@@ -19,10 +19,9 @@ fn parse_test_target_accepts_path_and_symbol_forms() {
     assert_eq!(with_member.symbol.as_deref(), Some("Foo"));
     assert_eq!(with_member.member.as_deref(), Some("bar"));
 
-    let parametrized = parse_test_target(
-        "tests/slow/ops/test_ops_help.py::test_ops_help[observability.py]",
-    )
-    .unwrap();
+    let parametrized =
+        parse_test_target("tests/slow/ops/test_ops_help.py::test_ops_help[observability.py]")
+            .unwrap();
     assert_eq!(
         parametrized.python_nodeid.as_deref(),
         Some("tests/slow/ops/test_ops_help.py::test_ops_help[observability.py]")
@@ -67,14 +66,24 @@ mod tests {
     )
     .unwrap();
     let model = super::model::load_source_model(&path, Language::Rust).unwrap();
-    assert!(model.definitions.iter().any(|d| d.name == "Config" && d.member.is_none()));
+    assert!(
+        model
+            .definitions
+            .iter()
+            .any(|d| d.name == "Config" && d.member.is_none())
+    );
     assert!(
         model
             .definitions
             .iter()
             .any(|d| d.name == "Config" && d.member.as_deref() == Some("load"))
     );
-    assert!(model.direct_tests.iter().any(|t| t.selector.contains("covers_helper")));
+    assert!(
+        model
+            .direct_tests
+            .iter()
+            .any(|t| t.selector.contains("covers_helper"))
+    );
     assert!(!model.non_test_lines().is_empty());
 }
 
@@ -88,7 +97,12 @@ fn python_source_model_marks_test_and_class_spans() {
     )
     .unwrap();
     let model = super::model::load_source_model(&path, Language::Python).unwrap();
-    assert!(model.definitions.iter().any(|d| d.name == "Box" && d.member.is_none()));
+    assert!(
+        model
+            .definitions
+            .iter()
+            .any(|d| d.name == "Box" && d.member.is_none())
+    );
     assert!(
         model
             .definitions

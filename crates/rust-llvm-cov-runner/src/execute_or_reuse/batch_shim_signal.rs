@@ -3,7 +3,9 @@ use std::io;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use crate::execute_or_reuse::batch_process_tree::{ProcessGroupIdentity, signal_validated_process_group};
+use crate::execute_or_reuse::batch_process_tree::{
+    ProcessGroupIdentity, signal_validated_process_group,
+};
 
 #[cfg(unix)]
 static SHIM_DELEGATED_PGID: AtomicU32 = AtomicU32::new(0);

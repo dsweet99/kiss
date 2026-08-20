@@ -28,7 +28,9 @@ fn inherent_impls_for_same_type_are_counted_together() {
     };
     let viols = analyze_rust_file(&parsed, &cfg);
     assert!(
-        viols.iter().any(|v| v.metric == "methods_per_class" && v.value == 6),
+        viols
+            .iter()
+            .any(|v| v.metric == "methods_per_class" && v.value == 6),
         "split inherent impls must sum methods, got {viols:?}"
     );
 }

@@ -10,7 +10,11 @@ use std::time::Duration;
 #[test]
 fn run_rslip_selectors_caps_parallel_jobs_for_forkserver_rss() {
     let tmp = tempfile::tempdir().unwrap();
-    fs::write(tmp.path().join("test_sample.py"), "def test_a():\n    assert True\n").unwrap();
+    fs::write(
+        tmp.path().join("test_sample.py"),
+        "def test_a():\n    assert True\n",
+    )
+    .unwrap();
     let observed_jobs = Rc::new(Cell::new(0));
     let observed_jobs_for_runner = Rc::clone(&observed_jobs);
     let runner = PytestRunner::from_bounded_fn(move |reqs, jobs| {

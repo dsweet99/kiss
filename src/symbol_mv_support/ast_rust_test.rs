@@ -1,4 +1,3 @@
-
 use super::super::ast_models::{ParseOutcome, ReferenceKind, SymbolKind};
 use super::super::ast_rust_span::compute_line_offsets;
 use super::parse_rust;

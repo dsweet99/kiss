@@ -1,4 +1,3 @@
-
 use std::path::{Path, PathBuf};
 
 use kiss::Language;
@@ -27,12 +26,9 @@ pub(crate) fn expand_target_operands(
             continue;
         }
         let candidate = resolve_candidate(repo_root, raw);
-        let abs = candidate.canonicalize().map_err(|_| {
-            format!(
-                "target '{raw}': path not found at {}",
-                candidate.display()
-            )
-        })?;
+        let abs = candidate
+            .canonicalize()
+            .map_err(|_| format!("target '{raw}': path not found at {}", candidate.display()))?;
         if abs.is_file() {
             return Err(format!(
                 "target '{raw}': {} is not a .py/.rs source file or directory",
@@ -54,9 +50,7 @@ pub(crate) fn expand_target_operands(
 
     if saw_repo_root {
         if targets.len() != 1 || !file_operands.is_empty() {
-            return Err(
-                "repository root cannot be mixed with additional targets".to_string(),
-            );
+            return Err("repository root cannot be mixed with additional targets".to_string());
         }
         return Ok(ExpandedTargetPlan::All);
     }
@@ -94,9 +88,7 @@ fn append_directory_sources(
     let (py_files, rs_files) =
         kiss::gather_files_by_lang(std::slice::from_ref(&path_arg), lang_filter, ignore);
     if py_files.is_empty() && rs_files.is_empty() {
-        return Err(format!(
-            "directory '{raw}' expands to zero source files"
-        ));
+        return Err(format!("directory '{raw}' expands to zero source files"));
     }
     for path in py_files.into_iter().chain(rs_files) {
         file_operands.push(path.to_string_lossy().into_owned());

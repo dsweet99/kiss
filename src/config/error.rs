@@ -1,13 +1,24 @@
 #[derive(Debug, Clone)]
 pub enum ConfigError {
-    UnknownKey { key: String, section: String },
+    UnknownKey {
+        key: String,
+        section: String,
+    },
     UnknownSection {
         section: String,
         hint: Option<String>,
     },
-    InvalidValue { key: String, message: String },
-    ParseError { message: String },
-    IoError { path: String, message: String },
+    InvalidValue {
+        key: String,
+        message: String,
+    },
+    ParseError {
+        message: String,
+    },
+    IoError {
+        path: String,
+        message: String,
+    },
 }
 
 impl std::fmt::Display for ConfigError {

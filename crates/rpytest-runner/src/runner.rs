@@ -80,7 +80,9 @@ impl PytestRunner {
             }),
             run_many_bounded: Box::new(move |reqs, max_jobs, on_complete| {
                 assert!(max_jobs > 0, "max_jobs must be greater than zero");
-                for (index, result) in run_many_bounded_stream(reqs, max_jobs).into_iter().enumerate()
+                for (index, result) in run_many_bounded_stream(reqs, max_jobs)
+                    .into_iter()
+                    .enumerate()
                 {
                     on_complete(index, result);
                 }
@@ -191,9 +193,6 @@ impl SubprocessPytestRunner {
         let started = Instant::now();
         let mut cmd = Command::new(&req.python);
         cmd.current_dir(&req.cwd);
-
-
-
 
         cmd.env_remove("PYTEST_ADDOPTS");
         cmd.env_remove("PYTEST_DISABLE_PLUGIN_AUTOLOAD");

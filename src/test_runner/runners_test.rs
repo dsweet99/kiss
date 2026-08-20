@@ -280,7 +280,8 @@ fn combined_selectors_carries_changed_rust_tests_into_population_plan() {
 
     assert!(plan.population_required.rust);
     assert!(
-        plan.selectors.rust
+        plan.selectors
+            .rust
             .contains(&"tests::gets_value".to_string())
     );
     assert!(plan.selectors.rust.contains(&"changed_extra".to_string()));

@@ -93,7 +93,6 @@ fn test_collect_use_paths() {
 
 #[test]
 fn extracts_function_scoped_use() {
-
     let ast = parse_rust_code(
         r"
 fn foo() {
@@ -205,7 +204,6 @@ fn test_qualified_rust_module_name() {
 fn test_same_stem_different_dirs_no_collision() {
     use std::io::Write;
 
-
     let tmp = tempfile::TempDir::new().unwrap();
     let dir_a = tmp.path().join("src").join("foo");
     let dir_b = tmp.path().join("src").join("bar");
@@ -223,7 +221,6 @@ fn test_same_stem_different_dirs_no_collision() {
     let pb = crate::rust_parsing::parse_rust_file(&path_b).unwrap();
     let refs: Vec<&crate::rust_parsing::ParsedRustFile> = vec![&pa, &pb];
     let graph = build_rust_dependency_graph(&refs);
-
 
     assert_eq!(
         graph.nodes.len(),

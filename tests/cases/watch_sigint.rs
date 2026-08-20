@@ -1,4 +1,3 @@
-
 #![cfg(unix)]
 
 use std::fs;
@@ -31,8 +30,6 @@ fn assert_watch_interrupted_gone(mut watch: WatchProc, timeout: Duration) {
     let pid = watch.pid();
     let deadline = Instant::now() + timeout;
     loop {
-
-
         if let Ok(Some(status)) = watch.child.try_wait() {
             std::mem::forget(watch);
             assert!(
@@ -170,7 +167,12 @@ fn spawn_foreground_watch(dir: &Path) -> Child {
         .expect("spawn kiss test --watch")
 }
 
-fn collect_stdout_until(child: &mut Child, needle_a: &str, needle_b: &str, timeout: Duration) -> String {
+fn collect_stdout_until(
+    child: &mut Child,
+    needle_a: &str,
+    needle_b: &str,
+    timeout: Duration,
+) -> String {
     use std::io::Read;
     use std::sync::{Arc, Mutex};
 
@@ -280,10 +282,7 @@ fn second_watch_fails_while_first_alive() {
         .expect("second watch");
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("already running"),
-        "stderr={stderr:?}"
-    );
+    assert!(stderr.contains("already running"), "stderr={stderr:?}");
     unsafe {
         assert_eq!(libc::kill(watch.pid(), libc::SIGINT), 0);
     }

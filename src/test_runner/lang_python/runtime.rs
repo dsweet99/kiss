@@ -1,4 +1,3 @@
-
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -9,13 +8,13 @@ use crate::test_runner::lang_iface::{
     EnsureRequest, ExecutionWitness, LanguageRuntime, OutcomeBatch, PublishBatch, WitnessStatus,
     summary_from_accepted_witness,
 };
+use crate::test_runner::python_coverage_index::generation::{
+    current_python_execution_identity, identity_matches_current,
+};
 use crate::test_runner::python_coverage_index::{
     GenerationReason, publish_python_derived_state_with_filter,
     repair_python_population_generation, repo_relative_coverage_file,
     selector_deltas_from_cached_outcomes, try_load_pinned_python_generation_warm,
-};
-use crate::test_runner::python_coverage_index::generation::{
-    current_python_execution_identity, identity_matches_current,
 };
 use crate::test_runner::runners::SelectorExecutionSummary;
 
@@ -43,7 +42,6 @@ impl LanguageRuntime for PythonRuntime {
     }
 
     fn load_full_witness(&self, repo_root: &Path) -> Result<ExecutionWitness, String> {
-
         let pinned = try_load_pinned_python_generation_warm(repo_root)
             .map_err(|e| format!("python witness load: {e:?}"))?;
         Ok(python_witness_from_pinned(&pinned))
@@ -68,7 +66,6 @@ impl LanguageRuntime for PythonRuntime {
             &request.gate,
         )?;
         let (statuses, durations_ns) = statuses_from_summary(&summary, miss_set);
-
 
         let publication_universe = match request.mode {
             crate::test_runner::lang_iface::AcceptMode::All
@@ -174,7 +171,6 @@ fn statuses_from_summary(
     let mut statuses = Vec::with_capacity(selectors.len());
     let mut durations = Vec::with_capacity(selectors.len());
     for sel in selectors {
-
         let status = match summary.raw_statuses.get(sel).copied().unwrap_or_else(|| {
             if summary.timed_out_selectors.iter().any(|s| s == sel) {
                 TestStatus::TimedOut

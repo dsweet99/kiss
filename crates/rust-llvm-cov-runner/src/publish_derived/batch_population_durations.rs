@@ -1,11 +1,10 @@
-
-use crate::publish_derived::batch_derived_index::RustPopulationState;
+use crate::CACHE_SCHEMA_VERSION;
 use crate::plan::batch_fingerprint::{
     RustCoverageBatchIdentity, RustCoverageToolIdentity, entry_fingerprint,
 };
 use crate::plan::batch_plan::RustCoverageBatchRequest;
+use crate::publish_derived::batch_derived_index::RustPopulationState;
 use crate::rust_cov_cache::{load_rust_cov_cache_entry, rust_cov_unique_suffix};
-use crate::CACHE_SCHEMA_VERSION;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
@@ -41,8 +40,6 @@ pub fn load_current_population_durations(
     tools: &RustCoverageToolIdentity,
     selectors: Option<&[String]>,
 ) -> Option<Vec<(String, Duration)>> {
-
-
     if let Some(cached) = try_load_durations_from_manifest_sidecar(cache_root, identity, selectors)
     {
         return Some(cached);
@@ -133,9 +130,7 @@ pub(crate) fn write_population_durations(
     }
     for selector in &population.selectors {
         if !durations.contains_key(selector) {
-            return Err(io::Error::other(
-                "population durations missing selector",
-            ));
+            return Err(io::Error::other("population durations missing selector"));
         }
     }
     let payload = PopulationDurationsFile {
@@ -179,8 +174,7 @@ pub(crate) fn try_publish_durations_after_population(
         ordinary_source_digests: BTreeMap::new(),
         test_binaries: BTreeMap::new(),
     };
-    let Some(pairs) =
-        load_durations_from_entries(cache_root, &population, identity, req, tools)
+    let Some(pairs) = load_durations_from_entries(cache_root, &population, identity, req, tools)
     else {
         return;
     };

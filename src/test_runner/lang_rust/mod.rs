@@ -1,18 +1,17 @@
-
-mod witness_store;
-mod runtime;
-mod publish_merge;
-pub(crate) mod llvm_cov;
-pub(crate) mod workspace;
 pub(crate) mod backer;
+pub(crate) mod llvm_cov;
+mod publish_merge;
+mod runtime;
+mod witness_store;
+pub(crate) mod workspace;
 
+#[cfg(test)]
+pub(crate) use witness_store::rust_miss_selectors;
 pub(crate) use witness_store::{
     PublishRustWitness, RustWarmDecision, maybe_bootstrap_rust_witness,
     publish_rust_execution_witness, rust_identity_digest_from_batch, rust_warm_or_miss_selectors,
     try_load_rust_execution_witness, try_warm_rust_cached_summary,
 };
-#[cfg(test)]
-pub(crate) use witness_store::rust_miss_selectors;
 
 pub(crate) use runtime::RustRuntime;
 

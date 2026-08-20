@@ -109,7 +109,6 @@ pub(crate) fn load_check_aggregate_population_state(
         return None;
     }
 
-
     let line_index = aggregate
         .aggregate_covered_lines
         .keys()

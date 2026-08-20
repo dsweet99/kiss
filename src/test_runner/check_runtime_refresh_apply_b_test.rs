@@ -1,5 +1,3 @@
-
-
 #[test]
 fn apply_identity_only_repair_on_bare_index_reports_structured_failure() {
     let tmp = tempfile::tempdir().unwrap();
@@ -104,10 +102,8 @@ fn successful_ensure_does_not_create_xdg_kiss_cov_durable() {
     let tmp = tempfile::tempdir().unwrap();
     let cache_home = tmp.path().join("xdg-cache");
     std::fs::create_dir_all(&cache_home).unwrap();
-    let _xdg = crate::test_runner::TestEnvVarGuard::set(
-        "XDG_CACHE_HOME",
-        cache_home.to_str().unwrap(),
-    );
+    let _xdg =
+        crate::test_runner::TestEnvVarGuard::set("XDG_CACHE_HOME", cache_home.to_str().unwrap());
     let repo_tmp = tempfile::tempdir().unwrap();
     let app = crate::test_runner::test_mode_fixtures::warm_python_covering_demo(&repo_tmp);
     assert!(app.is_file());
@@ -116,7 +112,8 @@ fn successful_ensure_does_not_create_xdg_kiss_cov_durable() {
         python: true,
         rust: false,
     };
-    super::ensure_check_runtime_coverage(repo, required, &[], 1, &[], &kiss::GateConfig::default()).expect("warm ensure");
+    super::ensure_check_runtime_coverage(repo, required, &[], 1, &[], &kiss::GateConfig::default())
+        .expect("warm ensure");
     assert!(
         !cache_home.join("kiss").join("kiss-cov-durable").exists(),
         "successful ensure must not publish $XDG_CACHE_HOME/kiss/kiss-cov-durable"
@@ -128,5 +125,5 @@ fn successful_ensure_does_not_create_xdg_kiss_cov_durable() {
         &kiss::GateConfig::default(),
         &[],
     )
-        .expect("coverage must remain loadable from ./.kiss");
+    .expect("coverage must remain loadable from ./.kiss");
 }

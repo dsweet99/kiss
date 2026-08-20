@@ -77,3 +77,37 @@ fn identity_drift_with_unchanged_outcomes_still_publishes() {
     let w = state.borrow().witness.clone().expect("published");
     assert_eq!(w.identity_digest, "new-id");
 }
+
+#[test]
+fn rust_warm_accept_still_emits_rust_identity_without_run() {
+    let state = Rc::new(RefCell::new(FakeState {
+        witness: Some(ExecutionWitness {
+            language: "rust".into(),
+            scope: WitnessScope::Full,
+            identity_digest: "id".into(),
+            selectors: vec!["a".into()],
+            statuses: vec![WitnessStatus::Passed],
+            durations_ns: vec![Some(1)],
+            covered_lines: BTreeMap::new(),
+            complete: true,
+            generation_id: "g".into(),
+        }),
+        ..Default::default()
+    }));
+    let runtime = FakeRuntime {
+        language: Language::Rust,
+        state: Rc::clone(&state),
+    };
+    let req = rust_request(vec!["a".into()]);
+    let out = crate::test_runner::capture_stdout::capture_stdout(|| {
+        let _ = ensure_runtime_cache(&req, &[&runtime]).expect("ensure");
+    });
+    assert!(
+        out.contains("kiss test: stage rust_identity"),
+        "warm accept must still emit rust_identity:\n{out}"
+    );
+    assert!(
+        state.borrow().run_calls.is_empty(),
+        "warm accept must not run"
+    );
+}

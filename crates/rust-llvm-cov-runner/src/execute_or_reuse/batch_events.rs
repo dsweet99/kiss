@@ -3,10 +3,10 @@ use std::path::PathBuf;
 
 use serde_json::Value;
 
+use crate::RustLlvmCovError;
 use crate::plan::batch_nextest_id::{
     libtest_binary_prefix, nextest_binary_id, package_name_from_manifest,
 };
-use crate::RustLlvmCovError;
 
 #[path = "batch_events_serde.rs"]
 mod batch_events_serde;
@@ -56,7 +56,6 @@ pub fn parse_batch_event_stream(stdout: &[u8]) -> Result<BatchEventStream, RustL
         if line.is_empty() {
             continue;
         }
-
 
         if line.first() != Some(&b'{') {
             continue;

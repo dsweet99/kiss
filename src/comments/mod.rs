@@ -1,10 +1,10 @@
-
 use std::path::Path;
 
 use crate::parsing::ParsedFile;
 use crate::rust_parsing::ParsedRustFile;
 use crate::violation::Violation;
 
+mod clap_docs;
 mod python;
 mod rust_scan;
 

@@ -212,7 +212,11 @@ fn begin_with_layout_sweeps_orphan_default_profraw() {
     fs::create_dir_all(kiss.join("tmp")).unwrap();
     fs::write(repo.join("default_root_0_1.profraw"), b"root").unwrap();
     fs::write(crate_dir.join("default_crate_0_2.profraw"), b"crate").unwrap();
-    fs::write(kiss.join("tmp").join("default_legacy_0_3.profraw"), b"legacy").unwrap();
+    fs::write(
+        kiss.join("tmp").join("default_legacy_0_3.profraw"),
+        b"legacy",
+    )
+    .unwrap();
 
     let mut req = crate::RustCoverageBatchRequest::witness();
     req.source_root = repo.to_path_buf();
@@ -232,7 +236,11 @@ fn begin_with_layout_sweeps_orphan_default_profraw() {
         b"keep",
     )
     .unwrap();
-    assert!(plan.target_runner_output_dir.join("intentional.profraw").exists());
+    assert!(
+        plan.target_runner_output_dir
+            .join("intentional.profraw")
+            .exists()
+    );
     drop(scope);
 }
 

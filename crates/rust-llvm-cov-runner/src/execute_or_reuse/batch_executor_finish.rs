@@ -36,8 +36,10 @@ pub(crate) fn build_instance_results(
     req: &RustCoverageBatchRequest,
 ) -> Result<Vec<InstanceResult>, RustLlvmCovError> {
     reject_missing_terminal_events(started_tests, ignored_tests, terminal_tests, exact, req)?;
-    let selector_index =
-        crate::execute_or_reuse::batch_events::SelectorMatchIndex::new(&req.logical_selectors, exact);
+    let selector_index = crate::execute_or_reuse::batch_events::SelectorMatchIndex::new(
+        &req.logical_selectors,
+        exact,
+    );
     let metadata_by_id: BTreeMap<_, _> = shim_metadata
         .iter()
         .map(|item| (item.full_name.clone(), item))
@@ -149,7 +151,6 @@ pub(crate) fn finish_fresh_batch_after_export(
         ..Default::default()
     };
 
-
     let kind = if req.population_publication_selectors.is_some() {
         "population coverage"
     } else {
@@ -240,8 +241,10 @@ fn reject_missing_terminal_events(
                 .map(|test| test.full_name.as_str())
                 .collect()
         };
-    let selector_index =
-        crate::execute_or_reuse::batch_events::SelectorMatchIndex::new(&req.logical_selectors, exact);
+    let selector_index = crate::execute_or_reuse::batch_events::SelectorMatchIndex::new(
+        &req.logical_selectors,
+        exact,
+    );
     let missing = started_tests
         .iter()
         .filter(|test| {

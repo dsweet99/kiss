@@ -151,9 +151,6 @@ fn entry_equal_except_duration(left: &RustCovCacheEntry, right: &RustCovCacheEnt
 
 fn entry_stable_for_generation(left: &RustCovCacheEntry, right: &RustCovCacheEntry) -> bool {
     if left.coverage.files.is_empty() && !right.coverage.files.is_empty() {
-
-
-
         return false;
     }
     left.schema_version == right.schema_version
@@ -169,8 +166,6 @@ pub fn store_rust_cov_cache_entry(
     entry: &RustCovCacheEntry,
 ) -> io::Result<()> {
     let path = rust_cov_cache_entry_path(cache_root, fingerprint);
-
-
 
     if let Ok(existing_bytes) = fs::read(&path)
         && let Ok(existing) = serde_json::from_slice::<RustCovCacheEntry>(&existing_bytes)

@@ -10,7 +10,7 @@ fn parse_rs(source: &str) -> ParsedRustFile {
     ParsedRustFile {
         path: PathBuf::from("t.rs"),
         source: source.to_string(),
-        ast: syn::parse_file("").unwrap(),
+        ast: syn::parse_file(source).unwrap_or_else(|_| syn::parse_file("").unwrap()),
     }
 }
 
@@ -178,4 +178,31 @@ fn docs_allowed_prefix_matches_file_path() {
         .len(),
         1
     );
+}
+
+#[test]
+fn rust_skips_clap_cli_help_docs() {
+    let parser = "/// about\n#[derive(Parser, Debug)]\nstruct Cli {\n    /// file\n    #[arg(long)]\n    path: String,\n}\n";
+    assert_eq!(rs_docs(parser, &["nowhere"]), 0);
+    let sub = "/// cmds\n#[derive(Subcommand)]\nenum C {\n    /// run check\n    Check {\n        /// root\n        path: String,\n    },\n}\n";
+    assert_eq!(rs_docs(sub, &["nowhere"]), 0);
+    let args = "/// opts\n#[derive(Args)]\nstruct Opts {\n    /// quiet\n    quiet: bool,\n}\n";
+    assert_eq!(rs_docs(args, &["nowhere"]), 0);
+    let values =
+        "/// mode\n#[derive(ValueEnum)]\nenum Mode {\n    /// git commit\n    Commit,\n}\n";
+    assert_eq!(rs_docs(values, &["nowhere"]), 0);
+}
+
+#[test]
+fn rust_flags_docs_that_are_not_clap_help() {
+    let src = "/// about\n#[derive(Parser)]\nstruct Cli {}\n/// leftover\nfn f() {}\n";
+    assert_eq!(rs_docs(src, &["nowhere"]), 1);
+    assert_eq!(
+        rs_docs(
+            "/// not clap\n#[derive(Debug)]\nstruct S {}\n",
+            &["nowhere"]
+        ),
+        1
+    );
+    assert_eq!(rs_count("/// about\n#[derive(Parser)]\nstruct Cli {}\n"), 0);
 }

@@ -1,4 +1,3 @@
-
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -116,12 +115,8 @@ impl WatchLiveConfig {
         self.kissconfig_sig = sig;
         self.kissconfig_digest = digest;
         machine.set_settle(self.settle);
-        *filter = WatchPathFilter::build(
-            repo_root,
-            &self.ignore,
-            self.lang_filter,
-            &self.invocation,
-        );
+        *filter =
+            WatchPathFilter::build(repo_root, &self.ignore, self.lang_filter, &self.invocation);
         crate::test_runner::emit_test_progress("kiss test: Reloaded .kissconfig");
         Ok(true)
     }

@@ -27,9 +27,7 @@ fn handle_rslip_miss_result_once(
     let outcome = match result {
         Ok(outcome) => outcome,
 
-
         Err(PytestRunError::Timeout(timeout)) => {
-
             return finalize_timed_out_miss_outcome(miss, timeout, 124, String::new());
         }
         Err(err) => return Err(RslipError::Runner(err)),

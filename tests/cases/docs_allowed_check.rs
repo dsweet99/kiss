@@ -189,3 +189,37 @@ fn check_does_not_treat_host_tmp_or_nested_src_as_allowed() {
         "vendor/src must not satisfy docs_allowed=[\"src\"]; stdout:\n{rs_out}"
     );
 }
+
+#[test]
+fn check_skips_clap_cli_help_doc_comments() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+    fs::write(
+        root.join("cli.rs"),
+        "/// about\n#[derive(Parser, Debug)]\nstruct Cli {\n    /// file\n    #[arg(long)]\n    path: String,\n}\n/// leftover\nfn extra() {}\n",
+    )
+    .unwrap();
+    write_docs_config(root, "[]");
+    let out = kiss_binary()
+        .current_dir(root)
+        .arg("check")
+        .arg("--lang")
+        .arg("rust")
+        .arg(".")
+        .output()
+        .expect("kiss check should run");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let doc_hits: Vec<_> = stdout
+        .lines()
+        .filter(|line| line.contains("VIOLATION:doc:"))
+        .collect();
+    assert_eq!(
+        doc_hits.len(),
+        1,
+        "only the non-clap leftover doc should be flagged; stdout:\n{stdout}"
+    );
+    assert!(
+        doc_hits[0].contains(":8:"),
+        "leftover doc is on line 8; stdout:\n{stdout}"
+    );
+}

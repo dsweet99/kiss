@@ -1,9 +1,8 @@
-
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use kiss::Language;
 use kiss::GateConfig;
+use kiss::Language;
 
 use super::witness::{AcceptMode, ExecutionWitness, WitnessStatus, summary_from_witness_statuses};
 use crate::test_runner::language_keyed::LanguageKeyed;
@@ -119,11 +118,8 @@ pub(crate) trait LanguageRuntime {
         miss_set: &[String],
     ) -> Result<OutcomeBatch, String>;
 
-    fn publish_outcomes(
-        &self,
-        request: &EnsureRequest,
-        batch: &PublishBatch,
-    ) -> Result<(), String>;
+    fn publish_outcomes(&self, request: &EnsureRequest, batch: &PublishBatch)
+    -> Result<(), String>;
 
     fn coverage_snapshot(&self, repo_root: &Path) -> Result<CoverageSnapshot, String> {
         let witness = self.load_full_witness(repo_root)?;

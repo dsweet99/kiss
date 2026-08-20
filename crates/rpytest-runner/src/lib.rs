@@ -1,4 +1,3 @@
-
 #![allow(clippy::missing_errors_doc)]
 #![allow(clippy::missing_panics_doc)]
 #![allow(clippy::must_use_candidate)]
@@ -21,21 +20,23 @@ mod bounded_concurrency_test_support;
 #[path = "bounded_concurrency_test_support_test.rs"]
 mod bounded_concurrency_test_support_test;
 #[cfg(test)]
-mod forkserver_test;
-#[cfg(test)]
-mod forkserver_test_support;
-#[cfg(test)]
 #[path = "forkserver_bootstrap_test.rs"]
 mod forkserver_bootstrap_test;
+#[cfg(test)]
+#[path = "forkserver_duration_test.rs"]
+mod forkserver_duration_test;
 #[cfg(test)]
 #[path = "forkserver_shutdown_test.rs"]
 mod forkserver_shutdown_test;
 #[cfg(test)]
+mod forkserver_test;
+#[cfg(test)]
+mod forkserver_test_b;
+#[cfg(test)]
+mod forkserver_test_support;
+#[cfg(test)]
 #[path = "forkserver_timeout_test.rs"]
 mod forkserver_timeout_test;
-#[cfg(test)]
-#[path = "forkserver_duration_test.rs"]
-mod forkserver_duration_test;
 #[cfg(test)]
 mod runner_test;
 #[cfg(test)]

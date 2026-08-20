@@ -1,6 +1,5 @@
 use super::types::{
-    ChangedDiff, CoverageFreshness, PopulationPlan, SelectionBasis, SelectionDecision,
-    TestSelector,
+    ChangedDiff, CoverageFreshness, PopulationPlan, SelectionBasis, SelectionDecision, TestSelector,
 };
 use crate::test_runner::runners::SelectorExecutionSummary;
 use crate::test_runner::{PlannedSelectors, SelectorRunOptions};

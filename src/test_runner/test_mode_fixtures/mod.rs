@@ -1,11 +1,8 @@
-
 mod git;
 mod python_warm;
 mod rust_warm;
 
-pub(crate) use git::{
-    checkout_branch, ensure_main_branch, git_in, git_stdout, init_git, with_cwd,
-};
+pub(crate) use git::{checkout_branch, ensure_main_branch, git_in, git_stdout, init_git, with_cwd};
 pub(crate) use python_warm::{
     PY_COVERING_SELECTOR, edit_python_covered_source, rewrite_python_population_after_edit,
     warm_python_covering_demo,

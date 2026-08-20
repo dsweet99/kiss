@@ -1,4 +1,3 @@
-
 use std::fs;
 use std::path::Path;
 
@@ -9,10 +8,12 @@ use super::paths::{
     create_staging_dir, generation_dir, generations_dir, pointer_path, sha256_hex, sync_dir,
     write_json_artifact,
 };
-use crate::test_runner::python_coverage_index::storage::{python_coverage_cache_root, python_unique_suffix};
 use super::types::{
     ArtifactDigest, GENERATION_SCHEMA_VERSION, GenerationManifest, GenerationReason,
     POINTER_SCHEMA_VERSION, PopulationPointer, PythonPopulationPlan, SelectorTimingRecord,
+};
+use crate::test_runner::python_coverage_index::storage::{
+    python_coverage_cache_root, python_unique_suffix,
 };
 
 pub(crate) fn publish_python_population_generation(
@@ -61,12 +62,7 @@ pub(crate) fn publish_locked(
         push_hardlinked_artifact(&mut artifacts, &staged, src, "timings.json")?;
         push_hardlinked_artifact(&mut artifacts, &staged, src, "durations.json")?;
     } else {
-        push_artifact(
-            &mut artifacts,
-            &staged,
-            "coverage.json",
-            &evidence.coverage,
-        )?;
+        push_artifact(&mut artifacts, &staged, "coverage.json", &evidence.coverage)?;
         push_artifact(
             &mut artifacts,
             &staged,
@@ -91,8 +87,7 @@ pub(crate) fn publish_locked(
         artifacts,
         creation_reason: reason,
     };
-    let (manifest_bytes, manifest_sha) =
-        write_json_artifact(&staged, "manifest.json", &manifest)?;
+    let (manifest_bytes, manifest_sha) = write_json_artifact(&staged, "manifest.json", &manifest)?;
     let _ = manifest_bytes;
     sync_dir(&staged)?;
     let final_dir = generation_dir(cache_root, &generation_id);
@@ -141,12 +136,10 @@ fn push_hardlinked_artifact(
                 dst.display()
             )
         })?;
-        let file = fs::File::open(&dst).map_err(|e| {
-            format!("error: kiss: open reused artifact {}: {e}", dst.display())
-        })?;
-        file.sync_all().map_err(|e| {
-            format!("error: kiss: sync reused artifact {}: {e}", dst.display())
-        })?;
+        let file = fs::File::open(&dst)
+            .map_err(|e| format!("error: kiss: open reused artifact {}: {e}", dst.display()))?;
+        file.sync_all()
+            .map_err(|e| format!("error: kiss: sync reused artifact {}: {e}", dst.display()))?;
     }
     let (byte_length, sha256) = super::paths::sha256_file(&dst)?;
     artifacts.push(ArtifactDigest {
@@ -163,10 +156,7 @@ fn write_pointer(
     manifest_sha256: &str,
 ) -> Result<(), String> {
     let path = pointer_path(cache_root);
-    let tmp = path.with_file_name(format!(
-        ".population.{}.tmp",
-        python_unique_suffix()
-    ));
+    let tmp = path.with_file_name(format!(".population.{}.tmp", python_unique_suffix()));
     let pointer = PopulationPointer {
         schema_version: POINTER_SCHEMA_VERSION.to_string(),
         generation_id: generation_id.to_string(),
@@ -233,12 +223,12 @@ pub(crate) struct GenerationDurationsFile {
 pub(crate) const GENERATION_DURATIONS_SCHEMA: &str = "rslip-python-generation-durations-v2";
 pub(crate) const GENERATION_DURATIONS_SCHEMA_V1: &str = "rslip-python-generation-durations-v1";
 
-pub(crate) fn generation_durations_file(timings: &[SelectorTimingRecord]) -> GenerationDurationsFile {
+pub(crate) fn generation_durations_file(
+    timings: &[SelectorTimingRecord],
+) -> GenerationDurationsFile {
     let mut max_duration_ns = 0_u64;
     let mut durations_ns = Vec::with_capacity(timings.len());
     for row in timings {
-
-
         if let Some(ns) = row.duration_ns {
             max_duration_ns = max_duration_ns.max(ns);
         }
@@ -258,7 +248,6 @@ pub(crate) fn path_maxes_from_timing_rows(
     use std::collections::BTreeMap;
     let mut by_path: BTreeMap<String, (u64, String)> = BTreeMap::new();
     for row in timings {
-
         let Some(ns) = row.duration_ns else {
             continue;
         };
@@ -280,11 +269,13 @@ pub(crate) fn path_maxes_from_timing_rows(
     }
     by_path
         .into_iter()
-        .map(|(path, (max_duration_ns, example_selector))| PathMaxDuration {
-            path,
-            max_duration_ns,
-            example_selector,
-        })
+        .map(
+            |(path, (max_duration_ns, example_selector))| PathMaxDuration {
+                path,
+                max_duration_ns,
+                example_selector,
+            },
+        )
         .collect()
 }
 
@@ -312,10 +303,12 @@ pub(crate) fn path_maxes_from_selector_durations(
     }
     by_path
         .into_iter()
-        .map(|(path, (max_duration_ns, example_selector))| PathMaxDuration {
-            path,
-            max_duration_ns,
-            example_selector,
-        })
+        .map(
+            |(path, (max_duration_ns, example_selector))| PathMaxDuration {
+                path,
+                max_duration_ns,
+                example_selector,
+            },
+        )
         .collect()
 }

@@ -1,8 +1,7 @@
-
-mod kernel;
 mod factory;
-mod planning;
 mod from_planned;
+mod kernel;
+mod planning;
 
 pub(crate) use factory::ensure_languages_runtime;
 pub(crate) use from_planned::EnsureFromPlanned;

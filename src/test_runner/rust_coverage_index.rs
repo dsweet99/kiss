@@ -1,12 +1,12 @@
 use crate::test_runner::line_selection;
 #[cfg(test)]
 use rpytest_runner::TestStatus;
+#[cfg(test)]
+use rust_llvm_cov_runner::RustLineCoverage;
 use rust_llvm_cov_runner::{
     CoverageOutputMode, RustCoverageBatchRequest, RustCoverageToolIdentity,
     placeholder_delegated_runner_fields, resolve_batch_request_runners,
 };
-#[cfg(test)]
-use rust_llvm_cov_runner::RustLineCoverage;
 use std::collections::{BTreeMap, BTreeSet};
 #[cfg(test)]
 use std::fs;
@@ -23,7 +23,6 @@ pub(crate) const RUST_COVERAGE_ENV_KEYS: &[&str] = &[
     "RUSTDOCFLAGS",
     "CARGO_TARGET_DIR",
     "LLVM_PROFILE_FILE",
-
     "KISS_RUST_LLVM_COV_HOLD_BEFORE_GO_MS",
 ];
 pub(crate) fn relevant_rust_batch_env() -> BTreeMap<String, String> {

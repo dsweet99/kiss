@@ -125,7 +125,8 @@ fn derived_publish_counters_and_manifest_loader_are_exercised() {
         identity.generation_fingerprint
     );
     let manifest =
-        crate::publish_derived::batch_derived_index::read_population_manifest(&req.cache_root).expect("manifest");
+        crate::publish_derived::batch_derived_index::read_population_manifest(&req.cache_root)
+            .expect("manifest");
     assert_eq!(manifest.schema_version, POPULATION_SCHEMA_VERSION);
     assert_eq!(
         manifest.generation_fingerprint,
@@ -134,7 +135,8 @@ fn derived_publish_counters_and_manifest_loader_are_exercised() {
     assert_eq!(manifest.input_fingerprint, identity.input_digest);
     assert_eq!(manifest.selectors, ["alpha".to_string()]);
     assert!(!manifest.entries_fingerprint.is_empty());
-    let index = crate::publish_derived::batch_derived_index::read_coverage_index(&req.cache_root).expect("index");
+    let index = crate::publish_derived::batch_derived_index::read_coverage_index(&req.cache_root)
+        .expect("index");
     assert_eq!(index.schema_version, INDEX_SCHEMA_VERSION);
     assert_eq!(index.entries_fingerprint, manifest.entries_fingerprint);
 }
@@ -142,10 +144,14 @@ fn derived_publish_counters_and_manifest_loader_are_exercised() {
 #[test]
 fn read_population_and_index_loaders_reject_invalid_json() {
     let tmp = tempfile::tempdir().unwrap();
-    assert!(crate::publish_derived::batch_derived_index::read_population_manifest(tmp.path()).is_none());
+    assert!(
+        crate::publish_derived::batch_derived_index::read_population_manifest(tmp.path()).is_none()
+    );
     std::fs::write(tmp.path().join("population.json"), b"{").unwrap();
     std::fs::write(tmp.path().join("index.json"), b"[").unwrap();
-    assert!(crate::publish_derived::batch_derived_index::read_population_manifest(tmp.path()).is_none());
+    assert!(
+        crate::publish_derived::batch_derived_index::read_population_manifest(tmp.path()).is_none()
+    );
     assert!(crate::publish_derived::batch_derived_index::read_coverage_index(tmp.path()).is_none());
     let counters = DerivedPublishCounters::default();
     assert_eq!(counters.cache_pruned_entries, 0);

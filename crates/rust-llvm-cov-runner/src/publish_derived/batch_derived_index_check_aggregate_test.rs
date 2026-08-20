@@ -57,7 +57,6 @@ fn load_check_aggregate_population_skips_index_json_body() {
     let index_path = fixture.req.cache_root.join("index.json");
     let original = std::fs::read(&index_path).expect("index.json");
 
-
     std::fs::write(
         &index_path,
         format!(

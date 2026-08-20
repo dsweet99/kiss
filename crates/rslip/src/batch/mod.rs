@@ -21,10 +21,10 @@ mod lock_chunk;
 mod miss_run;
 mod pycache;
 mod warm_hit_seal;
-pub use warm_hit_seal::warm_hit_seal_exists;
 use cached_status::{emit_prepare_resolved_progress, format_cached_status_dump};
 use finalize::clone_rslip_error;
 use miss_run::run_rslip_misses;
+pub use warm_hit_seal::warm_hit_seal_exists;
 
 pub(crate) struct RslipCacheCandidate {
     pub(crate) index: usize,
@@ -59,8 +59,12 @@ pub enum RslipBatchProgress {
     SelectorFinalized {
         outcomes: Vec<(usize, Result<RslipOutcome, RslipError>)>,
     },
-    CachedStatusDump { body: String },
-    TestsRemaining { remaining: usize },
+    CachedStatusDump {
+        body: String,
+    },
+    TestsRemaining {
+        remaining: usize,
+    },
 }
 
 impl Rslip {
@@ -90,16 +94,16 @@ impl Rslip {
             on_progress(RslipBatchProgress::CachedStatusDump {
                 body: format_cached_status_dump(&sealed),
             });
-            let out: Vec<Option<Result<RslipOutcome, RslipError>>> =
-                sealed.into_iter().map(|outcome| Some(Ok(outcome))).collect();
+            let out: Vec<Option<Result<RslipOutcome, RslipError>>> = sealed
+                .into_iter()
+                .map(|outcome| Some(Ok(outcome)))
+                .collect();
             return finalize_rslip_batch_results(out);
         }
         let context_fingerprint = shared_batch_context(&reqs);
         let cache_root = reqs.first().map(|req| req.cache_root.clone());
         let source_root = reqs.first().map(|req| req.source_root.clone());
-        let content_fingerprint = reqs
-            .first()
-            .and_then(|req| req.content_fingerprint.clone());
+        let content_fingerprint = reqs.first().and_then(|req| req.content_fingerprint.clone());
         let (mut out, misses, digest_union) = prepare_rslip_batch_slots(reqs);
         let cache_misses = misses.len();
         if cache_misses == 0 {
@@ -185,7 +189,6 @@ fn maybe_write_warm_hit_seal_from_hits(
 }
 
 fn shared_batch_context(reqs: &[RslipRequest]) -> Option<String> {
-
     reqs.first()
         .and_then(|first| rslip_request_context_fingerprint(first).ok())
 }
@@ -374,4 +377,3 @@ fn publish_rslip_runtime(cache_root: &Path) -> io::Result<PathBuf> {
     fs::rename(tmp_path, runtime_path)?;
     Ok(run_dir)
 }
-

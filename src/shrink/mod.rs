@@ -1,4 +1,3 @@
-
 mod metrics;
 
 use serde::{Deserialize, Serialize};
@@ -69,7 +68,6 @@ impl std::fmt::Display for ShrinkViolation {
 
 pub fn check_shrink_constraints(state: &ShrinkState, current: &GlobalMetrics) -> ShrinkViolations {
     let mut violations = Vec::new();
-
 
     let checks: &[(ShrinkTarget, usize)] = &[
         (ShrinkTarget::Files, state.baseline.files),

@@ -33,15 +33,15 @@ signal.setitimer(signal.ITIMER_REAL, 0)\n",
     );
     let outcomes = ForkserverPytestRunner::new().run_many_bounded(
         vec![PytestRunRequest::from_parts(
-        "test_sample.py::test_sleep".to_string(),
-        tmp.path().to_path_buf(),
-        python!(),
-        vec!["-q".to_string()],
-        env,
-        vec!["disable_alarm".to_string()],
-        Vec::new(),
-        Some(Duration::from_millis(40)),
-    )],
+            "test_sample.py::test_sleep".to_string(),
+            tmp.path().to_path_buf(),
+            python!(),
+            vec!["-q".to_string()],
+            env,
+            vec!["disable_alarm".to_string()],
+            Vec::new(),
+            Some(Duration::from_millis(40)),
+        )],
         1,
     );
     assert_eq!(
@@ -58,16 +58,18 @@ fn forkserver_timeout_metamorphic_vs_untimed_sleep() {
         "import time\n\ndef test_sleep():\n    time.sleep(0.2)\n",
     )
     .unwrap();
-    let mk = |timeout| PytestRunRequest::from_parts(
-        "test_sample.py::test_sleep".to_string(),
-        tmp.path().to_path_buf(),
-        python!(),
-        vec!["-q".to_string()],
-        BTreeMap::new(),
-        Vec::new(),
-        Vec::new(),
-        timeout,
-    );
+    let mk = |timeout| {
+        PytestRunRequest::from_parts(
+            "test_sample.py::test_sleep".to_string(),
+            tmp.path().to_path_buf(),
+            python!(),
+            vec!["-q".to_string()],
+            BTreeMap::new(),
+            Vec::new(),
+            Vec::new(),
+            timeout,
+        )
+    };
     let timed = ForkserverPytestRunner::new()
         .run_many_bounded(vec![mk(Some(Duration::from_millis(30)))], 1);
     let untimed = ForkserverPytestRunner::new().run_many_bounded(vec![mk(None)], 1);

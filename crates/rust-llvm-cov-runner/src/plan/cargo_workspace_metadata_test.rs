@@ -123,7 +123,9 @@ fn nested_non_member_crate_sources_are_detected() {
     assert!(metadata.is_non_member_local_crate_source(tmp.path(), &nested_lib));
     assert!(!metadata.is_non_member_local_crate_source(tmp.path(), &member_lib));
     assert_eq!(
-        metadata.non_member_local_crate_root(tmp.path(), &nested_lib).as_deref(),
+        metadata
+            .non_member_local_crate_root(tmp.path(), &nested_lib)
+            .as_deref(),
         Some("nested")
     );
 }
@@ -212,19 +214,21 @@ fn compile_time_closure_includes_proc_macro_local_dependency() {
 #[test]
 fn compile_time_closure_does_not_treat_custom_build_package_lib_as_compile_time() {
     let metadata = CargoMetadata {
-        packages: vec![crate::plan::cargo_workspace_metadata::CargoMetadataPackage {
-            id: "build-pkg".to_string(),
-            name: "build_pkg".to_string(),
-            manifest_path: "/repo/Cargo.toml".to_string(),
-            targets: vec![
-                serde_json::from_value(serde_json::json!({
-                    "kind": ["custom-build"],
-                    "crate_types": []
-                }))
-                .unwrap(),
-            ],
-            dependencies: vec![],
-        }],
+        packages: vec![
+            crate::plan::cargo_workspace_metadata::CargoMetadataPackage {
+                id: "build-pkg".to_string(),
+                name: "build_pkg".to_string(),
+                manifest_path: "/repo/Cargo.toml".to_string(),
+                targets: vec![
+                    serde_json::from_value(serde_json::json!({
+                        "kind": ["custom-build"],
+                        "crate_types": []
+                    }))
+                    .unwrap(),
+                ],
+                dependencies: vec![],
+            },
+        ],
         workspace_members: vec!["build-pkg".to_string()],
         workspace_root: Some("/repo".to_string()),
     };
@@ -245,19 +249,21 @@ fn compile_time_closure_does_not_treat_custom_build_package_lib_as_compile_time(
 #[test]
 fn proc_macro_crate_rs_classifies_as_compile_time() {
     let metadata = CargoMetadata {
-        packages: vec![crate::plan::cargo_workspace_metadata::CargoMetadataPackage {
-            id: "macro-pkg".to_string(),
-            name: "macro_pkg".to_string(),
-            manifest_path: "/repo/macro/Cargo.toml".to_string(),
-            targets: vec![
-                serde_json::from_value(serde_json::json!({
-                    "kind": ["lib"],
-                    "crate_types": ["proc-macro"]
-                }))
-                .unwrap(),
-            ],
-            dependencies: vec![],
-        }],
+        packages: vec![
+            crate::plan::cargo_workspace_metadata::CargoMetadataPackage {
+                id: "macro-pkg".to_string(),
+                name: "macro_pkg".to_string(),
+                manifest_path: "/repo/macro/Cargo.toml".to_string(),
+                targets: vec![
+                    serde_json::from_value(serde_json::json!({
+                        "kind": ["lib"],
+                        "crate_types": ["proc-macro"]
+                    }))
+                    .unwrap(),
+                ],
+                dependencies: vec![],
+            },
+        ],
         workspace_members: vec!["macro-pkg".to_string()],
         workspace_root: Some("/repo".to_string()),
     };
@@ -304,13 +310,15 @@ fn effective_manifest_path_honors_manifest_path_flag() {
 #[test]
 fn non_rs_paths_and_parent_dirs_are_not_compile_time() {
     let metadata = CargoMetadata {
-        packages: vec![crate::plan::cargo_workspace_metadata::CargoMetadataPackage {
-            id: "app-pkg".to_string(),
-            name: "app".to_string(),
-            manifest_path: "/repo/Cargo.toml".to_string(),
-            targets: vec![],
-            dependencies: vec![],
-        }],
+        packages: vec![
+            crate::plan::cargo_workspace_metadata::CargoMetadataPackage {
+                id: "app-pkg".to_string(),
+                name: "app".to_string(),
+                manifest_path: "/repo/Cargo.toml".to_string(),
+                targets: vec![],
+                dependencies: vec![],
+            },
+        ],
         workspace_members: vec!["app-pkg".to_string()],
         workspace_root: Some("/repo".to_string()),
     };
@@ -329,19 +337,21 @@ fn non_rs_paths_and_parent_dirs_are_not_compile_time() {
 #[test]
 fn ordinary_rs_outside_compile_time_closure_classifies_as_non_compile_time() {
     let metadata = CargoMetadata {
-        packages: vec![crate::plan::cargo_workspace_metadata::CargoMetadataPackage {
-            id: "app-pkg".to_string(),
-            name: "app".to_string(),
-            manifest_path: "/repo/Cargo.toml".to_string(),
-            targets: vec![
-                serde_json::from_value(serde_json::json!({
-                    "kind": ["lib"],
-                    "crate_types": ["lib"]
-                }))
-                .unwrap(),
-            ],
-            dependencies: vec![],
-        }],
+        packages: vec![
+            crate::plan::cargo_workspace_metadata::CargoMetadataPackage {
+                id: "app-pkg".to_string(),
+                name: "app".to_string(),
+                manifest_path: "/repo/Cargo.toml".to_string(),
+                targets: vec![
+                    serde_json::from_value(serde_json::json!({
+                        "kind": ["lib"],
+                        "crate_types": ["lib"]
+                    }))
+                    .unwrap(),
+                ],
+                dependencies: vec![],
+            },
+        ],
         workspace_members: vec!["app-pkg".to_string()],
         workspace_root: Some("/repo".to_string()),
     };

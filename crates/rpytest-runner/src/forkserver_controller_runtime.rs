@@ -27,7 +27,10 @@ pub(crate) struct ForkserverController {
 }
 
 impl ForkserverController {
-    pub(crate) fn start(python: &Path, bootstrap: &PytestBootstrap) -> Result<Self, PytestRunError> {
+    pub(crate) fn start(
+        python: &Path,
+        bootstrap: &PytestBootstrap,
+    ) -> Result<Self, PytestRunError> {
         let mut child = Command::new(python)
             .current_dir("/")
             .arg("-u")

@@ -1,9 +1,9 @@
-use super::*;
 use super::super::paths::{generation_dir, pointer_path};
 use super::super::publish::{
     GENERATION_DURATIONS_SCHEMA, GenerationDurationsFile, PathMaxDuration,
 };
 use super::super::types::{POINTER_SCHEMA_VERSION, PopulationPointer, SelectorTimingRecord};
+use super::*;
 use crate::test_runner::python_coverage_index::storage::python_coverage_cache_root;
 use std::time::Duration;
 

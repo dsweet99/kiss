@@ -1,17 +1,16 @@
-
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
 
 #[cfg(unix)]
 use super::control::{NudgeRequest, WatchSessionOwner};
-#[cfg(not(unix))]
-use super::session_cycle::NudgeRequest;
 use super::coverage::WatchCoverageResult;
 use super::event_source::{NativeWatchEventSource, WatchEventSource};
 use super::reload::{WatchLiveConfig, WatchReloadSeed};
 use super::roots::resolve_watch_registrations;
 use super::session::run_watch_loop_live;
+#[cfg(not(unix))]
+use super::session_cycle::NudgeRequest;
 use crate::test_runner::{RunTestCmdArgs, run_test_once};
 
 pub(crate) fn run_test_watch(
@@ -24,15 +23,10 @@ pub(crate) fn run_test_watch(
 ) -> i32 {
     match prepare_watch_session(&args) {
         Ok(prepared) => {
-            let config_path = super::reload::resolve_config_path(&prepared.repo_root, &seed.config_path);
-            let live = WatchLiveConfig::from_args(
-                &args,
-                settle,
-                seed,
-                py_config,
-                rs_config,
-                &config_path,
-            );
+            let config_path =
+                super::reload::resolve_config_path(&prepared.repo_root, &seed.config_path);
+            let live =
+                WatchLiveConfig::from_args(&args, settle, seed, py_config, rs_config, &config_path);
             run_native_watch(prepared, live, run_cov)
         }
         Err(code) => code,
@@ -97,8 +91,8 @@ fn prepare_watch_session(args: &RunTestCmdArgs<'_>) -> Result<PreparedWatch, i32
         eprintln!("error: kiss test requires a git repository ({e})");
         1
     })?;
-    let registrations =
-        resolve_watch_registrations(&repo_root, &args.invocation, args.ignore).map_err(|e| {
+    let registrations = resolve_watch_registrations(&repo_root, &args.invocation, args.ignore)
+        .map_err(|e| {
             eprintln!("error: kiss test --watch: {e}");
             1
         })?;
@@ -126,9 +120,9 @@ fn prepare_watch_session(args: &RunTestCmdArgs<'_>) -> Result<PreparedWatch, i32
 mod tests {
     use super::*;
     use crate::bin_cli::args::TestInvocation;
+    use crate::test_runner::WatchCoverageResult;
     use crate::test_runner::test_mode_fixtures::{git_in, init_git};
     use crate::test_runner::watch::event_source::FakeWatchEventSource;
-    use crate::test_runner::WatchCoverageResult;
     use std::env;
     use std::time::Duration;
 
@@ -157,7 +151,13 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         init_git(&tmp);
         std::fs::write(tmp.path().join("a.py"), "x=1\n").unwrap();
-        assert!(git_in(tmp.path()).args(["add", "a.py"]).status().unwrap().success());
+        assert!(
+            git_in(tmp.path())
+                .args(["add", "a.py"])
+                .status()
+                .unwrap()
+                .success()
+        );
         assert!(
             git_in(tmp.path())
                 .args(["commit", "-m", "init"])
@@ -186,7 +186,13 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         init_git(&tmp);
         std::fs::write(tmp.path().join("a.py"), "x=1\n").unwrap();
-        assert!(git_in(tmp.path()).args(["add", "a.py"]).status().unwrap().success());
+        assert!(
+            git_in(tmp.path())
+                .args(["add", "a.py"])
+                .status()
+                .unwrap()
+                .success()
+        );
         assert!(
             git_in(tmp.path())
                 .args(["commit", "-m", "init"])
@@ -196,7 +202,8 @@ mod tests {
         );
         let orig = env::current_dir().unwrap();
         env::set_current_dir(tmp.path()).unwrap();
-        super::super::event_source::TEST_IMMEDIATE_DISCONNECT.store(true, std::sync::atomic::Ordering::SeqCst);
+        super::super::event_source::TEST_IMMEDIATE_DISCONNECT
+            .store(true, std::sync::atomic::Ordering::SeqCst);
         let seed = WatchReloadSeed {
             cli_ignore: Vec::new(),
             jobs_cli: Some(1),

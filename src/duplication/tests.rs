@@ -64,7 +64,6 @@ fn test_structs_and_helpers() {
 
 #[test]
 fn test_python_duplication() {
-
     let code = "def foo():\n    x = 1\n    y = 2\n    z = 3\n    a = 4\n    b = 5\n    return x + y + z + a + b";
     let mut tmp1 = tempfile::NamedTempFile::with_suffix(".py").unwrap();
     let mut tmp2 = tempfile::NamedTempFile::with_suffix(".py").unwrap();
@@ -134,7 +133,6 @@ fn test_cluster_duplicates_from_chunks_smoke() {
 
 #[test]
 fn test_rust_duplication() {
-
     let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
     write!(tmp, "fn foo() {{\n    let x = 1;\n    let y = 2;\n    let z = 3;\n    let a = 4;\n    let b = 5;\n}}").unwrap();
     let parsed = parse_rust_file(tmp.path()).unwrap();

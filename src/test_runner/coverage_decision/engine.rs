@@ -56,9 +56,6 @@ fn plan_language(
     _diff: &ChangedDiff,
     changed_tests: Vec<TestSelector>,
 ) -> Result<(BTreeSet<TestSelector>, BTreeSet<TestSelector>, bool), String> {
-
-
-
     match planner.language() {
         kiss::Language::Rust => plan_rust_language(planner, changed_tests),
         kiss::Language::Python => plan_python_language(planner, changed_tests),
@@ -69,9 +66,6 @@ fn plan_python_language(
     planner: &dyn LanguagePlanner,
     changed_tests: Vec<TestSelector>,
 ) -> Result<(BTreeSet<TestSelector>, BTreeSet<TestSelector>, bool), String> {
-
-
-
     if planner.prior_failures().is_empty() {
         let freshness = planner.freshness(&[])?;
         if !freshness.requires_population() {
@@ -91,8 +85,6 @@ fn plan_rust_language(
     planner: &dyn LanguagePlanner,
     changed_tests: Vec<TestSelector>,
 ) -> Result<(BTreeSet<TestSelector>, BTreeSet<TestSelector>, bool), String> {
-
-
     if !planner.prior_failures().is_empty() {
         return plan_with_universe(planner, changed_tests);
     }

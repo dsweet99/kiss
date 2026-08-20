@@ -1,4 +1,3 @@
-
 use std::path::{Path, PathBuf};
 
 use kiss::Language;
@@ -68,7 +67,6 @@ fn detect_test_target_language(path: &Path) -> Result<Language, String> {
 }
 
 fn is_python_nodeid_tail(symbol_part: &str) -> bool {
-
     symbol_part.contains("::") || symbol_part.contains('[')
 }
 

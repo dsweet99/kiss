@@ -1,4 +1,4 @@
-use kiss::{default_config_toml, Config, ConfigLanguage, GateConfig, TestCoverageScope};
+use kiss::{Config, ConfigLanguage, GateConfig, TestCoverageScope, default_config_toml};
 
 #[test]
 fn default_config_has_reasonable_values() {

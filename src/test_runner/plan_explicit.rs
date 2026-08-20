@@ -1,4 +1,3 @@
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
@@ -34,7 +33,6 @@ pub(super) fn plan_explicit_target_selectors(
     }
     let direct_python: Vec<_> = query.direct_python.into_iter().collect();
     let direct_rust: Vec<_> = query.direct_rust.into_iter().collect();
-
 
     if source_paths.is_empty() {
         return Ok(PlannedSelectors {
@@ -108,9 +106,14 @@ fn reject_non_member_rust_targets(
     rust_paths.extend(query.rust_lines.keys().cloned());
 
     for selector in &query.direct_rust {
-        let path_part = selector.split_once("::").map_or(selector.as_str(), |(p, _)| p);
+        let path_part = selector
+            .split_once("::")
+            .map_or(selector.as_str(), |(p, _)| p);
         let candidate = PathBuf::from(path_part);
-        if candidate.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("rs")) {
+        if candidate
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("rs"))
+        {
             let abs = if candidate.is_absolute() {
                 candidate
             } else {
@@ -122,7 +125,8 @@ fn reject_non_member_rust_targets(
     rust_paths.sort();
     rust_paths.dedup();
     let roots = crate::test_runner::lang_rust::workspace::non_member_rust_crate_roots(
-        repo_root, &rust_paths,
+        repo_root,
+        &rust_paths,
     )?;
     if roots.is_empty() {
         return Ok(());

@@ -1,4 +1,3 @@
-
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -26,9 +25,8 @@ pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 pub(crate) fn sha256_file(path: &Path) -> Result<(u64, String), String> {
-    let mut file = File::open(path).map_err(|e| {
-        format!("error: kiss: open {} for digest: {e}", path.display())
-    })?;
+    let mut file = File::open(path)
+        .map_err(|e| format!("error: kiss: open {} for digest: {e}", path.display()))?;
     let mut hasher = Sha256::new();
     let mut buf = [0u8; 65536];
     let mut byte_length = 0u64;
@@ -91,7 +89,8 @@ pub(crate) fn write_create_new_bytes(path: &Path, bytes: &[u8]) -> Result<(), St
 }
 
 pub(crate) fn sync_dir(path: &Path) -> Result<(), String> {
-    let file = File::open(path).map_err(|e| format!("error: kiss: open dir {}: {e}", path.display()))?;
+    let file =
+        File::open(path).map_err(|e| format!("error: kiss: open dir {}: {e}", path.display()))?;
     file.sync_all()
         .map_err(|e| format!("error: kiss: sync dir {}: {e}", path.display()))?;
     Ok(())

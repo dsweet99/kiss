@@ -1,10 +1,9 @@
-
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use super::load::{GenerationLoadError, load_pinned_warm_locked};
-use crate::test_runner::python_coverage_index::storage::python_coverage_cache_root;
 use super::types::PinnedPythonGeneration;
+use crate::test_runner::python_coverage_index::storage::python_coverage_cache_root;
 
 static WARM_MEMO: Mutex<Option<WarmMemoEntry>> = Mutex::new(None);
 
@@ -24,8 +23,7 @@ pub(crate) fn clear_python_generation_warm_memo() {
 pub(crate) fn try_load_pinned_python_generation_warm_memoized(
     repo_root: &Path,
 ) -> Result<PinnedPythonGeneration, GenerationLoadError> {
-    let cache_root =
-        python_coverage_cache_root(repo_root).map_err(GenerationLoadError::Corrupt)?;
+    let cache_root = python_coverage_cache_root(repo_root).map_err(GenerationLoadError::Corrupt)?;
     if let Ok(guard) = WARM_MEMO.lock()
         && let Some(entry) = guard.as_ref()
         && entry.cache_root == cache_root

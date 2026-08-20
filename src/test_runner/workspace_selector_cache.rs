@@ -1,4 +1,3 @@
-
 use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -48,7 +47,9 @@ fn should_skip_dir(name: &str) -> bool {
 }
 
 fn ignored(rel: &str, ignore: &[String]) -> bool {
-    ignore.iter().any(|prefix| rel == prefix || rel.starts_with(&format!("{prefix}/")))
+    ignore
+        .iter()
+        .any(|prefix| rel == prefix || rel.starts_with(&format!("{prefix}/")))
 }
 
 fn hash_file_meta(h: u64, rel: &str, meta: &fs::Metadata) -> u64 {
@@ -79,8 +80,6 @@ pub(crate) fn workspace_files_fingerprint_for_cache(
 }
 
 fn workspace_files_fingerprint_git(repo_root: &Path, ignore: &[String]) -> io::Result<String> {
-
-
     let output = kiss::scrubbed_git_command(repo_root)
         .args([
             "ls-files",
@@ -139,8 +138,12 @@ fn workspace_files_fingerprint_walk(repo_root: &Path, ignore: &[String]) -> io::
             if ignored(&rel, ignore) {
                 continue;
             }
-            let is_py = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("py"));
-            let is_rs = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("rs"));
+            let is_py = path
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("py"));
+            let is_rs = path
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("rs"));
             if !(is_py || is_rs) {
                 continue;
             }
@@ -248,7 +251,6 @@ pub(crate) fn store_workspace_selectors(
         python_selectors: python_selectors.to_vec(),
         rust_selectors: rust_selectors.to_vec(),
     };
-
 
     let primary_ok = write_cache_at(&cache_path(repo_root), &cache).is_ok();
     let durable_ok = write_cache_at(&durable_cache_path(repo_root), &cache).is_ok();

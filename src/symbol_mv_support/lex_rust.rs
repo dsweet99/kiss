@@ -1,4 +1,3 @@
-
 use super::lex::{LexState, StringState};
 
 pub(super) fn step_rust_code_state(

@@ -21,10 +21,6 @@ fn parse_first_fn(
 
 #[test]
 fn bug_rust_local_variables_should_count_typed_tuple_pattern_bindings() {
-
-
-
-
     let (inputs, block, attr_count) =
         parse_first_fn("fn f() {\n    let (a, b): (i32, i32) = (1, 2);\n    let _ = (a, b);\n}\n");
     let m = compute_rust_function_metrics(&inputs, &block, attr_count);

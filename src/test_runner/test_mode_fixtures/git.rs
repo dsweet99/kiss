@@ -42,7 +42,6 @@ pub(crate) fn ensure_main_branch(dir: &Path) {
         .output()
         .unwrap();
     if !out.status.success() {
-
         return;
     }
     let current = String::from_utf8(out.stdout).unwrap().trim().to_string();
@@ -76,13 +75,7 @@ pub(crate) fn checkout_branch(dir: &Path, name: &str) {
 }
 
 pub(crate) fn commit_all(dir: &Path, message: &str) {
-    assert!(
-        git_in(dir)
-            .args(["add", "-A"])
-            .status()
-            .unwrap()
-            .success()
-    );
+    assert!(git_in(dir).args(["add", "-A"]).status().unwrap().success());
     assert!(
         git_in(dir)
             .args(["commit", "-m", message])

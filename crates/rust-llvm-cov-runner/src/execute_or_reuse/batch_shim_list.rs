@@ -18,7 +18,6 @@ pub(crate) fn run_delegated_list_child(
     let mut delegated_command = build_delegated_command(delegated, command);
     scrub_coverage_build_env(&mut delegated_command);
 
-
     let kiss_profraw = crate::kiss_profraw::resolve_kiss_profraw(output_dir);
     crate::kiss_profraw::ensure_kiss_profraw(&kiss_profraw)?;
     delegated_command.env(

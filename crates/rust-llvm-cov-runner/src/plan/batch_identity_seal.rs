@@ -63,8 +63,6 @@ fn ctime_ns(meta: &fs::Metadata) -> u64 {
     {
         let _ = meta;
 
-
-
         0
     }
 }
@@ -175,8 +173,6 @@ pub fn try_identity_from_mtime_seal(
     if !file_meta_matches(source_root, &seal.files) {
         return None;
     }
-
-
 
     let live_generation = crate::plan::batch_fingerprint::generation_fingerprint(
         &seal.input_digest,

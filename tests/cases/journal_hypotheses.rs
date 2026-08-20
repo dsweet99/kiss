@@ -13,9 +13,6 @@ fn first_function(p: &ParsedFile) -> Node<'_> {
     first_function_node(p)
 }
 
-
-
-
 #[test]
 fn hypothesis_01_import_not_a_statement() {
     let p = parse_python_source("def f():\n    import os\n    x = 1\n    return x\n");
@@ -23,9 +20,6 @@ fn hypothesis_01_import_not_a_statement() {
     let m = compute_function_metrics(func, &p.source);
     assert_eq!(m.statements, 2, "expected assignment + return only");
 }
-
-
-
 
 #[test]
 fn hypothesis_02_type_checking_imports_excluded_from_file_metrics() {
@@ -36,9 +30,6 @@ fn hypothesis_02_type_checking_imports_excluded_from_file_metrics() {
     assert_eq!(m.imports, 2, "expected typing + json only");
 }
 
-
-
-
 #[test]
 fn hypothesis_03_return_expression_list_counts_values() {
     let p = parse_python_source("def f():\n    return a, b, c\n");
@@ -47,18 +38,12 @@ fn hypothesis_03_return_expression_list_counts_values() {
     assert_eq!(m.max_return_values, 3);
 }
 
-
-
-
 #[test]
 fn hypothesis_04_from_import_counts_imported_symbols() {
     let p = parse_python_source("from typing import Any, List\n");
     let m = kiss::compute_file_metrics(&p);
     assert_eq!(m.imports, 2);
 }
-
-
-
 
 #[test]
 fn hypothesis_05_typed_boolean_defaults_counted() {
@@ -68,9 +53,6 @@ fn hypothesis_05_typed_boolean_defaults_counted() {
     assert_eq!(m.boolean_parameters, 1);
 }
 
-
-
-
 #[test]
 fn hypothesis_06_decorator_counting() {
     let p = parse_python_source("@a\n@b\n@c\ndef f():\n    return 1\n");
@@ -79,9 +61,6 @@ fn hypothesis_06_decorator_counting() {
     let m = compute_function_metrics(func, &p.source);
     assert_eq!(m.decorators, 3);
 }
-
-
-
 
 #[test]
 fn hypothesis_07_elif_counts_as_branch() {
@@ -93,9 +72,6 @@ fn hypothesis_07_elif_counts_as_branch() {
     assert!(m.branches >= 2, "branches={}", m.branches);
 }
 
-
-
-
 #[test]
 fn hypothesis_08_try_block_statements_are_try_body_only() {
     let p = parse_python_source(
@@ -105,9 +81,6 @@ fn hypothesis_08_try_block_statements_are_try_body_only() {
     let m = compute_function_metrics(func, &p.source);
     assert_eq!(m.max_try_block_statements, 1);
 }
-
-
-
 
 #[test]
 fn hypothesis_09_interface_type_detection_protocol_in_args() {
@@ -119,13 +92,8 @@ fn hypothesis_09_interface_type_detection_protocol_in_args() {
     assert_eq!(m.concrete_types, 1);
 }
 
-
-
-
 #[test]
 fn hypothesis_10_parenthesized_tuple_return_counts_elements() {
-
-
     let p = parse_py(Path::new("tests/fake_python/return_parenthesized_tuple.py"));
     let func = first_function(&p);
     let m = compute_function_metrics(func, &p.source);

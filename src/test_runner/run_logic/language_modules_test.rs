@@ -1,7 +1,7 @@
 use super::*;
+use crate::test_runner::PlannedSelectors;
 use crate::test_runner::coverage_decision::LanguagePlanner;
 use crate::test_runner::runners::SelectorExecutionSummary;
-use crate::test_runner::{PlannedSelectors, SelectorRunOptions};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -13,27 +13,12 @@ fn planned() -> PlannedSelectors {
     planned
 }
 
-fn options() -> SelectorRunOptions<'static> {
-    SelectorRunOptions {
-        dry_run: true,
-        force_rerun: false,
-        metrics: false,
-        jobs: 1,
-        extras: crate::test_runner::language_keyed::LanguageKeyed {
-            python: &[],
-            rust: &[],
-        },
-        plan_duration: Duration::ZERO,
-    gate: kiss::GateConfig::default()
-    }
-}
-
 #[test]
 #[allow(non_snake_case)]
 fn PythonModule_policy_reads_python_population_decision() {
     let mut planned = planned();
     planned.population_required.python = true;
-    let options = options();
+    let options = super::dry_run_selector_options();
     let ctx = crate::test_runner::coverage_decision::RunContext {
         planned: &planned,
         options: &options,
@@ -54,7 +39,7 @@ fn PythonModule_policy_reads_python_population_decision() {
 fn RustModule_policy_reads_rust_population_decision() {
     let mut planned = planned();
     planned.population_required.rust = true;
-    let options = options();
+    let options = super::dry_run_selector_options();
     let ctx = crate::test_runner::coverage_decision::RunContext {
         planned: &planned,
         options: &options,
@@ -75,7 +60,7 @@ fn language_executor_methods_handle_empty_runs_and_rebuild_indexes() {
     let tmp = tempfile::tempdir().unwrap();
     let mut planned = planned();
     planned.repo_root = tmp.path().to_path_buf();
-    let options = options();
+    let options = super::dry_run_selector_options();
     let ctx = crate::test_runner::coverage_decision::RunContext {
         planned: &planned,
         options: &options,
@@ -121,7 +106,7 @@ fn python_rebuild_index_skips_when_pure_test_operand_plan() {
     let mut planned = planned();
     planned.repo_root = tmp.path().to_path_buf();
     planned.skip_index_rebuild_after_selective.python = true;
-    let options = options();
+    let options = super::dry_run_selector_options();
     let ctx = crate::test_runner::coverage_decision::RunContext {
         planned: &planned,
         options: &options,
@@ -205,7 +190,7 @@ fn dry_run_lines_report_population_and_selector_commands() {
 #[test]
 fn language_executor_non_empty_runs_validate_jobs_before_spawning() {
     let planned = planned();
-    let mut options = options();
+    let mut options = super::dry_run_selector_options();
     options.jobs = 0;
     let ctx = crate::test_runner::coverage_decision::RunContext {
         planned: &planned,
@@ -310,7 +295,7 @@ fn rust_population_phase_uses_selector_entries_not_check_aggregate() {
     let mut planned = planned();
     planned.repo_root = tmp.path().to_path_buf();
     planned.ignore = Vec::new();
-    let mut options = options();
+    let mut options = super::dry_run_selector_options();
     options.extras.rust = &[];
     options.force_rerun = false;
     options.jobs = 1;
@@ -365,15 +350,6 @@ fn rust_population_phase_uses_selector_entries_not_check_aggregate() {
 
 #[test]
 fn aggregate_selection_scope_is_conservative_not_per_test() {
-
-
-
-
-
-
-
-
-
     let summary = crate::test_runner::runners::SelectorExecutionSummary {
         rust_batch_cache_hits: 42,
         rust_entry_generation_count: 0,
@@ -402,7 +378,7 @@ fn rust_execution_helper_tries_cached_selective_before_falling_through() {
     .unwrap();
     let mut planned = planned();
     planned.repo_root = tmp.path().to_path_buf();
-    let mut options = options();
+    let mut options = super::dry_run_selector_options();
     options.jobs = 0;
     let ctx = crate::test_runner::coverage_decision::RunContext {
         planned: &planned,

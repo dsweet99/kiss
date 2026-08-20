@@ -1,4 +1,3 @@
-
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -6,12 +5,12 @@ use std::time::Duration;
 use rpytest_runner::TestStatus;
 use serde::{Deserialize, Serialize};
 
+use super::POPULATION_SCHEMA_VERSION;
+use super::manifest::PythonPopulationManifest;
 use super::manifest::{
     PYTHON_COVERAGE_ENV_KEYS, read_python_population_manifest, stored_python_universe_population,
 };
-use super::manifest::PythonPopulationManifest;
 use super::storage::{python_coverage_cache_root, python_unique_suffix};
-use super::POPULATION_SCHEMA_VERSION;
 use crate::test_runner::runners::{detect_rslip_versions, rslip_request_from_parts};
 
 pub(crate) const POPULATION_DURATIONS_SCHEMA: &str = "rslip-python-population-durations-v3";
@@ -87,8 +86,9 @@ pub(crate) fn load_current_python_population_max_duration(
         }
         return None;
     }
-    let identity = super::manifest::current_python_population_manifest_identity(repo_root, pytest_args)
-        .ok()?;
+    let identity =
+        super::manifest::current_python_population_manifest_identity(repo_root, pytest_args)
+            .ok()?;
     let cache_root = python_coverage_cache_root(repo_root).ok()?;
     let pop_path = cache_root.join("population.json");
     let pop_bytes = fs::read(&pop_path).ok()?;
@@ -116,7 +116,6 @@ pub(crate) fn load_current_python_population_max_duration(
         || file.input_fingerprint != pop_id.input_fingerprint
         || file.entries_fingerprint != pop_id.entries_fingerprint
     {
-
         let _ = load_current_python_population_durations(repo_root, pytest_args)?;
         let bytes = fs::read(&dur_path).ok()?;
         let file: PopulationDurationsMaxOnly = serde_json::from_slice(&bytes).ok()?;
@@ -133,7 +132,9 @@ pub(crate) fn load_current_python_population_path_maxes(
         return Some(path_maxes);
     }
     let pairs = load_current_python_population_durations(repo_root, pytest_args)?;
-    Some(super::generation::path_maxes_from_selector_durations(&pairs))
+    Some(super::generation::path_maxes_from_selector_durations(
+        &pairs,
+    ))
 }
 
 #[derive(Deserialize)]
@@ -238,12 +239,17 @@ pub(crate) fn write_population_durations(
         ".population_durations.{}.tmp",
         python_unique_suffix()
     ));
-    kiss_publication_barrier::publish_atomically("python_population_durations", &path, &tmp_path, |file| {
-        serde_json::to_writer(&mut *file, &payload).map_err(std::io::Error::other)?;
-        use std::io::Write;
-        file.write_all(b"\n")?;
-        Ok(())
-    })
+    kiss_publication_barrier::publish_atomically(
+        "python_population_durations",
+        &path,
+        &tmp_path,
+        |file| {
+            serde_json::to_writer(&mut *file, &payload).map_err(std::io::Error::other)?;
+            use std::io::Write;
+            file.write_all(b"\n")?;
+            Ok(())
+        },
+    )
     .map_err(|e| e.to_string())
 }
 
@@ -286,8 +292,8 @@ fn load_durations_from_entry_probes_inner(
             &python_version,
             &pytest_version,
             false,
-        &kiss::GateConfig::load_for_repo(repo_root),
-    )
+            &kiss::GateConfig::load_for_repo(repo_root),
+        )
         .ok()?;
         let fingerprint = rslip::cache_fingerprint_for_request(&req).ok()?;
         let path = req

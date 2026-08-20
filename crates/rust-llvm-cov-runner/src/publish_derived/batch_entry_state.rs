@@ -1,6 +1,5 @@
-
-use crate::rust_cov_cache::rust_cov_unique_suffix;
 use crate::RustLlvmCovError;
+use crate::rust_cov_cache::rust_cov_unique_suffix;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{self, Write};

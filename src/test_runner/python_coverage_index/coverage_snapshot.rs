@@ -1,13 +1,12 @@
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use super::POPULATION_SCHEMA_VERSION;
 use super::manifest::read_python_population_manifest;
 use super::storage::{python_coverage_cache_root, python_unique_suffix};
-use super::POPULATION_SCHEMA_VERSION;
 
 pub(crate) const COVERAGE_SNAPSHOT_SCHEMA: &str = "rslip-python-coverage-snapshot-v1";
 
@@ -26,9 +25,7 @@ fn coverage_snapshot_path(cache_root: &Path) -> PathBuf {
     cache_root.join("coverage_snapshot.json")
 }
 
-pub(crate) fn try_load_python_coverage_snapshot(
-    repo_root: &Path,
-) -> Option<CoveredLinesMap> {
+pub(crate) fn try_load_python_coverage_snapshot(repo_root: &Path) -> Option<CoveredLinesMap> {
     let manifest = read_python_population_manifest(repo_root)?;
     if manifest.schema_version != POPULATION_SCHEMA_VERSION {
         return None;
@@ -51,7 +48,6 @@ pub(crate) fn write_python_coverage_snapshot(
     covered_lines: &CoveredLinesMap,
 ) -> Result<(), String> {
     let Some(manifest) = read_python_population_manifest(repo_root) else {
-
         return Ok(());
     };
     let cache_root = python_coverage_cache_root(repo_root)?;
@@ -66,15 +62,17 @@ pub(crate) fn write_python_coverage_snapshot(
     let parent = path
         .parent()
         .ok_or_else(|| "error: kiss: Python coverage snapshot path has no parent".to_string())?;
-    let tmp_path = parent.join(format!(
-        ".coverage_snapshot.{}.tmp",
-        python_unique_suffix()
-    ));
-    kiss_publication_barrier::publish_atomically("python_coverage_snapshot", &path, &tmp_path, |file| {
-        serde_json::to_writer(&mut *file, &payload).map_err(std::io::Error::other)?;
-        use std::io::Write;
-        file.write_all(b"\n")?;
-        Ok(())
-    })
+    let tmp_path = parent.join(format!(".coverage_snapshot.{}.tmp", python_unique_suffix()));
+    kiss_publication_barrier::publish_atomically(
+        "python_coverage_snapshot",
+        &path,
+        &tmp_path,
+        |file| {
+            serde_json::to_writer(&mut *file, &payload).map_err(std::io::Error::other)?;
+            use std::io::Write;
+            file.write_all(b"\n")?;
+            Ok(())
+        },
+    )
     .map_err(|e| e.to_string())
 }

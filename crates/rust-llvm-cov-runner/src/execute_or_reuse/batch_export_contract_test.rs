@@ -1,11 +1,10 @@
-
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
 use crate::execute_or_reuse::batch_export_tools::resolve_export_tools_from_rustc;
-use crate::execute_rust_coverage_batch;
 use crate::execute_or_reuse::llvm_cov_json::parse_llvm_cov_json;
+use crate::execute_rust_coverage_batch;
 
 use crate::batch_export_contract_fixture::*;
 

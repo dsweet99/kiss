@@ -6,9 +6,9 @@ use std::time::Instant;
 
 use crate::execute_or_reuse::batch_events::BatchCompilerArtifact;
 use crate::execute_or_reuse::batch_export::object_paths_for_executable;
-use crate::plan::batch_runner_resolve::resolve_batch_request_runners;
 use crate::execute_or_reuse::batch_shim::load_target_runner_shim_metadata;
 use crate::execute_or_reuse::llvm_cov_json::parse_llvm_cov_json_file;
+use crate::plan::batch_runner_resolve::resolve_batch_request_runners;
 use crate::{
     RustCovCacheStatus, RustCoverageBatchRequest, RustCoverageToolIdentity, RustLineCoverage,
     RustLlvmCovOutcome,
@@ -27,9 +27,9 @@ pub(crate) fn discover_compiler_artifacts(
             .map(|path| path.to_string_lossy().into_owned())
             .collect(),
         nextest_binary_id: None,
-    libtest_binary_prefix: None,
-    src_path: None,
-    is_test_harness: false,
+        libtest_binary_prefix: None,
+        src_path: None,
+        is_test_harness: false,
     }]
 }
 
@@ -88,7 +88,6 @@ impl EnvVarGuard {
     pub(crate) fn set(key: &'static str, value: &Path) -> Self {
         let prior = std::env::var_os(key);
 
-
         unsafe {
             std::env::set_var(key, value);
         }
@@ -98,7 +97,6 @@ impl EnvVarGuard {
 
 impl Drop for EnvVarGuard {
     fn drop(&mut self) {
-
         unsafe {
             if let Some(prior) = &self.prior {
                 std::env::set_var(self.key, prior);
@@ -209,9 +207,11 @@ fn parse_oracle_stdout_coverage(stdout: &[u8], source_root: &Path) -> RustLineCo
         };
     }
     let payload = extract_json_payload(stdout);
-    crate::execute_or_reuse::llvm_cov_json::parse_llvm_cov_json(&payload, source_root).unwrap_or(RustLineCoverage {
-        files: BTreeMap::new(),
-    })
+    crate::execute_or_reuse::llvm_cov_json::parse_llvm_cov_json(&payload, source_root).unwrap_or(
+        RustLineCoverage {
+            files: BTreeMap::new(),
+        },
+    )
 }
 
 #[cfg(test)]
@@ -250,7 +250,7 @@ pub(crate) fn batch_request_with_args(
             helper_bin.to_string_lossy().to_string(),
         )]),
         force_rerun: true,
-jobs,
+        jobs,
         generated_config: tmp.join("batch-cache/runs/parity/nextest.toml"),
         population_publication_selectors: None,
         delegated_runners: BTreeMap::new(),

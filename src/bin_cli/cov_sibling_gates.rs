@@ -1,4 +1,3 @@
-
 use std::path::Path;
 
 use kiss::cli_output::print_final_status;
@@ -16,9 +15,7 @@ pub(crate) struct SiblingGateResult {
 }
 
 pub(crate) fn finish_sibling_gates(result: SiblingGateResult) -> i32 {
-    print_final_status(
-        result.coverage_failed || result.time_failed || result.max_num_tests_failed,
-    );
+    print_final_status(result.coverage_failed || result.time_failed || result.max_num_tests_failed);
     i32::from(result.coverage_failed || result.time_failed || result.max_num_tests_failed)
 }
 
@@ -82,16 +79,12 @@ pub(crate) fn evaluate_max_num_tests_gate(
         ignore,
         args.pytest_args,
     ) else {
-        eprintln!(
-            "error: kiss test: unit-test population count is unavailable for max_num_tests"
-        );
+        eprintln!("error: kiss test: unit-test population count is unavailable for max_num_tests");
         return true;
     };
     let limit = args.gate_config.max_num_tests;
     if count > limit {
-        println!(
-            "VIOLATION:max_num_tests: {count} test(s) exceeds max_num_tests={limit}"
-        );
+        println!("VIOLATION:max_num_tests: {count} test(s) exceeds max_num_tests={limit}");
         true
     } else {
         false

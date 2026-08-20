@@ -2,9 +2,11 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use crate::publish_derived::batch_derived::{DerivedPublishCounters, publish_derived_state_with_binaries};
 use crate::plan::batch_fingerprint::{RustCoverageBatchIdentity, RustCoverageToolIdentity};
 use crate::plan::batch_plan::RustCoverageBatchRequest;
+use crate::publish_derived::batch_derived::{
+    DerivedPublishCounters, publish_derived_state_with_binaries,
+};
 use crate::rust_cov_cache::{RustCovCacheEntry, store_rust_cov_cache_entry};
 use crate::{CACHE_SCHEMA_VERSION, RustLlvmCovError, RustTestBinaryIdentity};
 
@@ -23,8 +25,6 @@ pub fn rekey_selector_entries_to_identity(
     prior_generation: &str,
     selectors: &[String],
 ) -> Result<(), RustLlvmCovError> {
-
-
     let by_selector = index_generation_selector_entries(&req.cache_root, prior_generation);
     for selector in selectors {
         let mut entry = by_selector.get(selector).cloned().ok_or_else(|| {
@@ -326,7 +326,6 @@ mod tests {
 
     #[test]
     fn rekey_and_validate_scale_with_many_decoy_entries() {
-
         let repo = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(repo.path().join("src")).unwrap();
         std::fs::write(repo.path().join("Cargo.toml"), "[package]\n").unwrap();

@@ -2,20 +2,13 @@ use super::*;
 
 #[test]
 fn test_count_layering_violations_with_manual_layers() {
-
-
     use kiss::LayerInfo;
 
     let mut graph = DependencyGraph::new();
     graph.add_dependency("foundation", "app");
 
-
-
     let layer_info = LayerInfo {
-        layers: vec![
-            vec!["foundation".to_string()],
-            vec!["app".to_string()],
-        ],
+        layers: vec![vec!["foundation".to_string()], vec!["app".to_string()]],
     };
 
     assert_eq!(count_layering_violations(&graph, &layer_info), 1);
@@ -23,7 +16,6 @@ fn test_count_layering_violations_with_manual_layers() {
 
 #[test]
 fn test_count_layering_violations_missing_layer_info() {
-
     use kiss::LayerInfo;
 
     let mut graph = DependencyGraph::new();
@@ -32,7 +24,6 @@ fn test_count_layering_violations_missing_layer_info() {
     let layer_info = LayerInfo {
         layers: vec![vec!["a".to_string()]],
     };
-
 
     assert_eq!(count_layering_violations(&graph, &layer_info), 0);
 }
@@ -209,7 +200,6 @@ fn test_project_name_from_paths() {
 
 #[test]
 fn test_project_name_from_cwd() {
-
     let result = project_name_from_cwd();
     assert!(result.is_some());
 }

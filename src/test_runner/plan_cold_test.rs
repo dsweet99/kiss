@@ -1,4 +1,3 @@
-
 use std::fs;
 use std::path::Path;
 
@@ -46,8 +45,14 @@ fn extras() -> crate::test_runner::language_keyed::LanguageKeyed<&'static [Strin
 }
 
 fn plan_all(lang: Option<Language>) -> PlannedSelectors {
-    plan_target_selectors(TargetPlanKind::All, &[], extras(), lang,
-        &kiss::GateConfig::default()).expect("cold plan")
+    plan_target_selectors(
+        TargetPlanKind::All,
+        &[],
+        extras(),
+        lang,
+        &kiss::GateConfig::default(),
+    )
+    .expect("cold plan")
 }
 
 fn wipe_selector_cache(root: &Path) {
@@ -157,7 +162,8 @@ fn cold_dot_target_uses_plan_all_and_rust_extras_validate() {
         &[],
         extras(),
         None,
-        &kiss::GateConfig::default())
+        &kiss::GateConfig::default(),
+    )
     .expect("dot all");
     assert_both_languages(&via_dot);
 
@@ -169,7 +175,8 @@ fn cold_dot_target_uses_plan_all_and_rust_extras_validate() {
             rust: &["--test-threads".into()],
         },
         Some(Language::Rust),
-        &kiss::GateConfig::default());
+        &kiss::GateConfig::default(),
+    );
     assert!(bad.is_err(), "expected rust extra validation error");
 
     std::env::set_current_dir(orig).unwrap();

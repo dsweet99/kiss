@@ -328,8 +328,9 @@ fn prune_obsolete_selective_generations_retains_population_and_current() {
             .join("deadbeefdeadbeef.json")
             .exists()
     );
-    let manifest = crate::publish_derived::batch_derived_index::read_population_manifest(&req.cache_root)
-        .expect("population manifest");
+    let manifest =
+        crate::publish_derived::batch_derived_index::read_population_manifest(&req.cache_root)
+            .expect("population manifest");
     assert_eq!(manifest.generation_fingerprint, population_generation);
 }
 

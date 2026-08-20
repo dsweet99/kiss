@@ -1,10 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
+use crate::RustTestBinaryIdentity;
 use crate::plan::batch_plan_env::ensure_coverage_link_build_id;
 use crate::plan::batch_plan_nextest_config::build_nextest_config_toml;
 use crate::plan::batch_plan_test_args::validate_supported_rust_test_args;
-use crate::RustTestBinaryIdentity;
 
 pub use crate::plan::batch_plan_coverage_mode::{
     CheckAggregateRepairPublication, CoverageOutputMode,
@@ -44,7 +44,7 @@ impl RustCoverageBatchRequest {
             test_args: vec!["--exact".to_string()],
             env: BTreeMap::from([("KEEP_ME".to_string(), "1".to_string())]),
             force_rerun: true,
-jobs: 4,
+            jobs: 4,
             generated_config: PathBuf::from(
                 "/repo/.kiss/rust_llvm_cov_cache/runs/run-witness/nextest.toml",
             ),
@@ -93,8 +93,6 @@ pub fn build_rust_coverage_batch_plan(
     ensure_coverage_link_build_id(&mut env);
 
     env.remove("KISS_RUST_COVERAGE_PROFILE_POOL");
-
-
 
     crate::kiss_profraw::ensure_kiss_profraw_env(&mut env, &req.source_root);
     let build_target_value = build_target.to_string_lossy().to_string();

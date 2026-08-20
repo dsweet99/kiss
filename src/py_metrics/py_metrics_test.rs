@@ -52,9 +52,6 @@ fn compute_max_indentation(node: Node, current_depth: usize) -> usize {
     })
 }
 
-
-
-
 #[cfg_attr(test, allow(dead_code))]
 fn count_branches(node: Node) -> usize {
     let mut cursor = node.walk();
@@ -141,7 +138,6 @@ mod tests {
 
     #[test]
     fn test_boolean_params_count() {
-
         let p = parse("def f(a=True, b=False): pass");
         let params = get_func_node(&p).child_by_field_name("parameters").unwrap();
         let counts = count_parameters(params, &p.source);
@@ -149,7 +145,6 @@ mod tests {
             counts.boolean_params, 2,
             "Should count 2 boolean parameters (a=True, b=False)"
         );
-
 
         let p2 = parse("def f(a: bool = True, b: int = 5): pass");
         let params2 = get_func_node(&p2)
@@ -160,7 +155,6 @@ mod tests {
             counts2.boolean_params, 1,
             "Should count 1 boolean parameter (a: bool = True)"
         );
-
 
         let p3 = parse("def f(a=True, b=False): x = 1");
         let m = compute_function_metrics(get_func_node(&p3), &p3.source);
@@ -197,8 +191,6 @@ mod tests {
 
     #[test]
     fn test_import_statements_not_counted() {
-
-
         let p = parse("def f():\n    import os\n    x = 1\n    print(x)");
         let body = get_func_node(&p).child_by_field_name("body").unwrap();
 
@@ -208,7 +200,6 @@ mod tests {
             "import statements should not be counted"
         );
 
-
         let p2 = parse("def f():\n    from os import path\n    y = 2");
         let body2 = get_func_node(&p2).child_by_field_name("body").unwrap();
         assert_eq!(
@@ -216,7 +207,6 @@ mod tests {
             1,
             "from imports should not be counted"
         );
-
 
         assert!(
             !is_statement("import_statement"),
@@ -267,7 +257,6 @@ mod tests {
 
     #[test]
     fn test_return_values() {
-
         let p1 = parse("def f():\n    return x");
         assert_eq!(
             compute_function_metrics(get_func_node(&p1), &p1.source).max_return_values,

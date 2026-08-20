@@ -50,7 +50,6 @@ fn test_format_markdown_with_cycles() {
 
 #[test]
 fn test_format_markdown_with_layers() {
-
     let analysis = LayoutAnalysis {
         project_name: "myproject".into(),
         metrics: LayoutMetrics::default(),

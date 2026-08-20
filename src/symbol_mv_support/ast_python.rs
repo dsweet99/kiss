@@ -1,4 +1,3 @@
-
 use tree_sitter::{Node, Parser};
 
 use crate::Language;
@@ -48,14 +47,12 @@ pub(super) fn python_identifier_is_value(node: Node<'_>) -> bool {
             .is_some_and(|n| n.id() == node.id())
     };
     match parent.kind() {
-
         "function_definition"
         | "async_function_definition"
         | "class_definition"
         | "typed_parameter"
         | "default_parameter"
         | "typed_default_parameter" => false,
-
 
         "parameters"
         | "lambda_parameters"
@@ -72,8 +69,6 @@ pub(super) fn python_identifier_is_value(node: Node<'_>) -> bool {
         {
             false
         }
-
-
 
         "attribute" if same("attribute") => false,
         _ => true,

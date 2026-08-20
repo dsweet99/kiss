@@ -1,8 +1,7 @@
-
 use std::path::PathBuf;
 
-use crate::test_runner::language_keyed::LanguageKeyed;
 use crate::test_runner::PlannedSelectors;
+use crate::test_runner::language_keyed::LanguageKeyed;
 
 pub(crate) fn empty_planned_selectors(repo_root: PathBuf) -> PlannedSelectors {
     PlannedSelectors {
@@ -19,10 +18,7 @@ pub(crate) fn empty_planned_selectors(repo_root: PathBuf) -> PlannedSelectors {
             python: Vec::new(),
             rust: Vec::new(),
         },
-        vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed {
-            python: 0,
-            rust: 0,
-        },
+        vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed { python: 0, rust: 0 },
         snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
             python: 0,
             rust: 0,

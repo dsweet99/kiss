@@ -1,14 +1,14 @@
 use super::{
-    invalidate_population_durations, load_current_population_durations, load_durations_from_entries,
-    population_durations_path, try_load_population_durations,
+    invalidate_population_durations, load_current_population_durations,
+    load_durations_from_entries, population_durations_path, try_load_population_durations,
     try_publish_durations_after_population, write_population_durations,
 };
+use crate::plan::batch_fingerprint::batch_identity;
 use crate::publish_derived::batch_derived_index::RustPopulationState;
 use crate::test_support::{
     batch_executor_fixture_repo, batch_executor_request, published_alpha_derived_fixture,
     store_batch_executor_selector, witness_batch_tools,
 };
-use crate::plan::batch_fingerprint::batch_identity;
 use std::collections::BTreeMap;
 use std::fs;
 use std::time::Duration;
@@ -179,12 +179,8 @@ fn population_durations_round_trip_max_duration_nanos() {
 fn try_load_rejects_wrong_cache_schema_version() {
     let tmp = tempfile::tempdir().unwrap();
     let pop = population(&["a"]);
-    write_population_durations(
-        tmp.path(),
-        &pop,
-        &[("a".into(), Duration::from_millis(1))],
-    )
-    .unwrap();
+    write_population_durations(tmp.path(), &pop, &[("a".into(), Duration::from_millis(1))])
+        .unwrap();
     let path = population_durations_path(tmp.path());
     let mut value: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
@@ -260,15 +256,17 @@ fn load_current_population_durations_returns_none_without_population() {
     fs::create_dir_all(&req.cache_root).unwrap();
     let tools = witness_batch_tools();
     let identity = batch_identity(&req, &tools).unwrap();
-    assert!(load_current_population_durations(
-        &req.cache_root,
-        &req.source_root,
-        &identity,
-        &req,
-        &tools,
-        None,
-    )
-    .is_none());
+    assert!(
+        load_current_population_durations(
+            &req.cache_root,
+            &req.source_root,
+            &identity,
+            &req,
+            &tools,
+            None,
+        )
+        .is_none()
+    );
 }
 
 #[test]

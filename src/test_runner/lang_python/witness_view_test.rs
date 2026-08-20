@@ -1,4 +1,3 @@
-
 use crate::test_runner::lang_iface::{WitnessScope, WitnessStatus};
 use crate::test_runner::python_coverage_index::generation::{
     PinnedPythonGeneration, PythonExecutionIdentity, PythonPopulationPlan, SelectorTimingRecord,

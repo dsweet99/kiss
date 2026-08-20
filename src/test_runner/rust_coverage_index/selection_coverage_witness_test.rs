@@ -79,10 +79,7 @@ fn check_aggregate_source_selection_returns_population_or_empty() {
         selection_context_fingerprint: "selection".to_string(),
         entries_fingerprint: "check-aggregate:deadbeef".to_string(),
         selectors: vec!["tests::covers_src".to_string()],
-        line_index: BTreeMap::from([(
-            "src/lib.rs".to_string(),
-            BTreeSet::new(),
-        )]),
+        line_index: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::new())]),
         ordinary_source_digests: BTreeMap::new(),
         test_binaries: BTreeMap::new(),
     };
@@ -97,10 +94,7 @@ fn check_aggregate_source_selection_returns_population_or_empty() {
         &resolved,
     )
     .expect("selection");
-    assert_eq!(
-        selected,
-        BTreeSet::from(["tests::covers_src".to_string()])
-    );
+    assert_eq!(selected, BTreeSet::from(["tests::covers_src".to_string()]));
 
     let uncovered = RustPopulationState {
         line_index: BTreeMap::new(),

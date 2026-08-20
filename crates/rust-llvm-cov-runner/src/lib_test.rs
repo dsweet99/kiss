@@ -2,11 +2,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use rpytest_runner::TestStatus;
 
+use super::{RustCovCacheStatus, RustLineCoverage, RustLlvmCovError, RustLlvmCovOutcome};
 use crate::llvm_cov_json::{
     LlvmCovData, LlvmCovFile, LlvmCovReport, covered_line_from_segment, parse_llvm_cov_json,
     parse_llvm_cov_json_file,
 };
-use super::{RustCovCacheStatus, RustLineCoverage, RustLlvmCovError, RustLlvmCovOutcome};
 
 #[test]
 fn rust_llvm_cov_request_outcome_and_coverage_types_expose_expected_fields() {

@@ -1,16 +1,16 @@
-
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use rust_llvm_cov_runner::{CoverageOutputMode, RustCoverageBatchIdentity, RustCoverageBatchRequest};
+use rust_llvm_cov_runner::{
+    CoverageOutputMode, RustCoverageBatchIdentity, RustCoverageBatchRequest,
+};
 
 use crate::test_runner::execution_witness::{
     ExecutionWitness, PublishRustWitness, WitnessScope, WitnessStatus,
-    publish_rust_execution_witness, rust_identity_digest_from_batch, try_load_rust_execution_witness,
+    publish_rust_execution_witness, rust_identity_digest_from_batch,
+    try_load_rust_execution_witness,
 };
-use crate::test_runner::runners::{
-    SelectorExecutionSummary,
-};
+use crate::test_runner::runners::SelectorExecutionSummary;
 
 pub(super) fn publish_rust_witness_after_batch(
     repo_root: &Path,
@@ -26,8 +26,7 @@ pub(super) fn publish_rust_witness_after_batch(
             &batch_req.test_args,
         )?;
     let existing_full = load_matching_full_witness(repo_root, &batch_identity);
-    let by_logical =
-        merged_statuses(repo_root, batch_req, summary, existing_full.as_ref())?;
+    let by_logical = merged_statuses(repo_root, batch_req, summary, existing_full.as_ref())?;
     let Some(selectors) = full_publication_selectors(
         batch_req,
         repo_root,
@@ -43,8 +42,8 @@ pub(super) fn publish_rust_witness_after_batch(
         &by_logical,
         summary,
         existing_full.as_ref(),
-    )? else {
-
+    )?
+    else {
         return Ok(());
     };
     let all_passed = aligned.statuses.iter().all(|s| *s == WitnessStatus::Passed);
@@ -104,8 +103,6 @@ pub(super) fn full_publication_selectors(
         );
     }
 
-
-
     let mut selectors = batch_req.logical_selectors.clone();
     if let Some(existing) = existing_full {
         for sel in &existing.selectors {
@@ -116,12 +113,8 @@ pub(super) fn full_publication_selectors(
     }
     selectors.sort();
     selectors.dedup();
-    let covers_population = population_equals(
-        &batch_req.cache_root,
-        repo_root,
-        batch_identity,
-        &selectors,
-    );
+    let covers_population =
+        population_equals(&batch_req.cache_root, repo_root, batch_identity, &selectors);
     if covers_population || existing_full.is_some() {
         Some(selectors)
     } else {
@@ -136,7 +129,6 @@ fn population_full_selectors(
 ) -> Option<Vec<String>> {
     let mut selectors = publication.to_vec();
     if let Some(existing) = existing_full {
-
         for sel in &existing.selectors {
             if !selectors.contains(sel) {
                 selectors.push(sel.clone());
@@ -159,7 +151,6 @@ fn check_aggregate_full_selectors(
     existing_full: Option<&ExecutionWitness>,
     by_logical: &BTreeMap<String, WitnessStatus>,
 ) -> Option<Vec<String>> {
-
     if let Some(existing) = existing_full {
         let mut selectors = existing.selectors.clone();
         for sel in &batch_req.logical_selectors {
@@ -175,12 +166,7 @@ fn check_aggregate_full_selectors(
     let mut selectors = batch_req.logical_selectors.clone();
     selectors.sort();
     selectors.dedup();
-    if !population_equals(
-        &batch_req.cache_root,
-        repo_root,
-        batch_identity,
-        &selectors,
-    ) {
+    if !population_equals(&batch_req.cache_root, repo_root, batch_identity, &selectors) {
         return None;
     }
     if selectors.iter().all(|s| by_logical.contains_key(s)) {
@@ -216,8 +202,10 @@ pub(super) fn merged_statuses(
     summary: &SelectorExecutionSummary,
     existing_full: Option<&ExecutionWitness>,
 ) -> Result<BTreeMap<String, WitnessStatus>, String> {
-    let report_ids =
-        crate::test_runner::runners::rust_report_ids_for_selectors(repo_root, &batch_req.logical_selectors)?;
+    let report_ids = crate::test_runner::runners::rust_report_ids_for_selectors(
+        repo_root,
+        &batch_req.logical_selectors,
+    )?;
     let mut by_logical = BTreeMap::new();
     if let Some(existing) = existing_full {
         for (sel, st) in existing.selectors.iter().zip(existing.statuses.iter()) {
@@ -225,7 +213,8 @@ pub(super) fn merged_statuses(
         }
     }
     for logical in &batch_req.logical_selectors {
-        let report = crate::test_runner::runners::require_kiss_test_report_id(&report_ids, logical)?;
+        let report =
+            crate::test_runner::runners::require_kiss_test_report_id(&report_ids, logical)?;
         let status = if summary.failed_selectors.iter().any(|s| s == &report) {
             WitnessStatus::Failed
         } else if summary.timed_out_selectors.iter().any(|s| s == &report) {

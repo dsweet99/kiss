@@ -52,7 +52,6 @@ fn warm_cov_caches_after_tests_writes_records_when_snapshot_present() {
         "expected file-list cache after successful warm"
     );
 
-
     let before = fs::metadata(repo.join(".kiss/cov_records_cache.json"))
         .unwrap()
         .modified()

@@ -1,5 +1,5 @@
 use crate::publish_derived::batch_reverse_query_metrics::{
-    take_reverse_query_counters_since_last_copy, ReverseUnavailableCounts,
+    ReverseUnavailableCounts, take_reverse_query_counters_since_last_copy,
 };
 use crate::{RustLlvmCovError, RustLlvmCovOutcome, RustTestBinaryIdentity};
 

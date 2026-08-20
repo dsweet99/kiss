@@ -1,4 +1,3 @@
-
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -6,13 +5,13 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
+use super::paths::{generation_dir, pointer_path};
 use super::publish::{
     GENERATION_DURATIONS_SCHEMA, GENERATION_DURATIONS_SCHEMA_V1, GenerationDurationsFile,
     PathMaxDuration, path_maxes_from_selector_durations,
 };
-use crate::test_runner::python_coverage_index::storage::python_coverage_cache_root;
-use super::paths::{generation_dir, pointer_path};
 use super::types::{POINTER_SCHEMA_VERSION, PopulationPointer};
+use crate::test_runner::python_coverage_index::storage::python_coverage_cache_root;
 
 static DURATIONS_MEMO: Mutex<Option<DurationsMemoEntry>> = Mutex::new(None);
 static PATH_MAXES_MEMO: Mutex<Option<PathMaxesMemoEntry>> = Mutex::new(None);
@@ -48,9 +47,7 @@ pub(crate) fn try_load_generation_max_duration(repo_root: &Path) -> Option<Durat
     Some(load_memoized(repo_root)?.max)
 }
 
-pub(crate) fn try_load_generation_path_maxes(
-    repo_root: &Path,
-) -> Option<Vec<PathMaxDuration>> {
+pub(crate) fn try_load_generation_path_maxes(repo_root: &Path) -> Option<Vec<PathMaxDuration>> {
     let path_maxes = load_memoized(repo_root)?.path_maxes;
     if path_maxes.is_empty() {
         return None;
@@ -200,4 +197,3 @@ fn read_plan_selectors(gen_dir: &Path) -> Option<Vec<String>> {
 #[cfg(test)]
 #[path = "durations_load_test.rs"]
 mod tests;
-

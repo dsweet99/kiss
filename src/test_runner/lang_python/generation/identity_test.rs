@@ -1,4 +1,3 @@
-
 use std::fs;
 
 use tempfile::tempdir;
@@ -90,17 +89,13 @@ fn population_plan_dedups_selectors_and_captures_plugin_args() {
     }
 
     let args = vec!["-p".to_string(), "only_plugin".to_string()];
-    let plan = population_plan_for_selectors(
-        repo,
-        &["b::t".into(), "a::t".into(), "b::t".into()],
-        &args,
-    )
-    .unwrap();
+    let plan =
+        population_plan_for_selectors(repo, &["b::t".into(), "a::t".into(), "b::t".into()], &args)
+            .unwrap();
     assert_eq!(plan.selectors, vec!["a::t".to_string(), "b::t".to_string()]);
-    assert_eq!(plan.base_identity.plugin_identities, vec!["only_plugin".to_string()]);
-    assert!(identity_matches_current(
-        repo,
-        &plan.base_identity,
-        &args
-    ));
+    assert_eq!(
+        plan.base_identity.plugin_identities,
+        vec!["only_plugin".to_string()]
+    );
+    assert!(identity_matches_current(repo, &plan.base_identity, &args));
 }

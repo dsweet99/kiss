@@ -1,4 +1,3 @@
-
 use std::time::Duration;
 
 pub(crate) fn format_test_duration(duration: Duration) -> String {

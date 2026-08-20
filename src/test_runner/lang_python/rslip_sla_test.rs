@@ -1,11 +1,9 @@
-
 use super::timeout_for_selector;
 use std::fs;
 use std::time::Duration;
 
 #[test]
 fn batch_template_applies_per_selector_timeouts() {
-
     let tmp = tempfile::tempdir().unwrap();
     fs::write(
         tmp.path().join(".kissconfig"),

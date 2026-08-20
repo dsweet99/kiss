@@ -6,11 +6,11 @@ use rpytest_runner::TestStatus;
 use rust_llvm_cov_runner::RustLineCoverage;
 use tempfile::TempDir;
 
+use crate::test_runner::PlannedSelectors;
 use crate::test_runner::coverage_decision::SelectionBasis;
 use crate::test_runner::rust_coverage_index::{
     rebuild_rust_coverage_index, write_rust_population_manifest_for_args, write_test_entry,
 };
-use crate::test_runner::PlannedSelectors;
 
 use super::git::{checkout_branch, commit_all, ensure_main_branch, git_in, git_stdout, init_git};
 
@@ -108,10 +108,7 @@ pub(crate) fn warm_base_demo_with_historical_source(tmp: &TempDir) -> (String, P
 }
 
 pub(crate) fn assert_base_delta_plan(planned: &PlannedSelectors, lib: &Path) {
-    assert_eq!(
-        planned.selection_basis.rust,
-        SelectionBasis::ReusablePrior
-    );
+    assert_eq!(planned.selection_basis.rust, SelectionBasis::ReusablePrior);
     assert!(!planned.population_required.rust);
     assert_eq!(planned.source_paths.rust, vec![lib.to_path_buf()]);
     assert!(

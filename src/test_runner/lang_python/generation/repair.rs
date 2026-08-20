@@ -1,8 +1,7 @@
-
 use std::path::Path;
 
-use super::identity::population_plan_for_selectors;
 use super::evidence::{PopulationEvidence, SelectorEvidence, status_label};
+use super::identity::population_plan_for_selectors;
 use super::load::{GenerationLoadError, try_load_pinned_python_generation_without_line_index};
 use super::publish::{
     publish_python_population_generation, publish_python_population_generation_reusing,

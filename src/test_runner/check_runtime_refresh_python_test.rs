@@ -1,4 +1,3 @@
-
 use super::check_runtime_refresh_python::{
     ensure_python_runtime_coverage, finalize_incomplete_repair_load,
     incomplete_repair_became_test_failure,
@@ -28,7 +27,8 @@ fn ensure_python_short_circuits_when_complete_generation_present() {
         return;
     };
     let selector = "t.py::test_a".to_string();
-    let mut plan = population_plan_for_selectors(repo, std::slice::from_ref(&selector), &[]).unwrap();
+    let mut plan =
+        population_plan_for_selectors(repo, std::slice::from_ref(&selector), &[]).unwrap();
     plan.base_identity.python_version = py;
     plan.base_identity.pytest_version = pt;
     plan.base_identity.selector_discovery_version = PYTHON_SELECTOR_DISCOVERY_VERSION.to_string();
@@ -46,7 +46,8 @@ fn ensure_python_short_circuits_when_complete_generation_present() {
         .unwrap();
     clear_python_generation_warm_memo();
     assert!(load_python_runtime_coverage(repo, &[], &kiss::GateConfig::default()).is_ok());
-    ensure_python_runtime_coverage(repo, &[], 1, &[], &kiss::GateConfig::default()).expect("already complete");
+    ensure_python_runtime_coverage(repo, &[], 1, &[], &kiss::GateConfig::default())
+        .expect("already complete");
 }
 
 #[test]
@@ -85,7 +86,8 @@ fn ensure_python_attempts_incomplete_repair_for_problem_selectors() {
     publish_python_population_generation(repo, &plan, &evidence, GenerationReason::Complete)
         .unwrap();
     clear_python_generation_warm_memo();
-    let err = load_python_runtime_coverage(repo, &[], &kiss::GateConfig::default()).expect_err("incomplete");
+    let err = load_python_runtime_coverage(repo, &[], &kiss::GateConfig::default())
+        .expect_err("incomplete");
     assert_eq!(err.problem_selectors, vec!["t.py::bad".to_string()]);
 
     let _ = ensure_python_runtime_coverage(repo, &[], 1, &[], &kiss::GateConfig::default());
@@ -150,25 +152,16 @@ fn incomplete_repair_classifier_and_finalize_arms() {
         exit_code: 1,
         ..SelectorExecutionSummary::default()
     };
-    let err = finalize_incomplete_repair_load(
-        repo,
-        &failed_summary,
-        &[],
-        &kiss::GateConfig::default(),
-    )
-    .expect_err("still incomplete");
+    let err =
+        finalize_incomplete_repair_load(repo, &failed_summary, &[], &kiss::GateConfig::default())
+            .expect_err("still incomplete");
     assert!(matches!(
         err,
         super::CoverageRefreshError::TestExecution { exit_code: 1, .. }
     ));
     let ok_summary = SelectorExecutionSummary::default();
-    let err = finalize_incomplete_repair_load(
-        repo,
-        &ok_summary,
-        &[],
-        &kiss::GateConfig::default(),
-    )
-    .expect_err("incomplete + exit0");
+    let err = finalize_incomplete_repair_load(repo, &ok_summary, &[], &kiss::GateConfig::default())
+        .expect_err("incomplete + exit0");
     assert!(matches!(
         err,
         super::CoverageRefreshError::PostRefreshValidation { .. }

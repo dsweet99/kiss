@@ -14,18 +14,11 @@ fn get_func_node(p: &kiss::ParsedFile) -> tree_sitter::Node<'_> {
     p.tree.root_node().child(0).unwrap()
 }
 
-
-
-
-
-
 #[test]
 fn h1_syntax_error_in_function_body_still_produces_metrics() {
-
     let code = "def foo():\n    x = 1\n    if True\n        y = 2\n    return x, y\n";
     let p = parse(code);
     let root = p.tree.root_node();
-
 
     let has_error = has_error_node(root);
     assert!(
@@ -33,20 +26,14 @@ fn h1_syntax_error_in_function_body_still_produces_metrics() {
         "Expected tree-sitter to produce ERROR nodes for broken syntax"
     );
 
-
     let func = get_func_node(&p);
     let m = compute_function_metrics(func, &p.source);
-
-
-
-
 
     assert!(m.statements >= 1, "Should have at least 1 statement");
 }
 
 #[test]
 fn h1_error_node_in_return_corrupts_return_value_count() {
-
     let code = "def foo():\n    return (a b)\n";
     let p = parse(code);
 
@@ -63,7 +50,6 @@ fn h1_error_node_in_return_corrupts_return_value_count() {
 
 #[test]
 fn h1_unclosed_string_corrupts_entire_function() {
-
     let code = "def foo():\n    x = '''\n    y = 1\n    return y\n\ndef bar():\n    return 1\n";
     let p = parse(code);
     let fm = compute_file_metrics(&p);
@@ -87,10 +73,6 @@ fn has_error_node(node: tree_sitter::Node) -> bool {
     }
     false
 }
-
-
-
-
 
 #[test]
 fn h2_numeric_literals_stay_distinct_after_normalization() {
@@ -120,8 +102,6 @@ fn h2_numeric_literals_stay_distinct_after_normalization() {
 
 #[test]
 fn h2_single_variable_rename_drops_similarity() {
-
-
     let code_a =
         "x = get_data()\ny = transform(x)\nz = validate(y)\nresult = process(z)\nreturn result\n";
     let code_b =
@@ -136,17 +116,11 @@ fn h2_single_variable_rename_drops_similarity() {
     let sig_b = compute_minhash(&shingles_b, 100);
     let sim = estimate_similarity(&sig_a, &sig_b);
 
-
     assert!(
         sim > 0.5,
         "Near-duplicate with single rename should still have >50% similarity, got {sim}"
     );
 }
-
-
-
-
-
 
 #[test]
 fn h3_function_with_1000_statements() {
@@ -173,7 +147,6 @@ fn h3_function_with_1000_statements() {
 
 #[test]
 fn h3_deeply_nested_indentation() {
-
     let mut code = String::from("def deep():\n");
     let mut indent = String::from("    ");
     for i in 0..50 {

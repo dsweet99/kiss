@@ -65,7 +65,6 @@ pub fn detect_duplicates_from_chunks(
         return Vec::new();
     }
 
-
     let signatures: Vec<MinHashSignature> = chunks
         .par_iter()
         .map(|c| {
@@ -120,8 +119,6 @@ pub fn cluster_duplicates_from_chunks(
     let candidates: Vec<(usize, usize)> = find_lsh_candidates(&signatures, config.lsh_bands)
         .into_iter()
         .collect();
-
-
 
     let good_pairs: Vec<(usize, usize, f64)> = candidates
         .par_iter()

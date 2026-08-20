@@ -1,4 +1,3 @@
-
 use std::path::Path;
 
 use kiss::GateConfig;
@@ -29,17 +28,19 @@ pub(super) fn ensure_python_runtime_coverage(
         Err(err) if !err.problem_selectors.is_empty() => {
             let planned = planned_selectors_for_incomplete(repo_root, &err.problem_selectors);
             return run_python_ensure(
-                ensure_request_for_selectors(crate::test_runner::ensure_runtime::EnsureSelectorsArgs {
-                    repo_root,
-                    ignore,
-                    jobs,
-                    lang_filter: kiss::Language::Python,
-                    force: false,
-                    python: planned,
-                    rust: vec![],
-                    gate: gate.clone(),
-                    pytest_args: pytest_args.to_vec(),
-                }),
+                ensure_request_for_selectors(
+                    crate::test_runner::ensure_runtime::EnsureSelectorsArgs {
+                        repo_root,
+                        ignore,
+                        jobs,
+                        lang_filter: kiss::Language::Python,
+                        force: false,
+                        python: planned,
+                        rust: vec![],
+                        gate: gate.clone(),
+                        pytest_args: pytest_args.to_vec(),
+                    },
+                ),
                 pytest_args,
                 gate,
             );
@@ -59,10 +60,7 @@ pub(super) fn ensure_python_runtime_coverage(
     run_python_ensure(request, pytest_args, gate)
 }
 
-fn planned_selectors_for_incomplete(
-    repo_root: &Path,
-    problem_selectors: &[String],
-) -> Vec<String> {
+fn planned_selectors_for_incomplete(repo_root: &Path, problem_selectors: &[String]) -> Vec<String> {
     if let Ok(pinned) = try_load_pinned_python_generation(repo_root) {
         let mut planned = pinned.plan.selectors;
         planned.sort();

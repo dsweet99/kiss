@@ -228,12 +228,14 @@ fn combined_selectors_routes_changed_python_and_rust_tests() {
     .unwrap();
 
     assert!(
-        plan.selectors.python
+        plan.selectors
+            .python
             .iter()
             .any(|selector| selector.ends_with("test_app.py::test_py_changed"))
     );
     assert!(
-        plan.selectors.rust
+        plan.selectors
+            .rust
             .iter()
             .any(|selector| selector.contains("rust_changed"))
     );
@@ -244,7 +246,6 @@ fn combined_selectors_routes_changed_python_and_rust_tests() {
 #[test]
 #[allow(non_snake_case)]
 fn EngineBackers_empty_when_no_language_has_work() {
-
     let tmp = tempfile::TempDir::new().unwrap();
     let changed_tests = ChangedTestSelectors::default();
     let python_changed_lines = BTreeMap::new();

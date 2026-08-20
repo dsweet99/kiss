@@ -1,4 +1,3 @@
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::time::Duration;
@@ -124,7 +123,10 @@ fn assert_restamp_rewrites_stale_kissconfig_and_refuses_fingerprint(repo: &Path)
         Some(&[]),
     )
     .unwrap();
-    assert!(restamped, "bounded rslip misses may restamp fingerprint drift");
+    assert!(
+        restamped,
+        "bounded rslip misses may restamp fingerprint drift"
+    );
     assert_ne!(
         try_load_pinned_python_generation_warm(repo)
             .unwrap()
@@ -172,20 +174,13 @@ fn publish_then_warm_load_reads_coverage_and_timings() {
     plan.base_identity.selector_discovery_version = PYTHON_SELECTOR_DISCOVERY_VERSION.to_string();
     let mut evidence = PopulationEvidence::from_ordered_selectors(&plan.selectors);
     evidence.absorb_selector(passed_evidence("t.py::test_a", "app.py", &[1]));
-    let id = publish_python_population_generation(
-        repo,
-        &plan,
-        &evidence,
-        GenerationReason::Complete,
-    )
-    .unwrap();
+    let id =
+        publish_python_population_generation(repo, &plan, &evidence, GenerationReason::Complete)
+            .unwrap();
     let pinned = try_load_pinned_python_generation_warm(repo).unwrap();
     assert_eq!(pinned.generation_id, id);
     assert!(pinned.complete);
-    assert_eq!(
-        pinned.coverage.get("app.py"),
-        Some(&BTreeSet::from([1u32]))
-    );
+    assert_eq!(pinned.coverage.get("app.py"), Some(&BTreeSet::from([1u32])));
     assert_eq!(pinned.timings.len(), 1);
     assert_published_interned_line_index(repo);
     assert_legacy_line_index_interns_without_name_blowup();
@@ -206,13 +201,9 @@ fn selective_repair_updates_only_changed_selector_coverage() {
     let mut evidence = PopulationEvidence::from_ordered_selectors(&plan.selectors);
     evidence.absorb_selector(passed_evidence("t.py::test_a", "app.py", &[1]));
     evidence.absorb_selector(passed_evidence("t.py::test_b", "app.py", &[1, 2]));
-    let _ = publish_python_population_generation(
-        repo,
-        &plan,
-        &evidence,
-        GenerationReason::Complete,
-    )
-    .unwrap();
+    let _ =
+        publish_python_population_generation(repo, &plan, &evidence, GenerationReason::Complete)
+            .unwrap();
     let before = super::load::try_load_pinned_python_generation(repo).unwrap();
     let unchanged = super::repair::repair_python_population_generation(
         repo,

@@ -1,7 +1,6 @@
-
 use super::{EnsureSelectorsArgs, ensure_request_for_selectors, ensure_request_from_planned};
-use crate::test_runner::lang_iface::AcceptMode;
 use crate::test_runner::PlannedSelectors;
+use crate::test_runner::lang_iface::AcceptMode;
 use std::path::PathBuf;
 
 #[test]
@@ -20,10 +19,7 @@ fn ensure_request_from_planned_copies_selectors_and_root() {
             python: Vec::new(),
             rust: vec![],
         },
-        vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed {
-            python: 0,
-            rust: 0,
-        },
+        vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed { python: 0, rust: 0 },
         snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
             python: 0,
             rust: 0,
@@ -85,10 +81,7 @@ fn ensure_request_carries_session_gate_without_reload() {
             python: Vec::new(),
             rust: vec![],
         },
-        vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed {
-            python: 0,
-            rust: 0,
-        },
+        vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed { python: 0, rust: 0 },
         snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
             python: 0,
             rust: 0,

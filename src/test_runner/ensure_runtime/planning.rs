@@ -1,11 +1,10 @@
-
 use std::path::Path;
 
 use kiss::{GateConfig, Language};
 
+use crate::test_runner::ensure_runtime::EnsureFromPlanned;
 use crate::test_runner::lang_iface::{AcceptMode, EnsureRequest};
 use crate::test_runner::language_keyed::LanguageKeyed;
-use crate::test_runner::ensure_runtime::EnsureFromPlanned;
 use crate::test_runner::runners;
 
 pub(crate) fn ensure_request_for_all(

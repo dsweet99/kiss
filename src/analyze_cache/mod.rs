@@ -4,9 +4,9 @@ mod emit;
 use crate::analyze::FocusFilter;
 use crate::analyze::{filter_duplicates_by_focus, filter_viols_by_focus};
 use emit::{emit_cached_bypass, emit_cached_gated};
+use kiss::DependencyGraph;
 use kiss::check_cache;
 use kiss::check_universe_cache::FullCheckCache;
-use kiss::DependencyGraph;
 use kiss::{Config, DuplicateCluster, GateConfig, Violation};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
@@ -17,7 +17,7 @@ mod store_full;
 pub(crate) use content_digest::load_verified_full_cache;
 use path_helpers::{cache_path_full, same_cached_paths};
 pub(crate) use stats_top::try_run_cached_stats_summary;
-pub use store_full::{store_full_cache_from_run, FullCacheInputs};
+pub use store_full::{FullCacheInputs, store_full_cache_from_run};
 
 const CACHE_SCHEMA_VERSION: &str = "v13-static";
 

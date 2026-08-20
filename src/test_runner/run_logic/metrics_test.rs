@@ -264,11 +264,13 @@ fn local_rubric_metrics_carry_reusable_prior_selection_basis() {
         jobs: 1,
         plan_duration: Duration::ZERO,
         force_rerun: false,
-metrics: false,
-        extras: crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] },
+        metrics: false,
+        extras: crate::test_runner::language_keyed::LanguageKeyed {
+            python: &[],
+            rust: &[],
+        },
 
-    gate: kiss::GateConfig::default()
-
+        gate: kiss::GateConfig::default(),
     };
     let metrics = LocalRubricMetrics::new(
         &planned,
@@ -279,10 +281,7 @@ metrics: false,
         planned.sel.rust.len(),
         planned.selection_basis.rust,
     );
-    assert_eq!(
-        metrics.selection_basis,
-        SelectionBasis::ReusablePrior
-    );
+    assert_eq!(metrics.selection_basis, SelectionBasis::ReusablePrior);
     assert_eq!(metrics.rust_vcs_source_paths, 168);
     assert_eq!(metrics.rust_snapshot_delta_modified, 1);
     assert!(!metrics.rust_snapshot_delta_structural);

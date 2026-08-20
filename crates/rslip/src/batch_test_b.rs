@@ -38,7 +38,7 @@ def test_false():\n    assert choose(False) == 2\n",
         env: BTreeMap::new(),
         cache_root: tmp.path().join(".rslip_cache"),
         force_rerun: false,
-timeout: None,
+        timeout: None,
         content_fingerprint: None,
     };
     let mut second_req = base_req.clone();
@@ -97,9 +97,7 @@ fn rslip_cache_candidate_and_miss_store_batch_fields() {
 #[test]
 fn prepared_rslip_misses_and_candidate_group_types_are_test_referenced() {
     assert!(std::any::type_name::<PreparedRslipMisses>().contains("PreparedRslipMisses"));
-    assert!(
-        std::any::type_name::<RslipCacheCandidateGroup>().contains("RslipCacheCandidateGroup")
-    );
+    assert!(std::any::type_name::<RslipCacheCandidateGroup>().contains("RslipCacheCandidateGroup"));
 }
 
 #[test]
@@ -151,7 +149,10 @@ fn missing_coverage_artifact_is_stored_as_failed_miss() {
         })
     }))
     .run_or_reuse_many_bounded(vec![req], 1);
-    assert_eq!(second[0].as_ref().unwrap().cache_status, CacheStatus::MissStored);
+    assert_eq!(
+        second[0].as_ref().unwrap().cache_status,
+        CacheStatus::MissStored
+    );
     assert_eq!(second[0].as_ref().unwrap().status, TestStatus::Failed);
     assert_eq!(calls.get(), 1);
 }

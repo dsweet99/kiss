@@ -1,7 +1,7 @@
 #![cfg(unix)]
 
-use super::{NudgeScript, commit_a_py, py_dry_args, timeout_steps};
 use super::super::*;
+use super::{NudgeScript, commit_a_py, py_dry_args, timeout_steps};
 use crate::test_runner::RunTestOnceOutcome;
 use crate::test_runner::test_mode_fixtures::init_git;
 use crate::test_runner::watch::control::NudgeRequestMsg;
@@ -218,10 +218,7 @@ fn watch_cycle_forwards_violation_stdout_to_client_reply() {
             "generic cov error suppressed when output set"
         );
         let out = reply.output.expect("output");
-        assert!(
-            out.contains("VIOLATION:test_coverage:"),
-            "output={out:?}"
-        );
+        assert!(out.contains("VIOLATION:test_coverage:"), "output={out:?}");
         assert!(out.contains("Run 'kiss rules'"), "output={out:?}");
     });
     let mut src = NudgeScript {

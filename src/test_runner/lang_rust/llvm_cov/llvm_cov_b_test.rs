@@ -76,9 +76,13 @@ mod tests {
         test_binaries: Vec::new(),
     };
 
-    let summary = finish_rust_coverage_batch_result(tmp.path(), &identity, result,
+    let summary = finish_rust_coverage_batch_result(
+        tmp.path(),
+        &identity,
+        result,
         &kiss::GateConfig::default(),
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(
         summary.timed_out_selectors,
         vec!["src/lib.rs::gets_value".to_string()]
@@ -160,9 +164,13 @@ fn finish_rust_coverage_batch_result_prints_cached_and_failed_outcomes() {
         test_binaries: Vec::new(),
     };
 
-    let summary = finish_rust_coverage_batch_result(tmp.path(), &identity, result,
+    let summary = finish_rust_coverage_batch_result(
+        tmp.path(),
+        &identity,
+        result,
         &kiss::GateConfig::default(),
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(summary.total, 4);
     assert_eq!(summary.failed, 2);
     assert_eq!(
@@ -172,10 +180,7 @@ fn finish_rust_coverage_batch_result_prints_cached_and_failed_outcomes() {
             "src/lib.rs::fresh_fail".to_string()
         ]
     );
-    assert_eq!(
-        summary.max_passing_run_duration,
-        Duration::from_millis(1)
-    );
+    assert_eq!(summary.max_passing_run_duration, Duration::from_millis(1));
 }
 
 #[test]
@@ -240,9 +245,13 @@ fn finish_rust_coverage_batch_result_prints_fresh_unstored_outcomes() {
         test_binaries: Vec::new(),
     };
 
-    let summary = finish_rust_coverage_batch_result(tmp.path(), &identity, result,
+    let summary = finish_rust_coverage_batch_result(
+        tmp.path(),
+        &identity,
+        result,
         &kiss::GateConfig::default(),
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(summary.total, 3);
     assert_eq!(summary.failed, 2);
     assert_eq!(
@@ -252,10 +261,7 @@ fn finish_rust_coverage_batch_result_prints_fresh_unstored_outcomes() {
             "src/lib.rs::fresh_fail_empty_stderr".to_string()
         ]
     );
-    assert_eq!(
-        summary.max_passing_run_duration,
-        Duration::from_millis(1)
-    );
+    assert_eq!(summary.max_passing_run_duration, Duration::from_millis(1));
 }
 
 #[test]
@@ -273,8 +279,13 @@ fn run_rust_llvm_cov_selectors_reaches_compat_executor_for_nonempty_selectors() 
     )
     .unwrap();
 
-    let outcome =
-        run_rust_llvm_cov_selectors(tmp.path(), &["tests::case".to_string()], &[], true, 1, None,
+    let outcome = run_rust_llvm_cov_selectors(
+        tmp.path(),
+        &["tests::case".to_string()],
+        &[],
+        true,
+        1,
+        None,
         &kiss::GateConfig::default(),
     );
     match outcome {
@@ -336,7 +347,6 @@ fn build_current_rust_test_executable_index_on_bare_temp_repo_indexes_or_errors(
         build_current_rust_test_executable_index(tmp.path(), &["missing_case".into()], &[], 1);
     match result {
         Ok(build) => {
-
             let mapped = build
                 .index
                 .selector_binary_ids
@@ -353,10 +363,7 @@ fn build_current_rust_test_executable_index_on_bare_temp_repo_indexes_or_errors(
             );
         }
         Err(err) => {
-            assert!(
-                !err.is_empty(),
-                "error path must carry a message"
-            );
+            assert!(!err.is_empty(), "error path must carry a message");
             assert!(
                 err.contains("missing PATH::symbol report id") || err.contains("missing_case"),
                 "unexpected err: {err}"

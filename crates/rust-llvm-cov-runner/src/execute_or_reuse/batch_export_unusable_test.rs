@@ -20,7 +20,9 @@ fn unusable_profile_stderr_detects_known_messages() {
     assert!(unusable_profile_stderr(
         "warning: x.profraw: malformed instrumentation profile data: symbol name is empty"
     ));
-    assert!(unusable_profile_stderr("warning: x.profraw: truncated profile data"));
+    assert!(unusable_profile_stderr(
+        "warning: x.profraw: truncated profile data"
+    ));
     assert!(!unusable_profile_stderr("some other llvm failure"));
 }
 

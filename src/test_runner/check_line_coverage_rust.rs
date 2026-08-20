@@ -1,4 +1,3 @@
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
@@ -23,14 +22,16 @@ pub(crate) fn load_rust_runtime_coverage(
         return Ok(cov);
     }
 
-
     if let Some(snapshot) = rust_llvm_cov_runner::load_current_check_aggregate_snapshot(
         &cache_root,
         repo_root,
         &identity,
         Some(&selectors),
     ) {
-        return Ok(backend_from_lines(snapshot.identity, snapshot.covered_lines));
+        return Ok(backend_from_lines(
+            snapshot.identity,
+            snapshot.covered_lines,
+        ));
     }
     if let Some(snapshot) = rust_llvm_cov_runner::load_current_generation_coverage_snapshot(
         &cache_root,
@@ -43,7 +44,6 @@ pub(crate) fn load_rust_runtime_coverage(
             remap_rust_covered_lines(repo_root, snapshot.covered_lines)?,
         ));
     }
-
 
     if let Some(cov) = try_load_rust_coverage_from_witness_prior(
         repo_root,
@@ -64,8 +64,6 @@ fn rust_selectors_for_coverage_load(
     repo_root: &Path,
     ignore: &[String],
 ) -> Result<Vec<String>, RuntimeCoverageLoadError> {
-
-
     if let Some((_, rust_selectors, _)) =
         crate::test_runner::workspace_selector_cache::load_cached_workspace_selectors(
             repo_root, ignore,
@@ -143,8 +141,6 @@ pub(super) fn try_load_rust_coverage_from_witness_prior(
         return None;
     }
 
-
-
     let prior = rust_llvm_cov_runner::load_reusable_prior_check_aggregate(
         cache_root,
         repo_root,
@@ -202,11 +198,9 @@ mod tests {
         std::fs::create_dir_all(repo.join("src")).unwrap();
         std::fs::write(repo.join("src/lib.rs"), b"fn f() {}\n").unwrap();
         let abs = repo.join("src/lib.rs").to_string_lossy().to_string();
-        let mapped = remap_rust_covered_lines(
-            repo,
-            BTreeMap::from([(abs, BTreeSet::from([1u32]))]),
-        )
-        .unwrap();
+        let mapped =
+            remap_rust_covered_lines(repo, BTreeMap::from([(abs, BTreeSet::from([1u32]))]))
+                .unwrap();
         assert!(mapped.contains_key("src/lib.rs"));
     }
 
@@ -232,7 +226,13 @@ mod tests {
         };
         let selectors = vec!["a".into()];
         assert!(
-            try_load_rust_coverage_from_witness(tmp.path(), &identity, &selectors, &kiss::GateConfig::default()).is_none()
+            try_load_rust_coverage_from_witness(
+                tmp.path(),
+                &identity,
+                &selectors,
+                &kiss::GateConfig::default()
+            )
+            .is_none()
         );
         assert!(
             try_load_rust_coverage_from_witness_prior(
@@ -266,10 +266,7 @@ mod tests {
             ordinary_source_digests: Default::default(),
         };
         let selectors = vec!["a".into(), "b".into()];
-        let covered = BTreeMap::from([(
-            "src/lib.rs".into(),
-            BTreeSet::from([1u32, 2u32]),
-        )]);
+        let covered = BTreeMap::from([("src/lib.rs".into(), BTreeSet::from([1u32, 2u32]))]);
         let _ = publish_rust_execution_witness(PublishRustWitness {
             repo_root: tmp.path(),
             identity: &identity,
@@ -281,8 +278,13 @@ mod tests {
             complete: true,
         })
         .unwrap();
-        let loaded =
-            try_load_rust_coverage_from_witness(tmp.path(), &identity, &selectors, &kiss::GateConfig::default()).unwrap();
+        let loaded = try_load_rust_coverage_from_witness(
+            tmp.path(),
+            &identity,
+            &selectors,
+            &kiss::GateConfig::default(),
+        )
+        .unwrap();
         assert!(loaded.covered_lines.contains_key("src/lib.rs"));
 
         let empty = BTreeMap::new();
@@ -298,7 +300,13 @@ mod tests {
         })
         .unwrap();
         assert!(
-            try_load_rust_coverage_from_witness(tmp.path(), &identity, &selectors, &kiss::GateConfig::default()).is_none()
+            try_load_rust_coverage_from_witness(
+                tmp.path(),
+                &identity,
+                &selectors,
+                &kiss::GateConfig::default()
+            )
+            .is_none()
         );
     }
 }

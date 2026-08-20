@@ -97,7 +97,6 @@ pub(crate) fn collect_import_from_names(node: Node, source: &str, names: &mut Ha
                 }
             }
             "wildcard_import" if seen_import => {
-
                 names.insert("*".to_string());
             }
             _ => {}
@@ -133,8 +132,6 @@ mod tests {
 
     #[test]
     fn test_wildcard_import_counted() {
-
-
         let p = parse("from foo import *");
         assert!(
             count_imports(p.tree.root_node(), &p.source) >= 1,

@@ -1,4 +1,3 @@
-
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
@@ -80,8 +79,7 @@ impl InternedLineIndex {
 }
 
 pub(crate) fn decode_line_index_bytes(bytes: &[u8]) -> Result<InternedLineIndex, String> {
-    let value: serde_json::Value =
-        serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
+    let value: serde_json::Value = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
     if value
         .get("schema_version")
         .and_then(|v| v.as_str())
@@ -115,7 +113,11 @@ fn intern_legacy_line_index(
                 .filter_map(|name| index.id_of(name))
                 .collect::<BTreeSet<_>>();
             if !ids.is_empty() {
-                index.files.entry(file.clone()).or_default().insert(line, ids);
+                index
+                    .files
+                    .entry(file.clone())
+                    .or_default()
+                    .insert(line, ids);
             }
         }
     }

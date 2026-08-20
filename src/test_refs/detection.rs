@@ -1,4 +1,3 @@
-
 use std::path::Path;
 
 fn has_python_test_naming(path: &Path) -> bool {

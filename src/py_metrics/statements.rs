@@ -17,8 +17,6 @@ pub(super) fn count_statements(node: Node) -> usize {
 }
 
 pub(super) fn is_statement(kind: &str) -> bool {
-
-
     matches!(
         kind,
         "expression_statement"

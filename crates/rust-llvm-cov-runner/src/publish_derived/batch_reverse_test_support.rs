@@ -1,6 +1,5 @@
-
-use crate::publish_derived::batch_entry_state::publish_next_entry_state;
 use crate::batch_lock::lock_batch;
+use crate::publish_derived::batch_entry_state::publish_next_entry_state;
 use crate::publish_derived::batch_reverse_publish::publish_reverse_line_index;
 use crate::publish_derived_state;
 use crate::test_support::witness_batch_tools;
@@ -42,8 +41,7 @@ pub fn publish_bound_reverse(
     entries_fp: &str,
 ) -> crate::publish_derived::batch_reverse_build::ReversePublishInfo {
     let revision = publish_next_entry_state(cache, generation, entries_fp).unwrap();
-    let info =
-        publish_reverse_line_index(cache, source, generation, entries_fp, revision).unwrap();
+    let info = publish_reverse_line_index(cache, source, generation, entries_fp, revision).unwrap();
     write_population_with_reverse(cache, generation, entries_fp, &info);
     info
 }

@@ -1,4 +1,3 @@
-
 use std::collections::BTreeMap;
 use std::time::Duration;
 
@@ -19,8 +18,7 @@ pub(crate) fn aggregate_with_zero_limit_bans(
         .filter(|selector| !selector_timeout_is_ban(req, selector))
         .cloned()
         .collect();
-    let (runnable_outcomes, counters) =
-        aggregate_logical_selectors(&runnable, exact, instances);
+    let (runnable_outcomes, counters) = aggregate_logical_selectors(&runnable, exact, instances);
     let mut by_selector: BTreeMap<String, RustLlvmCovOutcome> = runnable_outcomes
         .into_iter()
         .map(|outcome| (outcome.selector.clone(), outcome))

@@ -106,13 +106,11 @@ fn contains_test_ident(tokens: proc_macro2::TokenStream, negated: bool) -> bool 
     while let Some(tt) = iter.next() {
         match &tt {
             TokenTree::Ident(id) if *id == "test" => {
-
                 if !negated {
                     return true;
                 }
             }
             TokenTree::Ident(id) if *id == "not" => {
-
                 if let Some(TokenTree::Group(g)) = iter.next()
                     && contains_test_ident(g.stream(), !negated)
                 {
@@ -120,7 +118,6 @@ fn contains_test_ident(tokens: proc_macro2::TokenStream, negated: bool) -> bool 
                 }
             }
             TokenTree::Ident(id) if *id == "all" || *id == "any" => {
-
                 if let Some(TokenTree::Group(g)) = iter.next()
                     && contains_test_ident(g.stream(), negated)
                 {
@@ -150,7 +147,6 @@ fn count_use_names(tree: &syn::UseTree) -> usize {
         syn::UseTree::Group(g) => g.items.iter().map(count_use_names).sum(),
     }
 }
-
 
 #[allow(clippy::field_reassign_with_default)]
 pub fn compute_rust_function_metrics(
@@ -238,10 +234,7 @@ impl FunctionMetricsVisitor {
 
 impl<'ast> Visit<'ast> for FunctionMetricsVisitor {
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
-
-
         let is_use_item = matches!(stmt, Stmt::Item(syn::Item::Use(_)));
-
 
         let is_inner_fn = matches!(stmt, Stmt::Item(syn::Item::Fn(_)));
         if !is_use_item {
@@ -254,8 +247,6 @@ impl<'ast> Visit<'ast> for FunctionMetricsVisitor {
             syn::visit::visit_stmt(self, stmt);
         }
     }
-
-
 
     fn visit_expr(&mut self, expr: &'ast Expr) {
         self.on_enter_expr(expr);

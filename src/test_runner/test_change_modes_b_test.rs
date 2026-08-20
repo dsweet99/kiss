@@ -65,12 +65,18 @@ fn row_g_untracked_rust_source_commit_only() {
     let untracked = tmp.path().join("src").join("new_src.rs");
     fs::write(&untracked, "pub fn fresh() -> u32 { 1 }\n").unwrap();
     let commit = with_cwd(tmp.path(), || {
-        plan(TestChangeMode::Commit, None, None, Some(kiss::Language::Rust))
+        plan(
+            TestChangeMode::Commit,
+            None,
+            None,
+            Some(kiss::Language::Rust),
+        )
     })
     .expect("commit plan");
     assert!(
         commit
-            .source_paths.rust
+            .source_paths
+            .rust
             .iter()
             .any(|p| p.ends_with("new_src.rs")),
         "commit: untracked Rust source must appear in rust_source_paths, got {:?}",
@@ -87,7 +93,8 @@ fn row_g_untracked_rust_source_commit_only() {
     .expect("base plan");
     assert!(
         !base
-            .source_paths.rust
+            .source_paths
+            .rust
             .iter()
             .any(|p| p.ends_with("new_src.rs")),
         "base: untracked Rust source must not appear, got {:?}",
@@ -104,7 +111,8 @@ fn row_g_untracked_rust_source_commit_only() {
     .expect("main plan");
     assert!(
         !main
-            .source_paths.rust
+            .source_paths
+            .rust
             .iter()
             .any(|p| p.ends_with("new_src.rs")),
         "main: untracked Rust source must not appear, got {:?}",
@@ -180,15 +188,20 @@ fn row_i_base_and_main_same_tree_yield_identical_selectors() {
         base_planned.population_required.python, main_planned.population_required.python,
         "base≡main same-tree: python_population_required must match"
     );
-    assert_eq!(base_planned.sel.rust, vec![RS_COVERING_SELECTOR.to_string()]);
+    assert_eq!(
+        base_planned.sel.rust,
+        vec![RS_COVERING_SELECTOR.to_string()]
+    );
 }
 
 fn assert_run_test_dry_run(mode: TestChangeMode, main: Option<&str>, base: Option<&str>) {
     let tmp = TempDir::new().unwrap();
     let lib = warm_committed_rust_demo(&tmp);
     edit_rust_covered_source(&lib, 2);
-    let planned = with_cwd(tmp.path(), || plan(mode, main, base, Some(kiss::Language::Rust)))
-        .unwrap_or_else(|e| panic!("{mode:?} plan: {e}"));
+    let planned = with_cwd(tmp.path(), || {
+        plan(mode, main, base, Some(kiss::Language::Rust))
+    })
+    .unwrap_or_else(|e| panic!("{mode:?} plan: {e}"));
     assert_eq!(
         planned.sel.rust,
         vec![RS_COVERING_SELECTOR.to_string()],
@@ -275,15 +288,19 @@ fn row_k_run_test_base_without_other_refs_fails() {
             base_branch_cli: None,
             dry_run: true,
             force_rerun: false,
-            force_bad: false,            metrics: false,
+            force_bad: false,
+            metrics: false,
             jobs: 1,
             extra: &[],
-        python_extra: &[],
+            python_extra: &[],
             ignore: &[],
             lang_filter: Some(kiss::Language::Rust),
             config_main_branch: None,
-        gate_config: kiss::GateConfig::default()
+            gate_config: kiss::GateConfig::default(),
         })
     });
-    assert_ne!(code, 0, "base: run_test without other refs must be non-zero");
+    assert_ne!(
+        code, 0,
+        "base: run_test without other refs must be non-zero"
+    );
 }

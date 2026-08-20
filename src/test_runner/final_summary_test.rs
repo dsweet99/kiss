@@ -12,10 +12,7 @@ fn summary_with(
     SelectorExecutionSummary {
         total,
         failed,
-        failed_selectors: failed_selectors
-            .iter()
-            .map(|s| (*s).to_string())
-            .collect(),
+        failed_selectors: failed_selectors.iter().map(|s| (*s).to_string()).collect(),
         max_passing_run_duration: max_pass,
         ..SelectorExecutionSummary::default()
     }
@@ -23,12 +20,8 @@ fn summary_with(
 
 #[test]
 fn format_all_pass_and_zero_max_pass() {
-    let summary = FinalTestSummary::absorb(&[&summary_with(
-        148,
-        0,
-        &[],
-        Duration::from_millis(1370),
-    )]);
+    let summary =
+        FinalTestSummary::absorb(&[&summary_with(148, 0, &[], Duration::from_millis(1370))]);
     assert_eq!(
         format_final_test_summary(&summary, Duration::from_secs_f64(12.84), false),
         "✓ 148 passed · 12.84s total · 1.37s max pass"
@@ -79,10 +72,7 @@ fn format_zero_pass_and_no_test_aggregates() {
         "✓ 0 passed · 0.03s total · 0s max pass"
     );
     assert_eq!(format_max_pass_duration(Duration::ZERO), "0s");
-    assert_eq!(
-        format_max_pass_duration(Duration::from_millis(10)),
-        "0.01s"
-    );
+    assert_eq!(format_max_pass_duration(Duration::from_millis(10)), "0.01s");
     assert_eq!(format_test_duration(Duration::ZERO), "0.00s");
 }
 
@@ -108,6 +98,8 @@ fn format_color_only_icons_and_failed_token() {
         timed_out_selectors: Vec::new(),
         max_passing_run_duration: Duration::from_millis(10),
     };
-    assert!(format_final_test_summary(&pass, Duration::from_secs(1), true)
-        .starts_with("\x1b[32m✓\x1b[0m "));
+    assert!(
+        format_final_test_summary(&pass, Duration::from_secs(1), true)
+            .starts_with("\x1b[32m✓\x1b[0m ")
+    );
 }

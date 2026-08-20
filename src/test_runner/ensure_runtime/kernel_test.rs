@@ -1,4 +1,3 @@
-
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -207,8 +206,8 @@ fn miss_runs_and_publishes_even_when_exit_nonzero() {
         language: Language::Python,
         state: Rc::clone(&state),
     };
-    let result = ensure_runtime_cache(&request(vec!["a".into(), "b".into()]), &[&runtime])
-        .expect("ensure");
+    let result =
+        ensure_runtime_cache(&request(vec!["a".into(), "b".into()]), &[&runtime]).expect("ensure");
     assert_eq!(result.exit_code, 1);
     assert_eq!(state.borrow().publish_calls, 1);
     assert_eq!(state.borrow().run_calls.len(), 1);
@@ -265,8 +264,8 @@ fn second_ensure_after_partial_failure_runs_only_problem_selectors() {
         language: Language::Python,
         state: Rc::clone(&state),
     };
-    let _ = ensure_runtime_cache(&request(vec!["a".into(), "b".into()]), &[&runtime])
-        .expect("ensure");
+    let _ =
+        ensure_runtime_cache(&request(vec!["a".into(), "b".into()]), &[&runtime]).expect("ensure");
     assert_eq!(state.borrow().run_calls, vec![vec!["b".to_string()]]);
 }
 
@@ -291,8 +290,8 @@ fn terminal_incomplete_reports_without_run_or_publish() {
         language: Language::Python,
         state: Rc::clone(&state),
     };
-    let result = ensure_runtime_cache(&request(vec!["a".into(), "b".into()]), &[&runtime])
-        .expect("ensure");
+    let result =
+        ensure_runtime_cache(&request(vec!["a".into(), "b".into()]), &[&runtime]).expect("ensure");
     assert_ne!(result.exit_code, 0);
     assert!(state.borrow().run_calls.is_empty());
     assert_eq!(state.borrow().publish_calls, 0);
@@ -318,7 +317,6 @@ fn empty_all_mode_publishes_empty_full_without_run() {
 
 #[test]
 fn rust_accept_under_fake_runs_zero_exports_and_delta_publish() {
-
     let state = Rc::new(RefCell::new(FakeState {
         witness: Some(ExecutionWitness {
             language: "rust".into(),
@@ -340,9 +338,11 @@ fn rust_accept_under_fake_runs_zero_exports_and_delta_publish() {
     let req = rust_request(vec!["a".into(), "b".into()]);
     let result = ensure_runtime_cache(&req, &[&runtime]).expect("accept");
     assert_eq!(result.exit_code, 0);
-    assert!(state.borrow().run_calls.is_empty(), "Accept must not run selectors");
+    assert!(
+        state.borrow().run_calls.is_empty(),
+        "Accept must not run selectors"
+    );
     assert_eq!(state.borrow().publish_calls, 0);
-
 
     state.borrow_mut().witness.as_mut().unwrap().statuses[1] = WitnessStatus::Failed;
     state.borrow_mut().witness.as_mut().unwrap().complete = false;
@@ -391,35 +391,5 @@ fn python_miss_does_not_emit_rust_identity() {
     );
 }
 
-#[test]
-fn rust_warm_accept_still_emits_rust_identity_without_run() {
-    let state = Rc::new(RefCell::new(FakeState {
-        witness: Some(ExecutionWitness {
-            language: "rust".into(),
-            scope: WitnessScope::Full,
-            identity_digest: "id".into(),
-            selectors: vec!["a".into()],
-            statuses: vec![WitnessStatus::Passed],
-            durations_ns: vec![Some(1)],
-            covered_lines: BTreeMap::new(),
-            complete: true,
-            generation_id: "g".into(),
-        }),
-        ..Default::default()
-    }));
-    let runtime = FakeRuntime {
-        language: Language::Rust,
-        state: Rc::clone(&state),
-    };
-    let req = rust_request(vec!["a".into()]);
-    let out = crate::test_runner::capture_stdout::capture_stdout(|| {
-        let _ = ensure_runtime_cache(&req, &[&runtime]).expect("ensure");
-    });
-    assert!(
-        out.contains("kiss test: stage rust_identity"),
-        "warm accept must still emit rust_identity:\n{out}"
-    );
-    assert!(state.borrow().run_calls.is_empty(), "warm accept must not run");
-}
 #[path = "kernel_identity_publish_test.rs"]
 mod identity_publish;

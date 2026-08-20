@@ -75,7 +75,6 @@ where
             .map_err(|message| RustLlvmCovError::InvalidRequest(format!("batch plan: {message}")))
     })?;
 
-
     if !req.logical_selectors.is_empty()
         && req
             .logical_selectors
@@ -102,9 +101,6 @@ where
     ) && !req.force_rerun
         && let Some(result) = try_all_hit_fast_path(req, tools, &identity)?
     {
-
-
-
         return Ok(with_process_reverse_query_counters(result));
     }
 
@@ -124,8 +120,7 @@ where
             },
         );
     }
-    if let Some(mut result) = try_check_aggregate_hit_after_lock(req, &identity)?
-    {
+    if let Some(mut result) = try_check_aggregate_hit_after_lock(req, &identity)? {
         result.counters.legacy_cleanup_deferred = legacy_cleanup.deferred;
         return Ok(with_process_reverse_query_counters(result));
     }
@@ -421,6 +416,10 @@ fn outcome_from_entry(
 #[cfg(test)]
 #[path = "batch_executor_test.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "batch_executor_b_test.rs"]
+mod tests_b;
 
 #[cfg(test)]
 #[path = "batch_executor_all_hit_lock_test.rs"]

@@ -1,4 +1,3 @@
-
 use crate::RustLlvmCovError;
 use crate::publish_derived::batch_derived::INDEX_SCHEMA_VERSION;
 use crate::rust_cov_cache::rust_cov_unique_suffix;

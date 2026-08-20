@@ -12,17 +12,4 @@ fn test_touch_for_static_test_coverage() {
         std::mem::size_of_val(&run_test_command),
         std::mem::size_of::<RunStatsArgs>(),
     );
-
-
-
-
-
-
-
-
-
-
-
-
-
 }

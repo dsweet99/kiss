@@ -97,7 +97,6 @@ impl RustModule {
         enumerate_workspace_rust_selectors(&self.repo_root, &self.ignore)
     }
 
-
     fn resolved_state(&self) -> Result<&ResolvedRustPopulation, String> {
         self.resolved
             .get_or_init(|| {

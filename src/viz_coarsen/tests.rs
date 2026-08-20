@@ -19,7 +19,6 @@ fn test_fast_communities_assigns_all_nodes() {
 
 #[test]
 fn test_should_use_fast_coarsen_regressions() {
-
     assert!(should_use_fast_coarsen(2_000, 0, 10));
     assert!(should_use_fast_coarsen(100, 10_000, 50));
     assert!(should_use_fast_coarsen(1_000, 0, 100));
@@ -119,9 +118,6 @@ fn test_coarsen_with_target_respects_explicit_count() {
 
 #[test]
 fn test_build_cluster_labels_titles_clusters_with_common_directory_name() {
-
-
-
     let nodes: Vec<String> = (0..5).map(|i| format!("rs:n{i}")).collect();
     let mut paths_map: BTreeMap<String, PathBuf> = BTreeMap::new();
     for (i, n) in nodes.iter().enumerate() {
@@ -149,8 +145,6 @@ fn test_build_cluster_labels_titles_clusters_with_common_directory_name() {
 
 #[test]
 fn test_build_cluster_labels_collapses_multilevel_common_prefix() {
-
-
     let nodes: Vec<String> = vec!["py:a".into(), "py:b".into(), "py:c".into()];
     let mut paths_map: BTreeMap<String, PathBuf> = BTreeMap::new();
     paths_map.insert("py:a".into(), PathBuf::from("/repo/src/pkg/sub/x.py"));
@@ -195,12 +189,7 @@ fn merge_communities_to_target_merges_connected_singletons() {
     members.sort_unstable();
     assert_eq!(members, vec![0, 1, 2]);
 
-    let already = leiden::merge_communities_to_target(
-        &nodes,
-        &edges,
-        vec![vec![0, 1], vec![2]],
-        2,
-    );
+    let already = leiden::merge_communities_to_target(&nodes, &edges, vec![vec![0, 1], vec![2]], 2);
     assert_eq!(already.len(), 2);
 
     let partitioned = leiden::leiden_partition(&nodes, &edges);

@@ -3,11 +3,11 @@ use std::process::{Command, Stdio};
 
 use crate::execute_or_reuse::batch_events::selector_matches_test;
 use crate::execute_or_reuse::batch_executor_finish::{digest_test_binary, test_binary_id_for_path};
-use crate::plan::batch_fingerprint::{RustCoverageBatchIdentity, RustCoverageToolIdentity};
-use crate::plan::batch_plan::{RustCoverageBatchPlan, RustCoverageBatchRequest};
 use crate::execute_or_reuse::batch_result::RustCoverageBatchCounters;
 use crate::execute_or_reuse::batch_run::{self, CurrentRunCleanup, FreshBatchRunScope};
 use crate::execute_or_reuse::batch_shim::load_target_runner_list_metadata;
+use crate::plan::batch_fingerprint::{RustCoverageBatchIdentity, RustCoverageToolIdentity};
+use crate::plan::batch_plan::{RustCoverageBatchPlan, RustCoverageBatchRequest};
 use crate::{RustLlvmCovError, RustTestBinaryIdentity};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -138,8 +138,6 @@ fn list_test_names_from_executable(
     binary_id: &str,
     kiss_profraw: &std::path::Path,
 ) -> Result<Vec<String>, RustLlvmCovError> {
-
-
     crate::kiss_profraw::ensure_kiss_profraw(kiss_profraw).map_err(RustLlvmCovError::Io)?;
     let mut command = Command::new(path);
     command.arg("--list");
@@ -284,7 +282,8 @@ mod tests {
         plan.target_runner_output_dir = target_runner_output_dir;
 
         let index = super::executable_index_from_list_metadata(&req, &plan).unwrap();
-        let binary_id = crate::execute_or_reuse::batch_executor_finish::test_binary_id_for_path(&bin);
+        let binary_id =
+            crate::execute_or_reuse::batch_executor_finish::test_binary_id_for_path(&bin);
 
         assert_eq!(
             index.selector_binary_ids,
@@ -330,8 +329,7 @@ mod tests {
         permissions.set_mode(0o755);
         std::fs::set_permissions(&bin, permissions).unwrap();
 
-        let names =
-            super::list_test_names_from_executable(&bin, "bin-id", &kiss_profraw).unwrap();
+        let names = super::list_test_names_from_executable(&bin, "bin-id", &kiss_profraw).unwrap();
         assert_eq!(names, vec!["bin-id$alpha::passes".to_string()]);
         assert!(kiss_profraw.is_dir());
     }

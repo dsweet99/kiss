@@ -131,8 +131,6 @@ pub(crate) fn collect_detailed_from_items(
             Item::Impl(i) => push_impl_block(i, file, units),
             Item::Mod(m) => {
                 if is_cfg_test_mod(m) {
-
-
                 } else if let Some((_, inner)) = &m.content {
                     collect_detailed_from_items(inner, file, units);
                 }

@@ -1,10 +1,10 @@
 use std::path::{Path, PathBuf};
 
-use kiss::{
-    Config, DependencyGraph, GateConfig, ParsedFile, ParsedRustFile, Violation, analyze_graph,
-};
 use kiss::lang_analysis::{
     LanguageGraph, LanguageParser, PythonAnalysis, RustAnalysis, build_graphs as build_lang_graphs,
+};
+use kiss::{
+    Config, DependencyGraph, GateConfig, ParsedFile, ParsedRustFile, Violation, analyze_graph,
 };
 
 pub struct GraphConfigs<'a> {

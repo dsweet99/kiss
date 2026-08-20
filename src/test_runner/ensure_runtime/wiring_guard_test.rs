@@ -1,4 +1,3 @@
-
 #[test]
 fn cov_python_refresh_uses_factory_and_planning_api() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

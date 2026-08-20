@@ -175,7 +175,6 @@ pub(crate) fn compute_file_line_coverage(
     snapshot: &RuntimeCoverageSnapshot,
 ) -> LineCoverageRecord {
     let Some(denominator_lines) = coverage_denominator_lines(file) else {
-
         return LineCoverageRecord {
             file: file.to_path_buf(),
             total_lines: 0,
@@ -334,7 +333,6 @@ impl RustCoverableLineVisitor<'_> {
             return;
         };
         let trimmed = line.trim();
-
 
         if trimmed.is_empty()
             || trimmed.starts_with("//")

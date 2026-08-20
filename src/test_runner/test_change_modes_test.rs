@@ -190,14 +190,14 @@ fn row_d_empty_diff_dry_run_exits_zero() {
             SelectorRunOptions {
                 dry_run: true,
                 force_rerun: false,
-metrics: false,
+                metrics: false,
                 jobs: 1,
                 extras: crate::test_runner::language_keyed::LanguageKeyed {
                     python: &[],
                     rust: &[],
                 },
                 plan_duration: std::time::Duration::ZERO,
-            gate: kiss::GateConfig::default()
+                gate: kiss::GateConfig::default(),
             },
         )
     })

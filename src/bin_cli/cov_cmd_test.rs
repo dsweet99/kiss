@@ -22,7 +22,7 @@ fn evaluate_records_with_time_rejects_when_coverage_gate_fails() {
         jobs: 1,
         allow_refresh: true,
         pytest_args: &[],
-};
+    };
     let records = [analyze::line_coverage::LineCoverageRecord {
         file: PathBuf::from("src/low.rs"),
         total_lines: 100,
@@ -81,7 +81,7 @@ fn both_gates_disabled_short_circuits() {
         jobs: 1,
         allow_refresh: true,
         pytest_args: &[],
-};
+    };
     assert_eq!(run_cov_command(&args), 0);
 }
 
@@ -116,7 +116,7 @@ fn wiring_guard_time_gate_invoked_from_cov_path() {
         jobs: 1,
         allow_refresh: true,
         pytest_args: &[],
-};
+    };
     let files = CovFileSets {
         py_files: vec![],
         rs_files: vec![],
@@ -139,13 +139,16 @@ fn wiring_guard_time_gate_invoked_from_cov_path() {
         },
         ignore: &[],
         pytest_args: &[],
-};
+    };
 }
 
 #[test]
 fn lang_filter_cache_label_covers_both_languages() {
     assert_eq!(lang_filter_cache_label(None), None);
-    assert_eq!(lang_filter_cache_label(Some(Language::Python)), Some("python"));
+    assert_eq!(
+        lang_filter_cache_label(Some(Language::Python)),
+        Some("python")
+    );
     assert_eq!(lang_filter_cache_label(Some(Language::Rust)), Some("rust"));
 }
 
@@ -169,7 +172,7 @@ fn try_evaluate_records_with_time_falls_through_on_incomplete() {
         jobs: 1,
         allow_refresh: true,
         pytest_args: &[],
-};
+    };
     let files = CovFileSets {
         py_files: vec![],
         rs_files: vec![PathBuf::from("src/lib.rs")],
@@ -198,7 +201,6 @@ fn try_evaluate_records_with_time_falls_through_on_incomplete() {
     );
     assert!(code.is_none());
 }
-
 
 #[test]
 fn evaluate_coverage_gate_bypass_still_prints_violations() {
@@ -243,7 +245,7 @@ fn time_only_gate_path_runs_when_coverage_threshold_zero() {
         jobs: 1,
         allow_refresh: true,
         pytest_args: &[],
-};
+    };
 
     assert_eq!(run_cov_command(&args), 1);
 }
@@ -265,7 +267,7 @@ fn allow_refresh_false_incomplete_time_gate_fails_closed() {
         jobs: 1,
         allow_refresh: false,
         pytest_args: &[],
-};
+    };
     let records = [analyze::line_coverage::LineCoverageRecord {
         file: PathBuf::from("src/ok.rs"),
         total_lines: 10,
@@ -316,7 +318,10 @@ fn load_or_refresh_snapshot_respects_allow_refresh_false() {
         &kiss::GateConfig::default(),
         &[],
     );
-    assert!(matches!(err, Err(1)), "cache-only load must fail closed: {err:?}");
+    assert!(
+        matches!(err, Err(1)),
+        "cache-only load must fail closed: {err:?}"
+    );
 }
 
 #[test]
@@ -342,7 +347,7 @@ fn timing_true_empty_universe_short_circuits_or_fails_softly() {
         jobs: 1,
         allow_refresh: false,
         pytest_args: &[],
-};
+    };
 
     let code = run_cov_command(&args);
     assert!(code == 0 || code == 1, "code={code}");
@@ -350,10 +355,10 @@ fn timing_true_empty_universe_short_circuits_or_fails_softly() {
 
 #[test]
 fn run_cov_command_hits_records_fast_path_after_seed() {
+    use crate::bin_cli::cov_warm::warm_cov_caches_after_tests;
     use crate::test_runner::python_coverage_index::{
         write_python_coverage_snapshot, write_python_population_manifest_for_args,
     };
-    use crate::bin_cli::cov_warm::warm_cov_caches_after_tests;
     use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
 

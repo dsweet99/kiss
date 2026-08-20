@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use crate::test_runner::runners::enumerate_workspace_python_selectors;
 use crate::test_runner::coverage_decision::{
     ChangedDiff, CoverageFreshness, LanguagePlanner, PopulationPlan, SelectionDecision,
     TestSelector, full_population_plan,
@@ -12,6 +11,7 @@ use crate::test_runner::python_coverage_index::{
     select_python_source_selectors_from_index, select_python_source_selectors_hybrid,
     stored_python_universe_selectors,
 };
+use crate::test_runner::runners::enumerate_workspace_python_selectors;
 
 pub(crate) struct PythonModule {
     repo_root: PathBuf,
@@ -74,8 +74,6 @@ impl LanguagePlanner for PythonModule {
                 .collect());
         }
 
-
-
         if let Some((cached_py, _cached_rs, _fp)) =
             crate::test_runner::workspace_selector_cache::load_cached_workspace_selectors(
                 &self.repo_root,
@@ -126,10 +124,11 @@ impl LanguagePlanner for PythonModule {
             &universe_ids,
             &self.test_args,
             self.manifest_env_allowlist(),
-        ) && crate::test_runner::python_coverage_index::load_current_python_coverage_index(
-            &self.repo_root,
         )
-        .is_some();
+            && crate::test_runner::python_coverage_index::load_current_python_coverage_index(
+                &self.repo_root,
+            )
+            .is_some();
         let has_line_precise_entries = !self.python_changed_lines.is_empty()
             && select_fresh_python_source_selectors(
                 &self.repo_root,
@@ -140,8 +139,6 @@ impl LanguagePlanner for PythonModule {
         if has_current_population {
             Ok(CoverageFreshness::Fresh)
         } else if has_line_precise_entries {
-
-
             Ok(CoverageFreshness::ReusablePrior)
         } else {
             Ok(CoverageFreshness::Stale)
@@ -202,8 +199,6 @@ pub(crate) fn select_fresh_python_source_selectors(
     py_source_paths: &[PathBuf],
     python_changed_lines: &BTreeMap<PathBuf, BTreeSet<u32>>,
 ) -> Option<BTreeSet<String>> {
-
-
     const LINE_PRECISE_FILE_LIMIT: usize = 1;
     if !python_changed_lines.is_empty()
         && python_changed_lines.len() <= LINE_PRECISE_FILE_LIMIT
@@ -225,11 +220,11 @@ impl crate::test_runner::coverage_decision::SupportedLanguage for PythonModule {
 mod tests {
     use super::*;
     use crate::test_runner::coverage_decision::LanguagePlanner;
-    use crate::test_runner::workspace_selector_cache::store_workspace_selectors;
     use crate::test_runner::lang_python::collect::{
         full_suite_subprocess_collects_for_tests, reset_full_suite_subprocess_collects_for_tests,
         reset_python_collect_memo_for_tests,
     };
+    use crate::test_runner::workspace_selector_cache::store_workspace_selectors;
     use std::fs;
 
     #[test]
@@ -239,7 +234,11 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let tests = tmp.path().join("tests");
         fs::create_dir_all(&tests).unwrap();
-        fs::write(tests.join("test_app.py"), "def test_value():\n    assert True\n").unwrap();
+        fs::write(
+            tests.join("test_app.py"),
+            "def test_value():\n    assert True\n",
+        )
+        .unwrap();
         let cached = vec![
             "tests/test_app.py::test_value".to_string(),
             "tests/test_other.py::test_cached_only".to_string(),
@@ -336,20 +335,18 @@ mod tests {
     #[test]
     fn pythonpath_mismatch_forces_stale_even_with_line_precise_entries() {
         use crate::test_runner::TestEnvVarGuard;
+        use crate::test_runner::python_coverage_index::GenerationReason;
         use crate::test_runner::python_coverage_index::generation::{
             PopulationEvidence, SelectorEvidence, TimingCacheDisposition,
             population_plan_for_selectors, publish_python_population_generation,
         };
-        use crate::test_runner::python_coverage_index::GenerationReason;
         use std::time::Duration;
 
         let tmp = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(tmp.path().join(".git")).unwrap();
         let app = tmp.path().join("app.py");
         fs::write(&app, "def alpha():\n    return 'alpha'\n").unwrap();
-        let Ok((_py, _pt)) =
-            crate::test_runner::runners::detect_rslip_versions(tmp.path())
-        else {
+        let Ok((_py, _pt)) = crate::test_runner::runners::detect_rslip_versions(tmp.path()) else {
             return;
         };
         let root = tmp.path().canonicalize().unwrap();
@@ -357,9 +354,8 @@ mod tests {
         let changed = format!("{}:changed", root.display());
         let _pythonpath = TestEnvVarGuard::set("PYTHONPATH", &recorded);
         let selector = "tests/test_app.py::test_alpha".to_string();
-        let plan =
-            population_plan_for_selectors(tmp.path(), std::slice::from_ref(&selector), &[])
-                .unwrap();
+        let plan = population_plan_for_selectors(tmp.path(), std::slice::from_ref(&selector), &[])
+            .unwrap();
         let mut evidence = PopulationEvidence::from_ordered_selectors(&plan.selectors);
         evidence.absorb_selector(SelectorEvidence {
             selector: selector.clone(),

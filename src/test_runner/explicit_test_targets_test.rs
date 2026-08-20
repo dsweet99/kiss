@@ -1,4 +1,3 @@
-
 use std::fs;
 use std::path::Path;
 
@@ -25,9 +24,7 @@ fn write_prior_failures(root: &Path, count: usize) {
         ));
     }
     records.push(']');
-    let body = format!(
-        r#"{{"schema_version":"kiss-test-last-status-v1","records":{records}}}"#
-    );
+    let body = format!(r#"{{"schema_version":"kiss-test-last-status-v1","records":{records}}}"#);
     fs::write(kiss_dir.join("test_last_status.json"), body).unwrap();
 }
 
@@ -38,21 +35,28 @@ fn explicit_single_python_test_ignores_prior_failure_fanout() {
     init_git_repo(tmp.path());
     let tests = tmp.path().join("tests");
     fs::create_dir_all(&tests).unwrap();
-    fs::write(
-        tests.join("test_a.py"),
-        "def test_x():\n    assert True\n",
-    )
-    .unwrap();
+    fs::write(tests.join("test_a.py"), "def test_x():\n    assert True\n").unwrap();
     write_prior_failures(tmp.path(), 100);
 
     let orig = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
-    let planned = plan_target_selectors(TargetPlanKind::Targets(&["tests/test_a.py::test_x".into()]), &[], crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] }, Some(kiss::Language::Python),
-        &kiss::GateConfig::default());
+    let planned = plan_target_selectors(
+        TargetPlanKind::Targets(&["tests/test_a.py::test_x".into()]),
+        &[],
+        crate::test_runner::language_keyed::LanguageKeyed {
+            python: &[],
+            rust: &[],
+        },
+        Some(kiss::Language::Python),
+        &kiss::GateConfig::default(),
+    );
     std::env::set_current_dir(orig).unwrap();
     let planned = planned.expect("plan explicit test");
 
-    assert_eq!(planned.sel.python, vec!["tests/test_a.py::test_x".to_string()]);
+    assert_eq!(
+        planned.sel.python,
+        vec!["tests/test_a.py::test_x".to_string()]
+    );
     assert!(planned.sel.rust.is_empty());
     assert!(!planned.population_required.python);
     assert!(planned.prior_failure_selectors.python.is_empty());
@@ -81,8 +85,16 @@ fn explicit_python_test_file_selects_only_that_file() {
 
     let orig = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
-    let planned = plan_target_selectors(TargetPlanKind::Targets(&["tests/test_a.py".into()]), &[], crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] }, Some(kiss::Language::Python),
-        &kiss::GateConfig::default());
+    let planned = plan_target_selectors(
+        TargetPlanKind::Targets(&["tests/test_a.py".into()]),
+        &[],
+        crate::test_runner::language_keyed::LanguageKeyed {
+            python: &[],
+            rust: &[],
+        },
+        Some(kiss::Language::Python),
+        &kiss::GateConfig::default(),
+    );
     std::env::set_current_dir(orig).unwrap();
     let planned = planned.expect("plan explicit test file");
 
@@ -131,8 +143,16 @@ fn explicit_nested_non_member_rust_target_is_rejected() {
 
     let orig = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
-    let planned = plan_target_selectors(TargetPlanKind::Targets(&["nested".into()]), &[], crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] }, Some(kiss::Language::Rust),
-        &kiss::GateConfig::default());
+    let planned = plan_target_selectors(
+        TargetPlanKind::Targets(&["nested".into()]),
+        &[],
+        crate::test_runner::language_keyed::LanguageKeyed {
+            python: &[],
+            rust: &[],
+        },
+        Some(kiss::Language::Rust),
+        &kiss::GateConfig::default(),
+    );
     std::env::set_current_dir(orig).unwrap();
     let err = match planned {
         Ok(_) => panic!("nested non-member must fail fast"),

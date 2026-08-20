@@ -15,17 +15,14 @@ pub(super) fn new_graph() -> DependencyGraph {
 
 #[test]
 fn test_touch_dynamic_import_helpers_for_static_coverage() {
-
     let mut parser = create_parser().unwrap();
     let code = "def f():\n    import importlib\n    importlib.import_module(\"pkg.target\")\n    __import__(\"pkg.other\")\n";
     let tree = parser.parse(code, None).unwrap();
     let root = tree.root_node();
 
-
     let imports = extract_imports_for_cache(root, code);
     assert!(imports.contains(&"pkg.target".into()));
     assert!(imports.contains(&"pkg.other".into()));
-
 
     let call_node = root
         .descendant_for_byte_range(code.find("importlib.import_module").unwrap(), code.len())
@@ -89,15 +86,6 @@ fn test_graph_imports_and_cycles() {
 
 #[test]
 fn test_from_import_does_not_create_edges_to_imported_names() {
-
-
-
-
-
-
-
-
-
     let mut parser = create_parser().unwrap();
     let files: Vec<(PathBuf, Vec<String>)> = vec![
         (
@@ -130,8 +118,6 @@ fn test_from_import_does_not_create_edges_to_imported_names() {
 
 #[test]
 fn test_dotted_import_does_not_create_edges_to_middle_segments() {
-
-
     let mut parser = create_parser().unwrap();
     let files: Vec<(PathBuf, Vec<String>)> = vec![
         (
@@ -141,7 +127,6 @@ fn test_dotted_import_does_not_create_edges_to_middle_segments() {
                 "import foo.bar\n",
             ),
         ),
-
         (PathBuf::from("bar.py"), Vec::new()),
     ];
 
@@ -159,8 +144,6 @@ fn test_dotted_import_does_not_create_edges_to_middle_segments() {
 
 #[test]
 fn test_qualified_module_name_includes_full_package_path() {
-
-
     use std::path::Path;
     let a = qualified_module_name(Path::new("pkg1/sub/utils.py"));
     let b = qualified_module_name(Path::new("pkg2/sub/utils.py"));
@@ -275,9 +258,6 @@ fn test_type_checking_imports_included_in_graph() {
 
 #[test]
 fn test_from_dot_import_name_is_dependency_candidate() {
-
-
-
     let mut parser = create_parser().unwrap();
     let code = "def f():\n    from . import target\n    return 0\n";
     let imports = extract_imports_for_cache(parser.parse(code, None).unwrap().root_node(), code);

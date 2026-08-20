@@ -1,4 +1,3 @@
-
 pub(crate) const FORKSERVER_CONTROLLER_A: &str = r#"
 import importlib
 import io

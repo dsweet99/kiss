@@ -86,7 +86,10 @@ fn redirect_this_process_sets_absolute_discard_path_and_is_idempotent() {
     let repo = tmp.path().canonicalize().unwrap();
     let old = std::env::var_os("LLVM_PROFILE_FILE");
     let first = redirect_this_process(&repo).unwrap();
-    let expected = repo.join(".kiss").join("profraw").join(DISCARD_PROFILE_PATTERN);
+    let expected = repo
+        .join(".kiss")
+        .join("profraw")
+        .join(DISCARD_PROFILE_PATTERN);
     assert_eq!(first, expected);
     assert!(first.is_absolute());
     assert_eq!(
@@ -130,7 +133,6 @@ fn redirect_this_process_overwrites_prior_env_deliberate_delegation_resets() {
         std::env::var_os("LLVM_PROFILE_FILE").as_deref(),
         Some(redirected.as_os_str())
     );
-
 
     unsafe {
         std::env::set_var("LLVM_PROFILE_FILE", &intentional);
@@ -187,7 +189,11 @@ fn redirect_inherited_uses_kiss_profraw_env() {
     }
     redirect_inherited_llvm_profile_file(tmp.path()).unwrap();
     let redirected = std::env::var_os("LLVM_PROFILE_FILE").unwrap();
-    assert!(redirected.to_string_lossy().contains(DISCARD_PROFILE_PATTERN));
+    assert!(
+        redirected
+            .to_string_lossy()
+            .contains(DISCARD_PROFILE_PATTERN)
+    );
     assert!(kiss_profraw.is_dir());
 
     match old_profile {

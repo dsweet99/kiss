@@ -26,12 +26,12 @@ pub(crate) use manifest::{
 };
 
 pub(crate) mod population_durations;
+#[cfg(test)]
+pub(crate) use population_durations::write_population_durations;
 pub(crate) use population_durations::{
     load_current_python_population_durations, load_current_python_population_max_duration,
     load_current_python_population_path_maxes,
 };
-#[cfg(test)]
-pub(crate) use population_durations::write_population_durations;
 
 pub(crate) mod coverage_snapshot;
 pub(crate) use coverage_snapshot::{
@@ -113,7 +113,6 @@ pub(crate) fn publish_python_derived_state_with_filter_force(
             )
         });
     let Some(selectors) = selectors_to_publish else {
-
         return rebuild_selection_index_fallback(repo_root, &is_indexable);
     };
     if !force_publish
@@ -182,7 +181,14 @@ fn build_stable_python_coverage_index(
     repo_root: &Path,
     cache_root: &Path,
     is_indexable: impl Fn(&Path, &Path) -> bool,
-) -> Result<(PythonCoverageIndex, coverage_snapshot::CoveredLinesMap, String), String> {
+) -> Result<
+    (
+        PythonCoverageIndex,
+        coverage_snapshot::CoveredLinesMap,
+        String,
+    ),
+    String,
+> {
     for _ in 0..3 {
         let before = storage::python_entries_fingerprint(cache_root).map_err(|e| e.to_string())?;
         let (index, covered_lines) =

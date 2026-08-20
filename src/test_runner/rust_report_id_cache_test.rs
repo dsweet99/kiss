@@ -21,7 +21,13 @@ fn report_id_cache_round_trip_hits_without_rebuild() {
     map.insert("tests::t".into(), "src/lib.rs::t".into());
     store_cached(root, &[], &map).unwrap();
     let loaded = try_load_cached(root, &[]).expect("cache hit");
-    assert_eq!(loaded.get("tests::t").map(String::as_str), Some("src/lib.rs::t"));
+    assert_eq!(
+        loaded.get("tests::t").map(String::as_str),
+        Some("src/lib.rs::t")
+    );
     let via = rust_logical_to_kiss_test_ids_cached(root, &[]).unwrap();
-    assert_eq!(via.get("tests::t").map(String::as_str), Some("src/lib.rs::t"));
+    assert_eq!(
+        via.get("tests::t").map(String::as_str),
+        Some("src/lib.rs::t")
+    );
 }

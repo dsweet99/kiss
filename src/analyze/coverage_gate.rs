@@ -85,13 +85,9 @@ fn evaluate_codebase(
     let mut diagnostics: Vec<_> = focus_records
         .iter()
         .filter_map(|record| {
-            record.first_uncovered_line.map(|line| {
-                (
-                    record.file.clone(),
-                    line,
-                    record.percent,
-                )
-            })
+            record
+                .first_uncovered_line
+                .map(|line| (record.file.clone(), line, record.percent))
         })
         .collect();
     diagnostics.sort_by(|a, b| a.0.cmp(&b.0));
@@ -141,9 +137,7 @@ mod inline_coverage_witness {
             percent: 50,
             first_uncovered_line: Some(2),
         }];
-        assert!(
-            evaluate_line_gate(&records, &focus, 90, TestCoverageScope::ByFile).is_some()
-        );
+        assert!(evaluate_line_gate(&records, &focus, 90, TestCoverageScope::ByFile).is_some());
     }
 
     #[test]
@@ -194,9 +188,7 @@ mod inline_coverage_witness {
                 first_uncovered_line: Some(3),
             },
         ];
-        assert!(
-            evaluate_line_gate(&records, &focus, 90, TestCoverageScope::Codebase).is_some()
-        );
+        assert!(evaluate_line_gate(&records, &focus, 90, TestCoverageScope::Codebase).is_some());
     }
 
     #[test]

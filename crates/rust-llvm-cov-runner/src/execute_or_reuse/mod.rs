@@ -1,4 +1,3 @@
-
 pub(crate) mod batch_aggregate;
 
 pub(crate) mod batch_executable_index;

@@ -1,15 +1,13 @@
 use std::path::Path;
 
-use rust_llvm_cov_runner::{
-    RustCovCacheStatus, RustCoverageBatchResult, RustLlvmCovOutcome,
-};
+use rust_llvm_cov_runner::{RustCovCacheStatus, RustCoverageBatchResult, RustLlvmCovOutcome};
 
+use crate::test_runner::lang_rust::llvm_cov::error::map_rust_llvm_cov_error;
 use crate::test_runner::last_status::{LastStatusIdentity, record_statuses};
 use crate::test_runner::runners::{
     SelectorCacheRecord, SelectorExecutionRecord, SelectorExecutionSummary,
     rust_logical_to_kiss_test_ids,
 };
-use crate::test_runner::lang_rust::llvm_cov::error::map_rust_llvm_cov_error;
 
 #[allow(dead_code)]
 pub(crate) fn cached_summary_from_check_aggregate_population(
@@ -29,14 +27,14 @@ pub(crate) fn cached_summary_from_check_aggregate_population(
     let report_ids = rust_logical_to_kiss_test_ids(repo_root, &[]).ok()?;
     let mut summary = SelectorExecutionSummary::default();
     for selector in selectors {
-        let report = crate::test_runner::runners::require_kiss_test_report_id(&report_ids, selector)
-            .ok()?;
+        let report =
+            crate::test_runner::runners::require_kiss_test_report_id(&report_ids, selector).ok()?;
         let duration = duration_by_selector.get(selector).copied()?;
         println!("PASS (cached): {report}");
         summary.record(SelectorExecutionRecord {
             selector: report,
             status: rpytest_runner::TestStatus::Passed,
-                raw_status: None,
+            raw_status: None,
             cache_record: SelectorCacheRecord::Hit,
             exit_code: Some(0),
             duration,
@@ -50,8 +48,6 @@ fn print_rust_llvm_cov_outcome(
     report_id: &str,
     gate: &kiss::GateConfig,
 ) -> rpytest_runner::TestStatus {
-
-
     let status = crate::test_runner::status_labels::apply_unit_test_time_limit(
         outcome.status,
         report_id,
@@ -118,7 +114,6 @@ pub(crate) fn finish_rust_coverage_batch_result(
         {
             print_rust_llvm_cov_outcome(outcome, &report_id, gate)
         } else {
-
             crate::test_runner::status_labels::apply_unit_test_time_limit(
                 outcome.status,
                 &report_id,
@@ -141,9 +136,7 @@ pub(crate) fn finish_rust_coverage_batch_result(
             duration: outcome.duration,
         });
 
-        summary
-            .raw_statuses
-            .insert(outcome.selector.clone(), raw);
+        summary.raw_statuses.insert(outcome.selector.clone(), raw);
         summary
             .selector_durations_ns
             .insert(outcome.selector.clone(), outcome.duration.as_nanos() as u64);

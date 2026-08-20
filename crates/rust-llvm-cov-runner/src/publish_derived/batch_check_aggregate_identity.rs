@@ -2,7 +2,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use crate::CACHE_SCHEMA_VERSION;
-use crate::publish_derived::batch_check_aggregate::{CHECK_AGGREGATE_SCHEMA_VERSION, ValidatedCheckAggregate};
+use crate::publish_derived::batch_check_aggregate::{
+    CHECK_AGGREGATE_SCHEMA_VERSION, ValidatedCheckAggregate,
+};
 use crate::rust_cov_cache::repo_relative_coverage_file;
 
 pub(crate) fn validate_line_map(source_root: &Path, map: &BTreeMap<String, BTreeSet<u32>>) -> bool {

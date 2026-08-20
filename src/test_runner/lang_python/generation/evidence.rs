@@ -1,4 +1,3 @@
-
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::Duration;
@@ -79,7 +78,6 @@ impl PopulationEvidence {
     }
 
     pub(crate) fn recompute_complete(&mut self) {
-
         self.complete = self
             .timings
             .iter()
@@ -127,7 +125,6 @@ pub(crate) fn selector_evidence_from_outcome(
 
 fn measured_duration(outcome: &RslipOutcome) -> Option<Duration> {
     if outcome.duration.is_zero() && outcome.cache_status == CacheStatus::Hit {
-
         return None;
     }
     Some(outcome.duration)
@@ -286,10 +283,8 @@ mod tests {
 
     #[test]
     fn absorb_replaces_unique_lines_and_keeps_shared() {
-        let mut evidence = PopulationEvidence::from_ordered_selectors(&[
-            "a".to_string(),
-            "b".to_string(),
-        ]);
+        let mut evidence =
+            PopulationEvidence::from_ordered_selectors(&["a".to_string(), "b".to_string()]);
         let shared = BTreeMap::from([("f.py".to_string(), BTreeSet::from([1, 2]))]);
         evidence.absorb_selector(SelectorEvidence {
             selector: "a".to_string(),

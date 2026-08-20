@@ -93,7 +93,10 @@ fn publish_atomically_rename_failure_removes_tmp() {
         file.write_all(b"payload\n")
     })
     .expect_err("rename onto directory must fail");
-    assert!(!tmp_path.exists(), "tmp should be best-effort removed: {err}");
+    assert!(
+        !tmp_path.exists(),
+        "tmp should be best-effort removed: {err}"
+    );
 }
 
 #[cfg(debug_assertions)]

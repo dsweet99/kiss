@@ -1,10 +1,9 @@
-
 use std::collections::BTreeMap;
 use std::path::Path;
 
 use super::{
-    RslipCacheEntry, digest_recorded_path, is_non_digestable_coverage_path,
-    load_rslip_cache_entry, test_module_path_from_nodeid,
+    RslipCacheEntry, digest_recorded_path, is_non_digestable_coverage_path, load_rslip_cache_entry,
+    test_module_path_from_nodeid,
 };
 use crate::LineCoverage;
 

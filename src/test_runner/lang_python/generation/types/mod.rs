@@ -1,6 +1,5 @@
-
-mod identity_types;
 mod artifact_types;
+mod identity_types;
 
 pub(crate) use artifact_types::{
     ArtifactDigest, GenerationManifest, GenerationReason, PinnedPythonGeneration,

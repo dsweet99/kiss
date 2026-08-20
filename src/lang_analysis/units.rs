@@ -1,4 +1,3 @@
-
 use super::analysis::{LanguageAnalysis, PythonAnalysis, RustAnalysis};
 use crate::parsing::ParsedFile;
 use crate::rust_parsing::ParsedRustFile;

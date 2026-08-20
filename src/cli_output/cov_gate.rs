@@ -29,7 +29,9 @@ pub fn print_codebase_coverage_gate_failure(ctx: &CodebaseCoverageGateFailureCtx
     println!("{}", super::final_status_message(true));
 }
 
-pub fn codebase_coverage_gate_failure_lines(ctx: &CodebaseCoverageGateFailureCtx<'_>) -> Vec<String> {
+pub fn codebase_coverage_gate_failure_lines(
+    ctx: &CodebaseCoverageGateFailureCtx<'_>,
+) -> Vec<String> {
     let mut lines = vec![format!(
         "VIOLATION:test_coverage: codebase coverage {}% below {}% threshold",
         ctx.percent, ctx.threshold
@@ -47,7 +49,6 @@ pub fn codebase_coverage_gate_failure_lines(ctx: &CodebaseCoverageGateFailureCtx
 
 #[allow(clippy::implicit_hasher)]
 pub fn coverage_gate_failure_lines(ctx: &CoverageGateFailureCtx<'_>) -> Vec<String> {
-
     let threshold = ctx.threshold;
     let mut failing: Vec<_> = ctx
         .file_pcts
@@ -83,8 +84,8 @@ pub fn coverage_gate_failure_lines(ctx: &CoverageGateFailureCtx<'_>) -> Vec<Stri
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::VIOLATIONS_FIX_HINT;
+    use super::*;
 
     #[test]
     fn test_print_coverage_gate_failure_emits_hint() {
@@ -107,7 +108,10 @@ mod tests {
             stdout.contains("per-file enforcement"),
             "expected per-file enforcement in stdout: {stdout}"
         );
-        assert_eq!(super::super::final_status_message(true), VIOLATIONS_FIX_HINT);
+        assert_eq!(
+            super::super::final_status_message(true),
+            VIOLATIONS_FIX_HINT
+        );
     }
 
     #[test]
@@ -122,9 +126,7 @@ mod tests {
         });
         let stdout = lines.join("\n");
         assert!(
-            stdout.contains(
-                "VIOLATION:test_coverage: codebase coverage 80% below 90% threshold"
-            ),
+            stdout.contains("VIOLATION:test_coverage: codebase coverage 80% below 90% threshold"),
             "stdout:\n{stdout}"
         );
         assert!(

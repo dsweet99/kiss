@@ -1,4 +1,3 @@
-
 use std::path::{Path, PathBuf};
 
 use kiss::Language;
@@ -58,8 +57,6 @@ impl CoverageIndex for RustCoverageIndex {
     }
 
     fn index_file_present(&self, repo_root: &Path) -> bool {
-
-
         rust::rust_coverage_cache_root(repo_root).exists()
     }
 

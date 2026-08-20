@@ -1,4 +1,3 @@
-
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -20,7 +19,6 @@ mod params_tests {
 
     #[test]
     fn run_analyze_uncached_fields_are_named() {
-
         let _ = std::mem::size_of::<RunAnalyzeUncached<'_>>();
     }
 }

@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use rslip::RslipRequest;
 
-use crate::test_runner::runners::command_stdout;
 use crate::test_runner::python_coverage_index::python_coverage_cache_root;
+use crate::test_runner::runners::command_stdout;
 
 pub(crate) const DEFAULT_PYTEST_TIMEOUT: Duration = Duration::from_secs(180);
 
@@ -116,7 +116,8 @@ fn path_python_stamp() -> Option<(String, u64, u64)> {
 }
 
 fn stamps_match(path: &str, mtime: u64, len: u64) -> bool {
-    file_stamp(Path::new(path)).is_some_and(|(got_mtime, got_len)| got_mtime == mtime && got_len == len)
+    file_stamp(Path::new(path))
+        .is_some_and(|(got_mtime, got_len)| got_mtime == mtime && got_len == len)
 }
 
 fn read_cached_python_tool_versions(repo_root: &Path) -> Option<(String, String)> {
@@ -129,7 +130,11 @@ fn read_cached_python_tool_versions(repo_root: &Path) -> Option<(String, String)
     {
         return None;
     }
-    if !stamps_match(&cached.python_exe, cached.python_mtime_nanos, cached.python_len) {
+    if !stamps_match(
+        &cached.python_exe,
+        cached.python_mtime_nanos,
+        cached.python_len,
+    ) {
         return None;
     }
     if !stamps_match(
@@ -157,14 +162,12 @@ fn detect_python_tool_versions(repo_root: &Path) -> Result<PythonToolVersionsCac
     let pytest_version = next_probe_line(&mut lines, "pytest version")?;
     let python_exe = next_probe_line(&mut lines, "python executable")?;
     let pytest_file = next_probe_line(&mut lines, "pytest path")?;
-    let (python_mtime_nanos, python_len) = file_stamp(Path::new(&python_exe)).ok_or_else(|| {
-        format!("error: kiss test: cannot stat python executable {python_exe}")
-    })?;
-    let (pytest_mtime_nanos, pytest_len) = file_stamp(Path::new(&pytest_file)).ok_or_else(|| {
-        format!("error: kiss test: cannot stat pytest at {pytest_file}")
-    })?;
-    let (path_python, path_python_mtime_nanos, path_python_len) = path_python_stamp()
-        .ok_or_else(|| "error: kiss test: python is not on PATH".to_string())?;
+    let (python_mtime_nanos, python_len) = file_stamp(Path::new(&python_exe))
+        .ok_or_else(|| format!("error: kiss test: cannot stat python executable {python_exe}"))?;
+    let (pytest_mtime_nanos, pytest_len) = file_stamp(Path::new(&pytest_file))
+        .ok_or_else(|| format!("error: kiss test: cannot stat pytest at {pytest_file}"))?;
+    let (path_python, path_python_mtime_nanos, path_python_len) =
+        path_python_stamp().ok_or_else(|| "error: kiss test: python is not on PATH".to_string())?;
     Ok(PythonToolVersionsCache {
         python: python_version,
         pytest: pytest_version,
@@ -228,4 +231,3 @@ mod tests {
         assert_ne!(py, "0.0.0");
     }
 }
-

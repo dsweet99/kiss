@@ -9,7 +9,9 @@ use crate::execute_or_reuse::batch_events::BatchCompilerArtifact;
 use crate::execute_or_reuse::batch_export::{
     ExportCounters, export_instance_coverage, merge_profiles, object_paths_for_executable,
 };
-use crate::execute_or_reuse::batch_export_resolve::{BinaryIdObjectMap, resolve_objects_for_profdata};
+use crate::execute_or_reuse::batch_export_resolve::{
+    BinaryIdObjectMap, resolve_objects_for_profdata,
+};
 use crate::execute_or_reuse::batch_export_tools::{ExportTools, resolve_export_tools_from_rustc};
 use crate::execute_or_reuse::batch_shim::BatchShimMetadata;
 use crate::execute_or_reuse::batch_shim_lookup::resolve_shim_metadata;
@@ -348,7 +350,8 @@ impl CheckAggregateExporter {
             stable_name(&request.binary_id)
         ));
         let profile_inputs = resolve_profile_merge_inputs(&request.profile_paths)?;
-        let seed_ids = seed_binary_ids_for_objects(&self.tools, &self.binary_id_map, &request.objects)?;
+        let seed_ids =
+            seed_binary_ids_for_objects(&self.tools, &self.binary_id_map, &request.objects)?;
         let filtered_inputs = filter_pool_inputs_for_seed_ids(
             &self.tools,
             &profile_inputs,

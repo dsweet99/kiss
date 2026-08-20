@@ -1,4 +1,3 @@
-
 use syn::visit::Visit;
 use syn::{Expr, ExprCall, ExprMacro, ExprPath, ImplItem, ItemFn, ItemImpl, Type};
 

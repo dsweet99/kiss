@@ -21,11 +21,10 @@ pub(super) fn selector_timeout_millis_for_batch(
     coverage_output_mode: &CoverageOutputMode,
     gate: &kiss::GateConfig,
 ) -> Result<BTreeMap<String, u64>, String> {
-
-
-
-    if matches!(coverage_output_mode, CoverageOutputMode::CheckAggregate { .. })
-        && !timeout_rules_need_report_ids(&gate.max_unit_test_seconds)
+    if matches!(
+        coverage_output_mode,
+        CoverageOutputMode::CheckAggregate { .. }
+    ) && !timeout_rules_need_report_ids(&gate.max_unit_test_seconds)
     {
         return Ok(selectors
             .iter()
@@ -36,15 +35,13 @@ pub(super) fn selector_timeout_millis_for_batch(
             .collect());
     }
 
-
-    let report_ids = crate::test_runner::runners::rust_report_ids_for_selectors(repo_root, selectors)?;
+    let report_ids =
+        crate::test_runner::runners::rust_report_ids_for_selectors(repo_root, selectors)?;
     selectors
         .iter()
         .map(|selector| {
-            let for_limit = crate::test_runner::runners::require_kiss_test_report_id(
-                &report_ids,
-                selector,
-            )?;
+            let for_limit =
+                crate::test_runner::runners::require_kiss_test_report_id(&report_ids, selector)?;
             let secs = kiss::limit_for_selector(&gate.max_unit_test_seconds, &for_limit);
             Ok((selector.clone(), timeout_millis_from_limit(secs)))
         })

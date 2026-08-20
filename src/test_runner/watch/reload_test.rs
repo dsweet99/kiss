@@ -50,12 +50,18 @@ fn maybe_reload_updates_threshold_and_settle() {
         &cfg_path,
     );
     let mut machine = SettleMachine::new(Duration::from_secs(1));
-    let mut filter =
-        WatchPathFilter::build(tmp.path(), &[], Some(Language::Python), &TestInvocation::All);
+    let mut filter = WatchPathFilter::build(
+        tmp.path(),
+        &[],
+        Some(Language::Python),
+        &TestInvocation::All,
+    );
 
-    assert!(!live
-        .maybe_reload(tmp.path(), &mut machine, &mut filter)
-        .unwrap());
+    assert!(
+        !live
+            .maybe_reload(tmp.path(), &mut machine, &mut filter)
+            .unwrap()
+    );
 
     std::fs::write(
         &cfg_path,
@@ -63,9 +69,10 @@ fn maybe_reload_updates_threshold_and_settle() {
     )
     .unwrap();
 
-    assert!(live
-        .maybe_reload(tmp.path(), &mut machine, &mut filter)
-        .unwrap());
+    assert!(
+        live.maybe_reload(tmp.path(), &mut machine, &mut filter)
+            .unwrap()
+    );
     assert_eq!(live.gate_config.test_coverage_threshold, 90);
     assert!((live.settle.as_secs_f64() - 2.5).abs() < f64::EPSILON);
     assert_eq!(live.jobs, 8);
@@ -89,8 +96,12 @@ fn maybe_reload_picks_up_equal_length_same_mtime_edit() {
         &cfg_path,
     );
     let mut machine = SettleMachine::new(Duration::from_secs(1));
-    let mut filter =
-        WatchPathFilter::build(tmp.path(), &[], Some(Language::Python), &TestInvocation::All);
+    let mut filter = WatchPathFilter::build(
+        tmp.path(),
+        &[],
+        Some(Language::Python),
+        &TestInvocation::All,
+    );
     live.apply_reload_from_path(&cfg_path).unwrap();
     live.kissconfig_sig = PathSignature::from_path(&cfg_path);
     live.kissconfig_digest = file_digest(&cfg_path);
@@ -98,12 +109,12 @@ fn maybe_reload_picks_up_equal_length_same_mtime_edit() {
 
     std::fs::write(&cfg_path, b).unwrap();
 
-
     live.kissconfig_sig = PathSignature::from_path(&cfg_path);
     assert_ne!(file_digest(&cfg_path), live.kissconfig_digest);
-    assert!(live
-        .maybe_reload(tmp.path(), &mut machine, &mut filter)
-        .unwrap());
+    assert!(
+        live.maybe_reload(tmp.path(), &mut machine, &mut filter)
+            .unwrap()
+    );
     assert_eq!(live.gate_config.test_coverage_threshold, 90);
 }
 
@@ -123,12 +134,13 @@ fn maybe_reload_disabled_is_noop() {
         &cfg_path,
     );
     let mut machine = SettleMachine::new(Duration::from_secs(1));
-    let mut filter =
-        WatchPathFilter::build(tmp.path(), &[], None, &TestInvocation::All);
+    let mut filter = WatchPathFilter::build(tmp.path(), &[], None, &TestInvocation::All);
     std::fs::write(&cfg_path, "[test]\ntest_coverage_threshold = 99\n").unwrap();
-    assert!(!live
-        .maybe_reload(tmp.path(), &mut machine, &mut filter)
-        .unwrap());
+    assert!(
+        !live
+            .maybe_reload(tmp.path(), &mut machine, &mut filter)
+            .unwrap()
+    );
     assert_eq!(live.gate_config.test_coverage_threshold, 7);
 }
 
@@ -142,9 +154,7 @@ fn maybe_reload_does_not_leak_cwd_num_jobs_into_watched_file() {
         "[test]\ntest_coverage_threshold = 11\nwatch_settle_seconds = 1.5\n",
     )
     .unwrap();
-    let host_jobs = TestSectionConfig::try_load()
-        .unwrap_or_default()
-        .num_jobs;
+    let host_jobs = TestSectionConfig::try_load().unwrap_or_default().num_jobs;
     assert!(
         host_jobs != 2,
         "precondition: host .kissconfig num_jobs must differ from session jobs=2"
@@ -164,16 +174,21 @@ fn maybe_reload_does_not_leak_cwd_num_jobs_into_watched_file() {
     );
     assert_eq!(live.jobs, 2);
     let mut machine = SettleMachine::new(Duration::from_secs(1));
-    let mut filter =
-        WatchPathFilter::build(tmp.path(), &[], Some(Language::Python), &TestInvocation::All);
+    let mut filter = WatchPathFilter::build(
+        tmp.path(),
+        &[],
+        Some(Language::Python),
+        &TestInvocation::All,
+    );
     std::fs::write(
         &cfg_path,
         "[test]\ntest_coverage_threshold = 12\nwatch_settle_seconds = 1.5\n",
     )
     .unwrap();
-    assert!(live
-        .maybe_reload(tmp.path(), &mut machine, &mut filter)
-        .unwrap());
+    assert!(
+        live.maybe_reload(tmp.path(), &mut machine, &mut filter)
+            .unwrap()
+    );
     assert_eq!(live.gate_config.test_coverage_threshold, 12);
     assert_ne!(
         live.jobs, host_jobs,
@@ -214,11 +229,16 @@ fn maybe_reload_deleted_file_resets_to_defaults() {
 
     std::fs::remove_file(&cfg_path).unwrap();
     let mut machine = SettleMachine::new(Duration::from_secs(1));
-    let mut filter =
-        WatchPathFilter::build(tmp.path(), &[], Some(Language::Python), &TestInvocation::All);
-    assert!(live
-        .maybe_reload(tmp.path(), &mut machine, &mut filter)
-        .unwrap());
+    let mut filter = WatchPathFilter::build(
+        tmp.path(),
+        &[],
+        Some(Language::Python),
+        &TestInvocation::All,
+    );
+    assert!(
+        live.maybe_reload(tmp.path(), &mut machine, &mut filter)
+            .unwrap()
+    );
     assert_eq!(
         live.gate_config.test_coverage_threshold,
         GateConfig::default().test_coverage_threshold
@@ -257,8 +277,12 @@ fn maybe_reload_invalid_threshold_does_not_silently_default() {
     )
     .unwrap();
     let mut machine = SettleMachine::new(Duration::from_secs(1));
-    let mut filter =
-        WatchPathFilter::build(tmp.path(), &[], Some(Language::Python), &TestInvocation::All);
+    let mut filter = WatchPathFilter::build(
+        tmp.path(),
+        &[],
+        Some(Language::Python),
+        &TestInvocation::All,
+    );
     let result = live.maybe_reload(tmp.path(), &mut machine, &mut filter);
     assert!(
         result.is_err(),

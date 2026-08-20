@@ -1,8 +1,8 @@
+use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::cell::Cell;
 use std::time::Duration;
 
 use rpytest_runner::{PytestRunOutcome, PytestRunner, TestStatus};
@@ -170,7 +170,11 @@ fn editing_real_mod_invalidates_mixed_coverage_entry() {
     let nodeid = "test_real_mod.py::test_marker";
     let entry = cache::RslipCacheEntry::from_outcome(&passed_outcome(nodeid, coverage), tmp.path());
     assert!(entry_is_reusable(&entry, tmp.path()));
-    fs::write(tmp.path().join("real_mod.py"), "def marker():\n    return 2\n").unwrap();
+    fs::write(
+        tmp.path().join("real_mod.py"),
+        "def marker():\n    return 2\n",
+    )
+    .unwrap();
     assert!(!entry_is_reusable(&entry, tmp.path()));
 }
 
@@ -192,7 +196,8 @@ fn synthetic_only_coverage_is_reusable_with_empty_digest_map() {
     let coverage = coverage_with(&[synthetic_key("TYPE_ABSOLUTE"), synthetic_key("FROZEN")]);
     let digests = covered_file_digests(tmp.path(), "x.py::t", &coverage).unwrap();
     assert!(digests.is_empty());
-    let entry = cache::RslipCacheEntry::from_outcome(&passed_outcome("x.py::t", coverage), tmp.path());
+    let entry =
+        cache::RslipCacheEntry::from_outcome(&passed_outcome("x.py::t", coverage), tmp.path());
     assert!(entry_is_reusable(&entry, tmp.path()));
 }
 

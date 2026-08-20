@@ -11,9 +11,7 @@ use rust_llvm_cov_runner::{
 };
 
 use crate::test_runner::last_status::rust_last_status_identity;
-use crate::test_runner::runners::{
-    SelectorExecutionSummary,
-};
+use crate::test_runner::runners::SelectorExecutionSummary;
 use crate::test_runner::rust_coverage_index::relevant_rust_batch_env;
 
 pub(crate) mod error;
@@ -135,12 +133,14 @@ pub(crate) fn cached_rust_check_aggregate_selectors(
                 repo_root, extra,
             )?;
         if let Some(summary) = crate::test_runner::execution_witness::try_warm_rust_cached_summary(
-            repo_root, selectors, &identity, &kiss::GateConfig::load_for_repo(repo_root),
+            repo_root,
+            selectors,
+            &identity,
+            &kiss::GateConfig::load_for_repo(repo_root),
         ) {
             return Ok(Some(summary));
         }
     }
-
 
     if !cache_root.join("index.json").is_file() {
         return Ok(None);
@@ -289,12 +289,8 @@ pub(crate) fn rust_coverage_batch_request_from_parts(
     gate: &kiss::GateConfig,
 ) -> Result<RustCoverageBatchRequest, String> {
     validate_supported_rust_test_args(extra)?;
-    let selector_timeout_millis = selector_timeout_millis_for_batch(
-        repo_root,
-        selectors,
-        &coverage_output_mode,
-        gate,
-    )?;
+    let selector_timeout_millis =
+        selector_timeout_millis_for_batch(repo_root, selectors, &coverage_output_mode, gate)?;
     let mut req = RustCoverageBatchRequest {
         cwd: repo_root.to_path_buf(),
         source_root: repo_root.to_path_buf(),

@@ -28,10 +28,6 @@ fn test_single_node_no_edges() {
 
 #[test]
 fn test_linear_chain() {
-
-
-
-
     let graph = build_graph(&[("c", "b"), ("b", "a")]);
     let info = compute_layers(&graph);
 
@@ -43,11 +39,6 @@ fn test_linear_chain() {
 
 #[test]
 fn test_diamond_dependency() {
-
-
-
-
-
     let graph = build_graph(&[("d", "b"), ("d", "c"), ("b", "a"), ("c", "a")]);
     let info = compute_layers(&graph);
 
@@ -60,8 +51,6 @@ fn test_diamond_dependency() {
 
 #[test]
 fn test_two_node_cycle() {
-
-
     let graph = build_graph(&[("a", "b"), ("b", "a")]);
     let info = compute_layers(&graph);
 
@@ -73,9 +62,6 @@ fn test_two_node_cycle() {
 
 #[test]
 fn test_cycle_with_dependency() {
-
-
-
     let graph = build_graph(&[("a", "b"), ("b", "a"), ("c", "a")]);
     let info = compute_layers(&graph);
 
@@ -87,9 +73,6 @@ fn test_cycle_with_dependency() {
 
 #[test]
 fn test_cycle_depends_on_foundation() {
-
-
-
     let graph = build_graph(&[("a", "b"), ("b", "a"), ("b", "utils")]);
     let info = compute_layers(&graph);
 
@@ -101,7 +84,6 @@ fn test_cycle_depends_on_foundation() {
 
 #[test]
 fn test_three_node_cycle() {
-
     let graph = build_graph(&[("a", "b"), ("b", "c"), ("c", "a")]);
     let info = compute_layers(&graph);
 
@@ -115,10 +97,6 @@ fn test_three_node_cycle() {
 
 #[test]
 fn test_multiple_foundations() {
-
-
-
-
     let graph = build_graph(&[("c", "a"), ("c", "b")]);
     let info = compute_layers(&graph);
 
@@ -148,7 +126,6 @@ fn test_layer_for_unknown_module() {
 
 #[test]
 fn test_multiple_isolated_nodes() {
-
     let mut graph = DependencyGraph::new();
     graph.get_or_create_node("a");
     graph.get_or_create_node("b");
@@ -167,9 +144,6 @@ fn test_multiple_isolated_nodes() {
 
 #[test]
 fn test_complex_graph_with_multiple_sccs() {
-
-
-
     let graph = build_graph(&[
         ("core", "utils"),
         ("config", "utils"),
@@ -190,8 +164,6 @@ fn test_complex_graph_with_multiple_sccs() {
 
 #[test]
 fn test_build_condensation_single_node() {
-
-
     let mut graph = DependencyGraph::new();
     graph.get_or_create_node("only_node");
     let info = compute_layers(&graph);
@@ -207,9 +179,6 @@ fn test_build_condensation_single_node() {
 
 #[test]
 fn test_build_condensation_preserves_edges() {
-
-
-
     let graph = build_graph(&[("a", "b"), ("b", "c")]);
     let info = compute_layers(&graph);
 
@@ -225,10 +194,6 @@ fn test_build_condensation_preserves_edges() {
 
 #[test]
 fn test_build_condensation_removes_intra_scc_edges() {
-
-
-
-
     let graph = build_graph(&[("a", "b"), ("b", "c"), ("c", "a"), ("d", "a")]);
     let info = compute_layers(&graph);
 
@@ -245,10 +210,6 @@ fn test_build_condensation_removes_intra_scc_edges() {
 
 #[test]
 fn test_compute_layer_for_node_cached() {
-
-
-
-
     let graph = build_graph(&[
         ("top", "mid1"),
         ("top", "mid2"),
@@ -266,7 +227,6 @@ fn test_compute_layer_for_node_cached() {
         "top depends on mid1 and mid2"
     );
 
-
     let info2 = compute_layers(&graph);
     assert_eq!(
         info.layers, info2.layers,
@@ -276,13 +236,8 @@ fn test_compute_layer_for_node_cached() {
 
 #[test]
 fn test_deep_linear_chain_no_stack_overflow() {
-
-
-
-
     let depth = 1000;
     let mut graph = DependencyGraph::new();
-
 
     for i in (1..depth).rev() {
         let from = format!("n{i}");
@@ -291,7 +246,6 @@ fn test_deep_linear_chain_no_stack_overflow() {
     }
 
     let info = compute_layers(&graph);
-
 
     assert_eq!(
         info.num_layers(),

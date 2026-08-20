@@ -1,6 +1,5 @@
 #![cfg(unix)]
 
-
 use super::*;
 use crate::bin_cli::args::TestInvocation;
 use crate::test_runner::test_mode_fixtures::git_in;
@@ -53,7 +52,13 @@ pub(super) fn py_dry_args() -> RunTestCmdArgs<'static> {
 pub(super) fn commit_a_py(tmp: &tempfile::TempDir) -> PathBuf {
     let file = tmp.path().join("a.py");
     std::fs::write(&file, "x=1\n").unwrap();
-    assert!(git_in(tmp.path()).args(["add", "a.py"]).status().unwrap().success());
+    assert!(
+        git_in(tmp.path())
+            .args(["add", "a.py"])
+            .status()
+            .unwrap()
+            .success()
+    );
     assert!(
         git_in(tmp.path())
             .args(["commit", "-m", "init"])
@@ -73,7 +78,7 @@ pub(super) fn timeout_steps(n: usize) -> VecDeque<Result<Vec<NormalizedWatchEven
     steps
 }
 
-#[path = "session_nudge_test.rs"]
-mod tests;
 #[path = "session_nudge_cov_test.rs"]
 mod cov_tests;
+#[path = "session_nudge_test.rs"]
+mod tests;

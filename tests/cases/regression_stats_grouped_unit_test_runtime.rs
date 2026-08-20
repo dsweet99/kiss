@@ -1,4 +1,3 @@
-
 use crate::common::seed_python_runtime_coverage;
 use std::fs;
 use std::path::Path;
@@ -21,12 +20,7 @@ test_coverage_threshold = 0\n\
 \"*\" = 0\n";
 
 fn write_fixture(repo: &Path) {
-    for dir in [
-        "tests/slow/dbs",
-        "tests/slow",
-        "tests/fast",
-        "tests/web",
-    ] {
+    for dir in ["tests/slow/dbs", "tests/slow", "tests/fast", "tests/web"] {
         fs::create_dir_all(repo.join(dir)).unwrap();
     }
     fs::write(repo.join("app.py"), "VALUE = 1\n").unwrap();
@@ -34,7 +28,10 @@ fn write_fixture(repo: &Path) {
     seed_python_runtime_coverage(
         repo,
         &[
-            ("tests/slow/dbs/test_q.py::test_q", vec![("app.py", vec![1])]),
+            (
+                "tests/slow/dbs/test_q.py::test_q",
+                vec![("app.py", vec![1])],
+            ),
             (
                 "tests/slow/test_other.py::test_other",
                 vec![("app.py", vec![1])],

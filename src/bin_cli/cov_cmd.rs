@@ -1,13 +1,15 @@
 use crate::analyze;
-use crate::analyze::cov_records_cache::{CovRecordsCacheKey, store_cov_records, try_load_cov_records};
+use crate::analyze::cov_records_cache::{
+    CovRecordsCacheKey, store_cov_records, try_load_cov_records,
+};
 use crate::analyze::line_coverage::RuntimeCoverageSnapshot;
 use crate::analyze::line_coverage::compute_line_coverage_records;
 use crate::analyze::{build_focus_filter, gather_files};
-use crate::bin_cli::util::{merge_check_ignore_prefixes, validate_paths};
 use crate::bin_cli::cov_sibling_gates::{
     SiblingGateResult, apply_time_gate_eval, evaluate_max_num_tests_gate,
     evaluate_time_gate_for_cov, finish_sibling_gates,
 };
+use crate::bin_cli::util::{merge_check_ignore_prefixes, validate_paths};
 use crate::test_runner::check_line_coverage::{
     RequiredCoverageLanguages, ensure_check_runtime_coverage, load_check_runtime_coverage,
     repository_root_for_universe,
@@ -44,30 +46,30 @@ fn load_or_refresh_snapshot(
     pytest_args: &[String],
 ) -> Result<crate::test_runner::check_line_coverage::ValidatedCovInputs, i32> {
     use crate::test_runner::check_line_coverage::ValidatedCovInputs;
-    let snapshot = match load_check_runtime_coverage(repo_root, required, ignore, gate, pytest_args)
-    {
-        Ok(snapshot) => snapshot,
-        Err(load_err) => {
-            if !allow_refresh {
-                eprintln!("{load_err}");
-                return Err(1);
+    let snapshot =
+        match load_check_runtime_coverage(repo_root, required, ignore, gate, pytest_args) {
+            Ok(snapshot) => snapshot,
+            Err(load_err) => {
+                if !allow_refresh {
+                    eprintln!("{load_err}");
+                    return Err(1);
+                }
+                ensure_check_runtime_coverage(repo_root, required, ignore, jobs, pytest_args, gate)
+                    .map_err(|err| {
+                        eprintln!("{err}");
+                        1
+                    })?;
+                load_check_runtime_coverage(repo_root, required, ignore, gate, pytest_args)
+                    .map_err(|err| {
+                        eprintln!("{err}");
+                        1
+                    })?
             }
-            ensure_check_runtime_coverage(repo_root, required, ignore, jobs, pytest_args, gate)
-                .map_err(|err| {
-                    eprintln!("{err}");
-                    1
-                })?;
-            load_check_runtime_coverage(repo_root, required, ignore, gate, pytest_args).map_err(
-                |err| {
-                    eprintln!("{err}");
-                    1
-                },
-            )?
-        }
-    };
-    Ok(ValidatedCovInputs::from_snapshot(required, snapshot, repo_root))
+        };
+    Ok(ValidatedCovInputs::from_snapshot(
+        required, snapshot, repo_root,
+    ))
 }
-
 
 fn evaluate_coverage_gate(
     records: &[analyze::line_coverage::LineCoverageRecord],
@@ -108,10 +110,8 @@ fn evaluate_records_with_time(
         ctx.scope,
         ctx.args.bypass_gate,
     );
-    let time_eval =
-        evaluate_time_gate_for_cov(ctx.args, ctx.universe_root, ctx.files, ctx.ignore);
-    let time_failed =
-        apply_time_gate_eval(&time_eval);
+    let time_eval = evaluate_time_gate_for_cov(ctx.args, ctx.universe_root, ctx.files, ctx.ignore);
+    let time_failed = apply_time_gate_eval(&time_eval);
     let max_num_tests_failed =
         evaluate_max_num_tests_gate(ctx.args, ctx.universe_root, ctx.files, ctx.ignore);
     finish_sibling_gates(SiblingGateResult {
@@ -125,8 +125,7 @@ fn try_evaluate_records_with_time(
     records: &[analyze::line_coverage::LineCoverageRecord],
     ctx: &RecordsEvalCtx<'_>,
 ) -> Option<i32> {
-    let time_eval =
-        evaluate_time_gate_for_cov(ctx.args, ctx.universe_root, ctx.files, ctx.ignore);
+    let time_eval = evaluate_time_gate_for_cov(ctx.args, ctx.universe_root, ctx.files, ctx.ignore);
     if matches!(time_eval, RuntimeGateEval::Incomplete) {
         if !ctx.args.allow_refresh {
             eprintln!(
@@ -144,8 +143,7 @@ fn try_evaluate_records_with_time(
         ctx.scope,
         ctx.args.bypass_gate,
     );
-    let time_failed =
-        apply_time_gate_eval(&time_eval);
+    let time_failed = apply_time_gate_eval(&time_eval);
     let max_num_tests_failed =
         evaluate_max_num_tests_gate(ctx.args, ctx.universe_root, ctx.files, ctx.ignore);
     Some(finish_sibling_gates(SiblingGateResult {
@@ -171,20 +169,21 @@ fn gather_cov_files(
         lang_filter,
         ignore,
     };
-    let (py_files, mut rs_files) =
-        if let Some(cached) = crate::analyze::cov_file_list_cache::try_load_cov_file_list(&list_key)
-        {
-            cached
-        } else {
-            let (py_files, rs_files) = gather_files(universe_root, lang_filter, ignore);
-            if !py_files.is_empty() || !rs_files.is_empty() {
-                crate::analyze::cov_file_list_cache::store_cov_file_list(
-                    &list_key, &py_files, &rs_files,
-                );
-            }
-            (py_files, rs_files)
-        };
-    rs_files = super::cov_workspace_files::filter_root_workspace_rust_cov_files(&repo_root, rs_files);
+    let (py_files, mut rs_files) = if let Some(cached) =
+        crate::analyze::cov_file_list_cache::try_load_cov_file_list(&list_key)
+    {
+        cached
+    } else {
+        let (py_files, rs_files) = gather_files(universe_root, lang_filter, ignore);
+        if !py_files.is_empty() || !rs_files.is_empty() {
+            crate::analyze::cov_file_list_cache::store_cov_file_list(
+                &list_key, &py_files, &rs_files,
+            );
+        }
+        (py_files, rs_files)
+    };
+    rs_files =
+        super::cov_workspace_files::filter_root_workspace_rust_cov_files(&repo_root, rs_files);
     if py_files.is_empty() && rs_files.is_empty() {
         None
     } else {
@@ -214,12 +213,8 @@ fn compute_and_store_records(
         );
     }
     let t_records = Instant::now();
-    let records = compute_line_coverage_records(
-        repo_root,
-        &files.py_files,
-        &files.rs_files,
-        snapshot,
-    );
+    let records =
+        compute_line_coverage_records(repo_root, &files.py_files, &files.rs_files, snapshot);
     if timing {
         eprintln!(
             "TIMING:coverage_records_compute_ms:{}",
@@ -254,7 +249,6 @@ pub fn run_cov_command(args: &CovCommandArgs<'_>) -> i32 {
         );
     }
     let threshold = args.gate_config.test_coverage_threshold;
-
 
     if threshold == 0 && !args.bypass_gate {
         let repo_root = repository_root_for_universe(universe_root);
@@ -371,8 +365,8 @@ fn evaluate_gathered_cov(p: EvaluateGatheredCov<'_>) -> i32 {
 }
 
 #[cfg(test)]
-#[path = "cov_cmd_test.rs"]
-mod tests;
-#[cfg(test)]
 #[path = "cov_cmd_refresh_test.rs"]
 mod refresh_tests;
+#[cfg(test)]
+#[path = "cov_cmd_test.rs"]
+mod tests;

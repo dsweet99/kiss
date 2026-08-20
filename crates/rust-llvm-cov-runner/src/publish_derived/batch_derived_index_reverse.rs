@@ -1,4 +1,3 @@
-
 use crate::publish_derived::batch_derived_index_types::{
     OnDiskIndexWithFiles, PopulationManifestOnDisk, ReverseLineIndexManifestMeta,
 };
@@ -15,7 +14,8 @@ pub(crate) fn reverse_bound_index_ok(
     let Some(reverse) = manifest.reverse_line_index.as_ref() else {
         return false;
     };
-    let Some(state) = crate::publish_derived::batch_entry_state::read_entry_state(cache_root) else {
+    let Some(state) = crate::publish_derived::batch_entry_state::read_entry_state(cache_root)
+    else {
         return false;
     };
     crate::publish_derived::batch_entry_state::entry_state_matches(

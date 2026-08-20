@@ -38,17 +38,13 @@ pub(crate) fn qualified_rust_module_name(path: &Path) -> String {
         })
         .unwrap_or_default();
 
-
-
     if let Some(pos) = dirs.iter().rposition(|d| d == "src" || d == "tests") {
         dirs = dirs[(pos + 1)..].to_vec();
     }
 
-
     if path.is_absolute() && dirs.len() > 2 {
         dirs = dirs[(dirs.len() - 2)..].to_vec();
     }
-
 
     if stem == "mod" {
         if dirs.is_empty() {
@@ -67,9 +63,6 @@ pub(crate) fn qualified_rust_module_name(path: &Path) -> String {
 pub fn build_rust_dependency_graph(parsed_files: &[&ParsedRustFile]) -> DependencyGraph {
     let mut graph = DependencyGraph::new();
     let mut internal_modules = HashSet::new();
-
-
-
 
     let mut bare_to_qualified: HashMap<String, Vec<String>> = HashMap::new();
 
@@ -104,13 +97,11 @@ pub fn build_rust_dependency_graph(parsed_files: &[&ParsedRustFile]) -> Dependen
             }
         }
 
-
         for child in imports.mod_decls {
             let expected = resolve::qualify_child_module(&module_name, &child);
             if internal_modules.contains(&expected) {
                 graph.add_dependency(&module_name, &expected);
             } else {
-
                 resolve::resolve_import(
                     &child,
                     &module_name,

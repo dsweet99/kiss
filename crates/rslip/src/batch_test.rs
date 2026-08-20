@@ -81,9 +81,7 @@ fn PreparedRslipMisses_and_RslipCacheCandidateGroup_are_test_referenced() {
         representative: candidate,
         fingerprint: "abc".to_string(),
     };
-    let prepared = PreparedRslipMisses {
-        misses: Vec::new(),
-    };
+    let prepared = PreparedRslipMisses { misses: Vec::new() };
 
     assert_eq!(group.indices, vec![0]);
     assert_eq!(prepared.misses.len(), 0);
@@ -343,8 +341,10 @@ fn batch_pytest_failure_is_stored_after_coverage_parse() {
     }))
     .run_or_reuse_many_bounded(vec![req], 1);
 
-
-    assert_eq!(rerun[0].as_ref().unwrap().cache_status, CacheStatus::MissStored);
+    assert_eq!(
+        rerun[0].as_ref().unwrap().cache_status,
+        CacheStatus::MissStored
+    );
     assert_eq!(rerun[0].as_ref().unwrap().status, TestStatus::Failed);
     assert_eq!(calls.get(), 1);
 }

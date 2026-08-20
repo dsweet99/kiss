@@ -1,5 +1,5 @@
 use crate::config::{
-    apply_lenient_string_list, check_unknown_keys, parse_string_list_key, ConfigError,
+    ConfigError, apply_lenient_string_list, check_unknown_keys, parse_string_list_key,
 };
 use std::path::Path;
 

@@ -1,10 +1,10 @@
-use crate::analyze::finalize::{finalize_analysis, AnalysisProducts, FinalizeAnalysisIn};
-use crate::analyze::focus::{filter_viols_by_focus, FocusFilter};
+use crate::analyze::finalize::{AnalysisProducts, FinalizeAnalysisIn, finalize_analysis};
+use crate::analyze::focus::{FocusFilter, filter_viols_by_focus};
 use crate::analyze::options::{AnalyzeOptions, AnalyzeResult};
-use crate::analyze::parallel::{run_parallel_py_analysis, run_rust_analysis, ParallelPyIn};
+use crate::analyze::parallel::{ParallelPyIn, run_parallel_py_analysis, run_rust_analysis};
 use crate::analyze::params::RunAnalyzeUncached;
 use crate::analyze::print::log_parse_timing;
-use crate::analyze_parse::{parse_all_timed, ParseAllTimedParams, ParseResult};
+use crate::analyze_parse::{ParseAllTimedParams, ParseResult, parse_all_timed};
 use kiss::{DependencyGraph, ParsedFile, ParsedRustFile};
 use std::path::PathBuf;
 use std::time::Instant;

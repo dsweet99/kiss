@@ -21,10 +21,6 @@ pub(crate) struct FullCacheStoreInput<'a> {
 }
 
 pub(crate) fn maybe_store_full_cache(inp: FullCacheStoreInput<'_>) {
-
-
-
-
     if inp.opts.show_timing || inp.opts.suppress_final_status {
         return;
     }

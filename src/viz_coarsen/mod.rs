@@ -92,7 +92,6 @@ pub(crate) fn build_cluster_labels(
         let count = members.len();
         let suffix = if count == 1 { "node" } else { "nodes" };
 
-
         labels.push(format!("{title} ({count} {suffix})"));
     }
     labels

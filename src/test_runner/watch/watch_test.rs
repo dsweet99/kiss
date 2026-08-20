@@ -2,14 +2,16 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use crate::bin_cli::args::TestInvocation;
-use crate::test_runner::watch::event_source::{FakeWatchEventSource, NormalizedWatchEvent, WatchEventSource};
+use crate::test_runner::watch::event_source::{
+    FakeWatchEventSource, NormalizedWatchEvent, WatchEventSource,
+};
 use crate::test_runner::watch::filter::WatchPathFilter;
 use crate::test_runner::watch::settle::{PathSignature, SettleMachine, SettlePoll};
 
 #[test]
 fn watch_flag_parses_and_rejects_dry_run() {
-    use clap::Parser;
     use crate::bin_cli::args::{Cli, Commands};
+    use clap::Parser;
     let cli = Cli::try_parse_from(["kiss", "test", "--watch", "."]).unwrap();
     match cli.command {
         Commands::Test {
@@ -43,11 +45,15 @@ fn settle_coalesces_rename_old_and_new() {
         modified: Some(std::time::SystemTime::now() - settle),
         length: 1,
     };
-    m.note_path(PathBuf::from("old.py"), t0, PathSignature {
-        exists: false,
-        modified: None,
-        length: 0,
-    });
+    m.note_path(
+        PathBuf::from("old.py"),
+        t0,
+        PathSignature {
+            exists: false,
+            modified: None,
+            length: 0,
+        },
+    );
     m.note_path(PathBuf::from("new.py"), t0, sig.clone());
     let ready = m.poll(t0 + settle, |p| {
         if p.ends_with("old.py") {
@@ -142,7 +148,6 @@ fn native_watcher_observes_create_modify_rename_delete() {
         "expected modify event"
     );
 
-
     let tmp_write = tmp.path().join(".w.py.tmp");
     let renamed = tmp.path().join("w2.py");
     std::fs::write(&tmp_write, "a=3\n").unwrap();
@@ -174,9 +179,7 @@ fn invocation_label_covers_modes() {
         "commit"
     );
     assert_eq!(
-        crate::test_runner::watch::invocation_label(&TestInvocation::Targets(vec![
-            "a.py".into()
-        ])),
+        crate::test_runner::watch::invocation_label(&TestInvocation::Targets(vec!["a.py".into()])),
         "a.py"
     );
 }

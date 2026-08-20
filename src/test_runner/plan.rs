@@ -1,4 +1,3 @@
-
 use kiss::Language;
 
 use super::{
@@ -48,15 +47,13 @@ pub(crate) fn plan_target_selectors(
                 ExpandedTargetPlan::All => {
                     plan_all_selectors(&repo_root, &ignore_norm, extras.python, lang_filter, gate)
                 }
-                ExpandedTargetPlan::Files(files) => {
-                    plan_explicit_target_selectors(
-                        &repo_root,
-                        &files,
-                        &ignore_norm,
-                        extras,
-                        lang_filter,
-                    )
-                }
+                ExpandedTargetPlan::Files(files) => plan_explicit_target_selectors(
+                    &repo_root,
+                    &files,
+                    &ignore_norm,
+                    extras,
+                    lang_filter,
+                ),
             }
         }
     }
@@ -69,7 +66,8 @@ fn plan_all_selectors(
     lang_filter: Option<Language>,
     gate: &kiss::GateConfig,
 ) -> Result<PlannedSelectors, String> {
-    if let Some(planned) = try_plan_all_from_cache(repo_root, ignore, python_extra, lang_filter, gate)
+    if let Some(planned) =
+        try_plan_all_from_cache(repo_root, ignore, python_extra, lang_filter, gate)
     {
         return Ok(planned);
     }
@@ -176,10 +174,6 @@ fn planned_all(
     workspace_files_fingerprint: Option<String>,
     gate: &kiss::GateConfig,
 ) -> PlannedSelectors {
-
-
-
-
     let python_population_required = if py_sel.is_empty() {
         false
     } else if !crate::test_runner::python_coverage_index::python_coverage_index_file_present(
@@ -219,10 +213,7 @@ fn planned_all(
             python: Vec::new(),
             rust: Vec::new(),
         },
-        vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed {
-            python: 0,
-            rust: 0,
-        },
+        vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed { python: 0, rust: 0 },
         snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
             python: 0,
             rust: 0,

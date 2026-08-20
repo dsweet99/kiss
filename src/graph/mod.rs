@@ -1,4 +1,3 @@
-
 mod dependency_graph {
     use petgraph::Direction;
     use petgraph::algo::tarjan_scc;

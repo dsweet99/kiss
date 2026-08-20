@@ -138,14 +138,11 @@ fn check_cache_invalidates_on_mtime_or_size_change() {
     let stdout1 = String::from_utf8_lossy(&out1.stdout).to_string();
     assert!(!list_full_check_cache_files(repo.path()).is_empty());
 
-
     chmod(&src, 0o200);
     fs::write(&src, "def foo():\n    return 2\n").unwrap();
     chmod(&src, 0o000);
 
     let out2 = run_python_check(repo.path(), home.path());
-
-
 
     let stdout2 = String::from_utf8_lossy(&out2.stdout).to_string();
     assert_ne!(

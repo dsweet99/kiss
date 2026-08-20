@@ -290,7 +290,6 @@ fn cfg_helpers_cover_item_and_expr_variants_exhaustively() {
         "-1",
         "unsafe { 1 }",
         "while false {}",
-
     ];
     let mut parsed = 0usize;
     for snippet in expr_snippets {

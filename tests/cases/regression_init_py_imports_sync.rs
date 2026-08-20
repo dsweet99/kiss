@@ -1,4 +1,3 @@
-
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
@@ -76,9 +75,6 @@ fn kiss_stats_summary_excludes_init_py_imports() {
         .find(|l| l.trim_start().starts_with("imported_names_per_file"));
 
     if let Some(row) = imports_row {
-
-
-
         let nums: Vec<usize> = row
             .split_whitespace()
             .skip(1)

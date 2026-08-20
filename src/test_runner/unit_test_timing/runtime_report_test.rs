@@ -81,10 +81,7 @@ fn grouped_runtime_report_partitions_by_first_matching_rule() {
 
 #[test]
 fn grouped_runtime_report_keeps_empty_rows_and_handles_defaults() {
-    let multi = vec![
-        ("tests/slow".to_string(), 60.0),
-        ("*".to_string(), 0.0),
-    ];
+    let multi = vec![("tests/slow".to_string(), 60.0), ("*".to_string(), 0.0)];
     let report = build_unit_test_runtime_grouped_report(
         &[UnitTestTiming {
             language: Language::Python,

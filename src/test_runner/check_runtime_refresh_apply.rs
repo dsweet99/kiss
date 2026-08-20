@@ -66,11 +66,13 @@ pub(crate) fn apply_identity_only_repair_labeled(
         "{caller_label}: refreshed Rust runtime coverage rust_aggregate_binaries={} rust_aggregate_exports=0",
         aggregate.binaries.len()
     );
-    Ok(CoverageRefreshStats::for_rust(super::LanguageRefreshStats {
-        aggregate_binaries: aggregate.binaries.len(),
-        identity_only_repair: true,
-        ..Default::default()
-    }))
+    Ok(CoverageRefreshStats::for_rust(
+        super::LanguageRefreshStats {
+            aggregate_binaries: aggregate.binaries.len(),
+            identity_only_repair: true,
+            ..Default::default()
+        },
+    ))
 }
 
 #[cfg(test)]
@@ -105,13 +107,15 @@ pub(crate) fn finalize_population_summary_labeled(
     load_rust_runtime_coverage(repo_root, ignore, &kiss::GateConfig::default())
         .map(|_| ())
         .map_err(|err| CoverageRefreshError::validation("Rust", err))?;
-    Ok(CoverageRefreshStats::for_rust(super::LanguageRefreshStats {
-        test_instances: summary.rust_test_instances,
-        aggregate_binaries: summary.rust_aggregate_binaries,
-        aggregate_exports: summary.rust_aggregate_exports,
-        full_refresh,
-        ..Default::default()
-    }))
+    Ok(CoverageRefreshStats::for_rust(
+        super::LanguageRefreshStats {
+            test_instances: summary.rust_test_instances,
+            aggregate_binaries: summary.rust_aggregate_binaries,
+            aggregate_exports: summary.rust_aggregate_exports,
+            full_refresh,
+            ..Default::default()
+        },
+    ))
 }
 
 #[cfg(test)]

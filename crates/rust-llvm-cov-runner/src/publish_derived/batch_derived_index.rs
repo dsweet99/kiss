@@ -1,16 +1,16 @@
+use crate::plan::batch_fingerprint::RustCoverageBatchIdentity;
 use crate::publish_derived::batch_derived::{INDEX_SCHEMA_VERSION, POPULATION_SCHEMA_VERSION};
+use crate::publish_derived::batch_derived_index_check_aggregate_support::{
+    CHECK_AGGREGATE_ENTRIES_PREFIX, index_matches_check_aggregate,
+    load_check_aggregate_population_state,
+};
+use crate::publish_derived::batch_derived_index_reverse::reverse_bound_index_ok;
 #[cfg(test)]
 use crate::publish_derived::batch_derived_index_types::OnDiskIndex;
 use crate::publish_derived::batch_derived_index_types::{
     OnDiskIndexWithFiles, PopulationManifestOnDisk, PopulationManifestRaw, RustCoverageIndex,
     validate_ordinary_source_digests, validate_test_binaries,
 };
-use crate::plan::batch_fingerprint::RustCoverageBatchIdentity;
-use crate::publish_derived::batch_derived_index_check_aggregate_support::{
-    CHECK_AGGREGATE_ENTRIES_PREFIX, index_matches_check_aggregate,
-    load_check_aggregate_population_state,
-};
-use crate::publish_derived::batch_derived_index_reverse::reverse_bound_index_ok;
 use crate::rust_cov_cache::generation_entries_fingerprint;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -75,7 +75,10 @@ pub fn load_current_generation_coverage_snapshot(
         &population,
     )?;
     let snapshot_identity =
-        crate::publish_derived::batch_derived_snapshot::stable_generation_coverage_identity(&population, &entries);
+        crate::publish_derived::batch_derived_snapshot::stable_generation_coverage_identity(
+            &population,
+            &entries,
+        );
     Some(RustGenerationCoverageSnapshot {
         identity: snapshot_identity,
         covered_lines: entries,
@@ -249,7 +252,8 @@ fn manifest_generation_entries_complete(
         return true;
     }
     if let Some(reverse) = manifest.reverse_line_index.as_ref() {
-        let Some(state) = crate::publish_derived::batch_entry_state::read_entry_state(cache_root) else {
+        let Some(state) = crate::publish_derived::batch_entry_state::read_entry_state(cache_root)
+        else {
             return false;
         };
         return crate::publish_derived::batch_entry_state::entry_state_matches(
@@ -313,8 +317,6 @@ pub fn load_current_generation_line_index(
     cache_root: &Path,
     source_root: &Path,
 ) -> Option<RustCoverageIndex> {
-
-
     let manifest = read_population_manifest(cache_root)?;
     let index = read_index_with_files(cache_root)?;
     if !population_artifacts_compatible(cache_root, source_root, &index, &manifest, None) {
@@ -328,7 +330,11 @@ pub fn reusable_snapshot_delta(
     prior: &BTreeMap<String, String>,
     current: &BTreeMap<String, String>,
 ) -> RustSnapshotDelta {
-    crate::publish_derived::batch_derived_snapshot::reusable_snapshot_delta(source_root, prior, current)
+    crate::publish_derived::batch_derived_snapshot::reusable_snapshot_delta(
+        source_root,
+        prior,
+        current,
+    )
 }
 
 pub(crate) use crate::rust_cov_cache::normalized_source_root;

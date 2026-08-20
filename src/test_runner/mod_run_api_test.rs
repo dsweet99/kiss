@@ -73,7 +73,7 @@ impl SelectorRunOptions<'_> {
         Self {
             dry_run: true,
             force_rerun: false,
-metrics: false,
+            metrics: false,
             jobs: 1,
             extras: crate::test_runner::language_keyed::LanguageKeyed {
                 python: &[],
@@ -105,14 +105,14 @@ fn dry_run_rejects_unsupported_rust_test_args_without_panic() {
         SelectorRunOptions {
             dry_run: true,
             force_rerun: false,
-metrics: false,
+            metrics: false,
             jobs: 1,
             extras: crate::test_runner::language_keyed::LanguageKeyed {
                 python: &[],
                 rust: &extra,
             },
             plan_duration: Duration::ZERO,
-        gate: kiss::GateConfig::default()
+            gate: kiss::GateConfig::default(),
         },
     )
     .unwrap_err();
@@ -170,19 +170,19 @@ mod plan_tests {
         std::fs::write(tmp.path().join("b.py"), "y=1\n").unwrap();
         let orig = std::env::current_dir().unwrap();
         std::env::set_current_dir(tmp.path()).unwrap();
-        let planned: PlannedSelectors =
-            plan_selectors(PlanSelectorsRequest {
-                mode: TestChangeMode::Commit,
-                main_branch_cli: None,
-                base_branch_cli: None,
-                ignore: &[],
-                extras: crate::test_runner::language_keyed::LanguageKeyed {
-                    python: &[],
-                    rust: &[],
-                },
-                lang_filter: None,
-                config_main_branch: None,
-            }).unwrap();
+        let planned: PlannedSelectors = plan_selectors(PlanSelectorsRequest {
+            mode: TestChangeMode::Commit,
+            main_branch_cli: None,
+            base_branch_cli: None,
+            ignore: &[],
+            extras: crate::test_runner::language_keyed::LanguageKeyed {
+                python: &[],
+                rust: &[],
+            },
+            lang_filter: None,
+            config_main_branch: None,
+        })
+        .unwrap();
         std::env::set_current_dir(orig).unwrap();
         assert_eq!(planned.repo_root, tmp.path().canonicalize().unwrap());
         assert!(planned.sel.python.is_empty());
@@ -192,14 +192,14 @@ mod plan_tests {
             SelectorRunOptions {
                 dry_run: true,
                 force_rerun: false,
-metrics: false,
+                metrics: false,
                 jobs: 1,
                 extras: crate::test_runner::language_keyed::LanguageKeyed {
                     python: &[],
                     rust: &[],
                 },
                 plan_duration: Duration::ZERO,
-            gate: kiss::GateConfig::default()
+                gate: kiss::GateConfig::default(),
             },
         )
         .unwrap();
@@ -255,14 +255,14 @@ metrics: false,
             SelectorRunOptions {
                 dry_run: false,
                 force_rerun: false,
-metrics: false,
+                metrics: false,
                 jobs: 0,
                 extras: crate::test_runner::language_keyed::LanguageKeyed {
                     python: &[],
                     rust: &[],
                 },
                 plan_duration: Duration::ZERO,
-            gate: kiss::GateConfig::default()
+                gate: kiss::GateConfig::default(),
             },
         )
         .unwrap_err();

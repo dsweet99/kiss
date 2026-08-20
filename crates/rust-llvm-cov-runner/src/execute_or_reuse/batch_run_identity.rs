@@ -78,8 +78,6 @@ pub(crate) fn publish_successful_build_identity(
 ) -> io::Result<u64> {
     let build_target_is_cache_owned = plan.build_target.starts_with(&req.cache_root);
 
-
-
     let current_target_bytes = if build_target_is_cache_owned {
         path_size_bytes(&plan.build_target)?
     } else {

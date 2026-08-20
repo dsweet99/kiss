@@ -6,9 +6,6 @@ use tempfile::TempDir;
 
 use super::*;
 
-
-
-
 fn git_in(dir: &Path) -> Command {
     super::git_command(dir)
 }

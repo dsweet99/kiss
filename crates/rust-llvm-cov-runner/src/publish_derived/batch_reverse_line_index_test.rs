@@ -26,8 +26,7 @@ fn forward_oracle_selectors(
         if path.extension().and_then(|e| e.to_str()) != Some("json") {
             continue;
         }
-        let parsed: RustCovCacheEntry =
-            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        let parsed: RustCovCacheEntry = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         if parsed.generation_fingerprint != generation || parsed.status != TestStatus::Passed {
             continue;
         }
@@ -296,6 +295,10 @@ fn snapshot_lives_under_immutable_snapshots_dir() {
     let cache = tmp.path().join("cache");
     let source = tmp.path();
     let info = publish_bound_reverse(&cache, source, "gen1", "fp");
-    assert!(snapshot_path(&cache, &info.snapshot_id).join("meta.json").is_file());
+    assert!(
+        snapshot_path(&cache, &info.snapshot_id)
+            .join("meta.json")
+            .is_file()
+    );
     assert!(!cache.join("reverse_line_index").join("meta.json").exists());
 }

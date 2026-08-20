@@ -191,7 +191,6 @@ fn test_check_file_metrics_direct() {
     let mut viols = Vec::new();
     check_file_metrics(&m, 100, Path::new("test.py"), &cfg, &mut viols);
 
-
     let _ = viols;
 }
 

@@ -60,7 +60,6 @@ pub(crate) fn publish_python_covering(root: &Path, app: &Path) {
         LineCoverage {
             files: BTreeMap::from([(
                 app.to_string_lossy().to_string(),
-
                 std::collections::BTreeSet::from([2]),
             )]),
         },

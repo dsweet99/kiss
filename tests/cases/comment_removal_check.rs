@@ -113,12 +113,14 @@ fn library_collects_comments_and_emits_config_flag() {
         comment_removal_enabled: true,
         ..kiss::GateConfig::default()
     };
-    let toml = kiss::config_gen::generate_config_toml_by_language(&kiss::config_gen::GenerateConfigParams {
-        py: &kiss::MetricStats::default(),
-        rs: &kiss::MetricStats::default(),
-        py_n: 0,
-        rs_n: 0,
-        gate: &gate,
-    });
+    let toml = kiss::config_gen::generate_config_toml_by_language(
+        &kiss::config_gen::GenerateConfigParams {
+            py: &kiss::MetricStats::default(),
+            rs: &kiss::MetricStats::default(),
+            py_n: 0,
+            rs_n: 0,
+            gate: &gate,
+        },
+    );
     assert!(toml.contains("comment_removal_enabled = true"));
 }

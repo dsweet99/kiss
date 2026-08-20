@@ -47,7 +47,7 @@ pub(super) fn sample_batch_request(root: &Path) -> RustCoverageBatchRequest {
         test_args: Vec::new(),
         env: BTreeMap::new(),
         force_rerun: false,
-jobs: 1,
+        jobs: 1,
         generated_config: root.join(".kiss/rust_llvm_cov_cache/runs/run-a/nextest.toml"),
         population_publication_selectors: None,
         delegated_runners,
@@ -103,9 +103,9 @@ fn witness_batch_export() {
         executable: Some("/tmp/bin".to_string()),
         filenames: vec!["/tmp/a.o".to_string()],
         nextest_binary_id: None,
-    libtest_binary_prefix: None,
-    src_path: None,
-    is_test_harness: false,
+        libtest_binary_prefix: None,
+        src_path: None,
+        is_test_harness: false,
     }]);
     assert_eq!(objects, vec![PathBuf::from("/tmp/a.o")]);
 

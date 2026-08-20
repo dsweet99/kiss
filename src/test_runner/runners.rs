@@ -14,11 +14,12 @@ use rust_llvm_cov_runner::{
 
 #[path = "runners/decision.rs"]
 mod decision;
-pub(crate) use decision::{
-    CombinedSelectorInput, SelectorPlan, combined_selectors_with_direct, prior_failures_for_language,
-};
 #[cfg(test)]
 pub(crate) use decision::combined_selectors;
+pub(crate) use decision::{
+    CombinedSelectorInput, SelectorPlan, combined_selectors_with_direct,
+    prior_failures_for_language,
+};
 
 #[path = "runners/rust_enumerate.rs"]
 mod rust_enumerate;
@@ -31,8 +32,8 @@ use crate::test_runner::python_coverage_index::{
     PYTHON_COVERAGE_ENV_KEYS, repo_relative_path as python_repo_relative_path,
     stored_python_universe_selectors,
 };
-use collect::collect_python_nodeids;
 pub(crate) use collect::clear_python_collect_memo;
+use collect::collect_python_nodeids;
 pub(crate) fn collect_python_nodeids_for_targets(
     repo_root: &Path,
     paths: Option<&[PathBuf]>,
@@ -51,10 +52,10 @@ pub(crate) use crate::test_runner::lang_python::rslip::{
     detect_rslip_versions, rslip_request_from_parts,
 };
 
-#[path = "runners/rust_batch_counters.rs"]
-mod rust_batch_counters;
 #[path = "runners/execution_summary.rs"]
 mod execution_summary;
+#[path = "runners/rust_batch_counters.rs"]
+mod rust_batch_counters;
 pub(crate) use execution_summary::{
     SelectorCacheRecord, SelectorExecutionRecord, SelectorExecutionSummary,
 };
@@ -185,9 +186,7 @@ pub(crate) fn require_kiss_test_report_id(
     logical: &str,
 ) -> Result<String, String> {
     map.get(logical).cloned().ok_or_else(|| {
-        format!(
-            "error: kiss: missing PATH::symbol report id for rust selector `{logical}`"
-        )
+        format!("error: kiss: missing PATH::symbol report id for rust selector `{logical}`")
     })
 }
 
@@ -212,17 +211,12 @@ pub fn enumerate_workspace_python_selectors(
         let (py_files, _rs_files) =
             kiss::gather_files_by_lang(&[root], Some(kiss::Language::Python), ignore);
 
-
-
-
         let test_paths = py_files
             .into_iter()
             .filter(|path| is_pytest_nodeid_source_file(path))
             .collect::<Vec<_>>();
         return collect_python_nodeids(repo_root, Some(&test_paths), pytest_args);
     }
-
-
 
     let tests_root = repo_root.join("tests");
     if tests_root.is_dir() {
@@ -287,7 +281,7 @@ pub(crate) fn build_rust_coverage_batch_dry_run_lines(
         test_args: extra.to_vec(),
         env: BTreeMap::new(),
         force_rerun: false,
-jobs,
+        jobs,
         generated_config: PathBuf::from("<generated-filter>"),
         population_publication_selectors: None,
         delegated_runners,

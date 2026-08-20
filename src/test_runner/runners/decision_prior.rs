@@ -34,12 +34,20 @@ pub(crate) fn prior_failures_for_language(
         kiss::Language::Rust => {
             let cargo = PathBuf::from("cargo");
             let rustc = PathBuf::from("rustc");
-            let cargo_version = crate::test_runner::runners::command_stdout(&cargo, &["--version"], repo_root)?;
-            let llvm_cov_version =
-                crate::test_runner::runners::command_stdout(&cargo, &["llvm-cov", "--version"], repo_root)?;
-            let cargo_nextest_version =
-                crate::test_runner::runners::command_stdout(&cargo, &["nextest", "--version"], repo_root)?;
-            let rustc_version = crate::test_runner::runners::command_stdout(&rustc, &["-Vv"], repo_root)?;
+            let cargo_version =
+                crate::test_runner::runners::command_stdout(&cargo, &["--version"], repo_root)?;
+            let llvm_cov_version = crate::test_runner::runners::command_stdout(
+                &cargo,
+                &["llvm-cov", "--version"],
+                repo_root,
+            )?;
+            let cargo_nextest_version = crate::test_runner::runners::command_stdout(
+                &cargo,
+                &["nextest", "--version"],
+                repo_root,
+            )?;
+            let rustc_version =
+                crate::test_runner::runners::command_stdout(&rustc, &["-Vv"], repo_root)?;
             let runner_map_fingerprint =
                 crate::test_runner::rust_coverage_index::current_rust_runner_map_fingerprint(
                     repo_root, test_args,
@@ -59,4 +67,3 @@ pub(crate) fn prior_failures_for_language(
         .map(|id| TestSelector::new(language, id))
         .collect())
 }
-

@@ -300,21 +300,14 @@ impl WorkspaceMetadata {
     }
 
     #[cfg(test)]
-    pub(crate) fn is_non_member_local_crate_source(
-        &self,
-        source_root: &Path,
-        file: &Path,
-    ) -> bool {
-        self.non_member_local_crate_root(source_root, file).is_some()
+    pub(crate) fn is_non_member_local_crate_source(&self, source_root: &Path, file: &Path) -> bool {
+        self.non_member_local_crate_root(source_root, file)
+            .is_some()
     }
 }
 
 fn nearest_cargo_manifest_dir(path: &Path) -> Option<PathBuf> {
-    let mut dir = if path.is_file() {
-        path.parent()?
-    } else {
-        path
-    };
+    let mut dir = if path.is_file() { path.parent()? } else { path };
     loop {
         if dir.join("Cargo.toml").is_file() {
             return Some(dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf()));

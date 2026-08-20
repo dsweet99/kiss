@@ -72,9 +72,9 @@ fn object_paths_collect_unique_object_files_from_artifacts() {
             "/tmp/c.txt".into(),
         ],
         nextest_binary_id: None,
-    libtest_binary_prefix: None,
-    src_path: None,
-    is_test_harness: false,
+        libtest_binary_prefix: None,
+        src_path: None,
+        is_test_harness: false,
     }];
     let objects = object_paths_from_artifacts(&artifacts);
     assert_eq!(
@@ -90,17 +90,17 @@ fn object_paths_for_executable_selects_only_matching_artifact_objects() {
             executable: Some("/tmp/bin-a".into()),
             filenames: vec!["/tmp/a.o".into()],
             nextest_binary_id: None,
-        libtest_binary_prefix: None,
-        src_path: None,
-        is_test_harness: false,
+            libtest_binary_prefix: None,
+            src_path: None,
+            is_test_harness: false,
         },
         BatchCompilerArtifact {
             executable: Some("/tmp/bin-b".into()),
             filenames: vec!["/tmp/b.o".into()],
             nextest_binary_id: None,
-        libtest_binary_prefix: None,
-        src_path: None,
-        is_test_harness: false,
+            libtest_binary_prefix: None,
+            src_path: None,
+            is_test_harness: false,
         },
     ];
     let objects = object_paths_for_executable(&artifacts, Path::new("/tmp/bin-a"));
@@ -114,17 +114,17 @@ fn object_paths_for_executable_matches_basename_and_suffix_forms() {
             executable: Some("/tmp/target/debug/deps/demo-abc".into()),
             filenames: vec!["/tmp/demo.o".into()],
             nextest_binary_id: None,
-        libtest_binary_prefix: None,
-        src_path: None,
-        is_test_harness: false,
+            libtest_binary_prefix: None,
+            src_path: None,
+            is_test_harness: false,
         },
         BatchCompilerArtifact {
             executable: Some("relative/bin-two".into()),
             filenames: vec!["/tmp/two.o".into()],
             nextest_binary_id: None,
-        libtest_binary_prefix: None,
-        src_path: None,
-        is_test_harness: false,
+            libtest_binary_prefix: None,
+            src_path: None,
+            is_test_harness: false,
         },
     ];
 

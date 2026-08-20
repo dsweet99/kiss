@@ -72,10 +72,6 @@ fn write_metadata_atomically<T: Serialize>(
 }
 
 pub(crate) fn instance_full_name(command: &[std::ffi::OsString]) -> String {
-
-
-
-
     if should_use_nextest_env_for_instance(command)
         && let (Some(binary_id), Some(test_name)) = (
             std::env::var("NEXTEST_BINARY_ID").ok(),

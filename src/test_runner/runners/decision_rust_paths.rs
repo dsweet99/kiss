@@ -30,7 +30,10 @@ pub(super) fn prepare_rust_inputs(
     let mut mark = std::time::Instant::now();
     let mut lap = |label: &str| {
         if plan_trace {
-            eprintln!("KISS_PLAN_TRACE prep_{label}_ms={}", mark.elapsed().as_millis());
+            eprintln!(
+                "KISS_PLAN_TRACE prep_{label}_ms={}",
+                mark.elapsed().as_millis()
+            );
             mark = std::time::Instant::now();
         }
     };
@@ -54,8 +57,6 @@ pub(super) fn prepare_rust_inputs(
     );
     lap("rust_changed_lines");
 
-
-
     let mut effective_test_paths = py_test_paths;
     let line_precise = !rust_changed_lines.is_empty() && rust_changed_lines.len() <= 1;
     if !line_precise
@@ -66,7 +67,6 @@ pub(super) fn prepare_rust_inputs(
             rust_resolution.resolved.as_ref(),
         )
     {
-
     } else {
         effective_test_paths.extend(rust_resolution.test_paths.iter().cloned());
     }
@@ -203,8 +203,7 @@ fn effective_rust_changed_lines(
     if let Some(resolved) = resolved
         && matches!(
             resolved,
-            ResolvedRustPopulation::Current { .. }
-                | ResolvedRustPopulation::ReusablePrior { .. }
+            ResolvedRustPopulation::Current { .. } | ResolvedRustPopulation::ReusablePrior { .. }
         )
     {
         return changed_lines_for_sources(changed_lines, rust_source_paths);
@@ -235,9 +234,7 @@ mod tests {
         }
     }
 
-    fn resolved_reusable(
-        delta: rust_llvm_cov_runner::RustSnapshotDelta,
-    ) -> ResolvedRustPopulation {
+    fn resolved_reusable(delta: rust_llvm_cov_runner::RustSnapshotDelta) -> ResolvedRustPopulation {
         ResolvedRustPopulation::ReusablePrior {
             state: empty_population_state(),
             delta,
@@ -312,11 +309,7 @@ mod tests {
     #[test]
     fn effective_paths_mark_structural_population() {
         assert_eq!(
-            effective_paths_for_resolution(
-                &ResolvedRustPopulation::StructuralStale,
-                &[],
-                &[],
-            ),
+            effective_paths_for_resolution(&ResolvedRustPopulation::StructuralStale, &[], &[],),
             (Vec::new(), Vec::new(), 0, true)
         );
         let vcs_source = PathBuf::from("src/lib.rs");

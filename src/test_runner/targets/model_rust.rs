@@ -1,8 +1,7 @@
-
 use std::path::Path;
 
-use syn::{Attribute, Item, ItemFn};
 use syn::spanned::Spanned;
+use syn::{Attribute, Item, ItemFn};
 
 use super::model::{DirectTestDef, NamedDefinition, SourceModel};
 use kiss::Language;
@@ -12,20 +11,11 @@ pub(super) fn build_rust_model(
     content: String,
     line_count: u32,
 ) -> Result<SourceModel, String> {
-    let ast = syn::parse_file(&content).map_err(|e| {
-        format!(
-            "failed to parse Rust source {}: {e}",
-            path.display()
-        )
-    })?;
+    let ast = syn::parse_file(&content)
+        .map_err(|e| format!("failed to parse Rust source {}: {e}", path.display()))?;
     let mut definitions = Vec::new();
     let mut direct_tests = Vec::new();
-    collect_items(
-        &ast.items,
-        "",
-        &mut definitions,
-        &mut direct_tests,
-    );
+    collect_items(&ast.items, "", &mut definitions, &mut direct_tests);
     Ok(SourceModel {
         path: path.to_path_buf(),
         language: Language::Rust,

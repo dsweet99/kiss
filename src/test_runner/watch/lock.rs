@@ -1,4 +1,3 @@
-
 use std::fs::{File, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -56,7 +55,9 @@ mod tests {
     fn try_lock_success_vs_would_block() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("watch.lock");
-        let first = WatchLockGuard::try_lock(&path).unwrap().expect("first lock");
+        let first = WatchLockGuard::try_lock(&path)
+            .unwrap()
+            .expect("first lock");
         assert!(WatchLockGuard::try_lock(&path).unwrap().is_none());
         drop(first);
         assert!(WatchLockGuard::try_lock(&path).unwrap().is_some());

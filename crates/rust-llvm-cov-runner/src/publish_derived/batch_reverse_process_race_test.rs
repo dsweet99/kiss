@@ -1,6 +1,5 @@
-
-use crate::publish_derived::batch_entry_state::read_entry_state;
 use crate::execute_or_reuse::batch_lock::lock_batch;
+use crate::publish_derived::batch_entry_state::read_entry_state;
 use crate::publish_derived::batch_reverse_publish::snapshot_path;
 use crate::publish_derived::batch_reverse_test_support::seed_alpha_beta_reverse;
 use crate::publish_derived_state;
@@ -30,7 +29,11 @@ fn two_os_process_publishers_single_manifest_activation() {
     let (repo, req, work) = primed_shared_work_dir();
     store_batch_executor_selector(repo.path(), &req, "alpha");
     store_batch_executor_selector(repo.path(), &req, "beta");
-    fs::write(work.join("repo_path.txt"), repo.path().to_string_lossy().as_bytes()).unwrap();
+    fs::write(
+        work.join("repo_path.txt"),
+        repo.path().to_string_lossy().as_bytes(),
+    )
+    .unwrap();
 
     let exe = env::current_exe().unwrap();
     let children = [
@@ -44,11 +47,7 @@ fn two_os_process_publishers_single_manifest_activation() {
     }
     let tools = witness_batch_tools();
     let identity = crate::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
-    assert_single_activation(
-        &req.cache_root,
-        &work,
-        &identity.generation_fingerprint,
-    );
+    assert_single_activation(&req.cache_root, &work, &identity.generation_fingerprint);
 }
 
 #[test]
@@ -63,7 +62,11 @@ fn os_process_readers_during_pre_manifest_pause_never_see_partial() {
     let prior = seed_alpha_beta_reverse(&req);
     let barrier = work.join("barrier");
     fs::create_dir_all(&barrier).unwrap();
-    fs::write(work.join("repo_path.txt"), repo.path().to_string_lossy().as_bytes()).unwrap();
+    fs::write(
+        work.join("repo_path.txt"),
+        repo.path().to_string_lossy().as_bytes(),
+    )
+    .unwrap();
     fs::write(work.join("prior_snapshot.txt"), prior.as_bytes()).unwrap();
 
     let exe = env::current_exe().unwrap();
@@ -80,11 +83,7 @@ fn os_process_readers_during_pre_manifest_pause_never_see_partial() {
     assert_active_snapshot_readable(&req.cache_root);
 }
 
-fn primed_shared_work_dir() -> (
-    tempfile::TempDir,
-    crate::RustCoverageBatchRequest,
-    PathBuf,
-) {
+fn primed_shared_work_dir() -> (tempfile::TempDir, crate::RustCoverageBatchRequest, PathBuf) {
     let repo = batch_executor_fixture_repo();
     let req = batch_executor_request(repo.path());
     let work = repo.path().join("process-race-work");
@@ -92,11 +91,7 @@ fn primed_shared_work_dir() -> (
     (repo, req, work)
 }
 
-fn assert_single_activation(
-    cache_root: &Path,
-    work: &Path,
-    generation: &str,
-) {
+fn assert_single_activation(cache_root: &Path, work: &Path, generation: &str) {
     let snap_a = fs::read_to_string(work.join("snapshot-first.txt")).unwrap();
     let snap_b = fs::read_to_string(work.join("snapshot-second.txt")).unwrap();
     let population: serde_json::Value =
@@ -123,7 +118,6 @@ fn assert_single_activation(
         &BTreeMap::from([("src/lib.rs".into(), BTreeSet::from([1_u32]))]),
     );
     if let Some(map) = hit {
-
         let covered: BTreeSet<&str> = map.values().flatten().map(String::as_str).collect();
         assert!(
             covered.is_empty() || covered.contains("alpha") || covered.contains("beta"),
@@ -141,19 +135,11 @@ fn assert_active_snapshot_readable(cache_root: &Path) {
     assert!(snapshot_path(cache_root, active).is_dir());
 }
 
-fn run_concurrent_readers_then_release(
-    exe: &Path,
-    work: &Path,
-    barrier: &Path,
-    publisher: Child,
-) {
+fn run_concurrent_readers_then_release(exe: &Path, work: &Path, barrier: &Path, publisher: Child) {
     let readers: Vec<Child> = (0..4)
         .map(|i| spawn_child(exe, work, &format!("reader{i}"), "reader"))
         .collect();
-    wait_ready(
-        work,
-        &["reader0", "reader1", "reader2", "reader3"],
-    );
+    wait_ready(work, &["reader0", "reader1", "reader2", "reader3"]);
     fs::write(work.join("go_readers"), b"go").unwrap();
     for reader in readers {
         assert_child_ok("reader", &reader.wait_with_output().unwrap());
@@ -287,7 +273,11 @@ fn publish_under_lock_and_record_snapshot(
     let snap = population["reverse_line_index"]["snapshot_id"]
         .as_str()
         .unwrap();
-    fs::write(work.join(format!("snapshot-{child_id}.txt")), snap.as_bytes()).unwrap();
+    fs::write(
+        work.join(format!("snapshot-{child_id}.txt")),
+        snap.as_bytes(),
+    )
+    .unwrap();
 }
 
 fn assert_reader_observation_safe(
@@ -316,7 +306,9 @@ fn assert_reader_observation_safe(
                 return;
             };
             assert!(
-                snapshot_path(&req.cache_root, id).join("meta.json").is_file(),
+                snapshot_path(&req.cache_root, id)
+                    .join("meta.json")
+                    .is_file(),
                 "reader must not observe manifest→missing snapshot"
             );
             assert!(
@@ -348,7 +340,10 @@ fn wait_for_barrier_ready(barrier: &Path, artifact: &str, phase: &str) {
         if try_capture_barrier_ready(barrier, artifact, phase) {
             return;
         }
-        assert!(Instant::now() < deadline, "timeout waiting for barrier ready");
+        assert!(
+            Instant::now() < deadline,
+            "timeout waiting for barrier ready"
+        );
         thread::sleep(Duration::from_millis(20));
     }
 }

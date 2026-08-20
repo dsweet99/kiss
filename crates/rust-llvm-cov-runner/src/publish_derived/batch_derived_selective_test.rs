@@ -70,8 +70,9 @@ fn consecutive_selective_edits_reuse_complete_population_snapshot() {
 
     let after = std::fs::read(req.cache_root.join("population.json")).unwrap();
     assert_eq!(before, after);
-    let manifest = crate::publish_derived::batch_derived_index::read_population_manifest(&req.cache_root)
-        .expect("population manifest");
+    let manifest =
+        crate::publish_derived::batch_derived_index::read_population_manifest(&req.cache_root)
+            .expect("population manifest");
     assert_eq!(manifest.generation_fingerprint, population_generation);
 }
 
@@ -244,8 +245,9 @@ fn assert_failed_prune_preserves(
             .join("obsoleteselective01.json")
             .is_file()
     );
-    let manifest = crate::publish_derived::batch_derived_index::read_population_manifest(cache_root)
-        .expect("population manifest");
+    let manifest =
+        crate::publish_derived::batch_derived_index::read_population_manifest(cache_root)
+            .expect("population manifest");
     assert_eq!(manifest.generation_fingerprint, population_generation);
     assert_eq!(failed.counters.cache_pruned_entries, 0);
 }

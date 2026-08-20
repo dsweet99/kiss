@@ -1,4 +1,3 @@
-
 use super::{find_impl_blocks, rfind_word_boundary, split_method_receiver};
 
 pub(crate) fn extract_receiver(before: &str) -> String {

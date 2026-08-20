@@ -1,4 +1,3 @@
-
 #![cfg(unix)]
 
 use std::process::Command;
@@ -27,10 +26,7 @@ fn oneshot_surfaces_watcher_coverage_violations() {
     write_kissconfig_with_threshold(tmp.path(), 1.0, 90);
     commit_all(tmp.path(), "init");
 
-    let _watch = start_watch(
-        tmp.path(),
-        &["test", "--watch", "--lang", "python", "."],
-    );
+    let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
     std::thread::sleep(Duration::from_secs(8));
 
     let output = Command::new(env!("CARGO_BIN_EXE_kiss"))
@@ -44,10 +40,7 @@ fn oneshot_surfaces_watcher_coverage_violations() {
         !output.status.success(),
         "expected non-zero; stdout={stdout:?} stderr={stderr:?}"
     );
-    assert!(
-        stdout.contains("waiting for watcher"),
-        "stdout={stdout:?}"
-    );
+    assert!(stdout.contains("waiting for watcher"), "stdout={stdout:?}");
     assert!(
         stdout.contains("VIOLATION:test_coverage:"),
         "client must show VIOLATION lines; stdout={stdout:?} stderr={stderr:?}"

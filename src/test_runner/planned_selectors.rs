@@ -1,4 +1,3 @@
-
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -24,8 +23,7 @@ pub(crate) struct PlannedSelectors {
     >,
     pub ignore: Vec<String>,
     pub workspace_files_fingerprint: Option<String>,
-    pub skip_index_rebuild_after_selective:
-        crate::test_runner::language_keyed::LanguageKeyed<bool>,
+    pub skip_index_rebuild_after_selective: crate::test_runner::language_keyed::LanguageKeyed<bool>,
 }
 
 pub(crate) struct SelectorRunOptions<'a> {
@@ -104,7 +102,11 @@ mod tests {
     use crate::bin_cli::args::TestInvocation;
     use crate::test_runner::test_mode_fixtures::empty_planned_selectors;
 
-    fn args(invocation: TestInvocation, force: bool, lang: Option<Language>) -> RunTestCmdArgs<'static> {
+    fn args(
+        invocation: TestInvocation,
+        force: bool,
+        lang: Option<Language>,
+    ) -> RunTestCmdArgs<'static> {
         RunTestCmdArgs {
             invocation,
             main_branch_cli: None,
@@ -138,9 +140,15 @@ mod tests {
 
         planned.population_required.python = false;
         planned.population_required.rust = false;
-        apply_force_all_population(&args(TestInvocation::All, true, Some(Language::Python)), &mut planned);
+        apply_force_all_population(
+            &args(TestInvocation::All, true, Some(Language::Python)),
+            &mut planned,
+        );
         assert!(planned.population_required.python);
-        apply_force_all_population(&args(TestInvocation::All, true, Some(Language::Rust)), &mut planned);
+        apply_force_all_population(
+            &args(TestInvocation::All, true, Some(Language::Rust)),
+            &mut planned,
+        );
         assert!(planned.population_required.rust);
         planned.population_required.python = false;
         planned.population_required.rust = false;

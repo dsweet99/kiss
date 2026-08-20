@@ -1,4 +1,3 @@
-
 use super::{generation_already_current, is_indexable};
 use crate::test_runner::coverage_decision::RunContext;
 use crate::test_runner::python_coverage_index::generation::{
@@ -31,10 +30,7 @@ fn planned(repo: &Path) -> PlannedSelectors {
             python: Vec::new(),
             rust: Vec::new(),
         },
-        vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed {
-            python: 0,
-            rust: 0,
-        },
+        vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed { python: 0, rust: 0 },
         snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
             python: 0,
             rust: 0,
@@ -71,7 +67,8 @@ fn hook_helpers_detect_current_generation_and_indexable_paths() {
         return;
     };
     let selector = "t.py::test_a".to_string();
-    let mut plan = population_plan_for_selectors(repo, std::slice::from_ref(&selector), &[]).unwrap();
+    let mut plan =
+        population_plan_for_selectors(repo, std::slice::from_ref(&selector), &[]).unwrap();
     plan.base_identity.python_version = py;
     plan.base_identity.pytest_version = pt;
     plan.base_identity.selector_discovery_version = PYTHON_SELECTOR_DISCOVERY_VERSION.to_string();
@@ -105,7 +102,10 @@ fn hook_helpers_detect_current_generation_and_indexable_paths() {
         planned: &planned,
         options: &options,
     };
-    assert!(generation_already_current(&ctx, std::slice::from_ref(&selector)));
+    assert!(generation_already_current(
+        &ctx,
+        std::slice::from_ref(&selector)
+    ));
     let module = PythonModule::new(repo, &[], &BTreeMap::new(), &[], &[], &[], &[]);
     assert!(is_indexable(&module, &repo.join("app.py"), repo));
     assert!(!is_indexable(&module, Path::new("/tmp/out.py"), repo));

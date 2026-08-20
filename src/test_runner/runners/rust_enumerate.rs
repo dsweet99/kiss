@@ -1,4 +1,3 @@
-
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
@@ -35,7 +34,6 @@ pub(crate) fn rust_logical_to_kiss_test_ids(
 ) -> Result<BTreeMap<String, String>, String> {
     let mut map = BTreeMap::new();
 
-
     for (path, logical) in
         enumerate_workspace_rust_test_entries(repo_root, ignore, ParseErrorPolicy::Skip)?
     {
@@ -52,7 +50,6 @@ pub(crate) fn rust_logical_to_kiss_test_ids(
 }
 
 fn source_may_contain_rust_test_attr(source: &str) -> bool {
-
     source.contains("#[test]") || source.contains("#[ test]")
 }
 
@@ -61,7 +58,6 @@ fn rust_selector_parse_threads() -> usize {
         .map(|n| n.get())
         .unwrap_or(4)
         .max(1);
-
 
     match std::env::var("MALLOC_ARENA_MAX")
         .ok()
@@ -89,7 +85,6 @@ fn rust_selector_parse_pool() -> &'static rayon::ThreadPool {
 fn gather_member_rust_files(repo_root: &Path, ignore: &[String]) -> Vec<PathBuf> {
     let root = repo_root.to_string_lossy().to_string();
 
-
     let (_py_files, rs_files) =
         kiss::gather_files_by_lang_opts(&[root], Some(kiss::Language::Rust), ignore, false);
     match cargo_workspace_member_manifest_dirs(repo_root) {
@@ -111,9 +106,6 @@ fn gather_member_rust_files(repo_root: &Path, ignore: &[String]) -> Vec<PathBuf>
 }
 
 fn selectors_in_rust_file(path: &Path) -> Result<(PathBuf, Vec<String>), String> {
-
-
-
     let source = std::fs::read_to_string(path).map_err(|e| {
         format!(
             "error: kiss test: failed to read Rust workspace file {}: {e}",
@@ -171,11 +163,15 @@ fn enumerate_workspace_rust_test_entries(
     let t_gather = t0.elapsed();
     let n_files = rs_files.len();
 
-
     let t_parse_started = std::time::Instant::now();
     let parse_threads = rust_selector_parse_threads();
     let parsed: Vec<Result<(PathBuf, Vec<String>), String>> =
-        rust_selector_parse_pool().install(|| rs_files.par_iter().map(|p| selectors_in_rust_file(p)).collect());
+        rust_selector_parse_pool().install(|| {
+            rs_files
+                .par_iter()
+                .map(|p| selectors_in_rust_file(p))
+                .collect()
+        });
     let t_parse = t_parse_started.elapsed();
     let entries = flatten_parsed_entries(parsed, parse_errors)?;
     if profile {

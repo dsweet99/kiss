@@ -1,4 +1,3 @@
-
 use super::PythonRuntime;
 use crate::test_runner::lang_iface::{
     AcceptMode, EnsureRequest, ExecutionWitness, LanguageRuntime, PublishBatch, WitnessScope,
@@ -35,8 +34,14 @@ fn python_accepted_summary_counts_hits() {
         force_selectors: Vec::new(),
         jobs: 1,
         gate: kiss::GateConfig::default(),
-        extras: crate::test_runner::language_keyed::LanguageKeyed { python: vec![], rust: vec![] },
-        planned: crate::test_runner::language_keyed::LanguageKeyed { python: vec!["a".into()], rust: vec![] },
+        extras: crate::test_runner::language_keyed::LanguageKeyed {
+            python: vec![],
+            rust: vec![],
+        },
+        planned: crate::test_runner::language_keyed::LanguageKeyed {
+            python: vec!["a".into()],
+            rust: vec![],
+        },
     };
     let witness = ExecutionWitness {
         language: "python".into(),
@@ -71,8 +76,14 @@ fn python_runtime_empty_run_and_identity_paths() {
         force_selectors: Vec::new(),
         jobs: 1,
         gate: kiss::GateConfig::default(),
-        extras: crate::test_runner::language_keyed::LanguageKeyed { python: vec![], rust: vec![] },
-        planned: crate::test_runner::language_keyed::LanguageKeyed { python: vec!["a".into()], rust: vec![] },
+        extras: crate::test_runner::language_keyed::LanguageKeyed {
+            python: vec![],
+            rust: vec![],
+        },
+        planned: crate::test_runner::language_keyed::LanguageKeyed {
+            python: vec!["a".into()],
+            rust: vec![],
+        },
     };
     let batch = rt.run_selectors(&req, &[]).expect("empty");
     assert_eq!(batch.summary.total, 0);

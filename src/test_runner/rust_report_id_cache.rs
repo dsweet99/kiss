@@ -1,4 +1,3 @@
-
 use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::{self, Write};
@@ -8,9 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
 use super::runners::rust_logical_to_kiss_test_ids;
-use super::workspace_selector_cache::{
-    normalized_root, workspace_files_fingerprint_for_cache,
-};
+use super::workspace_selector_cache::{normalized_root, workspace_files_fingerprint_for_cache};
 
 const SCHEMA_VERSION: &str = "rust-test-report-ids-v1";
 const CACHE_FILE_NAME: &str = "rust_test_report_ids.json";

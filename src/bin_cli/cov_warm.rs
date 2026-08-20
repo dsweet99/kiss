@@ -1,4 +1,3 @@
-
 use std::path::Path;
 
 use kiss::{GateConfig, Language};
@@ -6,8 +5,8 @@ use kiss::{GateConfig, Language};
 use crate::analyze::cov_records_cache::{
     CovRecordsCacheKey, store_cov_records, try_load_cov_records,
 };
-use crate::analyze::line_coverage::compute_line_coverage_records;
 use crate::analyze::gather_files;
+use crate::analyze::line_coverage::compute_line_coverage_records;
 use crate::bin_cli::util::merge_check_ignore_prefixes;
 use crate::test_runner::check_line_coverage::{
     RequiredCoverageLanguages, load_check_runtime_coverage, repository_root_for_universe,
@@ -42,19 +41,19 @@ fn warm_cov_caches_after_tests_inner(
         lang_filter,
         ignore: &ignore,
     };
-    let (py_files, rs_files) =
-        if let Some(cached) = crate::analyze::cov_file_list_cache::try_load_cov_file_list(&list_key)
-        {
-            cached
-        } else {
-            let (py_files, rs_files) = gather_files(universe_root, lang_filter, &ignore);
-            if !py_files.is_empty() || !rs_files.is_empty() {
-                crate::analyze::cov_file_list_cache::store_cov_file_list(
-                    &list_key, &py_files, &rs_files,
-                );
-            }
-            (py_files, rs_files)
-        };
+    let (py_files, rs_files) = if let Some(cached) =
+        crate::analyze::cov_file_list_cache::try_load_cov_file_list(&list_key)
+    {
+        cached
+    } else {
+        let (py_files, rs_files) = gather_files(universe_root, lang_filter, &ignore);
+        if !py_files.is_empty() || !rs_files.is_empty() {
+            crate::analyze::cov_file_list_cache::store_cov_file_list(
+                &list_key, &py_files, &rs_files,
+            );
+        }
+        (py_files, rs_files)
+    };
     if py_files.is_empty() && rs_files.is_empty() {
         return;
     }

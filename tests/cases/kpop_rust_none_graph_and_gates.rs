@@ -8,7 +8,6 @@ fn parse_rs(path: &Path) -> ParsedRustFile {
 
 #[test]
 fn kpop_rust_none_cycle_size() {
-
     let cycle_a = parse_rs(Path::new("tests/fake_rust/kpop_graph/cycle_a.rs"));
     let cycle_b = parse_rs(Path::new("tests/fake_rust/kpop_graph/cycle_b.rs"));
     let cycle_c = parse_rs(Path::new("tests/fake_rust/kpop_graph/cycle_c.rs"));
@@ -24,7 +23,6 @@ fn kpop_rust_none_cycle_size() {
 
 #[test]
 fn kpop_rust_none_dependency_depth() {
-
     let chain_a = parse_rs(Path::new("tests/fake_rust/kpop_graph/chain_a.rs"));
     let chain_b = parse_rs(Path::new("tests/fake_rust/kpop_graph/chain_b.rs"));
     let chain_c = parse_rs(Path::new("tests/fake_rust/kpop_graph/chain_c.rs"));
@@ -37,8 +35,6 @@ fn kpop_rust_none_dependency_depth() {
 
 #[test]
 fn kpop_rust_none_test_coverage_threshold() {
-
-
     let gate = kiss::GateConfig {
         test_coverage_threshold: 90,
         ..Default::default()
@@ -54,8 +50,6 @@ fn kpop_rust_none_test_coverage_threshold() {
 
 #[test]
 fn kpop_rust_none_min_similarity() {
-
-
     let a = parse_rs(Path::new("tests/fake_rust/duplicate1.rs"));
     let b = parse_rs(Path::new("tests/fake_rust/duplicate2.rs"));
     let parsed: Vec<&ParsedRustFile> = vec![&a, &b];

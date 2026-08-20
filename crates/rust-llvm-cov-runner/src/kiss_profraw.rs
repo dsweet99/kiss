@@ -1,4 +1,3 @@
-
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -19,7 +18,6 @@ pub(crate) fn kiss_profraw_from_cache_root(cache_root: &Path) -> PathBuf {
 }
 
 pub(crate) fn repo_root_from_cache_root(cache_root: &Path) -> Option<PathBuf> {
-
     if cache_root.file_name()?.to_str()? != "rust_llvm_cov_cache" {
         return None;
     }
@@ -45,7 +43,9 @@ pub(crate) fn ensure_kiss_profraw_env(
     );
     env.insert(
         "LLVM_PROFILE_FILE".to_string(),
-        discard_llvm_profile_path(&dir).to_string_lossy().into_owned(),
+        discard_llvm_profile_path(&dir)
+            .to_string_lossy()
+            .into_owned(),
     );
 }
 
@@ -64,7 +64,6 @@ pub(crate) fn resolve_kiss_profraw(output_dir: &Path) -> PathBuf {
 }
 
 fn kiss_profraw_from_target_runner_output_dir(output_dir: &Path) -> Option<PathBuf> {
-
     let run = output_dir.parent()?;
     let runs = run.parent()?;
     let cache = runs.parent()?;
@@ -91,9 +90,7 @@ pub(crate) fn redirect_inherited_llvm_profile_file(output_dir: &Path) -> io::Res
 }
 
 pub fn discover_repo_root(start: &Path) -> PathBuf {
-    let start = start
-        .canonicalize()
-        .unwrap_or_else(|_| start.to_path_buf());
+    let start = start.canonicalize().unwrap_or_else(|_| start.to_path_buf());
     let start_dir = if start.is_file() {
         start.parent().unwrap_or(&start).to_path_buf()
     } else {
@@ -140,7 +137,9 @@ fn reexec_current_process() -> io::Result<()> {
         let exe = std::env::current_exe()?;
         let args: Vec<_> = std::env::args_os().skip(1).collect();
         let error = Command::new(exe).args(args).exec();
-        Err(io::Error::other(format!("re-exec after profraw redirect failed: {error}")))
+        Err(io::Error::other(format!(
+            "re-exec after profraw redirect failed: {error}"
+        )))
     }
     #[cfg(not(unix))]
     {

@@ -1,4 +1,3 @@
-
 use std::path::Path;
 
 use kiss::GateConfig;
@@ -47,7 +46,6 @@ pub(crate) fn python_witness_from_pinned(pinned: &PinnedPythonGeneration) -> Exe
             }
         }
     }
-
 
     ExecutionWitness {
         language: "python".into(),

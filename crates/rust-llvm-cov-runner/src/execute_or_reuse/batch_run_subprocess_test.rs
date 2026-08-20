@@ -2,7 +2,9 @@ use std::collections::{BTreeMap, HashSet};
 use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::execute_or_reuse::batch_process_tree::{BatchProcessTreeGuard, record_child_process_group};
+use crate::execute_or_reuse::batch_process_tree::{
+    BatchProcessTreeGuard, record_child_process_group,
+};
 use crate::execute_or_reuse::batch_shim::write_shim_start_metadata;
 use crate::execute_or_reuse::batch_shim_delegated::COVERAGE_BUILD_ENV_KEYS_FOR_TEST;
 

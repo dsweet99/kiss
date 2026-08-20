@@ -10,10 +10,6 @@ fn parse_rs(path: &Path) -> ParsedRustFile {
 
 #[test]
 fn bug_rust_indirect_dependencies_should_not_count_external_imports() {
-
-
-
-
     let a = parse_rs(Path::new("tests/fake_rust/rust_graph_ext_a.rs"));
     let b = parse_rs(Path::new("tests/fake_rust/rust_graph_ext_b.rs"));
     let parsed: Vec<&ParsedRustFile> = vec![&a, &b];
@@ -26,15 +22,6 @@ fn bug_rust_indirect_dependencies_should_not_count_external_imports() {
 
 #[test]
 fn bug_orphan_module_should_not_flag_crate_use_imports_in_rust() {
-
-
-
-
-
-
-
-
-
     use std::fs;
     use tempfile::TempDir;
 
@@ -45,7 +32,6 @@ fn bug_orphan_module_should_not_flag_crate_use_imports_in_rust() {
     let tmp = TempDir::new().unwrap();
     let src = tmp.path().join("src");
     fs::create_dir_all(&src).unwrap();
-
 
     fs::write(
         src.join("lib.rs"),
@@ -73,14 +59,6 @@ fn bug_orphan_module_should_not_flag_crate_use_imports_in_rust() {
 
 #[test]
 fn bug_orphan_module_should_not_flag_include_macro_in_rust() {
-
-
-
-
-
-
-
-
     use std::fs;
     use tempfile::TempDir;
 

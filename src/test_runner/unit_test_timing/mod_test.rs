@@ -78,10 +78,7 @@ fn runtime_gate_failure_lines_are_sorted_and_labeled() {
 
 #[test]
 fn path_pattern_limits_differ_per_selector() {
-    let rules = vec![
-        ("tests/fast".to_string(), 2.0),
-        ("*".to_string(), 0.0),
-    ];
+    let rules = vec![("tests/fast".to_string(), 2.0), ("*".to_string(), 0.0)];
     let timings = TimingPopulation::Complete(vec![
         UnitTestTiming {
             language: Language::Python,
@@ -106,12 +103,7 @@ fn path_pattern_limits_differ_per_selector() {
 
 #[test]
 fn rust_report_id_selectors_match_rust_path_pattern() {
-
-
-    let rules = vec![
-        ("rust".to_string(), 10.0),
-        ("*".to_string(), 0.0),
-    ];
+    let rules = vec![("rust".to_string(), 10.0), ("*".to_string(), 0.0)];
     let timings = TimingPopulation::Complete(vec![
         UnitTestTiming {
             language: Language::Rust,
@@ -146,7 +138,7 @@ fn empty_lang_selection_is_complete_empty() {
         },
         ignore: &[],
         pytest_args: &[],
-});
+    });
     assert_eq!(pop, TimingPopulation::Complete(vec![]));
 }
 
@@ -189,10 +181,7 @@ fn path_max_gate_reports_slowest_selector_per_path() {
             example_selector: "tests/other/b.py::t".into(),
         },
     ];
-    let rules = vec![
-        ("tests/fast".to_string(), 2.0),
-        ("*".to_string(), 0.0),
-    ];
+    let rules = vec![("tests/fast".to_string(), 2.0), ("*".to_string(), 0.0)];
     let viols = evaluate_path_max_runtime_violations(&path_maxes, &rules, &[]);
     assert_eq!(viols.len(), 1);
     assert_eq!(viols[0].selector, "tests/other/b.py::t");
@@ -208,8 +197,7 @@ fn path_max_gate_respects_ignore_prefixes() {
         },
     ];
     let rules = vec![("*".to_string(), 1.0)];
-    let viols =
-        evaluate_path_max_runtime_violations(&path_maxes, &rules, &["tests/slow".into()]);
+    let viols = evaluate_path_max_runtime_violations(&path_maxes, &rules, &["tests/slow".into()]);
     assert!(viols.is_empty());
 }
 
@@ -227,7 +215,7 @@ fn evaluate_cov_time_gate_disabled_without_limits() {
         limits: &[],
         timing: false,
         pytest_args: &[],
-});
+    });
     assert_eq!(eval, RuntimeGateEval::Disabled);
 }
 
@@ -252,7 +240,8 @@ fn evaluate_cov_time_gate_sole_star_from_python_generation() {
         return;
     };
     let selector = "t.py::test_a".to_string();
-    let mut plan = population_plan_for_selectors(repo, std::slice::from_ref(&selector), &[]).unwrap();
+    let mut plan =
+        population_plan_for_selectors(repo, std::slice::from_ref(&selector), &[]).unwrap();
     plan.base_identity.python_version = py;
     plan.base_identity.pytest_version = pt;
     plan.base_identity.selector_discovery_version = PYTHON_SELECTOR_DISCOVERY_VERSION.to_string();
@@ -282,7 +271,7 @@ fn evaluate_cov_time_gate_sole_star_from_python_generation() {
         limits: &limits,
         timing: true,
         pytest_args: &[],
-});
+    });
     assert_eq!(passed, RuntimeGateEval::Passed);
 
     let tight = vec![("*".to_string(), 0.001)];
@@ -297,7 +286,7 @@ fn evaluate_cov_time_gate_sole_star_from_python_generation() {
         limits: &tight,
         timing: false,
         pytest_args: &[],
-});
+    });
     assert!(matches!(failed, RuntimeGateEval::Failed(_)));
 }
 
@@ -326,7 +315,7 @@ fn evaluate_cov_time_gate_multi_prefix_and_incomplete() {
         limits: &[("*".to_string(), 1.0)],
         timing: false,
         pytest_args: &[],
-});
+    });
     assert_eq!(incomplete, RuntimeGateEval::Incomplete);
 
     let tmp = tempfile::tempdir().unwrap();
@@ -337,7 +326,8 @@ fn evaluate_cov_time_gate_multi_prefix_and_incomplete() {
         return;
     };
     let selector = "tests/fast/a.py::t".to_string();
-    let mut plan = population_plan_for_selectors(repo, std::slice::from_ref(&selector), &[]).unwrap();
+    let mut plan =
+        population_plan_for_selectors(repo, std::slice::from_ref(&selector), &[]).unwrap();
     plan.base_identity.python_version = py;
     plan.base_identity.pytest_version = pt;
     plan.base_identity.selector_discovery_version = PYTHON_SELECTOR_DISCOVERY_VERSION.to_string();
@@ -355,10 +345,7 @@ fn evaluate_cov_time_gate_multi_prefix_and_incomplete() {
         .unwrap();
     clear_python_generation_warm_memo();
 
-    let limits = vec![
-        ("tests/fast".to_string(), 2.0),
-        ("*".to_string(), 0.0),
-    ];
+    let limits = vec![("tests/fast".to_string(), 2.0), ("*".to_string(), 0.0)];
     let eval = evaluate_cov_time_gate(CovTimeGateOpts {
         universe: repo,
         lang_filter: Some(Language::Python),
@@ -370,7 +357,7 @@ fn evaluate_cov_time_gate_multi_prefix_and_incomplete() {
         limits: &limits,
         timing: true,
         pytest_args: &[],
-});
+    });
 
     assert!(
         matches!(eval, RuntimeGateEval::Passed | RuntimeGateEval::Failed(_)),

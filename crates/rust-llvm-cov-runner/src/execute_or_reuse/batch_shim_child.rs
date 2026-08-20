@@ -32,10 +32,6 @@ pub(crate) fn run_target_runner_shim_inner(
     platform: &str,
     command: &[OsString],
 ) -> io::Result<i32> {
-
-
-
-
     crate::kiss_profraw::redirect_inherited_llvm_profile_file(output_dir)?;
     let result = run_target_runner_shim_after_redirect(output_dir, runner_map, platform, command);
     let cleanup_err = crate::kiss_profraw::cleanup_kiss_profraw_for_pid(
@@ -47,9 +43,7 @@ pub(crate) fn run_target_runner_shim_inner(
         (Ok(code), None) => Ok(code),
         (Ok(_), Some(err)) => Err(err),
         (Err(err), None) => Err(err),
-        (Err(err), Some(cleanup)) => {
-            Err(io::Error::new(err.kind(), format!("{err}; {cleanup}")))
-        }
+        (Err(err), Some(cleanup)) => Err(io::Error::new(err.kind(), format!("{err}; {cleanup}"))),
     }
 }
 

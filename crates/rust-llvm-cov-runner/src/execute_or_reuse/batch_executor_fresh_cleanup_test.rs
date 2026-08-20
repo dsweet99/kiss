@@ -9,9 +9,11 @@ use crate::execute_or_reuse::batch_executor_fresh::{
     execute_fresh_batch_with_export_fn, execute_fresh_batch_with_export_fn_and_cleanup,
 };
 use crate::execute_or_reuse::batch_export::FakeInstanceExporter;
+use crate::execute_or_reuse::batch_run::{
+    BatchSubprocessRunner, CurrentRunCleanup, prepare_batch_run_layout,
+};
 use crate::plan::batch_fingerprint::batch_identity;
 use crate::plan::batch_plan::build_rust_coverage_batch_plan;
-use crate::execute_or_reuse::batch_run::{BatchSubprocessRunner, CurrentRunCleanup, prepare_batch_run_layout};
 use crate::test_support::{batch_executor_fixture_repo, batch_executor_request};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -113,13 +115,15 @@ fn fresh_batch_rejects_nonzero_exit_without_terminal_events() {
     let run_root = run_root_for(&req);
     let runner = BatchSubprocessRunner::from_fn(|_, plan| {
         fs::create_dir_all(&plan.build_target).unwrap();
-        Ok(crate::execute_or_reuse::batch_run::BatchSubprocessRunOutcome {
-            exit_code: Some(17),
-            stdout: br#"{"reason":"build-finished","success":true}"#.to_vec(),
-            stderr: b"no terminal events".to_vec(),
-            duration: Duration::from_millis(1),
-            process_residual_count: 0,
-        })
+        Ok(
+            crate::execute_or_reuse::batch_run::BatchSubprocessRunOutcome {
+                exit_code: Some(17),
+                stdout: br#"{"reason":"build-finished","success":true}"#.to_vec(),
+                stderr: b"no terminal events".to_vec(),
+                duration: Duration::from_millis(1),
+                process_residual_count: 0,
+            },
+        )
     });
     let err = execute_rust_coverage_batch_fresh_with_fake(&req, runner).unwrap_err();
     assert!(
@@ -166,13 +170,15 @@ fn build_failure_attempts_current_run_cleanup() {
     let run_root = run_root_for(&req);
     let runner = BatchSubprocessRunner::from_fn(|_, plan| {
         fs::create_dir_all(&plan.build_target).unwrap();
-        Ok(crate::execute_or_reuse::batch_run::BatchSubprocessRunOutcome {
-            exit_code: Some(0),
-            stdout: br#"{"reason":"build-finished","success":false}"#.to_vec(),
-            stderr: b"build failed".to_vec(),
-            duration: Duration::from_millis(1),
-            process_residual_count: 0,
-        })
+        Ok(
+            crate::execute_or_reuse::batch_run::BatchSubprocessRunOutcome {
+                exit_code: Some(0),
+                stdout: br#"{"reason":"build-finished","success":false}"#.to_vec(),
+                stderr: b"build failed".to_vec(),
+                duration: Duration::from_millis(1),
+                process_residual_count: 0,
+            },
+        )
     });
     let err = execute_rust_coverage_batch_fresh_with_fake(&req, runner).unwrap_err();
     assert!(

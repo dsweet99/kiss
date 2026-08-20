@@ -50,8 +50,8 @@ pub fn after_rename(artifact: &str, temporary_path: &Path, final_path: &Path) ->
 pub(crate) use publish::{open_publish_tmp, sync_publish_parent};
 
 #[cfg(test)]
+mod publish_test;
+#[cfg(test)]
 mod test_support;
 #[cfg(test)]
 mod tests;
-#[cfg(test)]
-mod publish_test;

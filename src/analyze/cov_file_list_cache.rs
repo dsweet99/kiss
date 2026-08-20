@@ -1,11 +1,12 @@
-
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use kiss::Language;
 use serde::{Deserialize, Serialize};
 
-use crate::analyze::cov_records_cache::{python_backend_identity_for_file_list, rust_backend_identity_for_file_list};
+use crate::analyze::cov_records_cache::{
+    python_backend_identity_for_file_list, rust_backend_identity_for_file_list,
+};
 use crate::analyze_cache::fnv1a64;
 
 const SCHEMA_VERSION: &str = "kiss-cov-file-list-v2";
@@ -24,7 +25,9 @@ pub(crate) struct CovFileListKey<'a> {
     pub(crate) ignore: &'a [String],
 }
 
-pub(crate) fn try_load_cov_file_list(key: &CovFileListKey<'_>) -> Option<(Vec<PathBuf>, Vec<PathBuf>)> {
+pub(crate) fn try_load_cov_file_list(
+    key: &CovFileListKey<'_>,
+) -> Option<(Vec<PathBuf>, Vec<PathBuf>)> {
     let fingerprint = file_list_fingerprint(key)?;
     let raw = fs::read(cache_path(key.repo_root)).ok()?;
     let cache: CovFileListCache = serde_json::from_slice(&raw).ok()?;
@@ -86,10 +89,16 @@ fn file_list_fingerprint(key: &CovFileListKey<'_>) -> Option<String> {
     let want_py = matches!(key.lang_filter, None | Some(Language::Python));
     let want_rs = matches!(key.lang_filter, None | Some(Language::Rust));
     if want_py {
-        h = fnv1a64(h, python_backend_identity_for_file_list(key.repo_root)?.as_bytes());
+        h = fnv1a64(
+            h,
+            python_backend_identity_for_file_list(key.repo_root)?.as_bytes(),
+        );
     }
     if want_rs {
-        h = fnv1a64(h, rust_backend_identity_for_file_list(key.repo_root)?.as_bytes());
+        h = fnv1a64(
+            h,
+            rust_backend_identity_for_file_list(key.repo_root)?.as_bytes(),
+        );
     }
     Some(format!("{h:016x}"))
 }

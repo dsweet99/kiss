@@ -57,13 +57,14 @@ fn rust_logical_to_kiss_test_ids_uses_path_and_bare_fn_name() {
 
 #[test]
 fn rust_logical_to_kiss_test_ids_maps_repo_path_test_file() {
-
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let map = rust_logical_to_kiss_test_ids(&repo, &[]).unwrap();
     let logical = "format_failures_preserve_order_and_full_selectors";
     assert_eq!(
         map.get(logical).map(String::as_str),
-        Some("src/test_runner/final_summary_test.rs::format_failures_preserve_order_and_full_selectors"),
+        Some(
+            "src/test_runner/final_summary_test.rs::format_failures_preserve_order_and_full_selectors"
+        ),
         "map miss would leave non-pasteable report ids"
     );
 }
@@ -72,8 +73,13 @@ fn rust_logical_to_kiss_test_ids_maps_repo_path_test_file() {
 fn rust_logical_to_kiss_test_ids_survives_sibling_parse_error() {
     let tmp = TempDir::new().unwrap();
     write_demo_crate(&tmp, demo_test_lib());
-    fs::write(tmp.path().join("src").join("broken_test.rs"), "fn broken(\n").unwrap();
-    let map = rust_logical_to_kiss_test_ids(tmp.path(), &[]).expect("parse errors must not wipe map");
+    fs::write(
+        tmp.path().join("src").join("broken_test.rs"),
+        "fn broken(\n",
+    )
+    .unwrap();
+    let map =
+        rust_logical_to_kiss_test_ids(tmp.path(), &[]).expect("parse errors must not wipe map");
     assert_eq!(
         map.get("tests::gets_value").map(String::as_str),
         Some("src/lib.rs::gets_value")
@@ -153,7 +159,6 @@ fn rust_module_population_manifest_selectors_uses_workspace_discovery() {
 #[test]
 fn enumerate_workspace_rust_selectors_fails_fast_on_invalid_syntax() {
     let tmp = TempDir::new().unwrap();
-
 
     write_demo_crate(&tmp, "#[test]\nfn broken(\n");
 

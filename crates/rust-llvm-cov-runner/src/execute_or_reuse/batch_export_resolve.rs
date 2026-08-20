@@ -184,8 +184,6 @@ fn resolve_objects_by_binary_ids(
     let mut unmatched = Vec::new();
     for id in profile_ids {
         if !seed_ids.is_empty() && !seed_ids.contains(id) {
-
-
             continue;
         }
         match try_resolve_object_for_binary_id(tools, catalog, seed_objects, binary_id_map, id)? {
@@ -204,10 +202,8 @@ fn resolve_objects_by_binary_ids(
             )));
         }
 
-
         return Ok(resolved);
     }
-
 
     resolve_with_orphan_profile_ids(
         tools,
@@ -256,9 +252,6 @@ fn try_resolve_object_for_binary_id(
     binary_id_map: &BinaryIdObjectMap,
     expected_id: &str,
 ) -> Result<Option<PathBuf>, RustLlvmCovError> {
-
-
-
     Ok(binary_id_map.lookup(expected_id).cloned())
 }
 
@@ -276,9 +269,7 @@ pub(crate) fn read_object_binary_id(
     if !output.status.success() {
         return Ok(None);
     }
-    Ok(crate::execute_or_reuse::batch_export_tools::parse_readobj_build_id(
-        &output.stdout,
-    ))
+    Ok(crate::execute_or_reuse::batch_export_tools::parse_readobj_build_id(&output.stdout))
 }
 
 #[cfg(test)]

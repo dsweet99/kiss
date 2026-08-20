@@ -139,9 +139,10 @@ fn public_dispatch_routes_analyze_and_tool_groups() {
                     base_branch: None,
                     dry_run: true,
                     force: false,
-        force_bad: false,                    metrics: false,
-                coverage_all: false,
-                watch: false,
+                    force_bad: false,
+                    metrics: false,
+                    coverage_all: false,
+                    watch: false,
                     jobs: None,
                     ignore: vec![],
                     extra: vec![],
@@ -183,9 +184,10 @@ fn dispatch_test_command_routes_valid_test_mode() {
             base_branch: None,
             dry_run: true,
             force: false,
-        force_bad: false,            metrics: false,
-                coverage_all: false,
-                watch: false,
+            force_bad: false,
+            metrics: false,
+            coverage_all: false,
+            watch: false,
             jobs: None,
             ignore: vec![],
             extra: vec![],
@@ -223,9 +225,10 @@ fn dispatch_test_command_rejects_removed_validate_selection() {
             base_branch: None,
             dry_run: true,
             force: false,
-        force_bad: false,            metrics: false,
-                coverage_all: false,
-                watch: false,
+            force_bad: false,
+            metrics: false,
+            coverage_all: false,
+            watch: false,
             jobs: None,
             ignore: vec![],
             extra: vec![],
@@ -237,5 +240,3 @@ fn dispatch_test_command_rejects_removed_validate_selection() {
     std::env::set_current_dir(orig_dir).unwrap();
     assert_eq!(code, 2);
 }
-
-

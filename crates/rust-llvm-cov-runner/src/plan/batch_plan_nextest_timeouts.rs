@@ -1,4 +1,3 @@
-
 use std::collections::BTreeMap;
 
 use crate::plan::batch_plan::RustCoverageBatchRequest;
@@ -15,7 +14,6 @@ pub(crate) fn append_slow_timeout_toml(out: &mut String, req: &RustCoverageBatch
         ));
         return;
     }
-
 
     let exact = true;
     let mut by_period: BTreeMap<String, Vec<&str>> = BTreeMap::new();

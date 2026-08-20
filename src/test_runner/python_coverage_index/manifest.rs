@@ -56,10 +56,7 @@ fn python_population_manifest_is_current_for_warm_seal(
         return false;
     }
 
-
-    if let Ok(pinned) =
-        super::generation::try_load_pinned_python_generation_warm(repo_root)
-    {
+    if let Ok(pinned) = super::generation::try_load_pinned_python_generation_warm(repo_root) {
         return generation_matches_tools_and_selectors(&pinned, repo_root, selectors, identity);
     }
     let Some(manifest) = read_python_population_manifest(repo_root) else {
@@ -195,7 +192,8 @@ pub(crate) fn stored_python_universe_population(
 ) -> Option<StoredPythonPopulation> {
     let _ = env_keys;
     if let Ok(pinned) = super::generation::try_load_pinned_python_generation(repo_root) {
-        let exec = super::generation::current_python_execution_identity(repo_root, test_args).ok()?;
+        let exec =
+            super::generation::current_python_execution_identity(repo_root, test_args).ok()?;
         if pinned.plan.base_identity == exec && pinned.complete {
             valid_stored_selectors(&pinned.plan.selectors)?;
             return Some(StoredPythonPopulation {
@@ -203,7 +201,6 @@ pub(crate) fn stored_python_universe_population(
                 identity: format!("gen:{}", pinned.generation_id),
             });
         }
-
     }
     let identity =
         current_python_population_manifest_identity_with_env_keys(repo_root, test_args, env_keys)
@@ -232,7 +229,8 @@ pub(crate) fn stored_python_universe_selectors_for_current_inputs(
     env_keys: &[&str],
 ) -> Option<Vec<String>> {
     if let Ok(pinned) = super::generation::try_load_pinned_python_generation(repo_root) {
-        let exec = super::generation::current_python_execution_identity(repo_root, test_args).ok()?;
+        let exec =
+            super::generation::current_python_execution_identity(repo_root, test_args).ok()?;
         if pinned.plan.base_identity == exec {
             valid_stored_selectors(&pinned.plan.selectors)?;
             return Some(pinned.plan.selectors.clone());
@@ -355,7 +353,6 @@ fn current_python_population_manifest_identity_with_env_keys(
         pytest_version,
         pytest_args: test_args.to_vec(),
 
-
         env: {
             let _ = env_keys;
             kiss::python_coverage_env_map(repo_root)
@@ -364,10 +361,7 @@ fn current_python_population_manifest_identity_with_env_keys(
 }
 
 #[cfg(test)]
-fn relevant_python_coverage_env(
-    repo_root: &Path,
-    env_keys: &[&str],
-) -> BTreeMap<String, String> {
+fn relevant_python_coverage_env(repo_root: &Path, env_keys: &[&str]) -> BTreeMap<String, String> {
     let _ = env_keys;
     kiss::python_coverage_env_map(repo_root)
 }

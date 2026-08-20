@@ -66,8 +66,6 @@ pub(crate) fn run_batch_subprocess(
         ));
     }
 
-
-
     let mut seen_shim_metadata = HashSet::new();
     ingest_live_shim_identities(
         process_tree.registry().as_ref(),

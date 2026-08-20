@@ -1,4 +1,3 @@
-
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
@@ -21,7 +20,11 @@ fn init_git_repo(root: &Path) {
 fn write_trivial_python_test(root: &Path) {
     let tests = root.join("tests");
     fs::create_dir_all(&tests).unwrap();
-    fs::write(tests.join("test_fast.py"), "def test_ok():\n    assert True\n").unwrap();
+    fs::write(
+        tests.join("test_fast.py"),
+        "def test_ok():\n    assert True\n",
+    )
+    .unwrap();
 }
 
 fn run_args(force_rerun: bool) -> crate::test_runner::RunTestCmdArgs<'static> {
@@ -96,7 +99,6 @@ fn explicit_single_python_test_harness_stays_under_50ms() {
 
     let orig = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
-
 
     let warm_code = run_test(run_args(true));
     assert_eq!(warm_code, 0, "warm force run must pass");

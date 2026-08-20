@@ -129,8 +129,6 @@ impl BatchProcessTreeGuard {
     }
 
     pub fn terminate_descendants(&self, grace: Duration) -> usize {
-
-
         if self.owns_sigint_handler {
             self.interrupted.store(true, Ordering::SeqCst);
         }
@@ -222,8 +220,6 @@ type SigintHandlerState = (Arc<ProcessTreeRegistry>, Arc<AtomicBool>);
 
 #[cfg(unix)]
 extern "C" fn handle_sigint(_signal: libc::c_int) {
-
-
     let flag = ACTIVE_SIGINT_FLAG.load(Ordering::SeqCst);
     if !flag.is_null() {
         unsafe {

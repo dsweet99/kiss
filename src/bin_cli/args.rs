@@ -1,7 +1,10 @@
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use kiss::Language;
-use std::ffi::OsString;
 use std::path::PathBuf;
+
+#[path = "cli_commands.rs"]
+mod cli_commands;
+pub use cli_commands::Commands;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -13,13 +16,28 @@ use std::path::PathBuf;
     after_help = "EXAMPLES:\n  kiss check .                 Run static analysis on current directory\n  kiss check . src/module/     Analyze module against full codebase (focus mode)\n  kiss test                    Run tests and enforce runtime coverage\n  kiss check --lang rust src/  Analyze only Rust files in src/\n  kiss mimic . --out .kissconfig   Generate config from codebase\n  kiss init .                  Write a default .kissconfig"
 )]
 pub struct Cli {
-    #[arg(long, global = true, value_name = "FILE")]
+    #[arg(
+        long,
+        global = true,
+        value_name = "FILE",
+        help = "Path to custom config file (default: .kissconfig)"
+    )]
     pub config: Option<PathBuf>,
 
-    #[arg(long, global = true, value_parser = parse_language, value_name = "LANG")]
+    #[arg(
+        long,
+        global = true,
+        value_parser = parse_language,
+        value_name = "LANG",
+        help = "Filter by language: python (py) or rust (rs)"
+    )]
     pub lang: Option<Language>,
 
-    #[arg(long, global = true)]
+    #[arg(
+        long,
+        global = true,
+        help = "Use built-in defaults, ignoring config files"
+    )]
     pub defaults: bool,
 
     #[command(subcommand)]
@@ -54,8 +72,7 @@ pub enum TestInvocation {
 }
 
 const RESERVED_TEST_ACTIONS: &[&str] = &["commit", "base", "main"];
-const TEST_OPERAND_HINT: &str =
-    "commit, base, main, ., or PATH / PATH::symbol / directory";
+const TEST_OPERAND_HINT: &str = "commit, base, main, ., or PATH / PATH::symbol / directory";
 
 fn is_dot_all_operand(operand: &str) -> bool {
     matches!(operand, "." | "./")
@@ -69,7 +86,6 @@ fn path_has_source_ext(path_part: &str) -> bool {
 }
 
 pub fn parse_test_invocation(operands: &[String]) -> Result<TestInvocation, String> {
-
     if operands.is_empty() {
         return Ok(TestInvocation::All);
     }
@@ -86,18 +102,13 @@ pub fn parse_test_invocation(operands: &[String]) -> Result<TestInvocation, Stri
 
 fn reject_legacy_all_operand(operands: &[String]) -> Result<(), String> {
     if operands.iter().any(|operand| operand == "all") {
-        Err(
-            "unknown test target 'all'. Use `kiss test .` instead of `kiss test all`.".to_string(),
-        )
+        Err("unknown test target 'all'. Use `kiss test .` instead of `kiss test all`.".to_string())
     } else {
         Ok(())
     }
 }
 
-fn try_parse_dot_all(
-    operands: &[String],
-    first: &str,
-) -> Result<Option<TestInvocation>, String> {
+fn try_parse_dot_all(operands: &[String], first: &str) -> Result<Option<TestInvocation>, String> {
     if is_dot_all_operand(first) {
         if operands.len() > 1 {
             return Err("`.` cannot be mixed with additional targets".to_string());
@@ -157,7 +168,10 @@ fn validate_target_operand_shape(raw: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn parse_reserved_action(first: &str, operand_count: usize) -> Result<Option<TestInvocation>, String> {
+fn parse_reserved_action(
+    first: &str,
+    operand_count: usize,
+) -> Result<Option<TestInvocation>, String> {
     if !RESERVED_TEST_ACTIONS.contains(&first) {
         return Ok(None);
     }
@@ -200,167 +214,6 @@ pub fn validate_test_branch_options(
         }
     }
     Ok(())
-}
-
-#[derive(Subcommand, Debug)]
-pub enum Commands {
-    Check {
-        #[arg(default_value = ".")]
-        paths: Vec<String>,
-        #[arg(long, value_name = "PREFIX")]
-        ignore: Vec<String>,
-        #[arg(long)]
-        timing: bool,
-    },
-    Stats {
-        #[arg(default_value = ".")]
-        paths: Vec<String>,
-        #[arg(long, value_name = "N", default_missing_value = "10", num_args = 0..=1, require_equals = true)]
-        all: Option<usize>,
-        #[arg(long)]
-        table: bool,
-        #[arg(long, value_name = "PREFIX")]
-        ignore: Vec<String>,
-    },
-    Mimic {
-        #[arg(required = true)]
-        paths: Vec<String>,
-        #[arg(long, short, value_name = "FILE")]
-        out: Option<PathBuf>,
-        #[arg(long, value_name = "PREFIX")]
-        ignore: Vec<String>,
-    },
-    Clamp {
-        #[arg(long, value_name = "PREFIX")]
-        ignore: Vec<String>,
-    },
-    Init {
-        #[arg(default_value = ".")]
-        repo_path: PathBuf,
-    },
-    Dry {
-        #[arg(default_value = ".")]
-        path: String,
-        #[arg(value_name = "FILTER_FILES")]
-        filter_files: Vec<String>,
-        #[arg(long, default_value = "3")]
-        shingle_size: usize,
-        #[arg(long, default_value = "100")]
-        minhash_size: usize,
-        #[arg(long, default_value = "20")]
-        lsh_bands: usize,
-        #[arg(long, default_value = "0.9")]
-        min_similarity: f64,
-        #[arg(long, value_name = "PREFIX")]
-        ignore: Vec<String>,
-    },
-    Rules,
-    Config,
-    Viz {
-        out: PathBuf,
-        #[arg(default_value = ".")]
-        paths: Vec<String>,
-        #[arg(long, value_name = "Z", default_value = "1.0")]
-        zoom: f64,
-        #[arg(long, value_name = "N", conflicts_with = "zoom")]
-        num_nodes: Option<usize>,
-        #[arg(long, value_name = "PREFIX")]
-        ignore: Vec<String>,
-    },
-    Shrink {
-        #[arg(
-            value_name = "METRIC=VALUE",
-            help = "Target metric and value (metrics: files, code_units, statements, graph_nodes, graph_edges)"
-        )]
-        target: Option<String>,
-        #[arg(default_value = ".")]
-        paths: Vec<String>,
-        #[arg(long, value_name = "PREFIX")]
-        ignore: Vec<String>,
-    },
-    #[command(alias = "t")]
-    Test {
-        #[arg(
-            num_args = 0..,
-            value_name = "commit|base|main|.|TARGET",
-            default_value = "."
-        )]
-        operands: Vec<String>,
-        #[arg(long, value_name = "BRANCH")]
-        main_branch: Option<String>,
-        #[arg(long, value_name = "BRANCH")]
-        base_branch: Option<String>,
-        #[arg(long)]
-        dry_run: bool,
-        #[arg(
-            long,
-            help = "Force selected tests to rerun instead of reusing test-runner caches"
-        )]
-        force: bool,
-        #[arg(
-            long,
-            help = "Rerun tests that need it under normal rules, plus any marked FAIL or TIMEOUT"
-        )]
-        force_bad: bool,
-        #[arg(long)]
-        metrics: bool,
-        #[arg(long)]
-        coverage_all: bool,
-        #[arg(long)]
-        watch: bool,
-        #[arg(
-            short = 'j',
-            long,
-            value_name = "JOBS",
-            value_parser = parse_positive_usize,
-            help = "Maximum number of test jobs to run concurrently"
-        )]
-        jobs: Option<usize>,
-        #[arg(long, value_name = "PREFIX")]
-        ignore: Vec<String>,
-        #[arg(last = true)]
-        extra: Vec<String>,
-    },
-    #[command(name = "cov", alias = "__coverage")]
-    Coverage {
-        #[arg(default_value = ".")]
-        paths: Vec<String>,
-        #[arg(long)]
-        all: bool,
-        #[arg(long, value_name = "PREFIX")]
-        ignore: Vec<String>,
-        #[arg(long)]
-        timing: bool,
-        #[arg(short = 'j', long, value_name = "JOBS", value_parser = parse_positive_usize)]
-        jobs: Option<usize>,
-    },
-    #[command(name = "__rust-llvm-cov-target-runner", hide = true)]
-    RustLlvmCovTargetRunner {
-        #[arg(long, value_name = "DIR")]
-        output_dir: PathBuf,
-        #[arg(long, value_name = "PATH")]
-        runner_map: PathBuf,
-        #[arg(long, value_name = "TRIPLE")]
-        platform: String,
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        command: Vec<OsString>,
-    },
-    Mv {
-        #[arg(value_name = "SOURCE")]
-        query: String,
-        #[arg(value_name = "TARGET")]
-        new_name: String,
-        #[arg(default_value = ".")]
-        paths: Vec<String>,
-        #[arg(long, value_name = "DEST_FILE")]
-        to: Option<PathBuf>,
-        #[arg(long)]
-        dry_run: bool,
-        #[arg(long)]
-        json: bool,
-        #[arg(long, value_name = "PREFIX")]
-        ignore: Vec<String>,
-    },
 }
 
 #[cfg(test)]

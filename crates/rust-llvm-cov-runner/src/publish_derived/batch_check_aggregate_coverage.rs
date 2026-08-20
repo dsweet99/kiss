@@ -3,8 +3,8 @@ use std::fs;
 use std::path::Path;
 
 use super::{
-    CheckAggregateBinaryRecord, OnDiskCheckAggregate, ValidatedCheckAggregate,
-    check_aggregate_path, CHECK_AGGREGATE_SCHEMA_VERSION,
+    CHECK_AGGREGATE_SCHEMA_VERSION, CheckAggregateBinaryRecord, OnDiskCheckAggregate,
+    ValidatedCheckAggregate, check_aggregate_path,
 };
 use crate::RustLineCoverage;
 

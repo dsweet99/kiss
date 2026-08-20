@@ -1,25 +1,21 @@
-
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 #[cfg(unix)]
 use super::control::NudgeRequest;
-#[cfg(not(unix))]
-use super::session_cycle::NudgeRequest;
 use super::coverage::WatchCoverageResult;
 use super::event_source::WatchEventSource;
 use super::filter::WatchPathFilter;
 use super::reload::{WatchLiveConfig, WatchReloadSeed};
-use super::session_cycle::{
-    CycleOutcome, EXIT_INTERRUPTED, WatchCycleCtx, run_one_watch_cycle,
-};
+#[cfg(not(unix))]
+use super::session_cycle::NudgeRequest;
+use super::session_cycle::{CycleOutcome, EXIT_INTERRUPTED, WatchCycleCtx, run_one_watch_cycle};
 use super::session_idle::{
     QueuedCycle, coalesce_nudges, force_ready_if_pending, wait_until_next_cycle,
 };
 use super::settle::SettleMachine;
 use crate::test_runner::runners::clear_python_collect_memo;
 use crate::test_runner::{RunTestCmdArgs, RunTestOnceOutcome, run_test_once};
-
 
 #[allow(unused_imports)]
 pub(super) use super::session_cycle::take_queued_cycle_args;
@@ -137,9 +133,14 @@ where
             force_ready_if_pending(&mut machine, repo_root);
             continue;
         }
-        if let Some(code) =
-            wait_until_next_cycle(source, &mut filter, &mut machine, repo_root, nudge_rx, &mut queued)
-        {
+        if let Some(code) = wait_until_next_cycle(
+            source,
+            &mut filter,
+            &mut machine,
+            repo_root,
+            nudge_rx,
+            &mut queued,
+        ) {
             return code;
         }
     }

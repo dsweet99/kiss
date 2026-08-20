@@ -1,4 +1,3 @@
-
 mod expand;
 mod model;
 mod model_python;
@@ -18,11 +17,11 @@ pub(super) fn language_label(language: Language) -> &'static str {
 }
 
 #[cfg(test)]
-#[path = "targets_test.rs"]
-mod targets_test;
-#[cfg(test)]
 #[path = "targets_b_test.rs"]
 mod targets_b_test;
 #[cfg(test)]
 #[path = "targets_expand_test.rs"]
 mod targets_expand_test;
+#[cfg(test)]
+#[path = "targets_test.rs"]
+mod targets_test;

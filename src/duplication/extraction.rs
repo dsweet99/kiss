@@ -25,9 +25,6 @@ pub(crate) fn is_nontrivial_chunk(normalized: &str, line_count: usize) -> bool {
 
 #[must_use]
 pub fn extract_chunks_for_duplication(parsed_files: &[&ParsedFile]) -> Vec<CodeChunk> {
-
-
-
     let mut per_file: Vec<(usize, Vec<CodeChunk>)> = parsed_files
         .par_iter()
         .enumerate()
@@ -53,8 +50,6 @@ pub fn extract_chunks_for_duplication(parsed_files: &[&ParsedFile]) -> Vec<CodeC
 
 #[must_use]
 pub fn extract_rust_chunks_for_duplication(parsed_files: &[&ParsedRustFile]) -> Vec<CodeChunk> {
-
-
     let mut chunks = Vec::new();
     for parsed in parsed_files {
         extract_rust_function_chunks(&parsed.ast, &parsed.source, &parsed.path, &mut chunks);

@@ -1,4 +1,3 @@
-
 use crate::rust_cov_cache::{RustCovCacheEntry, repo_relative_coverage_file};
 use crate::{CACHE_SCHEMA_VERSION, RustLlvmCovError};
 use rpytest_runner::TestStatus;
@@ -145,7 +144,10 @@ fn compress_file_coverage(
         .collect();
     let mut files = BTreeMap::new();
     for (rel, by_selector) in raw {
-        files.insert(rel.clone(), compress_selector_ranges(by_selector, &selector_ids));
+        files.insert(
+            rel.clone(),
+            compress_selector_ranges(by_selector, &selector_ids),
+        );
     }
     files
 }

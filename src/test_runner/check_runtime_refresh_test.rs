@@ -155,7 +155,6 @@ fn aggregate_repair_ignores_unmapped_binary_digest_changes() {
     ));
 }
 
-
 fn aggregate_prior(
     selectors: &[String],
     binaries: &[(&str, &str)],
@@ -259,13 +258,6 @@ fn coverage_refresh_error_constructors_and_display_cover_all_arms() {
 
 #[test]
 fn finalize_population_summary_labeled_uses_caller_label_not_kiss_cov() {
-
-
-
-
-
-
-
     use crate::test_runner::runners::SelectorExecutionSummary;
 
     let tmp = tempfile::tempdir().unwrap();
@@ -277,12 +269,18 @@ fn finalize_population_summary_labeled_uses_caller_label_not_kiss_cov() {
     };
 
     let err_cov = super::finalize_population_summary(tmp.path(), &[], &summary, false).unwrap_err();
-    let err_test = super::finalize_population_summary_labeled(tmp.path(), &[], &summary, false, "kiss test").unwrap_err();
+    let err_test =
+        super::finalize_population_summary_labeled(tmp.path(), &[], &summary, false, "kiss test")
+            .unwrap_err();
 
-
-    assert!(matches!(err_cov, super::CoverageRefreshError::TestExecution { .. }));
-    assert!(matches!(err_test, super::CoverageRefreshError::TestExecution { .. }));
-
+    assert!(matches!(
+        err_cov,
+        super::CoverageRefreshError::TestExecution { .. }
+    ));
+    assert!(matches!(
+        err_test,
+        super::CoverageRefreshError::TestExecution { .. }
+    ));
 
     assert_eq!(err_cov.to_string(), err_test.to_string());
 }

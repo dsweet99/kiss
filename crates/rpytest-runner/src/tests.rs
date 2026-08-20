@@ -29,16 +29,18 @@ fn run_many_preserves_request_order() {
     });
 
     let cwd = PathBuf::from(".");
-    let req = |nodeid: &str| PytestRunRequest::from_parts(
-        nodeid.to_string(),
-        cwd.clone(),
-        PathBuf::from("python"),
-        Vec::new(),
-        BTreeMap::new(),
-        Vec::new(),
-        Vec::new(),
-        None,
-    );
+    let req = |nodeid: &str| {
+        PytestRunRequest::from_parts(
+            nodeid.to_string(),
+            cwd.clone(),
+            PathBuf::from("python"),
+            Vec::new(),
+            BTreeMap::new(),
+            Vec::new(),
+            Vec::new(),
+            None,
+        )
+    };
     let got = runner.run_many(vec![req("a.py::test_a"), req("b.py::test_b")]);
     assert_eq!(got[0].as_ref().unwrap().nodeid, "a.py::test_a");
     assert_eq!(got[1].as_ref().unwrap().nodeid, "b.py::test_b");
@@ -126,15 +128,15 @@ fn subprocess_runner_runs_one_pytest_node() {
 
     let outcome = subprocess_pytest_runner()
         .run_one(PytestRunRequest::from_parts(
-        "test_sample.py::test_ok".to_string(),
-        tmp.path().to_path_buf(),
-        python!(),
-        vec!["-q".to_string()],
-        BTreeMap::new(),
-        Vec::new(),
-        Vec::new(),
-        None,
-    ))
+            "test_sample.py::test_ok".to_string(),
+            tmp.path().to_path_buf(),
+            python!(),
+            vec!["-q".to_string()],
+            BTreeMap::new(),
+            Vec::new(),
+            Vec::new(),
+            None,
+        ))
         .unwrap();
 
     assert_eq!(outcome.status, TestStatus::Passed);
@@ -153,15 +155,15 @@ fn forkserver_runner_runs_one_pytest_node() {
 
     let outcome = forkserver_pytest_runner()
         .run_one(PytestRunRequest::from_parts(
-        "test_sample.py::test_ok".to_string(),
-        tmp.path().to_path_buf(),
-        python!(),
-        vec!["-q".to_string(), "-s".to_string()],
-        BTreeMap::new(),
-        Vec::new(),
-        Vec::new(),
-        None,
-    ))
+            "test_sample.py::test_ok".to_string(),
+            tmp.path().to_path_buf(),
+            python!(),
+            vec!["-q".to_string(), "-s".to_string()],
+            BTreeMap::new(),
+            Vec::new(),
+            Vec::new(),
+            None,
+        ))
         .unwrap();
 
     assert_eq!(outcome.status, TestStatus::Passed);
@@ -181,15 +183,15 @@ fn forkserver_runner_ignores_inherited_pytest_addopts_testmon() {
 
     let outcome = forkserver_pytest_runner()
         .run_one(PytestRunRequest::from_parts(
-        "test_sample.py::test_ok".to_string(),
-        tmp.path().to_path_buf(),
-        python!(),
-        vec!["-q".to_string()],
-        BTreeMap::new(),
-        Vec::new(),
-        Vec::new(),
-        None,
-    ))
+            "test_sample.py::test_ok".to_string(),
+            tmp.path().to_path_buf(),
+            python!(),
+            vec!["-q".to_string()],
+            BTreeMap::new(),
+            Vec::new(),
+            Vec::new(),
+            None,
+        ))
         .unwrap();
 
     match old_addopts {
@@ -217,15 +219,15 @@ fn subprocess_runner_reports_failed_pytest_node() {
 
     let outcome = subprocess_pytest_runner()
         .run_one(PytestRunRequest::from_parts(
-        "test_sample.py::test_fail".to_string(),
-        tmp.path().to_path_buf(),
-        python!(),
-        vec!["-q".to_string()],
-        BTreeMap::new(),
-        Vec::new(),
-        Vec::new(),
-        None,
-    ))
+            "test_sample.py::test_fail".to_string(),
+            tmp.path().to_path_buf(),
+            python!(),
+            vec!["-q".to_string()],
+            BTreeMap::new(),
+            Vec::new(),
+            Vec::new(),
+            None,
+        ))
         .unwrap();
 
     assert_eq!(outcome.status, TestStatus::Failed);
@@ -247,16 +249,18 @@ fn subprocess_runner_run_many_preserves_order_for_real_nodes() {
         "def test_fail():\n    assert False\n",
     )
     .unwrap();
-    let req = |root: &Path, nodeid: &str| PytestRunRequest::from_parts(
-        nodeid.to_string(),
-        root.to_path_buf(),
-        python!(),
-        vec!["-q".to_string()],
-        BTreeMap::new(),
-        Vec::new(),
-        Vec::new(),
-        None,
-    );
+    let req = |root: &Path, nodeid: &str| {
+        PytestRunRequest::from_parts(
+            nodeid.to_string(),
+            root.to_path_buf(),
+            python!(),
+            vec!["-q".to_string()],
+            BTreeMap::new(),
+            Vec::new(),
+            Vec::new(),
+            None,
+        )
+    };
 
     let outcomes = SubprocessPytestRunner.run_many(vec![
         req(ok_tmp.path(), "test_sample.py::test_ok"),
@@ -314,15 +318,15 @@ fn subprocess_runner_imports_preload_before_pytest() {
 
     let outcome = subprocess_pytest_runner()
         .run_one(PytestRunRequest::from_parts(
-        "test_sample.py::test_ok".to_string(),
-        tmp.path().to_path_buf(),
-        python!(),
-        vec!["-q".to_string()],
-        env,
-        vec!["preload_flag".to_string()],
-        Vec::new(),
-        None,
-    ))
+            "test_sample.py::test_ok".to_string(),
+            tmp.path().to_path_buf(),
+            python!(),
+            vec!["-q".to_string()],
+            env,
+            vec!["preload_flag".to_string()],
+            Vec::new(),
+            None,
+        ))
         .unwrap();
 
     assert_eq!(outcome.status, TestStatus::Passed);
@@ -340,15 +344,15 @@ fn subprocess_runner_enforces_timeout() {
 
     let err = subprocess_pytest_runner()
         .run_one(PytestRunRequest::from_parts(
-        "test_sleep.py::test_sleep".to_string(),
-        tmp.path().to_path_buf(),
-        python!(),
-        vec!["-q".to_string()],
-        BTreeMap::new(),
-        Vec::new(),
-        Vec::new(),
-        Some(Duration::from_millis(20)),
-    ))
+            "test_sleep.py::test_sleep".to_string(),
+            tmp.path().to_path_buf(),
+            python!(),
+            vec!["-q".to_string()],
+            BTreeMap::new(),
+            Vec::new(),
+            Vec::new(),
+            Some(Duration::from_millis(20)),
+        ))
         .unwrap_err();
 
     assert_eq!(err, PytestRunError::Timeout(Duration::from_millis(20)));

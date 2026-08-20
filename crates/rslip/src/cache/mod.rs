@@ -61,7 +61,6 @@ pub(crate) fn load_reusable_rslip_cache_entry(
 }
 
 pub(crate) fn entry_is_reusable(entry: &RslipCacheEntry, source_root: &Path) -> bool {
-
     if entry.status != rpytest_runner::TestStatus::Passed {
         return false;
     }
@@ -84,16 +83,11 @@ pub(crate) fn store_rslip_cache_entry(
         .parent()
         .ok_or_else(|| io::Error::other("cache path has no parent"))?;
     let tmp_path = parent.join(format!(".{}.{}.tmp", fingerprint, rslip_unique_suffix()));
-    kiss_publication_barrier::publish_atomically(
-        "rslip_selector_entry",
-        &path,
-        &tmp_path,
-        |file| {
-            serde_json::to_writer(&mut *file, entry).map_err(io::Error::other)?;
-            file.write_all(b"\n")?;
-            Ok(())
-        },
-    )
+    kiss_publication_barrier::publish_atomically("rslip_selector_entry", &path, &tmp_path, |file| {
+        serde_json::to_writer(&mut *file, entry).map_err(io::Error::other)?;
+        file.write_all(b"\n")?;
+        Ok(())
+    })
 }
 
 #[cfg(test)]
@@ -175,7 +169,6 @@ pub(crate) fn covered_file_digests(
         digests.insert(module.to_string(), digest);
     }
     if digests.is_empty() {
-
         return Some(digests);
     }
     Some(digests)

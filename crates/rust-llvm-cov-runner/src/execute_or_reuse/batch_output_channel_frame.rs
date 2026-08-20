@@ -3,7 +3,9 @@ use std::os::unix::net::UnixStream;
 
 use crate::execute_or_reuse::batch_output_channel_token::TOKEN_LEN;
 
-use crate::execute_or_reuse::batch_output_channel::{FRAME_MAGIC, OutputChannelFrame, OutputStreamKind};
+use crate::execute_or_reuse::batch_output_channel::{
+    FRAME_MAGIC, OutputChannelFrame, OutputStreamKind,
+};
 
 pub(crate) fn relay_frame_live(frame: &OutputChannelFrame) {
     match frame.stream {

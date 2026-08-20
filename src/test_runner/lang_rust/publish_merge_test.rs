@@ -1,6 +1,5 @@
-
 use super::publish_merge::{
-    covered_sets_for_publish, merge_statuses, publish_complete, publication_universe,
+    covered_sets_for_publish, merge_statuses, publication_universe, publish_complete,
     statuses_from_summary,
 };
 use crate::test_runner::lang_iface::{
@@ -54,8 +53,14 @@ fn merge_updates_only_ran_selectors_and_preserves_siblings() {
         force_selectors: Vec::new(),
         jobs: 1,
         gate: kiss::GateConfig::default(),
-        extras: crate::test_runner::language_keyed::LanguageKeyed { python: vec![], rust: vec![] },
-        planned: crate::test_runner::language_keyed::LanguageKeyed { python: vec![], rust: universe.clone() },
+        extras: crate::test_runner::language_keyed::LanguageKeyed {
+            python: vec![],
+            rust: vec![],
+        },
+        planned: crate::test_runner::language_keyed::LanguageKeyed {
+            python: vec![],
+            rust: universe.clone(),
+        },
     };
     assert!(publish_complete(&req, &universe, &statuses, Some(&prior)));
 }
@@ -86,10 +91,7 @@ fn statuses_from_summary_classifies_failed_and_timeout() {
         ..Default::default()
     };
     summary.selector_durations_ns.insert("p".into(), 3);
-    let (st, dur) = statuses_from_summary(
-        &summary,
-        &["p".into(), "f".into(), "t".into()],
-    );
+    let (st, dur) = statuses_from_summary(&summary, &["p".into(), "f".into(), "t".into()]);
     assert_eq!(
         st,
         vec![
@@ -103,7 +105,6 @@ fn statuses_from_summary_classifies_failed_and_timeout() {
 
 #[test]
 fn statuses_from_summary_prefers_raw_over_effective_sla() {
-
     let mut summary = SelectorExecutionSummary::default();
     summary.record(SelectorExecutionRecord {
         selector: "slow_but_passed".into(),
@@ -113,7 +114,10 @@ fn statuses_from_summary_prefers_raw_over_effective_sla() {
         exit_code: Some(124),
         duration: Duration::from_secs(2),
     });
-    assert_eq!(summary.timed_out_selectors, vec!["slow_but_passed".to_string()]);
+    assert_eq!(
+        summary.timed_out_selectors,
+        vec!["slow_but_passed".to_string()]
+    );
     let (st, _) = statuses_from_summary(&summary, &["slow_but_passed".into()]);
     assert_eq!(st, vec![WitnessStatus::Passed]);
 }

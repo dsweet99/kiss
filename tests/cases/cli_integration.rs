@@ -113,11 +113,7 @@ fn cli_analyze_runs_on_python() {
     let tmp = TempDir::new().unwrap();
     fs::write(tmp.path().join("simple.py"), "def foo(): pass").unwrap();
     seed_python_runtime_coverage(tmp.path(), &[("tests/test_simple.py::test_simple", vec![])]);
-    let output = kiss_binary()
-        .arg("check")
-        .arg(tmp.path())
-        .output()
-        .unwrap();
+    let output = kiss_binary().arg("check").arg(tmp.path()).output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         !stdout.is_empty(),
@@ -176,11 +172,6 @@ fn cli_stats_all_uses_metric_registry_display_names() {
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-
-
-
-
-
     assert!(
         stdout.contains("STAT:positional_args:"),
         "Expected STAT:positional_args line in output. stdout:\n{stdout}"
@@ -193,8 +184,6 @@ fn cli_stats_all_uses_metric_registry_display_names() {
 
 #[test]
 fn cli_stats_all_does_not_consume_path_as_n() {
-
-
     let tmp = TempDir::new().unwrap();
     fs::write(tmp.path().join("mod.py"), "def foo():\n    return 1\n").unwrap();
     let output = kiss_binary()
@@ -217,8 +206,6 @@ fn cli_stats_all_does_not_consume_path_as_n() {
 
 #[test]
 fn cli_stats_summary_includes_lines_per_file() {
-
-
     let tmp = TempDir::new().unwrap();
     fs::write(tmp.path().join("mod.py"), "def foo():\n    return 1\n").unwrap();
     let output = kiss_binary().arg("stats").arg(tmp.path()).output().unwrap();

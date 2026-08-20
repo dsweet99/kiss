@@ -10,13 +10,6 @@ fn parse_py(path: &Path) -> ParsedFile {
 
 #[test]
 fn c2_break_1_empty_init_py_is_falsely_orphaned() {
-
-
-
-
-
-
-
     use std::fs;
     use tempfile::TempDir;
 
@@ -47,14 +40,6 @@ fn c2_break_1_empty_init_py_is_falsely_orphaned() {
 
 #[test]
 fn c2_break_2_ambiguous_dotted_suffix_skips_parent_fallback() {
-
-
-
-
-
-
-
-
     use std::fs;
     use tempfile::TempDir;
 
@@ -136,11 +121,6 @@ fn build_cross_pkg_registry_fixture() -> (tempfile::TempDir, Vec<std::path::Path
 
 #[test]
 fn c2_break_3_many_cross_package_importers_all_fail_on_ambiguous_suffix() {
-
-
-
-
-
     let (_tmp, paths) = build_cross_pkg_registry_fixture();
     let parsed: Vec<_> = paths.iter().map(|p| parse_py(p)).collect();
     let refs: Vec<&ParsedFile> = parsed.iter().collect();
@@ -159,11 +139,6 @@ fn c2_break_3_many_cross_package_importers_all_fail_on_ambiguous_suffix() {
 
 #[test]
 fn c2_break_4_type_checking_only_import_makes_module_invisible() {
-
-
-
-
-
     use std::fs;
     use tempfile::TempDir;
 
@@ -213,12 +188,6 @@ fn c2_break_4_type_checking_only_import_makes_module_invisible() {
 
 #[test]
 fn c2_break_5_absolute_path_truncation_creates_qualified_name_collision() {
-
-
-
-
-
-
     use std::fs;
     use tempfile::TempDir;
 

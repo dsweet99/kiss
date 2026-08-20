@@ -1,4 +1,3 @@
-
 #![cfg(unix)]
 
 use std::path::Path;
@@ -34,10 +33,7 @@ fn oneshot_defers_to_idle_watcher() {
     write_kissconfig(tmp.path(), 1.0);
     commit_all(tmp.path(), "init");
 
-    let _watch = start_watch(
-        tmp.path(),
-        &["test", "--watch", "--lang", "python", "."],
-    );
+    let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
     wait_watch_idle_cycle(tmp.path());
 
     let output = Command::new(env!("CARGO_BIN_EXE_kiss"))
@@ -52,10 +48,7 @@ fn oneshot_defers_to_idle_watcher() {
         "status={:?} stdout={stdout:?} stderr={stderr:?}",
         output.status
     );
-    assert!(
-        stdout.contains("waiting for watcher"),
-        "stdout={stdout:?}"
-    );
+    assert!(stdout.contains("waiting for watcher"), "stdout={stdout:?}");
     assert!(
         stdout.contains("watcher cycle complete"),
         "stdout={stdout:?}"
@@ -78,10 +71,7 @@ fn oneshot_during_settle_skips_quiet_period() {
     write_kissconfig(tmp.path(), 20.0);
     commit_all(tmp.path(), "init");
 
-    let _watch = start_watch(
-        tmp.path(),
-        &["test", "--watch", "--lang", "python", "."],
-    );
+    let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
     wait_watch_idle_cycle(tmp.path());
 
     std::fs::write(
@@ -131,11 +121,11 @@ fn no_watcher_oneshot_still_runs_tests() {
         "stdout={stdout:?} stderr={:?}",
         String::from_utf8_lossy(&output.stderr)
     );
+    assert!(!stdout.contains("waiting for watcher"), "stdout={stdout:?}");
     assert!(
-        !stdout.contains("waiting for watcher"),
+        stdout.contains("PASS:") || stdout.contains("PASS"),
         "stdout={stdout:?}"
     );
-    assert!(stdout.contains("PASS:") || stdout.contains("PASS"), "stdout={stdout:?}");
 }
 
 #[test]
@@ -185,10 +175,7 @@ fn oneshot_waits_out_long_inflight_cycle() {
     write_kissconfig(tmp.path(), 1.0);
     commit_all(tmp.path(), "init");
 
-    let _watch = start_watch(
-        tmp.path(),
-        &["test", "--watch", "--lang", "python", "."],
-    );
+    let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
     std::thread::sleep(Duration::from_millis(200));
     let output = Command::new(env!("CARGO_BIN_EXE_kiss"))
         .args(["test", "--lang", "python", "."])
@@ -219,10 +206,7 @@ fn oneshot_with_coverage_gate_defers_to_watcher() {
     write_kissconfig_with_threshold(tmp.path(), 1.0, 1);
     commit_all(tmp.path(), "init");
 
-    let _watch = start_watch(
-        tmp.path(),
-        &["test", "--watch", "--lang", "python", "."],
-    );
+    let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
     wait_watch_idle_cycle(tmp.path());
     std::thread::sleep(Duration::from_secs(5));
 
@@ -238,10 +222,7 @@ fn oneshot_with_coverage_gate_defers_to_watcher() {
         "status={:?} stdout={stdout:?} stderr={stderr:?}",
         output.status
     );
-    assert!(
-        stdout.contains("waiting for watcher"),
-        "stdout={stdout:?}"
-    );
+    assert!(stdout.contains("waiting for watcher"), "stdout={stdout:?}");
     assert!(
         !stderr.contains("missing or stale/incompatible population"),
         "stderr={stderr:?}"
@@ -264,10 +245,7 @@ fn stale_generation_repaired_on_watcher_not_client() {
     write_kissconfig_with_threshold(tmp.path(), 1.0, 1);
     commit_all(tmp.path(), "init");
 
-    let _watch = start_watch(
-        tmp.path(),
-        &["test", "--watch", "--lang", "python", "."],
-    );
+    let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
     wait_watch_idle_cycle(tmp.path());
     std::thread::sleep(Duration::from_secs(5));
 
@@ -284,10 +262,7 @@ fn stale_generation_repaired_on_watcher_not_client() {
         .expect("oneshot T after fingerprint drift");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stdout.contains("waiting for watcher"),
-        "stdout={stdout:?}"
-    );
+    assert!(stdout.contains("waiting for watcher"), "stdout={stdout:?}");
     assert!(
         !stderr.contains("missing or stale/incompatible population"),
         "T must not own cov/load; stderr={stderr:?}"
@@ -324,10 +299,7 @@ fn watcher_reloads_kissconfig_threshold_change() {
     write_kissconfig_with_threshold(tmp.path(), 1.0, 0);
     commit_all(tmp.path(), "init");
 
-    let _watch = start_watch(
-        tmp.path(),
-        &["test", "--watch", "--lang", "python", "."],
-    );
+    let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
     wait_watch_idle_cycle(tmp.path());
 
     let ok = Command::new(env!("CARGO_BIN_EXE_kiss"))
@@ -341,7 +313,6 @@ fn watcher_reloads_kissconfig_threshold_change() {
         String::from_utf8_lossy(&ok.stdout),
         String::from_utf8_lossy(&ok.stderr)
     );
-
 
     write_kissconfig_with_threshold(tmp.path(), 1.0, 90);
     std::thread::sleep(Duration::from_secs(4));
@@ -357,10 +328,7 @@ fn watcher_reloads_kissconfig_threshold_change() {
         !output.status.success(),
         "expected coverage fail after reload; stdout={stdout:?} stderr={stderr:?}"
     );
-    assert!(
-        stdout.contains("waiting for watcher"),
-        "stdout={stdout:?}"
-    );
+    assert!(stdout.contains("waiting for watcher"), "stdout={stdout:?}");
     assert!(
         stdout.contains("VIOLATION:test_coverage:") || stderr.contains("VIOLATION:test_coverage:"),
         "reloaded threshold must produce coverage VIOLATION; stdout={stdout:?} stderr={stderr:?}"

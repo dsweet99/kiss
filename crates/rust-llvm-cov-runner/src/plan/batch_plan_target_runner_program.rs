@@ -164,8 +164,6 @@ mod tests {
 
     #[test]
     fn target_runner_shim_program_honors_test_override() {
-
-
         unsafe {
             std::env::set_var("KISS_RUST_LLVM_COV_TARGET_RUNNER_SHIM", "/tmp/kiss-test");
         }

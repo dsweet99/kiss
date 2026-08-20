@@ -1,13 +1,12 @@
-
+use crate::RustLlvmCovError;
 use crate::publish_derived::batch_io_skip_not_found::{
     dir_entry_path_ok_missing, read_dir_ok_missing, remove_dir_all_ok_missing,
 };
 use crate::publish_derived::batch_reverse_build::{
-    BuiltReverseIndex, FileMeta, FileReverseRecord, ReverseMeta, ReversePublishInfo,
-    REVERSE_LINE_INDEX_SCHEMA, build_reverse_line_index, file_record_name, hex_digest,
+    BuiltReverseIndex, FileMeta, FileReverseRecord, REVERSE_LINE_INDEX_SCHEMA, ReverseMeta,
+    ReversePublishInfo, build_reverse_line_index, file_record_name, hex_digest,
 };
 use crate::rust_cov_cache::rust_cov_unique_suffix;
-use crate::RustLlvmCovError;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fs::{self, File};
@@ -159,10 +158,7 @@ fn activate_staged_snapshot(
 }
 
 fn io_msg(err: std::io::Error, context: &str) -> RustLlvmCovError {
-    RustLlvmCovError::Io(std::io::Error::new(
-        err.kind(),
-        format!("{context}: {err}"),
-    ))
+    RustLlvmCovError::Io(std::io::Error::new(err.kind(), format!("{context}: {err}")))
 }
 
 pub fn prune_unreferenced_snapshots(
@@ -240,6 +236,7 @@ fn write_json_bytes<T: Serialize>(
 }
 
 fn sync_dir(path: &Path) -> Result<(), RustLlvmCovError> {
-    let dir = File::open(path).map_err(|err| io_msg(err, &format!("sync_dir {}", path.display())))?;
+    let dir =
+        File::open(path).map_err(|err| io_msg(err, &format!("sync_dir {}", path.display())))?;
     dir.sync_all().map_err(RustLlvmCovError::Io)
 }

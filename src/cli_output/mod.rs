@@ -12,7 +12,6 @@ pub use cov_gate::{
     coverage_gate_failure_lines, print_codebase_coverage_gate_failure, print_coverage_gate_failure,
 };
 
-
 pub const VIOLATIONS_FIX_HINT: &str =
     "Run 'kiss rules' for more information about fixing violations.";
 

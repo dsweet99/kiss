@@ -53,8 +53,6 @@ pub fn parse_rust_file(path: &Path) -> Result<ParsedRustFile, RustParseError> {
     })
 }
 
-
-
 pub fn parse_rust_files(paths: &[PathBuf]) -> Vec<Result<ParsedRustFile, RustParseError>> {
     paths.iter().map(|path| parse_rust_file(path)).collect()
 }

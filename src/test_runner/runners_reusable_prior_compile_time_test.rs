@@ -33,10 +33,7 @@ fn build_script_edit_forces_population_while_ordinary_lib_stays_reusable() {
     )
     .unwrap();
     assert!(!ordinary.population_required.rust);
-    assert_eq!(
-        ordinary.selection_basis.rust,
-        SelectionBasis::ReusablePrior
-    );
+    assert_eq!(ordinary.selection_basis.rust, SelectionBasis::ReusablePrior);
 
     fs::write(
         tmp.path().join("builder").join("build.rs"),
@@ -109,10 +106,7 @@ fn proc_macro_edit_forces_population_while_ordinary_lib_stays_reusable() {
     )
     .unwrap();
     assert!(!ordinary.population_required.rust);
-    assert_eq!(
-        ordinary.selection_basis.rust,
-        SelectionBasis::ReusablePrior
-    );
+    assert_eq!(ordinary.selection_basis.rust, SelectionBasis::ReusablePrior);
 
     fs::write(
         tmp.path().join("macros").join("src").join("lib.rs"),

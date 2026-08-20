@@ -1,4 +1,3 @@
-
 use crate::bin_cli::args::TestInvocation;
 use kiss::Language;
 
@@ -110,15 +109,15 @@ fn apply_force_all_population_only_for_all_invocation() {
             repo_root: tmp.path().to_path_buf(),
             sel: crate::test_runner::language_keyed::LanguageKeyed {
                 python: if case.has_py {
-                vec!["tests/a.py::t".into()]
-            } else {
-                Vec::new()
-            },
+                    vec!["tests/a.py::t".into()]
+                } else {
+                    Vec::new()
+                },
                 rust: if case.has_rs {
-                vec!["crate::tests::t".into()]
-            } else {
-                Vec::new()
-            },
+                    vec!["crate::tests::t".into()]
+                } else {
+                    Vec::new()
+                },
             },
             population_required: crate::test_runner::language_keyed::LanguageKeyed {
                 python: false,
@@ -166,11 +165,11 @@ fn apply_force_all_population_only_for_all_invocation() {
             metrics: false,
             jobs: 1,
             extra: &[],
-        python_extra: &[],
+            python_extra: &[],
             ignore: &[],
             lang_filter: case.lang_filter,
             config_main_branch: None,
-        gate_config: kiss::GateConfig::default()
+            gate_config: kiss::GateConfig::default(),
         };
         crate::test_runner::apply_force_all_population(&args, &mut planned);
         assert_eq!(

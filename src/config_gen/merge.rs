@@ -65,7 +65,11 @@ pub(super) fn load_merge_tables(path: &Path, new: &str) -> Option<(toml::Table, 
 }
 
 pub(super) fn merge_global(merged: &mut toml::Table, ex: &toml::Table, nw: &toml::Table) {
-    if let Some(v) = nw.get("global").cloned().or_else(|| ex.get("global").cloned()) {
+    if let Some(v) = nw
+        .get("global")
+        .cloned()
+        .or_else(|| ex.get("global").cloned())
+    {
         merged.insert("global".to_string(), v);
     }
 }
@@ -95,7 +99,6 @@ const TEST_GATE_MERGE_KEYS: &[&str] = &[
 ];
 
 pub(super) fn merge_test(merged: &mut toml::Table, ex: &toml::Table, nw: &toml::Table) {
-
     let mut table = toml::Table::new();
     if let Some(toml::Value::Table(ex_t)) = ex.get("test") {
         for (k, v) in ex_t {

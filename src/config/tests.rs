@@ -155,8 +155,6 @@ fn test_unknown_key_returns_error() {
 
 #[test]
 fn test_thresholds_section_accepts_boolean_parameters() {
-
-
     let result = Config::try_load_from_content(
         "[thresholds]\nboolean_parameters = 2",
         ConfigLanguage::Python,
@@ -186,15 +184,13 @@ fn load_and_load_for_language_with_override_apply_toml() {
 
     let tmp = tempfile::NamedTempFile::new().unwrap();
     std::fs::write(tmp.path(), "[python]\nstatements_per_function = 61\n").unwrap();
-    let overridden =
-        Config::load_for_language_with_override(tmp.path(), ConfigLanguage::Python);
+    let overridden = Config::load_for_language_with_override(tmp.path(), ConfigLanguage::Python);
     assert_eq!(overridden.statements_per_function, 61);
 
     let missing = tempfile::NamedTempFile::new().unwrap();
     std::fs::remove_file(missing.path()).unwrap();
 
-    let fallback =
-        Config::load_for_language_with_override(missing.path(), ConfigLanguage::Python);
+    let fallback = Config::load_for_language_with_override(missing.path(), ConfigLanguage::Python);
     let baseline = Config::load_for_language(ConfigLanguage::Python);
     assert_eq!(
         fallback.statements_per_function,

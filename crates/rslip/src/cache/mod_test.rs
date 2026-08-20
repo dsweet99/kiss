@@ -1,7 +1,6 @@
 use super::*;
 use std::collections::BTreeSet;
 
-
 #[test]
 fn rslip_cache_fingerprint_stable_when_unrelated_python_changes() {
     let tmp = tempfile::tempdir().unwrap();
@@ -33,10 +32,7 @@ fn coverage_gated_reuse_hits_when_covered_files_unchanged() {
     fs::write(&app, "x = 1\n").unwrap();
     fs::write(&test, "def test_ok():\n    assert True\n").unwrap();
     let coverage = LineCoverage {
-        files: BTreeMap::from([(
-            app.to_string_lossy().into_owned(),
-            BTreeSet::from([1]),
-        )]),
+        files: BTreeMap::from([(app.to_string_lossy().into_owned(), BTreeSet::from([1]))]),
     };
     let entry = RslipCacheEntry {
         schema_version: CACHE_SCHEMA_VERSION.to_string(),

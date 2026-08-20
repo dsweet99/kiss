@@ -14,9 +14,6 @@ type TimingSlots = Arc<Mutex<Vec<Option<Instant>>>>;
 
 #[test]
 fn large_miss_batch_submits_one_bounded_call_without_retaining_entry_locks() {
-
-
-
     let tmp = tempfile::tempdir().unwrap();
     write_ok_sample(tmp.path());
     let miss_count = 4500;
@@ -44,9 +41,6 @@ fn large_miss_batch_submits_one_bounded_call_without_retaining_entry_locks() {
 
 #[test]
 fn bounded_miss_queue_starts_third_before_slow_first_finishes() {
-
-
-
     let tmp = tempfile::tempdir().unwrap();
     write_ok_sample(tmp.path());
     let starts = empty_timing_slots(3);
@@ -71,11 +65,6 @@ fn concurrent_cache_entry_wins_over_local_normal_outcome() {
     write_ok_sample(tmp.path());
     assert_concurrent_normal_entry_wins(tmp.path());
     assert_empty_concurrent_entry_does_not_win_over_timeout(tmp.path());
-}
-
-fn write_ok_sample(root: &Path) {
-    fs::write(root.join("app.py"), "x = 1\n").unwrap();
-    fs::write(root.join("test_sample.py"), "def test_ok():\n    assert True\n").unwrap();
 }
 
 fn numbered_sample_requests(root: &Path, count: usize) -> Vec<RslipRequest> {
@@ -134,7 +123,6 @@ fn run_blocking_first_worker_queue(
         let third_tx = third_started_tx.clone();
         thread::spawn(move || {
             loop {
-
                 let Some((index, req)) = queue.lock().unwrap().pop_front() else {
                     break;
                 };
@@ -200,16 +188,12 @@ fn assert_concurrent_normal_entry_wins(root: &Path) {
 }
 
 fn assert_empty_concurrent_entry_does_not_win_over_timeout(root: &Path) {
-
-
     let mut req = rslip_sample_request(root);
     req.nodeid = "test_sample.py::test_timeout".to_string();
     let fingerprint = rslip_cache_fingerprint(&req).unwrap();
     let cache_root = req.cache_root.clone();
-    let concurrent = cache::RslipCacheEntry::from_outcome(
-        &failed_empty_outcome(&req.nodeid, 7),
-        root,
-    );
+    let concurrent =
+        cache::RslipCacheEntry::from_outcome(&failed_empty_outcome(&req.nodeid, 7), root);
     let rslip = Rslip::new(PytestRunner::from_bounded_fn(move |reqs, _jobs| {
         store_rslip_cache_entry(&cache_root, &fingerprint, &concurrent).unwrap();
         reqs.into_iter()

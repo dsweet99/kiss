@@ -165,7 +165,11 @@ fn test_infer_gate_config_no_orphans_module_enabled() {
 #[test]
 fn test_infer_gate_config_comment_removal_enabled() {
     let tmp = TempDir::new().unwrap();
-    std::fs::write(tmp.path().join("a.py"), "from b import bar\ndef foo():\n    bar()\n").unwrap();
+    std::fs::write(
+        tmp.path().join("a.py"),
+        "from b import bar\ndef foo():\n    bar()\n",
+    )
+    .unwrap();
     std::fs::write(tmp.path().join("b.py"), "def bar():\n    pass\n").unwrap();
     let paths = vec![tmp.path().to_string_lossy().to_string()];
     let gate = infer_gate_config_for_paths(&paths, Some(Language::Python), &[]);

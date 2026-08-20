@@ -95,7 +95,15 @@ fn ensure_check_runtime_coverage_on_empty_repo_reports_refresh_failure() {
         python: false,
         rust: true,
     };
-    let err = super::ensure_check_runtime_coverage(repo, required, &[], 1, &[], &kiss::GateConfig::default()).unwrap_err();
+    let err = super::ensure_check_runtime_coverage(
+        repo,
+        required,
+        &[],
+        1,
+        &[],
+        &kiss::GateConfig::default(),
+    )
+    .unwrap_err();
     let rendered = err.to_string();
     assert!(rendered.contains("runtime line coverage"), "{rendered}");
 }
@@ -329,4 +337,3 @@ fn finalize_population_summary_full_refresh_flag_is_metamorphic() {
     let b = super::finalize_population_summary(tmp.path(), &[], &summary, true).unwrap_err();
     assert_eq!(a.to_string(), b.to_string());
 }
-

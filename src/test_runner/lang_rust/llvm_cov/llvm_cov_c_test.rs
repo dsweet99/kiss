@@ -1,5 +1,5 @@
-use super::*;
 use super::tests::{passed_rust_llvm_cov_outcome, write_rust_test_crate};
+use super::*;
 use rust_llvm_cov_runner::RustCoverageBatchCounters;
 
 fn default_tool_versions() -> RustCoverageToolVersions {
@@ -139,10 +139,7 @@ fn rust_coverage_batch_request_applies_path_limits_with_report_ids() {
     let tmp = tempfile::tempdir().unwrap();
     write_rust_test_crate(tmp.path(), &["case"]);
     let gate = kiss::GateConfig {
-        max_unit_test_seconds: vec![
-            ("src/lib.rs".to_string(), 10.0),
-            ("*".to_string(), 0.0),
-        ],
+        max_unit_test_seconds: vec![("src/lib.rs".to_string(), 10.0), ("*".to_string(), 0.0)],
         ..Default::default()
     };
     let req = rust_coverage_batch_request_from_parts(
@@ -186,8 +183,5 @@ fn rust_coverage_batch_request_check_aggregate_skips_report_ids_for_catch_all_ti
         &kiss::GateConfig::default(),
     )
     .expect("catch-all CheckAggregate timeouts must not require report ids");
-    assert_eq!(
-        req.selector_timeout_millis.get("tests::case"),
-        Some(&2_000)
-    );
+    assert_eq!(req.selector_timeout_millis.get("tests::case"), Some(&2_000));
 }

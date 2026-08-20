@@ -4,11 +4,6 @@ use kiss::graph::{DependencyGraph, analyze_graph};
 use kiss::minhash::{MinHashSignature, compute_minhash, estimate_similarity, generate_shingles};
 use std::fmt::Write as _;
 
-
-
-
-
-
 #[test]
 fn h4_fully_connected_graph_100_nodes() {
     let n = 100;
@@ -84,11 +79,6 @@ fn h4_long_chain_graph_200_deep() {
     assert_eq!(tail.fan_in, 1);
 }
 
-
-
-
-
-
 #[test]
 fn h5_same_file_two_paths_in_graph() {
     let mut g = DependencyGraph::new();
@@ -117,12 +107,6 @@ fn h5_same_file_two_paths_in_graph() {
         "Phantom orphan for 'pkg.utils' should be suppressed (same path as connected 'utils')"
     );
 }
-
-
-
-
-
-
 
 #[test]
 fn h6_factory_closure_not_self_duplicate() {
@@ -171,10 +155,6 @@ def mk_mk_likelihood(noise_transform_type, mk_covar_module):
             .collect::<Vec<_>>()
     );
 }
-
-
-
-
 
 #[test]
 fn h2_duplication_pipeline_with_near_identical_functions() {

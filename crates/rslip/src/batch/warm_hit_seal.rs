@@ -1,4 +1,3 @@
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::{self, Write};
@@ -95,7 +94,10 @@ fn content_fingerprint_matches(reqs: &[RslipRequest], seal: &WarmHitSeal) -> boo
     let Some(seal_fp) = seal.content_fingerprint.as_deref() else {
         return false;
     };
-    let Some(first_fp) = reqs.first().and_then(|req| req.content_fingerprint.as_deref()) else {
+    let Some(first_fp) = reqs
+        .first()
+        .and_then(|req| req.content_fingerprint.as_deref())
+    else {
         return false;
     };
     if first_fp != seal_fp {
@@ -141,9 +143,10 @@ pub(crate) fn try_warm_hit_seal(
     if reqs.iter().any(|req| req.force_rerun) {
         return None;
     }
-    if !reqs.iter().all(|req| {
-        req.cache_root == first.cache_root && req.source_root == first.source_root
-    }) {
+    if !reqs
+        .iter()
+        .all(|req| req.cache_root == first.cache_root && req.source_root == first.source_root)
+    {
         return None;
     }
     let bytes = fs::read(seal_path(&first.cache_root)).ok()?;
@@ -204,7 +207,9 @@ pub(crate) fn write_warm_hit_seal(
     }
     let covered_files = covered_file_stamps(source_root, &covered_digests);
     if covered_files.is_empty() {
-        return Err(io::Error::other("warm hit seal requires covered file stamps"));
+        return Err(io::Error::other(
+            "warm hit seal requires covered file stamps",
+        ));
     }
     let seal = WarmHitSeal {
         schema_version: SEAL_SCHEMA_VERSION.to_string(),
@@ -313,7 +318,6 @@ mod tests {
         let hit = try_warm_hit_seal(std::slice::from_ref(&req), context).expect("warm hit");
         assert_eq!(hit[0].duration, Duration::from_millis(12));
 
-
         fs::write(&app, "x = 22\n").unwrap();
         assert!(try_warm_hit_seal(std::slice::from_ref(&req), context).is_none());
     }
@@ -355,7 +359,6 @@ mod tests {
             Some("fp-abc".to_string()),
         )
         .unwrap();
-
 
         fs::remove_file(&app).unwrap();
         assert!(try_warm_hit_seal(std::slice::from_ref(&req), context).is_some());

@@ -1,11 +1,10 @@
-
 use std::path::Path;
 
 use kiss::GateConfig;
 
 use super::{
-    CoverageRefreshError, CoverageRefreshStats, LanguageRefreshStats, ensure_python_runtime_coverage,
-    ensure_rust_runtime_coverage,
+    CoverageRefreshError, CoverageRefreshStats, LanguageRefreshStats,
+    ensure_python_runtime_coverage, ensure_rust_runtime_coverage,
 };
 
 pub(crate) trait CoverageRuntimeRefresh {

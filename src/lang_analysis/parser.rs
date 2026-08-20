@@ -1,4 +1,3 @@
-
 use std::path::PathBuf;
 
 use super::analysis::{LanguageAnalysis, PythonAnalysis, RustAnalysis};
@@ -10,7 +9,10 @@ pub type ParseResults<T, E> = Vec<Result<T, E>>;
 pub trait LanguageParser: LanguageAnalysis {
     type Parsed;
     type Error;
-    fn parse_many(&self, paths: &[PathBuf]) -> Result<ParseResults<Self::Parsed, Self::Error>, Self::Error>;
+    fn parse_many(
+        &self,
+        paths: &[PathBuf],
+    ) -> Result<ParseResults<Self::Parsed, Self::Error>, Self::Error>;
 }
 
 impl LanguageParser for PythonAnalysis {

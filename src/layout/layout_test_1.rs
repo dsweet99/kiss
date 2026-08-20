@@ -66,9 +66,6 @@ fn test_compute_what_if_shows_improvement() {
 
 #[test]
 fn test_compute_what_if_overlapping_cycles() {
-
-
-
     let mut graph = DependencyGraph::new();
     graph.add_dependency("a", "b");
     graph.add_dependency("b", "c");
@@ -111,7 +108,6 @@ fn test_count_cross_directory_deps() {
     graph.add_dependency("mod_b", "mod_c");
     graph.add_dependency("mod_c", "mod_d");
 
-
     graph
         .paths
         .insert("mod_a".to_string(), PathBuf::from("src/mod_a.py"));
@@ -127,8 +123,6 @@ fn test_count_cross_directory_deps() {
         .insert("mod_d".to_string(), PathBuf::from("lib/mod_d.py"));
 
     let count = count_cross_directory_deps(&graph);
-
-
 
     assert_eq!(count, 2);
 }
@@ -161,15 +155,11 @@ fn test_count_cross_directory_deps_missing_path() {
         .paths
         .insert("a".to_string(), PathBuf::from("src/a.py"));
 
-
     assert_eq!(count_cross_directory_deps(&graph), 0);
 }
 
 #[test]
 fn test_count_layering_violations_dag_no_violations() {
-
-
-
     let mut graph = DependencyGraph::new();
     graph.add_dependency("app", "domain");
     graph.add_dependency("domain", "utils");
@@ -180,8 +170,6 @@ fn test_count_layering_violations_dag_no_violations() {
 
 #[test]
 fn test_count_layering_violations_with_cycle() {
-
-
     let mut graph = DependencyGraph::new();
     graph.add_dependency("app", "utils");
     graph.add_dependency("utils", "app");

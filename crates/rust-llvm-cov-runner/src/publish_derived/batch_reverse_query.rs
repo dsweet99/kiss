@@ -1,11 +1,10 @@
-
-use crate::publish_derived::batch_entry_state::{read_entry_state, EntryState};
+use crate::publish_derived::batch_entry_state::{EntryState, read_entry_state};
 use crate::publish_derived::batch_reverse_build::{
-    file_record_name, hex_digest, FileReverseRecord, ReverseMeta, REVERSE_LINE_INDEX_SCHEMA,
+    FileReverseRecord, REVERSE_LINE_INDEX_SCHEMA, ReverseMeta, file_record_name, hex_digest,
 };
 use crate::publish_derived::batch_reverse_publish::snapshot_path;
 use crate::publish_derived::batch_reverse_query_metrics::{
-    record_reverse_hit, record_reverse_unavailable, ReverseUnavailableReason,
+    ReverseUnavailableReason, record_reverse_hit, record_reverse_unavailable,
 };
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
@@ -13,8 +12,8 @@ use std::fs;
 use std::path::Path;
 
 pub use crate::publish_derived::batch_reverse_query_metrics::{
+    REVERSE_QUERY_HITS, ReverseQueryCounters, ReverseUnavailableCounts,
     snapshot_reverse_query_counters, take_reverse_query_counters_since_last_copy,
-    ReverseQueryCounters, ReverseUnavailableCounts, REVERSE_QUERY_HITS,
 };
 
 #[cfg(test)]
@@ -74,18 +73,16 @@ fn query_validated(
     let state = read_entry_state(cache_root).ok_or(ReverseUnavailableReason::MissingRecord)?;
     classify_entry_state(&state, &needle, reverse)?;
     let root = snapshot_path(cache_root, &reverse.snapshot_id);
-    let meta_bytes = fs::read(root.join("meta.json")).map_err(|_| {
-        ReverseUnavailableReason::MissingRecord
-    })?;
+    let meta_bytes =
+        fs::read(root.join("meta.json")).map_err(|_| ReverseUnavailableReason::MissingRecord)?;
     if hex_digest(&meta_bytes) != reverse.meta_digest {
         return Err(ReverseUnavailableReason::Digest);
     }
-    let meta: ReverseMeta = serde_json::from_slice(&meta_bytes)
-        .map_err(|_| ReverseUnavailableReason::Malformed)?;
+    let meta: ReverseMeta =
+        serde_json::from_slice(&meta_bytes).map_err(|_| ReverseUnavailableReason::Malformed)?;
     classify_meta(&meta, &needle, reverse)?;
-    let selectors_bytes = fs::read(root.join("selectors.json")).map_err(|_| {
-        ReverseUnavailableReason::MissingRecord
-    })?;
+    let selectors_bytes = fs::read(root.join("selectors.json"))
+        .map_err(|_| ReverseUnavailableReason::MissingRecord)?;
     if hex_digest(&selectors_bytes) != meta.selectors_digest {
         return Err(ReverseUnavailableReason::Digest);
     }
@@ -180,8 +177,8 @@ fn load_validated_record(
     if hex_digest(&bytes) != file_meta.digest {
         return Err(ReverseUnavailableReason::Digest);
     }
-    let record: FileReverseRecord = serde_json::from_slice(&bytes)
-        .map_err(|_| ReverseUnavailableReason::Malformed)?;
+    let record: FileReverseRecord =
+        serde_json::from_slice(&bytes).map_err(|_| ReverseUnavailableReason::Malformed)?;
     if record.file != *rel {
         return Err(ReverseUnavailableReason::Malformed);
     }

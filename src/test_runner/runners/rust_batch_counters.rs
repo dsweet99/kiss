@@ -1,4 +1,3 @@
-
 use super::SelectorExecutionSummary;
 use rust_llvm_cov_runner::RustCoverageBatchCounters;
 
@@ -13,8 +12,7 @@ pub(super) fn record_reverse_batch_counters(
     summary.rust_reverse_unavailable_fingerprint += counters.reverse_unavailable.fingerprint;
     summary.rust_reverse_unavailable_digest += counters.reverse_unavailable.digest;
     summary.rust_reverse_unavailable_malformed += counters.reverse_unavailable.malformed;
-    summary.rust_reverse_unavailable_missing_record +=
-        counters.reverse_unavailable.missing_record;
+    summary.rust_reverse_unavailable_missing_record += counters.reverse_unavailable.missing_record;
     if counters.reverse_published {
         summary.rust_reverse_published = true;
     }

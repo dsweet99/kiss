@@ -51,10 +51,7 @@ pub(super) fn same_cached_paths(
     focus.cache_focus_paths() == cache_focus
 }
 
-pub(super) fn load_full_cache(
-    repo_root: &Path,
-    fingerprint: &str,
-) -> Option<FullCheckCache> {
+pub(super) fn load_full_cache(repo_root: &Path, fingerprint: &str) -> Option<FullCheckCache> {
     let p = cache_path_full(repo_root, fingerprint);
     let bytes = std::fs::read(p).ok()?;
     let c: FullCheckCache = bincode::deserialize(&bytes).ok()?;

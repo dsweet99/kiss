@@ -133,11 +133,7 @@ mod tests {
             resolve_shim_metadata(&by_full_name, &missing_items, "old-bin$case").unwrap_err();
         assert!(format!("{missing:?}").contains("missing target-runner metadata"));
 
-
-        let ambiguous_items = vec![
-            shim("aclick_usage-aaa$case"),
-            shim("aclick_usage-bbb$case"),
-        ];
+        let ambiguous_items = vec![shim("aclick_usage-aaa$case"), shim("aclick_usage-bbb$case")];
         let ambiguous = resolve_shim_metadata(
             &by_full_name,
             &ambiguous_items,
@@ -145,7 +141,6 @@ mod tests {
         )
         .unwrap_err();
         assert!(format!("{ambiguous:?}").contains("ambiguous target-runner metadata"));
-
 
         let unrelated = vec![shim("bin-a$case"), shim("bin-b$case")];
         let missing_compat =

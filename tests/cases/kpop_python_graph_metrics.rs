@@ -12,12 +12,6 @@ fn parse_py(path: &Path) -> ParsedFile {
 
 #[test]
 fn bug_indirect_dependencies_should_not_count_external_modules() {
-
-
-
-
-
-
     let a = parse_py(Path::new("tests/fake_python/graph_ext_a.py"));
     let b = parse_py(Path::new("tests/fake_python/graph_ext_b.py"));
     let parsed_files: Vec<&ParsedFile> = vec![&a, &b];
@@ -30,13 +24,6 @@ fn bug_indirect_dependencies_should_not_count_external_modules() {
 
 #[test]
 fn bug_indirect_dependencies_violation_should_include_entry_modules() {
-
-
-
-
-
-
-
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
     fs::write(root.join("entry.py"), "import hub\n").unwrap();

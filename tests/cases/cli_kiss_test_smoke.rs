@@ -213,7 +213,9 @@ fn kiss_test_python_failure_prints_failed_recap_line() {
         "streaming FAIL: line must remain: {stdout}"
     );
     assert!(
-        stdout.lines().any(|line| line == "FAIL test_lib.py::test_f"),
+        stdout
+            .lines()
+            .any(|line| line == "FAIL test_lib.py::test_f"),
         "recap must include colon-free FAIL selector, stdout={stdout}"
     );
     assert!(
@@ -235,7 +237,14 @@ fn kiss_test_force_explicit_python_target_stays_selective_on_dry_run() {
     commit_all(tmp.path(), "init");
     let out = kiss_test_dry_run(
         tmp.path(),
-        &["test", "test_lib.py::test_f", "--force", "--dry-run", "--lang", "python"],
+        &[
+            "test",
+            "test_lib.py::test_f",
+            "--force",
+            "--dry-run",
+            "--lang",
+            "python",
+        ],
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
@@ -387,8 +396,7 @@ mod tests {\n\
         "recap must use kiss-test PATH::symbol id, stdout={stdout}"
     );
     assert!(
-        stdout.contains("FAIL: src/lib.rs::gets_value")
-            || stdout.contains("FAIL ("),
+        stdout.contains("FAIL: src/lib.rs::gets_value") || stdout.contains("FAIL ("),
         "streaming FAIL line must use PATH::symbol id: {stdout}"
     );
 }

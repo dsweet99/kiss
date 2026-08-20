@@ -1,4 +1,3 @@
-
 use std::path::Path;
 
 use rpytest_runner::TestStatus;
@@ -18,10 +17,8 @@ pub(crate) fn materialize_and_publish_from_cached_outcomes(
     is_indexable: &dyn Fn(&Path, &Path) -> bool,
 ) -> Result<(PythonPopulationPlan, String), String> {
     let plan = population_plan_for_selectors(repo_root, selectors, test_args)?;
-    let evidence =
-        evidence_from_cached_outcomes(repo_root, &plan, test_args, is_indexable)?;
-    let generation_id =
-        publish_python_population_generation(repo_root, &plan, &evidence, reason)?;
+    let evidence = evidence_from_cached_outcomes(repo_root, &plan, test_args, is_indexable)?;
+    let generation_id = publish_python_population_generation(repo_root, &plan, &evidence, reason)?;
     Ok((plan, generation_id))
 }
 
@@ -53,8 +50,8 @@ pub(crate) fn selector_deltas_from_cached_outcomes(
     let outcomes = rslip::load_cached_outcomes_many_trusting_population(&reqs);
     let mut deltas = Vec::new();
     for (selector, outcome) in selectors.iter().zip(outcomes) {
-        let Some(outcome) = outcome
-            .map_err(|e| format!("error: kiss: malformed Python cache entry: {e:?}"))?
+        let Some(outcome) =
+            outcome.map_err(|e| format!("error: kiss: malformed Python cache entry: {e:?}"))?
         else {
             continue;
         };
@@ -107,11 +104,7 @@ fn outcome_to_evidence(
     selector_evidence_from_outcome(repo_root, outcome, effective, reason, is_indexable)
 }
 
-fn effective_status(
-    raw: &TestStatus,
-    gate: &kiss::GateConfig,
-    selector: &str,
-) -> TestStatus {
+fn effective_status(raw: &TestStatus, gate: &kiss::GateConfig, selector: &str) -> TestStatus {
     if *raw != TestStatus::Passed {
         return *raw;
     }

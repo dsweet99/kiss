@@ -1,4 +1,3 @@
-
 use std::path::Path;
 
 use super::analysis::{LanguageAnalysis, PythonAnalysis, RustAnalysis};

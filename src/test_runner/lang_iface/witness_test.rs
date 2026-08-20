@@ -1,9 +1,8 @@
 use kiss::GateConfig;
 
 use super::witness::{
-    accept_witness, all_misses_warm_skippable, miss_selectors_for_repair,
-    reclassify_statuses_with_gate, AcceptDecision, AcceptMode, ExecutionWitness, WitnessScope,
-    WitnessStatus,
+    AcceptDecision, AcceptMode, ExecutionWitness, WitnessScope, WitnessStatus, accept_witness,
+    all_misses_warm_skippable, miss_selectors_for_repair, reclassify_statuses_with_gate,
 };
 
 fn witness(

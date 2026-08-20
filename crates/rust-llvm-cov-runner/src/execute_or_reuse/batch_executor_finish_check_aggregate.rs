@@ -46,8 +46,6 @@ pub(super) fn store_and_publish_check_aggregate(
             ),
         };
 
-
-
     for outcome in &mut completed {
         outcome.coverage = RustLineCoverage {
             files: BTreeMap::new(),

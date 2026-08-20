@@ -8,17 +8,17 @@ use rslip::{
     CacheStatus as PyCacheStatus, Rslip, RslipBatchProgress, RslipError, RslipOutcome, RslipRequest,
 };
 
+use crate::test_runner::last_status::{python_last_status_identity, record_statuses};
 use crate::test_runner::runners::{
     SelectorCacheRecord, SelectorExecutionRecord, SelectorExecutionSummary,
 };
-use crate::test_runner::last_status::{python_last_status_identity, record_statuses};
 
-use super::rslip_request::timeout_for_selector_with_gate;
-pub(crate) use super::rslip_request::{detect_rslip_versions, rslip_request_from_parts};
-#[cfg(test)]
-pub(crate) use super::rslip_request::timeout_for_selector;
 #[cfg(test)]
 use super::rslip_request::python_version_supports_rslip;
+#[cfg(test)]
+pub(crate) use super::rslip_request::timeout_for_selector;
+use super::rslip_request::timeout_for_selector_with_gate;
+pub(crate) use super::rslip_request::{detect_rslip_versions, rslip_request_from_parts};
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run_rslip_selectors(
@@ -71,7 +71,6 @@ fn run_rslip_selectors_with_runner(
         .map(|selector| selector.as_str())
         .collect();
 
-
     let gate = &args.gate;
 
     let mut template = rslip_request_from_parts(
@@ -99,16 +98,12 @@ fn run_rslip_selectors_with_runner(
         &mut statuses,
         &mut stdout,
     );
-    let results = Rslip::new(runner).run_or_reuse_many_bounded_with_progress(
-        reqs,
-        jobs,
-        |event| {
-            if let RslipBatchProgress::Prepared { elapsed, .. } = &event {
-                crate::test_runner::emit_stage_time("rslip_prepare", *elapsed);
-            }
-            handle_rslip_batch_progress(event, &runnable_selectors, gate, &mut stdout);
-        },
-    );
+    let results = Rslip::new(runner).run_or_reuse_many_bounded_with_progress(reqs, jobs, |event| {
+        if let RslipBatchProgress::Prepared { elapsed, .. } = &event {
+            crate::test_runner::emit_stage_time("rslip_prepare", *elapsed);
+        }
+        handle_rslip_batch_progress(event, &runnable_selectors, gate, &mut stdout);
+    });
     let _ = std::io::Write::flush(&mut stdout);
     for (selector, result) in runnable_selectors.iter().zip(results) {
         record_rslip_selector_result(selector, result, gate, &mut summary, &mut statuses);
@@ -142,7 +137,6 @@ fn partition_rslip_requests(
         }
         let mut req = input.template.clone();
         req.nodeid = selector.clone();
-
 
         req.timeout = Some(timeout);
         req.force_rerun = input.force_rerun || input.force_set.contains(selector.as_str());
@@ -181,9 +175,6 @@ fn record_rslip_selector_result(
 ) {
     match result {
         Ok(outcome) => {
-
-
-
             let raw = outcome.status;
             let effective = crate::test_runner::status_labels::apply_unit_test_time_limit(
                 raw,
@@ -205,7 +196,6 @@ fn record_rslip_selector_result(
                 duration: outcome.duration,
             });
         }
-
 
         Err(_) => {
             statuses.push((selector.to_string(), rpytest_runner::TestStatus::Failed));

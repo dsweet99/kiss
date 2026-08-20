@@ -1,4 +1,3 @@
-
 use crate::test_runner::lang_iface::{
     AcceptMode, EnsureRequest, EnsureRuntimeResult, LanguageEnsureResult, LanguageRuntime,
     OutcomeBatch, PublishBatch, all_misses_warm_skippable, miss_selectors_for_repair,
@@ -57,12 +56,8 @@ fn ensure_one_language(
     let mut witness = loaded.clone();
     if let Some(ref mut w) = witness {
         let gate_selectors = module.selectors_for_time_gate(request, &w.selectors)?;
-        w.statuses = reclassify_statuses_with_gate(
-            &gate_selectors,
-            &w.statuses,
-            &w.durations_ns,
-            gate,
-        );
+        w.statuses =
+            reclassify_statuses_with_gate(&gate_selectors, &w.statuses, &w.durations_ns, gate);
     }
     let mut misses = miss_selectors_for_repair(
         request.mode,
@@ -76,7 +71,8 @@ fn ensure_one_language(
         &mut misses,
         &request.force_selectors,
     );
-    if let Some(accepted) = try_accept_or_warm_report(request, module, &planned, &witness, &misses) {
+    if let Some(accepted) = try_accept_or_warm_report(request, module, &planned, &witness, &misses)
+    {
         return Ok(accepted);
     }
     run_misses_and_maybe_publish(request, module, &planned, witness, &misses, &identity)
@@ -87,7 +83,6 @@ fn try_publish_empty_all(
     module: &dyn LanguageRuntime,
     planned: &[String],
 ) -> Result<Option<LanguageEnsureResult>, String> {
-
     if !(planned.is_empty() && request.mode == AcceptMode::All) {
         return Ok(None);
     }
@@ -123,8 +118,6 @@ fn try_accept_or_warm_report(
         });
     }
 
-
-
     if !request.force
         && let Some(w) = witness.as_ref()
         && all_misses_warm_skippable(w, misses)
@@ -148,8 +141,6 @@ fn run_misses_and_maybe_publish(
 ) -> Result<LanguageEnsureResult, String> {
     let batch = module.run_selectors(request, misses)?;
 
-
-
     let publication_universe = batch.publication_universe.clone().or_else(|| {
         if request.mode == AcceptMode::All && batch.selectors.len() == planned.len() {
             Some(planned.to_vec())
@@ -165,9 +156,6 @@ fn run_misses_and_maybe_publish(
         publication_universe,
         summary: batch.summary.clone(),
     };
-
-
-
 
     let identity_unchanged = witness
         .as_ref()
@@ -201,12 +189,15 @@ fn outcomes_unchanged_vs_prior(
         .enumerate()
         .map(|(i, s)| (s.as_str(), i))
         .collect::<std::collections::BTreeMap<_, _>>();
-    batch.selectors.iter().zip(batch.statuses.iter()).zip(batch.durations_ns.iter()).all(
-        |((sel, status), dur)| match index.get(sel.as_str()) {
+    batch
+        .selectors
+        .iter()
+        .zip(batch.statuses.iter())
+        .zip(batch.durations_ns.iter())
+        .all(|((sel, status), dur)| match index.get(sel.as_str()) {
             Some(&i) => prior.statuses[i] == *status && prior.durations_ns[i] == *dur,
             None => false,
-        },
-    )
+        })
 }
 
 fn merge_accept_and_run(

@@ -1,6 +1,7 @@
-
 use crate::publish_derived::batch_entry_state::publish_next_entry_state;
-use crate::publish_derived::batch_reverse_build::{hex_digest, BuiltReverseIndex, FileReverseRecord};
+use crate::publish_derived::batch_reverse_build::{
+    BuiltReverseIndex, FileReverseRecord, hex_digest,
+};
 use crate::publish_derived::batch_reverse_publish::{
     prune_unreferenced_snapshots, snapshot_path, write_reverse_snapshot,
 };
@@ -108,7 +109,11 @@ fn reverse_rejects_malformed_meta_json() {
     let source = tmp.path().join("src");
     seed(&cache, &source);
     let info = publish_bound_reverse(&cache, &source, "gen1", "fp");
-    fs::write(snapshot_path(&cache, &info.snapshot_id).join("meta.json"), b"{").unwrap();
+    fs::write(
+        snapshot_path(&cache, &info.snapshot_id).join("meta.json"),
+        b"{",
+    )
+    .unwrap();
     assert!(crate::query_reverse_line_index(&cache, "gen1", &wanted()).is_none());
 }
 
@@ -130,7 +135,13 @@ fn reverse_rejects_unknown_selector_id() {
     fs::write(&record_path, &record_bytes).unwrap();
     let mut meta: serde_json::Value =
         serde_json::from_slice(&fs::read(root.join("meta.json")).unwrap()).unwrap();
-    let key = meta["files"].as_object().unwrap().keys().next().unwrap().clone();
+    let key = meta["files"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .next()
+        .unwrap()
+        .clone();
     meta["files"][&key]["digest"] = serde_json::json!(hex_digest(&record_bytes));
     let meta_bytes = write_meta_with_newline(&root, &meta);
     rewrite_population_meta_digest(&cache, &meta_bytes);
@@ -160,7 +171,13 @@ fn reverse_rejects_file_digest_mismatch() {
 
     let mut meta: serde_json::Value =
         serde_json::from_slice(&fs::read(root.join("meta.json")).unwrap()).unwrap();
-    let key = meta["files"].as_object().unwrap().keys().next().unwrap().clone();
+    let key = meta["files"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .next()
+        .unwrap()
+        .clone();
     meta["files"][&key]["digest"] = serde_json::json!("0".repeat(64));
     let meta_bytes = write_meta_with_newline(&root, &meta);
     rewrite_population_meta_digest(&cache, &meta_bytes);
@@ -201,10 +218,13 @@ fn abandoned_staging_reclaimed_without_activation() {
     };
     let r1 = publish_next_entry_state(cache, "gen", "fp").unwrap();
     let active = write_reverse_snapshot(cache, "gen", "fp", r1, &built).unwrap();
-    let staging = cache.join("reverse_line_index").join("snapshots").join(format!(
-        ".staging.{}",
-        kiss_publication_barrier::unique_process_suffix()
-    ));
+    let staging = cache
+        .join("reverse_line_index")
+        .join("snapshots")
+        .join(format!(
+            ".staging.{}",
+            kiss_publication_barrier::unique_process_suffix()
+        ));
     fs::create_dir_all(staging.join("files")).unwrap();
     fs::write(staging.join("meta.json"), b"{}").unwrap();
     assert!(!cache.join("population.json").exists());

@@ -1,4 +1,3 @@
-
 use super::RustRuntime;
 use crate::test_runner::lang_iface::{
     AcceptMode, EnsureRequest, ExecutionWitness, LanguageRuntime, PublishBatch, WitnessScope,

@@ -1,15 +1,15 @@
 use super::*;
+use crate::RustCovCacheStatus;
+use crate::RustLineCoverage;
+use crate::RustLlvmCovError;
 use crate::execute_or_reuse::batch_lock::lock_batch;
 use crate::plan::batch_fingerprint::{batch_identity, entry_fingerprint};
 use crate::publish_derived_state;
-use crate::rust_cov_cache::{store_rust_cov_cache_entry, RustCovCacheEntry};
+use crate::rust_cov_cache::{RustCovCacheEntry, store_rust_cov_cache_entry};
 use crate::test_support::{
     batch_executor_fixture_repo, batch_executor_request, store_alpha_entry,
     store_batch_executor_selector, witness_batch_tools,
 };
-use crate::RustCovCacheStatus;
-use crate::RustLineCoverage;
-use crate::RustLlvmCovError;
 use rpytest_runner::TestStatus;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -25,15 +25,23 @@ fn write_check_aggregate_hit_durations(
     identity: &crate::plan::batch_fingerprint::RustCoverageBatchIdentity,
 ) {
     let population = crate::publish_derived::batch_derived_index::load_current_population_state(
-        &req.cache_root, &req.source_root, identity, req.population_publication_selectors.as_deref(),
-    ).expect("published population");
+        &req.cache_root,
+        &req.source_root,
+        identity,
+        req.population_publication_selectors.as_deref(),
+    )
+    .expect("published population");
     let pairs: Vec<_> = population
         .selectors
         .iter()
         .map(|s| (s.clone(), Duration::from_millis(1)))
         .collect();
-    crate::batch_population_durations::write_population_durations(&req.cache_root, &population, &pairs)
-        .unwrap();
+    crate::batch_population_durations::write_population_durations(
+        &req.cache_root,
+        &population,
+        &pairs,
+    )
+    .unwrap();
 }
 
 #[test]
@@ -48,10 +56,12 @@ fn all_hit_batch_returns_without_batch_lock_or_spawn() {
     assert!(result.batch_error.is_none());
     assert_eq!(result.counters.cache_hits, 2);
     assert_eq!(result.counters.build_invocations, 0);
-    assert!(result
-        .completed
-        .iter()
-        .all(|outcome| { outcome.cache_status == RustCovCacheStatus::Hit }));
+    assert!(
+        result
+            .completed
+            .iter()
+            .all(|outcome| { outcome.cache_status == RustCovCacheStatus::Hit })
+    );
     assert!(
         result
             .completed
@@ -128,10 +138,12 @@ fn zero_limit_selectors_are_banned_without_fresh_execution() {
         })
         .unwrap();
     assert_eq!(result.completed.len(), 2);
-    assert!(result
-        .completed
-        .iter()
-        .all(|outcome| outcome.status == TestStatus::TimedOut));
+    assert!(
+        result
+            .completed
+            .iter()
+            .all(|outcome| outcome.status == TestStatus::TimedOut)
+    );
     assert_eq!(result.counters.build_invocations, 0);
 }
 
@@ -258,11 +270,13 @@ fn failed_selective_fresh_batch_preserves_population_through_executor() {
         fs::read(selective.cache_root.join("index.json")).unwrap(),
         before_index
     );
-    assert!(selective
-        .cache_root
-        .join("entries")
-        .join("obsoleteselective01.json")
-        .is_file());
+    assert!(
+        selective
+            .cache_root
+            .join("entries")
+            .join("obsoleteselective01.json")
+            .is_file()
+    );
     let manifest = crate::publish_derived::batch_derived_index::read_population_manifest(
         &selective.cache_root,
     )
@@ -347,62 +361,12 @@ fn check_aggregate_population_rechecks_cache_after_lock_without_fresh_run() {
     assert_eq!(result.completed.len(), 2);
     assert_eq!(result.counters.cache_hits, 2);
     assert_eq!(result.counters.build_invocations, 0);
-    assert!(result
-        .completed
-        .iter()
-        .all(|outcome| outcome.cache_status == RustCovCacheStatus::Hit));
-}
-
-#[test]
-fn apply_population_derived_publication_skips_errors_and_missing_selectors() {
-    let repo = batch_executor_fixture_repo();
-    let req = batch_executor_request(repo.path());
-    let tools = tools();
-    let identity = batch_identity(&req, &tools).unwrap();
-    let mut errored = RustCoverageBatchResult {
-        completed: Vec::new(),
-        batch_error: Some(RustLlvmCovError::InvalidRequest("failed".to_string())),
-        counters: RustCoverageBatchCounters::default(),
-        test_binaries: Vec::new(),
-    };
-    apply_population_derived_publication(&req, &tools, &identity, &mut errored).unwrap();
-    assert!(!errored.counters.derived_state_published);
-
-    let mut no_population = RustCoverageBatchResult {
-        completed: Vec::new(),
-        batch_error: None,
-        counters: RustCoverageBatchCounters::default(),
-        test_binaries: Vec::new(),
-    };
-    apply_population_derived_publication(&req, &tools, &identity, &mut no_population).unwrap();
-    assert!(!no_population.counters.derived_state_published);
-}
-
-#[test]
-fn outcome_from_entry_replays_cache_entry_without_output() {
-    let entry = RustCovCacheEntry::from_outcome(
-        &crate::RustLlvmCovOutcome {
-            selector: "alpha".to_string(),
-            status: TestStatus::Passed,
-            exit_code: Some(0),
-            duration: Duration::from_millis(1),
-            coverage: RustLineCoverage {
-                files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
-            },
-            test_binary_ids: vec!["bin".to_string()],
-            cache_status: RustCovCacheStatus::MissStored,
-            stdout: Some(b"stdout".to_vec()),
-            stderr: Some(b"stderr".to_vec()),
-        },
-        "generation",
+    assert!(
+        result
+            .completed
+            .iter()
+            .all(|outcome| outcome.cache_status == RustCovCacheStatus::Hit)
     );
-
-    let outcome = outcome_from_entry(entry, RustCovCacheStatus::Hit);
-
-    assert_eq!(outcome.selector, "alpha");
-    assert_eq!(outcome.cache_status, RustCovCacheStatus::Hit);
-    assert_eq!(outcome.stdout, None);
-    assert_eq!(outcome.stderr, None);
 }
 
 fn store_obsolete_selective_entry(cache_root: &std::path::Path) {

@@ -1,4 +1,3 @@
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
@@ -7,13 +6,14 @@ use std::time::Duration;
 use super::evidence::{PopulationEvidence, SelectorEvidence};
 use super::identity::population_plan_for_selectors;
 use super::publish::publish_python_population_generation;
+use super::types::{GenerationReason, TimingCacheDisposition};
 use crate::test_runner::python_coverage_index::coverage_snapshot::try_load_python_coverage_snapshot;
 use crate::test_runner::python_coverage_index::manifest::{
-    PYTHON_COVERAGE_ENV_KEYS, read_python_population_manifest,
-    stored_python_universe_population,
+    PYTHON_COVERAGE_ENV_KEYS, read_python_population_manifest, stored_python_universe_population,
 };
-use crate::test_runner::python_coverage_index::storage::{load_current_python_coverage_index, python_coverage_cache_root};
-use super::types::{GenerationReason, TimingCacheDisposition};
+use crate::test_runner::python_coverage_index::storage::{
+    load_current_python_coverage_index, python_coverage_cache_root,
+};
 use rpytest_runner::TestStatus;
 
 pub(crate) fn try_migrate_complete_v1_generation(
@@ -54,7 +54,8 @@ fn load_complete_v1_bundle(
     else {
         return Ok(None);
     };
-    if manifest.schema_version != crate::test_runner::python_coverage_index::POPULATION_SCHEMA_VERSION
+    if manifest.schema_version
+        != crate::test_runner::python_coverage_index::POPULATION_SCHEMA_VERSION
         || durations.len() != population.selectors.len()
     {
         return Ok(None);
@@ -70,7 +71,9 @@ fn load_complete_v1_bundle(
 fn load_v1_durations_for_migrate(
     repo_root: &Path,
     test_args: &[String],
-    population: &Option<crate::test_runner::python_coverage_index::manifest::StoredPythonPopulation>,
+    population: &Option<
+        crate::test_runner::python_coverage_index::manifest::StoredPythonPopulation,
+    >,
 ) -> Option<Vec<(String, Duration)>> {
     let population = population.as_ref()?;
     let manifest = read_python_population_manifest(repo_root)?;
@@ -93,8 +96,6 @@ pub(super) fn evidence_from_v1_bundle(
 ) -> Option<PopulationEvidence> {
     let mut evidence = PopulationEvidence::from_ordered_selectors(selectors);
     for selector in selectors {
-
-
         let cov = selector_coverage_from_index(selector, &bundle.index, &bundle.coverage);
         evidence.absorb_selector(SelectorEvidence {
             selector: selector.clone(),

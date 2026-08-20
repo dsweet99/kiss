@@ -1,4 +1,3 @@
-
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
@@ -6,12 +5,12 @@ use std::path::Path;
 use serde::Deserialize;
 
 use super::paths::{generation_dir, pointer_path, read_validated_artifact, sha256_hex};
-use crate::test_runner::python_coverage_index::storage::python_coverage_cache_root;
 use super::types::{
     CoveredLinesMap, GENERATION_SCHEMA_VERSION, GenerationManifest, InternedLineIndex,
     POINTER_SCHEMA_VERSION, PinnedPythonGeneration, PopulationPointer, SelectorCoverageMap,
     SelectorTimingRecord, decode_line_index_bytes,
 };
+use crate::test_runner::python_coverage_index::storage::python_coverage_cache_root;
 
 #[derive(Clone, Debug)]
 pub(crate) enum GenerationLoadError {
@@ -22,8 +21,7 @@ pub(crate) enum GenerationLoadError {
 pub(crate) fn try_load_pinned_python_generation(
     repo_root: &Path,
 ) -> Result<PinnedPythonGeneration, GenerationLoadError> {
-    let cache_root =
-        python_coverage_cache_root(repo_root).map_err(GenerationLoadError::Corrupt)?;
+    let cache_root = python_coverage_cache_root(repo_root).map_err(GenerationLoadError::Corrupt)?;
     let _guard = rslip::lock_rslip_derived_state(&cache_root)
         .map_err(|e| GenerationLoadError::Corrupt(e.to_string()))?;
     load_pinned_locked(&cache_root)
@@ -34,8 +32,8 @@ pub(crate) fn load_pinned_locked(
 ) -> Result<PinnedPythonGeneration, GenerationLoadError> {
     let pointer = read_pointer(cache_root)?;
     let gen_dir = generation_dir(cache_root, &pointer.generation_id);
-    let manifest_bytes = fs::read(gen_dir.join("manifest.json"))
-        .map_err(|_| GenerationLoadError::MissingOrStale)?;
+    let manifest_bytes =
+        fs::read(gen_dir.join("manifest.json")).map_err(|_| GenerationLoadError::MissingOrStale)?;
     if sha256_hex(&manifest_bytes) != pointer.manifest_sha256 {
         return Err(GenerationLoadError::Corrupt(
             "manifest checksum mismatch".to_string(),
@@ -89,8 +87,8 @@ pub(crate) fn load_pinned_warm_locked(
 ) -> Result<PinnedPythonGeneration, GenerationLoadError> {
     let pointer = read_pointer(cache_root)?;
     let gen_dir = generation_dir(cache_root, &pointer.generation_id);
-    let manifest_bytes = fs::read(gen_dir.join("manifest.json"))
-        .map_err(|_| GenerationLoadError::MissingOrStale)?;
+    let manifest_bytes =
+        fs::read(gen_dir.join("manifest.json")).map_err(|_| GenerationLoadError::MissingOrStale)?;
     if sha256_hex(&manifest_bytes) != pointer.manifest_sha256 {
         return Err(GenerationLoadError::Corrupt(
             "manifest checksum mismatch".to_string(),
@@ -118,11 +116,10 @@ pub(crate) fn load_pinned_warm_locked(
 }
 
 fn read_pointer(cache_root: &Path) -> Result<PopulationPointer, GenerationLoadError> {
-    let bytes = fs::read(pointer_path(cache_root)).map_err(|_| GenerationLoadError::MissingOrStale)?;
-    let pointer: PopulationPointer = serde_json::from_slice(&bytes).map_err(|_| {
-
-        GenerationLoadError::MissingOrStale
-    })?;
+    let bytes =
+        fs::read(pointer_path(cache_root)).map_err(|_| GenerationLoadError::MissingOrStale)?;
+    let pointer: PopulationPointer =
+        serde_json::from_slice(&bytes).map_err(|_| GenerationLoadError::MissingOrStale)?;
     if pointer.schema_version != POINTER_SCHEMA_VERSION {
         return Err(GenerationLoadError::MissingOrStale);
     }
@@ -163,8 +160,7 @@ fn read_line_index(
 pub(crate) fn try_load_pinned_python_generation_without_line_index(
     repo_root: &Path,
 ) -> Result<PinnedPythonGeneration, GenerationLoadError> {
-    let cache_root =
-        python_coverage_cache_root(repo_root).map_err(GenerationLoadError::Corrupt)?;
+    let cache_root = python_coverage_cache_root(repo_root).map_err(GenerationLoadError::Corrupt)?;
     let _guard = rslip::lock_rslip_derived_state(&cache_root)
         .map_err(|e| GenerationLoadError::Corrupt(e.to_string()))?;
     load_pinned_without_line_index_locked(&cache_root)
@@ -175,8 +171,8 @@ pub(crate) fn load_pinned_without_line_index_locked(
 ) -> Result<PinnedPythonGeneration, GenerationLoadError> {
     let pointer = read_pointer(cache_root)?;
     let gen_dir = generation_dir(cache_root, &pointer.generation_id);
-    let manifest_bytes = fs::read(gen_dir.join("manifest.json"))
-        .map_err(|_| GenerationLoadError::MissingOrStale)?;
+    let manifest_bytes =
+        fs::read(gen_dir.join("manifest.json")).map_err(|_| GenerationLoadError::MissingOrStale)?;
     if sha256_hex(&manifest_bytes) != pointer.manifest_sha256 {
         return Err(GenerationLoadError::Corrupt(
             "manifest checksum mismatch".to_string(),

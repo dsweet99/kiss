@@ -1,7 +1,7 @@
 use crate::rust_parsing::ParsedRustFile;
 use crate::violation::Violation;
 
-use super::{comment_violation, doc_violation};
+use super::{clap_docs, comment_violation, doc_violation};
 
 #[derive(Clone, Copy)]
 enum ScanMode {
@@ -19,22 +19,23 @@ pub(super) fn append_rust_doc_violations(parsed: &ParsedRustFile, out: &mut Vec<
 
 fn append_rust_comment_kind(parsed: &ParsedRustFile, out: &mut Vec<Violation>, mode: ScanMode) {
     let bytes = parsed.source.as_bytes();
+    let clap_help = clap_docs::help_doc_ranges(&parsed.ast);
     let mut i = 0;
     while i < bytes.len() {
         if let Some((is_doc, next)) = take_line_comment(bytes, i) {
-            push_kind(parsed, out, mode, is_doc, i);
+            push_kind(parsed, out, mode, is_doc, i, &clap_help);
             i = next;
             continue;
         }
         if let Some((is_doc, next)) = take_block_comment(bytes, i) {
-            push_kind(parsed, out, mode, is_doc, i);
+            push_kind(parsed, out, mode, is_doc, i, &clap_help);
             i = next;
             continue;
         }
         if matches!(mode, ScanMode::Doc)
             && let Some(next) = take_doc_attribute(bytes, i)
         {
-            push_kind(parsed, out, mode, true, i);
+            push_kind(parsed, out, mode, true, i, &clap_help);
             i = next;
             continue;
         }
@@ -81,9 +82,13 @@ fn push_kind(
     mode: ScanMode,
     is_doc: bool,
     byte_idx: usize,
+    clap_help: &[(usize, usize)],
 ) {
     let want_doc = matches!(mode, ScanMode::Doc);
     if is_doc != want_doc {
+        return;
+    }
+    if want_doc && clap_docs::is_help_doc(clap_help, byte_idx) {
         return;
     }
     let line = line_number(&parsed.source, byte_idx);
@@ -132,11 +137,7 @@ fn skip_to_eol(bytes: &[u8], mut i: usize) -> usize {
     while i < bytes.len() && bytes[i] != b'\n' {
         i += 1;
     }
-    if i < bytes.len() {
-        i + 1
-    } else {
-        i
-    }
+    if i < bytes.len() { i + 1 } else { i }
 }
 
 fn skip_nested_block(bytes: &[u8], start: usize) -> usize {

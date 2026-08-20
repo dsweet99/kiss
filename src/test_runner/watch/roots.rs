@@ -1,4 +1,3 @@
-
 use std::path::{Path, PathBuf};
 
 use crate::bin_cli::args::TestInvocation;
@@ -22,7 +21,10 @@ pub(crate) fn resolve_watch_registrations(
 ) -> Result<Vec<WatchRegistration>, String> {
     let mut regs: Vec<WatchRegistration> = Vec::new();
     match invocation {
-        TestInvocation::All | TestInvocation::Commit | TestInvocation::Base | TestInvocation::Main => {
+        TestInvocation::All
+        | TestInvocation::Commit
+        | TestInvocation::Base
+        | TestInvocation::Main => {
             regs.push(WatchRegistration {
                 path: repo_root.to_path_buf(),
                 kind: WatchRootKind::Recursive,
@@ -161,11 +163,7 @@ fn is_python_collection_root(path_part: &str, abs: &Path) -> bool {
     abs.is_dir() || !is_source_file_operand(path_part, abs)
 }
 
-fn push_ancestors_to_repo_root(
-    repo_root: &Path,
-    start: &Path,
-    regs: &mut Vec<WatchRegistration>,
-) {
+fn push_ancestors_to_repo_root(repo_root: &Path, start: &Path, regs: &mut Vec<WatchRegistration>) {
     let mut cur = if start.is_file()
         || start
             .extension()
@@ -175,7 +173,9 @@ fn push_ancestors_to_repo_root(
     } else {
         Some(start.to_path_buf())
     };
-    let repo_canon = repo_root.canonicalize().unwrap_or_else(|_| repo_root.to_path_buf());
+    let repo_canon = repo_root
+        .canonicalize()
+        .unwrap_or_else(|_| repo_root.to_path_buf());
     while let Some(dir) = cur {
         regs.push(WatchRegistration {
             path: dir.clone(),
@@ -219,9 +219,10 @@ mod tests {
     fn all_registers_repo_root_recursive() {
         let tmp = tempfile::tempdir().unwrap();
         let regs = resolve_watch_registrations(tmp.path(), &TestInvocation::All, &[]).unwrap();
-        assert!(regs.iter().any(|r| {
-            r.path == tmp.path() && matches!(r.kind, WatchRootKind::Recursive)
-        }));
+        assert!(
+            regs.iter()
+                .any(|r| { r.path == tmp.path() && matches!(r.kind, WatchRootKind::Recursive) })
+        );
     }
 
     #[test]

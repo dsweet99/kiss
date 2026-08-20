@@ -1,4 +1,3 @@
-
 pub(crate) mod detection;
 
 pub use detection::{is_in_test_directory, is_pytest_nodeid_source_file, is_test_file};
@@ -25,10 +24,14 @@ mod detection_tests {
     fn pytest_nodeid_source_files_exclude_conftest_and_helpers() {
         assert!(is_pytest_nodeid_source_file(Path::new("tests/test_foo.py")));
         assert!(is_pytest_nodeid_source_file(Path::new("foo_test.py")));
-        assert!(!is_pytest_nodeid_source_file(Path::new("tests/conftest.py")));
+        assert!(!is_pytest_nodeid_source_file(Path::new(
+            "tests/conftest.py"
+        )));
         assert!(!is_pytest_nodeid_source_file(Path::new(
             "tests/fast/run_one_test_helpers.py"
         )));
-        assert!(!is_pytest_nodeid_source_file(Path::new("tests/fast/cogneato/gp.py")));
+        assert!(!is_pytest_nodeid_source_file(Path::new(
+            "tests/fast/cogneato/gp.py"
+        )));
     }
 }

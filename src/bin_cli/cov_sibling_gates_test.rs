@@ -148,4 +148,3 @@ fn max_num_tests_gate_fails_closed_without_population() {
     };
     assert!(evaluate_max_num_tests_gate(&args, tmp.path(), &files, &[]));
 }
-

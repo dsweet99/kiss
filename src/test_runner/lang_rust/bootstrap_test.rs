@@ -1,4 +1,3 @@
-
 use std::path::Path;
 
 use super::{
@@ -6,8 +5,8 @@ use super::{
     rust_miss_selectors, try_load_rust_execution_witness, try_warm_rust_cached_summary,
 };
 use crate::test_runner::lang_iface::{WitnessScope, WitnessStatus};
-use crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity;
 use crate::test_runner::runners::enumerate_workspace_rust_selectors;
+use crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity;
 
 #[test]
 fn bootstrap_repo_rust_witness_when_env_set() {
@@ -33,7 +32,8 @@ fn bootstrap_repo_rust_witness_when_env_set() {
         eprintln!("misses={:?}", misses.as_ref().map(|m| m.len()));
         eprintln!(
             "warm={}",
-            try_warm_rust_cached_summary(root, &planned, &identity, &kiss::GateConfig::default()).is_some()
+            try_warm_rust_cached_summary(root, &planned, &identity, &kiss::GateConfig::default())
+                .is_some()
         );
     }
 
@@ -52,5 +52,8 @@ fn bootstrap_repo_rust_witness_when_env_set() {
     })
     .expect("publish");
     eprintln!("published {id} n={}", planned.len());
-    assert!(try_warm_rust_cached_summary(root, &planned, &identity, &kiss::GateConfig::default()).is_some());
+    assert!(
+        try_warm_rust_cached_summary(root, &planned, &identity, &kiss::GateConfig::default())
+            .is_some()
+    );
 }

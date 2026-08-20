@@ -59,7 +59,6 @@ fn finish_fresh_check_aggregate_publishes_successful_outcomes() {
         finish_context(),
     );
 
-
     match result {
         Ok(ok) => {
             assert!(ok.batch_error.is_none() || ok.counters.aggregate_exports >= 1);

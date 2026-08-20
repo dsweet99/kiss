@@ -155,9 +155,7 @@ pub(crate) fn load_python_runtime_coverage(
     if crate::test_runner::python_coverage_index::try_migrate_complete_v1_generation(
         repo_root,
         pytest_args,
-        &|path, root| {
-            python_repo_relative_coverage_file(root, &path.to_string_lossy()).is_some()
-        },
+        &|path, root| python_repo_relative_coverage_file(root, &path.to_string_lossy()).is_some(),
     )
     .ok()
     .flatten()
@@ -188,7 +186,9 @@ fn try_coverage_from_generation(
     pytest_args: &[String],
 ) -> Result<Option<BackendCoverage>, RuntimeCoverageLoadError> {
     let Ok(pinned) =
-        crate::test_runner::python_coverage_index::try_load_pinned_python_generation_warm(repo_root)
+        crate::test_runner::python_coverage_index::try_load_pinned_python_generation_warm(
+            repo_root,
+        )
     else {
         return Ok(None);
     };
@@ -211,8 +211,7 @@ fn try_coverage_from_generation(
             &pinned.timings,
         );
         return Err(RuntimeCoverageLoadError::incomplete_population(
-            "Python",
-            problems,
+            "Python", problems,
         ));
     }
     Ok(Some(BackendCoverage {
@@ -419,8 +418,8 @@ fn combined_identity(
 }
 
 #[cfg(test)]
-#[path = "check_line_coverage_test.rs"]
-mod tests;
-#[cfg(test)]
 #[path = "check_line_coverage_identity_test.rs"]
 mod identity_tests;
+#[cfg(test)]
+#[path = "check_line_coverage_test.rs"]
+mod tests;

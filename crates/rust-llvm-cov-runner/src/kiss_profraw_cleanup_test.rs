@@ -34,8 +34,16 @@ fn pid_scoped_cleanup_deletes_only_matching_pid_suffix() {
         b"a",
     )
     .unwrap();
-    fs::write(kiss_profraw.join(format!("default_1_{pid_a}.profraw")), b"a2").unwrap();
-    fs::write(kiss_profraw.join(format!("default_1_{pid_b}.profraw")), b"b").unwrap();
+    fs::write(
+        kiss_profraw.join(format!("default_1_{pid_a}.profraw")),
+        b"a2",
+    )
+    .unwrap();
+    fs::write(
+        kiss_profraw.join(format!("default_1_{pid_b}.profraw")),
+        b"b",
+    )
+    .unwrap();
     fs::write(
         kiss_profraw.join(format!("default_xyz_0_{pid_b}.profraw")),
         b"b2",
@@ -44,12 +52,26 @@ fn pid_scoped_cleanup_deletes_only_matching_pid_suffix() {
 
     cleanup_kiss_profraw_for_pid(&kiss_profraw, pid_a).unwrap();
 
-    assert!(!kiss_profraw.join(format!("default_abc_0_{pid_a}.profraw")).exists());
-    assert!(!kiss_profraw.join(format!("default_1_{pid_a}.profraw")).exists());
-    assert!(kiss_profraw.join(format!("default_1_{pid_b}.profraw")).exists());
-    assert!(kiss_profraw
-        .join(format!("default_xyz_0_{pid_b}.profraw"))
-        .exists());
+    assert!(
+        !kiss_profraw
+            .join(format!("default_abc_0_{pid_a}.profraw"))
+            .exists()
+    );
+    assert!(
+        !kiss_profraw
+            .join(format!("default_1_{pid_a}.profraw"))
+            .exists()
+    );
+    assert!(
+        kiss_profraw
+            .join(format!("default_1_{pid_b}.profraw"))
+            .exists()
+    );
+    assert!(
+        kiss_profraw
+            .join(format!("default_xyz_0_{pid_b}.profraw"))
+            .exists()
+    );
 }
 
 #[test]
@@ -66,13 +88,29 @@ fn list_child_pid_capture_cleans_spawned_child_pid() {
         .unwrap();
     let pid = child.id();
     let other = pid.wrapping_add(1);
-    fs::write(kiss_profraw.join(format!("default_1_{pid}.profraw")), b"mine").unwrap();
-    fs::write(kiss_profraw.join(format!("default_1_{other}.profraw")), b"other").unwrap();
+    fs::write(
+        kiss_profraw.join(format!("default_1_{pid}.profraw")),
+        b"mine",
+    )
+    .unwrap();
+    fs::write(
+        kiss_profraw.join(format!("default_1_{other}.profraw")),
+        b"other",
+    )
+    .unwrap();
     let _ = child.kill();
     let _ = child.wait();
     cleanup_kiss_profraw_for_pid(&kiss_profraw, pid).unwrap();
-    assert!(!kiss_profraw.join(format!("default_1_{pid}.profraw")).exists());
-    assert!(kiss_profraw.join(format!("default_1_{other}.profraw")).exists());
+    assert!(
+        !kiss_profraw
+            .join(format!("default_1_{pid}.profraw"))
+            .exists()
+    );
+    assert!(
+        kiss_profraw
+            .join(format!("default_1_{other}.profraw"))
+            .exists()
+    );
 }
 
 #[test]

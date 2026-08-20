@@ -1,4 +1,3 @@
-
 #![allow(clippy::redundant_pub_crate)]
 #![allow(clippy::must_use_candidate)]
 #![allow(clippy::missing_errors_doc)]

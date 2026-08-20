@@ -1,17 +1,16 @@
-
 use std::path::Path;
 
+use super::types::{
+    COLLECTOR_SEMANTICS_VERSION, GENERATION_SCHEMA_VERSION, PythonExecutionIdentity,
+    PythonPopulationPlan, RUNNER_SEMANTICS_VERSION,
+};
+use crate::test_runner::python_coverage_index::PYTHON_SELECTOR_DISCOVERY_VERSION;
 use crate::test_runner::python_coverage_index::manifest::{
     PYTHON_COVERAGE_ENV_KEYS, PythonPopulationManifestIdentity,
     current_python_population_manifest_identity,
 };
 use crate::test_runner::python_coverage_index::storage::{
     normalized_python_repo_root, python_fnv1a64, python_source_input_fingerprint,
-};
-use crate::test_runner::python_coverage_index::PYTHON_SELECTOR_DISCOVERY_VERSION;
-use super::types::{
-    COLLECTOR_SEMANTICS_VERSION, GENERATION_SCHEMA_VERSION, PythonExecutionIdentity,
-    PythonPopulationPlan, RUNNER_SEMANTICS_VERSION,
 };
 
 pub(crate) fn current_python_execution_identity(
@@ -70,9 +69,6 @@ pub(crate) fn identity_matches_current(
     identity: &PythonExecutionIdentity,
     test_args: &[String],
 ) -> bool {
-
-
-
     let Ok(current) = current_python_execution_identity(repo_root, test_args) else {
         return false;
     };

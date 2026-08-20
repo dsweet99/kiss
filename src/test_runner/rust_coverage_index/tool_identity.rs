@@ -228,7 +228,6 @@ fn build_tool_identity_cache_key(repo_root: &Path) -> ToolIdentityCacheKey {
 }
 
 fn which_meta(program: &Path) -> Option<(u64, Option<SystemTime>)> {
-
     file_meta(program).or_else(|| {
         std::env::var_os("PATH").and_then(|paths| {
             for dir in std::env::split_paths(&paths) {
@@ -307,8 +306,11 @@ mod tests {
     fn keyed_cache_changes_when_toolchain_file_changes() {
         let tmp = tempfile::tempdir().unwrap();
         let key1 = build_tool_identity_cache_key(tmp.path());
-        std::fs::write(tmp.path().join("rust-toolchain.toml"), "[toolchain]\nchannel = \"1.0\"\n")
-            .unwrap();
+        std::fs::write(
+            tmp.path().join("rust-toolchain.toml"),
+            "[toolchain]\nchannel = \"1.0\"\n",
+        )
+        .unwrap();
         let key2 = build_tool_identity_cache_key(tmp.path());
         assert_ne!(key1, key2);
     }
@@ -342,8 +344,11 @@ mod tests {
             cargo_nextest_version: "nextest-test".into(),
         };
         write_cached_rust_tool_identity(tmp.path(), &key, &tools).unwrap();
-        std::fs::write(tmp.path().join("rust-toolchain.toml"), "[toolchain]\nchannel = \"nightly\"\n")
-            .unwrap();
+        std::fs::write(
+            tmp.path().join("rust-toolchain.toml"),
+            "[toolchain]\nchannel = \"nightly\"\n",
+        )
+        .unwrap();
         let changed = build_tool_identity_cache_key(tmp.path());
         assert_ne!(key, changed);
         let (loaded_key, _) = read_cached_rust_tool_identity(tmp.path()).expect("readable");

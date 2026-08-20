@@ -1,10 +1,9 @@
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use kiss::Language;
-use kiss::test_refs::{is_in_test_directory, is_test_file};
 use kiss::is_rust_test_file;
+use kiss::test_refs::{is_in_test_directory, is_test_file};
 
 use super::model::{SourceModel, load_source_model};
 use super::model_python::attach_python_nodeids;
@@ -105,7 +104,6 @@ fn apply_parsed_target(
                 insert_direct(query, model.language, test.selector.clone());
             }
 
-
             let is_test_operand = match model.language {
                 Language::Python => is_test_file(abs) || is_in_test_directory(abs),
                 Language::Rust => is_rust_test_file(abs),
@@ -158,9 +156,7 @@ fn unit_test_selectors_for_def(
         .direct_tests
         .iter()
         .filter(|test| match member {
-            Some(method) => {
-                test.owner.as_deref() == Some(name) && test.name == method
-            }
+            Some(method) => test.owner.as_deref() == Some(name) && test.name == method,
             None => test.owner.is_none() && test.name == name,
         })
         .map(|test| test.selector.clone())
@@ -184,7 +180,8 @@ fn attach_python_tests(
         Some(std::slice::from_ref(&model.path)),
         pytest_args,
     )?;
-    let rel = repo_relative(repo_root, &model.path).unwrap_or_else(|| model.path.display().to_string());
+    let rel =
+        repo_relative(repo_root, &model.path).unwrap_or_else(|| model.path.display().to_string());
     attach_python_nodeids(model, &nodeids, &rel);
 
     model.direct_tests.retain(|test| !test.selector.is_empty());
@@ -240,9 +237,10 @@ fn reject_ignored_target(
     let Some(rel) = repo_relative(repo_root, abs) else {
         return Ok(());
     };
-    if ignore.iter().any(|prefix| {
-        rel == *prefix || rel.starts_with(&format!("{prefix}/"))
-    }) {
+    if ignore
+        .iter()
+        .any(|prefix| rel == *prefix || rel.starts_with(&format!("{prefix}/")))
+    {
         return Err(format!(
             "target '{raw}' is covered by --ignore prefix and cannot be requested"
         ));

@@ -193,8 +193,6 @@ fn builds_dependency_graph() {
 
 #[test]
 fn repro_orphan_module_with_dotted_import_and_ambiguous_bare_name() {
-
-
     let mut parser = create_parser().expect("parser should initialize");
 
     let pkg1_sub =

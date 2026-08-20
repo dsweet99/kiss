@@ -85,7 +85,8 @@ fn cached_rslip_outcome_omits_output_but_keeps_status_and_coverage() {
         stdout: Some(b"fresh".to_vec()),
         stderr: Some(b"err".to_vec()),
     };
-    let cached = rslip_outcome_from_cache(cache::RslipCacheEntry::from_outcome(&outcome, tmp.path()));
+    let cached =
+        rslip_outcome_from_cache(cache::RslipCacheEntry::from_outcome(&outcome, tmp.path()));
 
     assert_eq!(cached.nodeid, "test_sample.py::test_ok");
     assert_eq!(cached.status, TestStatus::Passed);

@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use rust_llvm_cov_runner::RustCoverageBatchCounters;
 
-use super::rust_batch_counters;
 use super::merge_exit_codes;
+use super::rust_batch_counters;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct SelectorExecutionSummary {

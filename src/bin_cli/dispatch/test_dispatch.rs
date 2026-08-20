@@ -104,7 +104,8 @@ fn call_handler_dispatchers(
         base_branch: None,
         dry_run: true,
         force: false,
-        force_bad: false,        metrics: false,
+        force_bad: false,
+        metrics: false,
         coverage_all: false,
         watch: false,
         jobs: None,
@@ -199,7 +200,8 @@ fn dispatch_test_command_rejects_invalid_modes_before_running_tests() {
                 base_branch: None,
                 dry_run: true,
                 force: false,
-        force_bad: false,                metrics: false,
+                force_bad: false,
+                metrics: false,
                 coverage_all: false,
                 watch: false,
                 jobs: None,
@@ -361,4 +363,3 @@ fn dispatch_test_rejects_watch_with_dry_run() {
         2
     );
 }
-

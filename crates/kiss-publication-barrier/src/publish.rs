@@ -10,7 +10,13 @@ pub fn publish_atomically(
     temporary_path: &Path,
     write: impl FnOnce(&mut File) -> io::Result<()>,
 ) -> io::Result<()> {
-    publish_atomically_inner(artifact, final_path, temporary_path, PublishSync::FileAndParent, write)
+    publish_atomically_inner(
+        artifact,
+        final_path,
+        temporary_path,
+        PublishSync::FileAndParent,
+        write,
+    )
 }
 
 pub fn publish_atomically_without_parent_sync(
@@ -19,7 +25,13 @@ pub fn publish_atomically_without_parent_sync(
     temporary_path: &Path,
     write: impl FnOnce(&mut File) -> io::Result<()>,
 ) -> io::Result<()> {
-    publish_atomically_inner(artifact, final_path, temporary_path, PublishSync::FlushOnly, write)
+    publish_atomically_inner(
+        artifact,
+        final_path,
+        temporary_path,
+        PublishSync::FlushOnly,
+        write,
+    )
 }
 
 #[derive(Clone, Copy)]
@@ -36,7 +48,10 @@ fn publish_atomically_inner(
     write: impl FnOnce(&mut File) -> io::Result<()>,
 ) -> io::Result<()> {
     let final_parent = final_path.parent().ok_or_else(|| {
-        io::Error::new(io::ErrorKind::InvalidInput, "final_path has no parent directory")
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "final_path has no parent directory",
+        )
     })?;
     let temporary_parent = temporary_path.parent().ok_or_else(|| {
         io::Error::new(
@@ -51,9 +66,8 @@ fn publish_atomically_inner(
         ));
     }
 
-    fs::create_dir_all(final_parent).map_err(|err| {
-        path_step_err(artifact, "create_dir_all", final_parent, err)
-    })?;
+    fs::create_dir_all(final_parent)
+        .map_err(|err| path_step_err(artifact, "create_dir_all", final_parent, err))?;
     let mut file = open_publish_tmp(artifact, temporary_path, final_parent)?;
     write(&mut file).map_err(|err| path_step_err(artifact, "write", temporary_path, err))?;
     match sync {
@@ -116,8 +130,9 @@ pub(crate) fn open_publish_tmp(
         Ok(file) => Ok(file),
 
         Err(err) if err.kind() == io::ErrorKind::NotFound => {
-            fs::create_dir_all(final_parent)
-                .map_err(|retry| path_step_err(artifact, "create_dir_all retry", final_parent, retry))?;
+            fs::create_dir_all(final_parent).map_err(|retry| {
+                path_step_err(artifact, "create_dir_all retry", final_parent, retry)
+            })?;
             OpenOptions::new()
                 .write(true)
                 .create_new(true)

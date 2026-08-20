@@ -1,4 +1,3 @@
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct WatchCoverageResult {
     pub exit_code: i32,
@@ -93,4 +92,3 @@ mod tests {
         assert!(std::ptr::eq(params.rs_config, &rs));
     }
 }
-

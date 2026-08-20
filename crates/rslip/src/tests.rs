@@ -54,7 +54,11 @@ fn run_or_reuse_uses_cache_on_second_call() {
     let runner = fake_runner(Rc::clone(&calls));
     let rslip = Rslip::new(runner);
     let req = rslip_sample_request(tmp.path());
-    let app_key = tmp.path().join("app.py").to_string_lossy().replace('\\', "/");
+    let app_key = tmp
+        .path()
+        .join("app.py")
+        .to_string_lossy()
+        .replace('\\', "/");
 
     let first = rslip.run_or_reuse(req.clone()).unwrap();
     let second = rslip.run_or_reuse(req).unwrap();
@@ -84,7 +88,7 @@ fn force_rerun_skips_cache_and_returns_only_fresh_output() {
     let forced = rslip
         .run_or_reuse(RslipRequest {
             force_rerun: true,
-..req
+            ..req
         })
         .unwrap();
 

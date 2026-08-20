@@ -1,4 +1,3 @@
-
 pub(crate) const FORKSERVER_CONTROLLER_B: &str = r#"
 class _TestDurationPlugin(object):
     def __init__(self):

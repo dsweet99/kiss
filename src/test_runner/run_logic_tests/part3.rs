@@ -11,14 +11,14 @@ fn finish_paths_print_recap_with_plan_time_and_phase_order() {
     let no_work_options = SelectorRunOptions {
         dry_run: false,
         force_rerun: false,
-metrics: true,
+        metrics: true,
         jobs: 1,
         extras: crate::test_runner::language_keyed::LanguageKeyed {
             python: &[],
             rust: &[],
         },
         plan_duration: Duration::from_millis(200),
-    gate: kiss::GateConfig::default()
+        gate: kiss::GateConfig::default(),
     };
     let no_work = capture_stdout(|| {
         assert_eq!(run_selectors(&planned, no_work_options).unwrap(), 0);
@@ -54,14 +54,14 @@ metrics: true,
     let phase_options = SelectorRunOptions {
         dry_run: false,
         force_rerun: false,
-metrics: false,
+        metrics: false,
         jobs: 1,
         extras: crate::test_runner::language_keyed::LanguageKeyed {
             python: &[],
             rust: &[],
         },
         plan_duration: Duration::from_millis(200),
-    gate: kiss::GateConfig::default()
+        gate: kiss::GateConfig::default(),
     };
     let python = FakeLanguageModule {
         language: Language::Python,
@@ -106,8 +106,7 @@ metrics: false,
         ),
     ];
     let out = capture_stdout(|| {
-        let code =
-            run_selected_phases(&planned, &phase_options, Instant::now(), &modules).unwrap();
+        let code = run_selected_phases(&planned, &phase_options, Instant::now(), &modules).unwrap();
         assert_eq!(code, 1);
     });
     assert!(
@@ -136,14 +135,14 @@ fn dry_run_does_not_print_final_recap() {
                 SelectorRunOptions {
                     dry_run: true,
                     force_rerun: false,
-metrics: false,
+                    metrics: false,
                     jobs: 1,
                     extras: crate::test_runner::language_keyed::LanguageKeyed {
                         python: &[],
                         rust: &[],
                     },
                     plan_duration: Duration::from_millis(10),
-                gate: kiss::GateConfig::default()
+                    gate: kiss::GateConfig::default()
                 },
             )
             .unwrap(),

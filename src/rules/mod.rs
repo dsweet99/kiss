@@ -1,4 +1,3 @@
-
 use kiss::{Config, GateConfig, Language};
 use std::path::PathBuf;
 

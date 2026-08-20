@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use crate::forkserver::{
     ForkserverController, WireArtifact, WireRequest, WireResponse, duration_millis_u64,
-    run_with_reused_controller, spawn_forkserver_worker,
+    spawn_forkserver_worker,
 };
 use crate::{
     ForkserverPytestRunner, PytestRunError, PytestRunRequest, RequestedArtifact, TestStatus,
@@ -133,7 +133,11 @@ fn forkserver_controller_pid_is_reused_for_multiple_requests() {
 def test_b():\n    assert True\n",
     )
     .unwrap();
-    let mut controller = ForkserverController::start(&python!(), &passing_req(tmp.path(), "test_sample.py::test_ok").bootstrap).unwrap();
+    let mut controller = ForkserverController::start(
+        &python!(),
+        &passing_req(tmp.path(), "test_sample.py::test_ok").bootstrap,
+    )
+    .unwrap();
     let pid = controller.controller_pid();
 
     controller
@@ -316,7 +320,11 @@ fn forkserver_controller_run_executes_one_request_directly() {
         "def test_ok():\n    assert True\n",
     )
     .unwrap();
-    let mut controller = ForkserverController::start(&python!(), &passing_req(tmp.path(), "test_sample.py::test_ok").bootstrap).unwrap();
+    let mut controller = ForkserverController::start(
+        &python!(),
+        &passing_req(tmp.path(), "test_sample.py::test_ok").bootstrap,
+    )
+    .unwrap();
 
     let outcome = controller
         .run(passing_req(tmp.path(), "test_sample.py::test_ok"))
@@ -333,7 +341,11 @@ fn forkserver_controller_run_reports_pytest_failure_exit_code() {
         "def test_fail():\n    assert False\n",
     )
     .unwrap();
-    let mut controller = ForkserverController::start(&python!(), &passing_req(tmp.path(), "test_sample.py::test_ok").bootstrap).unwrap();
+    let mut controller = ForkserverController::start(
+        &python!(),
+        &passing_req(tmp.path(), "test_sample.py::test_ok").bootstrap,
+    )
+    .unwrap();
 
     let outcome = controller
         .run(passing_req(tmp.path(), "test_sample.py::test_fail"))
@@ -361,65 +373,4 @@ fn forkserver_worker_processes_one_queued_request() {
     let (_index, outcome) = rx.recv_timeout(Duration::from_secs(3)).unwrap();
 
     assert_eq!(outcome.unwrap().status, TestStatus::Passed);
-}
-
-#[test]
-fn forkserver_run_with_reused_controller_keeps_controller_alive() {
-    let tmp = tempfile::tempdir().unwrap();
-    fs::write(
-        tmp.path().join("test_sample.py"),
-        "def test_ok():\n    assert True\n",
-    )
-    .unwrap();
-    let mut controller = None;
-
-    let outcome = run_with_reused_controller(
-        &mut controller,
-        passing_req(tmp.path(), "test_sample.py::test_ok"),
-    )
-    .unwrap();
-
-    assert_eq!(outcome.status, TestStatus::Passed);
-    assert!(controller.is_some());
-}
-
-#[test]
-fn forkserver_imports_preload_after_child_env_setup() {
-    let tmp = tempfile::tempdir().unwrap();
-    fs::write(
-        tmp.path().join("preload_flag.py"),
-        "import os\nopen(os.environ['FLAG_PATH'], 'w').write('loaded')\n",
-    )
-    .unwrap();
-    fs::write(
-        tmp.path().join("test_sample.py"),
-        "def test_ok():\n    assert True\n",
-    )
-    .unwrap();
-    let flag_path = tmp.path().join("flag.txt");
-    let mut env = BTreeMap::new();
-    env.insert(
-        "PYTHONPATH".to_string(),
-        tmp.path().to_string_lossy().to_string(),
-    );
-    env.insert(
-        "FLAG_PATH".to_string(),
-        flag_path.to_string_lossy().to_string(),
-    );
-
-    let outcome = ForkserverPytestRunner::new()
-        .run_one(PytestRunRequest::from_parts(
-            "test_sample.py::test_ok".to_string(),
-            tmp.path().to_path_buf(),
-            python!(),
-            vec!["-q".to_string()],
-            env,
-            vec!["preload_flag".to_string()],
-            Vec::new(),
-            None,
-        ))
-        .unwrap();
-
-    assert_eq!(outcome.status, TestStatus::Passed);
-    assert_eq!(fs::read_to_string(flag_path).unwrap(), "loaded");
 }

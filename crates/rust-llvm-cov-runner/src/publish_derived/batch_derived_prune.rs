@@ -1,9 +1,9 @@
+use crate::plan::batch_fingerprint::RustCoverageBatchIdentity;
+use crate::plan::batch_plan::RustCoverageBatchRequest;
 use crate::publish_derived::batch_derived_index::read_population_generation;
 use crate::publish_derived::batch_io_skip_not_found::{
     dir_entry_path_ok_missing, read_dir_ok_missing, read_ok_missing, remove_file_ok_missing,
 };
-use crate::plan::batch_fingerprint::RustCoverageBatchIdentity;
-use crate::plan::batch_plan::RustCoverageBatchRequest;
 use crate::rust_cov_cache::RustCovCacheEntry;
 use crate::{CACHE_SCHEMA_VERSION, RustLlvmCovError};
 use std::collections::BTreeSet;

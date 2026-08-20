@@ -1,4 +1,3 @@
-
 use std::path::Path;
 
 use super::identity::{current_python_execution_identity, identity_matches_current};
@@ -11,7 +10,9 @@ pub(crate) fn current_complete_generation_matches(
     test_args: &[String],
 ) -> bool {
     match try_load_pinned_python_generation_warm(repo_root) {
-        Ok(pinned) => generation_matches(&pinned, repo_root, selectors, test_args) && pinned.complete,
+        Ok(pinned) => {
+            generation_matches(&pinned, repo_root, selectors, test_args) && pinned.complete
+        }
         Err(_) => false,
     }
 }
@@ -46,7 +47,6 @@ pub(crate) fn generation_matches(
     if !identity_matches_current(repo_root, &pinned.plan.base_identity, test_args) {
         return false;
     }
-
 
     let mut expected = selectors.to_vec();
     expected.sort();

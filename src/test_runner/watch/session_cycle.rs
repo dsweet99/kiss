@@ -1,4 +1,3 @@
-
 use std::path::Path;
 use std::sync::mpsc::SyncSender;
 use std::time::Duration;
@@ -39,7 +38,8 @@ where
 {
     let (cycle_args, replies) = take_queued_cycle_args(ctx.live, ctx.queued);
     let capture = !replies.is_empty();
-    let (test_outcome, mut captured) = run_cycle_maybe_tee(capture, &mut *ctx.run_cycle, &cycle_args);
+    let (test_outcome, mut captured) =
+        run_cycle_maybe_tee(capture, &mut *ctx.run_cycle, &cycle_args);
     let test_exit = match test_outcome {
         RunTestOnceOutcome::Interrupted => {
             reply_all(&replies, EXIT_INTERRUPTED, None, None);
@@ -73,9 +73,13 @@ where
             reply_all(&replies, exit_code, error, output);
         }
     }
-    if let Some(msg) =
-        drain_into_machine(ctx.source, ctx.filter, ctx.machine, ctx.repo_root, Duration::ZERO)
-    {
+    if let Some(msg) = drain_into_machine(
+        ctx.source,
+        ctx.filter,
+        ctx.machine,
+        ctx.repo_root,
+        Duration::ZERO,
+    ) {
         eprintln!("error: kiss test --watch: {msg}");
         return CycleOutcome::Error;
     }
@@ -175,10 +179,7 @@ fn client_output_for_exit(exit_code: i32, captured: &str) -> Option<String> {
     }
 }
 
-fn suppress_generic_cov_error(
-    error: Option<String>,
-    output: Option<&String>,
-) -> Option<String> {
+fn suppress_generic_cov_error(error: Option<String>, output: Option<&String>) -> Option<String> {
     match error {
         Some(e) if e == "coverage gate failed" && output.is_some() => None,
         other => other,

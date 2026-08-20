@@ -87,11 +87,7 @@ fn cli_invalid_lang_reports_error() {
 #[test]
 fn cli_on_empty_directory() {
     let tmp = TempDir::new().unwrap();
-    let output = kiss_binary()
-        .arg("check")
-        .arg(tmp.path())
-        .output()
-        .unwrap();
+    let output = kiss_binary().arg("check").arg(tmp.path()).output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         stdout.contains("No files") || stdout.contains("No Python") || stdout.contains("No Rust"),

@@ -130,7 +130,7 @@ fn write_seeded_rslip_entry(
         env: env.clone(),
         cache_root: cache_root.to_path_buf(),
         force_rerun: false,
-timeout: None,
+        timeout: None,
         content_fingerprint: None,
     };
     let fingerprint = rslip::cache_fingerprint_for_request(&req).unwrap();
@@ -226,7 +226,7 @@ fn rust_runtime_coverage_request(
         test_args: Vec::new(),
         env: relevant_rust_env(),
         force_rerun: false,
-jobs: 1,
+        jobs: 1,
         generated_config: repo
             .join(".kiss")
             .join("rust_llvm_cov_cache")

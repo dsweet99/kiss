@@ -1,4 +1,3 @@
-
 use super::super::ast_models::{ParseOutcome, ReferenceKind};
 use super::{
     collect_decorator, collect_identifier_children, collect_py_call, collect_py_def,
@@ -27,11 +26,6 @@ fn parses_class_method_and_attribute_call() {
         panic!("parse should succeed");
     };
     assert!(res.matching_definition("helper", Some("C")).is_some());
-
-
-
-
-
 
     let method_spans: std::collections::BTreeSet<(usize, usize)> = res
         .references
@@ -156,11 +150,6 @@ fn inner_function_shadow_collects_nested_definitions() {
 
 #[test]
 fn del_obj_attr_emits_attribute_reference() {
-
-
-
-
-
     let src = "class C:\n    def field(self):\n        return 1\n\ndef use(c, c2):\n    del c.field\n    del c.field, c2.field\n    del c.field[0]\n";
     let ParseOutcome::Success(res) = parse_python(src) else {
         panic!("parse should succeed");

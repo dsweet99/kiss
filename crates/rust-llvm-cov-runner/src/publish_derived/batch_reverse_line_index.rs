@@ -1,5 +1,6 @@
-
-pub use crate::publish_derived::batch_reverse_build::{REVERSE_LINE_INDEX_SCHEMA, ReversePublishInfo};
+pub use crate::publish_derived::batch_reverse_build::{
+    REVERSE_LINE_INDEX_SCHEMA, ReversePublishInfo,
+};
 pub use crate::publish_derived::batch_reverse_publish::{
     prune_unreferenced_snapshots, publish_reverse_line_index, read_prior_snapshot_id,
     reverse_line_index_dir,

@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
 use crate::gate_config::GateConfig;
-use crate::stats::{compute_summaries, MetricStats, PercentileSummary};
+use crate::stats::{MetricStats, PercentileSummary, compute_summaries};
 
 use super::config_keys::{python_config_key, rust_config_key};
 use super::defaults_append::{append_python_defaults, append_rust_defaults};

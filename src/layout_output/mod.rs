@@ -1,4 +1,3 @@
-
 use crate::layout_cycles::{CycleBreakSuggestion, LayoutCycleAnalysis};
 use crate::layout_layers::LayerInfo;
 use std::fmt::Write;
@@ -143,11 +142,6 @@ fn format_layers(out: &mut String, layer_info: &LayerInfo) {
 }
 
 const fn default_layer_name(level: usize, total: usize) -> &'static str {
-
-
-
-
-
     if level == 0 {
         "Foundation"
     } else if level == total - 1 {

@@ -114,7 +114,10 @@ fn cargo_config_fingerprint(cwd: &Path, env: &BTreeMap<String, String>) -> Strin
         paths.push(home.join("config.toml"));
         paths.push(home.join("config"));
     }
-    let mut h = rust_cov_fnv1a64(0xcbf2_9ce4_8422_2325, RUNNER_RESOLVER_POLICY_VERSION.as_bytes());
+    let mut h = rust_cov_fnv1a64(
+        0xcbf2_9ce4_8422_2325,
+        RUNNER_RESOLVER_POLICY_VERSION.as_bytes(),
+    );
     for path in paths {
         h = rust_cov_fnv1a64(h, path.to_string_lossy().as_bytes());
         h = rust_cov_fnv1a64(h, &[0]);

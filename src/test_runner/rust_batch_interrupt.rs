@@ -1,4 +1,3 @@
-
 use std::sync::atomic::{AtomicBool, Ordering};
 
 static RUST_BATCH_INTERRUPTED: AtomicBool = AtomicBool::new(false);

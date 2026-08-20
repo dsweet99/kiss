@@ -28,7 +28,6 @@ pub(super) fn run_rslip_misses(
     out: &mut [Option<Result<RslipOutcome, RslipError>>],
     on_progress: &mut impl FnMut(RslipBatchProgress),
 ) {
-
     let groups = coalesce_rslip_miss_candidates(misses);
     let mut seen = slot_filled_mask(out);
     let groups = brief_lock_filter_rslip_miss_groups(groups, out);
@@ -43,7 +42,6 @@ pub(super) fn run_rslip_misses(
         return;
     }
 
-
     let source_roots: BTreeSet<_> = runner_misses
         .iter()
         .map(|miss| miss.req.source_root.clone())
@@ -56,7 +54,8 @@ pub(super) fn run_rslip_misses(
         .map(|miss| miss.runner_req.clone())
         .collect();
     let mut pending: Vec<Option<RslipMiss>> = runner_misses.into_iter().map(Some).collect();
-    rslip.runner
+    rslip
+        .runner
         .run_many_bounded_with_on_complete(runner_reqs, jobs, &mut |index, result| {
             let miss = pending[index]
                 .take()
@@ -64,7 +63,6 @@ pub(super) fn run_rslip_misses(
             let resolved = miss.indices.len();
             let mut outcomes = Vec::with_capacity(resolved);
             for (slot_index, slot_result) in handle_rslip_miss_result(miss, result) {
-
                 out[slot_index] = Some(clone_rslip_result(&slot_result));
                 seen[slot_index] = true;
                 outcomes.push((slot_index, slot_result));
@@ -102,4 +100,3 @@ fn emit_new_miss_finalizations(
     emit_miss_progress(outcomes, remaining, on_progress);
     remaining
 }
-

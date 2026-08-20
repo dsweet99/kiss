@@ -1,11 +1,11 @@
-pub(crate) use crate::publish_derived::batch_derived_prune::maybe_prune_obsolete_selective_after_batch;
+use crate::plan::batch_fingerprint::{RustCoverageBatchIdentity, RustCoverageToolIdentity};
+use crate::plan::batch_plan::RustCoverageBatchRequest;
 use crate::publish_derived::batch_derived_generations::{
     build_generation_index, count_generations,
 };
+pub(crate) use crate::publish_derived::batch_derived_prune::maybe_prune_obsolete_selective_after_batch;
 use crate::publish_derived::batch_derived_prune::prune_non_current_generations;
 pub use crate::publish_derived::batch_derived_prune::prune_obsolete_selective_generations;
-use crate::plan::batch_fingerprint::{RustCoverageBatchIdentity, RustCoverageToolIdentity};
-use crate::plan::batch_plan::RustCoverageBatchRequest;
 use crate::rust_cov_cache::{generation_entries_fingerprint, load_rust_cov_cache_entry};
 use crate::{
     RustLlvmCovError, RustTestBinaryIdentity, batch_check_aggregate::ValidatedCheckAggregate,
@@ -14,7 +14,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io;
 use std::path::Path;
-
 
 #[cfg(test)]
 use crate::RustLineCoverage;
@@ -60,8 +59,6 @@ pub(crate) fn try_publish_population_derived_state_with_binaries(
     test_binaries: &[RustTestBinaryIdentity],
 ) -> Result<Option<DerivedPublishCounters>, RustLlvmCovError> {
     let Some(selectors) = req.population_publication_selectors.as_deref() else {
-
-
         return republish_if_entry_state_missing(req, tools, identity, test_binaries);
     };
     if selectors.is_empty() {
@@ -144,13 +141,15 @@ pub fn population_manifest_state_is_current(
     identity: &RustCoverageBatchIdentity,
     selectors: &[String],
 ) -> Result<bool, RustLlvmCovError> {
-    Ok(crate::publish_derived::batch_derived_index::load_current_population_state(
-        cache_root,
-        source_root,
-        identity,
-        Some(selectors),
+    Ok(
+        crate::publish_derived::batch_derived_index::load_current_population_state(
+            cache_root,
+            source_root,
+            identity,
+            Some(selectors),
+        )
+        .is_some(),
     )
-    .is_some())
 }
 fn all_entries_hit(
     req: &RustCoverageBatchRequest,
@@ -249,18 +248,20 @@ pub fn publish_derived_state_with_binaries(
         Some(&reverse),
     )
     .map_err(|err| annotate_io("write_population_and_durations", err))?;
-    let reverse_snapshots_reclaimed = match crate::publish_derived::batch_reverse_line_index::prune_unreferenced_snapshots(
-        &req.cache_root,
-        &reverse.snapshot_id,
-        prior_snapshot.as_deref(),
-    ) {
-        Ok(removed) => removed,
-        Err(err) => {
-
-            eprintln!("kiss: reverse snapshot prune failed (active snapshot retained): {err:?}");
-            0
-        }
-    };
+    let reverse_snapshots_reclaimed =
+        match crate::publish_derived::batch_reverse_line_index::prune_unreferenced_snapshots(
+            &req.cache_root,
+            &reverse.snapshot_id,
+            prior_snapshot.as_deref(),
+        ) {
+            Ok(removed) => removed,
+            Err(err) => {
+                eprintln!(
+                    "kiss: reverse snapshot prune failed (active snapshot retained): {err:?}"
+                );
+                0
+            }
+        };
     let _ = crate::plan::batch_identity_seal::write_identity_mtime_seal(
         &req.cache_root,
         &req.source_root,
@@ -297,9 +298,6 @@ pub(crate) fn publish_conservative_derived_state_from_check_aggregate(
     aggregate: &ValidatedCheckAggregate,
 ) -> Result<DerivedPublishCounters, RustLlvmCovError> {
     let pruned = prune_non_current_generations(&req.cache_root, &identity.generation_fingerprint)?;
-
-
-
 
     let index = aggregate
         .aggregate_covered_lines

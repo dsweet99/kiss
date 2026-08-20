@@ -215,7 +215,6 @@ fn module_path_attr_ignores_non_string_path_forms() {
 
 #[test]
 fn unreadable_source_is_not_reported_as_fully_covered() {
-
     let missing =
         std::path::PathBuf::from("/tmp/kiss-missing-coverage-denom-file-does-not-exist.rs");
     let snapshot = RuntimeCoverageSnapshot {
@@ -258,13 +257,11 @@ fn cfg_helpers_cover_verbatim_yield_group_and_unknown_item() {
     });
     assert!(expr_cfg_active(&group));
 
-
     let item = syn::Item::Verbatim(TokenStream::from_iter([TokenTree::Ident(Ident::new(
         "mystery",
         Span::call_site(),
     ))]));
     assert!(item_cfg_active(&item));
-
 
     let _ = TokenTree::Group(Group::new(Delimiter::Parenthesis, TokenStream::new()));
 }

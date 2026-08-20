@@ -1,4 +1,3 @@
-
 use kiss::Language;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -53,10 +52,7 @@ mod tests {
 
     #[test]
     fn language_keyed_get_mut_and_map() {
-        let mut keyed = LanguageKeyed {
-            python: 1,
-            rust: 2,
-        };
+        let mut keyed = LanguageKeyed { python: 1, rust: 2 };
         *keyed.get_mut(Language::Python) = 10;
         *keyed.get_mut(Language::Rust) = 20;
         let mapped = keyed.map(|n| n * 2);

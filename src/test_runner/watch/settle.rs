@@ -1,4 +1,3 @@
-
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
@@ -168,9 +167,7 @@ fn poll_scope_dirty(machine: &mut SettleMachine, now: Instant) -> Option<SettleP
 }
 
 fn deadline_elapsed(machine: &SettleMachine, now: Instant) -> bool {
-    machine
-        .deadline
-        .is_some_and(|deadline| now >= deadline)
+    machine.deadline.is_some_and(|deadline| now >= deadline)
 }
 
 fn refresh_pending_unsettled(
@@ -278,10 +275,7 @@ mod tests {
         let t0 = Instant::now();
         let recent = sig(true, Duration::from_millis(10));
         m.note_path(PathBuf::from("a.py"), t0, recent.clone());
-        assert_eq!(
-            m.poll(t0 + settle, |_| recent.clone()),
-            SettlePoll::Waiting
-        );
+        assert_eq!(m.poll(t0 + settle, |_| recent.clone()), SettlePoll::Waiting);
     }
 
     #[test]
@@ -303,10 +297,7 @@ mod tests {
         m.mark_scope_dirty(t0);
         let any = sig(true, settle);
         assert_eq!(m.poll(t0, |_| any.clone()), SettlePoll::Waiting);
-        assert_eq!(
-            m.poll(t0 + settle, |_| any.clone()),
-            SettlePoll::ScopeDirty
-        );
+        assert_eq!(m.poll(t0 + settle, |_| any.clone()), SettlePoll::ScopeDirty);
     }
 
     #[test]

@@ -32,15 +32,14 @@ use check_runtime_refresh_python::ensure_python_runtime_coverage;
 
 #[path = "check_runtime_refresh_types.rs"]
 mod check_runtime_refresh_types;
-use check_runtime_refresh_types::{PythonRuntimeRefresh, RustRuntimeRefresh};
 pub(crate) use check_runtime_refresh_types::CoverageRuntimeRefresh;
+use check_runtime_refresh_types::{PythonRuntimeRefresh, RustRuntimeRefresh};
 
 #[cfg(test)]
 #[path = "check_runtime_refresh_python_test.rs"]
 mod python_refresh_tests;
 
-pub(crate) const COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV: &str =
-    "KISS_COVERAGE_RUNTIME_REFRESH_ACTIVE";
+pub(crate) const COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV: &str = "KISS_COVERAGE_RUNTIME_REFRESH_ACTIVE";
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct LanguageRefreshStats {
@@ -53,8 +52,7 @@ pub(crate) struct LanguageRefreshStats {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct CoverageRefreshStats {
-    pub(crate) by_language:
-        crate::test_runner::language_keyed::LanguageKeyed<LanguageRefreshStats>,
+    pub(crate) by_language: crate::test_runner::language_keyed::LanguageKeyed<LanguageRefreshStats>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -182,19 +180,16 @@ fn refresh_python_and_rust_parallel(
     pytest_args: &[String],
     gate: &kiss::GateConfig,
 ) -> Result<CoverageRefreshStats, CoverageRefreshError> {
-
-
     std::thread::scope(|scope| {
-        let python = scope.spawn(|| {
-            ensure_python_runtime_coverage(repo_root, ignore, jobs, pytest_args, gate)
-        });
+        let python = scope
+            .spawn(|| ensure_python_runtime_coverage(repo_root, ignore, jobs, pytest_args, gate));
         let rust = ensure_rust_runtime_coverage(repo_root, ignore, jobs, gate)?;
-        let python = python
-            .join()
-            .unwrap_or_else(|_| Err(CoverageRefreshError::publication(
+        let python = python.join().unwrap_or_else(|_| {
+            Err(CoverageRefreshError::publication(
                 "Python",
                 "python refresh thread panicked",
-            )))?;
+            ))
+        })?;
         Ok(CoverageRefreshStats {
             by_language: crate::test_runner::language_keyed::LanguageKeyed {
                 python: python.by_language.python,
@@ -217,12 +212,9 @@ static REFRESH_ENV_STATE: Mutex<(usize, Option<Option<std::ffi::OsString>>)> =
 
 impl ScopedRefreshEnvGuard {
     pub(crate) fn set() -> Self {
-        let mut state = REFRESH_ENV_STATE
-            .lock()
-            .expect("refresh env state lock");
+        let mut state = REFRESH_ENV_STATE.lock().expect("refresh env state lock");
         if state.0 == 0 {
             state.1 = Some(std::env::var_os(COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV));
-
 
             unsafe { std::env::set_var(COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV, "1") };
         }
@@ -233,9 +225,7 @@ impl ScopedRefreshEnvGuard {
 
 impl Drop for ScopedRefreshEnvGuard {
     fn drop(&mut self) {
-        let mut state = REFRESH_ENV_STATE
-            .lock()
-            .expect("refresh env state lock");
+        let mut state = REFRESH_ENV_STATE.lock().expect("refresh env state lock");
         state.0 = state.0.saturating_sub(1);
         if state.0 == 0 {
             let old = state.1.take().flatten();
@@ -247,7 +237,6 @@ impl Drop for ScopedRefreshEnvGuard {
 pub(crate) fn restore_refresh_active_env(old: Option<std::ffi::OsString>) {
     let key = COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV;
     match old {
-
         Some(value) => unsafe { std::env::set_var(key, value) },
 
         None => unsafe { std::env::remove_var(key) },
@@ -309,7 +298,6 @@ fn ensure_rust_runtime_coverage_with_stats_labeled(
     )
     .map_err(|err| CoverageRefreshError::discovery("Rust", err))?;
 
-
     if let Some(stats) = try_repair_rust_check_aggregate_labeled(
         repo_root,
         ignore,
@@ -326,10 +314,7 @@ fn ensure_rust_runtime_coverage_with_stats_labeled(
     let _refresh_env = ScopedRefreshEnvGuard::set();
     let result = crate::test_runner::ensure_runtime::ensure_languages_runtime(&request)
         .map_err(|err| CoverageRefreshError::publication("Rust", err))?;
-    let summary = result
-        .rust()
-        .map(|r| r.summary.clone())
-        .unwrap_or_default();
+    let summary = result.rust().map(|r| r.summary.clone()).unwrap_or_default();
     finalize_population_summary_labeled(repo_root, ignore, &summary, true, caller_label)
 }
 
@@ -353,8 +338,13 @@ pub(crate) fn ensure_rust_runtime_coverage_shared(
             ..Default::default()
         });
     }
-    let stats =
-        ensure_rust_runtime_coverage_with_stats_labeled(repo_root, ignore, jobs, caller_label, gate)?;
+    let stats = ensure_rust_runtime_coverage_with_stats_labeled(
+        repo_root,
+        ignore,
+        jobs,
+        caller_label,
+        gate,
+    )?;
     Ok(crate::test_runner::runners::SelectorExecutionSummary {
         rust_test_instances: stats.by_language.rust.test_instances,
         rust_aggregate_binaries: stats.by_language.rust.aggregate_binaries,

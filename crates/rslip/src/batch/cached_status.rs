@@ -1,4 +1,3 @@
-
 use std::collections::BTreeMap;
 
 use crate::{RslipError, RslipOutcome};
@@ -6,7 +5,6 @@ use crate::{RslipError, RslipOutcome};
 use super::RslipBatchProgress;
 
 pub(super) fn format_cached_status_dump(outcomes: &[RslipOutcome]) -> String {
-
     if outcomes.len() > 32 {
         return format_cached_status_totals(outcomes);
     }
@@ -166,4 +164,3 @@ mod tests {
         }
     }
 }
-

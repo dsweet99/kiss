@@ -1,4 +1,3 @@
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Write;
@@ -39,7 +38,9 @@ struct OnDiskRustWitness {
 pub(crate) fn rust_identity_digest_from_batch(identity: &RustCoverageBatchIdentity) -> String {
     format!(
         "rs:{}:{}:{}",
-        identity.input_digest, identity.generation_fingerprint, identity.selection_context_fingerprint
+        identity.input_digest,
+        identity.generation_fingerprint,
+        identity.selection_context_fingerprint
     )
 }
 
@@ -74,9 +75,7 @@ pub(crate) fn publish_rust_execution_witness(
     if selectors.len() != statuses.len() || selectors.len() != durations_ns.len() {
         return Err("error: kiss: rust execution witness shape mismatch".into());
     }
-    let (selectors, statuses, durations_ns) =
-        order_witness_rows(selectors, statuses, durations_ns);
-
+    let (selectors, statuses, durations_ns) = order_witness_rows(selectors, statuses, durations_ns);
 
     if scope == WitnessScope::Subset {
         return Ok(String::new());
@@ -146,8 +145,7 @@ fn refuse_full_shrink(
     }
     let existing_set: std::collections::BTreeSet<&str> =
         existing.selectors.iter().map(String::as_str).collect();
-    let new_set: std::collections::BTreeSet<&str> =
-        selectors.iter().map(String::as_str).collect();
+    let new_set: std::collections::BTreeSet<&str> = selectors.iter().map(String::as_str).collect();
     (!existing_set.is_subset(&new_set)).then_some(existing.generation_id)
 }
 
@@ -199,7 +197,11 @@ pub(crate) fn try_load_rust_execution_witness(
         scope,
         identity_digest: disk.identity_digest,
         selectors: disk.selectors,
-        statuses: disk.statuses.iter().map(|s| WitnessStatus::parse(s)).collect(),
+        statuses: disk
+            .statuses
+            .iter()
+            .map(|s| WitnessStatus::parse(s))
+            .collect(),
         durations_ns: disk.durations_ns,
         covered_lines: disk.covered_lines,
         complete: disk.complete,
@@ -297,7 +299,9 @@ pub(crate) fn rust_warm_or_miss_selectors(
                 RustWarmDecision::Miss
             }
         }
-        Some(misses) if misses.len() < planned_selectors.len() => RustWarmDecision::RunMisses(misses),
+        Some(misses) if misses.len() < planned_selectors.len() => {
+            RustWarmDecision::RunMisses(misses)
+        }
         _ => RustWarmDecision::Miss,
     }
 }

@@ -68,8 +68,6 @@ pub fn parse_files(paths: &[PathBuf]) -> Result<Vec<Result<ParsedFile, ParseErro
 
     Ok(paths
         .par_iter()
-
-
         .map_init(
             || create_parser().map_or_else(|_| ParserSlot::Failed, ParserSlot::Ready),
             |slot, path| match slot {

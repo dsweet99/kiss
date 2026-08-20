@@ -1,4 +1,3 @@
-
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
@@ -46,7 +45,12 @@ pub fn start_watch(dir: &Path, args: &[&str]) -> WatchProc {
         .expect("spawn watch");
     let deadline = Instant::now() + Duration::from_secs(90);
     loop {
-        if dir.join(".kiss").join("watch").join("session.json").is_file() {
+        if dir
+            .join(".kiss")
+            .join("watch")
+            .join("session.json")
+            .is_file()
+        {
             return WatchProc { child };
         }
         if Instant::now() >= deadline {

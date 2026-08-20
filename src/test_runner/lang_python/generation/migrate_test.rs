@@ -1,12 +1,11 @@
-
 use super::{
     V1Bundle, evidence_from_v1_bundle, selector_coverage_from_index,
     try_migrate_complete_v1_generation,
 };
 use crate::test_runner::python_coverage_index::{
-    python_coverage_cache_root, read_python_population_manifest,
-    write_population_durations, write_python_coverage_index_with_entries_fingerprint,
-    write_python_coverage_snapshot, write_python_population_manifest_for_args,
+    python_coverage_cache_root, read_python_population_manifest, write_population_durations,
+    write_python_coverage_index_with_entries_fingerprint, write_python_coverage_snapshot,
+    write_python_population_manifest_for_args,
 };
 use crate::test_runner::runners::detect_rslip_versions;
 use std::collections::{BTreeMap, BTreeSet};
@@ -77,10 +76,7 @@ fn migrate_publishes_generation_from_complete_v1_bundle() {
     let cache_root = python_coverage_cache_root(repo).unwrap();
     let coverage = BTreeMap::from([("app.py".into(), BTreeSet::from([1u32]))]);
     write_python_coverage_snapshot(repo, &coverage).unwrap();
-    let index = BTreeMap::from([(
-        "app.py".into(),
-        BTreeSet::from([selector.clone()]),
-    )]);
+    let index = BTreeMap::from([("app.py".into(), BTreeSet::from([selector.clone()]))]);
     write_python_coverage_index_with_entries_fingerprint(
         repo,
         &index,

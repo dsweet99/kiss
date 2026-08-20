@@ -1,4 +1,3 @@
-
 use crate::discovery::Language;
 
 pub trait LanguageAnalysis {

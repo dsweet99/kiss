@@ -1,7 +1,6 @@
 use super::*;
 use clap::{CommandFactory, Parser};
 
-
 impl Cli {
     fn witness() -> Self {
         Cli::parse_from(["kiss", "rules"])
@@ -26,10 +25,7 @@ fn cov_subcommand_parses_as_coverage() {
     let cli = Cli::parse_from(["kiss", "cov", ".", "-j", "7"]);
     assert!(matches!(
         cli.command,
-        Commands::Coverage {
-            jobs: Some(7),
-            ..
-        }
+        Commands::Coverage { jobs: Some(7), .. }
     ));
     let cli_alias = Cli::parse_from(["kiss", "__coverage", "."]);
     assert!(matches!(cli_alias.command, Commands::Coverage { .. }));
@@ -88,21 +84,14 @@ fn test_invocation_parses_modes_dot_all_and_targets() {
         TestInvocation::Commit
     );
     assert_eq!(
-        parse_test_invocation(&["src/lib.rs".into(), "tests/test_x.py::test_y".into()])
-            .unwrap(),
-        TestInvocation::Targets(vec![
-            "src/lib.rs".into(),
-            "tests/test_x.py::test_y".into()
-        ])
+        parse_test_invocation(&["src/lib.rs".into(), "tests/test_x.py::test_y".into()]).unwrap(),
+        TestInvocation::Targets(vec!["src/lib.rs".into(), "tests/test_x.py::test_y".into()])
     );
     assert_eq!(
         parse_test_invocation(&["src".into(), "crates/foo".into()]).unwrap(),
         TestInvocation::Targets(vec!["src".into(), "crates/foo".into()])
     );
-    assert_eq!(
-        parse_test_invocation(&[]).unwrap(),
-        TestInvocation::All
-    );
+    assert_eq!(parse_test_invocation(&[]).unwrap(), TestInvocation::All);
     assert!(parse_test_invocation(&[".".into(), "src/lib.rs".into()]).is_err());
     assert!(parse_test_invocation(&["src::symbol".into()]).is_err());
     assert!(parse_test_invocation(&["cov".into()]).is_err());
@@ -111,18 +100,10 @@ fn test_invocation_parses_modes_dot_all_and_targets() {
 
 #[test]
 fn test_branch_options_are_mode_specific() {
-    assert!(
-        validate_test_branch_options(&TestInvocation::Main, Some("main"), None).is_ok()
-    );
-    assert!(
-        validate_test_branch_options(&TestInvocation::Base, None, Some("origin/main")).is_ok()
-    );
-    assert!(
-        validate_test_branch_options(&TestInvocation::All, Some("main"), None).is_err()
-    );
-    assert!(
-        validate_test_branch_options(&TestInvocation::Commit, None, Some("base")).is_err()
-    );
+    assert!(validate_test_branch_options(&TestInvocation::Main, Some("main"), None).is_ok());
+    assert!(validate_test_branch_options(&TestInvocation::Base, None, Some("origin/main")).is_ok());
+    assert!(validate_test_branch_options(&TestInvocation::All, Some("main"), None).is_err());
+    assert!(validate_test_branch_options(&TestInvocation::Commit, None, Some("base")).is_err());
     assert!(
         validate_test_branch_options(
             &TestInvocation::Targets(vec!["a.py".into()]),
@@ -142,18 +123,77 @@ fn test_command_help_is_language_neutral_for_shared_options() {
         .render_long_help()
         .to_string();
 
+    assert!(help.contains("Force selected tests to rerun instead of reusing test-runner caches"));
     assert!(
-        help.contains("Force selected tests to rerun instead of reusing test-runner caches")
+        help.contains(
+            "Rerun tests that need it under normal rules, plus any marked FAIL or TIMEOUT"
+        )
     );
-    assert!(help.contains(
-        "Rerun tests that need it under normal rules, plus any marked FAIL or TIMEOUT"
-    ));
     assert!(help.contains("Maximum number of test jobs to run concurrently"));
     assert!(help.contains("commit|base|main|.|TARGET"));
     assert!(!help.contains("all|TARGET"));
     assert!(!help.contains("validate-selection"));
     assert!(!help.contains("Force Python tests"));
     assert!(!help.contains("Maximum number of Python test jobs"));
+    assert!(help.contains("Show tests that would run without executing them"));
+    assert!(help.contains("Rerun tests when sources change"));
+}
+
+#[test]
+fn top_level_help_describes_commands_and_global_flags() {
+    let help = Cli::command().render_long_help().to_string();
+    assert!(help.contains("Code-quality metrics tool for Python and Rust"));
+    assert!(help.contains("Path to custom config file (default: .kissconfig)"));
+    assert!(help.contains("Filter by language: python (py) or rust (rs)"));
+    assert!(help.contains("Use built-in defaults, ignoring config files"));
+    assert!(help.contains("Run static complexity, graph, and duplicate checks"));
+    assert!(help.contains("Show metric statistics for codebase"));
+    assert!(help.contains("Generate .kissconfig thresholds from an existing codebase"));
+    assert!(help.contains(
+        "Shortcut: generate .kissconfig from current directory (same as: mimic . --out .kissconfig)"
+    ));
+    assert!(
+        help.contains(
+            "Write a default .kissconfig into `REPO_PATH` (defaults to current directory)"
+        )
+    );
+    assert!(help.contains("Detect duplicate code blocks (uses function-level chunks)"));
+    assert!(help.contains("Display all available rules and their current thresholds"));
+    assert!(help.contains("Show effective configuration (merged from all sources)"));
+    assert!(
+        help.contains("Write dependency graph (Mermaid or Graphviz DOT based on output extension)")
+    );
+    assert!(help.contains(
+        "Constrained minimization: `kiss shrink METRIC=VALUE` to start, `kiss shrink` to check"
+    ));
+    assert!(help.contains(
+        "Run covering tests, then enforce runtime line coverage and unit-test time gates"
+    ));
+    assert!(help.contains("Coverage-only evaluation (prefer `kiss test` for the full path)"));
+    assert!(help.contains("Semantic rename/move for Python and Rust symbols (beta)"));
+    assert!(help.contains("Usage:"));
+}
+
+#[test]
+fn check_and_cov_help_describe_options() {
+    let mut command = Cli::command();
+    let check = command
+        .find_subcommand_mut("check")
+        .expect("check subcommand exists")
+        .render_long_help()
+        .to_string();
+    assert!(check.contains("Files or directories to analyze"));
+    assert!(check.contains("Path prefix to exclude"));
+    assert!(check.contains("Print analysis stage timings"));
+    assert!(check.contains("Usage:"));
+    let mut command = Cli::command();
+    let cov = command
+        .find_subcommand_mut("cov")
+        .expect("cov subcommand exists")
+        .render_long_help()
+        .to_string();
+    assert!(cov.contains("Coverage-only evaluation (prefer `kiss test` for the full path)"));
+    assert!(cov.contains("Include files that currently pass the coverage gate"));
 }
 
 #[test]
@@ -166,10 +206,15 @@ fn test_cli_parses_targets_and_rejects_removed_modes() {
         "--dry-run",
     ]);
     match cli.command {
-        Commands::Test { operands, dry_run, .. } => {
+        Commands::Test {
+            operands, dry_run, ..
+        } => {
             assert_eq!(
                 operands,
-                vec!["src/lib.rs".to_string(), "tests/test_x.py::test_y".to_string()]
+                vec![
+                    "src/lib.rs".to_string(),
+                    "tests/test_x.py::test_y".to_string()
+                ]
             );
             assert!(dry_run);
         }
@@ -217,4 +262,3 @@ fn test_watch_bg_flag_is_rejected_by_clap() {
         "msg={msg}"
     );
 }
-

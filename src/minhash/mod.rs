@@ -1,9 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
-
 const DEFAULT_MINHASH_SIZE: usize = 100;
-
 
 static DEFAULT_COEFFICIENTS: LazyLock<[(u64, u64); DEFAULT_MINHASH_SIZE]> = LazyLock::new(|| {
     let mut coeffs = [(0u64, 0u64); DEFAULT_MINHASH_SIZE];
@@ -73,9 +71,6 @@ pub fn compute_minhash<S: std::hash::BuildHasher>(
     size: usize,
 ) -> MinHashSignature {
     let mut hashes = vec![u64::MAX; size];
-
-
-
 
     if size == DEFAULT_MINHASH_SIZE {
         for &shingle in shingles {

@@ -1,4 +1,3 @@
-
 use std::path::Path;
 
 use rust_llvm_cov_runner::RustCoverageBatchIdentity;
@@ -59,16 +58,39 @@ fn publish_load_round_trip_and_warm_accept() {
         loaded.identity_digest,
         rust_identity_digest_from_batch(&identity)
     );
-    assert!(try_warm_rust_cached_summary(tmp.path(), &selectors, &identity, &kiss::GateConfig::default()).is_some());
+    assert!(
+        try_warm_rust_cached_summary(
+            tmp.path(),
+            &selectors,
+            &identity,
+            &kiss::GateConfig::default()
+        )
+        .is_some()
+    );
     assert_eq!(
-        rust_miss_selectors(tmp.path(), &["a".into(), "c".into()], &identity, &kiss::GateConfig::default()),
+        rust_miss_selectors(
+            tmp.path(),
+            &["a".into(), "c".into()],
+            &identity,
+            &kiss::GateConfig::default()
+        ),
         Some(vec!["c".into()])
     );
-    match rust_warm_or_miss_selectors(tmp.path(), &["a".into(), "c".into()], &identity, &kiss::GateConfig::default()) {
+    match rust_warm_or_miss_selectors(
+        tmp.path(),
+        &["a".into(), "c".into()],
+        &identity,
+        &kiss::GateConfig::default(),
+    ) {
         RustWarmDecision::RunMisses(misses) => assert_eq!(misses, vec!["c".to_string()]),
         other => panic!("expected RunMisses, got {other:?}"),
     }
-    match rust_warm_or_miss_selectors(tmp.path(), &selectors, &identity, &kiss::GateConfig::default()) {
+    match rust_warm_or_miss_selectors(
+        tmp.path(),
+        &selectors,
+        &identity,
+        &kiss::GateConfig::default(),
+    ) {
         RustWarmDecision::Warm(_) => {}
         other => panic!("expected Warm, got {other:?}"),
     }

@@ -2,12 +2,6 @@
 #[path = "ast_rust_test.rs"]
 mod ast_rust_test;
 
-
-
-
-
-
-
 use super::ast_models::{
     AstResult, Definition, FallbackReason, ParseOutcome, Reference, SymbolKind, TraitImpl,
 };

@@ -2,10 +2,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use super::enumerate_tests_in_changed_files;
-#[path = "decision_rust_paths.rs"]
-mod decision_rust_paths;
 #[path = "decision_prior.rs"]
 mod decision_prior;
+#[path = "decision_rust_paths.rs"]
+mod decision_rust_paths;
 use crate::test_runner::coverage_decision::{
     ChangedSource, CoverageDecisionEngine, LanguagePlanner, SelectionBasis, TestSelector,
 };
@@ -25,13 +25,12 @@ pub(crate) struct SelectorPlan {
     pub(crate) vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed<usize>,
     pub(crate) snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed<usize>,
     pub(crate) snapshot_delta_structural: crate::test_runner::language_keyed::LanguageKeyed<bool>,
-    pub(crate) changed_lines: crate::test_runner::language_keyed::LanguageKeyed<
-        BTreeMap<PathBuf, BTreeSet<u32>>,
-    >,
-    pub(crate) prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed<Vec<String>>,
+    pub(crate) changed_lines:
+        crate::test_runner::language_keyed::LanguageKeyed<BTreeMap<PathBuf, BTreeSet<u32>>>,
+    pub(crate) prior_failure_selectors:
+        crate::test_runner::language_keyed::LanguageKeyed<Vec<String>>,
     pub(crate) coverage_decision_engine_used: bool,
-    pub(crate) selection_basis:
-        crate::test_runner::language_keyed::LanguageKeyed<SelectionBasis>,
+    pub(crate) selection_basis: crate::test_runner::language_keyed::LanguageKeyed<SelectionBasis>,
 }
 
 #[derive(Clone, Copy)]
@@ -233,17 +232,16 @@ struct EngineBackers {
 
 fn engine_backers(input: EngineBackerInputs<'_>) -> Result<EngineBackers, String> {
     let mut backers = Vec::new();
-    let python_prior_failures = if !input.include_prior_failures
-        || input.lang_filter == Some(kiss::Language::Rust)
-    {
-        Vec::new()
-    } else {
-        prior_failures_for_language(
-            input.repo_root,
-            kiss::Language::Python,
-            input.test_args.python,
-        )?
-    };
+    let python_prior_failures =
+        if !input.include_prior_failures || input.lang_filter == Some(kiss::Language::Rust) {
+            Vec::new()
+        } else {
+            prior_failures_for_language(
+                input.repo_root,
+                kiss::Language::Python,
+                input.test_args.python,
+            )?
+        };
     let rust_prior_failures = if !input.include_prior_failures
         || input.lang_filter == Some(kiss::Language::Python)
     {
@@ -270,9 +268,10 @@ fn engine_backers(input: EngineBackerInputs<'_>) -> Result<EngineBackers, String
         && (!input.rust_source_paths.is_empty()
             || !input.changed_tests.rust.is_empty()
             || !rust_prior_failures.is_empty()
-            || input.rust_resolved.as_ref().is_some_and(|resolved| {
-                resolved.basis() == SelectionBasis::Population
-            }))
+            || input
+                .rust_resolved
+                .as_ref()
+                .is_some_and(|resolved| resolved.basis() == SelectionBasis::Population))
     {
         backers.push(rust_llvm_cov_backer(RustBackerInput {
             repo_root: input.repo_root,

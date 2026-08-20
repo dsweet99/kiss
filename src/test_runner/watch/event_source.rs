@@ -1,4 +1,3 @@
-
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::time::Duration;
@@ -27,7 +26,8 @@ pub(crate) enum RecvTimeout {
 }
 
 pub(crate) trait WatchEventSource {
-    fn recv_timeout(&mut self, timeout: Duration) -> Result<Vec<NormalizedWatchEvent>, RecvTimeout>;
+    fn recv_timeout(&mut self, timeout: Duration)
+    -> Result<Vec<NormalizedWatchEvent>, RecvTimeout>;
 }
 
 pub(crate) struct NativeWatchEventSource {
@@ -50,9 +50,9 @@ impl NativeWatchEventSource {
                 WatchRootKind::Recursive => RecursiveMode::Recursive,
                 WatchRootKind::NonRecursive => RecursiveMode::NonRecursive,
             };
-            watcher.watch(&reg.path, mode).map_err(|e| {
-                format_watch_setup_error(&e, &reg.path)
-            })?;
+            watcher
+                .watch(&reg.path, mode)
+                .map_err(|e| format_watch_setup_error(&e, &reg.path))?;
         }
         Ok(Self {
             _watcher: watcher,
@@ -62,7 +62,10 @@ impl NativeWatchEventSource {
 }
 
 impl WatchEventSource for NativeWatchEventSource {
-    fn recv_timeout(&mut self, timeout: Duration) -> Result<Vec<NormalizedWatchEvent>, RecvTimeout> {
+    fn recv_timeout(
+        &mut self,
+        timeout: Duration,
+    ) -> Result<Vec<NormalizedWatchEvent>, RecvTimeout> {
         #[cfg(test)]
         if TEST_IMMEDIATE_DISCONNECT.load(Ordering::SeqCst) {
             return Err(RecvTimeout::Disconnected(
@@ -86,7 +89,9 @@ impl WatchEventSource for NativeWatchEventSource {
     }
 }
 
-pub(crate) fn normalize_notify_result(res: Result<notify::Event, notify::Error>) -> NormalizedWatchEvent {
+pub(crate) fn normalize_notify_result(
+    res: Result<notify::Event, notify::Error>,
+) -> NormalizedWatchEvent {
     match res {
         Ok(event) => normalize_notify_event(event),
         Err(err) => NormalizedWatchEvent::Error(err.to_string()),
@@ -116,9 +121,7 @@ pub(crate) fn normalize_notify_event(event: notify::Event) -> NormalizedWatchEve
 pub(crate) fn format_watch_setup_error(err: &notify::Error, root: &Path) -> String {
     let base = format!("failed to watch {}: {err}", root.display());
     if matches!(err.kind, notify::ErrorKind::MaxFilesWatch) {
-        format!(
-            "{base}; on Linux raise fs.inotify.max_user_watches or choose a narrower target"
-        )
+        format!("{base}; on Linux raise fs.inotify.max_user_watches or choose a narrower target")
     } else {
         base
     }
@@ -132,7 +135,10 @@ pub(crate) struct FakeWatchEventSource {
 
 #[cfg(test)]
 impl WatchEventSource for FakeWatchEventSource {
-    fn recv_timeout(&mut self, _timeout: Duration) -> Result<Vec<NormalizedWatchEvent>, RecvTimeout> {
+    fn recv_timeout(
+        &mut self,
+        _timeout: Duration,
+    ) -> Result<Vec<NormalizedWatchEvent>, RecvTimeout> {
         if let Some(msg) = self.disconnected.take() {
             return Err(RecvTimeout::Disconnected(msg));
         }

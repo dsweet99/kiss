@@ -1,4 +1,3 @@
-
 #![allow(clippy::missing_errors_doc)]
 #![allow(clippy::missing_panics_doc)]
 #![allow(clippy::must_use_candidate)]
@@ -11,29 +10,27 @@ mod runtime;
 
 pub use batch::RslipBatchProgress;
 pub use batch::warm_hit_seal_exists;
-pub use outcomes_load::{
-    load_cached_outcomes_many, load_cached_outcomes_many_trusting_population,
-};
 pub(crate) use outcomes_load::rslip_outcome_from_cache;
+pub use outcomes_load::{load_cached_outcomes_many, load_cached_outcomes_many_trusting_population};
 
 #[cfg(test)]
 mod batch_error_test;
 #[cfg(test)]
 mod batch_lock_chunk_test;
 #[cfg(test)]
-mod batch_stream_test;
-#[cfg(test)]
 mod batch_process_test;
+#[cfg(test)]
+mod batch_pycache_regression_test;
+#[cfg(test)]
+mod batch_stream_test;
 #[cfg(test)]
 mod batch_test;
 #[cfg(test)]
 mod batch_test_b;
 #[cfg(test)]
-mod batch_pycache_regression_test;
+mod cache_cov_edges_test;
 #[cfg(test)]
 mod cache_test;
-#[cfg(test)]
-mod cache_cov_edges_test;
 #[cfg(test)]
 mod lock_test;
 
@@ -44,9 +41,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use cache::rslip_unique_suffix;
-pub use cache::{
-    is_kiss_rslip_cache_dir, is_rslip_cache_input, should_skip_rslip_dir,
-};
+pub use cache::{is_kiss_rslip_cache_dir, is_rslip_cache_input, should_skip_rslip_dir};
 pub use lock::{LocalRslipLockGuard, lock_rslip_cache_entry, lock_rslip_derived_state};
 use rpytest_runner::{
     PytestRunError, PytestRunOutcome, PytestRunRequest, PytestRunner, RequestedArtifact, TestStatus,
@@ -262,11 +257,23 @@ fn rslip_coverage_from_outcome(outcome: &PytestRunOutcome) -> Result<LineCoverag
         Ok(bytes) => bytes,
 
         Err(err) if err.kind() == io::ErrorKind::NotFound => {
-            return Err(RslipError::MissingArtifact(runtime::COVERAGE_ARTIFACT.to_string()));
+            return Err(RslipError::MissingArtifact(
+                runtime::COVERAGE_ARTIFACT.to_string(),
+            ));
         }
         Err(err) => return Err(RslipError::Io(err)),
     };
     Ok(serde_json::from_slice(&bytes)?)
+}
+
+#[cfg(test)]
+fn write_ok_sample(root: &Path) {
+    fs::write(root.join("app.py"), "x = 1\n").unwrap();
+    fs::write(
+        root.join("test_sample.py"),
+        "def test_ok():\n    assert True\n",
+    )
+    .unwrap();
 }
 
 #[cfg(test)]
@@ -282,7 +289,7 @@ fn rslip_sample_request(root: &Path) -> RslipRequest {
         env: BTreeMap::new(),
         cache_root: root.join(".rslip_cache"),
         force_rerun: false,
-timeout: None,
+        timeout: None,
         content_fingerprint: None,
     }
 }

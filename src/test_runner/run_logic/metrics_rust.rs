@@ -89,10 +89,7 @@ fn print_rust_reverse_metrics(metrics: &LocalRubricMetrics) {
         "rust_reverse_unavailable_missing_record={}",
         process.unavailable.missing_record
     );
-    println!(
-        "rust_reverse_published={}",
-        rust_reverse_published(metrics)
-    );
+    println!("rust_reverse_published={}", rust_reverse_published(metrics));
     println!(
         "rust_reverse_snapshots_reclaimed={}",
         rust_reverse_snapshots_reclaimed(metrics)
@@ -209,6 +206,9 @@ pub(super) fn rust_reverse_published(metrics: &LocalRubricMetrics) -> bool {
 }
 
 pub(super) fn rust_reverse_snapshots_reclaimed(metrics: &LocalRubricMetrics) -> usize {
-    metrics.rust_population.summary.rust_reverse_snapshots_reclaimed
+    metrics
+        .rust_population
+        .summary
+        .rust_reverse_snapshots_reclaimed
         + metrics.rust_final.summary.rust_reverse_snapshots_reclaimed
 }

@@ -1,6 +1,6 @@
 use super::*;
-use crate::test_runner::python_coverage_index::write_python_population_manifest_for_args;
 use crate::test_runner::python_coverage_index::clear_python_generation_warm_memo;
+use crate::test_runner::python_coverage_index::write_python_population_manifest_for_args;
 use crate::test_runner::runners::detect_rslip_versions;
 use std::time::Duration;
 
@@ -42,7 +42,8 @@ fn population_durations_prefer_generation_timings() {
         return;
     };
     let selector = "t.py::test_a".to_string();
-    let mut plan = population_plan_for_selectors(repo, std::slice::from_ref(&selector), &[]).unwrap();
+    let mut plan =
+        population_plan_for_selectors(repo, std::slice::from_ref(&selector), &[]).unwrap();
     plan.base_identity.python_version = py;
     plan.base_identity.pytest_version = pt;
     plan.base_identity.selector_discovery_version = PYTHON_SELECTOR_DISCOVERY_VERSION.to_string();
@@ -76,21 +77,25 @@ fn write_population_durations_rejects_count_and_order_mismatch() {
     write_python_population_manifest_for_args(tmp.path(), &selectors, &[]).unwrap();
     let manifest = read_python_population_manifest(tmp.path()).unwrap();
     let cache_root = python_coverage_cache_root(tmp.path()).unwrap();
-    assert!(write_population_durations(
-        &cache_root,
-        &manifest,
-        &[("a".into(), Duration::from_millis(1))]
-    )
-    .is_err());
-    assert!(write_population_durations(
-        &cache_root,
-        &manifest,
-        &[
-            ("b".into(), Duration::from_millis(1)),
-            ("a".into(), Duration::from_millis(2)),
-        ]
-    )
-    .is_err());
+    assert!(
+        write_population_durations(
+            &cache_root,
+            &manifest,
+            &[("a".into(), Duration::from_millis(1))]
+        )
+        .is_err()
+    );
+    assert!(
+        write_population_durations(
+            &cache_root,
+            &manifest,
+            &[
+                ("b".into(), Duration::from_millis(1)),
+                ("a".into(), Duration::from_millis(2)),
+            ]
+        )
+        .is_err()
+    );
     write_population_durations(
         &cache_root,
         &manifest,
@@ -153,7 +158,12 @@ fn load_durations_allow_non_passed_keeps_failed_entries() {
     };
     let selector = "t.py::test_a".to_string();
     let req = crate::test_runner::runners::rslip_request_from_parts(
-        repo, &selector, &[], &py, &pt, false,
+        repo,
+        &selector,
+        &[],
+        &py,
+        &pt,
+        false,
         &kiss::GateConfig::default(),
     )
     .unwrap();
@@ -166,14 +176,17 @@ fn load_durations_allow_non_passed_keeps_failed_entries() {
         "duration": {"secs": 0, "nanos": 1_000_000},
     });
 
-
     let _ = entry;
     let payload = format!(
         "{{\"nodeid\":\"{selector}\",\"status\":\"Failed\",\"duration\":{{\"secs\":0,\"nanos\":1000000}}}}\n"
     );
 
     std::fs::write(entry_dir.join(format!("{fingerprint}.json")), payload).ok();
-    let got = load_durations_from_entry_probes_allow_non_passed(repo, &[], std::slice::from_ref(&selector));
+    let got = load_durations_from_entry_probes_allow_non_passed(
+        repo,
+        &[],
+        std::slice::from_ref(&selector),
+    );
 
     let _ = got;
 }
@@ -199,7 +212,8 @@ fn try_load_generation_durations_from_published_generation() {
         return;
     };
     let selector = "t.py::test_a".to_string();
-    let mut plan = population_plan_for_selectors(repo, std::slice::from_ref(&selector), &[]).unwrap();
+    let mut plan =
+        population_plan_for_selectors(repo, std::slice::from_ref(&selector), &[]).unwrap();
     plan.base_identity.python_version = py;
     plan.base_identity.pytest_version = pt;
     plan.base_identity.selector_discovery_version = PYTHON_SELECTOR_DISCOVERY_VERSION.to_string();
@@ -250,7 +264,8 @@ fn population_durations_identity_mismatch_returns_none() {
         return;
     };
     let selector = "t.py::test_a".to_string();
-    let mut plan = population_plan_for_selectors(repo, std::slice::from_ref(&selector), &[]).unwrap();
+    let mut plan =
+        population_plan_for_selectors(repo, std::slice::from_ref(&selector), &[]).unwrap();
     plan.base_identity.python_version = py;
     plan.base_identity.pytest_version = pt;
     plan.base_identity.selector_discovery_version = PYTHON_SELECTOR_DISCOVERY_VERSION.to_string();
@@ -311,12 +326,15 @@ fn load_path_maxes_and_probe_helpers_cover_fallback_arms() {
     )
     .unwrap();
     clear_python_generation_warm_memo();
-    let path_maxes = load_current_python_population_path_maxes(tmp.path(), &[]).expect("path_maxes");
+    let path_maxes =
+        load_current_python_population_path_maxes(tmp.path(), &[]).expect("path_maxes");
     assert_eq!(path_maxes.len(), 1);
     assert_eq!(path_maxes[0].example_selector, selector);
 
-
-    assert!(load_durations_from_entry_probes(tmp.path(), &[], std::slice::from_ref(&selector)).is_none());
+    assert!(
+        load_durations_from_entry_probes(tmp.path(), &[], std::slice::from_ref(&selector))
+            .is_none()
+    );
     let _ = load_durations_from_entry_probes_allow_non_passed(
         tmp.path(),
         &[],

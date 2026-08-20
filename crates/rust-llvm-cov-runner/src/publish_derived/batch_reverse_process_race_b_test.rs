@@ -1,8 +1,7 @@
-
 use crate::execute_or_reuse::batch_lock::lock_batch;
 use crate::publish_derived::batch_reverse_process_race_support::{
-    assert_ok, child_work_and_repo, release_barrier, spawn_exact, wait_barrier_ready, wait_path,
-    wait_ready, SpawnExact,
+    SpawnExact, assert_ok, child_work_and_repo, release_barrier, spawn_exact, wait_barrier_ready,
+    wait_path, wait_ready,
 };
 use crate::publish_derived::batch_reverse_publish::{prune_unreferenced_snapshots, snapshot_path};
 use crate::publish_derived::batch_reverse_test_support::seed_alpha_beta_reverse;
@@ -151,7 +150,11 @@ fn store_selector_with_lib_coverage(
     let tools = witness_batch_tools();
     let identity = batch_identity(req, &tools).unwrap();
     let fingerprint = entry_fingerprint(&identity.input_digest, req, &tools, selector);
-    let file = repo.join("src").join("lib.rs").to_string_lossy().into_owned();
+    let file = repo
+        .join("src")
+        .join("lib.rs")
+        .to_string_lossy()
+        .into_owned();
     let entry = RustCovCacheEntry::from_outcome(
         &RustLlvmCovOutcome {
             selector: selector.to_string(),
@@ -208,7 +211,11 @@ fn primed() -> (tempfile::TempDir, crate::RustCoverageBatchRequest, PathBuf) {
 }
 
 fn write_work_paths(work: &Path, repo: &Path, prior: &str) {
-    fs::write(work.join("repo_path.txt"), repo.to_string_lossy().as_bytes()).unwrap();
+    fs::write(
+        work.join("repo_path.txt"),
+        repo.to_string_lossy().as_bytes(),
+    )
+    .unwrap();
     fs::write(work.join("prior_snapshot.txt"), prior.as_bytes()).unwrap();
 }
 
@@ -245,7 +252,11 @@ fn assert_active_readable(cache_root: &Path) {
     let active = population["reverse_line_index"]["snapshot_id"]
         .as_str()
         .unwrap();
-    assert!(snapshot_path(cache_root, active).join("meta.json").is_file());
+    assert!(
+        snapshot_path(cache_root, active)
+            .join("meta.json")
+            .is_file()
+    );
 }
 
 fn dispatch_child() {
@@ -311,7 +322,9 @@ fn assert_reader_safe(req: &crate::RustCoverageBatchRequest, generation: &str, p
                     .and_then(|v| v.as_str())
             {
                 assert!(
-                    snapshot_path(&req.cache_root, sid).join("meta.json").is_file(),
+                    snapshot_path(&req.cache_root, sid)
+                        .join("meta.json")
+                        .is_file(),
                     "manifest must not point at deleted snapshot"
                 );
                 assert!(sid == prior || snapshot_path(&req.cache_root, sid).is_dir());
@@ -361,13 +374,7 @@ fn test_name(mode: &str) -> &'static str {
     }
 }
 
-fn spawn(
-    exe: &Path,
-    work: &Path,
-    id: &str,
-    mode: &str,
-    barrier: Option<(&Path, &str)>,
-) -> Child {
+fn spawn(exe: &Path, work: &Path, id: &str, mode: &str, barrier: Option<(&Path, &str)>) -> Child {
     spawn_exact(SpawnExact {
         exe,
         work,

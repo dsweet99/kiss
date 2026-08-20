@@ -38,7 +38,16 @@ fn format_rslip_error_includes_context() {
 fn run_rslip_selectors_rejects_zero_jobs_before_spawning() {
     let tmp = tempfile::tempdir().unwrap();
 
-    let _ = run_rslip_selectors(tmp.path(), &[], &[], false, &[], 0, None, &kiss::GateConfig::default());
+    let _ = run_rslip_selectors(
+        tmp.path(),
+        &[],
+        &[],
+        false,
+        &[],
+        0,
+        None,
+        &kiss::GateConfig::default(),
+    );
 }
 
 #[test]
@@ -86,10 +95,7 @@ max_unit_test_seconds = [["tests/allowed", 60], ["*", 0]]
     let previous = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
     let gate = kiss::GateConfig {
-        max_unit_test_seconds: vec![
-            ("tests/allowed".into(), 60.0),
-            ("*".into(), 0.0),
-        ],
+        max_unit_test_seconds: vec![("tests/allowed".into(), 60.0), ("*".into(), 0.0)],
         ..kiss::GateConfig::default()
     };
     assert_eq!(
@@ -143,7 +149,6 @@ fn rslip_request_and_version_contracts_are_explicit() {
     assert_eq!(req.cwd, tmp.path());
     assert_eq!(req.pytest_args, extra);
     assert!(req.force_rerun);
-
 
     assert_eq!(req.timeout, Some(Duration::from_secs(2)));
     assert!(python_version_supports_rslip("3.12.0"));
@@ -218,7 +223,7 @@ def test_b():\n    assert False\n",
             force_rerun_selectors: &[],
             jobs: 3,
             content_fingerprint: None,
-        gate: kiss::GateConfig::default(),
+            gate: kiss::GateConfig::default(),
         },
         runner,
     )
@@ -349,7 +354,7 @@ def test_b():\n    assert True\n",
                 force_rerun_selectors: &[],
                 jobs: 2,
                 content_fingerprint: None,
-            gate: kiss::GateConfig::default(),
+                gate: kiss::GateConfig::default(),
             },
             runner,
         )
@@ -391,7 +396,7 @@ def test_b():\n    assert True\n",
                 force_rerun_selectors: &[],
                 jobs: 2,
                 content_fingerprint: None,
-            gate: kiss::GateConfig::default(),
+                gate: kiss::GateConfig::default(),
             },
             cached_runner,
         )

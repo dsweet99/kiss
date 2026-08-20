@@ -1,14 +1,9 @@
-
 use crate::common::seed_python_runtime_coverage;
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
 
 fn write_corpus(dir: &std::path::Path) {
-
-
-
-
     fs::write(dir.join("lib.py"), "def add(a, b):\n    return a + b\n").unwrap();
     fs::write(
         dir.join("test_lib.py"),
@@ -19,7 +14,6 @@ fn write_corpus(dir: &std::path::Path) {
         dir,
         &[("test_lib.py::test_add", vec![("lib.py", vec![1, 2])])],
     );
-
 
     fs::write(
         dir.join(".kissconfig"),

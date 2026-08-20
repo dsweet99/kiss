@@ -82,8 +82,6 @@ mod compound_test {{
 
 #[test]
 fn test_cfg_not_test_mod_included_in_metrics() {
-
-
     use std::io::Write;
     let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
     writeln!(
@@ -106,7 +104,6 @@ mod tests {{
     let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
     let m = compute_rust_file_metrics(&parsed);
 
-
     assert_eq!(
         m.functions, 2,
         "cfg(not(test)) is production code and should be counted (got {})",
@@ -122,7 +119,6 @@ mod tests {{
 #[test]
 fn test_is_cfg_test_mod_semantics() {
     use syn::{Item, parse_str};
-
 
     let cases = [
         (r"#[cfg(test)] mod m {}", "cfg(test)", true),
@@ -161,8 +157,6 @@ fn test_is_cfg_test_mod_semantics() {
 
 #[test]
 fn test_double_negation_not_not_test_is_test_code() {
-
-
     use std::io::Write;
     let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
     writeln!(

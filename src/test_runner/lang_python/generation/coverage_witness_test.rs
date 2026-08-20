@@ -1,4 +1,3 @@
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
@@ -147,7 +146,8 @@ fn corrupt_pointer_does_not_prune_finalized_generations() {
     }
     let id = publish_one(repo, "t.py::test_a");
     assert!(!id.is_empty());
-    let cache = crate::test_runner::python_coverage_index::python_coverage_cache_root(repo).unwrap();
+    let cache =
+        crate::test_runner::python_coverage_index::python_coverage_cache_root(repo).unwrap();
     let gen_dir = cache.join("generations").join(&id);
     assert!(gen_dir.is_dir());
     fs::write(cache.join("population.json"), b"{not-json").unwrap();

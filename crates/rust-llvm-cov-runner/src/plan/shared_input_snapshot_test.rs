@@ -107,8 +107,16 @@ fn rust_input_snapshot_excludes_nested_non_member_crate_sources() {
     req.source_root = tmp.path().to_path_buf();
     req.cargo_args.clear();
     let snapshot = rust_input_snapshot(tmp.path(), &req).unwrap();
-    assert!(snapshot.ordinary_source_digests.contains_key("member/src/lib.rs"));
-    assert!(!snapshot.ordinary_source_digests.contains_key("nested/src/lib.rs"));
+    assert!(
+        snapshot
+            .ordinary_source_digests
+            .contains_key("member/src/lib.rs")
+    );
+    assert!(
+        !snapshot
+            .ordinary_source_digests
+            .contains_key("nested/src/lib.rs")
+    );
 }
 
 fn write_nested_non_member_fixture() -> tempfile::TempDir {
@@ -125,13 +133,21 @@ fn write_nested_non_member_fixture() -> tempfile::TempDir {
         "[package]\nname='member'\nversion='0.1.0'\nedition='2024'\n",
     )
     .unwrap();
-    fs::write(tmp.path().join("member/src/lib.rs"), "pub fn member_fn() {}\n").unwrap();
+    fs::write(
+        tmp.path().join("member/src/lib.rs"),
+        "pub fn member_fn() {}\n",
+    )
+    .unwrap();
     fs::write(
         tmp.path().join("nested/Cargo.toml"),
         "[package]\nname='nested'\nversion='0.1.0'\nedition='2024'\n\n[workspace]\n",
     )
     .unwrap();
-    fs::write(tmp.path().join("nested/src/lib.rs"), "pub fn nested_fn() {}\n").unwrap();
+    fs::write(
+        tmp.path().join("nested/src/lib.rs"),
+        "pub fn nested_fn() {}\n",
+    )
+    .unwrap();
     tmp
 }
 

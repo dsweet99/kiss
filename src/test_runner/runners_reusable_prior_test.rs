@@ -6,9 +6,7 @@ use rpytest_runner::TestStatus;
 use rust_llvm_cov_runner::RustLineCoverage;
 use tempfile::TempDir;
 
-use crate::test_runner::coverage_decision::{
-    CoverageFreshness, LanguagePlanner, SelectionBasis,
-};
+use crate::test_runner::coverage_decision::{CoverageFreshness, LanguagePlanner, SelectionBasis};
 use crate::test_runner::runners::rust_backer::RustModule;
 use crate::test_runner::runners::{combined_selectors, enumerate_workspace_rust_selectors};
 use crate::test_runner::rust_coverage_index::{
@@ -227,15 +225,9 @@ fn rust_module_reports_reusable_prior_after_ordinary_source_edit() {
             .collect::<Vec<_>>(),
         vec!["tests::gets_value"]
     );
-    assert_eq!(
-        module.selection_basis(),
-        SelectionBasis::ReusablePrior
-    );
+    assert_eq!(module.selection_basis(), SelectionBasis::ReusablePrior);
     let empty_module = RustModule::new(tmp.path(), &[], &BTreeMap::new(), &[], &[], &[], &[]);
-    assert_eq!(
-        empty_module.selection_basis(),
-        SelectionBasis::Current
-    );
+    assert_eq!(empty_module.selection_basis(), SelectionBasis::Current);
 }
 
 #[test]

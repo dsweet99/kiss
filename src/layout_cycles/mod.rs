@@ -1,4 +1,3 @@
-
 use crate::graph::DependencyGraph;
 use petgraph::algo::tarjan_scc;
 use petgraph::graph::NodeIndex;

@@ -6,8 +6,8 @@ use std::fs;
 use std::path::Path;
 
 use super::{
-    repo_relative_coverage_file, rust_coverage_cache_root, rust_coverage_entry_paths,
-    CACHE_SCHEMA_VERSION,
+    CACHE_SCHEMA_VERSION, repo_relative_coverage_file, rust_coverage_cache_root,
+    rust_coverage_entry_paths,
 };
 
 pub(crate) fn selectors_by_changed_file_line(

@@ -1,4 +1,3 @@
-
 mod grouping;
 mod rules_table;
 mod types;

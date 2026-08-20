@@ -15,8 +15,14 @@ pub(crate) fn try_run_cached_stats_summary(
     rs_config: &Config,
     gate_config: &GateConfig,
 ) -> Option<FullCheckCache> {
-    let cache =
-        load_top_compatible_cache(universe, py_files, rs_files, py_config, rs_config, gate_config)?;
+    let cache = load_top_compatible_cache(
+        universe,
+        py_files,
+        rs_files,
+        py_config,
+        rs_config,
+        gate_config,
+    )?;
     if cache.py_file_count > 0 && cache.py_stats.is_none() {
         return None;
     }

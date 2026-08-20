@@ -46,8 +46,7 @@ fn try_warm_all_hit_seal_rejects_all_passed_false() {
     let req = request(cache_root.clone(), &["a::t"]);
     write_warm_all_hit_seal(&req, &id).unwrap();
     let path = seal_path(&cache_root);
-    let mut seal: WarmAllHitSeal =
-        serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let mut seal: WarmAllHitSeal = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     seal.all_passed = false;
     fs::write(&path, serde_json::to_vec(&seal).unwrap()).unwrap();
     assert_eq!(try_warm_all_hit_seal(&req, &id), None);

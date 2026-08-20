@@ -1,12 +1,11 @@
-
 mod cache;
+#[cfg(test)]
+pub(crate) mod cov_cache_test_support;
+pub(crate) mod cov_file_list_cache;
+pub(crate) mod cov_records_cache;
 mod coverage;
 mod coverage_gate;
 mod coverage_types;
-pub(crate) mod cov_records_cache;
-pub(crate) mod cov_file_list_cache;
-#[cfg(test)]
-pub(crate) mod cov_cache_test_support;
 mod dry;
 mod dup_detect;
 mod entry;
@@ -21,7 +20,6 @@ mod parallel;
 mod params;
 mod pipeline;
 mod print;
-
 
 #[allow(unused_imports)]
 pub(crate) use cache::{FullCacheStoreInput, maybe_store_full_cache};
@@ -47,10 +45,10 @@ pub use graph_api::{
 };
 pub use metrics_global::{GlobalMetricsInput, compute_global_metrics};
 pub use options::{AnalyzeOptions, AnalyzeResult};
-#[allow(unused_imports)]
-pub(crate) use pipeline::{FullPipelineInput, FullPipelineResult, run_full_pipeline};
 #[cfg(test)]
 pub(crate) use pipeline::empty_full_pipeline_result_for_tests;
+#[allow(unused_imports)]
+pub(crate) use pipeline::{FullPipelineInput, FullPipelineResult, run_full_pipeline};
 #[cfg(test)]
 mod tests_coverage;
 #[cfg(test)]

@@ -1,4 +1,3 @@
-
 mod analysis;
 mod graph;
 mod parser;
@@ -15,7 +14,9 @@ pub use units::LanguageUnits;
 
 use crate::discovery::Language;
 use crate::parsing::{ParseError, ParsedFile, create_parser, parse_file as parse_python_file};
-use crate::py_metrics::{FileMetrics as PyFileMetrics, compute_file_metrics as compute_py_file_metrics};
+use crate::py_metrics::{
+    FileMetrics as PyFileMetrics, compute_file_metrics as compute_py_file_metrics,
+};
 use crate::rust_fn_metrics::{RustFileMetrics, compute_rust_file_metrics};
 use crate::rust_parsing::{ParsedRustFile, RustParseError, parse_rust_file};
 

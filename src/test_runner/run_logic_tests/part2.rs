@@ -58,14 +58,14 @@ fn run_selected_phases_records_rust_population_selective_and_prints_metrics() {
     let options = SelectorRunOptions {
         dry_run: false,
         force_rerun: false,
-metrics: true,
+        metrics: true,
         jobs: 1,
         extras: crate::test_runner::language_keyed::LanguageKeyed {
             python: &[],
             rust: &[],
         },
         plan_duration: Duration::ZERO,
-    gate: kiss::GateConfig::default()
+        gate: kiss::GateConfig::default(),
     };
     let python = FakeLanguageModule {
         language: Language::Python,
@@ -122,14 +122,14 @@ fn run_selectors_rejects_zero_jobs_at_entry() {
         SelectorRunOptions {
             dry_run: false,
             force_rerun: false,
-metrics: false,
+            metrics: false,
             jobs: 0,
             extras: crate::test_runner::language_keyed::LanguageKeyed {
                 python: &[],
                 rust: &[],
             },
             plan_duration: Duration::ZERO,
-        gate: kiss::GateConfig::default()
+            gate: kiss::GateConfig::default(),
         },
     )
     .unwrap_err();
@@ -154,14 +154,14 @@ fn run_selectors_non_dry_run_executes_python_selective_phase() {
         SelectorRunOptions {
             dry_run: false,
             force_rerun: true,
-metrics: true,
+            metrics: true,
             jobs: 1,
             extras: crate::test_runner::language_keyed::LanguageKeyed {
                 python: &[],
                 rust: &[],
             },
             plan_duration: Duration::ZERO,
-        gate: kiss::GateConfig::default()
+            gate: kiss::GateConfig::default(),
         },
     );
 
@@ -186,14 +186,14 @@ fn run_selectors_no_work_and_dry_run_with_metrics() {
             SelectorRunOptions {
                 dry_run: false,
                 force_rerun: false,
-metrics: true,
+                metrics: true,
                 jobs: 1,
                 extras: crate::test_runner::language_keyed::LanguageKeyed {
                     python: &[],
                     rust: &[],
                 },
                 plan_duration: Duration::ZERO,
-            gate: kiss::GateConfig::default()
+                gate: kiss::GateConfig::default()
             },
         )
         .unwrap(),
@@ -208,14 +208,14 @@ metrics: true,
             SelectorRunOptions {
                 dry_run: true,
                 force_rerun: false,
-metrics: true,
+                metrics: true,
                 jobs: 1,
                 extras: crate::test_runner::language_keyed::LanguageKeyed {
                     python: &[],
                     rust: &[],
                 },
                 plan_duration: Duration::ZERO,
-            gate: kiss::GateConfig::default()
+                gate: kiss::GateConfig::default()
             },
         )
         .unwrap(),

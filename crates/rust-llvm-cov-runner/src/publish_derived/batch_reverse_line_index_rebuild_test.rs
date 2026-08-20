@@ -1,6 +1,8 @@
-use crate::publish_derived::batch_entry_state::publish_next_entry_state;
 use crate::publish_derived::batch_derived_index::load_current_population_state;
-use crate::publish_derived::batch_reverse_publish::{publish_reverse_line_index, reverse_line_index_dir, snapshot_path};
+use crate::publish_derived::batch_entry_state::publish_next_entry_state;
+use crate::publish_derived::batch_reverse_publish::{
+    publish_reverse_line_index, reverse_line_index_dir, snapshot_path,
+};
 use crate::publish_derived::batch_reverse_test_support::seed_alpha_beta_reverse;
 use crate::test_support::{
     batch_executor_fixture_repo, batch_executor_request, published_alpha_derived_fixture,
@@ -21,7 +23,11 @@ fn rebuild_workspace_reverse_line_index() {
     let info =
         publish_reverse_line_index(cache, fixture.repo.path(), generation, entries_fp, revision)
             .unwrap();
-    assert!(snapshot_path(cache, &info.snapshot_id).join("meta.json").is_file());
+    assert!(
+        snapshot_path(cache, &info.snapshot_id)
+            .join("meta.json")
+            .is_file()
+    );
     assert!(reverse_line_index_dir(cache).join("snapshots").is_dir());
 }
 
@@ -39,5 +45,8 @@ fn population_load_skips_entry_scan_when_reverse_bound() {
     fs::set_permissions(&entries, fs::Permissions::from_mode(0o000)).unwrap();
     let state = load_current_population_state(&req.cache_root, repo.path(), &identity, None);
     fs::set_permissions(&entries, fs::Permissions::from_mode(mode)).unwrap();
-    assert!(state.is_some(), "bound reverse+entry_state must load without reading entries");
+    assert!(
+        state.is_some(),
+        "bound reverse+entry_state must load without reading entries"
+    );
 }

@@ -1,4 +1,3 @@
-
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
@@ -19,7 +18,6 @@ fn build_corpus(dir: &std::path::Path) {
         "def nobody_calls_me():\n    x = 1\n    y = 2\n    return x + y\n",
     )
     .unwrap();
-
 
     let dup_body = (0..40)
         .map(|i| format!("    a{i} = {i} + {i}"))
@@ -121,8 +119,6 @@ fn cli_stats_summary_emits_violations_header_with_duplicate_and_orphan_counts() 
         line.contains("orphan"),
         "Violations header missing `orphan`: {line}\nfull stdout:\n{stdout}"
     );
-
-
 
     let nums: Vec<usize> = line
         .split(|c: char| !c.is_ascii_digit())

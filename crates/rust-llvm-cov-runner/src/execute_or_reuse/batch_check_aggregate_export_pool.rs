@@ -3,9 +3,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use crate::RustLlvmCovError;
 use crate::execute_or_reuse::batch_export_resolve::{BinaryIdObjectMap, read_object_binary_id};
 use crate::execute_or_reuse::batch_export_tools::{ExportTools, read_profdata_binary_ids};
-use crate::RustLlvmCovError;
 
 pub(super) fn seed_binary_ids_for_objects(
     tools: &ExportTools,
@@ -68,19 +68,21 @@ pub(super) fn stable_name(value: &str) -> String {
     format!("{h:016x}")
 }
 
-pub(super) fn resolve_profile_merge_inputs(paths: &[PathBuf]) -> Result<Vec<PathBuf>, RustLlvmCovError> {
+pub(super) fn resolve_profile_merge_inputs(
+    paths: &[PathBuf],
+) -> Result<Vec<PathBuf>, RustLlvmCovError> {
     if !paths
         .iter()
         .any(|path| path.to_string_lossy().contains('%'))
     {
         return Ok(paths.to_vec());
     }
-    let pattern = paths.first().ok_or_else(|| {
-        RustLlvmCovError::InvalidRequest("profile path list is empty".into())
-    })?;
-    let dir = pattern.parent().ok_or_else(|| {
-        RustLlvmCovError::InvalidRequest("profile path has no parent".into())
-    })?;
+    let pattern = paths
+        .first()
+        .ok_or_else(|| RustLlvmCovError::InvalidRequest("profile path list is empty".into()))?;
+    let dir = pattern
+        .parent()
+        .ok_or_else(|| RustLlvmCovError::InvalidRequest("profile path has no parent".into()))?;
     let prefix = pool_pattern_file_prefix(pattern).ok_or_else(|| {
         RustLlvmCovError::InvalidRequest(format!(
             "cannot derive pool file prefix from {}",
@@ -136,7 +138,10 @@ mod tests {
 
     #[test]
     fn resolve_profile_merge_inputs_passthrough_without_percent() {
-        let paths = vec![PathBuf::from("/tmp/a.profraw"), PathBuf::from("/tmp/b.profraw")];
+        let paths = vec![
+            PathBuf::from("/tmp/a.profraw"),
+            PathBuf::from("/tmp/b.profraw"),
+        ];
         let resolved = resolve_profile_merge_inputs(&paths).unwrap();
         assert_eq!(resolved, paths);
     }
@@ -178,8 +183,7 @@ mod tests {
         let mut seeds = BTreeSet::new();
         seeds.insert("deadbeef".to_string());
         let cache = Arc::new(Mutex::new(BTreeMap::new()));
-        let filtered =
-            filter_pool_inputs_for_seed_ids(&tools, &inputs, &seeds, &cache).unwrap();
+        let filtered = filter_pool_inputs_for_seed_ids(&tools, &inputs, &seeds, &cache).unwrap();
         assert_eq!(filtered, inputs);
     }
 
@@ -230,4 +234,3 @@ mod tests {
         }
     }
 }
-

@@ -1,4 +1,3 @@
-
 use std::fmt::Write;
 use std::time::Duration;
 
@@ -48,8 +47,7 @@ pub(crate) fn build_unit_test_runtime_grouped_report(
     }
     let mut buckets: Vec<Vec<usize>> = rules.iter().map(|_| Vec::new()).collect();
     for timing in timings {
-        if let Some(matched) =
-            kiss::gate_config::matched_rule_for_selector(rules, &timing.selector)
+        if let Some(matched) = kiss::gate_config::matched_rule_for_selector(rules, &timing.selector)
         {
             buckets[matched.index].push(duration_ms(timing.duration));
         }
@@ -105,9 +103,8 @@ fn format_optional_secs(ms: Option<usize>) -> String {
 pub(crate) fn format_unit_test_runtime_grouped_report(
     report: &UnitTestRuntimeGroupedReport,
 ) -> String {
-    let mut out = String::from(
-        "unit_test_runtime_sec: (coverage cache; may not reflect full test set)",
-    );
+    let mut out =
+        String::from("unit_test_runtime_sec: (coverage cache; may not reflect full test set)");
     if let Some(total) = report.codebase_tests {
         out.push_str(&format!(" codebase_tests={total}"));
     }
@@ -148,11 +145,7 @@ fn table_column_widths(header: &[&str; 8], rows: &[[String; 8]]) -> [usize; 8] {
     widths
 }
 
-fn write_runtime_table_row<T: AsRef<str>>(
-    out: &mut String,
-    cells: &[T; 8],
-    widths: &[usize; 8],
-) {
+fn write_runtime_table_row<T: AsRef<str>>(out: &mut String, cells: &[T; 8], widths: &[usize; 8]) {
     for (index, (cell, width)) in cells.iter().zip(widths).enumerate() {
         if index > 0 {
             out.push_str("  ");

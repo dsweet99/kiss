@@ -1,6 +1,5 @@
-
 use super::*;
-use crate::config::{apply_lenient_string_list, get_usize, parse_string_list_key, ConfigError};
+use crate::config::{ConfigError, apply_lenient_string_list, get_usize, parse_string_list_key};
 
 pub(super) fn merge_global_lenient(config: &mut GateConfig, global: &toml::Table) {
     if let Some(s) = get_f64(global, "min_similarity") {

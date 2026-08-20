@@ -50,18 +50,12 @@ fn no_source_files_status() -> i32 {
 }
 
 #[cfg(test)]
-pub(super) fn merge_fresh_items(
-    _py: Option<()>,
-    _rs: Option<()>,
-) -> Option<()> {
+pub(super) fn merge_fresh_items(_py: Option<()>, _rs: Option<()>) -> Option<()> {
     None
 }
 
 #[cfg(test)]
-pub fn collect_all_units(
-    py_files: &[PathBuf],
-    rs_files: &[PathBuf],
-) -> Vec<kiss::UnitMetrics> {
+pub fn collect_all_units(py_files: &[PathBuf], rs_files: &[PathBuf]) -> Vec<kiss::UnitMetrics> {
     let py_units = collect_py_units(py_files);
     let rs_units = collect_rs_units(rs_files);
     let mut units = py_units;
@@ -89,9 +83,9 @@ fn collect_py_units(py_files: &[PathBuf]) -> Vec<kiss::UnitMetrics> {
 }
 
 fn collect_rs_units(rs_files: &[PathBuf]) -> Vec<kiss::UnitMetrics> {
+    use kiss::collect_detailed_rs;
     use kiss::rust_graph::build_rust_dependency_graph;
     use kiss::rust_parsing::parse_rust_files;
-    use kiss::collect_detailed_rs;
 
     collect_lang_units(LangCollect {
         files: rs_files,

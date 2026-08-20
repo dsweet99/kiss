@@ -1,4 +1,3 @@
-
 use crate::common::seed_python_runtime_coverage;
 use std::fs;
 use std::process::Command;
@@ -21,11 +20,7 @@ fn cli_check_ignore_excludes_matching_directory() {
     write_trivial_py(&root.join("subdir").join("drop.py"));
     seed_python_runtime_coverage(root, &[("test_ignore.py::test_ignore", vec![])]);
 
-    let baseline = kiss_binary()
-        .arg("check")
-        .arg(root)
-        .output()
-        .unwrap();
+    let baseline = kiss_binary().arg("check").arg(root).output().unwrap();
     let baseline_stdout = String::from_utf8_lossy(&baseline.stdout);
     assert!(
         baseline_stdout.contains("Analyzed: 2 files"),
@@ -53,11 +48,7 @@ fn cli_check_ignore_excludes_matching_filename() {
     write_trivial_py(&root.join("small.py"));
     seed_python_runtime_coverage(root, &[("test_ignore.py::test_ignore", vec![])]);
 
-    let baseline = kiss_binary()
-        .arg("check")
-        .arg(root)
-        .output()
-        .unwrap();
+    let baseline = kiss_binary().arg("check").arg(root).output().unwrap();
     let baseline_stdout = String::from_utf8_lossy(&baseline.stdout);
     assert!(
         baseline_stdout.contains("Analyzed: 2 files"),

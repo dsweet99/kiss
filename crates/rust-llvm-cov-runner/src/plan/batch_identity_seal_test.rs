@@ -60,8 +60,10 @@ fn mtime_seal_misses_when_live_env_changes_generation() {
     let identity = sealed_identity_for(&req, &tools);
     write_identity_mtime_seal(&req.cache_root, repo.path(), &req, &tools, &identity).unwrap();
     assert!(try_identity_from_mtime_seal(&req.cache_root, repo.path(), &req, &tools).is_some());
-    req.env
-        .insert("RUSTFLAGS".into(), "-C instrument-coverage -Ccodegen-units=1".into());
+    req.env.insert(
+        "RUSTFLAGS".into(),
+        "-C instrument-coverage -Ccodegen-units=1".into(),
+    );
     assert!(try_identity_from_mtime_seal(&req.cache_root, repo.path(), &req, &tools).is_none());
 }
 
@@ -119,8 +121,6 @@ fn mtime_seal_false_hit_when_same_length_content_changes_with_restored_mtime() {
     let hit = try_identity_from_mtime_seal(&req.cache_root, repo.path(), &req, &tools);
     #[cfg(coverage)]
     {
-
-
         let _ = hit;
         return;
     }

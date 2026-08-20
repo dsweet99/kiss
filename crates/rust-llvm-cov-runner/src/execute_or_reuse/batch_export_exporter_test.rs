@@ -1,8 +1,8 @@
-use super::{InstanceExportRequest, SubprocessInstanceExporter};
 use super::tests::write_fake_profile;
+use super::{InstanceExportRequest, SubprocessInstanceExporter};
+use crate::RustLlvmCovError;
 use crate::execute_or_reuse::batch_export_resolve::BinaryIdObjectMap;
 use crate::execute_or_reuse::batch_export_tools::ExportTools;
-use crate::RustLlvmCovError;
 use std::fs;
 use std::path::{Path, PathBuf};
 

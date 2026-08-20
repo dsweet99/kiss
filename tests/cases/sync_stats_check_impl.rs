@@ -8,7 +8,6 @@ pub(super) fn kiss_binary() -> Command {
 }
 
 const NON_SHARED_METRICS: &[&str] = &[
-
     "cycle_size",
     "duplication",
     "orphan_module",

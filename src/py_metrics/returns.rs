@@ -1,7 +1,6 @@
 use tree_sitter::Node;
 
 pub(super) fn count_return_values(node: Node) -> usize {
-
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "return" {

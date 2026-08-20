@@ -22,9 +22,7 @@ fn force_all_population_helper_keeps_targets_selective() {
     let mut planned = planned();
     planned.sel.python = vec!["tests/a.py::only".to_string()];
     let args = crate::test_runner::RunTestCmdArgs {
-        invocation: crate::bin_cli::args::TestInvocation::Targets(vec![
-            "tests/a.py::only".into(),
-        ]),
+        invocation: crate::bin_cli::args::TestInvocation::Targets(vec!["tests/a.py::only".into()]),
         main_branch_cli: None,
         base_branch_cli: None,
         dry_run: true,
@@ -37,7 +35,7 @@ fn force_all_population_helper_keeps_targets_selective() {
         ignore: &[],
         lang_filter: Some(Language::Python),
         config_main_branch: None,
-    gate_config: kiss::GateConfig::default()
+        gate_config: kiss::GateConfig::default(),
     };
     crate::test_runner::apply_force_all_population(&args, &mut planned);
     assert!(!planned.population_required.python);
@@ -70,7 +68,7 @@ fn force_all_population_helper_sets_population_for_all() {
         ignore: &[],
         lang_filter: Some(Language::Python),
         config_main_branch: None,
-    gate_config: kiss::GateConfig::default()
+        gate_config: kiss::GateConfig::default(),
     };
     crate::test_runner::apply_force_all_population(&args, &mut planned);
     assert!(planned.population_required.python);
@@ -261,10 +259,7 @@ fn planned_selectors_carry_population_decisions_without_selector_vectors() {
             python: Vec::new(),
             rust: Vec::new(),
         },
-        vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed {
-            python: 0,
-            rust: 0,
-        },
+        vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed { python: 0, rust: 0 },
         snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
             python: 0,
             rust: 0,

@@ -227,8 +227,6 @@ fn repeated_operations_do_not_collide() {
 #[cfg(debug_assertions)]
 #[test]
 fn release_build_public_calls_are_no_ops_even_when_configured() {
-
-
     let dir = temp_dir();
     let _env = EnvGuard::set(Some(&dir), Some("artifact:after_rename"));
     let result = wait_if_targeted(

@@ -1,4 +1,3 @@
-
 #[test]
 fn lang_iface_has_no_python_or_rust_impl_files() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/test_runner/lang_iface");
@@ -8,7 +7,9 @@ fn lang_iface_has_no_python_or_rust_impl_files() {
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .collect();
     assert!(
-        !entries.iter().any(|n| n.contains("python") || n.contains("rust")),
+        !entries
+            .iter()
+            .any(|n| n.contains("python") || n.contains("rust")),
         "lang_iface must stay language-neutral; found {entries:?}"
     );
 }
@@ -21,7 +22,9 @@ fn language_packages_own_generation_and_llvm_cov_homes() {
         "Python generation must live under lang_python/"
     );
     assert!(
-        !root.join("python_coverage_index/generation/mod.rs").is_file(),
+        !root
+            .join("python_coverage_index/generation/mod.rs")
+            .is_file(),
         "generation must not remain under python_coverage_index/"
     );
     assert!(

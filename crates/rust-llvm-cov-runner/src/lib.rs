@@ -1,11 +1,10 @@
-
 #![allow(clippy::missing_errors_doc)]
 #![allow(clippy::missing_panics_doc)]
 #![allow(clippy::must_use_candidate)]
 #![allow(unused_imports)]
 
-mod plan;
 mod execute_or_reuse;
+mod plan;
 mod publish_derived;
 
 mod file_lock;
@@ -21,41 +20,23 @@ mod structure_regression_test;
 #[cfg(test)]
 mod test_support;
 
-
-#[allow(unused_imports)]
-pub(crate) use plan::batch_plan_shim_const;
-pub(crate) use execute_or_reuse::batch_executable_index;
-pub(crate) use plan::batch_fingerprint;
-pub(crate) use plan::batch_identity_seal;
-#[cfg(test)]
-pub(crate) use plan::batch_identity_seal_test;
-pub(crate) use plan::batch_plan;
-pub(crate) use plan::batch_plan_env;
-pub(crate) use plan::batch_plan_nextest_config;
-pub(crate) use plan::batch_plan_publish;
-pub(crate) use plan::batch_plan_target_runner_program;
-pub(crate) use plan::batch_plan_test_args;
-pub(crate) use plan::batch_platform;
-pub(crate) use plan::batch_runner_resolve;
-pub(crate) use plan::batch_nextest_id;
-pub(crate) use plan::cargo_workspace_metadata;
-pub(crate) use plan::shared_input;
-#[cfg(test)]
-pub(crate) use plan::batch_plan_test;
-#[cfg(test)]
-pub(crate) use plan::shared_input_test;
 pub(crate) use execute_or_reuse::batch_aggregate;
 pub(crate) use execute_or_reuse::batch_check_aggregate_export;
 pub(crate) use execute_or_reuse::batch_events;
+pub(crate) use execute_or_reuse::batch_executable_index;
 pub(crate) use execute_or_reuse::batch_executor;
 pub(crate) use execute_or_reuse::batch_executor_finish;
+pub(crate) use execute_or_reuse::batch_executor_finish_bans;
 pub(crate) use execute_or_reuse::batch_executor_finish_entries;
 pub(crate) use execute_or_reuse::batch_executor_finish_export;
 pub(crate) use execute_or_reuse::batch_executor_finish_store;
-pub(crate) use execute_or_reuse::batch_executor_finish_bans;
 pub(crate) use execute_or_reuse::batch_executor_fresh;
 pub(crate) use execute_or_reuse::batch_export;
 pub(crate) use execute_or_reuse::batch_export_catalog;
+#[cfg(test)]
+pub(crate) use execute_or_reuse::batch_export_contract_fixture;
+#[cfg(test)]
+pub(crate) use execute_or_reuse::batch_export_contract_test;
 pub(crate) use execute_or_reuse::batch_export_ignore;
 pub(crate) use execute_or_reuse::batch_export_resolve;
 pub(crate) use execute_or_reuse::batch_export_tools;
@@ -66,20 +47,37 @@ pub(crate) use execute_or_reuse::batch_output_channel_token;
 pub(crate) use execute_or_reuse::batch_process_tree;
 pub(crate) use execute_or_reuse::batch_result;
 pub(crate) use execute_or_reuse::batch_run;
-pub(crate) use execute_or_reuse::batch_warm_hit_seal;
 pub(crate) use execute_or_reuse::batch_shim;
-pub(crate) use execute_or_reuse::batch_shim_synthesize;
 #[cfg(unix)]
 pub(crate) use execute_or_reuse::batch_shim_delegated;
 pub(crate) use execute_or_reuse::batch_shim_lookup;
+pub(crate) use execute_or_reuse::batch_shim_synthesize;
+pub(crate) use execute_or_reuse::batch_warm_hit_seal;
 pub(crate) use execute_or_reuse::llvm_cov_json;
 pub(crate) use execute_or_reuse::worker;
 #[cfg(test)]
-pub(crate) use execute_or_reuse::batch_export_contract_fixture;
-#[cfg(test)]
-pub(crate) use execute_or_reuse::batch_export_contract_test;
-#[cfg(test)]
 pub(crate) use execute_or_reuse::worker_cleanup_test;
+pub(crate) use plan::batch_fingerprint;
+pub(crate) use plan::batch_identity_seal;
+#[cfg(test)]
+pub(crate) use plan::batch_identity_seal_test;
+pub(crate) use plan::batch_nextest_id;
+pub(crate) use plan::batch_plan;
+pub(crate) use plan::batch_plan_env;
+pub(crate) use plan::batch_plan_nextest_config;
+pub(crate) use plan::batch_plan_publish;
+#[allow(unused_imports)]
+pub(crate) use plan::batch_plan_shim_const;
+pub(crate) use plan::batch_plan_target_runner_program;
+#[cfg(test)]
+pub(crate) use plan::batch_plan_test;
+pub(crate) use plan::batch_plan_test_args;
+pub(crate) use plan::batch_platform;
+pub(crate) use plan::batch_runner_resolve;
+pub(crate) use plan::cargo_workspace_metadata;
+pub(crate) use plan::shared_input;
+#[cfg(test)]
+pub(crate) use plan::shared_input_test;
 pub(crate) use publish_derived::batch_check_aggregate;
 pub(crate) use publish_derived::batch_check_aggregate_identity;
 pub(crate) use publish_derived::batch_derived;
@@ -89,24 +87,24 @@ pub(crate) use publish_derived::batch_derived_index;
 pub(crate) use publish_derived::batch_derived_index_check_aggregate_support;
 pub(crate) use publish_derived::batch_derived_index_reverse;
 pub(crate) use publish_derived::batch_derived_index_types;
+#[cfg(test)]
+pub(crate) use publish_derived::batch_derived_index_witness_test;
 pub(crate) use publish_derived::batch_derived_index_write;
 pub(crate) use publish_derived::batch_derived_manifest;
-pub(crate) use publish_derived::batch_population_durations;
 pub(crate) use publish_derived::batch_derived_prune;
+pub(crate) use publish_derived::batch_derived_snapshot;
 pub(crate) use publish_derived::batch_entry_state;
+pub(crate) use publish_derived::batch_population_durations;
+pub(crate) use publish_derived::batch_publication_tmp;
 pub(crate) use publish_derived::batch_reverse_build;
+pub(crate) use publish_derived::batch_reverse_line_index;
+#[cfg(test)]
+pub(crate) use publish_derived::batch_reverse_process_race_support;
 pub(crate) use publish_derived::batch_reverse_publish;
 pub(crate) use publish_derived::batch_reverse_query;
 pub(crate) use publish_derived::batch_reverse_query_metrics;
-pub(crate) use publish_derived::batch_reverse_line_index;
 #[cfg(test)]
 pub(crate) use publish_derived::batch_reverse_test_support;
-#[cfg(test)]
-pub(crate) use publish_derived::batch_reverse_process_race_support;
-pub(crate) use publish_derived::batch_derived_snapshot;
-pub(crate) use publish_derived::batch_publication_tmp;
-#[cfg(test)]
-pub(crate) use publish_derived::batch_derived_index_witness_test;
 
 use std::io;
 use std::path::PathBuf;
@@ -125,22 +123,6 @@ pub use batch_derived::{
     population_manifest_state_is_current, prune_obsolete_selective_generations,
     publish_derived_state, publish_derived_state_with_binaries,
 };
-pub use batch_entry_state::{
-    EntryState, ENTRY_STATE_SCHEMA, invalidate_entry_state, publish_next_entry_state,
-    read_entry_state,
-};
-pub use batch_reverse_line_index::{
-    ReversePublishInfo, REVERSE_LINE_INDEX_SCHEMA, prune_unreferenced_snapshots,
-    publish_reverse_line_index, read_prior_snapshot_id, reverse_line_index_dir,
-};
-pub use batch_reverse_query::{
-    query_reverse_line_index, snapshot_reverse_query_counters,
-    take_reverse_query_counters_since_last_copy, ReverseQueryCounters, ReverseUnavailableCounts,
-    REVERSE_QUERY_HITS,
-};
-pub use batch_reverse_query_metrics::ReverseUnavailableReason;
-#[cfg(test)]
-pub use batch_reverse_query::reset_reverse_query_counters_for_test;
 pub use batch_derived_entries::{RustReusableSelectorEntry, load_reusable_prior_selector_entries};
 pub use batch_derived_incremental::{
     IncrementalPublishPlan, publish_incremental_derived_state, rekey_selector_entries_to_identity,
@@ -151,8 +133,9 @@ pub use batch_derived_index::{
     load_current_generation_line_index, load_current_population_state,
     load_reusable_prior_population_state, reusable_snapshot_delta,
 };
-pub use batch_population_durations::{
-    load_current_population_durations, try_load_population_durations,
+pub use batch_entry_state::{
+    ENTRY_STATE_SCHEMA, EntryState, invalidate_entry_state, publish_next_entry_state,
+    read_entry_state,
 };
 pub use batch_events::{
     BatchCompilerArtifact, BatchEventStream, BatchTestTerminal, aggregate_selectors_for_test,
@@ -179,17 +162,31 @@ pub use batch_plan::{
 };
 pub use batch_plan_publish::publish_generated_nextest_config;
 pub use batch_plan_test_args::{identity_relevant_test_args, validate_supported_rust_test_args};
+pub use batch_population_durations::{
+    load_current_population_durations, try_load_population_durations,
+};
 pub use batch_result::{RustCoverageBatchCounters, RustCoverageBatchResult};
+pub use batch_reverse_line_index::{
+    REVERSE_LINE_INDEX_SCHEMA, ReversePublishInfo, prune_unreferenced_snapshots,
+    publish_reverse_line_index, read_prior_snapshot_id, reverse_line_index_dir,
+};
+#[cfg(test)]
+pub use batch_reverse_query::reset_reverse_query_counters_for_test;
+pub use batch_reverse_query::{
+    REVERSE_QUERY_HITS, ReverseQueryCounters, ReverseUnavailableCounts, query_reverse_line_index,
+    snapshot_reverse_query_counters, take_reverse_query_counters_since_last_copy,
+};
+pub use batch_reverse_query_metrics::ReverseUnavailableReason;
 pub use batch_runner_resolve::{
     DelegatedRunnerMap, RUNNER_RESOLVER_POLICY_VERSION, delegated_runner_for_platform,
     placeholder_delegated_runner_fields, read_runner_map, resolve_batch_request_runners,
     resolve_delegated_runners, runner_map_fingerprint, write_runner_map,
 };
-pub use plan::batch_plan_shim_const::TARGET_RUNNER_SHIM_SUBCOMMAND;
 pub use batch_shim::run_target_runner_shim;
 pub use kiss_profraw::{
     KissProfrawProcessGuard, discover_repo_root, redirect_this_process, sweep_kiss_profraw_dir,
 };
+pub use plan::batch_plan_shim_const::TARGET_RUNNER_SHIM_SUBCOMMAND;
 pub use rust_cov_cache::{
     RustCovCacheEntry, generation_entries_fingerprint, repo_relative_coverage_file,
     repo_relative_path, store_rust_cov_cache_entry,

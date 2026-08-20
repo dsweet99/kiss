@@ -1,4 +1,3 @@
-
 use std::fs;
 use std::path::PathBuf;
 
@@ -50,9 +49,6 @@ fn static_reference_coverage_apis_are_removed_from_src() {
 
 #[test]
 fn kiss_check_stays_static_only_without_test_ref_analysis() {
-
-
-
     assert!(kiss::is_test_file(std::path::Path::new("tests/test_x.py")));
     assert!(kiss::is_rust_test_file(std::path::Path::new(
         "src/foo_test.rs"

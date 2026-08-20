@@ -133,7 +133,10 @@ fn resolve_diff_target_main_returns_ref_name_not_merge_base() {
     let got = resolve_diff_target(tmp.path(), TestChangeMode::Main, None, Some("main"), None)
         .unwrap()
         .expect("main target");
-    assert_eq!(got, "main", "main: must return ref name, not merge-base SHA");
+    assert_eq!(
+        got, "main",
+        "main: must return ref name, not merge-base SHA"
+    );
     assert_ne!(got, merge_base(tmp.path(), "main").unwrap());
     let via_cfg = resolve_diff_target(tmp.path(), TestChangeMode::Main, Some("main"), None, None)
         .unwrap()
@@ -175,7 +178,10 @@ fn resolve_main_branch_fallback_uses_local_name_then_master() {
     commit_file(&tmp, "a.py", "x=1\n", "root");
 
     let local = resolve_main_branch_name(tmp.path(), Some("main"), None).unwrap();
-    assert_eq!(local, "main", "main: local <name> when origin/<name> absent");
+    assert_eq!(
+        local, "main",
+        "main: local <name> when origin/<name> absent"
+    );
 
     assert!(
         git_in(tmp.path())

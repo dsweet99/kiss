@@ -45,7 +45,6 @@ pub(crate) fn analyze_body(body: Node, source: &str) -> BodySummary {
     }
 }
 
-
 pub(crate) fn walk_body(
     node: Node,
     source: &str,

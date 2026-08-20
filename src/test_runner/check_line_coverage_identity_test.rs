@@ -1,4 +1,3 @@
-
 use super::*;
 use std::collections::BTreeMap;
 use std::fs;
@@ -50,7 +49,8 @@ fn generation_identity_mismatch_does_not_fall_through_to_v1_generic() {
         err.reason
     );
     assert!(
-        !err.reason.contains("missing or stale/incompatible population"),
+        !err.reason
+            .contains("missing or stale/incompatible population"),
         "must not fall through to v1 generic; got: {}",
         err.reason
     );

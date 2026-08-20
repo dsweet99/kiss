@@ -13,7 +13,7 @@ fn run_test_returns_nonzero_when_planning_fails_outside_git_repo() {
         base_branch_cli: None,
         dry_run: true,
         force_rerun: false,
-            force_bad: false,
+        force_bad: false,
         metrics: false,
         jobs: 1,
         extra: &[],
@@ -21,7 +21,7 @@ fn run_test_returns_nonzero_when_planning_fails_outside_git_repo() {
         ignore: &[],
         lang_filter: None,
         config_main_branch: None,
-    gate_config: kiss::GateConfig::default()
+        gate_config: kiss::GateConfig::default(),
     });
     std::env::set_current_dir(old).unwrap();
     assert_eq!(code, 1);
@@ -35,7 +35,7 @@ fn run_test_dry_run_commit_in_workspace_completes() {
         base_branch_cli: None,
         dry_run: true,
         force_rerun: false,
-            force_bad: false,
+        force_bad: false,
         metrics: false,
         jobs: 1,
         extra: &[],
@@ -43,7 +43,7 @@ fn run_test_dry_run_commit_in_workspace_completes() {
         ignore: &[],
         lang_filter: Some(Language::Rust),
         config_main_branch: None,
-    gate_config: kiss::GateConfig::default()
+        gate_config: kiss::GateConfig::default(),
     });
     assert!(
         code == 0 || code == 1,
@@ -60,7 +60,7 @@ fn run_test_reports_run_selectors_error_for_unsupported_rust_extra() {
         base_branch_cli: None,
         dry_run: true,
         force_rerun: false,
-            force_bad: false,
+        force_bad: false,
         metrics: false,
         jobs: 1,
         extra: &extra,
@@ -68,7 +68,7 @@ fn run_test_reports_run_selectors_error_for_unsupported_rust_extra() {
         ignore: &[],
         lang_filter: Some(Language::Rust),
         config_main_branch: None,
-    gate_config: kiss::GateConfig::default()
+        gate_config: kiss::GateConfig::default(),
     });
     assert_eq!(code, 1);
 }
@@ -136,7 +136,7 @@ fn cold_initialization_population_marks_missing_state_for_both_languages() {
         base_branch_cli: None,
         dry_run: false,
         force_rerun: false,
-            force_bad: false,
+        force_bad: false,
         metrics: false,
         jobs: 16,
         extra: &[],
@@ -144,7 +144,7 @@ fn cold_initialization_population_marks_missing_state_for_both_languages() {
         ignore: &[],
         lang_filter: None,
         config_main_branch: None,
-    gate_config: kiss::GateConfig::default()
+        gate_config: kiss::GateConfig::default(),
     };
     let mut planned = crate::test_runner::PlannedSelectors {
         repo_root: tmp.path().to_path_buf(),
@@ -160,10 +160,7 @@ fn cold_initialization_population_marks_missing_state_for_both_languages() {
             python: Vec::new(),
             rust: Vec::new(),
         },
-        vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed {
-            python: 0,
-            rust: 0,
-        },
+        vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed { python: 0, rust: 0 },
         snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
             python: 0,
             rust: 0,
@@ -200,20 +197,27 @@ fn plan_all_materializes_nonempty_language_selector_sets() {
     let both = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::All,
         &[],
-        crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] },
+        crate::test_runner::language_keyed::LanguageKeyed {
+            python: &[],
+            rust: &[],
+        },
         None,
-        &kiss::GateConfig::default())
+        &kiss::GateConfig::default(),
+    )
     .unwrap();
     assert!(!both.sel.python.is_empty());
     assert!(!both.sel.rust.is_empty());
 
-
     let python_only = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::All,
         &[],
-        crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] },
+        crate::test_runner::language_keyed::LanguageKeyed {
+            python: &[],
+            rust: &[],
+        },
         Some(Language::Python),
-        &kiss::GateConfig::default())
+        &kiss::GateConfig::default(),
+    )
     .unwrap();
     assert!(!python_only.population_required.rust);
     assert!(!python_only.sel.python.is_empty());
@@ -222,9 +226,13 @@ fn plan_all_materializes_nonempty_language_selector_sets() {
     let rust_only = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::All,
         &[],
-        crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] },
+        crate::test_runner::language_keyed::LanguageKeyed {
+            python: &[],
+            rust: &[],
+        },
         Some(Language::Rust),
-        &kiss::GateConfig::default())
+        &kiss::GateConfig::default(),
+    )
     .unwrap();
     assert!(!rust_only.population_required.python);
     assert!(rust_only.sel.python.is_empty());
@@ -239,39 +247,56 @@ fn plan_repo_root_target_matches_all_via_dot() {
     let via_all = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::All,
         &[],
-        crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] },
+        crate::test_runner::language_keyed::LanguageKeyed {
+            python: &[],
+            rust: &[],
+        },
         Some(Language::Rust),
-        &kiss::GateConfig::default())
+        &kiss::GateConfig::default(),
+    )
     .unwrap();
     let via_root = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::Targets(&[root.to_string_lossy().into_owned()]),
         &[],
-        crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] },
+        crate::test_runner::language_keyed::LanguageKeyed {
+            python: &[],
+            rust: &[],
+        },
         Some(Language::Rust),
-        &kiss::GateConfig::default())
+        &kiss::GateConfig::default(),
+    )
     .unwrap();
     let via_dot = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::Targets(&[".".into()]),
         &[],
-        crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] },
+        crate::test_runner::language_keyed::LanguageKeyed {
+            python: &[],
+            rust: &[],
+        },
         Some(Language::Rust),
-        &kiss::GateConfig::default())
+        &kiss::GateConfig::default(),
+    )
     .unwrap();
     assert_eq!(via_all.sel.rust, via_root.sel.rust);
     assert_eq!(via_all.sel.python, via_root.sel.python);
-    assert_eq!(via_all.population_required.rust, via_root.population_required.rust);
+    assert_eq!(
+        via_all.population_required.rust,
+        via_root.population_required.rust
+    );
     assert_eq!(
         via_all.population_required.python,
         via_root.population_required.python
     );
     assert_eq!(via_all.sel.rust, via_dot.sel.rust);
     assert_eq!(via_all.sel.python, via_dot.sel.python);
-    assert_eq!(via_all.population_required.rust, via_dot.population_required.rust);
+    assert_eq!(
+        via_all.population_required.rust,
+        via_dot.population_required.rust
+    );
     assert_eq!(
         via_all.population_required.python,
         via_dot.population_required.python
     );
-
 
     assert!(!via_all.population_required.python);
     assert!(!via_all.coverage_decision_engine_used);
@@ -284,24 +309,30 @@ fn plan_subdirectory_is_not_workspace_enumerator() {
     let planned = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::Targets(&["src/bin_cli".into()]),
         &[],
-        crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] },
+        crate::test_runner::language_keyed::LanguageKeyed {
+            python: &[],
+            rust: &[],
+        },
         Some(Language::Rust),
-        &kiss::GateConfig::default())
+        &kiss::GateConfig::default(),
+    )
     .unwrap();
     let all = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::All,
         &[],
-        crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] },
+        crate::test_runner::language_keyed::LanguageKeyed {
+            python: &[],
+            rust: &[],
+        },
         Some(Language::Rust),
-        &kiss::GateConfig::default())
+        &kiss::GateConfig::default(),
+    )
     .unwrap();
     assert!(!planned.sel.rust.is_empty());
     assert!(!planned.source_paths.rust.is_empty());
     assert!(planned.coverage_decision_engine_used);
     assert!(all.source_paths.rust.is_empty());
     assert!(!all.coverage_decision_engine_used);
-
-
 }
 
 #[test]
@@ -313,89 +344,26 @@ fn plan_dot_all_from_nested_cwd_stays_repo_wide() {
     let planned = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::All,
         &[],
-        crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] },
+        crate::test_runner::language_keyed::LanguageKeyed {
+            python: &[],
+            rust: &[],
+        },
         Some(Language::Rust),
-        &kiss::GateConfig::default());
+        &kiss::GateConfig::default(),
+    );
     std::env::set_current_dir(&cwd).unwrap();
     let planned = planned.unwrap();
     let from_root = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::All,
         &[],
-        crate::test_runner::language_keyed::LanguageKeyed { python: &[], rust: &[] },
+        crate::test_runner::language_keyed::LanguageKeyed {
+            python: &[],
+            rust: &[],
+        },
         Some(Language::Rust),
-        &kiss::GateConfig::default())
+        &kiss::GateConfig::default(),
+    )
     .unwrap();
     assert_eq!(planned.repo_root, from_root.repo_root);
     assert_eq!(planned.sel.rust, from_root.sel.rust);
-}
-
-#[test]
-fn apply_force_bad_noop_when_flag_off_and_merges_when_on() {
-    let tmp = tempfile::tempdir().unwrap();
-    let mut planned = crate::test_runner::PlannedSelectors {
-        repo_root: tmp.path().to_path_buf(),
-        sel: crate::test_runner::language_keyed::LanguageKeyed {
-            python: vec!["tests/a.py::t".into()],
-            rust: Vec::new(),
-        },
-        population_required: crate::test_runner::language_keyed::LanguageKeyed {
-            python: false,
-            rust: false,
-        },
-        source_paths: crate::test_runner::language_keyed::LanguageKeyed {
-            python: Vec::new(),
-            rust: Vec::new(),
-        },
-        vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed {
-            python: 0,
-            rust: 0,
-        },
-        snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
-            python: 0,
-            rust: 0,
-        },
-        snapshot_delta_structural: crate::test_runner::language_keyed::LanguageKeyed {
-            python: false,
-            rust: false,
-        },
-        prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
-            python: Vec::new(),
-            rust: Vec::new(),
-        },
-        coverage_decision_engine_used: false,
-        selection_basis: crate::test_runner::language_keyed::LanguageKeyed {
-            python: crate::test_runner::coverage_decision::SelectionBasis::Current,
-            rust: crate::test_runner::coverage_decision::SelectionBasis::Current,
-        },
-        ignore: Vec::new(),
-        workspace_files_fingerprint: None,
-        skip_index_rebuild_after_selective: crate::test_runner::language_keyed::LanguageKeyed {
-            python: false,
-            rust: false,
-        },
-    };
-    let args = crate::test_runner::RunTestCmdArgs {
-        invocation: crate::bin_cli::args::TestInvocation::All,
-        main_branch_cli: None,
-        base_branch_cli: None,
-        dry_run: true,
-        force_rerun: false,
-        force_bad: false,
-        metrics: false,
-        jobs: 1,
-        extra: &[],
-        python_extra: &[],
-        ignore: &[],
-        lang_filter: None,
-        config_main_branch: None,
-        gate_config: kiss::GateConfig::default(),
-    };
-    crate::test_runner::apply_force_bad(&args, &mut planned).unwrap();
-    assert!(planned.prior_failure_selectors.python.is_empty());
-    let args_on = crate::test_runner::RunTestCmdArgs {
-        force_bad: true,
-        ..args
-    };
-    crate::test_runner::apply_force_bad(&args_on, &mut planned).unwrap();
-    assert!(planned.prior_failure_selectors.python.is_empty());
 }

@@ -45,12 +45,7 @@ pub(crate) fn run_with_cli(cli: Cli) -> i32 {
 }
 
 fn prepare_watch_flags(cli: &Cli) -> Option<i32> {
-    let Commands::Test {
-        watch,
-        dry_run,
-        ..
-    } = &cli.command
-    else {
+    let Commands::Test { watch, dry_run, .. } = &cli.command else {
         return None;
     };
     if *watch && *dry_run {

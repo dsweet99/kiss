@@ -352,7 +352,11 @@ fn find_profraw_for_binary_id(
     ));
     for profraw in find_all_profraws(root) {
         merge_profraw(tools, &profraw, &tmp_profdata);
-        let ids = crate::execute_or_reuse::batch_export_tools::read_profdata_binary_ids(tools, &tmp_profdata).ok()?;
+        let ids = crate::execute_or_reuse::batch_export_tools::read_profdata_binary_ids(
+            tools,
+            &tmp_profdata,
+        )
+        .ok()?;
         if ids == [expected_id] {
             let _ = std::fs::remove_file(&tmp_profdata);
             return Some(profraw);

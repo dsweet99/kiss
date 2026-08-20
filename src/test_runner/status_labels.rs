@@ -1,4 +1,3 @@
-
 use kiss::GateConfig;
 use rpytest_runner::TestStatus;
 use std::time::Duration;
@@ -36,7 +35,11 @@ pub(crate) fn print_classified_status_line(
     let line = format_status_line(
         status,
         selector,
-        if show_duration { duration_s.as_str() } else { "" },
+        if show_duration {
+            duration_s.as_str()
+        } else {
+            ""
+        },
         cache_tag,
     );
     println!("{line}");
@@ -71,10 +74,7 @@ mod tests {
     #[test]
     fn zero_limit_marks_timeout() {
         let gate = GateConfig {
-            max_unit_test_seconds: vec![
-                ("tests/fast".into(), 2.0),
-                ("*".into(), 0.0),
-            ],
+            max_unit_test_seconds: vec![("tests/fast".into(), 2.0), ("*".into(), 0.0)],
             ..GateConfig::default()
         };
         assert_eq!(

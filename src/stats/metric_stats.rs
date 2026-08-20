@@ -52,10 +52,6 @@ impl MetricStats {
                 stats.interface_types_per_file.push(fm.interface_types);
                 stats.concrete_types_per_file.push(fm.concrete_types);
 
-
-
-
-
                 let fname = parsed
                     .path
                     .file_name()

@@ -1,4 +1,3 @@
-
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -104,10 +103,7 @@ pub fn spawn_exact(cfg: SpawnExact<'_>) -> Child {
     cmd.spawn().unwrap()
 }
 
-pub fn child_work_and_repo(
-    child_env: &str,
-    root_env: &str,
-) -> (String, PathBuf, PathBuf) {
+pub fn child_work_and_repo(child_env: &str, root_env: &str) -> (String, PathBuf, PathBuf) {
     let id = env::var(child_env).unwrap();
     let work = PathBuf::from(env::var_os(root_env).unwrap());
     let repo = PathBuf::from(fs::read_to_string(work.join("repo_path.txt")).unwrap());

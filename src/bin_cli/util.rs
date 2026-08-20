@@ -2,9 +2,6 @@ use std::path::Path;
 
 #[cfg(unix)]
 pub fn set_sigpipe_default() {
-
-
-
     unsafe {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
     }

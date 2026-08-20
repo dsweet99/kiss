@@ -1,19 +1,20 @@
-
-use crate::publish_derived::batch_entry_state::publish_next_entry_state;
+use crate::execute_or_reuse::batch_result::RustCoverageBatchCounters;
 use crate::plan::batch_fingerprint::entry_fingerprint;
+use crate::publish_derived::batch_entry_state::publish_next_entry_state;
 use crate::publish_derived::batch_reverse_build::BuiltReverseIndex;
 use crate::publish_derived::batch_reverse_publish::{
     prune_unreferenced_snapshots, snapshot_path, write_reverse_snapshot,
 };
 use crate::publish_derived::batch_reverse_query_metrics::ReverseUnavailableReason;
-use crate::publish_derived::batch_reverse_test_support::{publish_bound_reverse, write_passed_entry};
-use crate::execute_or_reuse::batch_result::RustCoverageBatchCounters;
+use crate::publish_derived::batch_reverse_test_support::{
+    publish_bound_reverse, write_passed_entry,
+};
 use crate::rust_cov_cache::store_rust_cov_cache_entry;
 use crate::test_support::{derived_fixture_request, witness_batch_tools};
 use crate::{
+    RustCovCacheEntry, RustCovCacheStatus, RustLineCoverage, RustLlvmCovOutcome,
     publish_derived_state, query_reverse_line_index, reset_reverse_query_counters_for_test,
-    snapshot_reverse_query_counters, RustCovCacheEntry, RustCovCacheStatus, RustLineCoverage,
-    RustLlvmCovOutcome,
+    snapshot_reverse_query_counters,
 };
 use rpytest_runner::TestStatus;
 use std::collections::{BTreeMap, BTreeSet};
@@ -139,7 +140,10 @@ fn publish_derived_state_sets_reverse_published_counter() {
         ..Default::default()
     };
     assert!(batch.reverse_published);
-    assert_eq!(batch.reverse_snapshots_reclaimed, counters.reverse_snapshots_reclaimed);
+    assert_eq!(
+        batch.reverse_snapshots_reclaimed,
+        counters.reverse_snapshots_reclaimed
+    );
 }
 
 #[test]

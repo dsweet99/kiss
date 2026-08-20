@@ -74,7 +74,10 @@ fn lock_held_missing_session_retries_then_ok() {
     let server = thread::spawn(move || {
         thread::sleep(Duration::from_millis(40));
         let control = WatchControlServer::start(&repo_server).unwrap();
-        let req = control.nudge_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        let req = control
+            .nudge_rx
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap();
         let _ = req.reply.send(NudgeReplyMsg {
             exit_code: 0,
             pid: std::process::id(),

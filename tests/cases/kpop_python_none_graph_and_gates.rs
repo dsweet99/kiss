@@ -9,7 +9,6 @@ fn parse_py(path: &Path) -> ParsedFile {
 
 #[test]
 fn kpop_python_none_cycle_size() {
-
     let cycle_a = parse_py(Path::new("tests/fake_python/kpop_graph/cycle_a.py"));
     let cycle_b = parse_py(Path::new("tests/fake_python/kpop_graph/cycle_b.py"));
     let cycle_c = parse_py(Path::new("tests/fake_python/kpop_graph/cycle_c.py"));
@@ -23,7 +22,6 @@ fn kpop_python_none_cycle_size() {
 
 #[test]
 fn kpop_python_none_dependency_depth() {
-
     let chain_a = parse_py(Path::new("tests/fake_python/kpop_graph/chain_a.py"));
     let chain_b = parse_py(Path::new("tests/fake_python/kpop_graph/chain_b.py"));
     let chain_c = parse_py(Path::new("tests/fake_python/kpop_graph/chain_c.py"));
@@ -41,11 +39,6 @@ fn kpop_python_none_dependency_depth() {
 
 #[test]
 fn kpop_python_none_test_coverage_threshold() {
-
-
-
-
-
     let gate = kiss::GateConfig {
         test_coverage_threshold: 90,
         ..Default::default()
@@ -61,10 +54,6 @@ fn kpop_python_none_test_coverage_threshold() {
 
 #[test]
 fn kpop_python_none_min_similarity() {
-
-
-
-
     let p = parse_py(Path::new("tests/fake_python/user_service.py"));
     let parsed: Vec<&ParsedFile> = vec![&p];
     let dups = kiss::detect_duplicates(&parsed, &kiss::DuplicationConfig::default());

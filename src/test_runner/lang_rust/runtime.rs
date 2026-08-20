@@ -1,12 +1,11 @@
-
 use std::collections::BTreeMap;
 use std::path::Path;
 
 use kiss::Language;
 
 use crate::test_runner::lang_iface::{
-    summary_from_accepted_witness, AcceptMode, EnsureRequest, ExecutionWitness, LanguageRuntime,
-    OutcomeBatch, PublishBatch, WitnessScope,
+    AcceptMode, EnsureRequest, ExecutionWitness, LanguageRuntime, OutcomeBatch, PublishBatch,
+    WitnessScope, summary_from_accepted_witness,
 };
 use crate::test_runner::runners::SelectorExecutionSummary;
 use crate::test_runner::rust_coverage_index::{
@@ -15,8 +14,8 @@ use crate::test_runner::rust_coverage_index::{
 use crate::test_runner::selector_ids::report_string_for_logical_string;
 
 use super::witness_store::{
-    publish_rust_execution_witness, rust_identity_digest_from_batch,
-    try_load_rust_execution_witness, PublishRustWitness,
+    PublishRustWitness, publish_rust_execution_witness, rust_identity_digest_from_batch,
+    try_load_rust_execution_witness,
 };
 
 #[path = "population_repair.rs"]
@@ -145,8 +144,6 @@ impl LanguageRuntime for RustRuntime {
         planned: &[String],
         witness: &ExecutionWitness,
     ) -> SelectorExecutionSummary {
-
-
         let report_ids =
             crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
                 &request.repo_root,
@@ -187,11 +184,6 @@ impl LanguageRuntime for RustRuntime {
         request: &EnsureRequest,
         selectors: &[String],
     ) -> Result<Vec<String>, String> {
-
-
-
-
-
         let report_ids =
             crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
                 &request.repo_root,

@@ -19,7 +19,6 @@ impl WatchEventSource for SettleScript {
     ) -> Result<Vec<NormalizedWatchEvent>, RecvTimeout> {
         match self.steps.pop_front() {
             Some(Err(RecvTimeout::Timeout)) => {
-
                 std::thread::sleep(timeout.min(Duration::from_millis(15)));
                 Err(RecvTimeout::Timeout)
             }
@@ -39,7 +38,13 @@ fn settle_cycle_then_disconnect() {
     let _ = std::process::Command::new("touch")
         .args(["-d", "1970-01-01 00:00:01", file.to_str().unwrap()])
         .status();
-    assert!(git_in(tmp.path()).args(["add", "a.py"]).status().unwrap().success());
+    assert!(
+        git_in(tmp.path())
+            .args(["add", "a.py"])
+            .status()
+            .unwrap()
+            .success()
+    );
     assert!(
         git_in(tmp.path())
             .args(["commit", "-m", "init"])
@@ -82,7 +87,13 @@ fn fake_disconnect_after_first_cycle() {
     let tmp = tempfile::tempdir().unwrap();
     init_git(&tmp);
     std::fs::write(tmp.path().join("a.py"), "x=1\n").unwrap();
-    assert!(git_in(tmp.path()).args(["add", "a.py"]).status().unwrap().success());
+    assert!(
+        git_in(tmp.path())
+            .args(["add", "a.py"])
+            .status()
+            .unwrap()
+            .success()
+    );
     assert!(
         git_in(tmp.path())
             .args(["commit", "-m", "init"])

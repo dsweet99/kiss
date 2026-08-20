@@ -22,9 +22,6 @@ pub(super) use reference_inference_rust::{
     method_return_type, strip_rust_type_prefix, type_after_pattern_last_before,
 };
 
-
-
-
 pub(super) fn infer_python_receiver_type_at(
     content: &str,
     upto: usize,

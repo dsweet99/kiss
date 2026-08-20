@@ -1,4 +1,3 @@
-
 use std::path::{Path, PathBuf};
 
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
@@ -196,9 +195,8 @@ fn is_support_input(rel: &Path) -> bool {
 }
 
 fn is_source_ext(rel: &Path) -> bool {
-    rel.extension().is_some_and(|ext| {
-        ext.eq_ignore_ascii_case("py") || ext.eq_ignore_ascii_case("rs")
-    })
+    rel.extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("py") || ext.eq_ignore_ascii_case("rs"))
 }
 
 #[cfg(test)]

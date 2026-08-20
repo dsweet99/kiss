@@ -1,4 +1,3 @@
-
 use crate::rust_cov_cache::{RustCovCacheEntry, repo_relative_coverage_file};
 use crate::{RustLineCoverage, RustLlvmCovError};
 use rpytest_runner::TestStatus;
@@ -6,12 +5,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
-use super::batch_io_skip_not_found::{dir_entry_path_ok_missing, read_dir_ok_missing, read_ok_missing};
+use super::batch_io_skip_not_found::{
+    dir_entry_path_ok_missing, read_dir_ok_missing, read_ok_missing,
+};
 
 type RustCoverageIndex = BTreeMap<String, BTreeSet<String>>;
 
 pub(crate) fn count_generations(cache_root: &Path) -> Result<usize, RustLlvmCovError> {
-    let Some(entries) = read_dir_ok_missing(&cache_root.join("entries")).map_err(RustLlvmCovError::Io)?
+    let Some(entries) =
+        read_dir_ok_missing(&cache_root.join("entries")).map_err(RustLlvmCovError::Io)?
     else {
         return Ok(0);
     };
@@ -42,7 +44,8 @@ pub(crate) fn build_generation_index(
     generation: &str,
 ) -> Result<RustCoverageIndex, RustLlvmCovError> {
     let mut files: RustCoverageIndex = BTreeMap::new();
-    let Some(entries) = read_dir_ok_missing(&cache_root.join("entries")).map_err(RustLlvmCovError::Io)?
+    let Some(entries) =
+        read_dir_ok_missing(&cache_root.join("entries")).map_err(RustLlvmCovError::Io)?
     else {
         return Ok(files);
     };

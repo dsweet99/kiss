@@ -2,7 +2,9 @@ use super::{
     check_aggregate_pool_profile_path_for_run, synthesize_check_aggregate_shim_metadata,
     top_level_mod_names,
 };
-use crate::execute_or_reuse::batch_events::{BatchCompilerArtifact, BatchEventStream, BatchTestTerminal};
+use crate::execute_or_reuse::batch_events::{
+    BatchCompilerArtifact, BatchEventStream, BatchTestTerminal,
+};
 use std::path::PathBuf;
 
 fn artifact(
@@ -40,19 +42,19 @@ fn terminal(full_name: &str, passed: bool) -> BatchTestTerminal {
 fn synthesizes_shared_pool_metadata_with_deps_preference() {
     let stream = BatchEventStream {
         compiler_artifacts: vec![
-            artifact(
-                "kiss-ai::bin/kiss",
-                "/repo/target/debug/kiss",
-                None,
-                true,
-            ),
+            artifact("kiss-ai::bin/kiss", "/repo/target/debug/kiss", None, true),
             artifact(
                 "kiss-ai::bin/kiss",
                 "/repo/target/debug/deps/kiss-abc",
                 None,
                 true,
             ),
-            artifact("kiss-ai::kiss", "/repo/target/debug/deps/kiss_lib-def", None, true),
+            artifact(
+                "kiss-ai::kiss",
+                "/repo/target/debug/deps/kiss_lib-def",
+                None,
+                true,
+            ),
         ],
         terminal_tests: vec![
             terminal("kiss-ai::bin/kiss$cli::smoke", true),
@@ -100,7 +102,6 @@ fn colliding_lib_and_bin_libtest_prefix_disambiguates_via_src_mods() {
                 src_path: Some(bin_src.to_string_lossy().into_owned()),
                 is_test_harness: true,
             },
-
             BatchCompilerArtifact {
                 executable: Some("/repo/target/debug/kiss".into()),
                 filenames: vec![],

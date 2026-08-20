@@ -28,7 +28,11 @@ impl LanguageExecutor for PythonModule {
         selectors: &[String],
         ctx: &RunContext<'_, '_>,
     ) -> Result<SelectorExecutionSummary, String> {
-        ensure_python_via_kernel(selectors, ctx, crate::test_runner::lang_iface::AcceptMode::All)
+        ensure_python_via_kernel(
+            selectors,
+            ctx,
+            crate::test_runner::lang_iface::AcceptMode::All,
+        )
     }
 
     fn run_selective(
@@ -45,12 +49,14 @@ impl LanguageExecutor for PythonModule {
 
     fn rebuild_index(&self, ctx: &RunContext<'_, '_>) -> Result<(), String> {
         let index = crate::test_runner::coverage_index::for_language(kiss::Language::Python);
-        let _ = (index.cache_root(&ctx.planned.repo_root), index.index_file_present(&ctx.planned.repo_root));
+        let _ = (
+            index.cache_root(&ctx.planned.repo_root),
+            index.index_file_present(&ctx.planned.repo_root),
+        );
         python_generation_hooks::rebuild_python_index(self, ctx)
     }
 
     fn write_manifest(&self, selectors: &[String], ctx: &RunContext<'_, '_>) -> Result<(), String> {
-
         let _ = (self, selectors, ctx);
         Ok(())
     }
@@ -91,17 +97,18 @@ fn ensure_python_via_kernel(
     let mut planned = ctx.planned.clone();
     planned.sel.python = selectors.to_vec();
     planned.sel.rust.clear();
-    let request = ensure_request_from_planned(crate::test_runner::ensure_runtime::EnsureFromPlanned {
-        planned: &planned,
-        mode,
-        lang_filter: Some(kiss::Language::Python),
-        force: ctx.options.force_rerun,
-        force_selectors: ctx.planned.prior_failure_selectors.python.clone(),
-        jobs: ctx.options.jobs,
-        extras: ctx.options.extras,
-        repo_root_override: None,
-        gate: ctx.options.gate.clone(),
-    });
+    let request =
+        ensure_request_from_planned(crate::test_runner::ensure_runtime::EnsureFromPlanned {
+            planned: &planned,
+            mode,
+            lang_filter: Some(kiss::Language::Python),
+            force: ctx.options.force_rerun,
+            force_selectors: ctx.planned.prior_failure_selectors.python.clone(),
+            jobs: ctx.options.jobs,
+            extras: ctx.options.extras,
+            repo_root_override: None,
+            gate: ctx.options.gate.clone(),
+        });
     let result = ensure_languages_runtime(&request)?;
     Ok(result
         .python()
@@ -128,7 +135,11 @@ impl LanguageExecutor for RustModule {
         ctx: &RunContext<'_, '_>,
     ) -> Result<SelectorExecutionSummary, String> {
         assert!(ctx.options.jobs > 0, "jobs must be greater than zero");
-        ensure_rust_via_kernel(selectors, ctx, crate::test_runner::lang_iface::AcceptMode::All)
+        ensure_rust_via_kernel(
+            selectors,
+            ctx,
+            crate::test_runner::lang_iface::AcceptMode::All,
+        )
     }
 
     fn run_selective(
@@ -146,7 +157,10 @@ impl LanguageExecutor for RustModule {
 
     fn rebuild_index(&self, ctx: &RunContext<'_, '_>) -> Result<(), String> {
         let index = crate::test_runner::coverage_index::for_language(kiss::Language::Rust);
-        let _ = (index.cache_root(&ctx.planned.repo_root), index.index_file_present(&ctx.planned.repo_root));
+        let _ = (
+            index.cache_root(&ctx.planned.repo_root),
+            index.index_file_present(&ctx.planned.repo_root),
+        );
 
         crate::test_runner::rust_coverage_index::publish_rust_derived_state_with_filter(
             &ctx.planned.repo_root,
@@ -156,11 +170,7 @@ impl LanguageExecutor for RustModule {
         )
     }
 
-    fn write_manifest(
-        &self,
-        selectors: &[String],
-        ctx: &RunContext<'_, '_>,
-    ) -> Result<(), String> {
+    fn write_manifest(&self, selectors: &[String], ctx: &RunContext<'_, '_>) -> Result<(), String> {
         let _ = (self, selectors, ctx);
         Ok(())
     }
@@ -198,22 +208,22 @@ fn ensure_rust_via_kernel(
         ensure_languages_runtime, ensure_request_from_planned,
     };
 
-
     let force = ctx.options.force_rerun;
     let mut planned = ctx.planned.clone();
     planned.sel.rust = selectors.to_vec();
     planned.sel.python.clear();
-    let request = ensure_request_from_planned(crate::test_runner::ensure_runtime::EnsureFromPlanned {
-        planned: &planned,
-        mode,
-        lang_filter: Some(kiss::Language::Rust),
-        force,
-        force_selectors: ctx.planned.prior_failure_selectors.rust.clone(),
-        jobs: ctx.options.jobs,
-        extras: ctx.options.extras,
-        repo_root_override: None,
-        gate: ctx.options.gate.clone(),
-    });
+    let request =
+        ensure_request_from_planned(crate::test_runner::ensure_runtime::EnsureFromPlanned {
+            planned: &planned,
+            mode,
+            lang_filter: Some(kiss::Language::Rust),
+            force,
+            force_selectors: ctx.planned.prior_failure_selectors.rust.clone(),
+            jobs: ctx.options.jobs,
+            extras: ctx.options.extras,
+            repo_root_override: None,
+            gate: ctx.options.gate.clone(),
+        });
     let result = ensure_languages_runtime(&request)?;
     Ok(result.rust().map(|r| r.summary.clone()).unwrap_or_default())
 }
@@ -226,7 +236,6 @@ pub(super) fn run_rslip_selectors_for_module(
     if selectors.is_empty() {
         return Ok(SelectorExecutionSummary::default());
     }
-
 
     runners::run_rslip_selectors(
         &ctx.planned.repo_root,
@@ -249,7 +258,6 @@ pub(super) fn run_rust_selectors_for_module(
     if selectors.is_empty() {
         return Ok(SelectorExecutionSummary::default());
     }
-
 
     let force_rerun = ctx.options.force_rerun;
     if !force_rerun
@@ -351,7 +359,9 @@ pub(super) fn run_rust_population_selectors_with_batch_deps<D, E>(
     execute_batch: E,
 ) -> Result<SelectorExecutionSummary, String>
 where
-    D: FnOnce(&std::path::Path) -> Result<crate::test_runner::rust_llvm_cov::RustCoverageToolVersions, String>,
+    D: FnOnce(
+        &std::path::Path,
+    ) -> Result<crate::test_runner::rust_llvm_cov::RustCoverageToolVersions, String>,
     E: FnOnce(
         &rust_llvm_cov_runner::RustCoverageBatchRequest,
         &crate::test_runner::rust_llvm_cov::RustCoverageToolVersions,
@@ -367,11 +377,27 @@ where
             jobs: ctx.options.jobs,
             population_publication_selectors: Some(population_publication_selectors),
             coverage_output_mode: rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
-        gate: kiss::GateConfig::default(),
+            gate: kiss::GateConfig::default(),
         },
         detect_versions,
         execute_batch,
     )
+}
+
+#[cfg(test)]
+fn dry_run_selector_options() -> crate::test_runner::SelectorRunOptions<'static> {
+    crate::test_runner::SelectorRunOptions {
+        dry_run: true,
+        force_rerun: false,
+        metrics: false,
+        jobs: 1,
+        extras: crate::test_runner::language_keyed::LanguageKeyed {
+            python: &[],
+            rust: &[],
+        },
+        plan_duration: std::time::Duration::ZERO,
+        gate: kiss::GateConfig::default(),
+    }
 }
 
 #[cfg(test)]

@@ -27,7 +27,7 @@ fn miss_run_ignores_stale_same_size_pyc_for_rewritten_source() {
         env: BTreeMap::new(),
         cache_root: root.join(".rslip_cache"),
         force_rerun: false,
-timeout: None,
+        timeout: None,
         content_fingerprint: None,
     };
     let rslip = Rslip::new(forkserver_pytest_runner());
@@ -45,7 +45,6 @@ timeout: None,
         "from lib import value\n\ndef test_value():\n    assert value() == 1\n",
     )
     .unwrap();
-
 
     restore_test_pycs(root, &stale_pycs);
 

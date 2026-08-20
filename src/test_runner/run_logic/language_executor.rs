@@ -62,8 +62,6 @@ pub(super) fn execute_language_phase(
     let phase_duration = started.elapsed();
     let mut index_rebuild_duration = std::time::Duration::ZERO;
 
-
-
     if let ExecutionPhase::Population(selectors) = phase {
         let index_started = Instant::now();
         module.write_manifest(selectors, ctx)?;
@@ -88,11 +86,7 @@ fn should_rebuild_after_selective(
 ) -> bool {
     match phase {
         ExecutionPhase::NoWork | ExecutionPhase::Population(_) => false,
-        ExecutionPhase::Selective(_) => {
-
-
-            summary.cache_misses > 0 || summary.cache_unstored > 0
-        }
+        ExecutionPhase::Selective(_) => summary.cache_misses > 0 || summary.cache_unstored > 0,
     }
 }
 

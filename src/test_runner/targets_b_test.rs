@@ -106,12 +106,9 @@ fn resolve_missing_and_unresolved_targets_error() {
     let path = tmp.path().join("lib.rs");
     fs::write(&path, "pub fn alpha() {}\n").unwrap();
 
+    assert!(resolve_target_operands(tmp.path(), &["missing.rs".into()], None, &[], &[]).is_err());
     assert!(
-        resolve_target_operands(tmp.path(), &["missing.rs".into()], None, &[], &[]).is_err()
-    );
-    assert!(
-        resolve_target_operands(tmp.path(), &["lib.rs::missing".into()], None, &[], &[])
-            .is_err()
+        resolve_target_operands(tmp.path(), &["lib.rs::missing".into()], None, &[], &[]).is_err()
     );
 }
 
@@ -170,11 +167,7 @@ fn resolve_python_test_file_path_is_direct_only() {
     init_git_repo(tmp.path());
     let tests = tmp.path().join("tests");
     fs::create_dir_all(&tests).unwrap();
-    fs::write(
-        tests.join("test_a.py"),
-        "def test_x():\n    assert True\n",
-    )
-    .unwrap();
+    fs::write(tests.join("test_a.py"), "def test_x():\n    assert True\n").unwrap();
     let query = resolve_target_operands(
         tmp.path(),
         &["tests/test_a.py".into()],
@@ -184,10 +177,7 @@ fn resolve_python_test_file_path_is_direct_only() {
     )
     .unwrap();
     assert!(
-        query
-            .direct_python
-            .iter()
-            .any(|s| s.contains("test_x")),
+        query.direct_python.iter().any(|s| s.contains("test_x")),
         "expected collected test selector, got {:?}",
         query.direct_python
     );
@@ -204,11 +194,7 @@ fn resolve_rust_test_file_path_is_direct_only() {
     init_git_repo(tmp.path());
     let tests = tmp.path().join("tests");
     fs::create_dir_all(&tests).unwrap();
-    fs::write(
-        tests.join("smoke.rs"),
-        "#[test]\nfn case_one() {}\n",
-    )
-    .unwrap();
+    fs::write(tests.join("smoke.rs"), "#[test]\nfn case_one() {}\n").unwrap();
     let query = resolve_target_operands(
         tmp.path(),
         &["tests/smoke.rs".into()],

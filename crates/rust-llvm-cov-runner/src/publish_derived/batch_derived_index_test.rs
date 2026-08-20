@@ -340,7 +340,9 @@ fn reusable_snapshot_delta_reports_unchanged_modified_and_structural_cases() {
 
 #[test]
 fn index_type_validators_reject_unsorted_invalid_paths_and_binaries() {
-    use crate::publish_derived::batch_derived_index_types::{OrdinarySourceDigestRecord, TestBinaryRecord};
+    use crate::publish_derived::batch_derived_index_types::{
+        OrdinarySourceDigestRecord, TestBinaryRecord,
+    };
 
     assert!(
         crate::publish_derived::batch_derived_index_types::validate_ordinary_source_digests(vec![
@@ -375,19 +377,23 @@ fn index_type_validators_reject_unsorted_invalid_paths_and_binaries() {
     );
 
     assert!(
-        crate::publish_derived::batch_derived_index_types::validate_test_binaries(vec![TestBinaryRecord {
-            id: String::new(),
-            executable: "/tmp/bin".to_string(),
-            digest: "aaaaaaaaaaaaaaaa".to_string(),
-        }])
+        crate::publish_derived::batch_derived_index_types::validate_test_binaries(vec![
+            TestBinaryRecord {
+                id: String::new(),
+                executable: "/tmp/bin".to_string(),
+                digest: "aaaaaaaaaaaaaaaa".to_string(),
+            }
+        ])
         .is_none()
     );
     assert!(
-        crate::publish_derived::batch_derived_index_types::validate_test_binaries(vec![TestBinaryRecord {
-            id: "bin".to_string(),
-            executable: "/tmp/bin".to_string(),
-            digest: "AAAAAAAAAAAAAAAA".to_string(),
-        }])
+        crate::publish_derived::batch_derived_index_types::validate_test_binaries(vec![
+            TestBinaryRecord {
+                id: "bin".to_string(),
+                executable: "/tmp/bin".to_string(),
+                digest: "AAAAAAAAAAAAAAAA".to_string(),
+            }
+        ])
         .is_none()
     );
 }

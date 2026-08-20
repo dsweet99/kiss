@@ -2,10 +2,12 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::execute_or_reuse::batch_events::{BatchCompilerArtifact, BatchEventStream, BatchTestTerminal};
-use crate::plan::batch_nextest_id::prefer_deps_executable;
-use crate::execute_or_reuse::batch_shim::BatchShimMetadata;
 use crate::RustLlvmCovError;
+use crate::execute_or_reuse::batch_events::{
+    BatchCompilerArtifact, BatchEventStream, BatchTestTerminal,
+};
+use crate::execute_or_reuse::batch_shim::BatchShimMetadata;
+use crate::plan::batch_nextest_id::prefer_deps_executable;
 
 pub(crate) fn check_aggregate_pool_profile_path_for_run(
     build_target: &Path,
@@ -63,7 +65,10 @@ fn executable_candidates_by_libtest_prefix(
             executable: executable.clone(),
             src_path: artifact.src_path.clone(),
         };
-        insert_candidate(map.entry(prefix.clone()).or_default(), candidate_clone(&candidate));
+        insert_candidate(
+            map.entry(prefix.clone()).or_default(),
+            candidate_clone(&candidate),
+        );
         if let Some(nextest_id) = artifact.nextest_binary_id.as_ref()
             && nextest_id != prefix
         {
@@ -80,7 +85,10 @@ fn executable_candidates_by_libtest_prefix(
             .iter()
             .filter(|artifact| artifact.libtest_binary_prefix.is_some())
             .count();
-        let harnesses = artifacts.iter().filter(|artifact| artifact.is_test_harness).count();
+        let harnesses = artifacts
+            .iter()
+            .filter(|artifact| artifact.is_test_harness)
+            .count();
         return Err(RustLlvmCovError::InvalidRequest(format!(
             "no compiler-artifact executables available to synthesize CheckAggregate shim metadata \
              (artifacts={total}, with_executable={with_exe}, with_libtest_prefix={with_prefix}, \
@@ -107,9 +115,10 @@ fn insert_candidate(slot: &mut Vec<HarnessCandidate>, candidate: HarnessCandidat
         }
         return;
     }
-    if let Some(index) = slot.iter().position(|item| {
-        prefer_deps_executable(&item.executable, &candidate.executable)
-    }) {
+    if let Some(index) = slot
+        .iter()
+        .position(|item| prefer_deps_executable(&item.executable, &candidate.executable))
+    {
         slot[index] = candidate;
         return;
     }

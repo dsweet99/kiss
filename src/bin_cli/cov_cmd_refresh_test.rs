@@ -1,4 +1,3 @@
-
 use super::*;
 #[test]
 fn allow_refresh_true_invokes_refresh_on_identity_mismatch() {
@@ -64,7 +63,6 @@ fn allow_refresh_true_invokes_refresh_on_identity_mismatch() {
         "allow_refresh false must fail closed on identity mismatch"
     );
 
-
     let refreshed = load_or_refresh_snapshot(
         repo,
         required,
@@ -79,4 +77,3 @@ fn allow_refresh_true_invokes_refresh_on_identity_mismatch() {
         "allow_refresh true must invoke refresh and repair; got {refreshed:?}"
     );
 }
-

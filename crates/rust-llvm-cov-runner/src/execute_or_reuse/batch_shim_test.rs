@@ -51,7 +51,8 @@ fn target_runner_shim_writes_start_metadata_before_completion() {
 #[test]
 fn load_live_shim_process_identities_reads_start_records() {
     let tmp = tempfile::tempdir().unwrap();
-    let identity = crate::execute_or_reuse::batch_process_tree::ProcessGroupIdentity { pid: 42, pgid: 42 };
+    let identity =
+        crate::execute_or_reuse::batch_process_tree::ProcessGroupIdentity { pid: 42, pgid: 42 };
     write_shim_start_metadata(tmp.path(), "alpha", &identity).unwrap();
     let loaded = super::load_live_shim_process_identities(tmp.path()).unwrap();
     assert!(loaded.is_empty() || loaded.iter().any(|item| item.pid == 42));
@@ -207,8 +208,17 @@ fn target_runner_shim_list_phase_delegates_with_list_metadata_without_profile() 
     assert_eq!(fs::read_to_string(marker).unwrap(), "listed");
     let list = super::load_target_runner_list_metadata(&output).unwrap();
     assert_eq!(list.len(), 1);
-    assert!(list[0].test_names.iter().any(|name| name.ends_with("$alpha")));
-    assert!(super::load_target_runner_shim_metadata(&output).unwrap().is_empty());
+    assert!(
+        list[0]
+            .test_names
+            .iter()
+            .any(|name| name.ends_with("$alpha"))
+    );
+    assert!(
+        super::load_target_runner_shim_metadata(&output)
+            .unwrap()
+            .is_empty()
+    );
     assert!(
         fs::read_dir(&output)
             .unwrap()
@@ -255,7 +265,6 @@ fn target_runner_shim_ignores_nextest_env_for_shell_script_commands() {
     let script = tmp.path().join("check-profile.sh");
     fs::write(&script, "#!/bin/sh\nexit 8\n").unwrap();
     make_executable(&script);
-
 
     unsafe {
         std::env::set_var("NEXTEST_TEST_PHASE", "run");

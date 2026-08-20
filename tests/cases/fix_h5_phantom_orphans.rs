@@ -5,13 +5,11 @@ use kiss::graph::{DependencyGraph, analyze_graph};
 fn same_path_two_module_names_no_phantom_orphan() {
     let mut g = DependencyGraph::new();
 
-
     let path = std::path::PathBuf::from("src/utils.py");
     g.get_or_create_node("utils");
     g.paths.insert("utils".into(), path.clone());
     g.get_or_create_node("pkg.utils");
     g.paths.insert("pkg.utils".into(), path);
-
 
     g.get_or_create_node("main");
     g.paths
@@ -19,7 +17,6 @@ fn same_path_two_module_names_no_phantom_orphan() {
     g.add_dependency("main", "utils");
 
     let viols = analyze_graph(&g, &Config::python_defaults(), true);
-
 
     let orphan_viols: Vec<_> = viols
         .iter()

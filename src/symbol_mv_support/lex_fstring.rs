@@ -1,4 +1,3 @@
-
 use super::lex::{LexState, StringState};
 
 pub(super) fn try_parse_python_fstring_start(

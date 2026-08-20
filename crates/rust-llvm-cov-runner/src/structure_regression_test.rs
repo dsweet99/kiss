@@ -1,4 +1,3 @@
-
 use std::path::PathBuf;
 
 fn crate_src_dir() -> PathBuf {
@@ -9,10 +8,7 @@ fn crate_src_dir() -> PathBuf {
 fn verb_directories_and_substrate_files_exist() {
     let src = crate_src_dir();
     for dir in ["plan", "execute_or_reuse", "publish_derived"] {
-        assert!(
-            src.join(dir).is_dir(),
-            "missing verb directory src/{dir}"
-        );
+        assert!(src.join(dir).is_dir(), "missing verb directory src/{dir}");
     }
     for file in ["rust_cov_cache.rs", "file_lock.rs", "kiss_profraw.rs"] {
         assert!(
@@ -24,7 +20,6 @@ fn verb_directories_and_substrate_files_exist() {
 
 #[test]
 fn stable_public_api_names_resolve_at_crate_root() {
-
     use crate::{
         CoverageOutputMode, TARGET_RUNNER_SHIM_SUBCOMMAND, build_rust_coverage_batch_plan,
         execute_rust_coverage_batch, load_current_population_durations,
@@ -70,15 +65,13 @@ fn production_rs_files(package: &str) -> Vec<PathBuf> {
 fn file_has_forbidden_import(path: &std::path::Path, needles: &[&str]) -> Option<String> {
     let text = std::fs::read_to_string(path).unwrap();
     for needle in needles {
-
         if text.contains(&format!("crate::{needle}::"))
             || text.contains(&format!("use crate::{needle}"))
             || text.contains(&format!("{needle}::"))
-            && text
-                .lines()
-                .any(|line| line.contains(needle) && (line.contains("use ") || line.contains("crate::")))
+                && text.lines().any(|line| {
+                    line.contains(needle) && (line.contains("use ") || line.contains("crate::"))
+                })
         {
-
             if text.contains(&format!("crate::{needle}")) {
                 return Some(format!("{path:?} contains crate::{needle}"));
             }

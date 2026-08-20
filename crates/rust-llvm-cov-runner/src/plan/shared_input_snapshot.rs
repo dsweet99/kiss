@@ -68,9 +68,7 @@ fn warn_skipped_non_member_coverage_crates(root: &Path, crate_roots: &BTreeSet<S
         return;
     }
     let list = crate_roots.iter().cloned().collect::<Vec<_>>().join(", ");
-    eprintln!(
-        "kiss: skipping coverage scoring for nested non-member Cargo crate(s): {list}"
-    );
+    eprintln!("kiss: skipping coverage scoring for nested non-member Cargo crate(s): {list}");
 }
 
 fn is_default_ordinary_rust_source(file: &Path) -> bool {

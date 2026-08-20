@@ -1,5 +1,4 @@
 #![allow(clippy::redundant_pub_crate)]
-
 #![allow(clippy::needless_pass_by_value)]
 
 mod analyze;
@@ -20,7 +19,6 @@ use rust_llvm_cov_runner::{
 };
 
 fn main() {
-
     std::process::exit(run_kiss_main());
 }
 

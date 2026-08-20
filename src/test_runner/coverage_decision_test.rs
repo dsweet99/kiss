@@ -67,8 +67,6 @@ impl LanguagePlanner for FakePlanner {
     }
 
     fn freshness(&self, universe: &[TestSelector]) -> Result<CoverageFreshness, String> {
-
-
         if !universe.is_empty() {
             assert_eq!(universe, self.universe.as_slice());
         }

@@ -2,13 +2,13 @@ use super::fresh_test_helpers::{execute_rust_coverage_batch_fresh_with_fake, fak
 use super::*;
 use crate::RustCovCacheStatus;
 use crate::RustLlvmCovError;
-use crate::plan::batch_fingerprint::batch_identity;
-use crate::plan::batch_plan::build_rust_coverage_batch_plan;
 use crate::execute_or_reuse::batch_result::RustCoverageBatchResult;
 use crate::execute_or_reuse::batch_run::{
     BatchSubprocessRunner, BuildIdentityFile, BuildIdentityPreparation, build_identity_input,
     path_size_bytes, prepare_build_target_for_identity,
 };
+use crate::plan::batch_fingerprint::batch_identity;
+use crate::plan::batch_plan::build_rust_coverage_batch_plan;
 use crate::test_support::{
     batch_executor_fixture_repo, batch_executor_request, store_batch_executor_selector,
 };
@@ -109,16 +109,18 @@ fn fresh_batch_requires_shim_metadata_for_matched_instances() {
     let repo = batch_executor_fixture_repo();
     let req = batch_executor_request(repo.path());
     let runner = BatchSubprocessRunner::from_fn(|_, _| {
-        Ok(crate::execute_or_reuse::batch_run::BatchSubprocessRunOutcome {
-            exit_code: Some(0),
-            stdout: br#"{"reason":"build-finished","success":true}
+        Ok(
+            crate::execute_or_reuse::batch_run::BatchSubprocessRunOutcome {
+                exit_code: Some(0),
+                stdout: br#"{"reason":"build-finished","success":true}
 {"type":"test","event":"ok","name":"pkg::bin$alpha","exec_time":0.001}
 "#
-            .to_vec(),
-            stderr: Vec::new(),
-            duration: Duration::from_millis(1),
-            process_residual_count: 0,
-        })
+                .to_vec(),
+                stderr: Vec::new(),
+                duration: Duration::from_millis(1),
+                process_residual_count: 0,
+            },
+        )
     });
     let tools = tools();
     let identity = batch_identity(&req, &tools).unwrap();
@@ -147,13 +149,15 @@ fn subprocess_exporter_wrapper_propagates_pre_export_failures() {
     let repo = batch_executor_fixture_repo();
     let req = batch_executor_request(repo.path());
     let runner = BatchSubprocessRunner::from_fn(|_, _| {
-        Ok(crate::execute_or_reuse::batch_run::BatchSubprocessRunOutcome {
-            exit_code: Some(17),
-            stdout: br#"{"reason":"build-finished","success":true}"#.to_vec(),
-            stderr: b"no terminal events".to_vec(),
-            duration: Duration::from_millis(1),
-            process_residual_count: 0,
-        })
+        Ok(
+            crate::execute_or_reuse::batch_run::BatchSubprocessRunOutcome {
+                exit_code: Some(17),
+                stdout: br#"{"reason":"build-finished","success":true}"#.to_vec(),
+                stderr: b"no terminal events".to_vec(),
+                duration: Duration::from_millis(1),
+                process_residual_count: 0,
+            },
+        )
     });
     let tools = tools();
     let identity = batch_identity(&req, &tools).unwrap();
@@ -281,7 +285,11 @@ fn check_aggregate_branch_builds_export_requests_with_shim_metadata() {
         let bin = plan.build_target.join("bin");
         fs::write(&bin, b"binary").unwrap();
         let manifest = plan.build_target.join("Cargo.toml");
-        fs::write(&manifest, "[package]\nname = \"pkg\"\nversion = \"0.1.0\"\n").unwrap();
+        fs::write(
+            &manifest,
+            "[package]\nname = \"pkg\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
         Ok(crate::execute_or_reuse::batch_run::BatchSubprocessRunOutcome {
             exit_code: Some(0),
             stdout: format!(

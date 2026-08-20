@@ -38,14 +38,14 @@ fn plan_selectors_commit_uses_reusable_prior_after_ordinary_rs_edit() {
         SelectorRunOptions {
             dry_run: true,
             force_rerun: false,
-metrics: true,
+            metrics: true,
             jobs: 1,
             extras: crate::test_runner::language_keyed::LanguageKeyed {
                 python: &[],
                 rust: &[],
             },
             plan_duration: std::time::Duration::ZERO,
-        gate: kiss::GateConfig::default()
+            gate: kiss::GateConfig::default(),
         },
     )
     .unwrap();
@@ -53,10 +53,7 @@ metrics: true,
 
     assert_eq!(code, 0);
     assert!(!planned.population_required.rust);
-    assert_eq!(
-        planned.selection_basis.rust,
-        SelectionBasis::ReusablePrior
-    );
+    assert_eq!(planned.selection_basis.rust, SelectionBasis::ReusablePrior);
     assert_eq!(planned.sel.rust, vec![RS_COVERING_SELECTOR.to_string()]);
     assert!(planned.sel.rust.len() < universe.len() || universe.len() == 1);
     assert!(!planned.sel.rust.is_empty());

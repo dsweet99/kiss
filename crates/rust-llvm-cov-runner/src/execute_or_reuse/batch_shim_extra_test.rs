@@ -31,7 +31,6 @@ fn target_runner_shim_routes_child_output_through_side_channel_only() {
     let mut env = std::collections::BTreeMap::new();
     apply_output_channel_env(&mut env, &channel_config);
     for (key, value) in env {
-
         unsafe {
             std::env::set_var(key, value);
         }
@@ -44,10 +43,13 @@ fn target_runner_shim_routes_child_output_through_side_channel_only() {
         &[script.clone().into_os_string()],
     );
 
-
     unsafe {
-        std::env::remove_var(crate::execute_or_reuse::batch_output_channel::OUTPUT_CHANNEL_SOCKET_ENV);
-        std::env::remove_var(crate::execute_or_reuse::batch_output_channel::OUTPUT_CHANNEL_TOKEN_ENV);
+        std::env::remove_var(
+            crate::execute_or_reuse::batch_output_channel::OUTPUT_CHANNEL_SOCKET_ENV,
+        );
+        std::env::remove_var(
+            crate::execute_or_reuse::batch_output_channel::OUTPUT_CHANNEL_TOKEN_ENV,
+        );
     }
 
     assert_eq!(code, 3);
@@ -58,15 +60,18 @@ fn target_runner_shim_routes_child_output_through_side_channel_only() {
     let frames = server.stop();
     assert_eq!(frames.len(), 2);
     assert!(frames.iter().any(|frame| frame.bytes == b"child-out"
-        && frame.stream == crate::execute_or_reuse::batch_output_channel::OutputStreamKind::Stdout));
+        && frame.stream
+            == crate::execute_or_reuse::batch_output_channel::OutputStreamKind::Stdout));
     assert!(frames.iter().any(|frame| frame.bytes == b"child-err"
-        && frame.stream == crate::execute_or_reuse::batch_output_channel::OutputStreamKind::Stderr));
+        && frame.stream
+            == crate::execute_or_reuse::batch_output_channel::OutputStreamKind::Stderr));
 }
 
 #[test]
 fn shim_start_and_delegated_start_metadata_round_trip() {
     let tmp = tempfile::tempdir().unwrap();
-    let identity = crate::execute_or_reuse::batch_process_tree::ProcessGroupIdentity { pid: 99, pgid: 99 };
+    let identity =
+        crate::execute_or_reuse::batch_process_tree::ProcessGroupIdentity { pid: 99, pgid: 99 };
     let start = BatchShimStartMetadata {
         schema_version: "kiss-rust-llvm-cov-shim-start-v1".to_string(),
         id: "alpha".to_string(),
@@ -197,12 +202,10 @@ fn nextest_list_phase_detection_reads_environment() {
     }
     assert!(!super::batch_shim_child::is_nextest_list_phase());
 
-
     unsafe {
         std::env::set_var("NEXTEST_TEST_PHASE", "list");
     }
     assert!(super::batch_shim_child::is_nextest_list_phase());
-
 
     unsafe {
         std::env::remove_var("NEXTEST_TEST_PHASE");

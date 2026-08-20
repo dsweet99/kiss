@@ -159,11 +159,7 @@ fn try_run_as_watcher_client(args: &TestCommandArgs<'_>) -> Result<Option<i32>, 
 }
 
 #[cfg(unix)]
-fn apply_watcher_client_exit(
-    exit_code: i32,
-    error: Option<String>,
-    output: Option<String>,
-) -> i32 {
+fn apply_watcher_client_exit(exit_code: i32, error: Option<String>, output: Option<String>) -> i32 {
     println!("kiss test: watcher cycle complete");
     let has_report = output.as_ref().is_some_and(|s| !s.is_empty());
     if has_report {
@@ -320,11 +316,7 @@ pub(crate) fn finish_with_coverage(args: &TestCommandArgs<'_>, test_exit: i32) -
         allow_refresh: false,
         pytest_args: &python_extra,
     });
-    if cov_code != 0 {
-        cov_code
-    } else {
-        test_exit
-    }
+    if cov_code != 0 { cov_code } else { test_exit }
 }
 
 fn universe_root_for_test_invocation(invocation: &TestInvocation) -> PathBuf {

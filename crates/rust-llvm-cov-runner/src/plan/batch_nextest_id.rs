@@ -21,8 +21,6 @@ pub(crate) fn nextest_binary_id(package_name: &str, target_name: &str, kinds: &[
         return format!("{package_name}::bench/{target_name}");
     }
 
-
-
     libtest_binary_prefix(package_name, target_name)
 }
 
@@ -35,11 +33,7 @@ pub(crate) fn package_name_from_manifest(
     }
     let text = fs::read_to_string(manifest_path).ok()?;
     let value: toml::Value = toml::from_str(&text).ok()?;
-    let name = value
-        .get("package")?
-        .get("name")?
-        .as_str()?
-        .to_string();
+    let name = value.get("package")?.get("name")?.as_str()?.to_string();
     cache.insert(manifest_path.to_path_buf(), name.clone());
     Some(name)
 }
@@ -58,7 +52,10 @@ pub(crate) fn prefer_deps_executable(existing: &str, candidate: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{libtest_binary_prefix, nextest_binary_id, package_name_from_manifest, prefer_deps_executable};
+    use super::{
+        libtest_binary_prefix, nextest_binary_id, package_name_from_manifest,
+        prefer_deps_executable,
+    };
     use std::collections::BTreeMap;
     use std::fs;
 

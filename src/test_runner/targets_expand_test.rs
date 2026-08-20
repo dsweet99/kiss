@@ -38,13 +38,8 @@ fn expand_honors_lang_and_ignore() {
     fs::create_dir_all(dir.join("skip")).unwrap();
     fs::write(dir.join("skip/c.rs"), "fn g() {}\n").unwrap();
 
-    let rust_only = expand_target_operands(
-        tmp.path(),
-        &["pkg".into()],
-        &[],
-        Some(Language::Rust),
-    )
-    .unwrap();
+    let rust_only =
+        expand_target_operands(tmp.path(), &["pkg".into()], &[], Some(Language::Rust)).unwrap();
     match rust_only {
         ExpandedTargetPlan::Files(files) => {
             assert!(files.iter().all(|f| f.ends_with(".rs")), "{files:?}");
@@ -74,8 +69,7 @@ fn expand_empty_and_missing_fail_fast() {
     let tmp = tempdir().unwrap();
     init_git_repo(tmp.path());
     fs::create_dir_all(tmp.path().join("empty")).unwrap();
-    let empty_err =
-        expand_target_operands(tmp.path(), &["empty".into()], &[], None).unwrap_err();
+    let empty_err = expand_target_operands(tmp.path(), &["empty".into()], &[], None).unwrap_err();
     assert!(empty_err.contains("empty"), "{empty_err}");
     assert!(empty_err.contains("zero"), "{empty_err}");
 
@@ -97,12 +91,7 @@ fn expand_sole_repo_root_is_all_and_mix_errors() {
         ExpandedTargetPlan::All
     ));
 
-    let mix_err = expand_target_operands(
-        tmp.path(),
-        &[root_s, "lib.rs".into()],
-        &[],
-        None,
-    )
-    .unwrap_err();
+    let mix_err =
+        expand_target_operands(tmp.path(), &[root_s, "lib.rs".into()], &[], None).unwrap_err();
     assert!(mix_err.contains("mixed"), "{mix_err}");
 }

@@ -1,4 +1,3 @@
-
 use crate::test_runner::execution_witness::{
     rust_identity_digest_from_batch, try_load_rust_execution_witness,
 };
@@ -12,10 +11,7 @@ pub(super) fn rust_population_current_for_all_selectors(
     selectors: &[String],
     gate: &GateConfig,
 ) -> bool {
-
-
-    let cache_root =
-        crate::test_runner::rust_coverage_index::rust_coverage_cache_root(repo_root);
+    let cache_root = crate::test_runner::rust_coverage_index::rust_coverage_cache_root(repo_root);
     if !cache_root.join("population.json").is_file()
         && !cache_root.join("execution_witness.json").is_file()
     {
@@ -23,7 +19,10 @@ pub(super) fn rust_population_current_for_all_selectors(
     }
     let identity_started = std::time::Instant::now();
     let Ok(identity) =
-        crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(repo_root, &[])
+        crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(
+            repo_root,
+            &[],
+        )
     else {
         crate::test_runner::emit_stage_time("rust_identity", identity_started.elapsed());
         return false;
@@ -42,7 +41,6 @@ pub(super) fn rust_population_current_for_all_selectors(
     {
         return true;
     }
-
 
     rust_witness_accepts_full_universe(repo_root, &expected, &identity, gate)
 }
@@ -94,8 +92,17 @@ mod tests {
         let id = identity();
         let selectors = vec!["a".into()];
         let gate = GateConfig::default();
-        assert!(!rust_witness_accepts_full_universe(tmp.path(), &selectors, &id, &gate));
-        assert!(!rust_population_current_for_all_selectors(tmp.path(), &selectors, &gate));
+        assert!(!rust_witness_accepts_full_universe(
+            tmp.path(),
+            &selectors,
+            &id,
+            &gate
+        ));
+        assert!(!rust_population_current_for_all_selectors(
+            tmp.path(),
+            &selectors,
+            &gate
+        ));
     }
 
     #[test]
@@ -124,7 +131,12 @@ mod tests {
         .unwrap();
         assert!(!rust_identity_digest_from_batch(&id).is_empty());
         let gate = GateConfig::default();
-        assert!(rust_witness_accepts_full_universe(tmp.path(), &selectors, &id, &gate));
+        assert!(rust_witness_accepts_full_universe(
+            tmp.path(),
+            &selectors,
+            &id,
+            &gate
+        ));
 
         publish_rust_execution_witness(PublishRustWitness {
             repo_root: tmp.path(),
@@ -137,6 +149,11 @@ mod tests {
             complete: false,
         })
         .unwrap();
-        assert!(!rust_witness_accepts_full_universe(tmp.path(), &selectors, &id, &gate));
+        assert!(!rust_witness_accepts_full_universe(
+            tmp.path(),
+            &selectors,
+            &id,
+            &gate
+        ));
     }
 }

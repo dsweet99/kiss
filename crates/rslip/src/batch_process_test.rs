@@ -25,7 +25,11 @@ fn two_process_same_host_cold_cache_contention_prefers_first_store() {
 
 fn prepare_two_process_fixture(root: &Path) {
     fs::write(root.join("app.py"), "x = 1\n").unwrap();
-    fs::write(root.join("test_sample.py"), "def test_ok():\n    assert True\n").unwrap();
+    fs::write(
+        root.join("test_sample.py"),
+        "def test_ok():\n    assert True\n",
+    )
+    .unwrap();
     fs::create_dir(root.join("ready")).unwrap();
 }
 
@@ -75,14 +79,10 @@ fn configure_two_process_contention_child<'a>(
 ) -> &'a mut Command {
     command
         .arg("--exact")
-        .arg(
-            "batch_process_test::two_process_same_host_cold_cache_contention_prefers_first_store",
-        )
+        .arg("batch_process_test::two_process_same_host_cold_cache_contention_prefers_first_store")
         .arg("--nocapture")
         .env("RSLIP_TWO_PROCESS_CONTENTION_CHILD", child_id)
         .env("RSLIP_TWO_PROCESS_CONTENTION_ROOT", root)
-
-
         .env_remove("LLVM_PROFILE_FILE")
 }
 

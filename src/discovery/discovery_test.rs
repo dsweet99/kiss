@@ -181,11 +181,8 @@ fn test_kissignore_file() {
     assert!(files[0].path.ends_with("a.py"));
 }
 
-
-
 #[test]
 fn test_should_ignore_matches_filenames() {
-
     assert!(
         should_ignore(
             std::path::Path::new("src/test_utils.py"),
@@ -201,7 +198,6 @@ fn test_should_ignore_matches_filenames() {
 
 #[test]
 fn test_always_ignored_includes_env_dir() {
-
     assert!(
         is_always_ignored("env"),
         "'env' should be always ignored (common virtualenv directory)"
@@ -220,7 +216,6 @@ fn test_process_source_entry_and_ext_entry() {
         assert!(matches!(state, WalkState::Continue));
     }
     assert!(!results.into_inner().unwrap().is_empty());
-
 
     let results2 = Mutex::new(Vec::new());
     for entry in ignore::WalkBuilder::new(tmp.path()).build() {

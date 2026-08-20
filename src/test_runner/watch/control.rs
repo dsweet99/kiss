@@ -1,12 +1,11 @@
-
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::io::{self, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
-use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -126,10 +125,7 @@ impl WatchSessionOwner {
         let lock = match WatchLockGuard::try_lock(&lock_path) {
             Ok(Some(guard)) => guard,
             Ok(None) => {
-                let pid = read_session_file(repo_root)
-                    .ok()
-                    .flatten()
-                    .map(|s| s.pid);
+                let pid = read_session_file(repo_root).ok().flatten().map(|s| s.pid);
                 return Err(match pid {
                     Some(pid) => {
                         format!("watcher already running (pid {pid})")
@@ -150,10 +146,7 @@ impl WatchSessionOwner {
 pub(crate) fn probe_live_watcher(repo_root: &Path) -> Result<Option<SessionFile>, String> {
     let lock_path = watch_lock_path(repo_root);
     match WatchLockGuard::try_lock(&lock_path) {
-        Ok(Some(_guard)) => {
-
-            Ok(None)
-        }
+        Ok(Some(_guard)) => Ok(None),
         Ok(None) => Ok(Some(wait_for_session(repo_root)?)),
         Err(e) => Err(format!("cannot probe watch lock: {e}")),
     }
@@ -179,9 +172,7 @@ fn wait_for_session(repo_root: &Path) -> Result<SessionFile, String> {
                 thread::sleep(CLIENT_SESSION_SLEEP);
             }
             None => {
-                return Err(
-                    "watcher lock held but session is not ready; try again shortly".into(),
-                );
+                return Err("watcher lock held but session is not ready; try again shortly".into());
             }
         }
     }

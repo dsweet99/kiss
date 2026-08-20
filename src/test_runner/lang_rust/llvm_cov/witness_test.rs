@@ -1,8 +1,9 @@
-
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use rust_llvm_cov_runner::{CoverageOutputMode, RustCoverageBatchIdentity, RustCoverageBatchRequest};
+use rust_llvm_cov_runner::{
+    CoverageOutputMode, RustCoverageBatchIdentity, RustCoverageBatchRequest,
+};
 
 use super::{align_statuses, full_publication_selectors, merged_statuses};
 use crate::test_runner::execution_witness::{ExecutionWitness, WitnessScope, WitnessStatus};
@@ -162,15 +163,9 @@ fn align_statuses_requires_complete_universe() {
         .unwrap()
         .is_none()
     );
-    let aligned = align_statuses(
-        tmp.path(),
-        &["tests::a".into()],
-        &by,
-        &summary,
-        None,
-    )
-    .unwrap()
-    .unwrap();
+    let aligned = align_statuses(tmp.path(), &["tests::a".into()], &by, &summary, None)
+        .unwrap()
+        .unwrap();
     assert_eq!(aligned.statuses, vec![WitnessStatus::Passed]);
     assert_eq!(aligned.durations_ns, vec![Some(42)]);
 }

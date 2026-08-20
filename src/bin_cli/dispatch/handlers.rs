@@ -2,12 +2,12 @@ use std::path::Path;
 
 use crate::analyze;
 use crate::analyze::DryRunParams;
-use crate::bin_cli::{check_cmd, cov_cmd};
 use crate::bin_cli::mimic::run_mimic;
 use crate::bin_cli::shrink::{RunShrinkArgs, ShrinkFullContext, run_shrink};
 use crate::bin_cli::stats::{RunStatsArgs, run_stats};
 use crate::bin_cli::test_cmd::run_test_command;
 use crate::bin_cli::util;
+use crate::bin_cli::{check_cmd, cov_cmd};
 use crate::rules::{run_config, run_rules};
 use crate::viz::{VizCoarsen, run_viz};
 use kiss::{Language, normalize_ignore_prefixes};

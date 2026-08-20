@@ -1,5 +1,5 @@
 use super::*;
-use crate::config::{get_usize, ConfigError};
+use crate::config::{ConfigError, get_usize};
 
 #[test]
 fn test_gate_config_merge_from_toml() {

@@ -46,8 +46,6 @@ pub(crate) fn walk_file(node: Node, source: &str, in_type_checking: bool, agg: &
 }
 
 pub(crate) fn is_interface_type(class_node: Node, source: &str) -> bool {
-
-
     let supers = class_node.child_by_field_name("superclasses").or_else(|| {
         let mut c = class_node.walk();
         class_node

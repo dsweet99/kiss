@@ -53,10 +53,7 @@ fn python_coverage_env_tracks_only_pythonpath() {
 
     let env = relevant_python_coverage_env(tmp.path(), PYTHON_COVERAGE_ENV_KEYS);
 
-    assert_eq!(
-        env,
-        BTreeMap::from([("PYTHONPATH".to_string(), custom)])
-    );
+    assert_eq!(env, BTreeMap::from([("PYTHONPATH".to_string(), custom)]));
 }
 
 #[test]
@@ -66,11 +63,13 @@ fn python_coverage_env_defaults_unset_pythonpath_to_repo_root() {
     unsafe { std::env::remove_var("PYTHONPATH") };
 
     let env = relevant_python_coverage_env(tmp.path(), PYTHON_COVERAGE_ENV_KEYS);
-    let expected = tmp.path().canonicalize().unwrap().to_string_lossy().into_owned();
-    assert_eq!(
-        env,
-        BTreeMap::from([("PYTHONPATH".to_string(), expected)])
-    );
+    let expected = tmp
+        .path()
+        .canonicalize()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    assert_eq!(env, BTreeMap::from([("PYTHONPATH".to_string(), expected)]));
 }
 
 #[test]
@@ -114,7 +113,6 @@ fn python_manifest_current_always_normalizes_pythonpath_regardless_of_allowlist(
     let _pythonpath = TestEnvVarGuard::set("PYTHONPATH", &custom);
     std::fs::write(tmp.path().join("app.py"), "VALUE = 1\n").unwrap();
     let selector = "tests/test_app.py::test_value".to_string();
-
 
     let identity_empty =
         current_python_population_manifest_identity_with_env_keys(tmp.path(), &[], &[]).unwrap();
@@ -163,10 +161,7 @@ fn pythonpath_from_another_project_defaults_to_repo_root() {
         .unwrap()
         .to_string_lossy()
         .into_owned();
-    assert_eq!(
-        env,
-        BTreeMap::from([("PYTHONPATH".to_string(), expected)])
-    );
+    assert_eq!(env, BTreeMap::from([("PYTHONPATH".to_string(), expected)]));
 }
 
 #[test]

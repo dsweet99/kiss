@@ -7,7 +7,9 @@ use std::time::Duration;
 
 use crate::execute_or_reuse::batch_events::BatchCompilerArtifact;
 use crate::execute_or_reuse::batch_export_merge::merge_instance_profile;
-use crate::execute_or_reuse::batch_export_resolve::{BinaryIdObjectMap, resolve_objects_for_profdata};
+use crate::execute_or_reuse::batch_export_resolve::{
+    BinaryIdObjectMap, resolve_objects_for_profdata,
+};
 use crate::execute_or_reuse::batch_export_tools::ExportTools;
 use crate::{RustLineCoverage, RustLlvmCovError};
 
@@ -74,7 +76,9 @@ impl SubprocessInstanceExporter {
         jobs: usize,
     ) -> Result<Self, RustLlvmCovError> {
         self.binary_id_map = Some(BinaryIdObjectMap::build_with_jobs(
-            &self.tools, catalog, jobs,
+            &self.tools,
+            catalog,
+            jobs,
         )?);
         Ok(self)
     }
@@ -97,7 +101,6 @@ impl SubprocessInstanceExporter {
             .ok_or_else(|| RustLlvmCovError::InvalidRequest("profile path has no parent".into()))?;
         let profdata_path = profile_dir.join(format!("{}.profdata", request.instance_id));
         if !merge_instance_profile(&self.tools, &request.profile_path, &profdata_path)? {
-
             return Ok(RustLineCoverage {
                 files: BTreeMap::new(),
             });
@@ -130,9 +133,9 @@ pub fn object_paths_for_executable(
             .as_ref()
             .is_some_and(|path| paths_equivalent(path, executable))
         {
-            objects.extend(crate::execute_or_reuse::batch_export_catalog::object_paths_for_artifact(
-                artifact,
-            ));
+            objects.extend(
+                crate::execute_or_reuse::batch_export_catalog::object_paths_for_artifact(artifact),
+            );
         }
     }
     objects.sort();

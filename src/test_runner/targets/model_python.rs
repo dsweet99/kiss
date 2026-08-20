@@ -1,4 +1,3 @@
-
 use std::path::Path;
 
 use tree_sitter::{Node, Parser};

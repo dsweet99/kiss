@@ -32,9 +32,6 @@ pub fn require_git_repo_root(repo: &Path) -> Result<PathBuf, String> {
     git_repo_root(repo)
 }
 
-
-
-
 pub(crate) fn git_command(repo: &Path) -> Command {
     kiss::scrubbed_git_command(repo)
 }

@@ -124,7 +124,7 @@ fn selective_refresh_request(root: &Path) -> RustCoverageBatchRequest {
         test_args: Vec::new(),
         env: BTreeMap::new(),
         force_rerun: false,
-jobs: 1,
+        jobs: 1,
         generated_config: root.join(".kiss/rust_llvm_cov_cache/runs/plan/nextest.toml"),
         population_publication_selectors: Some(vec!["test_lib".to_string()]),
         delegated_runners,
@@ -185,7 +185,6 @@ fn assert_population_current(
 
 #[test]
 fn rust_forced_selective_entry_refresh_keeps_population_manifest_current_regression() {
-
     let tmp = tempfile::tempdir().unwrap();
     write_minimal_demo_crate(tmp.path());
     let req = selective_refresh_request(tmp.path());

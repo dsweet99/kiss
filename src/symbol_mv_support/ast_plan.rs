@@ -2,14 +2,6 @@
 #[path = "ast_plan_coverage.rs"]
 mod ast_plan_coverage;
 
-
-
-
-
-
-
-
-
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::Path;
@@ -172,11 +164,6 @@ pub(super) fn ast_definition_ident_offsets_from_result(
     owner: Option<&str>,
     language: Language,
 ) -> Vec<(usize, usize)> {
-
-
-
-
-
     if owner.is_none() {
         let Some(def) = result.matching_definition(name, owner) else {
             return Vec::new();

@@ -101,7 +101,8 @@ pub(crate) fn load_current_rust_coverage_index(
     repo_root: &Path,
     test_args: &[String],
 ) -> Option<RustCoverageIndex> {
-    super::load_current_rust_population_state(repo_root, None, test_args).map(|state| state.line_index)
+    super::load_current_rust_population_state(repo_root, None, test_args)
+        .map(|state| state.line_index)
 }
 
 pub(crate) fn rust_coverage_index_path(repo_root: &Path) -> std::path::PathBuf {

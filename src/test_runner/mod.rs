@@ -5,37 +5,37 @@ pub(crate) mod capture_stdout;
 pub(crate) mod check_line_coverage;
 pub(crate) mod check_runtime_refresh;
 mod coverage_decision;
+pub(crate) mod coverage_index;
 pub(crate) mod duration;
 pub(crate) mod ensure_runtime;
 pub(crate) mod execution_witness;
+mod final_summary;
 pub(crate) mod lang_iface;
 pub(crate) mod lang_python;
 pub(crate) mod lang_rust;
+mod language_keyed;
 pub(crate) mod last_status;
 mod line_selection;
+mod planned_selectors;
 mod python_cache_path;
 pub(crate) mod python_coverage_index;
-pub(crate) mod coverage_index;
-mod final_summary;
-mod status_labels;
 mod run_logic;
 mod runners;
+mod rust_batch_interrupt;
 mod rust_coverage_index;
-mod targets;
-pub(crate) mod unit_test_timing;
 mod rust_report_id_cache;
 mod selector_ids;
-mod language_keyed;
-mod planned_selectors;
+mod status_labels;
+mod targets;
+pub(crate) mod unit_test_timing;
 mod watch;
-mod rust_batch_interrupt;
-pub(crate) use rust_batch_interrupt::consume_rust_batch_interrupted;
+#[cfg(test)]
+pub(crate) use planned_selectors::should_force_cold_initialization;
 pub(crate) use planned_selectors::{
     PlannedSelectors, SelectorRunOptions, apply_cold_initialization_population,
     apply_force_all_population,
 };
-#[cfg(test)]
-pub(crate) use planned_selectors::should_force_cold_initialization;
+pub(crate) use rust_batch_interrupt::consume_rust_batch_interrupted;
 
 pub(crate) use lang_rust::llvm_cov as rust_llvm_cov;
 
@@ -94,16 +94,9 @@ pub(crate) fn apply_force_bad(
     if !a.force_bad {
         return Ok(());
     }
-    let py_bad = runners::prior_failures_for_language(
-        &planned.repo_root,
-        Language::Python,
-        a.python_extra,
-    )?;
-    let rs_bad = runners::prior_failures_for_language(
-        &planned.repo_root,
-        Language::Rust,
-        a.extra,
-    )?;
+    let py_bad =
+        runners::prior_failures_for_language(&planned.repo_root, Language::Python, a.python_extra)?;
+    let rs_bad = runners::prior_failures_for_language(&planned.repo_root, Language::Rust, a.extra)?;
     let mut py = planned.prior_failure_selectors.python.clone();
     py.extend(py_bad.into_iter().map(|s| s.id));
     py.sort();
@@ -142,9 +135,6 @@ pub fn run_test(a: RunTestCmdArgs<'_>) -> i32 {
 }
 
 pub(crate) fn emit_test_progress(message: &str) {
-
-
-
     #[cfg(unix)]
     {
         let mut line = Vec::with_capacity(message.len() + 1);
@@ -221,9 +211,9 @@ pub(crate) fn run_test_once(a: RunTestCmdArgs<'_>) -> RunTestOnceOutcome {
     }
 }
 
-pub(crate) use watch::{WatchCoverageParams, WatchCoverageResult, WatchReloadSeed, run_test_watch};
 #[cfg(unix)]
 pub(crate) use watch::control::{NudgeRequestMsg, nudge_watcher_with_retry, probe_live_watcher};
+pub(crate) use watch::{WatchCoverageParams, WatchCoverageResult, WatchReloadSeed, run_test_watch};
 
 fn plan_for_invocation(a: &RunTestCmdArgs<'_>) -> Result<PlannedSelectors, String> {
     match &a.invocation {
@@ -288,7 +278,9 @@ fn plan_for_invocation(a: &RunTestCmdArgs<'_>) -> Result<PlannedSelectors, Strin
 
 mod plan;
 mod workspace_selector_cache;
-pub(crate) use plan::{PlanSelectorsRequest, TargetPlanKind, plan_selectors, plan_target_selectors};
+pub(crate) use plan::{
+    PlanSelectorsRequest, TargetPlanKind, plan_selectors, plan_target_selectors,
+};
 
 #[cfg(test)]
 pub(crate) mod test_mode_fixtures;
@@ -324,6 +316,10 @@ mod test_change_modes_b_test;
 #[cfg(test)]
 #[path = "mod_test.rs"]
 mod mod_test;
+
+#[cfg(test)]
+#[path = "mod_test_b.rs"]
+mod mod_test_b;
 
 #[cfg(test)]
 #[path = "planning_heartbeat_test.rs"]

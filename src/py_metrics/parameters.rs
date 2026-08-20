@@ -129,9 +129,9 @@ pub(crate) fn is_boolean_default(param: &Node, source: &str) -> bool {
 }
 
 fn is_bool_annotation(param: &Node, source: &str) -> bool {
-    param.child_by_field_name("type").is_some_and(|ty| {
-        ty.utf8_text(source.as_bytes()).unwrap_or("") == "bool"
-    })
+    param
+        .child_by_field_name("type")
+        .is_some_and(|ty| ty.utf8_text(source.as_bytes()).unwrap_or("") == "bool")
 }
 
 fn is_boolean_param(param: &Node, source: &str) -> bool {
@@ -232,7 +232,9 @@ mod coverage_witness {
 
     #[test]
     fn boolean_param_counts_bool_typed_args_without_defaults() {
-        let parsed = parse_python_source("def f(verbose: bool, flag: bool = False, n: int = 1):\n    pass\n");
+        let parsed = parse_python_source(
+            "def f(verbose: bool, flag: bool = False, n: int = 1):\n    pass\n",
+        );
         let func = parsed.tree.root_node().child(0).expect("function");
         let params = func.child_by_field_name("parameters").expect("params");
         let counts = count_parameters(params, &parsed.source);

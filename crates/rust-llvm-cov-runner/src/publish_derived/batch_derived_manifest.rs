@@ -3,11 +3,9 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use crate::publish_derived::batch_derived::POPULATION_SCHEMA_VERSION;
-use crate::plan::batch_fingerprint::{
-    RustCoverageBatchIdentity, RustCoverageToolIdentity,
-};
+use crate::plan::batch_fingerprint::{RustCoverageBatchIdentity, RustCoverageToolIdentity};
 use crate::plan::batch_plan::RustCoverageBatchRequest;
+use crate::publish_derived::batch_derived::POPULATION_SCHEMA_VERSION;
 use crate::publish_derived::batch_reverse_build::ReversePublishInfo;
 use crate::rust_cov_cache::rust_cov_unique_suffix;
 use crate::{CACHE_SCHEMA_VERSION, RustLlvmCovError, RustTestBinaryIdentity};
@@ -49,7 +47,6 @@ pub(crate) fn write_population_manifest(
         test_binaries: test_binary_records(test_binaries),
         reverse_line_index: reverse_meta,
     };
-
 
     let mut last_err = None;
     for attempt in 0..2 {

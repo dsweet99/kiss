@@ -52,8 +52,6 @@ pub(crate) fn build_target_runner_cargo_config_toml(
         req.coverage_output_mode,
         CoverageOutputMode::CheckAggregate { .. }
     ) {
-
-
         return String::new();
     }
     let platform = toml_basic_string(&req.host_platform);
@@ -77,9 +75,6 @@ pub(crate) fn apply_target_runner_env(
         return;
     }
 
-
-
-
     let run_token = req
         .generated_config
         .parent()
@@ -93,9 +88,6 @@ pub(crate) fn apply_target_runner_env(
 }
 
 fn build_nextest_default_filter(req: &RustCoverageBatchRequest) -> String {
-
-
-
     let runnable: Vec<&String> = req
         .logical_selectors
         .iter()
@@ -120,7 +112,6 @@ fn build_nextest_default_filter(req: &RustCoverageBatchRequest) -> String {
         return format!("all() & {excludes}");
     }
     if runnable.is_empty() {
-
         return "not all()".to_string();
     }
     let exact = rust_test_args_request_exact_match(&req.test_args);
@@ -231,7 +222,8 @@ mod tests {
         req.logical_selectors = (0..100).map(|i| format!("test_{i}")).collect();
         let plan = crate::plan::batch_plan::build_rust_coverage_batch_plan(&req).unwrap();
         assert!(
-            plan.generated_config_toml.contains("default-filter = \"all()\""),
+            plan.generated_config_toml
+                .contains("default-filter = \"all()\""),
             "toml={}",
             plan.generated_config_toml
         );
@@ -268,13 +260,17 @@ mod tests {
                 .map(String::as_str),
             Some("/repo/.kiss/profraw")
         );
-        assert!(!plan.argv.iter().any(|arg| arg.contains("__rust-llvm-cov-target-runner")));
+        assert!(
+            !plan
+                .argv
+                .iter()
+                .any(|arg| arg.contains("__rust-llvm-cov-target-runner"))
+        );
     }
 
     #[test]
     fn refresh_guard_does_not_serialize_nextest_threads() {
         let req = crate::plan::batch_plan::RustCoverageBatchRequest::witness();
-
 
         unsafe {
             std::env::set_var("KISS_COVERAGE_RUNTIME_REFRESH_ACTIVE", "1");

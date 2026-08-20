@@ -1,4 +1,3 @@
-
 pub(crate) mod batch_check_aggregate;
 
 pub(crate) mod batch_check_aggregate_identity;

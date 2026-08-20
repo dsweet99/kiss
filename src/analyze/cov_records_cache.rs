@@ -1,4 +1,3 @@
-
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -32,7 +31,9 @@ pub(crate) struct CovRecordsCacheKey<'a> {
     pub(crate) lang_filter: Option<&'a str>,
 }
 
-pub(crate) fn try_load_cov_records(key: &CovRecordsCacheKey<'_>) -> Option<Vec<LineCoverageRecord>> {
+pub(crate) fn try_load_cov_records(
+    key: &CovRecordsCacheKey<'_>,
+) -> Option<Vec<LineCoverageRecord>> {
     let fingerprint = cov_records_fingerprint(key)?;
     let raw = fs::read(cache_path(key.repo_root)).ok()?;
     let cache: CovRecordsCache = serde_json::from_slice(&raw).ok()?;
@@ -72,7 +73,10 @@ fn cov_records_fingerprint(key: &CovRecordsCacheKey<'_>) -> Option<String> {
     let mut h = fnv1a64(0xcbf2_9ce4_8422_2325, SCHEMA_VERSION.as_bytes());
     h = fnv1a64(h, &key.threshold.to_le_bytes());
     h = fnv1a64(h, &[u8::from(key.bypass_gate)]);
-    h = fnv1a64(h, &[u8::from(key.required.python), u8::from(key.required.rust)]);
+    h = fnv1a64(
+        h,
+        &[u8::from(key.required.python), u8::from(key.required.rust)],
+    );
     if let Some(lang) = key.lang_filter {
         h = fnv1a64(h, lang.as_bytes());
     }
@@ -120,7 +124,8 @@ fn python_backend_identity(repo_root: &Path) -> Option<String> {
 }
 
 fn python_coverage_cache_root_population(repo_root: &Path) -> Option<PathBuf> {
-    let cache = crate::test_runner::python_coverage_index::python_coverage_cache_root(repo_root).ok()?;
+    let cache =
+        crate::test_runner::python_coverage_index::python_coverage_cache_root(repo_root).ok()?;
     let candidate = cache.join("population.json");
     candidate.is_file().then_some(candidate)
 }
@@ -136,7 +141,9 @@ fn rust_backend_identity(repo_root: &Path) -> Option<String> {
     {
         return Some(format!(
             "rs-wit:{}:{}:{}",
-            witness.generation_id, witness.identity_digest, witness.selectors.len()
+            witness.generation_id,
+            witness.identity_digest,
+            witness.selectors.len()
         ));
     }
     if let Some(identity) = rust_check_aggregate_backend_identity(&cache) {

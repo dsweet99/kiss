@@ -1,7 +1,7 @@
 #![cfg(unix)]
 
-use super::{NudgeScript, commit_a_py, py_dry_args, timeout_steps};
 use super::super::*;
+use super::{NudgeScript, commit_a_py, py_dry_args, timeout_steps};
 use crate::test_runner::RunTestOnceOutcome;
 use crate::test_runner::test_mode_fixtures::init_git;
 use crate::test_runner::watch::control::NudgeRequestMsg;
@@ -15,10 +15,7 @@ use std::time::{Duration, Instant};
 fn send_nudge_after(
     delay: Duration,
     msg: NudgeRequestMsg,
-) -> (
-    mpsc::Receiver<NudgeRequest>,
-    std::thread::JoinHandle<()>,
-) {
+) -> (mpsc::Receiver<NudgeRequest>, std::thread::JoinHandle<()>) {
     let (tx, rx) = mpsc::channel::<NudgeRequest>();
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
     let sender = std::thread::spawn(move || {
@@ -193,10 +190,7 @@ fn overlapping_pre_start_nudges_share_one_cycle() {
 fn spawn_force_nudge_during_barrier(
     entered: std::sync::Arc<std::sync::Barrier>,
     release: std::sync::Arc<std::sync::Barrier>,
-) -> (
-    mpsc::Receiver<NudgeRequest>,
-    std::thread::JoinHandle<()>,
-) {
+) -> (mpsc::Receiver<NudgeRequest>, std::thread::JoinHandle<()>) {
     let (tx, rx) = mpsc::channel::<NudgeRequest>();
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
     let sender = std::thread::spawn(move || {
@@ -211,7 +205,13 @@ fn spawn_force_nudge_during_barrier(
         })
         .unwrap();
         release.wait();
-        assert_eq!(reply_rx.recv_timeout(Duration::from_secs(5)).unwrap().exit_code, 0);
+        assert_eq!(
+            reply_rx
+                .recv_timeout(Duration::from_secs(5))
+                .unwrap()
+                .exit_code,
+            0
+        );
     });
     (rx, sender)
 }

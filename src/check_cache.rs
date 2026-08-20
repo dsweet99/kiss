@@ -122,9 +122,6 @@ mod tests {
 
     #[test]
     fn test_cache_dir_is_repo_local_kiss() {
-        assert_eq!(
-            cache_dir(Path::new("/repo")),
-            PathBuf::from("/repo/.kiss")
-        );
+        assert_eq!(cache_dir(Path::new("/repo")), PathBuf::from("/repo/.kiss"));
     }
 }

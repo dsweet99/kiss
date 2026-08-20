@@ -93,15 +93,15 @@ raise SystemExit(0)
 
     let outcome = crate::SubprocessPytestRunner::new()
         .run_one(PytestRunRequest::from_parts(
-        "test_sample.py::test_ok".to_string(),
-        tmp.path().to_path_buf(),
-        fake_python,
-        vec!["-q".to_string()],
-        BTreeMap::new(),
-        Vec::new(),
-        Vec::new(),
-        None,
-    ))
+            "test_sample.py::test_ok".to_string(),
+            tmp.path().to_path_buf(),
+            fake_python,
+            vec!["-q".to_string()],
+            BTreeMap::new(),
+            Vec::new(),
+            Vec::new(),
+            None,
+        ))
         .unwrap();
 
     match old_addopts {
@@ -117,7 +117,6 @@ raise SystemExit(0)
         observed["PYTEST_ADDOPTS"].is_null(),
         "inherited PYTEST_ADDOPTS must be scrubbed: {observed}"
     );
-
 
     assert!(
         observed["PYTEST_DISABLE_PLUGIN_AUTOLOAD"].is_null(),

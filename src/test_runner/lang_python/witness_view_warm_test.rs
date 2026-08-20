@@ -1,4 +1,3 @@
-
 use super::witness_view::try_warm_python_cached_summary;
 use crate::test_runner::python_coverage_index::generation::{
     PopulationEvidence, SelectorEvidence, TimingCacheDisposition, population_plan_for_selectors,
@@ -22,7 +21,8 @@ fn try_warm_python_accepts_complete_matching_plan() {
         return;
     };
     let selector = "t.py::test_a".to_string();
-    let mut plan = population_plan_for_selectors(repo, std::slice::from_ref(&selector), &[]).unwrap();
+    let mut plan =
+        population_plan_for_selectors(repo, std::slice::from_ref(&selector), &[]).unwrap();
     plan.base_identity.python_version = py;
     plan.base_identity.pytest_version = pt;
     plan.base_identity.selector_discovery_version = PYTHON_SELECTOR_DISCOVERY_VERSION.to_string();

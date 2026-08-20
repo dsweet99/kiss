@@ -65,7 +65,9 @@ pub(crate) fn write_python_coverage_index_with_entries_fingerprint(
 }
 
 pub(crate) fn load_current_python_coverage_index(repo_root: &Path) -> Option<PythonCoverageIndex> {
-    if let Ok(pinned) = super::generation::try_load_pinned_python_generation_without_line_index(repo_root) {
+    if let Ok(pinned) =
+        super::generation::try_load_pinned_python_generation_without_line_index(repo_root)
+    {
         return Some(super::generation::generation_file_index(&pinned));
     }
     #[derive(Deserialize)]

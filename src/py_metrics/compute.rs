@@ -130,12 +130,10 @@ mod tests {
 
     #[test]
     fn match_case_tree_has_case_clause() {
-        let parsed = parse_python_source("def f(x):\n    match x:\n        case 1:\n            return 1\n");
+        let parsed =
+            parse_python_source("def f(x):\n    match x:\n        case 1:\n            return 1\n");
         fn kinds(node: tree_sitter::Node) -> Vec<(String, usize)> {
-            let mut out = vec![(
-                node.kind().to_string(),
-                node.start_position().row + 1,
-            )];
+            let mut out = vec![(node.kind().to_string(), node.start_position().row + 1)];
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
                 out.extend(kinds(child));

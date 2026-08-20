@@ -1,13 +1,11 @@
-
 use std::path::Path;
 use std::time::{Duration, Instant};
 
 use kiss::Language;
 
 use super::{
-    RuntimeGateEval, RuntimeGateViolation, TimingCollectOpts, TimingLangInclude,
-    TimingPopulation, collect_current_unit_test_timings, evaluate_runtime_gate,
-    selector_matches_ignore_prefix,
+    RuntimeGateEval, RuntimeGateViolation, TimingCollectOpts, TimingLangInclude, TimingPopulation,
+    collect_current_unit_test_timings, evaluate_runtime_gate, selector_matches_ignore_prefix,
 };
 use crate::test_runner::check_line_coverage::repository_root_for_universe;
 
@@ -48,10 +46,9 @@ pub(crate) fn evaluate_cov_time_gate(opts: CovTimeGateOpts<'_>) -> RuntimeGateEv
 }
 
 fn try_evaluate_multi_prefix_path_max_gate(opts: CovTimeGateOpts<'_>) -> Option<RuntimeGateEval> {
-    let want_python = opts.include.python
-        && matches!(opts.lang_filter, None | Some(Language::Python));
-    let want_rust =
-        opts.include.rust && matches!(opts.lang_filter, None | Some(Language::Rust));
+    let want_python =
+        opts.include.python && matches!(opts.lang_filter, None | Some(Language::Python));
+    let want_rust = opts.include.rust && matches!(opts.lang_filter, None | Some(Language::Rust));
     if !want_python {
         return None;
     }
@@ -71,8 +68,7 @@ fn try_evaluate_multi_prefix_path_max_gate(opts: CovTimeGateOpts<'_>) -> Option<
             t_py.elapsed().as_millis()
         );
     }
-    let mut viols =
-        evaluate_path_max_runtime_violations(&path_maxes, opts.limits, opts.ignore);
+    let mut viols = evaluate_path_max_runtime_violations(&path_maxes, opts.limits, opts.ignore);
     if want_rust {
         let t_rs = Instant::now();
         match collect_current_unit_test_timings(TimingCollectOpts {
@@ -140,10 +136,9 @@ pub(super) fn evaluate_path_max_runtime_violations(
 fn evaluate_sole_star_time_gate(opts: CovTimeGateOpts<'_>, limit_seconds: f64) -> RuntimeGateEval {
     let t_timings = Instant::now();
     let repo_root = repository_root_for_universe(opts.universe);
-    let want_python = opts.include.python
-        && matches!(opts.lang_filter, None | Some(Language::Python));
-    let want_rust =
-        opts.include.rust && matches!(opts.lang_filter, None | Some(Language::Rust));
+    let want_python =
+        opts.include.python && matches!(opts.lang_filter, None | Some(Language::Python));
+    let want_rust = opts.include.rust && matches!(opts.lang_filter, None | Some(Language::Rust));
     let mut max = Duration::ZERO;
     if want_python {
         let Some(py_max) =

@@ -88,7 +88,9 @@ fn parse_rejects_framework_args_without_dashdash_as_mixed_reserved() {
 fn clap_keeps_trailing_extra_after_dashdash() {
     let cli = Cli::parse_from(["kiss", "test", ".", "--", "-q"]);
     match cli.command {
-        Commands::Test { operands, extra, .. } => {
+        Commands::Test {
+            operands, extra, ..
+        } => {
             assert_eq!(operands, vec![".".to_string()]);
             assert_eq!(extra, vec!["-q".to_string()]);
         }

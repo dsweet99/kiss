@@ -53,10 +53,7 @@ fn forkserver_configures_pytest_once_per_controller() {
         )
     };
     let outcomes = ForkserverPytestRunner::new().run_many_bounded(
-        vec![
-            req("test_sample.py::test_a"),
-            req("test_sample.py::test_b"),
-        ],
+        vec![req("test_sample.py::test_a"), req("test_sample.py::test_b")],
         1,
     );
     assert!(
@@ -124,7 +121,11 @@ fn forkserver_bootstrap_identity_reuses_or_restarts_controller() {
     let mut different = first;
     different.bootstrap = PytestBootstrap::new(
         different.cwd.clone(),
-        vec!["-q".to_string(), "-p".to_string(), "no:cacheprovider".to_string()],
+        vec![
+            "-q".to_string(),
+            "-p".to_string(),
+            "no:cacheprovider".to_string(),
+        ],
         BTreeMap::new(),
     );
     different.pytest_args = different.bootstrap.pytest_args.clone();
@@ -225,9 +226,6 @@ fn forkserver_bootstrap_rejects_configure_exception() {
 
 #[test]
 fn forkserver_bootstrap_clears_ini_addopts_unknown_without_plugins() {
-
-
-
     let tmp = tempfile::tempdir().unwrap();
     fs::write(
         tmp.path().join("pytest.ini"),
@@ -239,10 +237,8 @@ fn forkserver_bootstrap_clears_ini_addopts_unknown_without_plugins() {
         "def test_ok():\n    assert True\n",
     )
     .unwrap();
-    let outcomes = ForkserverPytestRunner::new().run_many_bounded(
-        vec![base_req(tmp.path(), "test_sample.py::test_ok")],
-        1,
-    );
+    let outcomes = ForkserverPytestRunner::new()
+        .run_many_bounded(vec![base_req(tmp.path(), "test_sample.py::test_ok")], 1);
     assert!(
         outcomes[0].is_ok(),
         "bootstrap must tolerate ini addopts without autoloaded plugins: {:?}",
@@ -297,9 +293,11 @@ fn forkserver_empty_selection_and_collection_error_preserve_exit_codes() {
     )
     .unwrap();
     fs::write(tmp.path().join("test_bad.py"), "def test_bad(\n").unwrap();
-    let mut controller =
-        ForkserverController::start(&test_python(), &base_req(tmp.path(), "test_sample.py::test_ok").bootstrap)
-            .unwrap();
+    let mut controller = ForkserverController::start(
+        &test_python(),
+        &base_req(tmp.path(), "test_sample.py::test_ok").bootstrap,
+    )
+    .unwrap();
 
     let empty = controller
         .run(base_req(tmp.path(), "test_sample.py::test_missing"))
@@ -332,9 +330,11 @@ fn forkserver_lifecycle_errors_match_pytest_exit_codes() {
         "import pytest\ndef test_ok():\n    assert True\ndef test_sys():\n    raise SystemExit(99)\ndef test_exit():\n    pytest.exit('bye', returncode=7)\n",
     )
     .unwrap();
-    let mut controller =
-        ForkserverController::start(&test_python(), &base_req(tmp.path(), "test_life.py::test_ok").bootstrap)
-            .unwrap();
+    let mut controller = ForkserverController::start(
+        &test_python(),
+        &base_req(tmp.path(), "test_life.py::test_ok").bootstrap,
+    )
+    .unwrap();
 
     let sys_exit = controller
         .run(base_req(tmp.path(), "test_life.py::test_sys"))
@@ -355,7 +355,11 @@ fn forkserver_lifecycle_errors_match_pytest_exit_codes() {
         "def pytest_sessionstart(session):\n    raise RuntimeError('boom-sessionstart')\n",
     )
     .unwrap();
-    fs::write(boom_dir.join("test_ok.py"), "def test_ok():\n    assert True\n").unwrap();
+    fs::write(
+        boom_dir.join("test_ok.py"),
+        "def test_ok():\n    assert True\n",
+    )
+    .unwrap();
     let mut boom = ForkserverController::start(
         &test_python(),
         &base_req(&boom_dir, "test_ok.py::test_ok").bootstrap,

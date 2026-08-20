@@ -117,16 +117,11 @@ fn test_is_bool_param() {
     }
 }
 
-
-
 #[test]
 fn test_inner_fn_statements_not_counted_in_outer() {
-
-
     let (inputs, block) =
         parse_fn("fn outer() { let x = 1; fn inner() { let y = 2; let z = 3; } }");
     let m = compute_rust_function_metrics(&inputs, &block, 0);
-
 
     assert_eq!(
         m.statements, 2,
@@ -137,7 +132,6 @@ fn test_inner_fn_statements_not_counted_in_outer() {
 
 #[test]
 fn test_inner_fn_locals_not_counted_in_outer() {
-
     let (inputs, block) =
         parse_fn("fn outer() { let a = 1; fn inner() { let b = 2; let c = 3; } }");
     let m = compute_rust_function_metrics(&inputs, &block, 0);
@@ -150,7 +144,6 @@ fn test_inner_fn_locals_not_counted_in_outer() {
 
 #[test]
 fn test_inner_fn_branches_not_counted_in_outer() {
-
     let (inputs, block) = parse_fn("fn outer() { fn inner(x: i32) { if x > 0 {} if x < 0 {} } }");
     let m = compute_rust_function_metrics(&inputs, &block, 0);
     assert_eq!(
@@ -198,8 +191,6 @@ fn test_file_metrics() {
 
 #[test]
 fn test_use_statements_in_function_not_counted() {
-
-
     let (_, b) = parse_fn("fn f() { use std::io::Write; let x = 1; println!(\"{}\", x); }");
     let m = compute_rust_function_metrics(&syn::punctuated::Punctuated::new(), &b, 0);
 
@@ -213,26 +204,20 @@ fn test_use_statements_in_function_not_counted() {
 fn test_count_use_names() {
     use std::io::Write;
 
-
     let u: syn::ItemUse = syn::parse_str("use foo::bar;").unwrap();
     assert_eq!(count_use_names(&u.tree), 1);
-
 
     let u2: syn::ItemUse = syn::parse_str("use foo::{bar, baz};").unwrap();
     assert_eq!(count_use_names(&u2.tree), 2);
 
-
     let u3: syn::ItemUse = syn::parse_str("use foo::*;").unwrap();
     assert_eq!(count_use_names(&u3.tree), 1);
-
 
     let u4: syn::ItemUse = syn::parse_str("use foo::bar as b;").unwrap();
     assert_eq!(count_use_names(&u4.tree), 1);
 
-
     let u5: syn::ItemUse = syn::parse_str("use foo::{bar, baz::{qux, quux}};").unwrap();
     assert_eq!(count_use_names(&u5.tree), 3);
-
 
     let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
     writeln!(

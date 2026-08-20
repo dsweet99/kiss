@@ -1,4 +1,3 @@
-
 use std::io::{IsTerminal, Write};
 use std::time::Duration;
 
@@ -62,10 +61,7 @@ pub(crate) fn format_final_test_summary(
     } else {
         icon.to_string()
     };
-    let mut line = format!(
-        "{icon} {} passed",
-        summary.passed
-    );
+    let mut line = format!("{icon} {} passed", summary.passed);
     if summary.failed > 0 {
         line.push_str(&format!(" · {} failed", summary.failed));
     }
@@ -76,11 +72,7 @@ pub(crate) fn format_final_test_summary(
     ));
     let mut lines = vec![line];
     for selector in &summary.failed_selectors {
-        let failed = if color {
-            "\x1b[31mFAIL\x1b[0m"
-        } else {
-            "FAIL"
-        };
+        let failed = if color { "\x1b[31mFAIL\x1b[0m" } else { "FAIL" };
         lines.push(format!("{failed} {selector}"));
     }
     for selector in &summary.timed_out_selectors {

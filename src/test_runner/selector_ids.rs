@@ -1,4 +1,3 @@
-
 use std::collections::BTreeMap;
 use std::fmt;
 use std::ops::Deref;
@@ -103,7 +102,11 @@ pub(crate) fn report_strings_for_logical_strings(
     map: &BTreeMap<String, String>,
     logicals: &[String],
 ) -> Vec<String> {
-    let typed: Vec<LogicalSelectorId> = logicals.iter().cloned().map(LogicalSelectorId::new).collect();
+    let typed: Vec<LogicalSelectorId> = logicals
+        .iter()
+        .cloned()
+        .map(LogicalSelectorId::new)
+        .collect();
     report_ids_for_logicals(map, &typed)
         .into_iter()
         .map(ReportSelectorId::into_string)
@@ -197,7 +200,10 @@ mod tests {
         );
         let typed = report_ids_for_logicals(
             &map,
-            &[LogicalSelectorId::new("tests::a"), LogicalSelectorId::new("tests::b")],
+            &[
+                LogicalSelectorId::new("tests::a"),
+                LogicalSelectorId::new("tests::b"),
+            ],
         );
         assert_eq!(typed[0].as_str(), "src/a.rs::a");
         assert_eq!(typed[1].as_str(), "src/b.rs::b");

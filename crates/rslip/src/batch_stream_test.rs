@@ -7,11 +7,6 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-fn write_ok_sample(root: &Path) {
-    fs::write(root.join("app.py"), "x = 1\n").unwrap();
-    fs::write(root.join("test_sample.py"), "def test_ok():\n    assert True\n").unwrap();
-}
-
 fn numbered_requests(root: &Path, count: usize) -> Vec<RslipRequest> {
     (0..count)
         .map(|i| {
@@ -22,7 +17,9 @@ fn numbered_requests(root: &Path, count: usize) -> Vec<RslipRequest> {
         .collect()
 }
 
-fn ok_coverage_outcome(req: rpytest_runner::PytestRunRequest) -> Result<PytestRunOutcome, PytestRunError> {
+fn ok_coverage_outcome(
+    req: rpytest_runner::PytestRunRequest,
+) -> Result<PytestRunOutcome, PytestRunError> {
     let path = req.artifacts[0].path.clone();
     let app = req.cwd.join("app.py");
     let payload = format!(
@@ -88,18 +85,20 @@ fn miss_entry_is_durable_before_later_streaming_completions() {
     let cache_root = reqs[0].cache_root.clone();
     let saw_first_on_disk = Arc::new(Mutex::new(false));
     let saw_for_runner = Arc::clone(&saw_first_on_disk);
-    let rslip = Rslip::new(PytestRunner::from_streaming_bounded_fn(move |reqs, _jobs, on_complete| {
-        for (index, req) in reqs.into_iter().enumerate() {
-            on_complete(index, ok_coverage_outcome(req));
-            if index == 0 {
-                assert!(
-                    load_rslip_cache_entry(&cache_root, &first_fp).is_some(),
-                    "first miss must be durable before later completions"
-                );
-                *saw_for_runner.lock().unwrap() = true;
+    let rslip = Rslip::new(PytestRunner::from_streaming_bounded_fn(
+        move |reqs, _jobs, on_complete| {
+            for (index, req) in reqs.into_iter().enumerate() {
+                on_complete(index, ok_coverage_outcome(req));
+                if index == 0 {
+                    assert!(
+                        load_rslip_cache_entry(&cache_root, &first_fp).is_some(),
+                        "first miss must be durable before later completions"
+                    );
+                    *saw_for_runner.lock().unwrap() = true;
+                }
             }
-        }
-    }));
+        },
+    ));
     let outcomes = rslip.run_or_reuse_many_bounded(reqs, 1);
     assert!(outcomes.iter().all(Result::is_ok));
     assert!(*saw_first_on_disk.lock().unwrap());
@@ -113,18 +112,20 @@ fn selector_finalized_and_remaining_emit_before_batch_returns() {
     let mid_for_runner = Arc::clone(&mid_progress);
     let events = Arc::new(Mutex::new(Vec::new()));
     let events_for_cb = Arc::clone(&events);
-    let rslip = Rslip::new(PytestRunner::from_streaming_bounded_fn(move |reqs, _jobs, on_complete| {
-        let total = reqs.len();
-        for (index, req) in reqs.into_iter().enumerate() {
-            on_complete(index, ok_coverage_outcome(req));
-            if index + 1 < total {
-                assert!(
-                    *mid_for_runner.lock().unwrap(),
-                    "SelectorFinalized must fire before later completions"
-                );
+    let rslip = Rslip::new(PytestRunner::from_streaming_bounded_fn(
+        move |reqs, _jobs, on_complete| {
+            let total = reqs.len();
+            for (index, req) in reqs.into_iter().enumerate() {
+                on_complete(index, ok_coverage_outcome(req));
+                if index + 1 < total {
+                    assert!(
+                        *mid_for_runner.lock().unwrap(),
+                        "SelectorFinalized must fire before later completions"
+                    );
+                }
             }
-        }
-    }));
+        },
+    ));
     let outcomes = rslip.run_or_reuse_many_bounded_with_progress(
         numbered_requests(tmp.path(), 3),
         1,
@@ -161,14 +162,16 @@ fn stopped_stream_leaves_completed_misses_as_hits_on_rerun() {
     write_ok_sample(tmp.path());
     let reqs = numbered_requests(tmp.path(), 4);
     let stop_after = 2usize;
-    let rslip = Rslip::new(PytestRunner::from_streaming_bounded_fn(move |reqs, _jobs, on_complete| {
-        for (index, req) in reqs.into_iter().enumerate() {
-            if index >= stop_after {
-                break;
+    let rslip = Rslip::new(PytestRunner::from_streaming_bounded_fn(
+        move |reqs, _jobs, on_complete| {
+            for (index, req) in reqs.into_iter().enumerate() {
+                if index >= stop_after {
+                    break;
+                }
+                on_complete(index, ok_coverage_outcome(req));
             }
-            on_complete(index, ok_coverage_outcome(req));
-        }
-    }));
+        },
+    ));
     let first = rslip.run_or_reuse_many_bounded(reqs.clone(), 1);
     assert!(first[0].is_ok());
     assert!(first[1].is_ok());
@@ -184,8 +187,14 @@ fn stopped_stream_leaves_completed_misses_as_hits_on_rerun() {
     let second = rslip.run_or_reuse_many_bounded(reqs, 1);
     assert_eq!(second[0].as_ref().unwrap().cache_status, CacheStatus::Hit);
     assert_eq!(second[1].as_ref().unwrap().cache_status, CacheStatus::Hit);
-    assert_eq!(second[2].as_ref().unwrap().cache_status, CacheStatus::MissStored);
-    assert_eq!(second[3].as_ref().unwrap().cache_status, CacheStatus::MissStored);
+    assert_eq!(
+        second[2].as_ref().unwrap().cache_status,
+        CacheStatus::MissStored
+    );
+    assert_eq!(
+        second[3].as_ref().unwrap().cache_status,
+        CacheStatus::MissStored
+    );
     assert_eq!(*calls.lock().unwrap(), 2);
 }
 
@@ -211,9 +220,9 @@ fn prepare_hits_emit_cached_dump_without_tests_remaining() {
         events_for_cb.lock().unwrap().push(event);
     });
     let events = events.lock().unwrap();
-    let prepare_dump = events.iter().position(|event| {
-        matches!(event, RslipBatchProgress::CachedStatusDump { .. })
-    });
+    let prepare_dump = events
+        .iter()
+        .position(|event| matches!(event, RslipBatchProgress::CachedStatusDump { .. }));
     let first_remaining = events
         .iter()
         .position(|event| matches!(event, RslipBatchProgress::TestsRemaining { .. }));

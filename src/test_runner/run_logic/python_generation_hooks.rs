@@ -1,11 +1,11 @@
-
 use crate::test_runner::coverage_decision::RunContext;
 use crate::test_runner::python_coverage_index::{
-    GenerationReason, current_complete_generation_matches, load_current_python_coverage_index,
+    GenerationReason, PYTHON_COVERAGE_ENV_KEYS, current_complete_generation_matches,
+    current_python_execution_identity, load_current_python_coverage_index,
     publish_python_derived_state_with_filter, publish_python_derived_state_with_filter_force,
-    python_population_manifest_is_current_for_args_with_env_keys, repair_python_population_generation,
-    selector_deltas_from_cached_outcomes, try_load_pinned_python_generation,
-    PYTHON_COVERAGE_ENV_KEYS, current_python_execution_identity,
+    python_population_manifest_is_current_for_args_with_env_keys,
+    repair_python_population_generation, selector_deltas_from_cached_outcomes,
+    try_load_pinned_python_generation,
 };
 use crate::test_runner::runners::python_backer::PythonModule;
 use std::path::Path;
@@ -89,7 +89,8 @@ fn try_selective_generation_repair(
     let Ok(pinned) = try_load_pinned_python_generation(&ctx.planned.repo_root) else {
         return Ok(false);
     };
-    let exec = current_python_execution_identity(&ctx.planned.repo_root, ctx.options.extras.python)?;
+    let exec =
+        current_python_execution_identity(&ctx.planned.repo_root, ctx.options.extras.python)?;
     if pinned.plan.base_identity != exec {
         return Ok(false);
     }
