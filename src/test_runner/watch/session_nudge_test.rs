@@ -182,8 +182,74 @@ fn overlapping_pre_start_nudges_share_one_cycle() {
     assert_eq!(code, 1);
     assert_eq!(
         cycles.load(std::sync::atomic::Ordering::SeqCst),
-        2,
-        "overlapping pre-start nudges must share one cycle"
+        1,
+        "overlapping idle nudges must reuse the last completed cycle"
+    );
+}
+
+#[test]
+fn idle_nudge_without_file_events_must_not_start_another_cycle() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_git(&tmp);
+    commit_a_py(&tmp);
+
+    let (tx, rx) = mpsc::channel::<NudgeRequest>();
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    let tests = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let covs = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let tests_nudge = std::sync::Arc::clone(&tests);
+    let sender = std::thread::spawn(move || {
+        while tests_nudge.load(std::sync::atomic::Ordering::SeqCst) < 1 {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        std::thread::sleep(Duration::from_millis(20));
+        tx.send(NudgeRequest {
+            msg: NudgeRequestMsg::default(),
+            reply: reply_tx,
+        })
+        .unwrap();
+        assert_eq!(
+            reply_rx
+                .recv_timeout(Duration::from_secs(5))
+                .unwrap()
+                .exit_code,
+            0
+        );
+    });
+
+    let tests_run = std::sync::Arc::clone(&tests);
+    let covs_run = std::sync::Arc::clone(&covs);
+    let mut src = NudgeScript {
+        steps: timeout_steps(12),
+    };
+    let mut args = py_dry_args();
+    args.dry_run = false;
+    let code = run_watch_loop_with(
+        args,
+        Duration::from_secs(3600),
+        tmp.path(),
+        &mut src,
+        Some(&rx),
+        |_args| {
+            tests_run.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            RunTestOnceOutcome::Code(0)
+        },
+        move |_args| {
+            covs_run.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            WatchCoverageResult::ok(0)
+        },
+    );
+    sender.join().unwrap();
+    assert_eq!(code, 1);
+    assert_eq!(
+        tests.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "idle nudge with no file events must not run another test cycle"
+    );
+    assert_eq!(
+        covs.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "idle nudge with no file events must not run another coverage cycle"
     );
 }
 

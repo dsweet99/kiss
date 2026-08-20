@@ -71,6 +71,10 @@ impl SettleMachine {
         self.deadline
     }
 
+    pub(crate) fn has_pending_work(&self) -> bool {
+        self.scope_dirty || !self.pending.is_empty()
+    }
+
     pub(crate) fn note_path(&mut self, path: PathBuf, now: Instant, signature: PathSignature) {
         let missing_since = if signature.exists {
             None
@@ -307,6 +311,7 @@ mod tests {
         let t0 = Instant::now();
         let settled_sig = sig(true, Duration::from_secs(60));
         m.note_path(PathBuf::from("a.py"), t0, settled_sig.clone());
+        assert!(m.has_pending_work());
         assert_eq!(
             m.poll(t0 + Duration::from_millis(1), |_| settled_sig.clone()),
             SettlePoll::Waiting
@@ -317,6 +322,7 @@ mod tests {
             m.poll(t0 + Duration::from_millis(2), |_| settled_sig.clone()),
             SettlePoll::Idle
         );
+        assert!(!m.has_pending_work());
     }
 
     #[test]

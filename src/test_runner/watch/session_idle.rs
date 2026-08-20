@@ -18,6 +18,12 @@ pub(super) struct QueuedCycle {
     pub metrics: bool,
 }
 
+impl QueuedCycle {
+    fn wants_new_cycle(&self) -> bool {
+        self.force || self.force_bad || self.metrics
+    }
+}
+
 pub(super) enum WaitOutcome {
     Settled(Vec<PathBuf>),
     Terminal(String),
@@ -31,10 +37,14 @@ pub(super) fn wait_until_next_cycle(
     repo_root: &Path,
     nudge_rx: Option<&std::sync::mpsc::Receiver<NudgeRequest>>,
     queued: &mut Option<QueuedCycle>,
+    last_reply: Option<&NudgeReplyMsg>,
 ) -> Option<i32> {
     crate::test_runner::emit_test_progress("kiss test: Waiting");
     loop {
         coalesce_nudges(nudge_rx, queued);
+        if try_reply_idle_nudge(queued, last_reply, machine) {
+            continue;
+        }
         if queued.is_some() {
             force_ready_if_pending(machine, repo_root);
             return None;
@@ -51,6 +61,29 @@ pub(super) fn wait_until_next_cycle(
             WaitOutcome::Continue => {}
         }
     }
+}
+
+fn try_reply_idle_nudge(
+    queued: &mut Option<QueuedCycle>,
+    last_reply: Option<&NudgeReplyMsg>,
+    machine: &SettleMachine,
+) -> bool {
+    let Some(q) = queued.as_ref() else {
+        return false;
+    };
+    if q.wants_new_cycle() || machine.has_pending_work() {
+        return false;
+    }
+    let Some(last) = last_reply else {
+        return false;
+    };
+    let Some(q) = queued.take() else {
+        return false;
+    };
+    for reply in q.replies {
+        let _ = reply.send(last.clone());
+    }
+    true
 }
 
 pub(super) fn coalesce_nudges(

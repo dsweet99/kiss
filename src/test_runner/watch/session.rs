@@ -104,6 +104,7 @@ where
         WatchPathFilter::build(repo_root, &live.ignore, live.lang_filter, &live.invocation);
     let mut machine = SettleMachine::new(live.settle);
     let mut queued: Option<QueuedCycle> = None;
+    let mut last_reply = None;
     let mut initial = true;
     loop {
         if !initial {
@@ -121,6 +122,7 @@ where
             filter: &mut filter,
             machine: &mut machine,
             repo_root,
+            last_reply: &mut last_reply,
             run_cycle: &mut run_cycle,
             run_cov: &mut run_cov,
         }) {
@@ -140,6 +142,7 @@ where
             repo_root,
             nudge_rx,
             &mut queued,
+            last_reply.as_ref(),
         ) {
             return code;
         }

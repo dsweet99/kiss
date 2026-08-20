@@ -27,6 +27,7 @@ pub(crate) struct WatchCycleCtx<'a, F, C> {
     pub filter: &'a mut WatchPathFilter,
     pub machine: &'a mut SettleMachine,
     pub repo_root: &'a Path,
+    pub last_reply: &'a mut Option<NudgeReplyMsg>,
     pub run_cycle: &'a mut F,
     pub run_cov: &'a mut C,
 }
@@ -70,7 +71,7 @@ where
                 .filter(|s| !s.is_empty())
                 .or_else(|| client_output_for_exit(exit_code, &captured));
             let error = suppress_generic_cov_error(error, output.as_ref());
-            reply_all(&replies, exit_code, error, output);
+            *ctx.last_reply = Some(reply_all(&replies, exit_code, error, output));
         }
     }
     if let Some(msg) = drain_into_machine(
@@ -206,7 +207,7 @@ fn reply_all(
     exit_code: i32,
     error: Option<String>,
     output: Option<String>,
-) {
+) -> NudgeReplyMsg {
     let msg = NudgeReplyMsg {
         exit_code,
         pid: std::process::id(),
@@ -216,6 +217,7 @@ fn reply_all(
     for reply in replies {
         let _ = reply.send(msg.clone());
     }
+    msg
 }
 
 fn clone_args<'a>(args: &RunTestCmdArgs<'a>) -> RunTestCmdArgs<'a> {

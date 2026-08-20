@@ -109,7 +109,11 @@ fn watch_cycle_interrupted_during_tests_replies_130_without_cov() {
     let sender = std::thread::spawn(move || {
         std::thread::sleep(Duration::from_millis(30));
         tx.send(NudgeRequest {
-            msg: NudgeRequestMsg::default(),
+            msg: NudgeRequestMsg {
+                force: true,
+                force_bad: false,
+                metrics: false,
+            },
             reply: reply_tx,
         })
         .unwrap();
@@ -163,7 +167,11 @@ fn watch_cycle_interrupted_during_cov_replies_130() {
     let sender = std::thread::spawn(move || {
         std::thread::sleep(Duration::from_millis(30));
         tx.send(NudgeRequest {
-            msg: NudgeRequestMsg::default(),
+            msg: NudgeRequestMsg {
+                force: true,
+                force_bad: false,
+                metrics: false,
+            },
             reply: reply_tx,
         })
         .unwrap();
