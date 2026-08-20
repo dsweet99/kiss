@@ -11,7 +11,8 @@ use super::reload::{WatchLiveConfig, WatchReloadSeed};
 use super::session_cycle::NudgeRequest;
 use super::session_cycle::{CycleOutcome, EXIT_INTERRUPTED, WatchCycleCtx, run_one_watch_cycle};
 use super::session_idle::{
-    QueuedCycle, coalesce_nudges, force_ready_if_pending, wait_until_next_cycle,
+    QueuedCycle, coalesce_nudges, force_ready_if_pending, try_reply_idle_nudge,
+    wait_until_next_cycle,
 };
 use super::settle::SettleMachine;
 use crate::test_runner::runners::clear_python_collect_memo;
@@ -131,7 +132,7 @@ where
             CycleOutcome::Continue => {}
         }
         coalesce_nudges(nudge_rx, &mut queued);
-        if queued.is_some() {
+        if !try_reply_idle_nudge(&mut queued, last_reply.as_ref()) && queued.is_some() {
             force_ready_if_pending(&mut machine, repo_root);
             continue;
         }

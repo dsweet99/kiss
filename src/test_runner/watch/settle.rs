@@ -71,6 +71,7 @@ impl SettleMachine {
         self.deadline
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn has_pending_work(&self) -> bool {
         self.scope_dirty || !self.pending.is_empty()
     }

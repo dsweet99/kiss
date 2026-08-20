@@ -1,6 +1,4 @@
 #[cfg(unix)]
-mod client_report;
-#[cfg(unix)]
 pub(crate) mod control;
 mod coverage;
 mod event_source;

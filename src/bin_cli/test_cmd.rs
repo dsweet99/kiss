@@ -142,7 +142,7 @@ fn run_local_tests_after_client(
     run_args: RunTestCmdArgs<'_>,
     run_local: impl FnOnce(RunTestCmdArgs<'_>) -> i32,
 ) -> i32 {
-    if let Some(code) = watcher_client_exit(args) {
+    if let Some(code) = wait_out_live_watcher() {
         return code;
     }
     if let Err(code) = reject_test_universe_languages(args) {
@@ -155,78 +155,52 @@ fn run_local_tests_after_client(
     finish_with_coverage(args, code)
 }
 
-fn watcher_client_exit(args: &TestCommandArgs<'_>) -> Option<i32> {
+fn wait_out_live_watcher() -> Option<i32> {
     #[cfg(unix)]
-    let result = match try_run_as_watcher_client(args) {
-        Ok(Some(code)) => Some(code),
-        Ok(None) => None,
+    let result = match try_wait_out_live_watcher() {
+        Ok(()) => None,
         Err(e) => {
             eprintln!("error: kiss test: {e}");
             Some(1)
         }
     };
     #[cfg(not(unix))]
-    let result = {
-        let _ = args;
-        None
-    };
+    let result = None;
     result
 }
 
 #[cfg(unix)]
-fn try_run_as_watcher_client(args: &TestCommandArgs<'_>) -> Result<Option<i32>, String> {
+fn try_wait_out_live_watcher() -> Result<(), String> {
     if let Some(overridden) = CLIENT_RESULT_OVERRIDE.with(Cell::take) {
         return match overridden {
-            Ok(None) => Ok(None),
-            Ok(Some(exit_code)) => Ok(Some(apply_watcher_client_exit(exit_code, None, None))),
+            Ok(_) => Ok(()),
             Err(e) => Err(e),
         };
     }
 
-    use crate::test_runner::{NudgeRequestMsg, nudge_watcher_with_retry, probe_live_watcher};
+    use crate::test_runner::{
+        NudgeRequestMsg, nudge_watcher_with_retry_on_wait, probe_live_watcher,
+    };
 
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
     let repo_root = crate::test_git::require_git_repo_root(&cwd)?;
     let Some(session) = probe_live_watcher(&repo_root)? else {
-        return Ok(None);
+        return Ok(());
     };
-    println!("kiss test: waiting for watcher (pid {})", session.pid);
-    let reply = nudge_watcher_with_retry(
+    let pid = session.pid;
+    let mut printed_waiting = false;
+    let _reply = nudge_watcher_with_retry_on_wait(
         &repo_root,
         &session,
-        &NudgeRequestMsg {
-            force: args.force,
-            force_bad: args.force_bad,
-            metrics: args.metrics,
+        &NudgeRequestMsg::default(),
+        &mut || {
+            if !printed_waiting {
+                printed_waiting = true;
+                println!("kiss test: waiting for watcher (pid {pid})");
+            }
         },
     )?;
-    Ok(Some(apply_watcher_client_exit(
-        reply.exit_code,
-        reply.error,
-        reply.output,
-    )))
-}
-
-#[cfg(unix)]
-fn apply_watcher_client_exit(exit_code: i32, error: Option<String>, output: Option<String>) -> i32 {
-    println!("kiss test: watcher cycle complete");
-    let has_report = output.as_ref().is_some_and(|s| !s.is_empty());
-    if has_report {
-        println!("{}", output.as_deref().unwrap_or(""));
-    }
-    if exit_code != 0 {
-        if !has_report {
-            println!("FAIL");
-        }
-        if let Some(err) = error {
-            eprintln!("{err}");
-        }
-        return exit_code;
-    }
-    if !has_report {
-        println!("PASS");
-    }
-    exit_code
+    Ok(())
 }
 
 pub(crate) fn evaluate_watch_coverage(

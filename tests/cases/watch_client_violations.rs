@@ -40,13 +40,20 @@ fn oneshot_surfaces_watcher_coverage_violations() {
         !output.status.success(),
         "expected non-zero; stdout={stdout:?} stderr={stderr:?}"
     );
-    assert!(stdout.contains("waiting for watcher"), "stdout={stdout:?}");
+    assert!(
+        stdout.contains("kiss test: Planning"),
+        "oneshot must plan locally; stdout={stdout:?}"
+    );
     assert!(
         stdout.contains("VIOLATION:test_coverage:"),
-        "client must show VIOLATION lines; stdout={stdout:?} stderr={stderr:?}"
+        "T finish_with_coverage must show VIOLATION lines; stdout={stdout:?} stderr={stderr:?}"
     );
     assert!(
         !stdout.lines().any(|l| l.trim() == "FAIL"),
         "bare FAIL should not replace VIOLATION report; stdout={stdout:?}"
+    );
+    assert!(
+        !stdout.contains("watcher cycle complete"),
+        "stdout={stdout:?}"
     );
 }

@@ -12,7 +12,8 @@ use crate::test_runner::python_coverage_index::generation::{
 };
 use crate::test_runner::python_coverage_index::storage::python_coverage_cache_root;
 use crate::test_runner::python_coverage_index::{
-    GenerationReason, clear_python_generation_warm_memo,
+    GenerationReason, PYTHON_COVERAGE_ENV_KEYS, clear_python_generation_warm_memo,
+    python_population_manifest_is_current_for_args_with_env_keys,
 };
 use crate::test_runner::runners::detect_rslip_versions;
 
@@ -90,6 +91,15 @@ fn drifted_fingerprint_rejected_by_ensure_and_cov_even_with_warm_seal() {
     clear_python_generation_warm_memo();
 
     assert!(!identity_matches_current(repo, &plan.base_identity, &[]));
+    assert!(
+        !python_population_manifest_is_current_for_args_with_env_keys(
+            repo,
+            &selectors,
+            &[],
+            PYTHON_COVERAGE_ENV_KEYS,
+        ),
+        "warm seal must not treat a drifted fingerprint as a current population"
+    );
     assert!(try_warm_python_cached_summary(repo, &selectors, &[]).is_none());
     let err = load_python_runtime_coverage(repo, &[], &kiss::GateConfig::default())
         .expect_err("cov must reject drifted fingerprint");

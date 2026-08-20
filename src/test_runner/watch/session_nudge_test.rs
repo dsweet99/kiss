@@ -253,20 +253,17 @@ fn idle_nudge_without_file_events_must_not_start_another_cycle() {
     );
 }
 
-fn spawn_force_nudge_during_barrier(
+fn spawn_nudge_during_barrier(
     entered: std::sync::Arc<std::sync::Barrier>,
     release: std::sync::Arc<std::sync::Barrier>,
+    msg: NudgeRequestMsg,
 ) -> (mpsc::Receiver<NudgeRequest>, std::thread::JoinHandle<()>) {
     let (tx, rx) = mpsc::channel::<NudgeRequest>();
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
     let sender = std::thread::spawn(move || {
         entered.wait();
         tx.send(NudgeRequest {
-            msg: NudgeRequestMsg {
-                force: true,
-                force_bad: false,
-                metrics: false,
-            },
+            msg,
             reply: reply_tx,
         })
         .unwrap();
@@ -301,13 +298,59 @@ fn record_force_and_block_first(
 }
 
 #[test]
+fn nudge_while_cycle_in_flight_does_not_run_second_cycle() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_git(&tmp);
+    commit_a_py(&tmp);
+    let entered = std::sync::Arc::new(std::sync::Barrier::new(2));
+    let release = std::sync::Arc::new(std::sync::Barrier::new(2));
+    let (rx, sender) = spawn_nudge_during_barrier(
+        Arc::clone(&entered),
+        Arc::clone(&release),
+        NudgeRequestMsg::default(),
+    );
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let seen_c = Arc::clone(&seen);
+    let entered_c = Arc::clone(&entered);
+    let release_c = Arc::clone(&release);
+    let mut src = NudgeScript {
+        steps: timeout_steps(8),
+    };
+    let code = run_watch_loop_with(
+        py_dry_args(),
+        Duration::from_secs(3600),
+        tmp.path(),
+        &mut src,
+        Some(&rx),
+        move |args| record_force_and_block_first(&args, &seen_c, &entered_c, &release_c),
+        |_args| WatchCoverageResult::ok(0),
+    );
+    sender.join().unwrap();
+    assert_eq!(code, 1);
+    let flags = seen.lock().unwrap().clone();
+    assert_eq!(
+        flags,
+        vec![false],
+        "default mid-cycle nudge must not start a second cycle"
+    );
+}
+
+#[test]
 fn nudge_while_cycle_in_flight_runs_second_cycle_before_reply() {
     let tmp = tempfile::tempdir().unwrap();
     init_git(&tmp);
     commit_a_py(&tmp);
     let entered = std::sync::Arc::new(std::sync::Barrier::new(2));
     let release = std::sync::Arc::new(std::sync::Barrier::new(2));
-    let (rx, sender) = spawn_force_nudge_during_barrier(Arc::clone(&entered), Arc::clone(&release));
+    let (rx, sender) = spawn_nudge_during_barrier(
+        Arc::clone(&entered),
+        Arc::clone(&release),
+        NudgeRequestMsg {
+            force: true,
+            force_bad: false,
+            metrics: false,
+        },
+    );
     let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let seen_c = Arc::clone(&seen);
     let entered_c = Arc::clone(&entered);

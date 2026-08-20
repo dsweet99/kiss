@@ -193,8 +193,14 @@ mod viz_error_tests {
 
     #[test]
     fn eprint_viz_error_both_prefix_branches() {
-        eprint_viz_error(&Error::new(ErrorKind::InvalidInput, "Error: found rust files"));
-        eprint_viz_error(&Error::new(ErrorKind::InvalidInput, "No source files found."));
+        eprint_viz_error(&Error::new(
+            ErrorKind::InvalidInput,
+            "Error: found rust files",
+        ));
+        eprint_viz_error(&Error::new(
+            ErrorKind::InvalidInput,
+            "No source files found.",
+        ));
     }
 
     #[test]
@@ -224,4 +230,3 @@ mod viz_error_tests {
         assert_eq!(empty_code, 1);
     }
 }
-

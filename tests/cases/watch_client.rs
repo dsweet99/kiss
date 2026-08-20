@@ -22,6 +22,21 @@ fn write_kissconfig(root: &Path, settle: f64) {
     write_kissconfig_with_threshold(root, settle, 0);
 }
 
+fn assert_local_oneshot_report(stdout: &str) {
+    assert!(
+        stdout.contains("kiss test: Planning"),
+        "oneshot must plan locally; stdout={stdout:?}"
+    );
+    assert!(
+        !stdout.contains("watcher cycle complete"),
+        "stdout={stdout:?}"
+    );
+    assert!(
+        !stdout.lines().any(|l| l.trim() == "FAIL"),
+        "bare FAIL must not be the report; stdout={stdout:?}"
+    );
+}
+
 #[test]
 fn oneshot_defers_to_idle_watcher() {
     if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
@@ -48,15 +63,11 @@ fn oneshot_defers_to_idle_watcher() {
         "status={:?} stdout={stdout:?} stderr={stderr:?}",
         output.status
     );
-    assert!(stdout.contains("waiting for watcher"), "stdout={stdout:?}");
+    assert_local_oneshot_report(&stdout);
+    assert!(!stdout.contains("waiting for watcher"), "stdout={stdout:?}");
     assert!(
-        stdout.contains("watcher cycle complete"),
-        "stdout={stdout:?}"
-    );
-    let planning_count = stdout.matches("kiss test: Planning").count();
-    assert!(
-        planning_count == 0,
-        "oneshot client must not plan locally; stdout={stdout:?}"
+        stdout.contains("passed") && stdout.contains("total"),
+        "idle oneshot must print a summary; stdout={stdout:?}"
     );
 }
 
@@ -92,10 +103,11 @@ fn oneshot_during_settle_skips_quiet_period() {
         "stdout={stdout:?} stderr={:?}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(stdout.contains("waiting for watcher"), "stdout={stdout:?}");
+    assert_local_oneshot_report(&stdout);
+    assert!(!stdout.contains("waiting for watcher"), "stdout={stdout:?}");
     assert!(
         elapsed < Duration::from_secs(10),
-        "nudge should skip 20s settle; elapsed={elapsed:?}"
+        "T must not wait the 20s settle; elapsed={elapsed:?}"
     );
 }
 
@@ -188,11 +200,7 @@ fn oneshot_waits_out_long_inflight_cycle() {
         "stdout={stdout:?} stderr={:?}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(stdout.contains("waiting for watcher"), "stdout={stdout:?}");
-    assert!(
-        !stdout.contains("kiss test: Planning"),
-        "client must not plan; stdout={stdout:?}"
-    );
+    assert_local_oneshot_report(&stdout);
 }
 
 #[test]
@@ -222,14 +230,11 @@ fn oneshot_with_coverage_gate_defers_to_watcher() {
         "status={:?} stdout={stdout:?} stderr={stderr:?}",
         output.status
     );
-    assert!(stdout.contains("waiting for watcher"), "stdout={stdout:?}");
+    assert_local_oneshot_report(&stdout);
+    assert!(!stdout.contains("waiting for watcher"), "stdout={stdout:?}");
     assert!(
         !stderr.contains("missing or stale/incompatible population"),
         "stderr={stderr:?}"
-    );
-    assert!(
-        !stdout.contains("kiss test: Planning"),
-        "client must not plan; stdout={stdout:?}"
     );
     assert!(stdout.contains("PASS"), "stdout={stdout:?}");
 }
@@ -262,19 +267,19 @@ fn stale_generation_repaired_on_watcher_not_client() {
         .expect("oneshot T after fingerprint drift");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stdout.contains("waiting for watcher"), "stdout={stdout:?}");
-    assert!(
-        !stderr.contains("missing or stale/incompatible population"),
-        "T must not own cov/load; stderr={stderr:?}"
-    );
-    assert!(
-        !stdout.contains("kiss test: Planning"),
-        "client must not plan; stdout={stdout:?}"
-    );
+    assert_local_oneshot_report(&stdout);
+    assert!(!stdout.contains("waiting for watcher"), "stdout={stdout:?}");
     assert!(
         output.status.success(),
-        "status={:?} stdout={stdout:?} stderr={stderr:?}",
-        output.status
+        "T+W after a source edit must match no-W coverage success; stdout={stdout:?} stderr={stderr:?}"
+    );
+    assert!(
+        !stderr.contains("generation identity mismatch"),
+        "T must restamp locally instead of fail-closing coverage; stdout={stdout:?} stderr={stderr:?}"
+    );
+    assert!(
+        stdout.contains("PASS:") || stdout.contains("✓"),
+        "T must still run tests locally after fingerprint drift; stdout={stdout:?} stderr={stderr:?}"
     );
 }
 
@@ -328,9 +333,48 @@ fn watcher_reloads_kissconfig_threshold_change() {
         !output.status.success(),
         "expected coverage fail after reload; stdout={stdout:?} stderr={stderr:?}"
     );
-    assert!(stdout.contains("waiting for watcher"), "stdout={stdout:?}");
+    assert_local_oneshot_report(&stdout);
+    assert!(!stdout.contains("waiting for watcher"), "stdout={stdout:?}");
     assert!(
         stdout.contains("VIOLATION:test_coverage:") || stderr.contains("VIOLATION:test_coverage:"),
         "reloaded threshold must produce coverage VIOLATION; stdout={stdout:?} stderr={stderr:?}"
+    );
+}
+
+#[test]
+fn oneshot_idle_watcher_prints_local_fail_not_bare_fail() {
+    if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
+        return;
+    }
+    let tmp = tempfile::TempDir::new().unwrap();
+    init_git_repo(tmp.path());
+    std::fs::write(tmp.path().join("lib.py"), "def f():\n    return 0\n").unwrap();
+    std::fs::write(
+        tmp.path().join("test_lib.py"),
+        "from lib import f\n\ndef test_f():\n    assert f() == 1\n",
+    )
+    .unwrap();
+    write_kissconfig(tmp.path(), 1.0);
+    commit_all(tmp.path(), "init");
+
+    let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
+    wait_watch_idle_cycle(tmp.path());
+
+    let output = Command::new(env!("CARGO_BIN_EXE_kiss"))
+        .args(["test", "--lang", "python", "."])
+        .current_dir(tmp.path())
+        .output()
+        .expect("oneshot failing python");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success(),
+        "expected failure; stdout={stdout:?} stderr={stderr:?}"
+    );
+    assert_local_oneshot_report(&stdout);
+    assert!(!stdout.contains("waiting for watcher"), "stdout={stdout:?}");
+    assert!(
+        stdout.contains("FAIL:") || stdout.contains("FAIL tests/") || stdout.contains("FAIL test_"),
+        "failing python + idle W must print FAIL: or a recap, not a solitary FAIL; stdout={stdout:?}"
     );
 }

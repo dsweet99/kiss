@@ -34,60 +34,10 @@ pub(crate) fn python_population_manifest_is_current_for_args_with_env_keys(
         return false;
     };
 
-    if python_population_manifest_is_current_for_warm_seal(repo_root, selectors, &identity) {
-        return true;
-    }
-
     if super::generation::current_generation_plan_matches(repo_root, selectors, test_args) {
         return true;
     }
     python_population_manifest_is_current_with_identity(repo_root, selectors, &identity)
-}
-
-fn python_population_manifest_is_current_for_warm_seal(
-    repo_root: &Path,
-    selectors: &[String],
-    identity: &PythonPopulationManifestIdentity,
-) -> bool {
-    let Ok(cache_root) = python_coverage_cache_root(repo_root) else {
-        return false;
-    };
-    if !rslip::warm_hit_seal_exists(&cache_root) {
-        return false;
-    }
-
-    if let Ok(pinned) = super::generation::try_load_pinned_python_generation_warm(repo_root) {
-        return generation_matches_tools_and_selectors(&pinned, repo_root, selectors, identity);
-    }
-    let Some(manifest) = read_python_population_manifest(repo_root) else {
-        return false;
-    };
-    manifest.matches_python_identity(identity, &normalized_python_repo_root(repo_root))
-        && manifest.matches_python_selectors(selectors)
-}
-
-fn generation_matches_tools_and_selectors(
-    pinned: &super::generation::PinnedPythonGeneration,
-    repo_root: &Path,
-    selectors: &[String],
-    identity: &PythonPopulationManifestIdentity,
-) -> bool {
-    let exec = &pinned.plan.base_identity;
-    let source_root = normalized_python_repo_root(repo_root);
-    identity.has_python_tool_versions()
-        && exec.source_root == source_root
-        && exec.cache_schema_version == identity.cache_schema_version
-        && exec.selector_discovery_version == identity.selector_discovery_version
-        && exec.python_version == identity.python_version
-        && exec.pytest_version == identity.pytest_version
-        && exec.pytest_args == identity.pytest_args
-        && exec.env == identity.env
-        && {
-            let mut expected = selectors.to_vec();
-            expected.sort();
-            expected.dedup();
-            pinned.plan.selectors == expected
-        }
 }
 
 #[cfg(test)]

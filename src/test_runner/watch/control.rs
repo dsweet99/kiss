@@ -19,6 +19,7 @@ const SESSION_FILE_NAME: &str = "session.json";
 const MAX_FRAME_LEN: u32 = 256 * 1024;
 const CLIENT_SESSION_RETRY: Duration = Duration::from_millis(200);
 const CLIENT_SESSION_SLEEP: Duration = Duration::from_millis(10);
+const REPLY_IMMEDIATE_WAIT: Duration = Duration::from_millis(250);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub(crate) struct NudgeRequestMsg {
@@ -159,7 +160,12 @@ pub(crate) fn try_client_nudge(
 ) -> Result<Option<NudgeReplyMsg>, String> {
     match probe_live_watcher(repo_root)? {
         None => Ok(None),
-        Some(session) => Ok(Some(nudge_watcher_with_retry(repo_root, &session, msg)?)),
+        Some(session) => Ok(Some(nudge_watcher_with_retry_on_wait(
+            repo_root,
+            &session,
+            msg,
+            &mut || {},
+        )?)),
     }
 }
 
@@ -178,15 +184,16 @@ fn wait_for_session(repo_root: &Path) -> Result<SessionFile, String> {
     }
 }
 
-pub(crate) fn nudge_watcher_with_retry(
+pub(crate) fn nudge_watcher_with_retry_on_wait(
     repo_root: &Path,
     session: &SessionFile,
     msg: &NudgeRequestMsg,
+    on_slow: &mut dyn FnMut(),
 ) -> Result<NudgeReplyMsg, String> {
     let deadline = Instant::now() + CLIENT_SESSION_RETRY;
     let mut current = session.clone();
     loop {
-        match nudge_watcher(&current, msg) {
+        match nudge_watcher_on_wait(&current, msg, on_slow) {
             Ok(reply) => return Ok(reply),
             Err(e) if Instant::now() < deadline => {
                 let _ = e;
@@ -200,16 +207,42 @@ pub(crate) fn nudge_watcher_with_retry(
     }
 }
 
-pub(crate) fn nudge_watcher(
+fn nudge_watcher_on_wait(
     session: &SessionFile,
     msg: &NudgeRequestMsg,
+    on_slow: &mut dyn FnMut(),
 ) -> Result<NudgeReplyMsg, String> {
     let mut stream = UnixStream::connect(&session.socket)
         .map_err(|e| format!("cannot connect to watcher socket: {e}"))?;
     write_framed_json(&mut stream, msg).map_err(|e| format!("nudge write failed: {e}"))?;
+    if !socket_readable_within(&stream, REPLY_IMMEDIATE_WAIT) {
+        on_slow();
+    }
     let reply: NudgeReplyMsg =
         read_framed_json(&mut stream).map_err(|e| format!("nudge read failed: {e}"))?;
     Ok(reply)
+}
+
+fn socket_readable_within(stream: &UnixStream, timeout: Duration) -> bool {
+    use std::os::fd::AsRawFd;
+
+    let mut pfd = libc::pollfd {
+        fd: stream.as_raw_fd(),
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    let ms = timeout.as_millis().min(i32::MAX as u128) as libc::c_int;
+    loop {
+        let n = unsafe { libc::poll(&mut pfd, 1, ms) };
+        if n < 0 {
+            let err = std::io::Error::last_os_error();
+            if err.kind() == std::io::ErrorKind::Interrupted {
+                continue;
+            }
+            return false;
+        }
+        return n > 0;
+    }
 }
 
 pub(crate) fn session_file_path(repo_root: &Path) -> PathBuf {

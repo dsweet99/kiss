@@ -377,12 +377,19 @@ fn reclamp_omits_language_with_zero_files() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
     fs::write(root.join("app.py"), "def tiny():\n    return 1\n").unwrap();
-    fs::write(root.join("lib.rs"), "pub fn add(a: i32, b: i32) -> i32 { a + b }\n").unwrap();
+    fs::write(
+        root.join("lib.rs"),
+        "pub fn add(a: i32, b: i32) -> i32 { a + b }\n",
+    )
+    .unwrap();
 
     let first = run_kiss(root, &["clamp"]);
     assert!(first.status.success(), "{}", combined(&first));
     let mixed = fs::read_to_string(root.join(".kissconfig")).unwrap();
-    assert!(mixed.contains("[python]") && mixed.contains("[rust]"), "{mixed}");
+    assert!(
+        mixed.contains("[python]") && mixed.contains("[rust]"),
+        "{mixed}"
+    );
 
     fs::remove_file(root.join("lib.rs")).unwrap();
     let second = run_kiss(root, &["clamp"]);

@@ -212,7 +212,9 @@ pub(crate) fn run_test_once(a: RunTestCmdArgs<'_>) -> RunTestOnceOutcome {
 }
 
 #[cfg(unix)]
-pub(crate) use watch::control::{NudgeRequestMsg, nudge_watcher_with_retry, probe_live_watcher};
+pub(crate) use watch::control::{
+    NudgeRequestMsg, nudge_watcher_with_retry_on_wait, probe_live_watcher,
+};
 pub(crate) use watch::{WatchCoverageParams, WatchCoverageResult, WatchReloadSeed, run_test_watch};
 
 fn plan_for_invocation(a: &RunTestCmdArgs<'_>) -> Result<PlannedSelectors, String> {
