@@ -331,3 +331,27 @@ fn rust_defaults_expose_not_applicable_python_only_fields() {
         crate::defaults::NOT_APPLICABLE
     );
 }
+
+#[test]
+fn language_tables_present_from_toml_and_missing_language() {
+    use super::types::{LanguageTablesPresent, missing_language_table_message};
+
+    assert_eq!(
+        LanguageTablesPresent::from_toml("[test]\nnum_jobs = 4\n"),
+        LanguageTablesPresent::none()
+    );
+    let both = LanguageTablesPresent::from_toml("[python]\n[rust]\n");
+    assert!(both.python && both.rust);
+    let py = [std::path::PathBuf::from("a.py")];
+    let rs = [std::path::PathBuf::from("a.rs")];
+    assert_eq!(both.missing_language(&py, &rs), None);
+    assert_eq!(
+        LanguageTablesPresent::none().missing_language(&py, &[]),
+        Some("python")
+    );
+    assert_eq!(
+        LanguageTablesPresent::none().missing_language(&[], &rs),
+        Some("rust")
+    );
+    assert!(missing_language_table_message("rust").contains("kiss clamp"));
+}

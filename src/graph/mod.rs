@@ -15,7 +15,9 @@ mod graph_python;
 pub use dependency_graph::{
     CycleInfo, DependencyGraph, ModuleGraphMetrics, is_entry_point, qualified_module_name,
 };
-pub use graph_analyze::{analyze_graph, compute_cyclomatic_complexity};
+pub use graph_analyze::{
+    GraphKeyMaxima, analyze_graph, compute_cyclomatic_complexity, graph_key_maxima,
+};
 pub use graph_build::build_dependency_graph;
 
 #[cfg(test)]

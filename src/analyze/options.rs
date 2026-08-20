@@ -11,6 +11,7 @@ pub struct AnalyzeOptions<'a> {
     pub ignore_prefixes: &'a [String],
     pub show_timing: bool,
     pub suppress_final_status: bool,
+    pub language_tables: kiss::LanguageTablesPresent,
 }
 
 #[derive(Debug, Clone)]

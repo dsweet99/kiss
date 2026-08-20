@@ -60,6 +60,7 @@ def c_caller():
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
     assert_eq!(run_mv_command(opts), 0);
 

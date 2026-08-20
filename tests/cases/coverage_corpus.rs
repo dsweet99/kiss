@@ -195,7 +195,9 @@ fn write_mixed_repo(repo: &std::path::Path) {
          orphan_module_enabled = false\n\
 \n\
 [test]\n\
-         test_coverage_threshold = 0\n",
+         test_coverage_threshold = 0\n\
+         [python]\n\
+         [rust]\n",
     )
     .unwrap();
     fs::write(

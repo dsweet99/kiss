@@ -55,6 +55,7 @@ fn mv_json_mode_is_valid_json() {
         json: true,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0);
@@ -75,6 +76,7 @@ fn regression_mv_json_without_dry_run_applies_edits() {
         json: true,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0);
@@ -134,6 +136,7 @@ fn mv_rejects_mismatched_lang_filter() {
         json: false,
         lang_filter: Some(Language::Rust),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 1);
@@ -213,6 +216,7 @@ fn regression_rust_method_query_should_not_rename_other_types() {
         json: false,
         lang_filter: Some(Language::Rust),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0);

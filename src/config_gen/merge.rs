@@ -76,16 +76,15 @@ pub(super) fn merge_global(merged: &mut toml::Table, ex: &toml::Table, nw: &toml
 
 pub(super) fn merge_lang_sections(
     merged: &mut toml::Table,
-    ex: &toml::Table,
+    _ex: &toml::Table,
     nw: &toml::Table,
     lang: MergeLanguageUpdate,
 ) {
-    let pick = |k: &str, upd: bool| if upd { nw.get(k) } else { ex.get(k) }.cloned();
     for (k, upd) in [
         ("python", lang.update_python()),
         ("rust", lang.update_rust()),
     ] {
-        if let Some(v) = pick(k, upd) {
+        if upd && let Some(v) = nw.get(k).cloned() {
             merged.insert(k.to_string(), v);
         }
     }

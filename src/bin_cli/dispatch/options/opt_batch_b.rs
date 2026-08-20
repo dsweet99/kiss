@@ -13,6 +13,7 @@ pub(crate) struct DryDispatchOptions {
     pub lsh_bands: usize,
     pub min_similarity: f64,
     pub ignore: Vec<String>,
+    pub language_tables: kiss::LanguageTablesPresent,
 }
 
 pub(crate) struct RulesDispatchOptions<'a> {
@@ -28,6 +29,7 @@ pub(crate) struct VizDispatchOptions {
     pub zoom: f64,
     pub num_nodes: Option<usize>,
     pub ignore: Vec<String>,
+    pub language_tables: kiss::LanguageTablesPresent,
 }
 
 #[cfg(test)]
@@ -45,6 +47,7 @@ mod coverage_witness {
                 lsh_bands: 1,
                 min_similarity: 0.5,
                 ignore: vec![],
+                language_tables: kiss::LanguageTablesPresent::both(),
             }
         }
     }
@@ -60,6 +63,7 @@ mod coverage_witness {
                 zoom: 1.0,
                 num_nodes: None,
                 ignore: vec![],
+                language_tables: kiss::LanguageTablesPresent::both(),
             }
         }
     }

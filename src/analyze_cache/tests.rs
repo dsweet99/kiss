@@ -65,6 +65,7 @@ fn test_analyze_options<'a>(
         ignore_prefixes: &[],
         show_timing: false,
         suppress_final_status: false,
+        language_tables: kiss::LanguageTablesPresent::both(),
     }
 }
 

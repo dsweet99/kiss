@@ -342,9 +342,16 @@ pub fn run_viz(
     lang_filter: Option<Language>,
     ignore: &[String],
     coarsen: VizCoarsen,
+    language_tables: kiss::LanguageTablesPresent,
 ) -> std::io::Result<()> {
     let coarsen = validate_coarsen(coarsen)?;
     let (py_files, rs_files) = kiss::discovery::gather_files_by_lang(paths, lang_filter, ignore);
+    if let Some(language) = language_tables.missing_language(&py_files, &rs_files) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            kiss::missing_language_table_message(language),
+        ));
+    }
     if py_files.is_empty() && rs_files.is_empty() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,

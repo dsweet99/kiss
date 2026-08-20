@@ -81,6 +81,7 @@ fn run_stats_top_status_reports_empty_inputs_without_exiting() {
         py_config: &py,
         rs_config: &rs,
         gate_config: &gate,
+        language_tables: kiss::LanguageTablesPresent::both(),
     });
     assert_eq!(code, 1);
 }
@@ -103,6 +104,7 @@ fn run_stats_top_status_analyzes_temp_python_file() {
         py_config: &py,
         rs_config: &rs,
         gate_config: &gate,
+        language_tables: kiss::LanguageTablesPresent::both(),
     });
     assert_eq!(code, 0);
 }
@@ -121,6 +123,7 @@ fn run_stats_top_status_empty_vs_populated_is_metamorphic() {
         py_config: &py,
         rs_config: &rs,
         gate_config: &gate,
+        language_tables: kiss::LanguageTablesPresent::both(),
     });
     let tmp = tempfile::tempdir().unwrap();
     std::fs::write(tmp.path().join("m.py"), "x = 1\n").unwrap();
@@ -132,6 +135,7 @@ fn run_stats_top_status_empty_vs_populated_is_metamorphic() {
         py_config: &py,
         rs_config: &rs,
         gate_config: &gate,
+        language_tables: kiss::LanguageTablesPresent::both(),
     });
     assert_ne!(empty, populated);
     assert_eq!(empty, 1);
@@ -158,6 +162,7 @@ fn stats_top_args_preserves_cli_inputs() {
         py_config: &py,
         rs_config: &rs,
         gate_config: &gate,
+        language_tables: kiss::LanguageTablesPresent::both(),
     };
     assert_eq!(args.paths, ["src"]);
     assert_eq!(args.lang_filter, Some(Language::Rust));
@@ -207,6 +212,7 @@ fn run_stats_top_status_analyzes_temp_rust_file() {
         py_config: &py,
         rs_config: &rs,
         gate_config: &gate,
+        language_tables: kiss::LanguageTablesPresent::both(),
     });
     assert_eq!(code, 0);
 }

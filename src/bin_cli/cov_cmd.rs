@@ -15,8 +15,6 @@ use crate::test_runner::check_line_coverage::{
     repository_root_for_universe,
 };
 use crate::test_runner::unit_test_timing::RuntimeGateEval;
-#[cfg(test)]
-use crate::test_runner::unit_test_timing::TimingCollectOpts;
 use kiss::Language;
 use kiss::cli_output::{print_no_files_message, print_violations};
 use std::path::{Path, PathBuf};
@@ -34,6 +32,7 @@ pub struct CovCommandArgs<'a> {
     pub jobs: usize,
     pub allow_refresh: bool,
     pub pytest_args: &'a [String],
+    pub language_tables: kiss::LanguageTablesPresent,
 }
 
 fn load_or_refresh_snapshot(
@@ -242,6 +241,13 @@ pub fn run_cov_command(args: &CovCommandArgs<'_>) -> i32 {
         print_no_files_message(args.lang_filter, universe_root);
         return 0;
     };
+    if let Err(code) = crate::bin_cli::util::reject_unconfigured_languages(
+        &files.py_files,
+        &files.rs_files,
+        args.language_tables,
+    ) {
+        return code;
+    }
     if args.timing {
         eprintln!(
             "TIMING:coverage_gather_files_ms:{}",

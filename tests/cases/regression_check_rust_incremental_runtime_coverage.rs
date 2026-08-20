@@ -211,7 +211,9 @@ fn write_incremental_rust_repo(repo: &TempDir, value: &str) {
          orphan_module_enabled = false\n\
 \n\
 [test]\n\
-         test_coverage_threshold = 100\n",
+         test_coverage_threshold = 100\n\
+         [python]\n\
+         [rust]\n",
     )
     .unwrap();
     fs::write(

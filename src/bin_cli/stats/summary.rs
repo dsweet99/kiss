@@ -27,11 +27,17 @@ pub fn run_stats_summary(
     py_cfg: &Config,
     rs_cfg: &Config,
     gate: &GateConfig,
-) {
+    language_tables: kiss::LanguageTablesPresent,
+) -> i32 {
     let (py_files, rs_files) = gather_files_by_lang(paths, lang_filter, ignore);
     if py_files.is_empty() && rs_files.is_empty() {
         eprintln!("No source files found.");
-        std::process::exit(1);
+        return 1;
+    }
+    if let Err(code) =
+        crate::bin_cli::util::reject_unconfigured_languages(&py_files, &rs_files, language_tables)
+    {
+        return code;
     }
 
     if maybe_print_cached_stats_summary(CachedStatsSummaryArgs {
@@ -44,7 +50,7 @@ pub fn run_stats_summary(
         lang_filter,
         ignore,
     }) {
-        return;
+        return 0;
     }
 
     run_stats_summary_from_pipeline(StatsSummaryInput {
@@ -57,6 +63,7 @@ pub fn run_stats_summary(
         ignore,
         gate,
     });
+    0
 }
 
 fn run_stats_summary_from_pipeline(input: StatsSummaryInput<'_>) {
@@ -74,6 +81,7 @@ fn run_stats_summary_from_pipeline(input: StatsSummaryInput<'_>) {
         ignore_prefixes: input.ignore,
         show_timing: false,
         suppress_final_status: false,
+        language_tables: kiss::LanguageTablesPresent::both(),
     };
 
     let pipeline = crate::analyze::run_full_pipeline(crate::analyze::FullPipelineInput {

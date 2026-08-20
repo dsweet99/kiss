@@ -116,7 +116,15 @@ fn test_mermaid_node_id() {
 #[test]
 fn test_run_viz_errors_on_no_source_files() {
     let out_path = Path::new("does-not-matter.dot");
-    let err = run_viz(out_path, &[], None, &[], VizCoarsen::Zoom(1.0)).unwrap_err();
+    let err = run_viz(
+        out_path,
+        &[],
+        None,
+        &[],
+        VizCoarsen::Zoom(1.0),
+        kiss::LanguageTablesPresent::both(),
+    )
+    .unwrap_err();
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
     assert!(err.to_string().contains("No source files"));
 }
@@ -124,7 +132,15 @@ fn test_run_viz_errors_on_no_source_files() {
 #[test]
 fn test_run_viz_rejects_zero_num_nodes() {
     let out_path = Path::new("does-not-matter.dot");
-    let err = run_viz(out_path, &[], None, &[], VizCoarsen::NumNodes(0)).unwrap_err();
+    let err = run_viz(
+        out_path,
+        &[],
+        None,
+        &[],
+        VizCoarsen::NumNodes(0),
+        kiss::LanguageTablesPresent::both(),
+    )
+    .unwrap_err();
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
     assert!(err.to_string().contains("num-nodes"));
 }

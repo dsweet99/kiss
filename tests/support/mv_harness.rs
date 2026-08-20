@@ -183,6 +183,7 @@ fn build_options(root: &Path, spec: &ScenarioSpec, override_query: Option<String
         json: false,
         lang_filter: Some(spec.language),
         ignore: vec![],
+        language_tables: Default::default(),
     }
 }
 
@@ -215,6 +216,7 @@ fn build_inverse_options(opts: &MvOptions, root: &Path) -> Result<MvOptions, Str
         json: false,
         lang_filter: opts.lang_filter,
         ignore: vec![],
+        language_tables: Default::default(),
     })
 }
 

@@ -214,6 +214,8 @@ orphan_module_enabled = false
 
 [test]
 test_coverage_threshold = 0
+[python]
+[rust]
 [thresholds]
 statements_per_function = 0
 methods_per_class = 0

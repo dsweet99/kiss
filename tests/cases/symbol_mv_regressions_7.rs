@@ -35,6 +35,7 @@ pub fn caller() -> i32 {
         json: false,
         lang_filter: Some(Language::Rust),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0, "mv command should succeed");
@@ -100,6 +101,7 @@ def caller():
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0, "mv command should succeed");

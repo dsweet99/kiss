@@ -48,6 +48,7 @@ fn use_types(a: A, b: B) -> u32 {
         json: false,
         lang_filter: Some(Language::Rust),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     let exit_code = run_mv_command(opts);
@@ -100,6 +101,7 @@ fn use_types(a: A, b: B) -> u32 {
         json: false,
         lang_filter: Some(Language::Rust),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(
@@ -208,6 +210,7 @@ fn assert_nested_python_shadowing_rename(
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0);

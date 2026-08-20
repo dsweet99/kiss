@@ -1,6 +1,11 @@
 use crate::symbol_mv::{self, EditKind, MvOptions, MvPlan, MvRequest, ParsedQuery};
 
 pub fn run_mv_inner(opts: MvOptions) -> Result<(), ()> {
+    let (py_files, rs_files) =
+        crate::discovery::gather_files_by_lang(&opts.paths, opts.lang_filter, &opts.ignore);
+    if crate::reject_unconfigured_languages(&py_files, &rs_files, opts.language_tables).is_err() {
+        return Err(());
+    }
     let query = validate_mv_options(&opts)?;
     let req = MvRequest {
         query,
@@ -167,6 +172,7 @@ mod run_mv_coverage {
             json: false,
             lang_filter: None,
             ignore: vec![],
+            language_tables: Default::default(),
         };
         let _ = validate_mv_options(&bad);
         let plan = MvPlan {

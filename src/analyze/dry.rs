@@ -17,22 +17,29 @@ pub struct DryRunParams<'a> {
     pub config: &'a DuplicationConfig,
     pub ignore_prefixes: &'a [String],
     pub lang_filter: Option<Language>,
+    pub language_tables: kiss::LanguageTablesPresent,
 }
 
-pub fn run_dry(p: &DryRunParams<'_>) {
+pub fn run_dry(p: &DryRunParams<'_>) -> i32 {
     let DryRunParams {
         path,
         filter_files,
         config,
         ignore_prefixes,
         lang_filter,
+        language_tables,
     } = p;
     let root = Path::new(path);
     let (py_files, rs_files) = gather_files(root, *lang_filter, ignore_prefixes);
+    if let Err(code) =
+        crate::bin_cli::util::reject_unconfigured_languages(&py_files, &rs_files, *language_tables)
+    {
+        return code;
+    }
 
     if py_files.is_empty() && rs_files.is_empty() {
         print_no_files_message(*lang_filter, root);
-        return;
+        return 0;
     }
 
     let py_parsed = parse_py_for_dry(&py_files);
@@ -48,6 +55,7 @@ pub fn run_dry(p: &DryRunParams<'_>) {
     filter_pairs_by_files(&mut pairs, filter_files);
 
     print_dry_results(&pairs);
+    0
 }
 
 fn parse_py_for_dry(py_files: &[PathBuf]) -> Vec<kiss::ParsedFile> {
@@ -101,6 +109,7 @@ mod dry_helpers_test {
                 config,
                 ignore_prefixes: &[],
                 lang_filter: None,
+                language_tables: kiss::LanguageTablesPresent::both(),
             }
         }
     }
@@ -123,6 +132,7 @@ mod dry_helpers_test {
             config: &config,
             ignore_prefixes: &[],
             lang_filter: None,
+            language_tables: kiss::LanguageTablesPresent::both(),
         };
         assert_eq!(params.path, "/tmp");
         assert!(params.filter_files.is_empty());
@@ -144,6 +154,7 @@ mod dry_helpers_test {
             config: &config,
             ignore_prefixes: &[],
             lang_filter: None,
+            language_tables: kiss::LanguageTablesPresent::both(),
         });
     }
 }

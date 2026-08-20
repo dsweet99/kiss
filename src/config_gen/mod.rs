@@ -1,12 +1,13 @@
 mod collect;
 mod config_keys;
+#[cfg(test)]
 mod defaults_append;
 mod generate;
 mod infer_gate;
 mod merge;
 
 pub use collect::{
-    collect_all_stats, collect_all_stats_with_ignore, collect_py_stats,
+    collect_all_stats, collect_all_stats_with_ignore, collect_lang_from_paths, collect_py_stats,
     collect_py_stats_with_ignore, collect_rs_stats, collect_rs_stats_with_ignore,
 };
 pub use config_keys::{python_config_key, rust_config_key};

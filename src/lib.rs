@@ -56,8 +56,9 @@ pub use comments::{
     has_non_doc_comments,
 };
 pub use config::{
-    Config, ConfigError, ConfigLanguage, find_repo_root, is_similar, kissconfig_path_for_repo,
-    kissconfig_path_from_cwd,
+    Config, ConfigError, ConfigLanguage, LanguageTablesPresent, find_repo_root, is_similar,
+    kissconfig_path_for_repo, kissconfig_path_from_cwd, missing_language_table_message,
+    reject_unconfigured_languages,
 };
 pub use counts::analyze_file;
 pub use counts::analyze_file_with_statement_count;
@@ -78,8 +79,8 @@ pub use gate_config::{
     format_nested_toml_table, limit_for_selector, matched_rule_for_selector,
 };
 pub use graph::{
-    CycleInfo, DependencyGraph, ModuleGraphMetrics, analyze_graph, build_dependency_graph,
-    compute_cyclomatic_complexity,
+    CycleInfo, DependencyGraph, GraphKeyMaxima, ModuleGraphMetrics, analyze_graph,
+    build_dependency_graph, compute_cyclomatic_complexity, graph_key_maxima,
 };
 pub use layout_cycles::{CycleBreakSuggestion, LayoutCycleAnalysis, analyze_cycles};
 pub use layout_layers::{LayerInfo, compute_layers};

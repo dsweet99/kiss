@@ -28,7 +28,9 @@ pub fn write_kissconfig_with_threshold(root: &Path, settle: f64, threshold: u8) 
              watch_settle_seconds = {settle}\n\
              \n\
              [test.max_unit_test_seconds]\n\
-             \"*\" = 60\n"
+             \"*\" = 60\n\
+             [python]\n\
+             [rust]\n"
         ),
     )
     .unwrap();

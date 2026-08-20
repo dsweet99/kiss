@@ -21,6 +21,7 @@ fn regression_rename_updates_multiline_parenthesized_from_import() {
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0);
@@ -54,6 +55,7 @@ fn regression_move_rename_should_keep_rust_attributes_visibility_and_comments() 
         json: false,
         lang_filter: Some(Language::Rust),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0);
@@ -109,6 +111,7 @@ fn regression_rust_raw_string_with_embedded_quotes_should_not_rename() {
         json: false,
         lang_filter: Some(Language::Rust),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0);
@@ -153,6 +156,7 @@ fn regression_python_triple_quoted_string_with_embedded_quote_should_not_rename(
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0);
@@ -198,6 +202,7 @@ fn regression_rust_char_literal_with_double_quote_should_not_break_lexer() {
         json: false,
         lang_filter: Some(Language::Rust),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0);
@@ -239,6 +244,7 @@ fn regression_rust_move_should_not_break_on_brace_inside_string_literal() {
         json: false,
         lang_filter: Some(Language::Rust),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0);
@@ -283,6 +289,7 @@ fn regression_rust_method_owner_scoping_should_use_exact_impl_match() {
         json: false,
         lang_filter: Some(Language::Rust),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0);

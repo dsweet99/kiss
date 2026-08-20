@@ -16,6 +16,7 @@ fn witness_opt_batch_c() {
         py: &py,
         rs: &rs,
         gate: &gate,
+        language_tables: kiss::LanguageTablesPresent::both(),
     };
     let test = TestDispatchOptions {
         lang: Some(Language::Python),

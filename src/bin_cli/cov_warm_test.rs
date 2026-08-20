@@ -4,7 +4,15 @@ use crate::test_runner::python_coverage_index::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+struct RestoreCwd(PathBuf);
+
+impl Drop for RestoreCwd {
+    fn drop(&mut self) {
+        let _ = std::env::set_current_dir(&self.0);
+    }
+}
 
 fn write_src(repo: &Path) {
     fs::create_dir_all(repo.join(".git")).unwrap();
@@ -25,13 +33,15 @@ fn warm_cov_caches_after_tests_is_callable_without_panicking() {
 #[test]
 fn warm_cov_caches_after_tests_writes_records_when_snapshot_present() {
     let _cwd = crate::cwd_test_lock::lock();
+    let orig_dir = std::env::current_dir().unwrap();
     let tmp = tempfile::tempdir().unwrap();
     let repo = tmp.path();
     std::env::set_current_dir(repo).unwrap();
+    let _restore_cwd = RestoreCwd(orig_dir);
     write_src(repo);
     fs::write(
         repo.join(".kissconfig"),
-        "[test]\ntest_coverage_threshold = 75\n",
+        "[test]\ntest_coverage_threshold = 75\n[python]\n[rust]\n",
     )
     .unwrap();
 

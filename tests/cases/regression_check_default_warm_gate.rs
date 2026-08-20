@@ -43,7 +43,7 @@ fn regression_check_default_warm_gate_matches_cold_and_warm_output() {
 
     fs::write(
         repo.path().join(".kissconfig"),
-        "[test]\ntest_coverage_threshold = 100\n",
+        "[test]\ntest_coverage_threshold = 100\n[python]\n[rust]\n",
     )
     .unwrap();
     fs::write(
@@ -88,7 +88,7 @@ fn regression_cached_coverage_violations_do_not_leak_into_default_gate_mode() {
 
     fs::write(
         repo.path().join(".kissconfig"),
-        "[test]\ntest_coverage_threshold = 0\n",
+        "[test]\ntest_coverage_threshold = 0\n[python]\n[rust]\n",
     )
     .unwrap();
     fs::write(
@@ -131,7 +131,7 @@ fn regression_default_gate_fail_still_reports_timing() {
 
     fs::write(
         repo.path().join(".kissconfig"),
-        "[test]\ntest_coverage_threshold = 100\n",
+        "[test]\ntest_coverage_threshold = 100\n[python]\n[rust]\n",
     )
     .unwrap();
     fs::write(
@@ -171,7 +171,7 @@ fn kiss_check_ignores_seeded_below_threshold_runtime_coverage() {
 
     fs::write(
         repo.path().join(".kissconfig"),
-        "[global]\nduplication_enabled = false\norphan_module_enabled = false\n[test]\ntest_coverage_threshold = 100\n",
+        "[global]\nduplication_enabled = false\norphan_module_enabled = false\n[test]\ntest_coverage_threshold = 100\n[python]\n[rust]\n",
     )
     .unwrap();
     fs::write(

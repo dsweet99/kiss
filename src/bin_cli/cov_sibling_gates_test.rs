@@ -77,6 +77,7 @@ fn evaluate_time_gate_disabled_without_limits() {
         jobs: 1,
         allow_refresh: false,
         pytest_args: &[],
+        language_tables: Default::default(),
     };
     let files = CovFileSets {
         py_files: vec![PathBuf::from("a.py")],
@@ -108,6 +109,7 @@ fn max_num_tests_gate_skipped_when_bypass() {
         jobs: 1,
         allow_refresh: false,
         pytest_args: &[],
+        language_tables: Default::default(),
     };
     assert!(!evaluate_max_num_tests_gate(
         &args,
@@ -140,6 +142,7 @@ fn max_num_tests_gate_fails_closed_without_population() {
         jobs: 1,
         allow_refresh: false,
         pytest_args: &[],
+        language_tables: Default::default(),
     };
     let tmp = tempfile::tempdir().unwrap();
     let files = CovFileSets {

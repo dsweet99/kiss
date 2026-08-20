@@ -128,11 +128,14 @@ pub fn gather_files_by_lang_opts(
             }
         }
     }
-    let rs_files = if expand_rust_includes {
+    py_files.sort();
+    rs_files.sort();
+    let mut rs_files = if expand_rust_includes {
         crate::rust_graph::expand_rust_files(rs_files)
     } else {
         rs_files
     };
+    rs_files.sort();
     (py_files, rs_files)
 }
 

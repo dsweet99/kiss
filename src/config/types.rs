@@ -6,6 +6,87 @@ pub enum ConfigLanguage {
     Rust,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LanguageTablesPresent {
+    pub python: bool,
+    pub rust: bool,
+}
+
+impl Default for LanguageTablesPresent {
+    fn default() -> Self {
+        Self::both()
+    }
+}
+
+impl LanguageTablesPresent {
+    #[must_use]
+    pub const fn both() -> Self {
+        Self {
+            python: true,
+            rust: true,
+        }
+    }
+
+    #[must_use]
+    pub const fn none() -> Self {
+        Self {
+            python: false,
+            rust: false,
+        }
+    }
+
+    #[must_use]
+    pub fn from_toml(content: &str) -> Self {
+        let Ok(table) = content.parse::<toml::Table>() else {
+            return Self::none();
+        };
+        Self {
+            python: table.contains_key("python"),
+            rust: table.contains_key("rust"),
+        }
+    }
+
+    #[must_use]
+    pub fn from_path(path: &std::path::Path) -> Self {
+        std::fs::read_to_string(path)
+            .map(|content| Self::from_toml(&content))
+            .unwrap_or_else(|_| Self::none())
+    }
+
+    #[must_use]
+    pub fn missing_language(
+        self,
+        py_files: &[std::path::PathBuf],
+        rs_files: &[std::path::PathBuf],
+    ) -> Option<&'static str> {
+        if !py_files.is_empty() && !self.python {
+            Some("python")
+        } else if !rs_files.is_empty() && !self.rust {
+            Some("rust")
+        } else {
+            None
+        }
+    }
+}
+
+pub fn missing_language_table_message(language: &str) -> String {
+    format!(
+        "Error: found {language} files but .kissconfig has no [{language}] table. Run `kiss clamp` to generate language thresholds."
+    )
+}
+
+pub fn reject_unconfigured_languages(
+    py_files: &[std::path::PathBuf],
+    rs_files: &[std::path::PathBuf],
+    tables: LanguageTablesPresent,
+) -> Result<(), i32> {
+    if let Some(language) = tables.missing_language(py_files, rs_files) {
+        eprintln!("{}", missing_language_table_message(language));
+        return Err(1);
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub statements_per_function: usize,

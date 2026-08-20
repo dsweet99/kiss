@@ -36,6 +36,13 @@ pub fn run_analyze_with_result(opts: &AnalyzeOptions<'_>) -> AnalyzeResult {
     let t0 = std::time::Instant::now();
     let universe_root = Path::new(opts.universe);
     let (py_files, rs_files) = gather_files(universe_root, opts.lang_filter, opts.ignore_prefixes);
+    if let Err(code) = crate::bin_cli::util::reject_unconfigured_languages(
+        &py_files,
+        &rs_files,
+        opts.language_tables,
+    ) {
+        return AnalyzeResult { success: code == 0 };
+    }
     if py_files.is_empty() && rs_files.is_empty() {
         print_no_files_message(opts.lang_filter, universe_root);
         return AnalyzeResult { success: true };
@@ -79,6 +86,7 @@ mod entry_touch {
             ignore_prefixes: &[],
             show_timing,
             suppress_final_status,
+            language_tables: kiss::LanguageTablesPresent::both(),
         }
     }
 

@@ -25,6 +25,7 @@ fn regression_python_multiline_paren_import_renames_non_first_name() {
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0, "mv command should succeed");

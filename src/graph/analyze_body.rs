@@ -73,8 +73,9 @@ pub(crate) fn indirect_deps_violation(
             "Module '{}' has {} indirect dependencies (threshold: {})",
             module_name, metrics.indirect_dependencies, threshold
         ),
-        suggestion: "Reduce coupling by introducing abstraction layers or splitting responsibilities."
-            .to_string(),
+        suggestion:
+            "Reduce coupling by introducing abstraction layers or splitting responsibilities."
+                .to_string(),
     }
 }
 
@@ -197,6 +198,41 @@ pub(crate) fn count_decision_points(node: Node) -> usize {
         .sum()
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct GraphKeyMaxima {
+    pub indirect_dependencies: usize,
+    pub dependency_depth: usize,
+    pub cycle_size: usize,
+}
+
+#[must_use]
+pub fn graph_key_maxima(graph: &DependencyGraph) -> GraphKeyMaxima {
+    let mut indirect_dependencies = 0;
+    let mut dependency_depth = 0;
+    for module_name in graph.nodes.keys() {
+        if !graph.paths.contains_key(module_name) {
+            continue;
+        }
+        let metrics = graph.module_metrics(module_name);
+        if !is_crate_root_aggregator(graph, module_name) {
+            indirect_dependencies = indirect_dependencies.max(metrics.indirect_dependencies);
+        }
+        dependency_depth = dependency_depth.max(metrics.dependency_depth);
+    }
+    let cycle_size = graph
+        .find_cycles()
+        .cycles
+        .iter()
+        .map(Vec::len)
+        .max()
+        .unwrap_or(0);
+    GraphKeyMaxima {
+        indirect_dependencies,
+        dependency_depth,
+        cycle_size,
+    }
+}
+
 #[must_use]
 pub fn analyze_graph(
     graph: &DependencyGraph,
@@ -204,7 +240,8 @@ pub fn analyze_graph(
     orphan_module_enabled: bool,
 ) -> Vec<Violation> {
     let seen_paths = path_dedup_set(graph);
-    let mut violations = collect_module_violations(graph, config, orphan_module_enabled, &seen_paths);
+    let mut violations =
+        collect_module_violations(graph, config, orphan_module_enabled, &seen_paths);
     for cycle in graph.find_cycles().cycles {
         if cycle.len() > config.cycle_size {
             violations.push(cycle_size_violation(graph, &cycle, config.cycle_size));

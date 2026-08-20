@@ -10,6 +10,7 @@ pub struct StatsTopArgs<'a> {
     pub py_config: &'a Config,
     pub rs_config: &'a Config,
     pub gate_config: &'a GateConfig,
+    pub language_tables: kiss::LanguageTablesPresent,
 }
 
 pub fn run_stats_top(args: StatsTopArgs<'_>) {
@@ -29,6 +30,13 @@ pub(super) fn run_stats_top_status(args: StatsTopArgs<'_>) -> i32 {
         kiss::discovery::gather_files_by_lang(args.paths, args.lang_filter, args.ignore);
     if py_files.is_empty() && rs_files.is_empty() {
         return no_source_files_status();
+    }
+    if let Err(code) = crate::bin_cli::util::reject_unconfigured_languages(
+        &py_files,
+        &rs_files,
+        args.language_tables,
+    ) {
+        return code;
     }
     println!(
         "kiss stats --all {n} - Top Outliers\nAnalyzed from: {paths}\n{prov}\n",

@@ -107,6 +107,7 @@ fn dispatch_tools(
             lsh_bands,
             min_similarity,
             ignore,
+            language_tables: cfg.language_tables,
         }),
         Commands::Rules => dispatch_rules(RulesDispatchOptions {
             lang,
@@ -126,6 +127,7 @@ fn dispatch_tools(
             zoom,
             num_nodes,
             ignore,
+            language_tables: cfg.language_tables,
         }),
         test_command @ Commands::Test { .. } => dispatch_test_command(
             lang,
@@ -151,6 +153,7 @@ fn dispatch_tools(
             to,
             mv_flags: MvOutputFlags { dry_run, json },
             ignore,
+            language_tables: cfg.language_tables,
         }),
         _ => 2,
     }
@@ -230,10 +233,13 @@ pub fn dispatch(
     gate_config: &GateConfig,
     test_section: &TestSectionConfig,
 ) -> i32 {
+    let language_tables =
+        crate::bin_cli::config_session::load_language_tables(cli.config.as_ref(), cli.defaults);
     let cfg = TriConfig {
         py: py_config,
         rs: rs_config,
         gate: gate_config,
+        language_tables,
     };
     match cli {
         Cli {

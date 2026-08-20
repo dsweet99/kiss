@@ -10,6 +10,7 @@ pub(crate) struct MvDispatchOptions {
     pub to: Option<PathBuf>,
     pub mv_flags: MvOutputFlags,
     pub ignore: Vec<String>,
+    pub language_tables: kiss::LanguageTablesPresent,
 }
 
 pub(crate) struct MvOutputFlags {
@@ -31,6 +32,7 @@ mod coverage_witness {
                 to: None,
                 mv_flags: MvOutputFlags::witness(),
                 ignore: vec![],
+                language_tables: kiss::LanguageTablesPresent::both(),
             }
         }
     }

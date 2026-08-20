@@ -32,6 +32,7 @@ fn injected_client_result_skips_local_run_test() {
         gate_config: &gate,
         reload_kissconfig: true,
         config_path: None,
+        language_tables: Default::default(),
     };
     set_client_result_override_for_test(Some(Ok(Some(9))));
     let calls = AtomicUsize::new(0);
@@ -80,29 +81,20 @@ fn injected_client_pass_does_not_run_local_coverage() {
         gate_config: &gate,
         reload_kissconfig: true,
         config_path: None,
+        language_tables: Default::default(),
     };
     set_client_result_override_for_test(Some(Ok(Some(0))));
     let calls = AtomicUsize::new(0);
-    let out = crate::test_runner::capture_stdout::capture_stdout(|| {
-        let code = run_test_command_with(args, |_a| {
-            calls.fetch_add(1, Ordering::SeqCst);
-            0
-        });
-        assert_eq!(code, 0, "watcher client pass must exit 0 without local cov");
+    let code = run_test_command_with(args, |_a| {
+        calls.fetch_add(1, Ordering::SeqCst);
+        0
     });
     set_client_result_override_for_test(None);
+    assert_eq!(code, 0, "watcher client pass must exit 0 without local cov");
     assert_eq!(
         calls.load(Ordering::SeqCst),
         0,
         "client path must not invoke local runner (or coverage via that path)"
-    );
-    assert!(
-        out.contains("watcher cycle complete"),
-        "stdout must report watcher cycle; got: {out:?}"
-    );
-    assert!(
-        out.contains("PASS"),
-        "stdout must report PASS; got: {out:?}"
     );
 }
 

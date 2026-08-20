@@ -22,6 +22,7 @@ fn dispatch_routes_supported_commands_to_handlers() {
         py: &py,
         rs: &rs,
         gate: &gate,
+        language_tables: kiss::LanguageTablesPresent::both(),
     };
     call_handler_dispatchers(&cfg, &test, out_dot);
     call_router_dispatchers(&py, &rs, &gate, &test, &cfg);
@@ -64,6 +65,7 @@ fn call_handler_dispatchers(
         lsh_bands: 20,
         min_similarity: 0.9,
         ignore: vec![],
+        language_tables: kiss::LanguageTablesPresent::both(),
     });
     assert_eq!(
         handlers::dispatch_rules(options::RulesDispatchOptions {
@@ -80,6 +82,7 @@ fn call_handler_dispatchers(
         zoom: 1.0,
         num_nodes: None,
         ignore: vec![],
+        language_tables: kiss::LanguageTablesPresent::both(),
     });
     let _ = handlers::dispatch_test(options::TestDispatchOptions {
         lang: None,
@@ -111,6 +114,7 @@ fn call_handler_dispatchers(
             json: false,
         },
         ignore: vec![],
+        language_tables: kiss::LanguageTablesPresent::both(),
     });
 }
 
@@ -171,6 +175,7 @@ fn dispatch_test_command_rejects_invalid_modes_before_running_tests() {
         py: &py,
         rs: &rs,
         gate: &gate,
+        language_tables: kiss::LanguageTablesPresent::both(),
     };
 
     assert_eq!(
@@ -213,6 +218,7 @@ fn dispatch_private_routers_reject_commands_from_the_other_group() {
         py: &py,
         rs: &rs,
         gate: &gate,
+        language_tables: kiss::LanguageTablesPresent::both(),
     };
 
     assert_eq!(dispatch_analyze(None, Commands::Rules, &cfg, &test), 2);
@@ -248,6 +254,7 @@ fn dispatch_private_routers_cover_additional_command_variants() {
         py: &py,
         rs: &rs,
         gate: &gate,
+        language_tables: kiss::LanguageTablesPresent::both(),
     };
 
     let _ = dispatch_analyze(
@@ -321,6 +328,7 @@ fn dispatch_test_rejects_watch_with_dry_run() {
         py: &py,
         rs: &rs,
         gate: &gate,
+        language_tables: kiss::LanguageTablesPresent::both(),
     };
     assert_eq!(
         super::dispatch_test_command(

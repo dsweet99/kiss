@@ -22,11 +22,17 @@ pub struct RunStatsArgs<'a> {
     pub py_config: &'a Config,
     pub rs_config: &'a Config,
     pub gate_config: &'a GateConfig,
+    pub language_tables: kiss::LanguageTablesPresent,
 }
 
-pub fn run_stats(args: RunStatsArgs<'_>) {
+pub fn run_stats(args: RunStatsArgs<'_>) -> i32 {
     if args.table {
-        table::run_stats_table(args.paths, args.lang_filter, args.ignore);
+        table::run_stats_table_status(
+            args.paths,
+            args.lang_filter,
+            args.ignore,
+            args.language_tables,
+        )
     } else if let Some(n) = args.all {
         top::run_stats_top(top::StatsTopArgs {
             paths: args.paths,
@@ -36,7 +42,9 @@ pub fn run_stats(args: RunStatsArgs<'_>) {
             py_config: args.py_config,
             rs_config: args.rs_config,
             gate_config: args.gate_config,
+            language_tables: args.language_tables,
         });
+        0
     } else {
         summary::run_stats_summary(
             args.paths,
@@ -45,7 +53,8 @@ pub fn run_stats(args: RunStatsArgs<'_>) {
             args.py_config,
             args.rs_config,
             args.gate_config,
-        );
+            args.language_tables,
+        )
     }
 }
 
@@ -60,5 +69,6 @@ mod coverage_witness {
     #[test]
     fn witness_run_stats_args() {
         RunStatsArgs::witness();
+        let _ = kiss::LanguageTablesPresent::both();
     }
 }

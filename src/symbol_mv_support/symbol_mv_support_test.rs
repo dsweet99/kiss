@@ -211,6 +211,7 @@ fn run_mv_inner_errors_on_empty_plan() {
         json: false,
         lang_filter: None,
         ignore: vec![],
+        language_tables: Default::default(),
     };
     assert!(run_mv_inner(opts).is_err());
 }

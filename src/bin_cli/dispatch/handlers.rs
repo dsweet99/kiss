@@ -26,6 +26,7 @@ pub(in crate::bin_cli::dispatch) fn dispatch_check(o: CheckDispatchOptions<'_>) 
         gate_config: o.cfg.gate,
         ignore: &o.ignore,
         timing: o.timing,
+        language_tables: o.cfg.language_tables,
     };
     check_cmd::run_check_command(&args)
 }
@@ -44,6 +45,7 @@ pub(in crate::bin_cli::dispatch) fn dispatch_cov(o: CovDispatchOptions<'_>) -> i
         jobs: o.jobs.unwrap_or(o.test_cfg.num_jobs),
         allow_refresh: true,
         pytest_args: &pytest_args,
+        language_tables: o.cfg.language_tables,
     };
     cov_cmd::run_cov_command(&args)
 }
@@ -59,12 +61,12 @@ pub(in crate::bin_cli::dispatch) fn dispatch_stats(o: StatsDispatchOptions) -> i
         py_config: o.cfg.py,
         rs_config: o.cfg.rs,
         gate_config: o.cfg.gate,
-    });
-    0
+        language_tables: o.cfg.language_tables,
+    })
 }
 
 pub(in crate::bin_cli::dispatch) fn dispatch_mimic(o: MimicDispatchOptions) -> i32 {
-    let ignore = normalize_ignore_prefixes(&o.ignore);
+    let ignore = util::merge_check_ignore_prefixes(&o.ignore);
     run_mimic(&o.paths, o.out.as_deref(), o.lang, &ignore)
 }
 
@@ -99,9 +101,9 @@ pub(in crate::bin_cli::dispatch) fn dispatch_dry(o: DryDispatchOptions) -> i32 {
         config: &config,
         ignore_prefixes: &ignore,
         lang_filter: o.lang,
+        language_tables: o.language_tables,
     };
-    analyze::run_dry(&params);
-    0
+    analyze::run_dry(&params)
 }
 
 pub(in crate::bin_cli::dispatch) fn dispatch_rules(o: RulesDispatchOptions<'_>) -> i32 {
@@ -115,11 +117,27 @@ pub(in crate::bin_cli::dispatch) fn dispatch_viz(o: VizDispatchOptions) -> i32 {
     let coarsen = o
         .num_nodes
         .map_or(VizCoarsen::Zoom(o.zoom), VizCoarsen::NumNodes);
-    if let Err(e) = run_viz(&o.out, &o.paths, o.lang, &ignore, coarsen) {
-        eprintln!("Error: {e}");
+    if let Err(e) = run_viz(
+        &o.out,
+        &o.paths,
+        o.lang,
+        &ignore,
+        coarsen,
+        o.language_tables,
+    ) {
+        eprint_viz_error(&e);
         return 1;
     }
     0
+}
+
+fn eprint_viz_error(e: &std::io::Error) {
+    let msg = e.to_string();
+    if msg.starts_with("Error:") {
+        eprintln!("{msg}");
+    } else {
+        eprintln!("Error: {msg}");
+    }
 }
 
 pub(in crate::bin_cli::dispatch) fn dispatch_test(o: TestDispatchOptions<'_>) -> i32 {
@@ -147,6 +165,7 @@ pub(in crate::bin_cli::dispatch) fn dispatch_test(o: TestDispatchOptions<'_>) ->
         gate_config: o.cfg.gate,
         reload_kissconfig: o.reload_kissconfig,
         config_path: o.config_path,
+        language_tables: o.cfg.language_tables,
     })
 }
 
@@ -161,6 +180,48 @@ pub(in crate::bin_cli::dispatch) fn dispatch_mv(o: MvDispatchOptions) -> i32 {
         json: o.mv_flags.json,
         lang_filter: o.lang,
         ignore,
+        language_tables: o.language_tables,
     };
     kiss::symbol_mv::run_mv_command(opts)
 }
+
+#[cfg(test)]
+mod viz_error_tests {
+    use super::*;
+    use std::io::{Error, ErrorKind};
+    use std::path::PathBuf;
+
+    #[test]
+    fn eprint_viz_error_both_prefix_branches() {
+        eprint_viz_error(&Error::new(ErrorKind::InvalidInput, "Error: found rust files"));
+        eprint_viz_error(&Error::new(ErrorKind::InvalidInput, "No source files found."));
+    }
+
+    #[test]
+    fn dispatch_viz_prints_reclamp_without_double_prefix() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("a.py"), "x = 1\n").unwrap();
+        let code = dispatch_viz(VizDispatchOptions {
+            lang: None,
+            out: tmp.path().join("g.mmd"),
+            paths: vec![tmp.path().to_string_lossy().into_owned()],
+            zoom: 1.0,
+            num_nodes: None,
+            ignore: vec![],
+            language_tables: kiss::LanguageTablesPresent::none(),
+        });
+        assert_eq!(code, 1);
+        let empty = tempfile::tempdir().unwrap();
+        let empty_code = dispatch_viz(VizDispatchOptions {
+            lang: None,
+            out: PathBuf::from("g.mmd"),
+            paths: vec![empty.path().to_string_lossy().into_owned()],
+            zoom: 1.0,
+            num_nodes: None,
+            ignore: vec![],
+            language_tables: kiss::LanguageTablesPresent::both(),
+        });
+        assert_eq!(empty_code, 1);
+    }
+}
+

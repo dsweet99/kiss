@@ -37,6 +37,7 @@ def caller():
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
     assert_eq!(run_mv_command(opts), 0);
 
@@ -85,6 +86,7 @@ fn caller(c: &C) -> u32 {
         json: false,
         lang_filter: Some(Language::Rust),
         ignore: vec![],
+        language_tables: Default::default(),
     };
     assert_eq!(run_mv_command(opts), 0);
 
@@ -130,6 +132,7 @@ def caller(obj):
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
     assert_eq!(run_mv_command(opts), 0);
 
@@ -179,6 +182,7 @@ def caller():
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
     assert_eq!(run_mv_command(opts), 0);
 

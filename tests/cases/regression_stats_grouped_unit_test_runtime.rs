@@ -10,6 +10,8 @@ orphan_module_enabled = false\n\
 \n\
 [test]\n\
 test_coverage_threshold = 0\n\
+[python]\n\
+[rust]\n\
 \n\
 [test.max_unit_test_seconds]\n\
 \"tests/slow/dbs\" = 180\n\

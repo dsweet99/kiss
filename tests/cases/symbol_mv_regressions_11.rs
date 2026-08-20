@@ -13,6 +13,7 @@ pub fn py(query: &str, new_name: &str, root: &std::path::Path) -> MvOptions {
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     }
 }
 
@@ -26,6 +27,7 @@ pub fn rs(query: &str, new_name: &str, root: &std::path::Path) -> MvOptions {
         json: false,
         lang_filter: Some(Language::Rust),
         ignore: vec![],
+        language_tables: Default::default(),
     }
 }
 
@@ -274,6 +276,7 @@ def other():
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     let exit_code = run_mv_command(opts);

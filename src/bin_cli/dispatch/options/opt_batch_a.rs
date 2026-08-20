@@ -8,6 +8,7 @@ pub(crate) struct TriConfig<'a> {
     pub py: &'a kiss::Config,
     pub rs: &'a kiss::Config,
     pub gate: &'a GateConfig,
+    pub language_tables: kiss::LanguageTablesPresent,
 }
 
 pub(crate) struct CheckDispatchOptions<'a> {

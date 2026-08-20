@@ -1,4 +1,14 @@
 use super::*;
+use std::path::PathBuf;
+
+struct RestoreCwd(PathBuf);
+
+impl Drop for RestoreCwd {
+    fn drop(&mut self) {
+        let _ = std::env::set_current_dir(&self.0);
+    }
+}
+
 #[test]
 fn allow_refresh_true_invokes_refresh_on_identity_mismatch() {
     use crate::test_runner::python_coverage_index::generation::{
@@ -14,9 +24,11 @@ fn allow_refresh_true_invokes_refresh_on_identity_mismatch() {
     use std::time::Duration;
 
     let _cwd = crate::cwd_test_lock::lock();
+    let orig_dir = std::env::current_dir().unwrap();
     let tmp = tempfile::tempdir().unwrap();
     let repo = tmp.path();
     std::env::set_current_dir(repo).unwrap();
+    let _restore_cwd = RestoreCwd(orig_dir);
     fs::create_dir_all(repo.join(".git")).unwrap();
     fs::write(repo.join("app.py"), b"x = 1\n").unwrap();
     fs::write(

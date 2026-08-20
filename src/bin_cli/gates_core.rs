@@ -123,8 +123,14 @@ fn test_gather_stats_normalize_validate() {
         &py_cfg,
         &rs_cfg,
         &gate_cfg,
+        kiss::LanguageTablesPresent::both(),
     );
-    run_stats_table(std::slice::from_ref(&p), Some(Language::Rust), &[]);
+    run_stats_table(
+        std::slice::from_ref(&p),
+        Some(Language::Rust),
+        &[],
+        kiss::LanguageTablesPresent::both(),
+    );
     assert_eq!(
         normalize_ignore_prefixes(&["src/".to_string(), String::new()]),
         vec!["src"]
@@ -145,6 +151,7 @@ fn exercise_stats_modes_and_mimic(p: &str) {
         py_config: &kiss::Config::python_defaults(),
         rs_config: &kiss::Config::rust_defaults(),
         gate_config: &gate,
+        language_tables: kiss::LanguageTablesPresent::both(),
     });
     run_stats(RunStatsArgs {
         paths,
@@ -155,6 +162,7 @@ fn exercise_stats_modes_and_mimic(p: &str) {
         py_config: &kiss::Config::python_defaults(),
         rs_config: &kiss::Config::rust_defaults(),
         gate_config: &gate,
+        language_tables: kiss::LanguageTablesPresent::both(),
     });
     run_stats(RunStatsArgs {
         paths,
@@ -165,6 +173,7 @@ fn exercise_stats_modes_and_mimic(p: &str) {
         py_config: &kiss::Config::python_defaults(),
         rs_config: &kiss::Config::rust_defaults(),
         gate_config: &gate,
+        language_tables: kiss::LanguageTablesPresent::both(),
     });
     run_mimic(paths, None, Some(Language::Python), &[]);
 }

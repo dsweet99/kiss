@@ -15,6 +15,10 @@ mod bug_test_coverage_aggregate_gate_masking;
 mod bug_test_coverage_violation_message;
 #[path = "cases/cache_integration.rs"]
 mod cache_integration;
+#[path = "cases/clamp_graph_keys.rs"]
+mod clamp_graph_keys;
+#[path = "cases/clamp_then_check.rs"]
+mod clamp_then_check;
 #[path = "cases/cli_check_hint.rs"]
 mod cli_check_hint;
 #[path = "cases/cli_integration.rs"]

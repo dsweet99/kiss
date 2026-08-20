@@ -15,7 +15,9 @@ fn synthetic_python_runtime_coverage_paths_do_not_make_check_malformed() {
          orphan_module_enabled = false\n\
 \n\
 [test]\n\
-         test_coverage_threshold = 100\n",
+         test_coverage_threshold = 100\n\
+         [python]\n\
+         [rust]\n",
     )
     .unwrap();
     seed_python_runtime_coverage(
@@ -66,7 +68,9 @@ fn seeded_python_runtime_coverage_becomes_stale_after_source_change() {
          orphan_module_enabled = false\n\
 \n\
 [test]\n\
-         test_coverage_threshold = 100\n",
+         test_coverage_threshold = 100\n\
+         [python]\n\
+         [rust]\n",
     )
     .unwrap();
     seed_python_runtime_coverage(
@@ -132,7 +136,9 @@ fn cold_python_check_refreshes_runtime_coverage_and_warm_check_reuses_cache() {
          orphan_module_enabled = false\n\
 \n\
 [test]\n\
-         test_coverage_threshold = 100\n",
+         test_coverage_threshold = 100\n\
+         [python]\n\
+         [rust]\n",
     )
     .unwrap();
 
@@ -274,7 +280,9 @@ fn write_refreshable_python_repo(repo: &TempDir, assertion: &str) {
          orphan_module_enabled = false\n\
 \n\
 [test]\n\
-         test_coverage_threshold = 100\n",
+         test_coverage_threshold = 100\n\
+         [python]\n\
+         [rust]\n",
     )
     .unwrap();
 }

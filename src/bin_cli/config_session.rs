@@ -1,5 +1,6 @@
 use crate::bin_cli::mimic::run_mimic_with_quiet;
-use kiss::{Config, ConfigLanguage, GateConfig};
+use crate::bin_cli::util::merge_check_ignore_prefixes;
+use kiss::{Config, ConfigLanguage, GateConfig, LanguageTablesPresent, kissconfig_path_from_cwd};
 use std::path::{Path, PathBuf};
 
 pub fn ensure_default_config_exists() {
@@ -8,10 +9,24 @@ pub fn ensure_default_config_exists() {
         return;
     }
     let quiet = false;
-    let code = run_mimic_with_quiet(&[".".to_string()], Some(local_config), None, &[], quiet);
+    let ignore = merge_check_ignore_prefixes(&[]);
+    let code = run_mimic_with_quiet(&[".".to_string()], Some(local_config), None, &ignore, quiet);
     if code != 0 {
         std::process::exit(code);
     }
+}
+
+pub fn load_language_tables(
+    config_path: Option<&PathBuf>,
+    use_defaults: bool,
+) -> LanguageTablesPresent {
+    if use_defaults {
+        return LanguageTablesPresent::both();
+    }
+    if let Some(path) = config_path {
+        return LanguageTablesPresent::from_path(path);
+    }
+    LanguageTablesPresent::from_path(&kissconfig_path_from_cwd())
 }
 
 pub fn run_init_command(repo_path: &Path) -> i32 {

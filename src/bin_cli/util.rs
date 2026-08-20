@@ -1,5 +1,7 @@
 use std::path::Path;
 
+pub use kiss::reject_unconfigured_languages;
+
 #[cfg(unix)]
 pub fn set_sigpipe_default() {
     unsafe {

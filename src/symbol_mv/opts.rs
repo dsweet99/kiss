@@ -14,6 +14,7 @@ pub struct MvOptions {
     pub json: bool,
     pub lang_filter: Option<Language>,
     pub ignore: Vec<String>,
+    pub language_tables: crate::LanguageTablesPresent,
 }
 
 #[derive(Debug, Clone)]
@@ -41,6 +42,7 @@ mod coverage_witness {
                 json: false,
                 lang_filter: None,
                 ignore: vec![],
+                language_tables: crate::LanguageTablesPresent::both(),
             }
         }
     }

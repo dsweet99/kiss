@@ -13,6 +13,7 @@ fn run_python_mv(file: &std::path::Path, query: String, new_name: &str, root: &s
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
     let _ = file;
     assert_eq!(run_mv_command(opts), 0);

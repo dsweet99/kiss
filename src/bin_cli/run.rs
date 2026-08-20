@@ -192,7 +192,7 @@ mod run_coverage {
         let tmp = tempfile::tempdir().unwrap();
         fs::write(
             tmp.path().join(".kissconfig"),
-            "[global]\nduplication_enabled = false\n[test]\ntest_coverage_threshold = 0\n",
+            "[global]\nduplication_enabled = false\n[test]\ntest_coverage_threshold = 0\n[python]\n[rust]\n",
         )
         .unwrap();
         fs::write(

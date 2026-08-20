@@ -31,6 +31,7 @@ def caller():
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0, "mv command should succeed");
@@ -73,6 +74,7 @@ async def caller():
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0, "mv command should succeed");
@@ -105,6 +107,7 @@ fn regression_rust_async_function_definition_should_be_renamed() {
         json: false,
         lang_filter: Some(Language::Rust),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0, "mv command should succeed");
@@ -150,6 +153,7 @@ fn caller(s: &S) -> u32 {
         json: false,
         lang_filter: Some(Language::Rust),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0, "mv command should succeed");
@@ -195,6 +199,7 @@ def caller():
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0);

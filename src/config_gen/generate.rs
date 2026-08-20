@@ -1,17 +1,25 @@
 use std::fmt::Write;
 
 use crate::gate_config::GateConfig;
+use crate::graph::GraphKeyMaxima;
 use crate::stats::{MetricStats, PercentileSummary, compute_summaries};
 
 use super::config_keys::{python_config_key, rust_config_key};
-use super::defaults_append::{append_python_defaults, append_rust_defaults};
 
 pub struct GenerateConfigParams<'a> {
     pub py: &'a MetricStats,
     pub rs: &'a MetricStats,
     pub py_n: usize,
     pub rs_n: usize,
+    pub py_graph: GraphKeyMaxima,
+    pub rs_graph: GraphKeyMaxima,
     pub gate: &'a GateConfig,
+}
+
+const GRAPH_METRIC_IDS: &[&str] = &["cycle_size", "indirect_dependencies", "dependency_depth"];
+
+fn is_graph_metric_id(metric_id: &str) -> bool {
+    GRAPH_METRIC_IDS.contains(&metric_id)
 }
 
 pub fn generate_config_toml_by_language(p: &GenerateConfigParams<'_>) -> String {
@@ -56,24 +64,22 @@ pub fn generate_config_toml_by_language(p: &GenerateConfigParams<'_>) -> String 
     );
     out.push('\n');
     if p.py_n > 0 {
-        append_section(
+        append_language_section(
             &mut out,
             "[python]",
             &compute_summaries(p.py),
             python_config_key,
+            p.py_graph,
         );
-    } else {
-        append_python_defaults(&mut out);
     }
     if p.rs_n > 0 {
-        append_section(
+        append_language_section(
             &mut out,
             "[rust]",
             &compute_summaries(p.rs),
             rust_config_key,
+            p.rs_graph,
         );
-    } else {
-        append_rust_defaults(&mut out);
     }
     out
 }
@@ -91,19 +97,40 @@ fn write_toml_string_list(out: &mut String, key: &str, values: &[String]) {
     let _ = writeln!(out, "{key} = [{rendered}]");
 }
 
+#[cfg(test)]
 pub fn append_section(
     out: &mut String,
     header: &str,
     sums: &[PercentileSummary],
     key_fn: fn(&str) -> Option<&'static str>,
 ) {
+    append_language_section(out, header, sums, key_fn, GraphKeyMaxima::default());
+}
+
+fn append_language_section(
+    out: &mut String,
+    header: &str,
+    sums: &[PercentileSummary],
+    key_fn: fn(&str) -> Option<&'static str>,
+    graph_max: GraphKeyMaxima,
+) {
     out.push_str(header);
     out.push('\n');
     for s in sums {
+        if is_graph_metric_id(s.metric_id) {
+            continue;
+        }
         if let Some(k) = key_fn(s.metric_id) {
             let _ = writeln!(out, "{k} = {}", s.max);
         }
     }
+    let _ = writeln!(
+        out,
+        "indirect_dependencies = {}",
+        graph_max.indirect_dependencies
+    );
+    let _ = writeln!(out, "dependency_depth = {}", graph_max.dependency_depth);
+    let _ = writeln!(out, "cycle_size = {}", graph_max.cycle_size);
     out.push('\n');
 }
 
@@ -128,6 +155,8 @@ mod coverage_witness {
             rs: &rs,
             py_n: 0,
             rs_n: 0,
+            py_graph: GraphKeyMaxima::default(),
+            rs_graph: GraphKeyMaxima::default(),
             gate: &gate,
         };
         let toml = generate_config_toml_by_language(&p);
@@ -151,5 +180,13 @@ mod coverage_witness {
             "default asterisk mapping:\n{toml}"
         );
         assert!(toml.contains("[test]\n"), "test section present:\n{toml}");
+        assert!(
+            !toml.contains("[python]"),
+            "zero python files must omit [python]:\n{toml}"
+        );
+        assert!(
+            !toml.contains("[rust]"),
+            "zero rust files must omit [rust]:\n{toml}"
+        );
     }
 }

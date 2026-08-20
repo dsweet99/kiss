@@ -17,7 +17,9 @@ fn write_gate_config(root: &std::path::Path, enabled: bool) {
              comment_removal_enabled = {enabled}\n\
              \n\
              [test]\n\
-             test_coverage_threshold = 0\n"
+             test_coverage_threshold = 0\n\
+             [python]\n\
+             [rust]\n"
         ),
     )
     .unwrap();
@@ -119,6 +121,8 @@ fn library_collects_comments_and_emits_config_flag() {
             rs: &kiss::MetricStats::default(),
             py_n: 0,
             rs_n: 0,
+            py_graph: kiss::GraphKeyMaxima::default(),
+            rs_graph: kiss::GraphKeyMaxima::default(),
             gate: &gate,
         },
     );

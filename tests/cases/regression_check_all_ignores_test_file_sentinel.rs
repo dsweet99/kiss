@@ -24,6 +24,8 @@ fn write_corpus(dir: &std::path::Path) {
          \n\
 [test]\n\
          test_coverage_threshold = 90\n\
+         [python]\n\
+         [rust]\n\
          \n\
          [thresholds]\n\
          statements_per_function = 100\n\

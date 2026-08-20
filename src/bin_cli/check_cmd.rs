@@ -11,6 +11,7 @@ pub struct CheckCommandArgs<'a> {
     pub gate_config: &'a kiss::GateConfig,
     pub ignore: &'a [String],
     pub timing: bool,
+    pub language_tables: kiss::LanguageTablesPresent,
 }
 
 pub fn run_check_command(args: &CheckCommandArgs<'_>) -> i32 {
@@ -33,6 +34,7 @@ pub fn run_check_command(args: &CheckCommandArgs<'_>) -> i32 {
         ignore_prefixes: &ignore,
         show_timing: args.timing,
         suppress_final_status: false,
+        language_tables: args.language_tables,
     };
     i32::from(!run_analyze(&opts))
 }
@@ -60,6 +62,7 @@ mod coverage_witness {
             gate_config: &gate,
             ignore: &[],
             timing: false,
+            language_tables: kiss::LanguageTablesPresent::both(),
         };
         CheckCommandArgs::witness();
         assert_eq!(run_check_command(&args), 0);

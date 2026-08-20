@@ -73,6 +73,7 @@ mod symbol_mv_coverage {
             json: false,
             lang_filter: None,
             ignore: vec![],
+            language_tables: Default::default(),
         };
         let code = run_mv_command(opts);
         assert!(code == 0 || code == 1);

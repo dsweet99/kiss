@@ -1,7 +1,15 @@
 use super::*;
 use crate::analyze::FocusFilter;
-use crate::test_runner::unit_test_timing::TimingLangInclude;
+use crate::test_runner::unit_test_timing::{TimingCollectOpts, TimingLangInclude};
 use kiss::{Config, GateConfig, TestCoverageScope};
+use std::path::PathBuf;
+
+struct RestoreCwd(PathBuf);
+impl Drop for RestoreCwd {
+    fn drop(&mut self) {
+        let _ = std::env::set_current_dir(&self.0);
+    }
+}
 #[test]
 fn evaluate_records_with_time_rejects_when_coverage_gate_fails() {
     let py = Config::python_defaults();
@@ -22,6 +30,7 @@ fn evaluate_records_with_time_rejects_when_coverage_gate_fails() {
         jobs: 1,
         allow_refresh: true,
         pytest_args: &[],
+        language_tables: Default::default(),
     };
     let records = [analyze::line_coverage::LineCoverageRecord {
         file: PathBuf::from("src/low.rs"),
@@ -81,6 +90,7 @@ fn both_gates_disabled_short_circuits() {
         jobs: 1,
         allow_refresh: true,
         pytest_args: &[],
+        language_tables: Default::default(),
     };
     assert_eq!(run_cov_command(&args), 0);
 }
@@ -116,6 +126,7 @@ fn wiring_guard_time_gate_invoked_from_cov_path() {
         jobs: 1,
         allow_refresh: true,
         pytest_args: &[],
+        language_tables: Default::default(),
     };
     let files = CovFileSets {
         py_files: vec![],
@@ -172,6 +183,7 @@ fn try_evaluate_records_with_time_falls_through_on_incomplete() {
         jobs: 1,
         allow_refresh: true,
         pytest_args: &[],
+        language_tables: Default::default(),
     };
     let files = CovFileSets {
         py_files: vec![],
@@ -245,6 +257,7 @@ fn time_only_gate_path_runs_when_coverage_threshold_zero() {
         jobs: 1,
         allow_refresh: true,
         pytest_args: &[],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_cov_command(&args), 1);
@@ -267,6 +280,7 @@ fn allow_refresh_false_incomplete_time_gate_fails_closed() {
         jobs: 1,
         allow_refresh: false,
         pytest_args: &[],
+        language_tables: Default::default(),
     };
     let records = [analyze::line_coverage::LineCoverageRecord {
         file: PathBuf::from("src/ok.rs"),
@@ -347,6 +361,7 @@ fn timing_true_empty_universe_short_circuits_or_fails_softly() {
         jobs: 1,
         allow_refresh: false,
         pytest_args: &[],
+        language_tables: Default::default(),
     };
 
     let code = run_cov_command(&args);
@@ -363,14 +378,16 @@ fn run_cov_command_hits_records_fast_path_after_seed() {
     use std::fs;
 
     let _cwd = crate::cwd_test_lock::lock();
+    let orig_dir = std::env::current_dir().unwrap();
     let tmp = tempfile::tempdir().unwrap();
     let repo = tmp.path();
     std::env::set_current_dir(repo).unwrap();
+    let _restore_cwd = RestoreCwd(orig_dir);
     fs::create_dir_all(repo.join(".git")).unwrap();
     fs::write(repo.join("a.py"), "x = 1\n").unwrap();
     fs::write(
         repo.join(".kissconfig"),
-        "[test]\ntest_coverage_threshold = 50\nmax_unit_test_seconds = [[\"*\", 0.0]]\n",
+        "[test]\ntest_coverage_threshold = 50\nmax_unit_test_seconds = [[\"*\", 0.0]]\n[python]\n[rust]\n",
     )
     .unwrap();
     let selector = "tests/test_a.py::test_x".to_string();
@@ -396,6 +413,7 @@ fn run_cov_command_hits_records_fast_path_after_seed() {
         jobs: 1,
         allow_refresh: false,
         pytest_args: &[],
+        language_tables: Default::default(),
     };
     let code = run_cov_command(&args);
     assert!(code == 0 || code == 1, "code={code}");

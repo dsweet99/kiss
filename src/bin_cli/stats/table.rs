@@ -1,21 +1,33 @@
 use crate::bin_cli::config_session::config_provenance;
 use kiss::Language;
 
-pub fn run_stats_table(paths: &[String], lang_filter: Option<Language>, ignore: &[String]) {
-    let status = run_stats_table_status(paths, lang_filter, ignore);
+#[cfg(test)]
+pub fn run_stats_table(
+    paths: &[String],
+    lang_filter: Option<Language>,
+    ignore: &[String],
+    language_tables: kiss::LanguageTablesPresent,
+) {
+    let status = run_stats_table_status(paths, lang_filter, ignore, language_tables);
     if status != 0 {
         std::process::exit(status);
     }
 }
 
-fn run_stats_table_status(
+pub(super) fn run_stats_table_status(
     paths: &[String],
     lang_filter: Option<Language>,
     ignore: &[String],
+    language_tables: kiss::LanguageTablesPresent,
 ) -> i32 {
     let (py_files, rs_files) = kiss::discovery::gather_files_by_lang(paths, lang_filter, ignore);
     if py_files.is_empty() && rs_files.is_empty() {
         return no_source_files_status();
+    }
+    if let Err(code) =
+        crate::bin_cli::util::reject_unconfigured_languages(&py_files, &rs_files, language_tables)
+    {
+        return code;
     }
     println!(
         "kiss stats --table - Per-Unit Metrics\nAnalyzed from: {}\n{}\n",
@@ -95,7 +107,10 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         let paths = vec![tmp.path().to_string_lossy().to_string()];
 
-        assert_eq!(super::run_stats_table_status(&paths, None, &[]), 1);
+        assert_eq!(
+            super::run_stats_table_status(&paths, None, &[], kiss::LanguageTablesPresent::both()),
+            1
+        );
     }
 
     #[test]
@@ -122,6 +137,6 @@ mod tests {
             rs_path.to_string_lossy().to_string(),
         ];
 
-        super::run_stats_table(&paths, None, &[]);
+        super::run_stats_table(&paths, None, &[], kiss::LanguageTablesPresent::both());
     }
 }

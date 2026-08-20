@@ -173,6 +173,7 @@ fn dispatch_test_command_routes_valid_test_mode() {
         py: &py,
         rs: &rs,
         gate: &gate,
+        language_tables: kiss::LanguageTablesPresent::both(),
     };
     let code = super::dispatch_test_command(
         None,
@@ -214,6 +215,7 @@ fn dispatch_test_command_rejects_removed_validate_selection() {
         py: &py,
         rs: &rs,
         gate: &gate,
+        language_tables: kiss::LanguageTablesPresent::both(),
     };
     let code = super::dispatch_test_command(
         Some(kiss::Language::Python),

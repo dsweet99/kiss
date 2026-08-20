@@ -110,12 +110,14 @@ fn test_branch_options_are_mode_specific() {
     assert!(validate_test_branch_options(&TestInvocation::Base, None, Some("origin/main")).is_ok());
     assert!(validate_test_branch_options(&TestInvocation::All, Some("main"), None).is_err());
     assert!(validate_test_branch_options(&TestInvocation::Commit, None, Some("base")).is_err());
-    assert!(validate_test_branch_options(
-        &TestInvocation::Targets(vec!["a.py".into()]),
-        Some("main"),
-        None
-    )
-    .is_err());
+    assert!(
+        validate_test_branch_options(
+            &TestInvocation::Targets(vec!["a.py".into()]),
+            Some("main"),
+            None
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -128,8 +130,11 @@ fn test_command_help_is_language_neutral_for_shared_options() {
         .to_string();
 
     assert!(help.contains("Force selected tests to rerun instead of reusing test-runner caches"));
-    assert!(help
-        .contains("Rerun tests that need it under normal rules, plus any marked FAIL or TIMEOUT"));
+    assert!(
+        help.contains(
+            "Rerun tests that need it under normal rules, plus any marked FAIL or TIMEOUT"
+        )
+    );
     assert!(help.contains("Maximum number of test jobs to run concurrently"));
     assert!(help.contains("commit, base, main, ., or PATH / PATH::symbol / directory"));
     assert!(help.contains("[TARGET]"));

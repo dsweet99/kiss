@@ -1,24 +1,15 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use kiss::{DuplicateCluster, Language, Violation, find_source_files_with_ignore};
+use kiss::{DuplicateCluster, Language, Violation, gather_files_by_lang};
 
 pub fn gather_files(
     root: &Path,
     lang: Option<Language>,
     ignore_prefixes: &[String],
 ) -> (Vec<PathBuf>, Vec<PathBuf>) {
-    let all = find_source_files_with_ignore(root, ignore_prefixes);
-    let (mut py, mut rs) = (Vec::new(), Vec::new());
-    for sf in all {
-        let path = std::path::absolute(&sf.path).unwrap_or(sf.path);
-        match (sf.language, lang) {
-            (Language::Python, None | Some(Language::Python)) => py.push(path),
-            (Language::Rust, None | Some(Language::Rust)) => rs.push(path),
-            _ => {}
-        }
-    }
-    (py, rs)
+    let root = root.to_string_lossy().into_owned();
+    gather_files_by_lang(&[root], lang, ignore_prefixes)
 }
 
 pub fn build_focus_set(

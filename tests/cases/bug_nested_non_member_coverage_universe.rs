@@ -44,7 +44,9 @@ fn write_nested_workspace_repo(root: &std::path::Path) {
 \n\
 [test]\n\
          test_coverage_threshold = 75\n\
-         test_coverage_scope = \"by_file\"\n",
+         test_coverage_scope = \"by_file\"\n\
+         [python]\n\
+         [rust]\n",
     )
     .unwrap();
     let mut git = kiss::scrubbed_git_command(root);

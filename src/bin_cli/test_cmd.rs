@@ -33,6 +33,7 @@ pub struct TestCommandArgs<'a> {
     pub gate_config: &'a kiss::GateConfig,
     pub reload_kissconfig: bool,
     pub config_path: Option<&'a PathBuf>,
+    pub language_tables: kiss::LanguageTablesPresent,
 }
 
 thread_local! {
@@ -46,6 +47,17 @@ pub(crate) fn set_client_result_override_for_test(value: Option<Result<Option<i3
 
 pub fn run_test_command(args: TestCommandArgs<'_>) -> i32 {
     run_test_command_with(args, run_test)
+}
+
+fn reject_test_universe_languages(args: &TestCommandArgs<'_>) -> Result<(), i32> {
+    if args.language_tables.python && args.language_tables.rust {
+        return Ok(());
+    }
+    let universe = universe_root_for_test_invocation(&args.invocation);
+    let path = universe.to_string_lossy().into_owned();
+    let (py_files, rs_files) =
+        kiss::gather_files_by_lang(std::slice::from_ref(&path), args.lang_filter, args.ignore);
+    crate::bin_cli::util::reject_unconfigured_languages(&py_files, &rs_files, args.language_tables)
 }
 
 pub(crate) fn run_test_command_with(
@@ -71,57 +83,94 @@ pub(crate) fn run_test_command_with(
         gate_config: args.gate_config.clone(),
     };
     if args.watch {
-        let settle = Duration::from_secs_f64(args.test_cfg.watch_settle_seconds);
-        let seed = crate::test_runner::WatchReloadSeed {
-            cli_ignore: args.cli_ignore.to_vec(),
-            jobs_cli: args.jobs_cli,
-            extra: args.extra.to_vec(),
-            coverage_all: args.coverage_all,
-            enabled: args.reload_kissconfig,
-            config_path: args
-                .config_path
-                .cloned()
-                .unwrap_or_else(|| PathBuf::from(".kissconfig")),
-        };
-        return run_test_watch(
-            run_args,
-            settle,
-            seed,
-            args.py_config.clone(),
-            args.rs_config.clone(),
-            |cycle, live| {
-                evaluate_watch_coverage(
-                    cycle,
-                    &WatchCoverageParams {
-                        py_config: &live.py_config,
-                        rs_config: &live.rs_config,
-                        coverage_all: live.coverage_all,
-                    },
-                )
-            },
-        );
+        run_watch_tests(&args, run_args)
+    } else if args.dry_run {
+        run_dry_tests(&args, run_args, run_local)
+    } else {
+        run_local_tests_after_client(&args, run_args, run_local)
     }
-    if args.dry_run {
-        return run_local(run_args);
-    }
+}
 
-    #[cfg(unix)]
-    {
-        match try_run_as_watcher_client(&args) {
-            Ok(Some(code)) => return code,
-            Ok(None) => {}
-            Err(e) => {
-                eprintln!("error: kiss test: {e}");
-                return 1;
-            }
-        }
+fn run_watch_tests(args: &TestCommandArgs<'_>, run_args: RunTestCmdArgs<'_>) -> i32 {
+    if let Err(code) = reject_test_universe_languages(args) {
+        return code;
     }
+    let settle = Duration::from_secs_f64(args.test_cfg.watch_settle_seconds);
+    let seed = crate::test_runner::WatchReloadSeed {
+        cli_ignore: args.cli_ignore.to_vec(),
+        jobs_cli: args.jobs_cli,
+        extra: args.extra.to_vec(),
+        coverage_all: args.coverage_all,
+        enabled: args.reload_kissconfig,
+        config_path: args
+            .config_path
+            .cloned()
+            .unwrap_or_else(|| PathBuf::from(".kissconfig")),
+    };
+    run_test_watch(
+        run_args,
+        settle,
+        seed,
+        args.py_config.clone(),
+        args.rs_config.clone(),
+        |cycle, live| {
+            evaluate_watch_coverage(
+                cycle,
+                &WatchCoverageParams {
+                    py_config: &live.py_config,
+                    rs_config: &live.rs_config,
+                    coverage_all: live.coverage_all,
+                },
+            )
+        },
+    )
+}
 
+fn run_dry_tests(
+    args: &TestCommandArgs<'_>,
+    run_args: RunTestCmdArgs<'_>,
+    run_local: impl FnOnce(RunTestCmdArgs<'_>) -> i32,
+) -> i32 {
+    if let Err(code) = reject_test_universe_languages(args) {
+        return code;
+    }
+    run_local(run_args)
+}
+
+fn run_local_tests_after_client(
+    args: &TestCommandArgs<'_>,
+    run_args: RunTestCmdArgs<'_>,
+    run_local: impl FnOnce(RunTestCmdArgs<'_>) -> i32,
+) -> i32 {
+    if let Some(code) = watcher_client_exit(args) {
+        return code;
+    }
+    if let Err(code) = reject_test_universe_languages(args) {
+        return code;
+    }
     let code = run_local(run_args);
     if code != 0 {
         return code;
     }
-    finish_with_coverage(&args, code)
+    finish_with_coverage(args, code)
+}
+
+fn watcher_client_exit(args: &TestCommandArgs<'_>) -> Option<i32> {
+    #[cfg(unix)]
+    let result = match try_run_as_watcher_client(args) {
+        Ok(Some(code)) => Some(code),
+        Ok(None) => None,
+        Err(e) => {
+            eprintln!("error: kiss test: {e}");
+            Some(1)
+        }
+    };
+    #[cfg(not(unix))]
+    let result = {
+        let _ = args;
+        None
+    };
+    result
 }
 
 #[cfg(unix)]
@@ -206,6 +255,7 @@ pub(crate) fn evaluate_watch_coverage(
         jobs: cycle.jobs,
         allow_refresh: true,
         pytest_args: cycle.python_extra,
+        language_tables: kiss::LanguageTablesPresent::from_path(&kiss::kissconfig_path_from_cwd()),
     };
     let (cov_code, error) = run_cov_for_watch(&args);
     if crate::test_runner::consume_rust_batch_interrupted() {
@@ -315,6 +365,7 @@ pub(crate) fn finish_with_coverage(args: &TestCommandArgs<'_>, test_exit: i32) -
         jobs: args.jobs,
         allow_refresh: false,
         pytest_args: &python_extra,
+        language_tables: args.language_tables,
     });
     if cov_code != 0 { cov_code } else { test_exit }
 }
