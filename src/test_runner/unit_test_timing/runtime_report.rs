@@ -104,7 +104,7 @@ pub(crate) fn format_unit_test_runtime_grouped_report(
     report: &UnitTestRuntimeGroupedReport,
 ) -> String {
     let mut out =
-        String::from("unit_test_runtime_sec: (coverage cache; may not reflect full test set)");
+        String::from("unit_test_runtime_sec: (culled from cached values only)");
     if let Some(total) = report.codebase_tests {
         out.push_str(&format!(" codebase_tests={total}"));
     }

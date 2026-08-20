@@ -29,16 +29,6 @@ pub(crate) fn rust_logical_to_kiss_test_ids_cached(
     repo_root: &Path,
     ignore: &[String],
 ) -> Result<BTreeMap<String, String>, String> {
-    let started = std::time::Instant::now();
-    let map = rust_logical_to_kiss_test_ids_cached_inner(repo_root, ignore);
-    crate::test_runner::emit_stage_time("rust_report_ids", started.elapsed());
-    map
-}
-
-fn rust_logical_to_kiss_test_ids_cached_inner(
-    repo_root: &Path,
-    ignore: &[String],
-) -> Result<BTreeMap<String, String>, String> {
     if let Some(map) = try_load_cached(repo_root, ignore) {
         return Ok(map);
     }

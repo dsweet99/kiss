@@ -68,7 +68,7 @@ fn runtime_rows(stdout: &str) -> Vec<&str> {
         .find(|l| l.starts_with("unit_test_runtime_sec:"))
         .unwrap_or_else(|| panic!("missing unit_test_runtime_sec heading:\n{stdout}"));
     assert!(
-        heading.contains("coverage cache; may not reflect full test set"),
+        heading.contains("culled from cached values only"),
         "heading missing cache disclaimer: {heading}"
     );
     stdout

@@ -111,7 +111,6 @@ fn watch_stage_names_use_kiss_test_stage_format() {
         "cov_score",
         "rslip_prepare",
         "selective_index_repair",
-        "rust_report_ids",
         "plan_python",
         "plan_rust",
     ] {

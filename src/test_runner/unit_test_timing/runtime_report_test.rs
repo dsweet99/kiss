@@ -71,7 +71,7 @@ fn grouped_runtime_report_partitions_by_first_matching_rule() {
 
     let formatted = format_unit_test_runtime_grouped_report(&report);
     assert!(formatted.starts_with(
-        "unit_test_runtime_sec: (coverage cache; may not reflect full test set) codebase_tests=99\n"
+        "unit_test_runtime_sec: (culled from cached values only) codebase_tests=99\n"
     ));
     assert!(formatted.contains("pattern"));
     assert!(formatted.contains("tests/slow/dbs"));
