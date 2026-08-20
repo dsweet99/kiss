@@ -51,7 +51,7 @@ pub(in crate::bin_cli::dispatch) fn dispatch_cov(o: CovDispatchOptions<'_>) -> i
 }
 
 pub(in crate::bin_cli::dispatch) fn dispatch_stats(o: StatsDispatchOptions) -> i32 {
-    let ignore = normalize_ignore_prefixes(&o.ignore);
+    let ignore = util::merge_check_ignore_prefixes(&o.ignore);
     run_stats(RunStatsArgs {
         paths: &o.paths,
         lang_filter: o.lang,

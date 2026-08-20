@@ -101,6 +101,8 @@ mod regression_check_synthetic_python_coverage_paths;
 mod regression_init_py_imports_sync;
 #[path = "cases/regression_stats_all_metric_registry.rs"]
 mod regression_stats_all_metric_registry;
+#[path = "cases/regression_stats_check_same_ignore.rs"]
+mod regression_stats_check_same_ignore;
 #[path = "cases/regression_stats_cold_eq_warm.rs"]
 mod regression_stats_cold_eq_warm;
 #[path = "cases/regression_stats_grouped_unit_test_runtime.rs"]
