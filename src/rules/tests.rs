@@ -57,17 +57,6 @@ fn global_and_test_rule_specs_use_shared_metrics() {
         assert!(!rs_metrics.contains(metric), "{metric} still under Rust");
     }
 }
-#[test]
-fn test_run_config_and_print_config() {
-    let py = Config::python_defaults();
-    let rs = Config::rust_defaults();
-    let gate = GateConfig::default();
-    let test = kiss::TestSectionConfig::default();
-    run_config(&py, &rs, &gate, &test, None, false);
-    run_config(&py, &rs, &gate, &test, None, true);
-    print_python_config(&py);
-    print_rust_config(&rs);
-}
 
 #[test]
 fn test_threshold_value_format() {

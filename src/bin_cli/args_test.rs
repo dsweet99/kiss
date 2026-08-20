@@ -32,6 +32,12 @@ fn cov_subcommand_parses_as_coverage() {
 }
 
 #[test]
+fn config_subcommand_is_removed() {
+    assert!(Cli::try_parse_from(["kiss", "config"]).is_err());
+    assert!(Cli::command().find_subcommand("config").is_none());
+}
+
+#[test]
 fn test_accepts_coverage_all_flag() {
     let cli = Cli::parse_from(["kiss", "test", ".", "--coverage-all"]);
     assert!(matches!(
@@ -159,7 +165,8 @@ fn top_level_help_describes_commands_and_global_flags() {
     );
     assert!(help.contains("Detect duplicate code blocks (uses function-level chunks)"));
     assert!(help.contains("Display all available rules and their current thresholds"));
-    assert!(help.contains("Show effective configuration (merged from all sources)"));
+    assert!(!help.contains("Show effective configuration (merged from all sources)"));
+    assert!(Cli::command().find_subcommand("config").is_none());
     assert!(
         help.contains("Write dependency graph (Mermaid or Graphviz DOT based on output extension)")
     );

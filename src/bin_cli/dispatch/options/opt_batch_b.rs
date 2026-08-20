@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use kiss::Language;
-use kiss::TestSectionConfig;
 
 use super::TriConfig;
 
@@ -20,13 +19,6 @@ pub(crate) struct RulesDispatchOptions<'a> {
     pub lang: Option<Language>,
     pub defaults: bool,
     pub cfg: &'a TriConfig<'a>,
-}
-
-pub(crate) struct ConfigDispatchOptions<'a> {
-    pub defaults: bool,
-    pub config: Option<PathBuf>,
-    pub cfg: &'a TriConfig<'a>,
-    pub test_cfg: &'a TestSectionConfig,
 }
 
 pub(crate) struct VizDispatchOptions {
@@ -59,9 +51,6 @@ mod coverage_witness {
     impl RulesDispatchOptions<'_> {
         fn witness() {}
     }
-    impl ConfigDispatchOptions<'_> {
-        fn witness() {}
-    }
     impl VizDispatchOptions {
         fn witness() -> Self {
             Self {
@@ -79,7 +68,6 @@ mod coverage_witness {
     fn witness_opt_batch_b() {
         let _ = DryDispatchOptions::witness();
         RulesDispatchOptions::witness();
-        ConfigDispatchOptions::witness();
         let _ = VizDispatchOptions::witness();
     }
 }

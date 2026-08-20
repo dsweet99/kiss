@@ -167,7 +167,6 @@ fn cli_corpus_exercises_mixed_repo_reporting_paths() {
         vec!["mimic", "--out", mimic_out.to_str().unwrap(), "."],
         vec!["viz", graph_out.to_str().unwrap(), "--zoom", "0.5", "."],
         vec!["rules"],
-        vec!["config"],
     ] {
         let out = kiss_binary()
             .args(args)

@@ -10,14 +10,13 @@ use crate::bin_cli::args::{Cli, Commands, parse_test_invocation, validate_test_b
 use crate::bin_cli::config_session::run_init_command;
 
 use handlers::{
-    dispatch_check, dispatch_clamp, dispatch_config, dispatch_cov, dispatch_dry, dispatch_mimic,
-    dispatch_mv, dispatch_rules, dispatch_stats, dispatch_test, dispatch_viz,
+    dispatch_check, dispatch_clamp, dispatch_cov, dispatch_dry, dispatch_mimic, dispatch_mv,
+    dispatch_rules, dispatch_stats, dispatch_test, dispatch_viz,
 };
 use options::{
-    CheckDispatchOptions, ConfigDispatchOptions, CovDispatchOptions, DryDispatchOptions,
-    MimicDispatchOptions, MvDispatchOptions, MvOutputFlags, RulesDispatchOptions,
-    StatsDispatchOptions, TestDispatchOptions, TriConfig,
-    VizDispatchOptions,
+    CheckDispatchOptions, CovDispatchOptions, DryDispatchOptions, MimicDispatchOptions,
+    MvDispatchOptions, MvOutputFlags, RulesDispatchOptions, StatsDispatchOptions,
+    TestDispatchOptions, TriConfig, VizDispatchOptions,
 };
 
 use kiss::GateConfig;
@@ -113,12 +112,6 @@ fn dispatch_tools(
             lang,
             defaults,
             cfg,
-        }),
-        Commands::Config => dispatch_config(ConfigDispatchOptions {
-            defaults,
-            config,
-            cfg,
-            test_cfg: test_section,
         }),
         Commands::Viz {
             out,

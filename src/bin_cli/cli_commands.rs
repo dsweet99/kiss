@@ -79,8 +79,6 @@ pub enum Commands {
     },
     #[command(about = "Display all available rules and their current thresholds")]
     Rules,
-    #[command(about = "Show effective configuration (merged from all sources)")]
-    Config,
     #[command(about = "Write dependency graph (Mermaid or Graphviz DOT based on output extension)")]
     Viz {
         #[arg(help = "Output markdown path")]

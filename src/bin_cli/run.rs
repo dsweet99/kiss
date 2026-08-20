@@ -236,7 +236,6 @@ mod run_coverage {
                 min_similarity: 0.9,
                 ignore: Vec::new(),
             },
-            Commands::Config,
             Commands::Rules,
         ] {
             assert_eq!(

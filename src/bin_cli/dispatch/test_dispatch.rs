@@ -73,15 +73,6 @@ fn call_handler_dispatchers(
         }),
         0
     );
-    assert_eq!(
-        handlers::dispatch_config(options::ConfigDispatchOptions {
-            defaults: true,
-            config: None,
-            cfg,
-            test_cfg: test,
-        }),
-        0
-    );
     let _ = handlers::dispatch_viz(options::VizDispatchOptions {
         lang: None,
         out: out_dot,

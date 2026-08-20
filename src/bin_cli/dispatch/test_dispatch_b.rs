@@ -72,7 +72,7 @@ fn public_dispatch_routes_analyze_and_tool_groups() {
                 config: None,
                 lang: None,
                 defaults: true,
-                command: Commands::Config,
+                command: Commands::Rules,
             },
             &py,
             &rs,
