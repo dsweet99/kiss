@@ -98,8 +98,6 @@ pub enum Commands {
     },
     #[command(about = "Display all available rules and their current thresholds")]
     Rules,
-    #[command(about = "Coverage is enforced by kiss test, not a standalone command")]
-    Cov,
     #[command(about = "Write a dependency graph")]
     Viz {
         #[arg(help = "Output file (.md, .mmd/.mermaid, or .dot)")]

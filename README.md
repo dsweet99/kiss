@@ -102,4 +102,4 @@ Complexity and size maxima print `<= N` because a value equal to the configured 
 
 ## kiss test
 
-`kiss test` runs covering tests, then enforces runtime line coverage (`test_coverage_threshold` / `test_coverage_scope`), `max_unit_test_seconds`, and `max_num_tests`. See `kiss test --help` for `commit|base|main|.|TARGET` modes, `--watch`, jobs, and toolchain notes (pytest 8.x / rslip for Python; llvm-cov for Rust).
+`kiss test` runs covering tests, then enforces runtime line coverage (`test_coverage_threshold` / `test_coverage_scope`), `max_unit_test_seconds`, and `max_num_tests`. See `kiss test --help` for `commit|base|main|.|TARGET` modes, `--watch`, jobs, and toolchain notes (pytest 8.x / rslip for Python; llvm coverage for Rust).

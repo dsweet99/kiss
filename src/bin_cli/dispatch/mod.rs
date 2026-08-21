@@ -114,10 +114,6 @@ fn dispatch_tools(
             defaults,
             cfg,
         }),
-        Commands::Cov => {
-            eprintln!("error: coverage is enforced by `kiss test`, not a standalone `kiss cov` command");
-            2
-        }
         Commands::Viz {
             out,
             paths,

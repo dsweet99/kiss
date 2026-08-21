@@ -22,18 +22,32 @@ fn witness_cli_types() {
 
 #[test]
 fn cov_subcommand_parses_as_coverage() {
-    assert!(matches!(
-        Cli::parse_from(["kiss", "cov"]).command,
-        Commands::Cov
-    ));
-    assert!(Cli::command().find_subcommand("cov").is_some());
+    assert!(Cli::try_parse_from(["kiss", "cov"]).is_err());
+    assert!(Cli::command().find_subcommand("cov").is_none());
     let help = Cli::command().render_long_help().to_string();
     assert!(help.contains("kiss test"), "{help}");
+    assert!(
+        !help
+            .split(|c: char| !c.is_ascii_alphanumeric())
+            .any(|w| w.eq_ignore_ascii_case("cov")),
+        "top-level help must not mention the token cov\n{help}"
+    );
     let cli = Cli::parse_from(["kiss", "__coverage", ".", "-j", "7"]);
     assert!(matches!(
         cli.command,
         Commands::Coverage { jobs: Some(7), .. }
     ));
+}
+
+#[test]
+fn readme_does_not_mention_cov_token() {
+    let readme = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"));
+    assert!(
+        !readme
+            .split(|c: char| !c.is_ascii_alphanumeric())
+            .any(|w| w.eq_ignore_ascii_case("cov")),
+        "README.md must not mention the token cov"
+    );
 }
 
 #[test]
@@ -165,7 +179,9 @@ fn test_command_help_is_language_neutral_for_shared_options() {
 #[test]
 fn top_level_help_describes_commands_and_global_flags() {
     let help = Cli::command().render_long_help().to_string();
-    assert!(help.contains("Global code feedback for LLM coding agents"));
+    let first_line = help.lines().next().expect("help has a first line");
+    assert_eq!(first_line, "Global code feedback for LLM coding agents");
+    assert!(!help.contains(" (Python and Rust)"));
     assert!(help.contains("Path to custom config file (default: .kissconfig)"));
     assert!(help.contains("Filter by language: python (py) or rust (rs)"));
     assert!(help.contains("Use built-in defaults, ignoring config files"));
@@ -185,6 +201,14 @@ fn top_level_help_describes_commands_and_global_flags() {
     assert!(!help.contains("Output markdown path"));
     assert!(help.contains("Run covering tests and enforce coverage and time gates"));
     assert!(!help.contains("Coverage-only evaluation (prefer kiss test for the full path)"));
+    assert!(!help.contains("Coverage is enforced by kiss test, not a standalone command"));
+    assert!(
+        !help.lines().any(|line| {
+            let name = line.split_whitespace().next();
+            name == Some("cov")
+        }),
+        "top-level help must not list cov\n{help}"
+    );
     assert!(help.contains("Rename or move a Python or Rust symbol (beta)"));
     assert!(help.contains("Usage:"));
     assert!(help.contains("Examples:"));
@@ -204,14 +228,7 @@ fn check_and_cov_help_describe_options() {
     assert!(check.contains("Path prefix to exclude"));
     assert!(check.contains("Print analysis stage timings"));
     assert!(check.contains("Usage:"));
-    assert!(Cli::command().find_subcommand("cov").is_some());
-    let cov_help = Cli::command()
-        .find_subcommand("cov")
-        .expect("cov subcommand exists")
-        .get_about()
-        .map(|s| s.to_string())
-        .unwrap_or_default();
-    assert!(cov_help.contains("kiss test"), "{cov_help}");
+    assert!(Cli::command().find_subcommand("cov").is_none());
     let mut command = Cli::command();
     let viz = command
         .find_subcommand_mut("viz")
