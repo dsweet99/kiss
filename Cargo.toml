@@ -2,7 +2,7 @@
 name = "kiss-ai"
 version = "0.4.10"
 edition = "2024"
-description = "Global code feedback for LLM coding agents (Python and Rust)"
+description = "Global code feedback for LLM coding agents"
 license = "MIT"
 repository = "https://github.com/dsweet99/kiss"
 readme = "README.md"
