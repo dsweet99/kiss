@@ -93,7 +93,7 @@ fn public_dispatch_routes_analyze_and_tool_groups() {
                     shingle_size: 3,
                     minhash_size: 100,
                     lsh_bands: 20,
-                    min_similarity: 0.9,
+                    min_similarity: Some(0.9),
                     ignore: vec![],
                 },
             },

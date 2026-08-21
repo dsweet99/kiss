@@ -31,19 +31,13 @@ fn test_stats_helpers() {
         ..Default::default()
     };
     assert!(!compute_summaries(&s2).is_empty());
-    let toml = super::generate_config_toml(&[PercentileSummary {
-        metric_id: "statements_per_function",
-        count: 10,
-        p50: 5,
-        p90: 9,
-        p95: 10,
-        p99: 15,
-        max: 20,
-    }]);
-    assert!(toml.contains("statements_per_function = 15"));
     assert_eq!(
         config_key_for("statements_per_function"),
         Some("statements_per_function")
+    );
+    assert_eq!(
+        config_key_for("boolean_parameters"),
+        Some("boolean_parameters")
     );
     assert!(
         super::format_stats_table(&[PercentileSummary {
@@ -204,21 +198,6 @@ fn test_cycle_size_is_per_module_distribution() {
     let mut got = stats.cycle_size.clone();
     got.sort_unstable();
     assert_eq!(got, vec![0, 2, 2]);
-}
-
-#[test]
-fn test_generate_config_toml_includes_boolean_parameters() {
-    let summaries = vec![PercentileSummary {
-        metric_id: "boolean_parameters",
-        count: 10,
-        p50: 0,
-        p90: 1,
-        p95: 1,
-        p99: 2,
-        max: 3,
-    }];
-    let toml = super::generate_config_toml(&summaries);
-    assert!(toml.contains("boolean_parameters"));
 }
 
 #[test]

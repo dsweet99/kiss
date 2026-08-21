@@ -64,7 +64,7 @@ impl TestSectionConfig {
     pub fn merged_ignore(&self, cli_ignore: &[String]) -> Vec<String> {
         let mut ignore = self.ignore.clone();
         ignore.extend(cli_ignore.iter().cloned());
-        crate::discovery::normalize_ignore_prefixes(&ignore)
+        crate::discovery::merge_check_ignore_prefixes(&ignore)
     }
 
     pub fn load() -> Self {

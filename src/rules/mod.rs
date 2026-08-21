@@ -8,6 +8,25 @@ mod test_rules;
 #[cfg(test)]
 mod tests;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ThresholdOp {
+    AtMost,
+    AtLeast,
+    StrictLess,
+    Equal,
+}
+
+impl ThresholdOp {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::AtMost => "<=",
+            Self::AtLeast => ">=",
+            Self::StrictLess => "<",
+            Self::Equal => "==",
+        }
+    }
+}
+
 pub(crate) enum ThresholdValue {
     Usize(fn(&Config, &GateConfig) -> usize),
     F64(fn(&Config, &GateConfig) -> f64),
@@ -24,7 +43,7 @@ impl ThresholdValue {
 
 pub(crate) struct RuleSpec {
     pub(crate) metric: &'static str,
-    pub(crate) op: &'static str,
+    pub(crate) op: ThresholdOp,
     pub(crate) threshold: ThresholdValue,
     pub(crate) description: &'static str,
 }
@@ -74,12 +93,44 @@ fn print_threshold_rules(lang: &str, c: &Config, g: &GateConfig) {
 
 fn print_rule_specs(section: &str, specs: &[RuleSpec], c: &Config, g: &GateConfig) {
     for spec in specs {
-        println!(
-            "RULE: [{section}] [{} {} {}] {}",
-            spec.metric,
-            spec.op,
-            spec.threshold.format(c, g),
-            spec.description
-        );
+        println!("{}", format_rule_line(section, spec, c, g));
+    }
+}
+
+fn format_rule_line(section: &str, spec: &RuleSpec, c: &Config, g: &GateConfig) -> String {
+    let value = spec.threshold.format(c, g);
+    let op = display_op(spec.metric, spec.op, &value);
+    let extra = alias_note(section, spec.metric);
+    format!(
+        "RULE: [{section}] [{} {op} {value}] {}{extra}",
+        spec.metric, spec.description
+    )
+}
+
+fn display_op(metric: &str, op: ThresholdOp, value: &str) -> &'static str {
+    if metric == "cycle_size" && value == "0" {
+        "=="
+    } else {
+        op.as_str()
+    }
+}
+
+fn alias_note(section: &str, metric: &str) -> String {
+    let keys = toml_aliases(section, metric);
+    if keys.is_empty() {
+        return String::new();
+    }
+    format!(" TOML key(s): {}.", keys.join(", "))
+}
+
+fn toml_aliases(section: &str, metric: &str) -> &'static [&'static str] {
+    match (section, metric) {
+        ("Rust", "positional_args") => &["arguments"],
+        (_, "max_indentation_depth") => &["max_indentation"],
+        (_, "local_variables_per_function") => &["local_variables"],
+        ("Python", "annotations_per_function") => &["decorators_per_function"],
+        ("Rust", "annotations_per_function") => &["attributes_per_function"],
+        (_, "concrete_types_per_file") => &["classes_per_file", "types_per_file"],
+        _ => &[],
     }
 }

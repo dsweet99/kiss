@@ -194,6 +194,21 @@ fn process_ext_entry(
     WalkState::Continue
 }
 
+pub const DEFAULT_CHECK_IGNORE_PREFIXES: &[&str] = &["fake_", "fixtures"];
+
+pub fn default_check_ignore_prefixes() -> Vec<String> {
+    DEFAULT_CHECK_IGNORE_PREFIXES
+        .iter()
+        .map(|prefix| (*prefix).to_string())
+        .collect()
+}
+
+pub fn merge_check_ignore_prefixes(user: &[String]) -> Vec<String> {
+    let mut ignore = default_check_ignore_prefixes();
+    ignore.extend(user.iter().cloned());
+    normalize_ignore_prefixes(&ignore)
+}
+
 pub fn normalize_ignore_prefixes(prefixes: &[String]) -> Vec<String> {
     let result: Vec<String> = prefixes
         .iter()

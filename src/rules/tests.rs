@@ -75,7 +75,7 @@ fn test_threshold_value_format() {
 fn test_rule_spec_struct_literal_referenced() {
     let spec = RuleSpec {
         metric: "touch",
-        op: "=",
+        op: ThresholdOp::Equal,
         threshold: ThresholdValue::Usize(|c, _| c.statements_per_function),
         description: "touch",
     };
@@ -87,7 +87,7 @@ fn test_rule_spec_fields() {
     let specs: &[RuleSpec] = python::PY_RULE_SPECS;
     let spec = &specs[0];
     assert_eq!(spec.metric, "statements_per_function");
-    assert_eq!(spec.op, "<");
+    assert_eq!(spec.op, ThresholdOp::AtMost);
     assert!(!spec.description.is_empty());
 }
 
@@ -95,7 +95,7 @@ impl RuleSpec {
     fn witness() -> Self {
         Self {
             metric: "touch",
-            op: "=",
+            op: ThresholdOp::Equal,
             threshold: ThresholdValue::Usize(|c, _| c.statements_per_function),
             description: "touch",
         }
@@ -106,4 +106,21 @@ impl RuleSpec {
 fn witness_rule_spec_assoc() {
     let spec = RuleSpec::witness();
     assert_eq!(spec.metric, "touch");
+}
+
+#[test]
+fn display_op_uses_eq_for_zero_cycle_size() {
+    assert_eq!(display_op("cycle_size", ThresholdOp::AtMost, "0"), "==");
+    assert_eq!(display_op("cycle_size", ThresholdOp::AtMost, "3"), "<=");
+    assert_eq!(
+        display_op("statements_per_function", ThresholdOp::AtMost, "0"),
+        "<="
+    );
+}
+
+#[test]
+fn alias_note_documents_toml_keys() {
+    assert!(alias_note("Rust", "positional_args").contains("arguments"));
+    assert!(alias_note("Python", "max_indentation_depth").contains("max_indentation"));
+    assert!(alias_note("Python", "statements_per_function").is_empty());
 }

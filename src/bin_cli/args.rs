@@ -22,7 +22,7 @@ Examples:
 #[command(
     name = "kiss",
     version,
-    about = "Code-quality metrics tool for Python and Rust",
+    about = "Global code feedback for LLM coding agents (Python and Rust)",
     disable_help_subcommand = true
 )]
 #[command(after_help = AFTER_HELP)]

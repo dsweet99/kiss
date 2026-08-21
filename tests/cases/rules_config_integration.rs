@@ -151,7 +151,7 @@ fn cli_rules_ignores_home_kissconfig_without_local() {
         "rules should succeed. stderr: {stderr}"
     );
     assert!(
-        !stdout.contains("statements_per_function < 99"),
+        !stdout.contains("statements_per_function <= 99"),
         "Home .kissconfig must not be merged. stdout: {stdout}"
     );
 }
@@ -210,15 +210,15 @@ fn cli_rules_with_custom_file_and_local_layers_merges() {
 
     assert!(output.status.success());
     assert!(
-        stdout.contains("statements_per_function < 100"),
+        stdout.contains("statements_per_function <= 100"),
         "Local .kissconfig should be preserved. stdout: {stdout}"
     );
     assert!(
-        !stdout.contains("lines_per_file < 111"),
+        !stdout.contains("lines_per_file <= 111"),
         "Home .kissconfig should not be merged. stdout: {stdout}"
     );
     assert!(
-        stdout.contains("positional_args < 1"),
+        stdout.contains("positional_args <= 1"),
         "Explicit --config should override local settings. stdout: {stdout}"
     );
 }

@@ -6,7 +6,7 @@ use super::parse_positive_usize;
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    #[command(about = "Run static complexity, graph, and duplicate checks")]
+    #[command(about = "Run static complexity, graph, duplicate, comment, doc, and orphan checks")]
     Check {
         #[arg(
             default_value = ".",
@@ -88,13 +88,18 @@ pub enum Commands {
         minhash_size: usize,
         #[arg(long, default_value = "20", help = "Number of LSH bands")]
         lsh_bands: usize,
-        #[arg(long, default_value = "0.9", help = "Minimum similarity to report")]
-        min_similarity: f64,
+        #[arg(
+            long,
+            help = "Minimum similarity to report (default: .kissconfig min_similarity)"
+        )]
+        min_similarity: Option<f64>,
         #[arg(long, value_name = "PREFIX", help = "Path prefix to exclude")]
         ignore: Vec<String>,
     },
     #[command(about = "Display all available rules and their current thresholds")]
     Rules,
+    #[command(about = "Coverage is enforced by kiss test, not a standalone command")]
+    Cov,
     #[command(about = "Write a dependency graph")]
     Viz {
         #[arg(help = "Output file (.md, .mmd/.mermaid, or .dot)")]

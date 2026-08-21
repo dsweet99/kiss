@@ -147,6 +147,8 @@ fn test_section_config_defaults_and_reads_ignore() {
     assert_eq!(
         cfg.merged_ignore(&["cli_extra".to_string()]),
         vec![
+            "fake_".to_string(),
+            "fixtures".to_string(),
             "ignored_tests".to_string(),
             "vendor".to_string(),
             "cli_extra".to_string()

@@ -17,7 +17,7 @@ pub const VIOLATIONS_FIX_HINT: &str =
 
 pub fn format_unreferenced_unit_coverage_message(file_pct: usize) -> String {
     if file_pct >= 100 {
-        "This code unit has no test reference. Add test coverage.".to_string()
+        "This code unit has no covered lines. Add test coverage.".to_string()
     } else {
         format!("{file_pct}% covered. Add test coverage for this code unit.")
     }
@@ -227,7 +227,7 @@ mod tests {
     fn test_format_unreferenced_unit_coverage_message_rounding_cliff() {
         assert_eq!(
             format_unreferenced_unit_coverage_message(100),
-            "This code unit has no test reference. Add test coverage."
+            "This code unit has no covered lines. Add test coverage."
         );
         assert_eq!(
             format_unreferenced_unit_coverage_message(50),

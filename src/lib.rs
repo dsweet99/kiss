@@ -10,7 +10,6 @@ pub mod defaults;
 pub mod gate_config;
 pub mod py_imports;
 pub mod py_metrics;
-pub mod rule_defs;
 pub mod shared_helpers;
 pub mod violation;
 
@@ -66,6 +65,7 @@ pub use defaults::default_config_toml;
 pub use discovery::{
     Language, SourceFile, find_python_files, find_rust_files, find_source_files,
     find_source_files_with_ignore, gather_files_by_lang, gather_files_by_lang_opts,
+    DEFAULT_CHECK_IGNORE_PREFIXES, default_check_ignore_prefixes, merge_check_ignore_prefixes,
     normalize_ignore_prefixes,
 };
 pub use duplication::{
@@ -96,7 +96,7 @@ pub use shared_helpers::{
 };
 pub use stats::{
     METRICS, MetricDef, MetricScope, MetricStats, PercentileSummary, compute_summaries,
-    format_stats_table, generate_config_toml, get_metric_def,
+    format_stats_table, get_metric_def,
 };
 pub use stats_detailed::{
     UnitMetrics, collect_detailed_py, collect_detailed_rs, format_detailed_table, truncate,
@@ -119,8 +119,6 @@ pub use rust_graph::{IncludeGraph, build_include_graph, expand_rust_files};
 pub use rust_parsing::{ParsedRustFile, RustParseError, parse_rust_file, parse_rust_files};
 pub use rust_test_refs::{is_binary_entry_point, is_rust_test_file, rust_test_functions_in};
 pub use rust_units::{RustCodeUnit, extract_rust_code_units};
-
-pub use rule_defs::{Applicability, RULES, Rule, RuleCategory, rules_for_python, rules_for_rust};
 
 pub use global_metrics::GlobalMetrics;
 

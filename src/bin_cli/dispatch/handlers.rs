@@ -9,7 +9,7 @@ use crate::bin_cli::util;
 use crate::bin_cli::{check_cmd, cov_cmd};
 use crate::rules::run_rules;
 use crate::viz::{VizCoarsen, run_viz};
-use kiss::{Language, normalize_ignore_prefixes};
+use kiss::Language;
 
 use super::options::{
     CheckDispatchOptions, CovDispatchOptions, DryDispatchOptions, MimicDispatchOptions,
@@ -84,7 +84,7 @@ pub(in crate::bin_cli::dispatch) fn dispatch_clamp(
 }
 
 pub(in crate::bin_cli::dispatch) fn dispatch_dry(o: DryDispatchOptions) -> i32 {
-    let ignore = normalize_ignore_prefixes(&o.ignore);
+    let ignore = util::merge_check_ignore_prefixes(&o.ignore);
     if let Err(msg) = util::validate_min_similarity(o.min_similarity) {
         eprintln!("Error: {msg}");
         return 1;
@@ -112,7 +112,7 @@ pub(in crate::bin_cli::dispatch) fn dispatch_rules(o: RulesDispatchOptions<'_>) 
 }
 
 pub(in crate::bin_cli::dispatch) fn dispatch_viz(o: VizDispatchOptions) -> i32 {
-    let ignore = normalize_ignore_prefixes(&o.ignore);
+    let ignore = util::merge_check_ignore_prefixes(&o.ignore);
     util::validate_paths(&o.paths);
     let coarsen = o
         .num_nodes
@@ -170,7 +170,7 @@ pub(in crate::bin_cli::dispatch) fn dispatch_test(o: TestDispatchOptions<'_>) ->
 }
 
 pub(in crate::bin_cli::dispatch) fn dispatch_mv(o: MvDispatchOptions) -> i32 {
-    let ignore = normalize_ignore_prefixes(&o.ignore);
+    let ignore = util::merge_check_ignore_prefixes(&o.ignore);
     let opts = kiss::symbol_mv::MvOptions {
         query: o.query,
         new_name: o.new_name,

@@ -132,6 +132,22 @@ fn runtime_section_helper_covers_defaults_and_disabled_rules() {
         &defaults.max_unit_test_seconds,
     )
     .expect("default catch-all should emit a runtime table");
+    assert_eq!(
+        format_violation_counts(1, 2, 3, 4),
+        "Violations: 1 duplicate, 2 orphan, 3 comment, 4 doc"
+    );
+    let comment = kiss::Violation::builder("a.py")
+        .metric("comment")
+        .build();
+    let doc = kiss::Violation::builder("b.py").metric("doc").build();
+    assert_eq!(
+        count_metric([comment.metric.as_str(), doc.metric.as_str()], "comment"),
+        1
+    );
+    assert_eq!(
+        count_metric([comment.metric.as_str(), doc.metric.as_str()], "doc"),
+        1
+    );
     assert!(default_report.starts_with("unit_test_runtime_sec:"));
     assert!(default_report.lines().any(|line| {
         line.split_whitespace()

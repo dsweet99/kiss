@@ -176,7 +176,15 @@ fn print_summary_from_pipeline(
         graph_nodes,
         graph_edges
     );
-    println!("Violations: {duplicate_total} duplicate, {orphan_total} orphan\n");
+    println!(
+        "{}\n",
+        format_violation_counts(
+            duplicate_total,
+            orphan_total,
+            count_metric(pipeline.result.violations.iter().map(|v| v.metric.as_str()), "comment"),
+            count_metric(pipeline.result.violations.iter().map(|v| v.metric.as_str()), "doc"),
+        )
+    );
 
     if !pipeline.result.py_parsed.is_empty() {
         println!(
@@ -268,7 +276,15 @@ fn print_cached_summary(
         cache.graph_nodes,
         cache.graph_edges
     );
-    println!("Violations: {dup_total} duplicate, {orphan_total} orphan\n");
+    println!(
+        "{}\n",
+        format_violation_counts(
+            dup_total,
+            orphan_total,
+            count_metric(cache.base_violations.iter().map(|v| v.metric.as_str()), "comment"),
+            count_metric(cache.base_violations.iter().map(|v| v.metric.as_str()), "doc"),
+        )
+    );
 
     if cache.py_file_count > 0
         && let Some(stats) = &cache.py_stats
@@ -315,6 +331,17 @@ fn unit_test_runtime_section_for_rules(
         rules,
         &pytest_args,
     )
+}
+
+fn format_violation_counts(duplicate: usize, orphan: usize, comment: usize, doc: usize) -> String {
+    format!("Violations: {duplicate} duplicate, {orphan} orphan, {comment} comment, {doc} doc")
+}
+
+fn count_metric<'a, I>(metrics: I, metric: &str) -> usize
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    metrics.into_iter().filter(|name| *name == metric).count()
 }
 
 #[cfg(test)]

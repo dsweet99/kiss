@@ -119,6 +119,14 @@ fn cli_stats_summary_emits_violations_header_with_duplicate_and_orphan_counts() 
         line.contains("orphan"),
         "Violations header missing `orphan`: {line}\nfull stdout:\n{stdout}"
     );
+    assert!(
+        line.contains("comment"),
+        "Violations header missing `comment`: {line}\nfull stdout:\n{stdout}"
+    );
+    assert!(
+        line.contains("doc"),
+        "Violations header missing `doc`: {line}\nfull stdout:\n{stdout}"
+    );
 
     let nums: Vec<usize> = line
         .split(|c: char| !c.is_ascii_digit())
@@ -127,8 +135,8 @@ fn cli_stats_summary_emits_violations_header_with_duplicate_and_orphan_counts() 
         .collect();
     assert_eq!(
         nums.len(),
-        2,
-        "expected exactly 2 numbers in `Violations:` line ({line:?}); full stdout:\n{stdout}"
+        4,
+        "expected exactly 4 numbers in `Violations:` line ({line:?}); full stdout:\n{stdout}"
     );
     assert!(
         nums[0] > 0,

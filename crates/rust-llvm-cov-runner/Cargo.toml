@@ -5,7 +5,7 @@ edition = "2024"
 description = "Small cargo llvm-cov execution boundary for Kiss"
 license = "MIT"
 repository = "https://github.com/dsweet99/kiss"
-readme = "../../README.md"
+readme = "README.md"
 keywords = ["coverage", "testing", "rust", "llvm-cov", "kiss"]
 categories = ["development-tools::testing"]
 

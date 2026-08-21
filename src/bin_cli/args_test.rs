@@ -22,8 +22,13 @@ fn witness_cli_types() {
 
 #[test]
 fn cov_subcommand_parses_as_coverage() {
-    assert!(Cli::try_parse_from(["kiss", "cov", "."]).is_err());
-    assert!(Cli::command().find_subcommand("cov").is_none());
+    assert!(matches!(
+        Cli::parse_from(["kiss", "cov"]).command,
+        Commands::Cov
+    ));
+    assert!(Cli::command().find_subcommand("cov").is_some());
+    let help = Cli::command().render_long_help().to_string();
+    assert!(help.contains("kiss test"), "{help}");
     let cli = Cli::parse_from(["kiss", "__coverage", ".", "-j", "7"]);
     assert!(matches!(
         cli.command,
@@ -160,11 +165,11 @@ fn test_command_help_is_language_neutral_for_shared_options() {
 #[test]
 fn top_level_help_describes_commands_and_global_flags() {
     let help = Cli::command().render_long_help().to_string();
-    assert!(help.contains("Code-quality metrics tool for Python and Rust"));
+    assert!(help.contains("Global code feedback for LLM coding agents"));
     assert!(help.contains("Path to custom config file (default: .kissconfig)"));
     assert!(help.contains("Filter by language: python (py) or rust (rs)"));
     assert!(help.contains("Use built-in defaults, ignoring config files"));
-    assert!(help.contains("Run static complexity, graph, and duplicate checks"));
+    assert!(help.contains("Run static complexity, graph, duplicate, comment, doc, and orphan checks"));
     assert!(help.contains("Show metric statistics for the codebase"));
     assert!(help.contains("Generate .kissconfig thresholds from an existing codebase"));
     assert!(help.contains("Generate .kissconfig from the current directory"));
@@ -199,7 +204,14 @@ fn check_and_cov_help_describe_options() {
     assert!(check.contains("Path prefix to exclude"));
     assert!(check.contains("Print analysis stage timings"));
     assert!(check.contains("Usage:"));
-    assert!(Cli::command().find_subcommand("cov").is_none());
+    assert!(Cli::command().find_subcommand("cov").is_some());
+    let cov_help = Cli::command()
+        .find_subcommand("cov")
+        .expect("cov subcommand exists")
+        .get_about()
+        .map(|s| s.to_string())
+        .unwrap_or_default();
+    assert!(cov_help.contains("kiss test"), "{cov_help}");
     let mut command = Cli::command();
     let viz = command
         .find_subcommand_mut("viz")

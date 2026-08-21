@@ -105,7 +105,7 @@ fn dispatch_tools(
             shingle_size,
             minhash_size,
             lsh_bands,
-            min_similarity,
+            min_similarity: min_similarity.unwrap_or(cfg.gate.min_similarity),
             ignore,
             language_tables: cfg.language_tables,
         }),
@@ -114,6 +114,10 @@ fn dispatch_tools(
             defaults,
             cfg,
         }),
+        Commands::Cov => {
+            eprintln!("error: coverage is enforced by `kiss test`, not a standalone `kiss cov` command");
+            2
+        }
         Commands::Viz {
             out,
             paths,

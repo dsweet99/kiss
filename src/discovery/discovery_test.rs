@@ -5,6 +5,14 @@ use tempfile::TempDir;
 use super::*;
 
 #[test]
+fn merge_check_ignore_prefixes_always_includes_defaults() {
+    assert_eq!(
+        merge_check_ignore_prefixes(&["custom/".to_string()]),
+        vec!["fake_", "fixtures", "custom"]
+    );
+}
+
+#[test]
 fn test_normalize_ignore_prefixes_trims_and_drops_empty() {
     let out = normalize_ignore_prefixes(&[
         "src/".to_string(),

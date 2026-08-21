@@ -12,20 +12,7 @@ pub fn set_sigpipe_default() {
 #[cfg(not(unix))]
 pub fn set_sigpipe_default() {}
 
-pub const DEFAULT_CHECK_IGNORE_PREFIXES: &[&str] = &["fake_", "fixtures"];
-
-pub fn default_check_ignore_prefixes() -> Vec<String> {
-    DEFAULT_CHECK_IGNORE_PREFIXES
-        .iter()
-        .map(|prefix| (*prefix).to_string())
-        .collect()
-}
-
-pub fn merge_check_ignore_prefixes(user: &[String]) -> Vec<String> {
-    let mut ignore = default_check_ignore_prefixes();
-    ignore.extend(user.iter().cloned());
-    kiss::normalize_ignore_prefixes(&ignore)
-}
+pub use kiss::merge_check_ignore_prefixes;
 
 pub fn validate_paths(paths: &[String]) {
     for p in paths {
