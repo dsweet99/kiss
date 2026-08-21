@@ -122,20 +122,7 @@ pub(crate) struct WatchSessionOwner {
 
 impl WatchSessionOwner {
     pub(crate) fn acquire(repo_root: &Path) -> Result<Self, String> {
-        let lock_path = watch_lock_path(repo_root);
-        let lock = match WatchLockGuard::try_lock(&lock_path) {
-            Ok(Some(guard)) => guard,
-            Ok(None) => {
-                let pid = read_session_file(repo_root).ok().flatten().map(|s| s.pid);
-                return Err(match pid {
-                    Some(pid) => {
-                        format!("watcher already running (pid {pid})")
-                    }
-                    None => "watcher already running".into(),
-                });
-            }
-            Err(e) => return Err(format!("cannot lock {}: {e}", lock_path.display())),
-        };
+        let lock = acquire_exclusive_watch_lock(repo_root)?;
         let control = WatchControlServer::start(repo_root)?;
         Ok(Self {
             _lock: lock,
@@ -144,9 +131,29 @@ impl WatchSessionOwner {
     }
 }
 
+fn acquire_exclusive_watch_lock(repo_root: &Path) -> Result<WatchLockGuard, String> {
+    let lock_path = watch_lock_path(repo_root);
+    let deadline = Instant::now() + CLIENT_SESSION_RETRY;
+    loop {
+        match WatchLockGuard::try_lock(&lock_path) {
+            Ok(Some(guard)) => return Ok(guard),
+            Ok(None) => {
+                if let Ok(Some(session)) = read_session_file(repo_root) {
+                    return Err(format!("watcher already running (pid {})", session.pid));
+                }
+                if Instant::now() >= deadline {
+                    return Err("watcher already running".into());
+                }
+                thread::sleep(CLIENT_SESSION_SLEEP);
+            }
+            Err(e) => return Err(format!("cannot lock {}: {e}", lock_path.display())),
+        }
+    }
+}
+
 pub(crate) fn probe_live_watcher(repo_root: &Path) -> Result<Option<SessionFile>, String> {
     let lock_path = watch_lock_path(repo_root);
-    match WatchLockGuard::try_lock(&lock_path) {
+    match WatchLockGuard::try_lock_shared(&lock_path) {
         Ok(Some(_guard)) => Ok(None),
         Ok(None) => Ok(Some(wait_for_session(repo_root)?)),
         Err(e) => Err(format!("cannot probe watch lock: {e}")),

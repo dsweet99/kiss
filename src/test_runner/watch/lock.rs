@@ -24,6 +24,15 @@ impl WatchLockGuard {
             Err(err) => Err(err),
         }
     }
+
+    pub(crate) fn try_lock_shared(path: &Path) -> io::Result<Option<Self>> {
+        let file = open_watch_lock(path)?;
+        match FileExt::try_lock_shared(&file) {
+            Ok(()) => Ok(Some(Self { _file: file })),
+            Err(err) if err.kind() == io::ErrorKind::WouldBlock => Ok(None),
+            Err(err) => Err(err),
+        }
+    }
 }
 
 fn open_watch_lock(path: &Path) -> io::Result<File> {
@@ -71,5 +80,31 @@ mod tests {
         drop(first);
         let second = WatchLockGuard::try_lock(&path).unwrap().expect("second");
         drop(second);
+    }
+
+    #[test]
+    fn shared_probes_do_not_exclude_each_other() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = watch_lock_path(tmp.path());
+        let first = WatchLockGuard::try_lock_shared(&path)
+            .unwrap()
+            .expect("first shared");
+        let second = WatchLockGuard::try_lock_shared(&path)
+            .unwrap()
+            .expect("second shared");
+        assert!(WatchLockGuard::try_lock(&path).unwrap().is_none());
+        drop(first);
+        drop(second);
+        assert!(WatchLockGuard::try_lock(&path).unwrap().is_some());
+    }
+
+    #[test]
+    fn exclusive_holder_blocks_shared_probe() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = watch_lock_path(tmp.path());
+        let exclusive = WatchLockGuard::try_lock(&path).unwrap().expect("exclusive");
+        assert!(WatchLockGuard::try_lock_shared(&path).unwrap().is_none());
+        drop(exclusive);
+        assert!(WatchLockGuard::try_lock_shared(&path).unwrap().is_some());
     }
 }

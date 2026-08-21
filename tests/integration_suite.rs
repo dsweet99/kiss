@@ -179,3 +179,5 @@ mod watch_client;
 mod watch_client_violations;
 #[path = "cases/watch_sigint.rs"]
 mod watch_sigint;
+#[path = "cases/watch_startup_order.rs"]
+mod watch_startup_order;
