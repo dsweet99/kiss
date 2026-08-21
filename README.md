@@ -46,9 +46,6 @@ Finally, LLMs have a tendency to rewrite small functions rather than finding and
 VIOLATION:duplication:src/users.py:10:create_user: 80% similar, 2 copies: [src/users.py:10-40, src/accounts.py:8-38]. Extract common code into a shared function.
 ```
 
-`kiss check`, `kiss stats`, `kiss dry`, `kiss viz`, `kiss mv`, `kiss mimic`, `kiss clamp`, and `kiss test` all ignore path prefixes `fake_` and `fixtures` by default. Pass extra `--ignore` prefixes to exclude more.
-
-
 
 ## Exploring your code: `kiss stats` and `kiss viz`
 
