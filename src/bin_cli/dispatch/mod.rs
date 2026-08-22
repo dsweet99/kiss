@@ -13,9 +13,8 @@ use handlers::{
     dispatch_test, dispatch_viz,
 };
 use options::{
-    CheckDispatchOptions, CovDispatchOptions, DryDispatchOptions, MvDispatchOptions,
-    MvOutputFlags, RulesDispatchOptions, StatsDispatchOptions, TestDispatchOptions, TriConfig,
-    VizDispatchOptions,
+    CheckDispatchOptions, CovDispatchOptions, DryDispatchOptions, MvDispatchOptions, MvOutputFlags,
+    RulesDispatchOptions, StatsDispatchOptions, TestDispatchOptions, TriConfig, VizDispatchOptions,
 };
 
 use kiss::GateConfig;
@@ -238,9 +237,7 @@ pub fn dispatch(
             defaults: _,
             config: _,
             command:
-                command @ (Commands::Check { .. }
-                | Commands::Coverage { .. }
-                | Commands::Stats { .. }),
+                command @ (Commands::Check { .. } | Commands::Coverage { .. } | Commands::Stats { .. }),
         } => dispatch_analyze(lang, command, &cfg, test_section),
         Cli {
             lang,

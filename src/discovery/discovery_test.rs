@@ -138,9 +138,40 @@ fn test_should_ignore() {
 
 #[test]
 fn test_has_ignored_prefix() {
-    assert!(has_ignored_prefix("fake_data", &["fake_".to_string()]));
-    assert!(has_ignored_prefix("mock_dir", &["mock_".to_string()]));
-    assert!(!has_ignored_prefix("real_data", &["fake_".to_string()]));
+    assert!(ignore_prefix_matches("fake_data", "fake_"));
+    assert!(ignore_prefix_matches("mock_dir", "mock_"));
+    assert!(!ignore_prefix_matches("real_data", "fake_"));
+}
+
+#[test]
+fn ignore_prefix_matches_component_and_path_forms() {
+    assert!(
+        ignore_prefix_matches("tests/fake_python/test_x.py", "fake_"),
+        "component form: fake_ must match directory fake_python"
+    );
+    assert!(
+        ignore_prefix_matches("src/fake_utils.py", "fake_"),
+        "component form: fake_ must match filename fake_utils.py"
+    );
+    assert!(
+        ignore_prefix_matches("tests/slow/test_b.py", "tests/slow"),
+        "path form: tests/slow must match descendants"
+    );
+    assert!(ignore_prefix_matches("sub/x.py", "sub"));
+    assert!(!ignore_prefix_matches("tests/test_app.py", "fake_"));
+    assert!(!ignore_prefix_matches("tests/fast/test_a.py", "tests/slow"));
+    assert!(
+        ignore_prefix_matches("/tmp/repo/lib/slow/mod.py", "lib/slow"),
+        "path form must match consecutive components on an absolute walk path"
+    );
+    assert!(!ignore_prefix_matches(
+        "/tmp/repo/lib/fast/mod.py",
+        "lib/slow"
+    ));
+    assert!(path_ignored_by_prefixes(
+        "tests/fake_python/test_x.py::test_x",
+        &["fake_".to_string(), "fixtures".to_string()]
+    ));
 }
 
 #[test]
@@ -202,6 +233,32 @@ fn test_should_ignore_matches_filenames() {
         should_ignore(std::path::Path::new("big.py"), &["big".to_string()]),
         "root-level files should be ignored when filename starts with PREFIX"
     );
+    assert!(
+        should_ignore(
+            std::path::Path::new("tests/slow/test_b.py"),
+            &["tests/slow".to_string()]
+        ),
+        "path-form PREFIX must ignore descendants in check the same way test does"
+    );
+    assert!(
+        should_ignore(
+            std::path::Path::new("/tmp/repo/lib/slow/mod.py"),
+            &["lib/slow".to_string()]
+        ),
+        "path-form PREFIX must ignore absolute WalkBuilder paths"
+    );
+}
+
+#[test]
+fn find_source_files_path_form_ignore_on_absolute_root() {
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("a.py"), "").unwrap();
+    let slow = tmp.path().join("lib/slow");
+    fs::create_dir_all(&slow).unwrap();
+    fs::write(slow.join("mod.py"), "").unwrap();
+    let files = find_source_files_with_ignore(tmp.path(), &["lib/slow".to_string()]);
+    assert_eq!(files.len(), 1, "{files:?}");
+    assert!(files[0].path.ends_with("a.py"));
 }
 
 #[test]

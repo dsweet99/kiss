@@ -245,10 +245,7 @@ fn parse_unified_new_range(range: &str) -> Option<(u32, u32)> {
 }
 
 fn rel_path_ignored(rel: &str, ignore: &[String]) -> bool {
-    ignore.iter().any(|p| {
-        let p = p.as_str();
-        rel == p || rel.starts_with(&format!("{p}/"))
-    })
+    kiss::path_ignored_by_prefixes(rel, ignore)
 }
 
 fn lang_ok(path: &Path, lang_filter: Option<TestLangFilter>) -> bool {

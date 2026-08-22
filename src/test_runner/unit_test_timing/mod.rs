@@ -71,9 +71,7 @@ fn filter_timings_by_ignore(
 
 pub(super) fn selector_matches_ignore_prefix(selector: &str, ignore: &[String]) -> bool {
     let path_part = selector.split_once("::").map_or(selector, |(p, _)| p);
-    ignore
-        .iter()
-        .any(|prefix| path_part == prefix.as_str() || path_part.starts_with(&format!("{prefix}/")))
+    kiss::path_ignored_by_prefixes(path_part, ignore)
 }
 
 fn load_python_timings(repo_root: &Path, pytest_args: &[String]) -> Option<Vec<UnitTestTiming>> {

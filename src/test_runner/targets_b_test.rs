@@ -34,6 +34,26 @@ fn resolve_rejects_lang_and_ignore_mismatches() {
     )
     .unwrap_err();
     assert!(err.contains("--ignore"));
+
+    let fake_dir = tmp.path().join("tests/fake_python");
+    fs::create_dir_all(&fake_dir).unwrap();
+    fs::write(
+        fake_dir.join("test_x.py"),
+        "def test_x():\n    assert True\n",
+    )
+    .unwrap();
+    let err = resolve_target_operands(
+        tmp.path(),
+        &["tests/fake_python/test_x.py".into()],
+        None,
+        &["fake_".into()],
+        &[],
+    )
+    .unwrap_err();
+    assert!(
+        err.contains("--ignore"),
+        "component prefix fake_ must reject tests/fake_python the same way check does: {err}"
+    );
 }
 
 #[test]

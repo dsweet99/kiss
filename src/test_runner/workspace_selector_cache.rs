@@ -47,9 +47,7 @@ fn should_skip_dir(name: &str) -> bool {
 }
 
 fn ignored(rel: &str, ignore: &[String]) -> bool {
-    ignore
-        .iter()
-        .any(|prefix| rel == prefix || rel.starts_with(&format!("{prefix}/")))
+    kiss::path_ignored_by_prefixes(rel, ignore)
 }
 
 fn hash_file_meta(h: u64, rel: &str, meta: &fs::Metadata) -> u64 {

@@ -67,8 +67,8 @@ pub use defaults::default_config_toml;
 pub use discovery::{
     DEFAULT_CHECK_IGNORE_PREFIXES, Language, SourceFile, default_check_ignore_prefixes,
     find_python_files, find_rust_files, find_source_files, find_source_files_with_ignore,
-    gather_files_by_lang, gather_files_by_lang_opts, merge_check_ignore_prefixes,
-    normalize_ignore_prefixes,
+    gather_files_by_lang, gather_files_by_lang_opts, ignore_prefix_matches,
+    merge_check_ignore_prefixes, normalize_ignore_prefixes, path_ignored_by_prefixes,
 };
 pub use duplication::{
     CodeChunk, DuplicateCluster, DuplicatePair, DuplicationConfig, MinHashSignature,

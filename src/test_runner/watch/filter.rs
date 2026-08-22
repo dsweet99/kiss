@@ -77,7 +77,7 @@ impl WatchPathFilter {
         if is_hard_excluded(rel) {
             return is_git_support_path(rel, &self.invocation);
         }
-        if component_has_cli_prefix(rel, &self.cli_ignore) {
+        if kiss::path_ignored_by_prefixes(&rel.to_string_lossy(), &self.cli_ignore) {
             return false;
         }
         let abs = self.repo_root.join(rel);
@@ -148,18 +148,6 @@ fn is_hard_excluded(rel: &Path) -> bool {
             .to_str()
             .is_some_and(|name| HARD_EXCLUDED_DIRS.contains(&name))
     })
-}
-
-fn component_has_cli_prefix(rel: &Path, prefixes: &[String]) -> bool {
-    for component in rel.components() {
-        let Some(name) = component.as_os_str().to_str() else {
-            continue;
-        };
-        if prefixes.iter().any(|prefix| name.starts_with(prefix)) {
-            return true;
-        }
-    }
-    false
 }
 
 fn is_git_support_path(rel: &Path, invocation: &TestInvocation) -> bool {
@@ -254,6 +242,24 @@ mod tests {
         assert!(exact.is_relevant(Path::new("src/a.py")));
         assert!(!exact.is_relevant(Path::new("src/b.py")));
         assert!(exact.is_relevant(Path::new("pytest.ini")));
+    }
+
+    #[test]
+    fn cli_ignore_uses_shared_prefix_matcher() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fake =
+            WatchPathFilter::build(tmp.path(), &["fake_".into()], None, &TestInvocation::All);
+        assert!(!fake.is_relevant(Path::new("tests/fake_python/test_x.py")));
+        assert!(fake.is_relevant(Path::new("tests/test_app.py")));
+
+        let slow = WatchPathFilter::build(
+            tmp.path(),
+            &["tests/slow".into()],
+            None,
+            &TestInvocation::All,
+        );
+        assert!(!slow.is_relevant(Path::new("tests/slow/test_b.py")));
+        assert!(slow.is_relevant(Path::new("tests/fast/test_a.py")));
     }
 
     #[test]

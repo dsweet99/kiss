@@ -165,6 +165,22 @@ fn ignore_prefixes_drop_matching_path_selectors() {
     assert_eq!(filtered.len(), 2);
     assert_eq!(filtered[0].selector, "tests/fast/test_a.py::t");
     assert_eq!(filtered[1].selector, "crate::mod::tests::t");
+
+    let mixed = vec![
+        UnitTestTiming {
+            language: Language::Python,
+            selector: "tests/fake_python/test_x.py::test_x".into(),
+            duration: Duration::from_millis(10),
+        },
+        UnitTestTiming {
+            language: Language::Python,
+            selector: "tests/test_app.py::test_app".into(),
+            duration: Duration::from_millis(10),
+        },
+    ];
+    let filtered = filter_timings_by_ignore(mixed, &["fake_".into()]);
+    assert_eq!(filtered.len(), 1);
+    assert_eq!(filtered[0].selector, "tests/test_app.py::test_app");
 }
 
 #[test]

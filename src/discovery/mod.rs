@@ -59,12 +59,53 @@ pub fn find_rust_files(root: &Path) -> Vec<PathBuf> {
 
 const ALWAYS_IGNORED: &[&str] = &["__pycache__", "node_modules", ".venv", "venv", "env"];
 
-fn has_ignored_prefix(name: &str, prefixes: &[String]) -> bool {
-    prefixes.iter().any(|prefix| name.starts_with(prefix))
-}
-
 fn is_always_ignored(name: &str) -> bool {
     ALWAYS_IGNORED.contains(&name)
+}
+
+fn prefix_components(prefix: &str) -> Vec<&str> {
+    prefix
+        .split(['/', '\\'])
+        .filter(|part| !part.is_empty() && *part != ".")
+        .collect()
+}
+
+fn path_has_prefix_components(path: &Path, prefix: &str) -> bool {
+    let pref = prefix_components(prefix);
+    if pref.is_empty() {
+        return false;
+    }
+    let comps: Vec<&str> = path
+        .components()
+        .filter_map(|c| match c {
+            std::path::Component::Normal(name) => name.to_str(),
+            _ => None,
+        })
+        .collect();
+    comps
+        .windows(pref.len())
+        .any(|window| window == pref.as_slice())
+}
+
+#[must_use]
+pub fn ignore_prefix_matches(path: &str, prefix: &str) -> bool {
+    if prefix.is_empty() {
+        return false;
+    }
+    let path = Path::new(path);
+    if path_has_prefix_components(path, prefix) {
+        return true;
+    }
+    path.components()
+        .filter_map(|c| c.as_os_str().to_str())
+        .any(|name| name.starts_with(prefix))
+}
+
+#[must_use]
+pub fn path_ignored_by_prefixes(path: &str, prefixes: &[String]) -> bool {
+    prefixes
+        .iter()
+        .any(|prefix| ignore_prefix_matches(path, prefix))
 }
 
 fn should_ignore(path: &Path, ignore_prefixes: &[String]) -> bool {
@@ -74,16 +115,13 @@ fn should_ignore(path: &Path, ignore_prefixes: &[String]) -> bool {
     } else {
         &[]
     };
-    if dir_components.iter().any(|c| {
-        c.as_os_str()
-            .to_str()
-            .is_some_and(|s| has_ignored_prefix(s, ignore_prefixes) || is_always_ignored(s))
-    }) {
+    if dir_components
+        .iter()
+        .any(|c| c.as_os_str().to_str().is_some_and(is_always_ignored))
+    {
         return true;
     }
-    path.file_name()
-        .and_then(|n| n.to_str())
-        .is_some_and(|name| has_ignored_prefix(name, ignore_prefixes))
+    path_ignored_by_prefixes(&path.to_string_lossy(), ignore_prefixes)
 }
 
 pub fn find_source_files(root: &Path) -> Vec<SourceFile> {

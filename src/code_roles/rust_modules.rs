@@ -117,7 +117,11 @@ fn conventional_paths(
     sibling
 }
 
-fn pick_mod_file(rs: PathBuf, nested: PathBuf, name: &str) -> Result<Option<PathBuf>, RoleBuildError> {
+fn pick_mod_file(
+    rs: PathBuf,
+    nested: PathBuf,
+    name: &str,
+) -> Result<Option<PathBuf>, RoleBuildError> {
     match (rs.is_file(), nested.is_file()) {
         (true, true) => Err(RoleBuildError::AmbiguousModule {
             name: name.to_string(),

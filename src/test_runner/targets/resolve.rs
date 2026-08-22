@@ -299,10 +299,7 @@ fn reject_ignored_target(
     let Some(rel) = repo_relative(repo_root, abs) else {
         return Ok(());
     };
-    if ignore
-        .iter()
-        .any(|prefix| rel == *prefix || rel.starts_with(&format!("{prefix}/")))
-    {
+    if kiss::path_ignored_by_prefixes(&rel, ignore) {
         return Err(format!(
             "target '{raw}' is covered by --ignore prefix and cannot be requested"
         ));
