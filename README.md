@@ -3,12 +3,12 @@
 Global code feedback for LLM coding agents
 
 ## tl;dr
-`kiss check` provides feedback to LLMs about code complexity and duplication; `kiss test` refreshes and enforces cached runtime line coverage. Add an AI coder rule (e.g., a Cursor rule) like
+`kiss check` provides feedback to LLMs about code complexity and duplication; `kiss test` refreshes and enforces cached runtime line coverage. Add an AI coder rule (e.g., in `AGENTS.md`) like
 ```
 When you write code, always make sure `pytest -sv tests`, `ruff check`, `kiss check`, and `kiss test` pass.
 Iterate until they do.
 ```
-kiss will help your LLM/agent produce simpler, clearer, more maintainable code. kiss works on Python and Rust.
+kiss will help your agent produce simpler, clearer, more maintainable code. kiss works on Python and Rust.
 
 
 ## The Problem: Missing Global Context
@@ -24,13 +24,13 @@ cargo install kiss-ai
 
 ## Quickstart
 
-In your repo:
+In your repo root, run:
 ```bash
 kiss check
 ```
-If `.kissconfig` is missing, `kiss check` writes one from the current codebase maxima. Those values are the upper bound of complexity today. Over time, you can reduce complexity by tightening the constraints in `.kissconfig`.
+If `.kissconfig` is missing, `kiss check` will write one with threshold set so that your repo *just* passes `kiss check`. Any future code complexity increases will be prevented.
 
-When your LLM runs `kiss check` it will see whether any of the code it has written has violated a constraint. Example shape (not a live dump of this repository):
+When your LLM runs `kiss check` it will see whether any of the code it has written has violated a constraint. For example:
 ```
 VIOLATION:positional_args:src/shipping.py:12:calculate_shipping: Function 'calculate_shipping' has 6 positional arguments (threshold: 3) Consider using keyword-only arguments, a config object, or the builder pattern.
 ```
@@ -45,6 +45,17 @@ Finally, LLMs have a tendency to rewrite small functions rather than finding and
 ```
 VIOLATION:duplication:src/users.py:10:create_user: 80% similar, 2 copies: [src/users.py:10-40, src/accounts.py:8-38]. Extract common code into a shared function.
 ```
+
+## `kiss test`
+
+`kiss test` runs your unit tests, then enforces line-level code coverage, and limites running time of unit tests. `kiss test` is designed to be an efficient and robust unit test runner for both Python and Rust. It supports
+- Caching, to avoid reruns of working tests
+- Parallelization, to speed up test running
+- Separate interpreters for each Python test, to reduce test flakiness and failures of the test runner
+- Timeouts with feedback for your agent so that it will write faster tests
+
+
+---
 
 
 ## Exploring your code: `kiss stats` and `kiss viz`
@@ -86,7 +97,7 @@ This will create a Mermaid plot inside the markdown file graph.md (viewable in V
 
 ## kiss rules
 
-You can help your LLM produce rule-following code by adding the output of `kiss rules` (see below) to its context before it starts coding. For example, you might put this in `.cursorrules` (or maybe `AGENTS.md`):
+You can help your LLM produce rule-following code by adding the output of `kiss rules` (see below) to its context before it starts coding (e.g., in AGENTS.md):
 ```
 FIRST STEP: After the user's first request, before doing anything else, call `kiss rules`
 ```
@@ -100,6 +111,3 @@ RULE: [Python] [positional_args <= 3] positional_args is the maximum number of p
 
 Complexity and size maxima print `<= N` because a value equal to the configured maximum is legal.
 
-## kiss test
-
-`kiss test` runs covering tests, then enforces runtime line coverage (`test_coverage_threshold` / `test_coverage_scope`), `max_unit_test_seconds`, and `max_num_tests`. See `kiss test --help` for `commit|base|main|.|TARGET` modes, `--watch`, jobs, and toolchain notes (pytest 8.x / rslip for Python; llvm coverage for Rust).
