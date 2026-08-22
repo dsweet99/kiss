@@ -27,7 +27,7 @@ pub fn auto_created_gate_config() -> GateConfig {
         duplication_enabled: false,
         orphan_module_enabled: false,
         comment_removal_enabled: false,
-        docs_allowed: Vec::new(),
+        docs_allowed: vec!["./".to_string()],
         test_coverage_threshold: 0,
         max_unit_test_seconds: vec![("*".to_string(), 99999.0)],
         ..GateConfig::default()
@@ -162,7 +162,7 @@ mod coverage_witness {
         assert!(!gate.duplication_enabled);
         assert!(!gate.orphan_module_enabled);
         assert!(!gate.comment_removal_enabled);
-        assert!(gate.docs_allowed.is_empty());
+        assert_eq!(gate.docs_allowed, vec!["./".to_string()]);
         assert_eq!(gate.test_coverage_threshold, 0);
         assert_eq!(gate.max_unit_test_seconds, vec![("*".to_string(), 99999.0)]);
         let py = MetricStats::default();
@@ -189,7 +189,7 @@ mod coverage_witness {
             "auto-created global flags:\n{toml}"
         );
         assert!(
-            toml.contains("docs_allowed = []"),
+            toml.contains(r#"docs_allowed = ["./"]"#),
             "auto-created docs_allowed:\n{toml}"
         );
         assert!(

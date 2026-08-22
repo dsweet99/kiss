@@ -163,6 +163,8 @@ fn rust_flags_doc_comments_outside_allowed_dirs() {
 fn docs_allowed_dot_allows_all_paths() {
     assert_eq!(py_docs("\"\"\"module doc\"\"\"\nx = 1\n", &["."]), 0);
     assert_eq!(rs_docs("/// doc\nfn f() {}\n", &["."]), 0);
+    assert_eq!(py_docs("\"\"\"module doc\"\"\"\nx = 1\n", &["./"]), 0);
+    assert_eq!(rs_docs("/// doc\nfn f() {}\n", &["./"]), 0);
 }
 
 #[test]

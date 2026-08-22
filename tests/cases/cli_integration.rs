@@ -11,7 +11,11 @@ fn kiss_binary() -> Command {
 #[test]
 fn cli_init_writes_default_config_in_current_directory() {
     let tmp = TempDir::new().unwrap();
-    fs::write(tmp.path().join("mod.py"), "def foo():\n    return 1\n").unwrap();
+    fs::write(
+        tmp.path().join("mod.py"),
+        "\"\"\"module\"\"\"\ndef foo():\n    return 1\n",
+    )
+    .unwrap();
     let output = kiss_binary()
         .arg("check")
         .current_dir(tmp.path())
@@ -35,7 +39,7 @@ fn cli_init_writes_default_config_in_current_directory() {
             && config.contains("duplication_enabled = false")
             && config.contains("orphan_module_enabled = false")
             && config.contains("comment_removal_enabled = false")
-            && config.contains("docs_allowed = []")
+            && config.contains(r#"docs_allowed = ["./"]"#)
             && config.contains("test_coverage_threshold = 0")
             && config.contains("\"*\" = 99999")
             && !config.contains("[rust]"),

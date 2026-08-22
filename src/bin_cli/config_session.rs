@@ -145,8 +145,9 @@ mod tests {
             "created .kissconfig must disable comment_removal:\n{created}"
         );
         assert!(
-            created.contains("docs_allowed = []"),
-            "created .kissconfig must set docs_allowed = []:\n{created}"
+            created.contains(r#"docs_allowed = ["./"]"#),
+            r#"created .kissconfig must set docs_allowed = ["./"]:
+{created}"#,
         );
         assert!(
             created.contains("test_coverage_threshold = 0"),
