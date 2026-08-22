@@ -204,140 +204,91 @@ fn try_wait_out_live_watcher() -> Result<(), String> {
     Ok(())
 }
 
+/// Coverage after a green test run. One-shot and watch both call this.
+/// `allow_refresh` is the only policy difference: watch may rebuild a missing
+/// snapshot; one-shot fails closed.
+struct AfterTestCoverage<'a> {
+    invocation: &'a TestInvocation,
+    lang_filter: Option<kiss::Language>,
+    ignore: &'a [String],
+    gate_config: &'a kiss::GateConfig,
+    py_config: &'a kiss::Config,
+    rs_config: &'a kiss::Config,
+    coverage_all: bool,
+    jobs: usize,
+    allow_refresh: bool,
+    pytest_args: &'a [String],
+    language_tables: kiss::LanguageTablesPresent,
+}
+
+fn run_after_test_coverage(p: AfterTestCoverage<'_>) -> i32 {
+    let universe = universe_root_for_test_invocation(p.invocation);
+    warm_cov_caches_after_tests(
+        &universe,
+        p.lang_filter,
+        p.ignore,
+        p.gate_config,
+        p.pytest_args,
+    );
+    let universe_s = universe.to_string_lossy().into_owned();
+    let paths = [universe_s];
+    let started = std::time::Instant::now();
+    let code = run_cov_command(&CovCommandArgs {
+        paths: &paths,
+        lang_filter: p.lang_filter,
+        py_config: p.py_config,
+        rs_config: p.rs_config,
+        gate_config: p.gate_config,
+        bypass_gate: p.coverage_all,
+        ignore: p.ignore,
+        timing: false,
+        jobs: p.jobs,
+        allow_refresh: p.allow_refresh,
+        pytest_args: p.pytest_args,
+        language_tables: p.language_tables,
+    });
+    crate::test_runner::emit_stage_time("cov_score", started.elapsed());
+    code
+}
+
 pub(crate) fn evaluate_watch_coverage(
     cycle: &RunTestCmdArgs<'_>,
     cov: &WatchCoverageParams<'_>,
 ) -> WatchCoverageResult {
-    let universe = universe_root_for_test_invocation(&cycle.invocation);
-    warm_cov_caches_after_tests(
-        &universe,
-        cycle.lang_filter,
-        cycle.ignore,
-        &cycle.gate_config,
-        cycle.python_extra,
-    );
-    let universe_s = universe.to_string_lossy().into_owned();
-    let paths = [universe_s];
-    let args = CovCommandArgs {
-        paths: &paths,
+    let cov_code = run_after_test_coverage(AfterTestCoverage {
+        invocation: &cycle.invocation,
         lang_filter: cycle.lang_filter,
+        ignore: cycle.ignore,
+        gate_config: &cycle.gate_config,
         py_config: cov.py_config,
         rs_config: cov.rs_config,
-        gate_config: &cycle.gate_config,
-        bypass_gate: cov.coverage_all,
-        ignore: cycle.ignore,
-        timing: false,
+        coverage_all: cov.coverage_all,
         jobs: cycle.jobs,
         allow_refresh: true,
         pytest_args: cycle.python_extra,
         language_tables: kiss::LanguageTablesPresent::from_path(&kiss::kissconfig_path_from_cwd()),
-    };
-    let (cov_code, error) = run_cov_for_watch(&args);
+    });
     if crate::test_runner::consume_rust_batch_interrupted() {
         return WatchCoverageResult::interrupted();
     }
     if cov_code == 0 {
         WatchCoverageResult::ok(0)
     } else {
-        WatchCoverageResult::failed(
-            cov_code,
-            error.unwrap_or_else(|| "coverage gate failed".to_string()),
-        )
+        WatchCoverageResult::failed(cov_code, "coverage gate failed")
     }
-}
-
-#[doc = "kiss-coverage-off"]
-fn run_cov_for_watch(args: &CovCommandArgs<'_>) -> (i32, Option<String>) {
-    use crate::analyze::gather_files;
-    use crate::bin_cli::util::merge_check_ignore_prefixes;
-    use crate::test_runner::check_line_coverage::{
-        RequiredCoverageLanguages, ensure_check_runtime_coverage, load_check_runtime_coverage,
-        repository_root_for_universe,
-    };
-
-    if args.gate_config.test_coverage_threshold == 0
-        && args.gate_config.unit_test_time_gate_disabled()
-        && !args.bypass_gate
-    {
-        return (run_watch_cov_score(args), None);
-    }
-
-    let ignore = merge_check_ignore_prefixes(args.ignore);
-    let universe = PathBuf::from(args.paths.first().map(String::as_str).unwrap_or("."));
-    let repo_root = repository_root_for_universe(&universe);
-    let (py_files, rs_files) = gather_files(&universe, args.lang_filter, &ignore);
-    let required = RequiredCoverageLanguages {
-        python: !py_files.is_empty(),
-        rust: !rs_files.is_empty(),
-    };
-    if let Err(_load_err) = load_check_runtime_coverage(
-        &repo_root,
-        required,
-        &ignore,
-        args.gate_config,
-        args.pytest_args,
-    ) {
-        if let Err(refresh_err) = ensure_check_runtime_coverage(
-            &repo_root,
-            required,
-            &ignore,
-            args.jobs,
-            args.pytest_args,
-            args.gate_config,
-        ) {
-            let msg = refresh_err.to_string();
-            eprintln!("{msg}");
-            return (1, Some(msg));
-        }
-        if let Err(err) = load_check_runtime_coverage(
-            &repo_root,
-            required,
-            &ignore,
-            args.gate_config,
-            args.pytest_args,
-        ) {
-            let msg = err.to_string();
-            eprintln!("{msg}");
-            return (1, Some(msg));
-        }
-    }
-    let code = run_watch_cov_score(args);
-    if code == 0 {
-        (0, None)
-    } else {
-        (code, Some("coverage gate failed".to_string()))
-    }
-}
-
-fn run_watch_cov_score(args: &CovCommandArgs<'_>) -> i32 {
-    let started = std::time::Instant::now();
-    let code = run_cov_command(args);
-    crate::test_runner::emit_stage_time("cov_score", started.elapsed());
-    code
 }
 
 pub(crate) fn finish_with_coverage(args: &TestCommandArgs<'_>, test_exit: i32) -> i32 {
-    let universe = universe_root_for_test_invocation(&args.invocation);
     let python_extra =
         kiss::effective_python_pytest_args(&args.test_cfg.pytest_plugins, args.extra);
-    warm_cov_caches_after_tests(
-        &universe,
-        args.lang_filter,
-        args.ignore,
-        args.gate_config,
-        &python_extra,
-    );
-    let universe_s = universe.to_string_lossy().into_owned();
-    let paths = [universe_s];
-    let cov_code = run_cov_command(&CovCommandArgs {
-        paths: &paths,
+    let cov_code = run_after_test_coverage(AfterTestCoverage {
+        invocation: &args.invocation,
         lang_filter: args.lang_filter,
+        ignore: args.ignore,
+        gate_config: args.gate_config,
         py_config: args.py_config,
         rs_config: args.rs_config,
-        gate_config: args.gate_config,
-        bypass_gate: args.coverage_all,
-        ignore: args.ignore,
-        timing: false,
+        coverage_all: args.coverage_all,
         jobs: args.jobs,
         allow_refresh: false,
         pytest_args: &python_extra,
@@ -388,6 +339,14 @@ mod tests {
                 "src/lib.rs::my_test".into()
             ])),
             PathBuf::from("src/lib.rs")
+        );
+        assert_eq!(
+            universe_root_for_test_invocation(&TestInvocation::Targets(vec![".".into()])),
+            PathBuf::from(".")
+        );
+        assert_eq!(
+            universe_root_for_test_invocation(&TestInvocation::Targets(vec!["./".into()])),
+            PathBuf::from(".")
         );
     }
 }

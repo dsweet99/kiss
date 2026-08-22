@@ -1,7 +1,20 @@
 use super::*;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use kiss::TestSectionConfig;
+
+struct IsolatedPythonRepo {
+    restore: PathBuf,
+    _tmp: tempfile::TempDir,
+    _cwd: std::sync::MutexGuard<'static, ()>,
+}
+
+impl Drop for IsolatedPythonRepo {
+    fn drop(&mut self) {
+        let _ = std::env::set_current_dir(&self.restore);
+    }
+}
 
 fn python_oneshot_args<'a>(
     test_cfg: &'a TestSectionConfig,
@@ -107,6 +120,7 @@ fn dry_run_invokes_local_runner() {
 
 #[test]
 fn finish_with_coverage_returns_test_exit_when_threshold_zero() {
+    let _cwd = crate::cwd_test_lock::lock();
     let test_cfg = TestSectionConfig::default();
     let py = kiss::Config::python_defaults();
     let rs = kiss::Config::rust_defaults();
@@ -122,6 +136,7 @@ fn finish_with_coverage_returns_test_exit_when_threshold_zero() {
 
 #[test]
 fn evaluate_watch_coverage_threshold_zero_returns_ok() {
+    let _cwd = crate::cwd_test_lock::lock();
     let py = kiss::Config::python_defaults();
     let rs = kiss::Config::rust_defaults();
     let gate = kiss::GateConfig {
@@ -152,6 +167,72 @@ fn evaluate_watch_coverage_threshold_zero_returns_ok() {
     };
     let result = evaluate_watch_coverage(&cycle, &cov);
     assert_eq!(result.exit_code, 0);
+}
+
+fn isolated_python_repo() -> IsolatedPythonRepo {
+    let cwd = crate::cwd_test_lock::lock();
+    let restore = std::env::current_dir().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+    std::env::set_current_dir(tmp.path()).unwrap();
+    std::fs::create_dir_all(tmp.path().join(".git")).unwrap();
+    std::fs::write(tmp.path().join("app.py"), "x = 1\n").unwrap();
+    IsolatedPythonRepo {
+        restore,
+        _tmp: tmp,
+        _cwd: cwd,
+    }
+}
+
+#[test]
+fn finish_with_coverage_returns_cov_exit_when_snapshot_missing() {
+    let _repo = isolated_python_repo();
+    let test_cfg = TestSectionConfig::default();
+    let py = kiss::Config::python_defaults();
+    let rs = kiss::Config::rust_defaults();
+    let gate = kiss::GateConfig {
+        test_coverage_threshold: 75,
+        max_unit_test_seconds: Vec::new(),
+        ..kiss::GateConfig::default()
+    };
+    let args = python_oneshot_args(&test_cfg, &py, &rs, &gate);
+    let code = finish_with_coverage(&args, 0);
+    assert_eq!(code, 1);
+}
+
+#[test]
+fn evaluate_watch_coverage_fails_when_language_table_missing() {
+    let _repo = isolated_python_repo();
+    let py = kiss::Config::python_defaults();
+    let rs = kiss::Config::rust_defaults();
+    let gate = kiss::GateConfig {
+        test_coverage_threshold: 0,
+        max_unit_test_seconds: Vec::new(),
+        ..kiss::GateConfig::default()
+    };
+    let cycle = crate::test_runner::RunTestCmdArgs {
+        invocation: TestInvocation::All,
+        main_branch_cli: None,
+        base_branch_cli: None,
+        dry_run: true,
+        force_rerun: false,
+        force_bad: false,
+        metrics: false,
+        jobs: 1,
+        extra: &[],
+        python_extra: &[],
+        ignore: &[],
+        lang_filter: Some(kiss::Language::Python),
+        config_main_branch: None,
+        gate_config: gate.clone(),
+    };
+    let cov = WatchCoverageParams {
+        py_config: &py,
+        rs_config: &rs,
+        coverage_all: false,
+    };
+    let result = evaluate_watch_coverage(&cycle, &cov);
+    assert_eq!(result.exit_code, 1);
+    assert_eq!(result.error.as_deref(), Some("coverage gate failed"));
 }
 
 #[test]
