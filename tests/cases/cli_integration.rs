@@ -32,6 +32,12 @@ fn cli_init_writes_default_config_in_current_directory() {
             && config.contains("[python]")
             && config.contains("[test]")
             && config.contains("num_jobs = 4")
+            && config.contains("duplication_enabled = false")
+            && config.contains("orphan_module_enabled = false")
+            && config.contains("comment_removal_enabled = false")
+            && config.contains("docs_allowed = []")
+            && config.contains("test_coverage_threshold = 0")
+            && config.contains("\"*\" = 99999")
             && !config.contains("[rust]"),
         "config:\n{config}"
     );

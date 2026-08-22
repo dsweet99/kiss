@@ -1,7 +1,7 @@
 use kiss::Language;
 use kiss::config_gen::{
-    GenerateConfigParams, collect_lang_from_paths, generate_config_toml_by_language,
-    infer_gate_config_for_paths, write_mimic_config_with_quiet,
+    GenerateConfigParams, auto_created_gate_config, collect_lang_from_paths,
+    generate_config_toml_by_language, write_mimic_config_with_quiet,
 };
 use std::fmt::Display;
 use std::path::Path;
@@ -40,8 +40,7 @@ fn mimic_generate(
     if py.file_count + rs.file_count == 0 {
         return Err(mimic_fail(quiet, "No source files found."));
     }
-    let gate = infer_gate_config_for_paths(paths, lang_filter, ignore)
-        .map_err(|err| mimic_fail(quiet, err))?;
+    let gate = auto_created_gate_config();
     let toml = generate_config_toml_by_language(&GenerateConfigParams {
         py: &py.stats,
         rs: &rs.stats,

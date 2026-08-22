@@ -11,7 +11,9 @@ pub use collect::{
     collect_py_stats_with_ignore, collect_rs_stats, collect_rs_stats_with_ignore,
 };
 pub use config_keys::{python_config_key, rust_config_key};
-pub use generate::{GenerateConfigParams, generate_config_toml_by_language};
+pub use generate::{
+    GenerateConfigParams, auto_created_gate_config, generate_config_toml_by_language,
+};
 pub use infer_gate::infer_gate_config_for_paths;
 pub use merge::{MergeLanguageUpdate, merge_config_toml};
 

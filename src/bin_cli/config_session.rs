@@ -86,8 +86,8 @@ pub fn config_provenance() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use clap::Parser;
     use crate::bin_cli::args::Cli;
+    use clap::Parser;
 
     fn init_parse_is_err(args: &[&str]) {
         assert!(Cli::try_parse_from(args).is_err());
@@ -133,6 +133,30 @@ mod tests {
             "created .kissconfig must include [test]:\n{created}"
         );
         assert!(
+            created.contains("duplication_enabled = false"),
+            "created .kissconfig must disable duplication:\n{created}"
+        );
+        assert!(
+            created.contains("orphan_module_enabled = false"),
+            "created .kissconfig must disable orphan_module:\n{created}"
+        );
+        assert!(
+            created.contains("comment_removal_enabled = false"),
+            "created .kissconfig must disable comment_removal:\n{created}"
+        );
+        assert!(
+            created.contains("docs_allowed = []"),
+            "created .kissconfig must set docs_allowed = []:\n{created}"
+        );
+        assert!(
+            created.contains("test_coverage_threshold = 0"),
+            "created .kissconfig must set test_coverage_threshold = 0:\n{created}"
+        );
+        assert!(
+            created.contains("\"*\" = 99999"),
+            "created .kissconfig must set max_unit_test_seconds catch-all to 99999:\n{created}"
+        );
+        assert!(
             created.contains("num_jobs = 4"),
             "created .kissconfig must set num_jobs = 4:\n{created}"
         );
@@ -161,10 +185,7 @@ mod tests {
         .unwrap();
         let orig_dir = std::env::current_dir().unwrap();
         std::env::set_current_dir(cwd.path()).unwrap();
-        ensure_default_config_from(
-            &[other.path().to_string_lossy().into_owned()],
-            &[],
-        );
+        ensure_default_config_from(&[other.path().to_string_lossy().into_owned()], &[]);
         let created = std::fs::read_to_string(".kissconfig").unwrap();
         std::env::set_current_dir(orig_dir).unwrap();
         assert!(
