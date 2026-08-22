@@ -946,7 +946,10 @@ def assert_forced_rust_reexecuted(name: str, metrics: dict[str, str], *, every: 
 
 
 def rendered_plan(outcome: Outcome) -> str:
-    return outcome.stdout.partition("KISS TEST METRICS")[0]
+    body = outcome.stdout.partition("KISS TEST METRICS")[0]
+    return "\n".join(
+        line for line in body.splitlines() if not line.startswith("kiss test: stage ")
+    )
 
 
 def changed_text(path: Path, old: str, new: str) -> None:
@@ -1067,6 +1070,8 @@ def qa_fixture(prefix: str) -> Iterator[Fixture]:
             "test_coverage_threshold = 0\n"
             "[test.max_unit_test_seconds]\n"
             '"*" = 30\n'
+            "[python]\n"
+            "[rust]\n"
         )
         (root / ".kissconfig").write_text(kissconfig)
         (nested / ".kissconfig").write_text(kissconfig)
@@ -1145,7 +1150,9 @@ def write_witness_config(repo: Path) -> None:
         "duplication_enabled = false\n"
         "orphan_module_enabled = false\n"
         "[test]\n"
-        "test_coverage_threshold = 0\n",
+        "test_coverage_threshold = 0\n"
+        "[python]\n"
+        "[rust]\n",
     )
     (repo / ".gitignore").write_text(".kiss/\ntarget/\n.pytest_cache/\n__pycache__/\n")
 
@@ -1288,6 +1295,58 @@ def entry_lines(entry: dict, source: str) -> set[int]:
     return matched
 
 
+def rust_selector_coverage_from_aggregate(cache: Path) -> dict[str, dict[str, set[int]]]:
+    """Map selector → {file: lines} from check-aggregate binary line maps."""
+    path = cache / "check_aggregate.json"
+    if not path.is_file():
+        return {}
+    aggregate = load_json(path)
+    binaries = {
+        binary["id"]: binary.get("line_map") or {}
+        for binary in aggregate.get("binaries") or []
+    }
+    result: dict[str, dict[str, set[int]]] = {}
+    for selector, ids in (aggregate.get("selector_binary_ids") or {}).items():
+        files: dict[str, set[int]] = {}
+        for binary_id in ids:
+            for file_path, lines in (binaries.get(binary_id) or {}).items():
+                files.setdefault(str(file_path).replace("\\", "/"), set()).update(
+                    int(line) for line in lines
+                )
+        result[str(selector)] = files
+    return result
+
+
+def rust_coverage_payloads(cache: Path) -> list[dict]:
+    maps = rust_selector_coverage_from_aggregate(cache)
+    if maps:
+        return [
+            {
+                "selector": selector,
+                "coverage": {
+                    "files": {path: sorted(lines) for path, lines in files.items()}
+                },
+            }
+            for selector, files in maps.items()
+        ]
+    return selector_entry_payloads(cache)
+
+
+def rust_files_index(cache: Path) -> dict:
+    maps = rust_selector_coverage_from_aggregate(cache)
+    if maps:
+        files: dict[str, list[str]] = {}
+        for selector, file_lines in maps.items():
+            for path, lines in file_lines.items():
+                if lines:
+                    files.setdefault(path, []).append(selector)
+        for path in files:
+            files[path] = sorted(set(files[path]))
+        source_root = load_json(cache / "check_aggregate.json").get("source_root")
+        return {"files": files, "source_root": source_root}
+    return load_json(cache / "index.json")
+
+
 def assert_index_source_selectors(
     index: dict,
     source: str,
@@ -1337,6 +1396,15 @@ def load_python_generation_line_index(cache: Path) -> dict:
     """Build an index-like `{files: {source: [selectors...]}}` from line_index.json."""
     line_index = load_json(pinned_python_generation_dir(cache) / "line_index.json")
     files: dict[str, list[str]] = {}
+    if line_index.get("schema_version") == "rslip-python-line-index-v2":
+        names = line_index.get("selectors") or []
+        for source, lines in (line_index.get("files") or {}).items():
+            selectors: set[str] = set()
+            for ids in lines.values():
+                for selector_id in ids:
+                    selectors.add(str(names[int(selector_id)]))
+            files[source] = sorted(selectors)
+        return {"files": files}
     for source, lines in line_index.items():
         selectors: set[str] = set()
         for ids in lines.values():
@@ -1485,9 +1553,9 @@ def assert_rust_coverage_witness(repo: Path, marker_dir: Path) -> None:
     cache = repo / ".kiss/rust_llvm_cov_cache"
     entry_paths = sorted((cache / "entries").glob("*.json"))
     assert entry_paths, f"missing Rust selector entries in {cache / 'entries'}"
-    entry_payloads = [load_json(path) for path in entry_paths]
+    entry_payloads = rust_coverage_payloads(cache)
     assert_disjoint_entry_lines(entry_payloads, "src/lib.rs", 2, 6, 10)
-    index = load_json(cache / "index.json")
+    index = rust_files_index(cache)
     manifest = load_json(cache / "population.json")
     assert_index_source_selectors(index, "src/lib.rs", ("test_alpha", "test_beta"))
     assert_population_selectors(manifest, ("test_alpha", "test_beta"))
@@ -1588,6 +1656,34 @@ RUST_SELECTOR_PUBLISH_ARTIFACTS = frozenset(
         "rust_reverse_meta",
     }
 )
+_RUST_POPULATION_SNAPSHOT_NAMES = (
+    "population.json",
+    "check_aggregate.json",
+    "index.json",
+)
+
+
+def snapshot_rust_population_files(cache: Path) -> dict[str, bytes]:
+    saved: dict[str, bytes] = {}
+    for name in _RUST_POPULATION_SNAPSHOT_NAMES:
+        path = cache / name
+        if path.is_file():
+            saved[name] = path.read_bytes()
+    return saved
+
+
+def restore_rust_population_files(cache: Path, saved: dict[str, bytes]) -> None:
+    for name, data in saved.items():
+        (cache / name).write_bytes(data)
+
+
+def sweep_rust_cache_tmp(cache: Path) -> None:
+    """Remove publication tmp files left behind by SIGKILL mid-rename."""
+    if not cache.is_dir():
+        return
+    for path in cache.rglob("*.tmp"):
+        if path.is_file():
+            path.unlink(missing_ok=True)
 
 
 def publication_writer_command(
@@ -1762,7 +1858,9 @@ def write_aggregate_benchmark_repo(repo: Path) -> None:
         "duplication_enabled = false\n"
         "orphan_module_enabled = false\n"
         "[test]\n"
-        "test_coverage_threshold = 0\n",
+        "test_coverage_threshold = 0\n"
+        "[python]\n"
+        "[rust]\n",
     )
     (repo / "Cargo.toml").write_text(
         "[package]\n"
@@ -2202,18 +2300,41 @@ def reverse_index_concurrency_stress() -> None:
                 artifact, phase = reverse_barriers[iteration % len(reverse_barriers)]
                 barrier_dir = fixture.root / f".kiss-qa-barrier-{iteration}"
                 barrier_dir.mkdir(exist_ok=True)
-                force_publication_target(fixture.root, "rust", artifact)
                 writer_env = dict(fixture.env)
                 writer_env["KISS_QA_PUBLICATION_BARRIER_DIR"] = str(barrier_dir)
                 writer_env["KISS_QA_PUBLICATION_BARRIER_TARGET"] = f"{artifact}:{phase}"
-                kill_cmd = kiss_command(
-                    "rust",
-                    fixture.ignores["rust"],
-                    "--force",
-                    "--metrics",
-                    "-j",
-                    "1",
-                )
+                rust_cache = fixture.root / ".kiss/rust_llvm_cov_cache"
+                population_snapshot: dict[str, bytes] = {}
+                # Selector/reverse barriers fire only on SelectorEntries publish
+                # (`test PATH --force`). `test commit --force` stays on
+                # CheckAggregate and never writes rust_entry_state / rust_reverse_*.
+                # SIGKILL mid-publish can drop population.json; restore the
+                # pre-kill snapshot so repair stays at the primed selector set.
+                if artifact in RUST_SELECTOR_PUBLISH_ARTIFACTS:
+                    (fixture.root / ".kiss" / "cov_records_cache.json").unlink(
+                        missing_ok=True
+                    )
+                    population_snapshot = snapshot_rust_population_files(rust_cache)
+                    (rust_cache / "entry_state.json").unlink(missing_ok=True)
+                    shutil.rmtree(rust_cache / "reverse_line_index", ignore_errors=True)
+                    force_cmd = [
+                        str(KISS),
+                        "--lang",
+                        "rust",
+                        "test",
+                        RS_SOURCE.as_posix(),
+                        "--force",
+                        "--metrics",
+                    ]
+                else:
+                    force_publication_target(fixture.root, "rust", artifact)
+                    force_cmd = kiss_command(
+                        "rust",
+                        fixture.ignores["rust"],
+                        "--force",
+                        "--metrics",
+                    )
+                kill_cmd = force_cmd + ["-j", "1"]
                 writer = subprocess.Popen(
                     kill_cmd,
                     cwd=fixture.root,
@@ -2229,21 +2350,52 @@ def reverse_index_concurrency_stress() -> None:
                     killed_writers += 1
                 finally:
                     writer.communicate(timeout=60)
-                # Repair after kill.
+                sweep_rust_cache_tmp(rust_cache)
+                if population_snapshot:
+                    restore_rust_population_files(rust_cache, population_snapshot)
+                # Repair after kill. A mid-publish SIGKILL invalidates population
+                # identity, so PATH --force would expand to the full Rust suite.
+                # Rebuild the ignore-sparse CheckAggregate set first, then
+                # republish reverse/entry_state with the file target.
+                if artifact in RUST_SELECTOR_PUBLISH_ARTIFACTS:
+                    pop_repair = run(
+                        f"reverse-repair-pop-{iteration}",
+                        kiss_command(
+                            "rust",
+                            fixture.ignores["rust"],
+                            "--force",
+                            "--metrics",
+                            "-j",
+                            str(jobs),
+                        ),
+                        fixture.root,
+                        fixture.env,
+                    )
+                    assert pop_repair.returncode == 0, pop_repair.stderr
                 repair = run(
                     f"reverse-repair-{iteration}",
-                    kiss_command(
-                        "rust",
-                        fixture.ignores["rust"],
-                        "--force",
-                        "--metrics",
-                        "-j",
-                        str(jobs),
-                    ),
+                    force_cmd + ["-j", str(jobs)],
                     fixture.root,
                     fixture.env,
                 )
                 assert repair.returncode == 0, repair.stderr
+                if artifact not in RUST_SELECTOR_PUBLISH_ARTIFACTS:
+                    run(
+                        f"reverse-repair-reprime-{iteration}",
+                        [
+                            str(KISS),
+                            "--lang",
+                            "rust",
+                            "test",
+                            RS_SOURCE.as_posix(),
+                            "--force",
+                            "--metrics",
+                            "-j",
+                            str(jobs),
+                        ],
+                        fixture.root,
+                        fixture.env,
+                    )
                 repaired += 1
                 assert_rust_reverse_cache_integrity(fixture.root)
 
@@ -2400,6 +2552,15 @@ def rust_forward_entry_oracle_selectors(repo: Path, rel_file: str) -> set[str]:
             if normalized == rel_file or normalized.endswith("/" + rel_file):
                 if lines:
                     selected.add(entry["selector"])
+                    break
+    if selected:
+        return selected
+    for selector, files in rust_selector_coverage_from_aggregate(cache).items():
+        for file_path, lines in files.items():
+            normalized = str(file_path).replace("\\", "/")
+            if normalized == rel_file or normalized.endswith("/" + rel_file):
+                if lines:
+                    selected.add(selector)
                     break
     return selected
 
@@ -2977,15 +3138,17 @@ def concurrent_cache_recovery() -> None:
             assert len(set(plans)) == 1
             assert "COVERAGE POPULATION" not in plans[0]
 
-        # Clear reverse/index/aggregate tokens, but keep population.json so planning
-        # stays selective. Then --force the edited Rust source only: commit-mode
-        # selection can include logical ids that lack PATH::symbol report ids, which
+        # Clear reverse/index tokens, but keep check_aggregate.json and
+        # population.json so planning stays selective. Population is
+        # check-aggregate-backed; deleting the aggregate makes kiss reject it
+        # and expand `test PATH --force` to the full Rust suite.
+        # Then --force the edited Rust source only: commit-mode selection can
+        # include logical ids that lack PATH::symbol report ids, which
         # SelectorEntries rejects; RS_SOURCE targets are report-id safe and still
         # activate reverse_line_index for the oracle races below.
         rs_cache = fixture.root / ".kiss/rust_llvm_cov_cache"
         (rs_cache / "index.json").unlink(missing_ok=True)
         (rs_cache / "entry_state.json").unlink(missing_ok=True)
-        (rs_cache / "check_aggregate.json").unlink(missing_ok=True)
         shutil.rmtree(rs_cache / "reverse_line_index", ignore_errors=True)
         reverse_prime = run(
             "rust-reverse-prime",
@@ -3629,12 +3792,15 @@ def rust_full_repo_observer(jobs: int, log_dir: Path | None) -> None:
     env["PYTHONPATH"] = str(ROOT)
     rust_cache = ROOT / ".kiss" / "rust_llvm_cov_cache"
     shutil.rmtree(rust_cache, ignore_errors=True)
+    # `test commit` only rebuilds a Rust population when the current commit
+    # has Rust sources. A docs-only HEAD then scores coverage against an
+    # empty cache and fails. All-invocation `test` after the wipe is the
+    # full-repository cold population this check observes.
     command = [
         str(kiss_bin),
         "--lang",
         "rust",
         "test",
-        "commit",
         "--metrics",
         "-j",
         str(jobs),

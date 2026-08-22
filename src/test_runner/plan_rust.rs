@@ -106,6 +106,92 @@ mod tests {
     }
 
     #[test]
+    fn rust_population_current_unreadable_population_without_witness_is_not_current() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cache = tmp.path().join(".kiss").join("rust_llvm_cov_cache");
+        std::fs::create_dir_all(&cache).unwrap();
+        std::fs::write(cache.join("population.json"), b"{}").unwrap();
+        assert!(!rust_population_current_for_all_selectors(
+            tmp.path(),
+            &["a".into()],
+            &GateConfig::default()
+        ));
+    }
+
+    #[test]
+    fn rust_population_current_when_published_population_matches() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+        std::fs::write(
+            tmp.path().join("Cargo.toml"),
+            "[package]\nname='demo'\nversion='0.1.0'\nedition='2021'\n",
+        )
+        .unwrap();
+        std::fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
+        crate::test_runner::rust_coverage_index::write_rust_population_manifest_for_args(
+            tmp.path(),
+            &["a".into()],
+            &[],
+        )
+        .unwrap();
+        assert!(rust_population_current_for_all_selectors(
+            tmp.path(),
+            &["a".into()],
+            &GateConfig::default()
+        ));
+    }
+
+    #[test]
+    fn rust_population_current_uses_matching_witness_when_population_unreadable() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+        std::fs::write(
+            tmp.path().join("Cargo.toml"),
+            "[package]\nname='demo'\nversion='0.1.0'\nedition='2021'\n",
+        )
+        .unwrap();
+        std::fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
+        let id = crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(
+            tmp.path(),
+            &[],
+        )
+        .unwrap();
+        let cache = tmp.path().join(".kiss").join("rust_llvm_cov_cache");
+        std::fs::create_dir_all(&cache).unwrap();
+        std::fs::write(cache.join("population.json"), b"{not-json").unwrap();
+        let selectors = vec!["a".into(), "b".into()];
+        let covered = BTreeMap::from([("src/lib.rs".into(), BTreeSet::from([1u32]))]);
+        publish_rust_execution_witness(PublishRustWitness {
+            repo_root: tmp.path(),
+            identity: &id,
+            scope: WitnessScope::Full,
+            selectors: &selectors,
+            statuses: &[WitnessStatus::Passed, WitnessStatus::Passed],
+            durations_ns: &[Some(1), Some(1)],
+            covered_lines: &covered,
+            complete: true,
+        })
+        .unwrap();
+        assert!(rust_population_current_for_all_selectors(
+            tmp.path(),
+            &selectors,
+            &GateConfig::default()
+        ));
+        let other = rust_llvm_cov_runner::RustCoverageBatchIdentity {
+            input_digest: "other".into(),
+            generation_fingerprint: "g".into(),
+            selection_context_fingerprint: "s".into(),
+            ordinary_source_digests: Default::default(),
+        };
+        assert!(!rust_witness_accepts_full_universe(
+            tmp.path(),
+            &selectors,
+            &other,
+            &GateConfig::default()
+        ));
+    }
+
+    #[test]
     fn rust_witness_accepts_complete_full_universe() {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(tmp.path().join("src")).unwrap();
