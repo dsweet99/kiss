@@ -1,7 +1,8 @@
+use crate::code_roles::{SourceRoleIndex, is_test_only_file, production_line_count, skip_syn};
 use crate::graph::DependencyGraph;
 use crate::rust_fn_metrics::{
-    RustFunctionMetrics, compute_rust_file_metrics, compute_rust_function_metrics,
-    count_non_doc_attrs, is_cfg_test_mod,
+    RustFunctionMetrics, compute_rust_file_metrics_with_roles,
+    compute_rust_function_metrics_with_roles, count_non_doc_attrs,
 };
 use crate::rust_parsing::ParsedRustFile;
 use syn::{ImplItem, Item};
@@ -19,10 +20,25 @@ pub fn collect_detailed_rs(
     parsed_files: &[&ParsedRustFile],
     graph: Option<&DependencyGraph>,
 ) -> Vec<UnitMetrics> {
+    collect_detailed_rs_with_roles(parsed_files, graph, None)
+}
+
+#[must_use]
+pub fn collect_detailed_rs_with_roles(
+    parsed_files: &[&ParsedRustFile],
+    graph: Option<&DependencyGraph>,
+    roles: Option<&SourceRoleIndex>,
+) -> Vec<UnitMetrics> {
     let mut units = Vec::new();
     for &parsed in parsed_files {
-        let fm = compute_rust_file_metrics(parsed);
-        let lines = parsed.source.lines().count();
+        if roles.is_some_and(|roles| is_test_only_file(roles, &parsed.path)) {
+            continue;
+        }
+        let fm = compute_rust_file_metrics_with_roles(parsed, roles);
+        let lines = roles.map_or_else(
+            || parsed.source.lines().count(),
+            |roles| production_line_count(roles, &parsed.path, &parsed.source),
+        );
         units.push(file_unit_metrics(
             &parsed.path,
             FileScopeMetrics {
@@ -35,10 +51,12 @@ pub fn collect_detailed_rs(
             },
             graph,
         ));
-        collect_detailed_from_items(
+        collect_detailed_from_items_with_roles(
             &parsed.ast.items,
             &parsed.path.display().to_string(),
             &mut units,
+            Some(&parsed.path),
+            roles,
         );
     }
     units
@@ -69,8 +87,20 @@ pub(crate) fn push_rust_fn_or_method_unit(units: &mut Vec<UnitMetrics>, p: RustF
     units.push(u);
 }
 
-fn push_top_level_fn(f: &syn::ItemFn, file: &str, units: &mut Vec<UnitMetrics>) {
-    let m = compute_rust_function_metrics(&f.sig.inputs, &f.block, count_non_doc_attrs(&f.attrs));
+fn push_top_level_fn(
+    f: &syn::ItemFn,
+    file: &str,
+    units: &mut Vec<UnitMetrics>,
+    path: Option<&std::path::Path>,
+    roles: Option<&SourceRoleIndex>,
+) {
+    let m = compute_rust_function_metrics_with_roles(
+        &f.sig.inputs,
+        &f.block,
+        count_non_doc_attrs(&f.attrs),
+        path,
+        roles,
+    );
     push_rust_fn_or_method_unit(
         units,
         RustFnMethodPush {
@@ -83,12 +113,21 @@ fn push_top_level_fn(f: &syn::ItemFn, file: &str, units: &mut Vec<UnitMetrics>) 
     );
 }
 
-fn push_impl_block(i: &syn::ItemImpl, file: &str, units: &mut Vec<UnitMetrics>) {
+fn push_impl_block(
+    i: &syn::ItemImpl,
+    file: &str,
+    units: &mut Vec<UnitMetrics>,
+    path: Option<&std::path::Path>,
+    roles: Option<&SourceRoleIndex>,
+) {
     let name = get_impl_name(i);
     let mcnt = i
         .items
         .iter()
-        .filter(|ii| matches!(ii, ImplItem::Fn(_)))
+        .filter(|ii| match ii {
+            ImplItem::Fn(m) => !path.is_some_and(|p| skip_syn(roles, p, m)),
+            _ => false,
+        })
         .count();
     let mut u = UnitMetrics::new(
         file.to_string(),
@@ -100,14 +139,28 @@ fn push_impl_block(i: &syn::ItemImpl, file: &str, units: &mut Vec<UnitMetrics>) 
     units.push(u);
     for ii in &i.items {
         if let ImplItem::Fn(m) = ii {
-            push_impl_method(m, file, units);
+            if path.is_some_and(|p| skip_syn(roles, p, m)) {
+                continue;
+            }
+            push_impl_method(m, file, units, path, roles);
         }
     }
 }
 
-fn push_impl_method(m: &syn::ImplItemFn, file: &str, units: &mut Vec<UnitMetrics>) {
-    let metrics =
-        compute_rust_function_metrics(&m.sig.inputs, &m.block, count_non_doc_attrs(&m.attrs));
+fn push_impl_method(
+    m: &syn::ImplItemFn,
+    file: &str,
+    units: &mut Vec<UnitMetrics>,
+    path: Option<&std::path::Path>,
+    roles: Option<&SourceRoleIndex>,
+) {
+    let metrics = compute_rust_function_metrics_with_roles(
+        &m.sig.inputs,
+        &m.block,
+        count_non_doc_attrs(&m.attrs),
+        path,
+        roles,
+    );
     push_rust_fn_or_method_unit(
         units,
         RustFnMethodPush {
@@ -120,19 +173,32 @@ fn push_impl_method(m: &syn::ImplItemFn, file: &str, units: &mut Vec<UnitMetrics
     );
 }
 
+#[cfg(test)]
 pub(crate) fn collect_detailed_from_items(
     items: &[Item],
     file: &str,
     units: &mut Vec<UnitMetrics>,
 ) {
+    collect_detailed_from_items_with_roles(items, file, units, None, None);
+}
+
+fn collect_detailed_from_items_with_roles(
+    items: &[Item],
+    file: &str,
+    units: &mut Vec<UnitMetrics>,
+    path: Option<&std::path::Path>,
+    roles: Option<&SourceRoleIndex>,
+) {
     for item in items {
+        if path.is_some_and(|p| skip_syn(roles, p, item)) {
+            continue;
+        }
         match item {
-            Item::Fn(f) => push_top_level_fn(f, file, units),
-            Item::Impl(i) => push_impl_block(i, file, units),
+            Item::Fn(f) => push_top_level_fn(f, file, units, path, roles),
+            Item::Impl(i) => push_impl_block(i, file, units, path, roles),
             Item::Mod(m) => {
-                if is_cfg_test_mod(m) {
-                } else if let Some((_, inner)) = &m.content {
-                    collect_detailed_from_items(inner, file, units);
+                if let Some((_, inner)) = &m.content {
+                    collect_detailed_from_items_with_roles(inner, file, units, path, roles);
                 }
             }
             _ => {}

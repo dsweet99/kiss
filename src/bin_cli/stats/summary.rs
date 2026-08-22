@@ -62,11 +62,10 @@ pub fn run_stats_summary(
         lang_filter,
         ignore,
         gate,
-    });
-    0
+    })
 }
 
-fn run_stats_summary_from_pipeline(input: StatsSummaryInput<'_>) {
+fn run_stats_summary_from_pipeline(input: StatsSummaryInput<'_>) -> i32 {
     let focus_filter = crate::analyze::FocusFilter::unrestricted();
     let universe = input.paths.first().map(String::as_str).unwrap_or_default();
     let now = Instant::now();
@@ -84,7 +83,7 @@ fn run_stats_summary_from_pipeline(input: StatsSummaryInput<'_>) {
         language_tables: kiss::LanguageTablesPresent::both(),
     };
 
-    let pipeline = crate::analyze::run_full_pipeline(crate::analyze::FullPipelineInput {
+    let pipeline = match crate::analyze::run_full_pipeline(crate::analyze::FullPipelineInput {
         opts: &options,
         py_files: input.py_files,
         rs_files: input.rs_files,
@@ -92,7 +91,13 @@ fn run_stats_summary_from_pipeline(input: StatsSummaryInput<'_>) {
         t0: now,
         t1: now,
         t2: now,
-    });
+    }) {
+        Ok(pipeline) => pipeline,
+        Err(err) => {
+            eprintln!("{err}");
+            return 1;
+        }
+    };
     crate::analyze::maybe_store_full_cache(crate::analyze::FullCacheStoreInput {
         opts: &options,
         py_files: input.py_files,
@@ -114,6 +119,7 @@ fn run_stats_summary_from_pipeline(input: StatsSummaryInput<'_>) {
         input.ignore,
         input.gate,
     );
+    0
 }
 
 fn maybe_print_unit_test_runtime_line(
@@ -181,8 +187,14 @@ fn print_summary_from_pipeline(
         format_violation_counts(
             duplicate_total,
             orphan_total,
-            count_metric(pipeline.result.violations.iter().map(|v| v.metric.as_str()), "comment"),
-            count_metric(pipeline.result.violations.iter().map(|v| v.metric.as_str()), "doc"),
+            count_metric(
+                pipeline.result.violations.iter().map(|v| v.metric.as_str()),
+                "comment"
+            ),
+            count_metric(
+                pipeline.result.violations.iter().map(|v| v.metric.as_str()),
+                "doc"
+            ),
         )
     );
 
@@ -281,8 +293,14 @@ fn print_cached_summary(
         format_violation_counts(
             dup_total,
             orphan_total,
-            count_metric(cache.base_violations.iter().map(|v| v.metric.as_str()), "comment"),
-            count_metric(cache.base_violations.iter().map(|v| v.metric.as_str()), "doc"),
+            count_metric(
+                cache.base_violations.iter().map(|v| v.metric.as_str()),
+                "comment"
+            ),
+            count_metric(
+                cache.base_violations.iter().map(|v| v.metric.as_str()),
+                "doc"
+            ),
         )
     );
 

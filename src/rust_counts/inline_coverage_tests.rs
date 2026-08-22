@@ -29,7 +29,7 @@ fn inline_build_violation_via_method_threshold() {
         ..Default::default()
     };
     let mut v = Vec::new();
-    RustAnalyzer::new(&p, &cfg, &mut v).check_methods_per_class(1, "S", 5);
+    RustAnalyzer::new(&p, &cfg, &mut v, None).check_methods_per_class(1, "S", 5);
     assert_eq!(v.len(), 1);
     assert_eq!(v[0].metric, "methods_per_class");
 }
@@ -110,7 +110,7 @@ fn direct_push_file_threshold_and_build_violation() {
     let p = std::path::PathBuf::from("direct.rs");
     let cfg = Config::default();
     let mut viols = Vec::new();
-    let mut analyzer = RustAnalyzer::new(&p, &cfg, &mut viols);
+    let mut analyzer = RustAnalyzer::new(&p, &cfg, &mut viols, None);
     analyzer.push_file_threshold_violation(
         "f.rs",
         "lines_per_file",

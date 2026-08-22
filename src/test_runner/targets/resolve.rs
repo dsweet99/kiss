@@ -2,8 +2,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use kiss::Language;
-use kiss::is_rust_test_file;
-use kiss::test_refs::{is_in_test_directory, is_test_file};
+use kiss::code_roles::{
+    CodeRole, SourcePosition, SourceSpan, is_python_test_module_path, is_test_only_file,
+};
 
 use super::model::{SourceModel, load_source_model};
 use super::model_python::attach_python_nodeids;
@@ -30,6 +31,8 @@ pub(crate) fn resolve_target_operands(
     let mut query = TargetSelectionQuery::default();
     let mut seen_raw = BTreeSet::new();
     let mut models: BTreeMap<PathBuf, SourceModel> = BTreeMap::new();
+    let roles = crate::test_runner::runners::roles_for_universe(repo_root, ignore)
+        .map_err(|err| format!("error: kiss test: {err}"))?;
     for raw in operands {
         if !seen_raw.insert(raw.clone()) {
             continue;
@@ -51,7 +54,7 @@ pub(crate) fn resolve_target_operands(
             models.insert(abs.clone(), model);
         }
         let model = models.get(&abs).expect("model inserted above");
-        apply_parsed_target(&mut query, model, &parsed, &abs)?;
+        apply_parsed_target(&mut query, model, &parsed, &abs, repo_root, ignore, &roles)?;
     }
     Ok(query)
 }
@@ -67,7 +70,7 @@ fn explicit_python_test_selector(
     if let Some(nodeid) = &parsed.python_nodeid {
         return Some(nodeid.clone());
     }
-    if !is_test_file(abs) && !is_in_test_directory(abs) {
+    if !is_python_test_module_path(abs) {
         return None;
     }
     let rel = repo_relative(repo_root, abs)?;
@@ -83,6 +86,9 @@ fn apply_parsed_target(
     model: &SourceModel,
     parsed: &ParsedTestTarget,
     abs: &Path,
+    repo_root: &Path,
+    ignore: &[String],
+    roles: &kiss::code_roles::SourceRoleIndex,
 ) -> Result<(), String> {
     if let Some(nodeid) = &parsed.python_nodeid {
         if model.direct_tests.iter().any(|t| t.selector == *nodeid) {
@@ -96,23 +102,71 @@ fn apply_parsed_target(
         ));
     }
     match (&parsed.symbol, parsed.member.as_deref()) {
-        (None, _) => {
-            for test in &model.direct_tests {
-                if test.selector.is_empty() {
-                    continue;
-                }
-                insert_direct(query, model.language, test.selector.clone());
-            }
+        (None, _) => apply_file_operand(query, model, abs, repo_root, ignore, roles)?,
+        (Some(name), member) => {
+            apply_symbol_target(query, model, parsed, abs, name, member, roles)?
+        }
+    }
+    Ok(())
+}
 
-            let is_test_operand = match model.language {
-                Language::Python => is_test_file(abs) || is_in_test_directory(abs),
-                Language::Rust => is_rust_test_file(abs),
-            };
-            if !is_test_operand {
-                insert_file(query, model.language, abs);
+fn apply_file_operand(
+    query: &mut TargetSelectionQuery,
+    model: &SourceModel,
+    abs: &Path,
+    repo_root: &Path,
+    ignore: &[String],
+    roles: &kiss::code_roles::SourceRoleIndex,
+) -> Result<(), String> {
+    let before_py = query.direct_python.len();
+    let before_rs = query.direct_rust.len();
+    for test in &model.direct_tests {
+        if test.selector.is_empty() {
+            continue;
+        }
+        insert_direct(query, model.language, test.selector.clone());
+    }
+    if is_test_only_file(roles, abs) {
+        insert_universe_if_unresolved(
+            query,
+            model.language,
+            repo_root,
+            ignore,
+            before_py,
+            before_rs,
+        )?;
+        return Ok(());
+    }
+    insert_file(query, model.language, abs);
+    Ok(())
+}
+
+fn insert_universe_if_unresolved(
+    query: &mut TargetSelectionQuery,
+    language: Language,
+    repo_root: &Path,
+    ignore: &[String],
+    before_py: usize,
+    before_rs: usize,
+) -> Result<(), String> {
+    match language {
+        Language::Python if query.direct_python.len() == before_py => {
+            for selector in crate::test_runner::runners::enumerate_workspace_python_selectors(
+                repo_root,
+                ignore,
+                &[],
+            )? {
+                insert_direct(query, Language::Python, selector);
             }
         }
-        (Some(name), member) => apply_symbol_target(query, model, parsed, abs, name, member)?,
+        Language::Rust if query.direct_rust.len() == before_rs => {
+            for selector in
+                crate::test_runner::runners::enumerate_workspace_rust_selectors(repo_root, ignore)?
+            {
+                insert_direct(query, Language::Rust, selector);
+            }
+        }
+        _ => {}
     }
     Ok(())
 }
@@ -124,9 +178,13 @@ fn apply_symbol_target(
     abs: &Path,
     name: &str,
     member: Option<&str>,
+    roles: &kiss::code_roles::SourceRoleIndex,
 ) -> Result<(), String> {
     let def = model.find_definition(name, member)?;
     if !def.is_unit_test {
+        if roles.role_for_span(abs, definition_span(def)) == CodeRole::TestOnly {
+            return Ok(());
+        }
         let lines = model.coverage_lines_for_definition(def);
         if !lines.is_empty() {
             insert_lines(query, model.language, abs, lines);
@@ -145,6 +203,13 @@ fn apply_symbol_target(
         insert_direct(query, model.language, selector);
     }
     Ok(())
+}
+
+fn definition_span(def: &super::model::NamedDefinition) -> SourceSpan {
+    SourceSpan::new(
+        SourcePosition::new(def.start_line as usize, 0),
+        SourcePosition::new(def.end_line.saturating_add(1) as usize, 0),
+    )
 }
 
 fn unit_test_selectors_for_def(
@@ -169,10 +234,7 @@ fn attach_python_tests(
     model: &mut SourceModel,
     pytest_args: &[String],
 ) -> Result<(), String> {
-    if model.direct_tests.is_empty()
-        && !is_test_file(&model.path)
-        && !is_in_test_directory(&model.path)
-    {
+    if model.direct_tests.is_empty() && !is_python_test_module_path(&model.path) {
         return Ok(());
     }
     let nodeids = collect_python_nodeids_for_targets(

@@ -9,7 +9,6 @@ use crate::execute_rust_coverage_batch;
 use crate::batch_export_contract_fixture::*;
 
 #[test]
-#[ignore = "requires cargo llvm-cov and LLVM tools; set KISS_REAL_TOOL_TESTS=1"]
 fn real_tool_direct_export_matches_cargo_llvm_cov_json() {
     if !real_tool_tests_enabled() {
         return;
@@ -43,7 +42,6 @@ fn real_tool_direct_export_matches_cargo_llvm_cov_json() {
 }
 
 #[test]
-#[ignore = "requires cargo llvm-cov, cargo nextest, LLVM tools, and a built kiss shim"]
 fn real_tool_legacy_and_batch_outputs_match_on_fixture() {
     if !real_tool_tests_enabled() {
         return;
@@ -344,7 +342,6 @@ fn shim_metadata_for_batch(
 }
 
 #[test]
-#[ignore = "requires cargo llvm-cov, cargo nextest, LLVM tools, and a built kiss shim"]
 fn real_tool_legacy_and_batch_parity_matrix_on_fixture() {
     if !real_tool_tests_enabled() {
         return;
@@ -363,7 +360,6 @@ fn real_tool_legacy_and_batch_parity_matrix_on_fixture() {
 }
 
 #[test]
-#[ignore = "requires cargo llvm-cov, cargo nextest, LLVM tools, and a built kiss shim"]
 fn real_tool_batch_leaves_repository_target_untouched() {
     if !real_tool_tests_enabled() {
         return;

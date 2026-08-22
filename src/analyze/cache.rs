@@ -36,8 +36,18 @@ pub(crate) fn maybe_store_full_cache(inp: FullCacheStoreInput<'_>) {
     crate::analyze_cache::store_full_cache_from_run(crate::analyze_cache::FullCacheInputs {
         repo_root: crate::analyze_cache::repo_root_for_universe(inp.opts.universe),
         fingerprint: fp,
-        py_file_count: inp.result.py_parsed.len(),
-        rs_file_count: inp.result.rs_parsed.len(),
+        py_file_count: inp
+            .result
+            .py_parsed
+            .iter()
+            .filter(|p| !kiss::code_roles::is_test_only_file(&inp.result.roles, &p.path))
+            .count(),
+        rs_file_count: inp
+            .result
+            .rs_parsed
+            .iter()
+            .filter(|p| !kiss::code_roles::is_test_only_file(&inp.result.roles, &p.path))
+            .count(),
         code_unit_count: inp.result.code_unit_count,
         statement_count: inp.result.statement_count,
         py_stats: inp.py_stats,

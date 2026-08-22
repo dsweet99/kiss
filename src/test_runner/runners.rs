@@ -6,8 +6,7 @@ use std::process::{Command, Stdio};
 pub(crate) use super::rust_llvm_cov::{
     cached_rust_check_aggregate_selectors, run_rust_llvm_cov_selectors,
 };
-use kiss::test_refs::{is_in_test_directory, is_pytest_nodeid_source_file, is_test_file};
-use kiss::{parse_rust_files, rust_test_functions_in};
+use kiss::code_roles::{is_default_pytest_collect_candidate, is_test_only_file};
 use rust_llvm_cov_runner::{
     CoverageOutputMode, RustCoverageBatchRequest, build_rust_coverage_batch_plan,
 };
@@ -71,27 +70,68 @@ pub fn merge_exit_codes(a: i32, b: i32) -> i32 {
     a.max(b)
 }
 
-pub fn partition_changed_paths(paths: &[PathBuf]) -> (Vec<PathBuf>, Vec<PathBuf>) {
+#[cfg(test)]
+pub fn partition_changed_paths(
+    paths: &[PathBuf],
+) -> Result<(Vec<PathBuf>, Vec<PathBuf>), kiss::code_roles::RoleBuildError> {
+    let existing: Vec<PathBuf> = paths.iter().filter(|p| p.exists()).cloned().collect();
+    let roles = roles_for_changed_paths(&existing)?;
+    Ok(partition_changed_paths_with_roles(paths, &roles))
+}
+
+pub(crate) fn partition_changed_paths_with_roles(
+    paths: &[PathBuf],
+    roles: &kiss::code_roles::SourceRoleIndex,
+) -> (Vec<PathBuf>, Vec<PathBuf>) {
     let mut source = Vec::new();
     let mut test = Vec::new();
     for p in paths {
         let is_py = p.extension().is_some_and(|e| e.eq_ignore_ascii_case("py"));
         let is_rs = is_rust_planning_source_path(p);
-        if is_py {
-            if is_test_file(p) || is_in_test_directory(p) {
-                test.push(p.clone());
-            } else {
-                source.push(p.clone());
-            }
-        } else if is_rs {
-            if kiss::is_rust_test_file(p) {
-                test.push(p.clone());
-            } else {
-                source.push(p.clone());
-            }
+        if !is_py && !is_rs {
+            continue;
+        }
+        if !p.exists() {
+            source.push(p.clone());
+            continue;
+        }
+        if is_test_only_file(roles, p) {
+            test.push(p.clone());
+        } else {
+            source.push(p.clone());
         }
     }
     (source, test)
+}
+
+pub(crate) fn roles_for_universe(
+    repo_root: &Path,
+    ignore: &[String],
+) -> Result<kiss::code_roles::SourceRoleIndex, kiss::code_roles::RoleBuildError> {
+    let root = repo_root.to_string_lossy().to_string();
+    let (py, rs) = kiss::gather_files_by_lang(&[root], None, ignore);
+    let py_parsed = crate::analyze_parse::parse_py_files(&py)?;
+    let rs_parsed = crate::analyze_parse::parse_rs_files(&rs)?;
+    kiss::code_roles::build_source_role_index(&py_parsed, &rs_parsed, &py, &rs)
+}
+
+#[cfg(test)]
+fn roles_for_changed_paths(
+    paths: &[PathBuf],
+) -> Result<kiss::code_roles::SourceRoleIndex, kiss::code_roles::RoleBuildError> {
+    let py: Vec<_> = paths
+        .iter()
+        .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("py")))
+        .cloned()
+        .collect();
+    let rs: Vec<_> = paths
+        .iter()
+        .filter(|p| kiss::Language::is_rust_path(p))
+        .cloned()
+        .collect();
+    let py_parsed = crate::analyze_parse::parse_py_files(&py)?;
+    let rs_parsed = crate::analyze_parse::parse_rs_files(&rs)?;
+    kiss::code_roles::build_source_role_index(&py_parsed, &rs_parsed, &py, &rs)
 }
 
 pub(crate) fn is_rust_planning_source_path(path: &Path) -> bool {
@@ -142,14 +182,13 @@ pub fn enumerate_tests_in_changed_files(
         }
     }
     if !rs.is_empty() {
-        let parsed = parse_rust_files(&rs);
-        for (path, r) in rs.iter().zip(parsed) {
-            let pf = r.map_err(|e| {
-                format!("error: kiss test: failed to parse {}: {e}", path.display())
-            })?;
-            let ids = rust_test_functions_in(&pf);
+        for path in rs {
+            let ids =
+                crate::test_runner::targets::rust_direct_test_selectors(&path).map_err(|e| {
+                    format!("error: kiss test: failed to parse {}: {e}", path.display())
+                })?;
             for id in ids {
-                out.rust_tests.insert((pf.path.clone(), id));
+                out.rust_tests.insert((path.clone(), id));
             }
         }
     }
@@ -213,7 +252,7 @@ pub fn enumerate_workspace_python_selectors(
 
         let test_paths = py_files
             .into_iter()
-            .filter(|path| is_pytest_nodeid_source_file(path))
+            .filter(|path| is_default_pytest_collect_candidate(path))
             .collect::<Vec<_>>();
         return collect_python_nodeids(repo_root, Some(&test_paths), pytest_args);
     }

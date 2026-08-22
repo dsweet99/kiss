@@ -34,8 +34,10 @@ pub(super) fn run_stats_table_status(
         paths.join(", "),
         config_provenance()
     );
-    print_py_table(&py_files);
-    print_rs_table(&rs_files);
+    if let Err(err) = print_py_table(&py_files).and_then(|()| print_rs_table(&rs_files)) {
+        eprintln!("{err}");
+        return 1;
+    }
     0
 }
 
@@ -44,47 +46,45 @@ fn no_source_files_status() -> i32 {
     1
 }
 
-fn print_py_table(py_files: &[std::path::PathBuf]) {
-    use kiss::parsing::parse_files;
-    use kiss::{build_dependency_graph, collect_detailed_py, format_detailed_table};
+fn print_py_table(py_files: &[std::path::PathBuf]) -> Result<(), kiss::RoleBuildError> {
+    use kiss::{build_python_context_graph, collect_detailed_py, format_detailed_table};
 
     if py_files.is_empty() {
-        return;
+        return Ok(());
     }
-    match parse_files(py_files) {
-        Ok(results) => {
-            let parsed: Vec<_> = results.iter().filter_map(|r| r.as_ref().ok()).collect();
-            let graph = build_dependency_graph(&parsed);
-            let units = collect_detailed_py(&parsed, Some(&graph));
-            println!(
-                "=== Python ({} files, {} units) ===\n{}",
-                py_files.len(),
-                units.len(),
-                format_detailed_table(&units)
-            );
-        }
-        Err(e) => eprintln!("error: failed to parse Python files: {e}"),
-    }
-}
-
-fn print_rs_table(rs_files: &[std::path::PathBuf]) {
-    use kiss::rust_graph::build_rust_dependency_graph;
-    use kiss::rust_parsing::parse_rust_files;
-    use kiss::{collect_detailed_rs, format_detailed_table};
-
-    if rs_files.is_empty() {
-        return;
-    }
-    let results = parse_rust_files(rs_files);
-    let parsed: Vec<_> = results.iter().filter_map(|r| r.as_ref().ok()).collect();
-    let graph = build_rust_dependency_graph(&parsed);
-    let units = collect_detailed_rs(&parsed, Some(&graph));
+    let (parsed, roles) = super::load::load_production_python(py_files)?;
+    let refs: Vec<_> = parsed.iter().collect();
+    let graph = build_python_context_graph(&refs, &roles).production_view();
+    let units = collect_detailed_py(&refs, Some(&graph));
     println!(
-        "=== Rust ({} files, {} units) ===\n{}",
-        rs_files.len(),
+        "=== Python ({} files, {} units) ===\n{}",
+        parsed.len(),
         units.len(),
         format_detailed_table(&units)
     );
+    Ok(())
+}
+
+fn print_rs_table(rs_files: &[std::path::PathBuf]) -> Result<(), kiss::RoleBuildError> {
+    use kiss::{
+        build_rust_dependency_graph_with_roles, collect_detailed_rs_with_roles,
+        format_detailed_table,
+    };
+
+    if rs_files.is_empty() {
+        return Ok(());
+    }
+    let (parsed, roles) = super::load::load_production_rust(rs_files)?;
+    let refs: Vec<_> = parsed.iter().collect();
+    let graph = build_rust_dependency_graph_with_roles(&refs, Some(&roles));
+    let units = collect_detailed_rs_with_roles(&refs, Some(&graph), Some(&roles));
+    println!(
+        "=== Rust ({} files, {} units) ===\n{}",
+        parsed.len(),
+        units.len(),
+        format_detailed_table(&units)
+    );
+    Ok(())
 }
 
 #[cfg(test)]
@@ -93,8 +93,8 @@ mod tests {
 
     #[test]
     fn private_table_printers_return_on_empty_inputs() {
-        super::print_py_table(&[]);
-        super::print_rs_table(&[]);
+        super::print_py_table(&[]).unwrap();
+        super::print_rs_table(&[]).unwrap();
     }
 
     #[test]
@@ -121,8 +121,8 @@ mod tests {
         fs::write(&py_path, "def f():\n    return 1\n").expect("write python");
         fs::write(&rs_path, "pub fn f() -> i32 {\n    1\n}\n").expect("write rust");
 
-        super::print_py_table(&[py_path]);
-        super::print_rs_table(&[rs_path]);
+        super::print_py_table(&[py_path]).unwrap();
+        super::print_rs_table(&[rs_path]).unwrap();
     }
 
     #[test]

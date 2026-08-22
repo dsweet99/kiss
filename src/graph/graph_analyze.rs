@@ -7,7 +7,7 @@ use crate::config::Config;
 use crate::violation::Violation;
 
 use super::dependency_graph::{
-    DependencyGraph, ModuleGraphMetrics, is_crate_root_aggregator, is_orphan, is_test_module,
+    DependencyGraph, ModuleGraphMetrics, is_crate_root_aggregator, is_orphan,
 };
 
 include!("analyze_body.rs");

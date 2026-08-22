@@ -86,3 +86,96 @@ fn injected_client_pass_still_runs_local() {
         "waiting on W must not skip run_local"
     );
 }
+
+#[test]
+fn dry_run_invokes_local_runner() {
+    let test_cfg = TestSectionConfig::default();
+    let py = kiss::Config::python_defaults();
+    let rs = kiss::Config::rust_defaults();
+    let gate = kiss::GateConfig::default();
+    let mut args = python_oneshot_args(&test_cfg, &py, &rs, &gate);
+    args.dry_run = true;
+    args.language_tables = kiss::LanguageTablesPresent::both();
+    let calls = AtomicUsize::new(0);
+    let code = run_test_command_with(args, |_a| {
+        calls.fetch_add(1, Ordering::SeqCst);
+        0
+    });
+    assert_eq!(code, 0);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn finish_with_coverage_returns_test_exit_when_threshold_zero() {
+    let test_cfg = TestSectionConfig::default();
+    let py = kiss::Config::python_defaults();
+    let rs = kiss::Config::rust_defaults();
+    let gate = kiss::GateConfig {
+        test_coverage_threshold: 0,
+        max_unit_test_seconds: Vec::new(),
+        ..kiss::GateConfig::default()
+    };
+    let args = python_oneshot_args(&test_cfg, &py, &rs, &gate);
+    let code = finish_with_coverage(&args, 3);
+    assert_eq!(code, 3);
+}
+
+#[test]
+fn evaluate_watch_coverage_threshold_zero_returns_ok() {
+    let py = kiss::Config::python_defaults();
+    let rs = kiss::Config::rust_defaults();
+    let gate = kiss::GateConfig {
+        test_coverage_threshold: 0,
+        max_unit_test_seconds: Vec::new(),
+        ..kiss::GateConfig::default()
+    };
+    let cycle = crate::test_runner::RunTestCmdArgs {
+        invocation: TestInvocation::All,
+        main_branch_cli: None,
+        base_branch_cli: None,
+        dry_run: true,
+        force_rerun: false,
+        force_bad: false,
+        metrics: false,
+        jobs: 1,
+        extra: &[],
+        python_extra: &[],
+        ignore: &[],
+        lang_filter: Some(kiss::Language::Python),
+        config_main_branch: None,
+        gate_config: gate.clone(),
+    };
+    let cov = WatchCoverageParams {
+        py_config: &py,
+        rs_config: &rs,
+        coverage_all: false,
+    };
+    let result = evaluate_watch_coverage(&cycle, &cov);
+    assert_eq!(result.exit_code, 0);
+}
+
+#[test]
+fn dry_run_rejects_unconfigured_languages() {
+    let test_cfg = TestSectionConfig::default();
+    let py = kiss::Config::python_defaults();
+    let rs = kiss::Config::rust_defaults();
+    let gate = kiss::GateConfig::default();
+    let mut args = python_oneshot_args(&test_cfg, &py, &rs, &gate);
+    args.dry_run = true;
+    args.language_tables = kiss::LanguageTablesPresent::none();
+    let code = run_test_command_with(args, |_a| 0);
+    assert_eq!(code, 1);
+}
+
+#[test]
+fn watch_flag_takes_watch_dispatch_path() {
+    let test_cfg = TestSectionConfig::default();
+    let py = kiss::Config::python_defaults();
+    let rs = kiss::Config::rust_defaults();
+    let gate = kiss::GateConfig::default();
+    let mut args = python_oneshot_args(&test_cfg, &py, &rs, &gate);
+    args.watch = true;
+    args.language_tables = kiss::LanguageTablesPresent::none();
+    let code = run_test_command_with(args, |_a| 0);
+    assert_eq!(code, 1);
+}

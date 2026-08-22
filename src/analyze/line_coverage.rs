@@ -1,13 +1,11 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use kiss::check_universe_cache::CachedLineCoverageRecord;
-use rayon::prelude::*;
+use kiss::code_roles::{SourceRoleIndex, skip_syn};
 use syn::spanned::Spanned;
 use syn::visit::Visit;
-
-use crate::analyze::coverage_gate::is_coverage_gate_file;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct RuntimeCoverageSnapshot {
@@ -24,157 +22,103 @@ pub(crate) struct LineCoverageRecord {
     pub(crate) first_uncovered_line: Option<usize>,
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct CoverageSourceFacts {
+    pub(crate) roles: SourceRoleIndex,
+    coverable_lines: BTreeMap<PathBuf, BTreeSet<usize>>,
+}
+
+impl CoverageSourceFacts {
+    pub(crate) fn from_files(
+        py_files: &[PathBuf],
+        rs_files: &[PathBuf],
+    ) -> Result<Self, kiss::code_roles::RoleBuildError> {
+        let (_py, rs, roles) = crate::analyze_parse::parse_classified(py_files, rs_files)?;
+        Ok(Self::from_index(roles, &rs, py_files, rs_files))
+    }
+
+    fn from_index(
+        roles: SourceRoleIndex,
+        rs: &[kiss::ParsedRustFile],
+        py_files: &[PathBuf],
+        rs_files: &[PathBuf],
+    ) -> Self {
+        let coverable_lines = py_files
+            .iter()
+            .chain(rs_files)
+            .filter(|path| {
+                roles.file_composition(path) != kiss::code_roles::FileComposition::TestOnly
+            })
+            .filter_map(|path| {
+                let lines = rs
+                    .iter()
+                    .find(|parsed| {
+                        kiss::rust_include::canonical_path(&parsed.path)
+                            == kiss::rust_include::canonical_path(path)
+                    })
+                    .map_or_else(
+                        || coverage_denominator_lines(path, &roles),
+                        |parsed| {
+                            rust_coverable_lines(
+                                &parsed.path,
+                                &parsed.source,
+                                &roles,
+                                Some(&parsed.ast),
+                            )
+                        },
+                    )?;
+                Some((path.clone(), lines))
+            })
+            .collect();
+        Self {
+            roles,
+            coverable_lines,
+        }
+    }
+}
+
 pub(crate) fn compute_line_coverage_records(
     repo_root: &Path,
-    py_files: &[PathBuf],
-    rs_files: &[PathBuf],
+    facts: &CoverageSourceFacts,
     snapshot: &RuntimeCoverageSnapshot,
 ) -> Vec<LineCoverageRecord> {
-    let cfg_test_only_rust_files = cfg_test_only_rust_files(rs_files);
-    let paths: Vec<&PathBuf> = py_files
+    let mut records: Vec<_> = facts
+        .coverable_lines
         .iter()
-        .chain(rs_files)
-        .filter(|path| is_coverage_gate_file(path))
-        .filter(|path| !cfg_test_only_rust_files.contains(*path))
+        .map(|(path, denom)| {
+            record_from_denominator(repo_root, path, denom, snapshot, &facts.roles)
+        })
         .collect();
-    let mut records = paths
-        .into_par_iter()
-        .map(|path| compute_file_line_coverage(repo_root, path, snapshot))
-        .collect::<Vec<_>>();
     records.sort_by(|a, b| a.file.cmp(&b.file));
     records
 }
 
 #[path = "line_coverage_cfg.rs"]
 mod line_coverage_cfg;
-use line_coverage_cfg::{cfg_attrs_active, coverage_off_attrs, stmt_cfg_active};
+use line_coverage_cfg::coverage_off_attrs;
 
-fn cfg_test_only_rust_files(rs_files: &[PathBuf]) -> BTreeSet<PathBuf> {
-    let universe: BTreeSet<PathBuf> = rs_files.iter().cloned().collect();
-    let mut refs: HashMap<PathBuf, Vec<(PathBuf, bool)>> = HashMap::new();
-    for file in rs_files {
-        let Ok(source) = fs::read_to_string(file) else {
-            continue;
-        };
-        let Ok(ast) = syn::parse_file(&source) else {
-            continue;
-        };
-        for item in ast.items {
-            let syn::Item::Mod(module) = item else {
-                continue;
-            };
-
-            if module.content.is_none() {
-                let Some(target) = resolve_module_file(file, &module) else {
-                    continue;
-                };
-                if universe.contains(&target) {
-                    refs.entry(target)
-                        .or_default()
-                        .push((file.clone(), has_cfg_test_attribute(&module.attrs)));
-                }
-            }
-        }
-    }
-    let mut test_only = BTreeSet::new();
-    loop {
-        let before = test_only.len();
-        for (path, incoming) in &refs {
-            if !incoming.is_empty()
-                && incoming.iter().all(|(parent, edge_is_test_only)| {
-                    *edge_is_test_only || test_only.contains(parent)
-                })
-            {
-                test_only.insert(path.clone());
-            }
-        }
-        if test_only.len() == before {
-            return test_only;
-        }
-    }
-}
-
-fn resolve_module_file(parent_file: &Path, module: &syn::ItemMod) -> Option<PathBuf> {
-    if let Some(path_attr) = module_path_attr(module) {
-        return Some(parent_file.parent()?.join(path_attr));
-    }
-    let name = module.ident.to_string();
-    let sibling = parent_file.parent()?.join(format!("{name}.rs"));
-    if sibling.exists() {
-        return Some(sibling);
-    }
-    Some(parent_file.parent()?.join(name).join("mod.rs"))
-}
-
-fn module_path_attr(module: &syn::ItemMod) -> Option<PathBuf> {
-    module.attrs.iter().find_map(|attr| {
-        if !attr.path().is_ident("path") {
-            return None;
-        }
-        let syn::Meta::NameValue(name_value) = &attr.meta else {
-            return None;
-        };
-        let syn::Expr::Lit(expr_lit) = &name_value.value else {
-            return None;
-        };
-        let syn::Lit::Str(lit) = &expr_lit.lit else {
-            return None;
-        };
-        Some(PathBuf::from(lit.value()))
-    })
-}
-
-fn has_cfg_test_attribute(attrs: &[syn::Attribute]) -> bool {
-    attrs.iter().any(|attr| {
-        if !attr.path().is_ident("cfg") {
-            return false;
-        }
-        let syn::Meta::List(list) = &attr.meta else {
-            return false;
-        };
-        cfg_tokens_contain_test(list.tokens.clone())
-    })
-}
-
-fn cfg_tokens_contain_test(tokens: proc_macro2::TokenStream) -> bool {
-    let mut iter = tokens.into_iter();
-    while let Some(token) = iter.next() {
-        match token {
-            proc_macro2::TokenTree::Ident(ident) if ident == "test" => return true,
-            proc_macro2::TokenTree::Ident(ident) if ident == "not" => {
-                let _ = iter.next();
-            }
-            proc_macro2::TokenTree::Ident(ident) if ident == "all" => {
-                if let Some(proc_macro2::TokenTree::Group(group)) = iter.next()
-                    && cfg_tokens_contain_test(group.stream())
-                {
-                    return true;
-                }
-            }
-            proc_macro2::TokenTree::Ident(ident) if ident == "any" => {
-                if let Some(proc_macro2::TokenTree::Group(group)) = iter.next()
-                    && cfg_tokens_contain_test(group.stream())
-                {
-                    return true;
-                }
-            }
-            proc_macro2::TokenTree::Group(group) => {
-                if cfg_tokens_contain_test(group.stream()) {
-                    return true;
-                }
-            }
-            _ => {}
-        }
-    }
-    false
-}
-
+#[cfg(test)]
 pub(crate) fn compute_file_line_coverage(
     repo_root: &Path,
     file: &Path,
     snapshot: &RuntimeCoverageSnapshot,
 ) -> LineCoverageRecord {
-    let Some(denominator_lines) = coverage_denominator_lines(file) else {
+    compute_file_line_coverage_with_roles(
+        repo_root,
+        file,
+        snapshot,
+        &kiss::code_roles::SourceRoleIndex::empty(),
+    )
+}
+
+#[cfg(test)]
+fn compute_file_line_coverage_with_roles(
+    repo_root: &Path,
+    file: &Path,
+    snapshot: &RuntimeCoverageSnapshot,
+    roles: &SourceRoleIndex,
+) -> LineCoverageRecord {
+    let Some(denominator_lines) = coverage_denominator_lines(file, roles) else {
         return LineCoverageRecord {
             file: file.to_path_buf(),
             total_lines: 0,
@@ -183,7 +127,32 @@ pub(crate) fn compute_file_line_coverage(
             first_uncovered_line: None,
         };
     };
+    record_from_denominator(repo_root, file, &denominator_lines, snapshot, roles)
+}
+
+fn record_from_denominator(
+    repo_root: &Path,
+    file: &Path,
+    denominator_lines: &BTreeSet<usize>,
+    snapshot: &RuntimeCoverageSnapshot,
+    roles: &SourceRoleIndex,
+) -> LineCoverageRecord {
+    let candidates: Vec<usize> = denominator_lines.iter().copied().collect();
+    let denominator_lines: BTreeSet<usize> = roles
+        .production_lines(file, &candidates)
+        .into_iter()
+        .collect();
     let total_lines = denominator_lines.len();
+    if total_lines == 0 && roles.file_composition(file) == kiss::code_roles::FileComposition::Mixed
+    {
+        return LineCoverageRecord {
+            file: file.to_path_buf(),
+            total_lines: 0,
+            covered_lines: 0,
+            percent: 100,
+            first_uncovered_line: None,
+        };
+    }
     let rel = repo_relative_key(repo_root, file);
     let covered = rel
         .as_ref()
@@ -245,14 +214,14 @@ pub(crate) fn line_records_from_cache(
         .collect()
 }
 
-fn coverage_denominator_lines(file: &Path) -> Option<BTreeSet<usize>> {
+fn coverage_denominator_lines(file: &Path, roles: &SourceRoleIndex) -> Option<BTreeSet<usize>> {
     let contents = fs::read_to_string(file).ok()?;
     if contents.is_empty() {
         return Some(BTreeSet::new());
     }
     let parsed = match file.extension().and_then(|ext| ext.to_str()) {
         Some("py") => python_coverable_lines(&contents),
-        Some("rs") => rust_coverable_lines(&contents),
+        Some("rs") => rust_coverable_lines(file, &contents, roles, None),
         _ => None,
     };
     Some(parsed.unwrap_or_else(|| (1..=contents.lines().count()).collect()))
@@ -311,22 +280,41 @@ fn is_python_coverable_node(kind: &str) -> bool {
     )
 }
 
-fn rust_coverable_lines(source: &str) -> Option<BTreeSet<usize>> {
-    let ast = syn::parse_file(source).ok()?;
+fn rust_coverable_lines(
+    path: &Path,
+    source: &str,
+    roles: &SourceRoleIndex,
+    ast: Option<&syn::File>,
+) -> Option<BTreeSet<usize>> {
+    let parsed_ast;
+    let ast = if let Some(ast) = ast {
+        ast
+    } else {
+        parsed_ast = syn::parse_file(source).ok()?;
+        &parsed_ast
+    };
     let mut visitor = RustCoverableLineVisitor {
         source_lines: source.lines().collect(),
         lines: BTreeSet::new(),
+        path,
+        roles,
     };
-    visitor.visit_file(&ast);
+    visitor.visit_file(ast);
     Some(visitor.lines)
 }
 
 struct RustCoverableLineVisitor<'a> {
     source_lines: Vec<&'a str>,
     lines: BTreeSet<usize>,
+    path: &'a Path,
+    roles: &'a SourceRoleIndex,
 }
 
 impl RustCoverableLineVisitor<'_> {
+    fn skip_node(&self, node: &impl Spanned) -> bool {
+        skip_syn(Some(self.roles), self.path, node)
+    }
+
     fn add_start_line(&mut self, span: proc_macro2::Span) {
         let line_no = span.start().line;
         let Some(line) = self.source_lines.get(line_no.saturating_sub(1)) else {
@@ -349,7 +337,7 @@ impl RustCoverableLineVisitor<'_> {
 
 impl<'ast> Visit<'ast> for RustCoverableLineVisitor<'_> {
     fn visit_item_fn(&mut self, node: &'ast syn::ItemFn) {
-        if !cfg_attrs_active(&node.attrs) || coverage_off_attrs(&node.attrs) {
+        if self.skip_node(node) || coverage_off_attrs(&node.attrs) {
             return;
         }
         self.add_start_line(node.sig.span());
@@ -357,7 +345,7 @@ impl<'ast> Visit<'ast> for RustCoverableLineVisitor<'_> {
     }
 
     fn visit_impl_item_fn(&mut self, node: &'ast syn::ImplItemFn) {
-        if !cfg_attrs_active(&node.attrs) || coverage_off_attrs(&node.attrs) {
+        if self.skip_node(node) || coverage_off_attrs(&node.attrs) {
             return;
         }
         self.add_start_line(node.sig.span());
@@ -365,14 +353,14 @@ impl<'ast> Visit<'ast> for RustCoverableLineVisitor<'_> {
     }
 
     fn visit_expr_block(&mut self, node: &'ast syn::ExprBlock) {
-        if !cfg_attrs_active(&node.attrs) {
+        if self.skip_node(node) {
             return;
         }
         syn::visit::visit_expr_block(self, node);
     }
 
     fn visit_stmt(&mut self, node: &'ast syn::Stmt) {
-        if !stmt_cfg_active(node) {
+        if self.skip_node(node) {
             return;
         }
         self.add_start_line(node.span());
@@ -400,6 +388,22 @@ pub(crate) fn coverage_percentage(covered: usize, total: usize) -> usize {
     {
         ((covered as f64 / total as f64) * 100.0).round() as usize
     }
+}
+
+#[cfg(test)]
+fn coverage_denominator_lines_for_test(file: &Path) -> Option<BTreeSet<usize>> {
+    coverage_denominator_lines(file, &SourceRoleIndex::empty())
+}
+
+#[cfg(test)]
+fn compute_line_coverage_records_for_test(
+    repo_root: &Path,
+    py_files: &[PathBuf],
+    rs_files: &[PathBuf],
+    snapshot: &RuntimeCoverageSnapshot,
+) -> Result<Vec<LineCoverageRecord>, kiss::code_roles::RoleBuildError> {
+    let facts = CoverageSourceFacts::from_files(py_files, rs_files)?;
+    Ok(compute_line_coverage_records(repo_root, &facts, snapshot))
 }
 
 #[cfg(test)]

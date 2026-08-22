@@ -1,23 +1,5 @@
 use std::path::Path;
 
-fn has_python_test_naming(path: &Path) -> bool {
-    let is_py = path
-        .extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("py"));
-    path.file_name()
-        .and_then(|n| n.to_str())
-        .is_some_and(|name| {
-            (name.starts_with("test_") && is_py)
-                || (name.len() > 8 && name[..name.len() - 3].ends_with("_test") && is_py)
-                || name.eq_ignore_ascii_case("conftest.py")
-        })
-}
-
-#[must_use]
-pub fn is_test_file(path: &std::path::Path) -> bool {
-    has_python_test_naming(path)
-}
-
 #[must_use]
 pub fn is_pytest_nodeid_source_file(path: &Path) -> bool {
     let is_conftest = path

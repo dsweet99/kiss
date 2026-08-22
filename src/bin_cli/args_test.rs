@@ -185,7 +185,9 @@ fn top_level_help_describes_commands_and_global_flags() {
     assert!(help.contains("Path to custom config file (default: .kissconfig)"));
     assert!(help.contains("Filter by language: python (py) or rust (rs)"));
     assert!(help.contains("Use built-in defaults, ignoring config files"));
-    assert!(help.contains("Run static complexity, graph, duplicate, comment, doc, and orphan checks"));
+    assert!(
+        help.contains("Run static complexity, graph, duplicate, comment, doc, and orphan checks")
+    );
     assert!(help.contains("Show metric statistics for the codebase"));
     assert!(help.contains("Generate .kissconfig thresholds from an existing codebase"));
     assert!(help.contains("Generate .kissconfig from the current directory"));

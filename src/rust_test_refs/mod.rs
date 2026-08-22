@@ -3,54 +3,12 @@ use syn::{Attribute, Item};
 
 use crate::rust_parsing::ParsedRustFile;
 
-fn is_rs_file(path: &Path) -> bool {
-    crate::rust_include::is_rust_source_path(path)
-}
-
-fn has_test_naming_pattern(path: &Path) -> bool {
-    path.file_stem()
-        .and_then(|n| n.to_str())
-        .is_some_and(|name| {
-            name == "tests"
-                || name.ends_with("_test")
-                || name.ends_with("_tests")
-                || name.ends_with("_integration")
-                || name.ends_with("_test_1")
-                || name.ends_with("_test_2")
-                || name.starts_with("test_")
-                || name.starts_with("tests_")
-        })
-}
-
-fn is_fake_rust_fixture(path: &Path) -> bool {
-    path.file_stem()
-        .and_then(|s| s.to_str())
-        .is_some_and(|stem| stem.starts_with("fake_"))
-}
-
-#[must_use]
-pub fn is_rust_test_file(path: &Path) -> bool {
-    is_rs_file(path)
-        && !is_fake_rust_fixture(path)
-        && (has_test_naming_pattern(path) || crate::test_refs::is_in_test_directory(path))
-}
-
 fn has_test_attribute(attrs: &[Attribute]) -> bool {
     attrs.iter().any(|a| a.path().is_ident("test"))
 }
 
-fn has_ignore_attribute(attrs: &[Attribute]) -> bool {
-    attrs.iter().any(|a| a.path().is_ident("ignore"))
-}
-
 #[must_use]
 pub fn is_binary_entry_point(path: &Path) -> bool {
-    if path
-        .components()
-        .any(|c| matches!(c, std::path::Component::Normal(s) if s == "tests"))
-    {
-        return false;
-    }
     if path.file_name().is_some_and(|n| n == "main.rs") {
         return true;
     }
@@ -75,17 +33,38 @@ fn collect_test_fn_ids(items: &[Item], prefix: &str, out: &mut Vec<String>) {
                     collect_test_fn_ids(mod_items, &mod_prefix, out);
                 }
             }
-            Item::Fn(f) if has_test_attribute(&f.attrs) && !has_ignore_attribute(&f.attrs) => {
-                let fn_name = f.sig.ident.to_string();
-                let test_id = if prefix.is_empty() {
-                    fn_name
-                } else {
-                    format!("{prefix}::{fn_name}")
+            Item::Fn(f) if has_test_attribute(&f.attrs) => {
+                out.push(prefixed_test_id(prefix, &f.sig.ident.to_string()));
+            }
+            Item::Impl(item_impl) => {
+                let Some(owner) = impl_owner_name(&item_impl.self_ty) else {
+                    continue;
                 };
-                out.push(test_id);
+                for impl_item in &item_impl.items {
+                    if let syn::ImplItem::Fn(method) = impl_item
+                        && has_test_attribute(&method.attrs)
+                    {
+                        out.push(format!("{owner}::{}", method.sig.ident));
+                    }
+                }
             }
             _ => {}
         }
+    }
+}
+
+fn prefixed_test_id(prefix: &str, name: &str) -> String {
+    if prefix.is_empty() {
+        name.to_string()
+    } else {
+        format!("{prefix}::{name}")
+    }
+}
+
+pub fn impl_owner_name(ty: &syn::Type) -> Option<String> {
+    match ty {
+        syn::Type::Path(path) => path.path.segments.last().map(|seg| seg.ident.to_string()),
+        _ => None,
     }
 }
 
@@ -103,17 +82,19 @@ mod tests {
 
     #[test]
     fn rust_test_file_naming() {
-        assert!(is_rust_test_file(Path::new("src/foo_test.rs")));
-        assert!(is_rust_test_file(Path::new("tests/integration.rs")));
-        assert!(!is_rust_test_file(Path::new("src/lib.rs")));
-        assert!(!is_rust_test_file(Path::new("tests/fake_helper.rs")));
+        let parsed = ParsedRustFile {
+            path: Path::new("src/foo_test.rs").to_path_buf(),
+            source: "#[test] fn t() {}".to_string(),
+            ast: syn::parse_file("#[test] fn t() {}").unwrap(),
+        };
+        assert_eq!(rust_test_functions_in(&parsed), vec!["t".to_string()]);
     }
 
     #[test]
     fn binary_entry_point_detection() {
         assert!(is_binary_entry_point(Path::new("src/main.rs")));
         assert!(is_binary_entry_point(Path::new("src/bin/tool.rs")));
-        assert!(!is_binary_entry_point(Path::new("tests/main.rs")));
+        assert!(is_binary_entry_point(Path::new("tests/main.rs")));
         assert!(!is_binary_entry_point(Path::new("src/lib.rs")));
     }
 
@@ -148,6 +129,21 @@ mod tests {
         let ids: Vec<_> = rust_test_functions_in(&parsed);
         assert!(ids.iter().any(|id| id == "top"));
         assert!(ids.iter().any(|id| id == "nested::inner"));
-        assert!(!ids.iter().any(|id| id == "nested::skipped"));
+        assert!(ids.iter().any(|id| id == "nested::skipped"));
+    }
+
+    #[test]
+    fn rust_test_functions_in_finds_impl_tests() {
+        let src = "struct T;\nimpl T {\n    #[test]\n    fn method() {}\n}\n";
+        let parsed = ParsedRustFile {
+            path: Path::new("src/impl_test.rs").to_path_buf(),
+            source: src.to_string(),
+            ast: syn::parse_file(src).unwrap(),
+        };
+        assert!(
+            rust_test_functions_in(&parsed)
+                .iter()
+                .any(|id| id == "T::method")
+        );
     }
 }

@@ -136,9 +136,7 @@ fn runtime_section_helper_covers_defaults_and_disabled_rules() {
         format_violation_counts(1, 2, 3, 4),
         "Violations: 1 duplicate, 2 orphan, 3 comment, 4 doc"
     );
-    let comment = kiss::Violation::builder("a.py")
-        .metric("comment")
-        .build();
+    let comment = kiss::Violation::builder("a.py").metric("comment").build();
     let doc = kiss::Violation::builder("b.py").metric("doc").build();
     assert_eq!(
         count_metric([comment.metric.as_str(), doc.metric.as_str()], "comment"),

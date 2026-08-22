@@ -9,8 +9,6 @@ use kiss::cli_output::{
     coverage_gate_failure_lines,
 };
 
-pub(crate) use kiss::cli_output::is_coverage_gate_file;
-
 pub(crate) fn evaluate_line_gate(
     records: &[LineCoverageRecord],
     focus: &FocusFilter,
@@ -107,11 +105,38 @@ pub fn check_coverage_gate(p: &CheckCoverageGateParams<'_>) -> bool {
 #[cfg(test)]
 mod inline_coverage_witness {
     use super::*;
-    use std::path::Path;
+
+    #[test]
+    fn witness_local_coverage_record_shape() {
+        let record = LineCoverageRecord {
+            file: std::path::PathBuf::from("src/lib.rs"),
+            total_lines: 1,
+            covered_lines: 1,
+            percent: 100,
+            first_uncovered_line: None,
+        };
+        assert_eq!(record.percent, 100);
+    }
 
     #[test]
     fn witness_local_is_coverage_gate_file() {
-        assert!(is_coverage_gate_file(Path::new("src/lib.rs")));
+        let record = LineCoverageRecord {
+            file: std::path::PathBuf::from("src/lib.rs"),
+            total_lines: 4,
+            covered_lines: 4,
+            percent: 100,
+            first_uncovered_line: None,
+        };
+        let focus = FocusFilter::unrestricted();
+        assert!(
+            evaluate_line_gate(
+                std::slice::from_ref(&record),
+                &focus,
+                90,
+                TestCoverageScope::ByFile
+            )
+            .is_none()
+        );
     }
 
     #[test]

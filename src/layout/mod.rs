@@ -50,7 +50,7 @@ fn analyze_layout(
     }
 
     if !rs_files.is_empty() {
-        let rs_graph = crate::analyze::build_rs_graph_from_files(rs_files);
+        let rs_graph = crate::analyze::build_rs_graph_from_files(rs_files)?;
         merge_graph(&mut combined_graph, &rs_graph, "rs");
     }
 

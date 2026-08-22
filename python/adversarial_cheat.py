@@ -17,14 +17,14 @@ class CheatMetrics(NamedTuple):
     gaps: tuple[tuple[str, float, float], ...]
 
 
-def _is_test_module_path(path: str) -> bool:
+def _is_harness_test_module_path(path: str) -> bool:
     return path.startswith("tests/") or path.endswith("/tests")
 
 
 def cheat_gaps(kiss_partial: dict[str, float], true: dict[str, float]) -> list[tuple[str, float, float]]:
     gaps: list[tuple[str, float, float]] = []
     for path, true_pct in sorted(true.items()):
-        if _is_test_module_path(path):
+        if _is_harness_test_module_path(path):
             continue
         kiss_pct = kiss_partial.get(path, 100.0)
         if kiss_pct >= 100.0 and true_pct < TRUE_COVERAGE_CEILING:

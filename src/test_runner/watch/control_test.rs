@@ -162,10 +162,7 @@ fn probe_times_out_when_lock_held_without_session() {
     let t0 = Instant::now();
     let err = probe_live_watcher(repo).expect_err("missing session must time out");
     let elapsed = t0.elapsed();
-    assert!(
-        err.contains("session is not ready"),
-        "err={err}"
-    );
+    assert!(err.contains("session is not ready"), "err={err}");
     assert!(
         elapsed >= CLIENT_SESSION_RETRY,
         "probe returned too early; elapsed={elapsed:?}"

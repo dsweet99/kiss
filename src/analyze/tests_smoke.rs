@@ -67,6 +67,7 @@ fn test_structs() {
     let _ = ParseResult {
         py_parsed: vec![],
         rs_parsed: vec![],
+        roles: kiss::code_roles::SourceRoleIndex::empty(),
         violations: vec![],
         code_unit_count: 0,
         statement_count: 0,
@@ -93,7 +94,8 @@ fn test_gather_parse_and_graphs() {
         &rs,
         &Config::python_defaults(),
         &Config::rust_defaults(),
-    );
+    )
+    .unwrap();
     assert_eq!(result.py_parsed.len(), 2);
     assert_eq!(result.rs_parsed.len(), 1);
 
@@ -126,9 +128,10 @@ fn test_print_functions_and_helpers() {
 
 #[test]
 fn test_detect_duplicates() {
-    let py_dups = crate::analyze::detect_py_duplicates(&[], 0.9);
+    let roles = kiss::code_roles::SourceRoleIndex::empty();
+    let py_dups = crate::analyze::detect_py_duplicates(&[], 0.9, &roles);
     assert!(py_dups.is_empty());
-    let rs_dups = crate::analyze::detect_rs_duplicates(&[], 0.9);
+    let rs_dups = crate::analyze::detect_rs_duplicates(&[], 0.9, &roles);
     assert!(rs_dups.is_empty());
 }
 
@@ -172,7 +175,8 @@ fn test_run_analyze_no_files() {
     let (parsed, viols, units, _) = crate::analyze_parse::parse_and_analyze_rs(
         &[tmp.path().join("lib.rs")],
         &Config::rust_defaults(),
-    );
+    )
+    .unwrap();
     assert_eq!(parsed.len(), 1);
     assert!(viols.is_empty());
     assert!(units > 0);
@@ -186,6 +190,7 @@ fn test_run_analyze_current_repo_in_process() {
         test_coverage_threshold: 0,
         duplication_enabled: false,
         orphan_module_enabled: false,
+        docs_allowed: vec!["src/".into()],
         ..GateConfig::default()
     };
     let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));

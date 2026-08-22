@@ -1,10 +1,12 @@
 use std::path::Path;
 
+use crate::code_roles::{RoleBuildError, SourceRoleIndex, is_test_only_file};
 use crate::discovery::{Language, gather_files_by_lang};
-use crate::graph::{GraphKeyMaxima, build_dependency_graph, graph_key_maxima};
-use crate::parsing::{ParsedFile, parse_files};
-use crate::rust_graph::build_rust_dependency_graph;
-use crate::rust_parsing::{ParsedRustFile, parse_rust_files};
+use crate::graph::{GraphKeyMaxima, graph_key_maxima};
+use crate::lang_analysis::parse_then_classify;
+use crate::parsing::ParsedFile;
+use crate::rust_graph::build_rust_dependency_graph_with_roles;
+use crate::rust_parsing::ParsedRustFile;
 use crate::stats::MetricStats;
 
 pub struct CollectedLang {
@@ -18,13 +20,17 @@ pub fn collect_py_stats(root: &Path) -> (MetricStats, usize) {
 }
 
 pub fn collect_py_stats_with_ignore(root: &Path, ignore: &[String]) -> (MetricStats, usize) {
-    let collected = collect_lang_from_paths(
+    match collect_lang_from_paths(
         &[root.to_string_lossy().into()],
         Some(Language::Python),
         ignore,
-    )
-    .0;
-    (collected.stats, collected.file_count)
+    ) {
+        Ok((py, _)) => (py.stats, py.file_count),
+        Err(err) => {
+            eprintln!("{err}");
+            (MetricStats::default(), 0)
+        }
+    }
 }
 
 pub fn collect_rs_stats(root: &Path) -> (MetricStats, usize) {
@@ -32,13 +38,17 @@ pub fn collect_rs_stats(root: &Path) -> (MetricStats, usize) {
 }
 
 pub fn collect_rs_stats_with_ignore(root: &Path, ignore: &[String]) -> (MetricStats, usize) {
-    let collected = collect_lang_from_paths(
+    match collect_lang_from_paths(
         &[root.to_string_lossy().into()],
         Some(Language::Rust),
         ignore,
-    )
-    .1;
-    (collected.stats, collected.file_count)
+    ) {
+        Ok((_, rs)) => (rs.stats, rs.file_count),
+        Err(err) => {
+            eprintln!("{err}");
+            (MetricStats::default(), 0)
+        }
+    }
 }
 
 pub fn collect_all_stats(
@@ -53,110 +63,65 @@ pub fn collect_all_stats_with_ignore(
     lang: Option<Language>,
     ignore: &[String],
 ) -> ((MetricStats, usize), (MetricStats, usize)) {
-    let (py, rs) = collect_lang_from_paths(paths, lang, ignore);
-    ((py.stats, py.file_count), (rs.stats, rs.file_count))
+    match collect_lang_from_paths(paths, lang, ignore) {
+        Ok((py, rs)) => ((py.stats, py.file_count), (rs.stats, rs.file_count)),
+        Err(err) => {
+            eprintln!("{err}");
+            ((MetricStats::default(), 0), (MetricStats::default(), 0))
+        }
+    }
 }
 
 pub fn collect_lang_from_paths(
     paths: &[String],
     lang: Option<Language>,
     ignore: &[String],
-) -> (CollectedLang, CollectedLang) {
+) -> Result<(CollectedLang, CollectedLang), RoleBuildError> {
     let (py_files, rs_files) = gather_files_by_lang(paths, lang, ignore);
-    (
-        collect_python_from_files(&py_files),
-        collect_rust_from_files(&rs_files),
-    )
+    let (py_parsed, rs_parsed, roles) = parse_then_classify(&py_files, &rs_files)?;
+    Ok((
+        collect_python_from_parsed(&py_parsed, &roles),
+        collect_rust_from_parsed(&rs_parsed, &roles),
+    ))
 }
 
-fn keep_parsed_python(
-    result: Result<ParsedFile, crate::parsing::ParseError>,
-) -> Option<ParsedFile> {
-    match result {
-        Ok(parsed) => Some(parsed),
-        Err(err) => {
-            eprintln!("Error parsing Python: {err}");
-            None
-        }
-    }
-}
-
-fn keep_parsed_rust(
-    result: Result<ParsedRustFile, crate::rust_parsing::RustParseError>,
-) -> Option<ParsedRustFile> {
-    match result {
-        Ok(parsed) => Some(parsed),
-        Err(err) => {
-            eprintln!("Error parsing Rust: {err}");
-            None
-        }
-    }
-}
-
-fn collect_python_from_files(py_files: &[std::path::PathBuf]) -> CollectedLang {
-    if py_files.is_empty() {
-        return CollectedLang {
-            stats: MetricStats::default(),
-            file_count: 0,
-            graph_max: GraphKeyMaxima::default(),
-        };
-    }
-    let results = match parse_files(py_files) {
-        Ok(results) => results,
-        Err(err) => {
-            eprintln!("Failed to initialize Python parser: {err}");
-            return CollectedLang {
-                stats: MetricStats::default(),
-                file_count: py_files.len(),
-                graph_max: GraphKeyMaxima::default(),
-            };
-        }
-    };
-    let parsed: Vec<ParsedFile> = results.into_iter().filter_map(keep_parsed_python).collect();
-    let refs: Vec<&ParsedFile> = parsed.iter().collect();
-    let stats = if refs.is_empty() {
-        MetricStats::default()
-    } else {
-        MetricStats::collect(&refs)
-    };
-    let graph_max = if refs.is_empty() {
-        GraphKeyMaxima::default()
-    } else {
-        graph_key_maxima(&build_dependency_graph(&refs))
-    };
-    CollectedLang {
-        stats,
-        file_count: py_files.len(),
-        graph_max,
-    }
-}
-
-fn collect_rust_from_files(rs_files: &[std::path::PathBuf]) -> CollectedLang {
-    if rs_files.is_empty() {
-        return CollectedLang {
-            stats: MetricStats::default(),
-            file_count: 0,
-            graph_max: GraphKeyMaxima::default(),
-        };
-    }
-    let parsed: Vec<ParsedRustFile> = parse_rust_files(rs_files)
-        .into_iter()
-        .filter_map(keep_parsed_rust)
+fn collect_python_from_parsed(parsed: &[ParsedFile], roles: &SourceRoleIndex) -> CollectedLang {
+    let refs: Vec<&ParsedFile> = parsed
+        .iter()
+        .filter(|p| !is_test_only_file(roles, &p.path))
         .collect();
-    let refs: Vec<&ParsedRustFile> = parsed.iter().collect();
-    let stats = if refs.is_empty() {
-        MetricStats::default()
-    } else {
-        MetricStats::collect_rust(&refs)
-    };
-    let graph_max = if refs.is_empty() {
-        GraphKeyMaxima::default()
-    } else {
-        graph_key_maxima(&build_rust_dependency_graph(&refs))
-    };
+    if refs.is_empty() {
+        return CollectedLang {
+            stats: MetricStats::default(),
+            file_count: 0,
+            graph_max: GraphKeyMaxima::default(),
+        };
+    }
     CollectedLang {
-        stats,
-        file_count: rs_files.len(),
-        graph_max,
+        stats: MetricStats::collect(&refs),
+        file_count: refs.len(),
+        graph_max: graph_key_maxima(
+            &crate::graph::build_python_context_graph(&refs, roles).production_view(),
+        ),
+    }
+}
+
+fn collect_rust_from_parsed(parsed: &[ParsedRustFile], roles: &SourceRoleIndex) -> CollectedLang {
+    let refs: Vec<&ParsedRustFile> = parsed.iter().collect();
+    let production = refs
+        .iter()
+        .filter(|p| !is_test_only_file(roles, &p.path))
+        .count();
+    if refs.is_empty() {
+        return CollectedLang {
+            stats: MetricStats::default(),
+            file_count: 0,
+            graph_max: GraphKeyMaxima::default(),
+        };
+    }
+    CollectedLang {
+        stats: MetricStats::collect_rust_with_roles(&refs, Some(roles)),
+        file_count: production,
+        graph_max: graph_key_maxima(&build_rust_dependency_graph_with_roles(&refs, Some(roles))),
     }
 }

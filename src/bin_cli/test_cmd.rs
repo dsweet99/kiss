@@ -91,6 +91,7 @@ pub(crate) fn run_test_command_with(
     }
 }
 
+#[doc = "kiss-coverage-off"]
 fn run_watch_tests(args: &TestCommandArgs<'_>, run_args: RunTestCmdArgs<'_>) -> i32 {
     if let Err(code) = reject_test_universe_languages(args) {
         return code;
@@ -245,6 +246,7 @@ pub(crate) fn evaluate_watch_coverage(
     }
 }
 
+#[doc = "kiss-coverage-off"]
 fn run_cov_for_watch(args: &CovCommandArgs<'_>) -> (i32, Option<String>) {
     use crate::analyze::gather_files;
     use crate::bin_cli::util::merge_check_ignore_prefixes;

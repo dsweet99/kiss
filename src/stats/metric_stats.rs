@@ -1,12 +1,13 @@
+use crate::code_roles::production_line_count;
 use crate::graph::DependencyGraph;
 use crate::parsing::ParsedFile;
 use crate::py_metrics::{compute_file_metrics, walk_py_ast};
-use crate::rust_fn_metrics::compute_rust_file_metrics;
+use crate::rust_fn_metrics::compute_rust_file_metrics_with_roles;
 use crate::rust_parsing::ParsedRustFile;
 use rayon::prelude::*;
 
 use super::collect_py::StatsVisitor;
-use super::collect_rust::collect_rust_from_items;
+use super::collect_rust::collect_rust_from_items_with_roles;
 
 use serde::{Deserialize, Serialize};
 
@@ -134,16 +135,32 @@ impl MetricStats {
     }
 
     pub fn collect_rust(parsed_files: &[&ParsedRustFile]) -> Self {
+        Self::collect_rust_with_roles(parsed_files, None)
+    }
+
+    pub fn collect_rust_with_roles(
+        parsed_files: &[&ParsedRustFile],
+        roles: Option<&crate::code_roles::SourceRoleIndex>,
+    ) -> Self {
         let mut stats = Self::default();
         for parsed in parsed_files {
-            let fm = compute_rust_file_metrics(parsed);
+            let fm = compute_rust_file_metrics_with_roles(parsed, roles);
             stats.statements_per_file.push(fm.statements);
-            stats.lines_per_file.push(parsed.source.lines().count());
+            let lines = roles.map_or_else(
+                || parsed.source.lines().count(),
+                |roles| production_line_count(roles, &parsed.path, &parsed.source),
+            );
+            stats.lines_per_file.push(lines);
             stats.functions_per_file.push(fm.functions);
             stats.interface_types_per_file.push(fm.interface_types);
             stats.concrete_types_per_file.push(fm.concrete_types);
             stats.imported_names_per_file.push(fm.imports);
-            collect_rust_from_items(&parsed.ast.items, &mut stats);
+            collect_rust_from_items_with_roles(
+                &parsed.ast.items,
+                &mut stats,
+                Some(&parsed.path),
+                roles,
+            );
         }
         stats
     }

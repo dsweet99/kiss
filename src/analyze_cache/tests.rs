@@ -292,3 +292,31 @@ fn fingerprint_covers_all_config_fields() {
         dependency_depth: _,
     } = Config::python_defaults();
 }
+
+#[test]
+fn fingerprint_includes_role_file_bytes_not_just_len_mtime() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let py = tmp.path().join("a.py");
+    let content1 = "def foo():\n    return 1\n# padding!!\n";
+    let content2 = "def a():\n    pass\ndef b():\n    pass\n";
+    assert_eq!(content1.len(), content2.len());
+    std::fs::write(&py, content1).unwrap();
+    let files = vec![py.clone()];
+    let py_cfg = Config::python_defaults();
+    let rs_cfg = Config::rust_defaults();
+    let gate = GateConfig::default();
+    let fp1 = fingerprint_for_check(&files, &[], &py_cfg, &rs_cfg, &gate);
+    let mtime = std::fs::metadata(&py).unwrap().modified().unwrap();
+    std::fs::write(&py, content2).unwrap();
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(&py)
+        .unwrap()
+        .set_modified(mtime)
+        .unwrap();
+    let fp2 = fingerprint_for_check(&files, &[], &py_cfg, &rs_cfg, &gate);
+    assert_ne!(
+        fp1, fp2,
+        "role file bytes must change the check fingerprint when length and mtime match"
+    );
+}

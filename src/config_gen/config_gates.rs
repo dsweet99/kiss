@@ -128,7 +128,7 @@ fn test_infer_gate_keeps_default_coverage_threshold() {
 
     let paths = vec![tmp.path().to_string_lossy().to_string()];
     let ignore = vec!["fake_".to_string()];
-    let gate = infer_gate_config_for_paths(&paths, None, &ignore);
+    let gate = infer_gate_config_for_paths(&paths, None, &ignore).unwrap();
     assert_eq!(
         gate.test_coverage_threshold,
         GateConfig::default().test_coverage_threshold,
@@ -142,7 +142,7 @@ fn test_infer_gate_config_orphan_module_enabled() {
     let orphan_py = tmp.path().join("orphan.py");
     std::fs::write(&orphan_py, "def foo():\n    pass\n").unwrap();
     let paths = vec![tmp.path().to_string_lossy().to_string()];
-    let gate = infer_gate_config_for_paths(&paths, Some(Language::Python), &[]);
+    let gate = infer_gate_config_for_paths(&paths, Some(Language::Python), &[]).unwrap();
     assert!(
         !gate.orphan_module_enabled,
         "orphan module should set orphan_module_enabled=false"
@@ -157,7 +157,7 @@ fn test_infer_gate_config_no_orphans_module_enabled() {
     std::fs::write(&a_py, "from b import bar\ndef foo():\n    bar()\n").unwrap();
     std::fs::write(&b_py, "def bar():\n    pass\n").unwrap();
     let paths = vec![tmp.path().to_string_lossy().to_string()];
-    let gate = infer_gate_config_for_paths(&paths, Some(Language::Python), &[]);
+    let gate = infer_gate_config_for_paths(&paths, Some(Language::Python), &[]).unwrap();
     assert!(
         gate.orphan_module_enabled,
         "no orphan modules should set orphan_module_enabled=true"
@@ -174,7 +174,7 @@ fn test_infer_gate_config_comment_removal_enabled() {
     .unwrap();
     std::fs::write(tmp.path().join("b.py"), "def bar():\n    pass\n").unwrap();
     let paths = vec![tmp.path().to_string_lossy().to_string()];
-    let gate = infer_gate_config_for_paths(&paths, Some(Language::Python), &[]);
+    let gate = infer_gate_config_for_paths(&paths, Some(Language::Python), &[]).unwrap();
     assert!(
         gate.comment_removal_enabled,
         "comment-free python should enable comment_removal"
@@ -187,7 +187,7 @@ fn test_infer_gate_config_comment_removal_enabled() {
     )
     .unwrap();
     let paths2 = vec![tmp2.path().to_string_lossy().to_string()];
-    let gated = infer_gate_config_for_paths(&paths2, Some(Language::Python), &[]);
+    let gated = infer_gate_config_for_paths(&paths2, Some(Language::Python), &[]).unwrap();
     assert!(
         !gated.comment_removal_enabled,
         "comments should set comment_removal_enabled=false"

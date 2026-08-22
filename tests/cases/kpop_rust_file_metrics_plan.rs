@@ -1,5 +1,6 @@
 use kiss::MetricStats;
-use kiss::rust_fn_metrics::compute_rust_file_metrics;
+use kiss::code_roles::build_source_role_index;
+use kiss::rust_fn_metrics::{compute_rust_file_metrics, compute_rust_file_metrics_with_roles};
 use kiss::rust_parsing::parse_rust_file;
 use std::io::Write;
 
@@ -57,8 +58,10 @@ mod t {{
     )
     .unwrap();
     let parsed = parse_rust_file(tmp.path()).unwrap();
-    let fm = compute_rust_file_metrics(&parsed);
-    let stats = MetricStats::collect_rust(&[&parsed]);
+    let paths = [parsed.path.clone()];
+    let roles = build_source_role_index(&[], std::slice::from_ref(&parsed), &[], &paths).unwrap();
+    let fm = compute_rust_file_metrics_with_roles(&parsed, Some(&roles));
+    let stats = MetricStats::collect_rust_with_roles(&[&parsed], Some(&roles));
 
     assert_eq!(
         fm.statements, 0,

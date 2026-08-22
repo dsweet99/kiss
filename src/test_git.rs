@@ -276,9 +276,7 @@ pub fn resolve_changed_source_paths(
             continue;
         }
         let abs = repo_root.join(rel);
-        let include_missing_rust = matches!(lang_filter, None | Some(TestLangFilter::Rust))
-            && is_rust_planning_path(&abs)
-            && !kiss::is_rust_test_file(&abs);
+        let include_missing = lang_ok(&abs, lang_filter);
         match abs.metadata() {
             Ok(meta) if meta.is_file() => {
                 if !lang_ok(&abs, lang_filter) {
@@ -288,7 +286,7 @@ pub fn resolve_changed_source_paths(
                     out.push(c);
                 }
             }
-            _ if include_missing_rust && lang_ok(&abs, lang_filter) => {
+            _ if include_missing => {
                 out.push(abs);
             }
             _ => continue,

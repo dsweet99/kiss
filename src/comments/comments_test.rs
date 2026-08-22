@@ -4,7 +4,10 @@ use crate::parsing::ParsedFile;
 use crate::rust_parsing::ParsedRustFile;
 use crate::test_utils::parse_python_source;
 
-use super::{collect_comment_violations, collect_doc_violations, has_non_doc_comments};
+use super::{
+    collect_comment_violations, collect_comment_violations_with_roles, collect_doc_violations,
+    has_non_doc_comments,
+};
 
 fn parse_rs(source: &str) -> ParsedRustFile {
     ParsedRustFile {
@@ -62,6 +65,31 @@ fn rust_flags_plain_comments_not_docs_or_strings() {
     assert_eq!(rs_count("/* n */\nfn f() {}\n"), 1);
     assert_eq!(rs_count("let s = \"// n\";\n"), 0);
     assert_eq!(rs_count("let s = r#\"// n\"#;\n"), 0);
+}
+
+#[test]
+fn rust_skips_comments_in_cfg_test_mod_when_roles_present() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::write(
+        src.join("lib.rs"),
+        "fn prod() {}\n#[cfg(test)]\nmod tests {\n    // hidden\n    fn t() {}\n}\n",
+    )
+    .unwrap();
+    let path = src.join("lib.rs");
+    let parsed = crate::rust_parsing::parse_rust_file(&path).unwrap();
+    let roles = crate::code_roles::build_source_role_index(
+        &[],
+        std::slice::from_ref(&parsed),
+        &[],
+        std::slice::from_ref(&path),
+    )
+    .unwrap();
+    assert_eq!(
+        collect_comment_violations_with_roles(&[], &[parsed], Some(&roles)).len(),
+        0
+    );
 }
 
 #[test]

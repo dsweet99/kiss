@@ -1,3 +1,4 @@
+use super::tests_1::{classified_file_metrics, mod_is_test_only};
 use super::*;
 
 #[test]
@@ -68,7 +69,7 @@ mod compound_test {{
     )
     .unwrap();
     let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
-    let m = compute_rust_file_metrics(&parsed);
+    let m = classified_file_metrics(&parsed);
 
     assert_eq!(
         m.functions, 1,
@@ -102,7 +103,7 @@ mod tests {{
     )
     .unwrap();
     let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
-    let m = compute_rust_file_metrics(&parsed);
+    let m = classified_file_metrics(&parsed);
 
     assert_eq!(
         m.functions, 2,
@@ -118,8 +119,6 @@ mod tests {{
 
 #[test]
 fn test_is_cfg_test_mod_semantics() {
-    use syn::{Item, parse_str};
-
     let cases = [
         (r"#[cfg(test)] mod m {}", "cfg(test)", true),
         (
@@ -129,8 +128,8 @@ fn test_is_cfg_test_mod_semantics() {
         ),
         (
             r"#[cfg(any(test, windows))] mod m {}",
-            "cfg(any(test,...))",
-            true,
+            "cfg(any(test,...)) is production-capable",
+            false,
         ),
         (
             r"#[cfg(not(test))] mod m {}",
@@ -146,12 +145,7 @@ fn test_is_cfg_test_mod_semantics() {
     ];
 
     for (code, label, expected) in cases {
-        let item: Item = parse_str(code).unwrap();
-        if let Item::Mod(m) = item {
-            let result = is_cfg_test_mod(&m);
-            println!("{label}: is_cfg_test_mod = {result}, expected = {expected}");
-            assert_eq!(result, expected, "mismatch for {label}");
-        }
+        assert_eq!(mod_is_test_only(code), expected, "mismatch for {label}");
     }
 }
 
@@ -177,7 +171,7 @@ mod tests {{
     )
     .unwrap();
     let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
-    let m = compute_rust_file_metrics(&parsed);
+    let m = classified_file_metrics(&parsed);
 
     assert_eq!(
         m.functions, 1,

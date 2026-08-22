@@ -6,6 +6,7 @@ use kiss::{
 use crate::analyze::dup_detect::{detect_py_duplicates, detect_rs_duplicates};
 use crate::analyze::graph_api::{build_py_graph, build_rs_graph};
 use crate::analyze::options::AnalyzeOptions;
+use kiss::code_roles::SourceRoleIndex;
 
 pub(crate) struct RustAnalysis {
     pub graph: Option<DependencyGraph>,
@@ -15,10 +16,11 @@ pub(crate) struct RustAnalysis {
 pub(crate) fn run_rust_analysis(
     rs_parsed: &[ParsedRustFile],
     gate_config: &GateConfig,
+    roles: &SourceRoleIndex,
 ) -> RustAnalysis {
-    let graph = build_rs_graph(rs_parsed);
+    let graph = build_rs_graph(rs_parsed, roles);
     let dups = if gate_config.duplication_enabled {
-        detect_rs_duplicates(rs_parsed, gate_config.min_similarity)
+        detect_rs_duplicates(rs_parsed, gate_config.min_similarity, roles)
     } else {
         Vec::new()
     };
@@ -33,6 +35,7 @@ pub(crate) struct ParallelPyIn<'a> {
     pub rs_graph: Option<&'a DependencyGraph>,
     pub opts: &'a AnalyzeOptions<'a>,
     pub file_count: usize,
+    pub roles: &'a SourceRoleIndex,
 }
 
 pub(crate) fn run_parallel_py_analysis(in_: ParallelPyIn<'_>) -> (GraphResult, DupResult) {
@@ -41,11 +44,12 @@ pub(crate) fn run_parallel_py_analysis(in_: ParallelPyIn<'_>) -> (GraphResult, D
         rs_graph,
         opts,
         file_count,
+        roles,
     } = in_;
     let orphan_enabled = opts.gate_config.orphan_module_enabled;
     let dup_enabled = opts.gate_config.duplication_enabled;
     let min_sim = opts.gate_config.min_similarity;
-    let py_graph = build_py_graph(py_parsed);
+    let py_graph = build_py_graph(py_parsed, roles);
     let (gv, py_dups) = rayon::join(
         || {
             build_graph_violations(BuildGraphViols {
@@ -59,7 +63,7 @@ pub(crate) fn run_parallel_py_analysis(in_: ParallelPyIn<'_>) -> (GraphResult, D
         },
         || {
             if dup_enabled {
-                detect_py_duplicates(py_parsed, min_sim)
+                detect_py_duplicates(py_parsed, min_sim, roles)
             } else {
                 Vec::new()
             }

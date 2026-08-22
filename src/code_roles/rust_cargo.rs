@@ -1,0 +1,230 @@
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+use serde::Deserialize;
+
+use super::error::RoleBuildError;
+use super::types::CodeContextSet;
+
+#[derive(Clone, Debug)]
+pub struct CargoRoot {
+    pub src_path: PathBuf,
+    pub allow_production: bool,
+    pub workspace: PathBuf,
+    pub package: String,
+    pub kinds: Vec<String>,
+    pub manifest_path: PathBuf,
+}
+
+#[derive(Deserialize)]
+struct LocateProject {
+    root: PathBuf,
+}
+
+#[derive(Deserialize)]
+struct Metadata {
+    packages: Vec<MetaPackage>,
+    workspace_root: PathBuf,
+}
+
+#[derive(Deserialize)]
+struct MetaPackage {
+    name: String,
+    manifest_path: PathBuf,
+    targets: Vec<MetaTarget>,
+}
+
+#[derive(Deserialize)]
+struct MetaTarget {
+    kind: Vec<String>,
+    src_path: PathBuf,
+}
+
+pub fn cargo_roots_for_files(
+    files: &[PathBuf],
+) -> Result<(Vec<CargoRoot>, HashMap<PathBuf, PathBuf>), RoleBuildError> {
+    let mut workspace_memo: HashMap<PathBuf, PathBuf> = HashMap::new();
+    let mut metadata_memo: HashMap<PathBuf, Vec<CargoRoot>> = HashMap::new();
+    let mut roots = Vec::new();
+    let mut file_workspace = HashMap::new();
+    for file in files {
+        let Some(manifest) = nearest_manifest(file) else {
+            continue;
+        };
+        let workspace = locate_workspace(&manifest, &mut workspace_memo)?;
+        file_workspace.insert(file.clone(), workspace.clone());
+        if let Some(existing) = metadata_memo.get(&workspace)
+            && roots.iter().all(|r: &CargoRoot| {
+                existing
+                    .iter()
+                    .any(|e| e.src_path == r.src_path && e.allow_production == r.allow_production)
+            })
+        {
+            continue;
+        }
+        if !metadata_memo.contains_key(&workspace) {
+            let workspace_roots = load_workspace_roots(&workspace)?;
+            metadata_memo.insert(workspace.clone(), workspace_roots);
+        }
+    }
+    for ws_roots in metadata_memo.into_values() {
+        roots.extend(ws_roots);
+    }
+    Ok((roots, file_workspace))
+}
+
+fn nearest_manifest(path: &Path) -> Option<PathBuf> {
+    for ancestor in path.ancestors() {
+        let candidate = ancestor.join("Cargo.toml");
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+fn locate_workspace(
+    manifest: &Path,
+    memo: &mut HashMap<PathBuf, PathBuf>,
+) -> Result<PathBuf, RoleBuildError> {
+    if let Some(hit) = memo.get(manifest) {
+        return Ok(hit.clone());
+    }
+    let output = Command::new("cargo")
+        .args([
+            "locate-project",
+            "--workspace",
+            "--message-format",
+            "json",
+            "--manifest-path",
+        ])
+        .arg(manifest)
+        .output()
+        .map_err(|err| cargo_err(manifest, &err.to_string()))?;
+    if !output.status.success() {
+        return Err(cargo_err(
+            manifest,
+            &String::from_utf8_lossy(&output.stderr),
+        ));
+    }
+    let located: LocateProject = serde_json::from_slice(&output.stdout)
+        .map_err(|err| cargo_err(manifest, &err.to_string()))?;
+    memo.insert(manifest.to_path_buf(), located.root.clone());
+    Ok(located.root)
+}
+
+fn load_workspace_roots(workspace_manifest: &Path) -> Result<Vec<CargoRoot>, RoleBuildError> {
+    let output = Command::new("cargo")
+        .args([
+            "metadata",
+            "--format-version",
+            "1",
+            "--no-deps",
+            "--manifest-path",
+        ])
+        .arg(workspace_manifest)
+        .output()
+        .map_err(|err| cargo_err(workspace_manifest, &err.to_string()))?;
+    if !output.status.success() {
+        return Err(cargo_err(
+            workspace_manifest,
+            &String::from_utf8_lossy(&output.stderr),
+        ));
+    }
+    let meta: Metadata = serde_json::from_slice(&output.stdout)
+        .map_err(|err| cargo_err(workspace_manifest, &err.to_string()))?;
+    let workspace = crate::rust_include::canonical_path(&meta.workspace_root);
+    let mut roots = Vec::new();
+    for pkg in meta.packages {
+        let manifest_path = crate::rust_include::canonical_path(&pkg.manifest_path);
+        for target in pkg.targets {
+            roots.push(target_root(&workspace, &pkg.name, &manifest_path, target));
+        }
+    }
+    Ok(roots)
+}
+
+fn target_root(
+    workspace: &Path,
+    package: &str,
+    manifest_path: &Path,
+    target: MetaTarget,
+) -> CargoRoot {
+    let mut kinds = target.kind;
+    kinds.sort();
+    let (_, allow_production) = target_contexts(&kinds);
+    CargoRoot {
+        src_path: crate::rust_include::canonical_path(&target.src_path),
+        allow_production,
+        workspace: workspace.to_path_buf(),
+        package: package.to_string(),
+        kinds,
+        manifest_path: manifest_path.to_path_buf(),
+    }
+}
+
+fn target_contexts(kinds: &[String]) -> (CodeContextSet, bool) {
+    if kinds.is_empty() {
+        return (CodeContextSet::production_only(), true);
+    }
+    if kinds.iter().all(|kind| kind == "test" || kind == "bench") {
+        return (CodeContextSet::test_only(), false);
+    }
+    if kinds.iter().all(|kind| kind == "custom-build") {
+        return (CodeContextSet::production_only(), true);
+    }
+    (CodeContextSet::both(), true)
+}
+
+pub fn workspace_roots_at(repo_root: &Path) -> Result<Vec<CargoRoot>, RoleBuildError> {
+    let manifest = repo_root.join("Cargo.toml");
+    if !manifest.is_file() {
+        return Ok(Vec::new());
+    }
+    load_workspace_roots(&manifest)
+}
+
+fn cargo_err(path: &Path, message: &str) -> RoleBuildError {
+    RoleBuildError::CargoMetadata {
+        workspace: path.to_path_buf(),
+        message: message.trim().to_string(),
+    }
+}
+
+#[cfg(test)]
+mod cargo_test {
+    use super::*;
+
+    #[test]
+    fn target_kind_classification() {
+        let (ctx, allow) = target_contexts(&["test".into()]);
+        assert!(ctx.is_test_only());
+        assert!(!allow);
+        let (ctx, allow) = target_contexts(&["lib".into()]);
+        assert!(ctx.production && ctx.test);
+        assert!(allow);
+        let (ctx, allow) = target_contexts(&["custom-build".into()]);
+        assert!(ctx.production && !ctx.test);
+        assert!(allow);
+        let (ctx, allow) = target_contexts(&[]);
+        assert!(ctx.production);
+        assert!(allow);
+    }
+
+    #[test]
+    fn nearest_manifest_walks_parents() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(
+            tmp.path().join("Cargo.toml"),
+            "[package]\nname=\"t\"\nversion=\"0.1.0\"\n",
+        )
+        .unwrap();
+        let file = src.join("lib.rs");
+        std::fs::write(&file, "pub fn f() {}\n").unwrap();
+        let found = nearest_manifest(&file).unwrap();
+        assert!(found.ends_with("Cargo.toml"));
+    }
+}

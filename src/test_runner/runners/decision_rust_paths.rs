@@ -70,7 +70,8 @@ pub(super) fn prepare_rust_inputs(
     } else {
         effective_test_paths.extend(rust_resolution.test_paths.iter().cloned());
     }
-    let changed_tests = changed_test_selectors_by_language(repo_root, &effective_test_paths)?;
+    let changed_tests =
+        changed_test_selectors_by_language(repo_root, &effective_test_paths, ignore)?;
     lap("changed_tests");
     Ok(PreparedRustInputs {
         python_changed_lines: changed_lines_for_sources(changed_lines, &py_source_paths),
@@ -149,8 +150,13 @@ fn resolve_effective_rust_paths(
         rust_vcs_source_paths,
         rust_test_args,
     )?;
-    let (source_paths, test_paths, modified, structural) =
-        effective_paths_for_resolution(&resolved, rust_vcs_source_paths, rust_vcs_test_paths);
+    let (source_paths, test_paths, modified, structural) = effective_paths_for_resolution(
+        &resolved,
+        rust_vcs_source_paths,
+        rust_vcs_test_paths,
+        repo_root,
+        ignore,
+    )?;
     Ok(EffectiveRustPaths {
         source_paths,
         test_paths,
@@ -164,35 +170,50 @@ fn effective_paths_for_resolution(
     resolved: &ResolvedRustPopulation,
     rust_vcs_source_paths: &[PathBuf],
     rust_vcs_test_paths: &[PathBuf],
-) -> (Vec<PathBuf>, Vec<PathBuf>, usize, bool) {
+    repo_root: &Path,
+    ignore: &[String],
+) -> Result<(Vec<PathBuf>, Vec<PathBuf>, usize, bool), String> {
     match resolved {
-        ResolvedRustPopulation::Current { .. } => (
+        ResolvedRustPopulation::Current { .. } => Ok((
             rust_vcs_source_paths.to_vec(),
             rust_vcs_test_paths.to_vec(),
             0,
             false,
-        ),
+        )),
         ResolvedRustPopulation::ReusablePrior { delta, .. } => match delta {
             rust_llvm_cov_runner::RustSnapshotDelta::Modified(paths) => {
+                let roles = roles_for_modified_paths(repo_root, ignore, paths)?;
                 let (source_paths, test_paths) =
-                    crate::test_runner::runners::partition_changed_paths(paths);
-                (source_paths, test_paths, paths.len(), false)
+                    crate::test_runner::runners::partition_changed_paths_with_roles(paths, &roles);
+                Ok((source_paths, test_paths, paths.len(), false))
             }
             rust_llvm_cov_runner::RustSnapshotDelta::StructuralChange => {
-                (Vec::new(), Vec::new(), 0, true)
+                Ok((Vec::new(), Vec::new(), 0, true))
             }
             rust_llvm_cov_runner::RustSnapshotDelta::Unchanged => {
-                (Vec::new(), Vec::new(), 0, false)
+                Ok((Vec::new(), Vec::new(), 0, false))
             }
         },
-        ResolvedRustPopulation::StructuralStale => (Vec::new(), Vec::new(), 0, true),
-        ResolvedRustPopulation::ColdStale => (
+        ResolvedRustPopulation::StructuralStale => Ok((Vec::new(), Vec::new(), 0, true)),
+        ResolvedRustPopulation::ColdStale => Ok((
             rust_vcs_source_paths.to_vec(),
             rust_vcs_test_paths.to_vec(),
             0,
             false,
-        ),
+        )),
     }
+}
+
+fn roles_for_modified_paths(
+    repo_root: &Path,
+    ignore: &[String],
+    paths: &[PathBuf],
+) -> Result<kiss::code_roles::SourceRoleIndex, String> {
+    if paths.iter().all(|path| !path.exists()) {
+        return Ok(kiss::code_roles::SourceRoleIndex::empty());
+    }
+    crate::test_runner::runners::roles_for_universe(repo_root, ignore)
+        .map_err(|err| err.to_string())
 }
 
 fn effective_rust_changed_lines(
@@ -280,7 +301,10 @@ mod tests {
                 &resolved_current(),
                 std::slice::from_ref(&vcs_source),
                 std::slice::from_ref(&vcs_test),
-            ),
+                Path::new("."),
+                &[],
+            )
+            .unwrap(),
             (vec![vcs_source], vec![vcs_test], 0, false)
         );
 
@@ -292,7 +316,10 @@ mod tests {
                 ])),
                 &[],
                 &[],
-            ),
+                Path::new("."),
+                &[],
+            )
+            .unwrap(),
             (vec![modified], Vec::new(), 1, false)
         );
 
@@ -301,7 +328,10 @@ mod tests {
                 &resolved_reusable(rust_llvm_cov_runner::RustSnapshotDelta::Unchanged),
                 &[],
                 &[],
-            ),
+                Path::new("."),
+                &[],
+            )
+            .unwrap(),
             (Vec::new(), Vec::new(), 0, false)
         );
     }
@@ -309,7 +339,14 @@ mod tests {
     #[test]
     fn effective_paths_mark_structural_population() {
         assert_eq!(
-            effective_paths_for_resolution(&ResolvedRustPopulation::StructuralStale, &[], &[],),
+            effective_paths_for_resolution(
+                &ResolvedRustPopulation::StructuralStale,
+                &[],
+                &[],
+                Path::new("."),
+                &[],
+            )
+            .unwrap(),
             (Vec::new(), Vec::new(), 0, true)
         );
         let vcs_source = PathBuf::from("src/lib.rs");
@@ -318,7 +355,10 @@ mod tests {
                 &ResolvedRustPopulation::ColdStale,
                 std::slice::from_ref(&vcs_source),
                 &[],
-            ),
+                Path::new("."),
+                &[],
+            )
+            .unwrap(),
             (vec![vcs_source], Vec::new(), 0, false)
         );
     }
@@ -359,7 +399,7 @@ mod tests {
 
     #[test]
     fn prepared_and_effective_rust_input_unit_witnesses() {
-        let prepared: PreparedRustInputs = PreparedRustInputs {
+        let prepared = PreparedRustInputs {
             py_source_paths: Vec::new(),
             rust_source_paths: Vec::new(),
             python_changed_lines: BTreeMap::new(),
@@ -370,7 +410,7 @@ mod tests {
             rust_snapshot_delta_modified: 0,
             rust_snapshot_delta_structural: false,
         };
-        let effective: EffectiveRustPaths = EffectiveRustPaths {
+        let effective = EffectiveRustPaths {
             source_paths: Vec::new(),
             test_paths: Vec::new(),
             resolved: None,
@@ -381,9 +421,7 @@ mod tests {
             prepared.rust_vcs_source_paths,
             effective.snapshot_delta_modified
         );
-        assert!(effective.source_paths.is_empty());
-        assert!(effective.test_paths.is_empty());
-        assert!(effective.resolved.is_none());
-        assert!(!effective.snapshot_delta_structural);
+        assert!(effective.source_paths.is_empty() && effective.test_paths.is_empty());
+        assert!(effective.resolved.is_none() && !effective.snapshot_delta_structural);
     }
 }

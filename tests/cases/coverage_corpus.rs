@@ -74,8 +74,7 @@ fn cli_corpus_exercises_analysis_gate_paths() {
         .arg("stats")
         .arg("--config")
         .arg(&config)
-        .arg("--all")
-        .arg("10")
+        .arg("--all=10")
         .arg("--ignore")
         .arg("target")
         .arg(repo.path())
@@ -105,21 +104,25 @@ fn write_nested_repo(repo: &std::path::Path) {
     .unwrap();
     fs::write(
         repo.join("pkg").join("nested").join("tool.py"),
-        "import os\n\n\
-         def choose(x):\n\
-             try:\n\
-                 if x:\n\
-                     return os.path.basename(str(x))\n\
-                 return 'empty'\n\
-             except TypeError:\n\
-                 return 'bad'\n",
+        concat!(
+            "import os\n\n",
+            "def choose(x):\n",
+            "    try:\n",
+            "        if x:\n",
+            "            return os.path.basename(str(x))\n",
+            "        return 'empty'\n",
+            "    except TypeError:\n",
+            "        return 'bad'\n",
+        ),
     )
     .unwrap();
     fs::write(
         repo.join("main.py"),
-        "from pkg import choose\n\n\
-         def run():\n\
-             return choose('value')\n",
+        concat!(
+            "from pkg import choose\n\n",
+            "def run():\n",
+            "    return choose('value')\n",
+        ),
     )
     .unwrap();
     fs::write(
@@ -129,14 +132,16 @@ fn write_nested_repo(repo: &std::path::Path) {
     .unwrap();
     fs::write(
         repo.join("src").join("lib.rs"),
-        "pub mod inner;\n\
-         pub fn run(x: i32) -> i32 {\n\
-             match x {\n\
-                 0 => 0,\n\
-                 n if n > 0 => inner::math::bump(n),\n\
-                 n => n,\n\
-             }\n\
-         }\n",
+        concat!(
+            "pub mod inner;\n",
+            "pub fn run(x: i32) -> i32 {\n",
+            "    match x {\n",
+            "        0 => 0,\n",
+            "        n if n > 0 => inner::math::bump(n),\n",
+            "        n => n,\n",
+            "    }\n",
+            "}\n",
+        ),
     )
     .unwrap();
     fs::write(
@@ -146,9 +151,7 @@ fn write_nested_repo(repo: &std::path::Path) {
     .unwrap();
     fs::write(
         repo.join("src").join("inner").join("math.rs"),
-        "pub fn bump(x: i32) -> i32 {\n\
-             x + 1\n\
-         }\n",
+        concat!("pub fn bump(x: i32) -> i32 {\n", "    x + 1\n", "}\n"),
     )
     .unwrap();
 }
@@ -202,18 +205,19 @@ fn write_mixed_repo(repo: &std::path::Path) {
     .unwrap();
     fs::write(
         repo.join("app.py"),
-        "import pkg.helper\n\n\
-         class App:\n\
-             def value(self, x):\n\
-                 if x > 0:\n\
-                     return pkg.helper.bump(x)\n\
-                 return 0\n",
+        concat!(
+            "import pkg.helper\n\n",
+            "class App:\n",
+            "    def value(self, x):\n",
+            "        if x > 0:\n",
+            "            return pkg.helper.bump(x)\n",
+            "        return 0\n",
+        ),
     )
     .unwrap();
     fs::write(
         repo.join("pkg").join("helper.py"),
-        "def bump(x):\n\
-             return x + 1\n",
+        concat!("def bump(x):\n", "    return x + 1\n"),
     )
     .unwrap();
     fs::write(
@@ -223,17 +227,17 @@ fn write_mixed_repo(repo: &std::path::Path) {
     .unwrap();
     fs::write(
         repo.join("src").join("lib.rs"),
-        "mod math;\n\
-         pub fn value(x: i32) -> i32 {\n\
-             if x > 0 { math::bump(x) } else { 0 }\n\
-         }\n",
+        concat!(
+            "mod math;\n",
+            "pub fn value(x: i32) -> i32 {\n",
+            "    if x > 0 { math::bump(x) } else { 0 }\n",
+            "}\n",
+        ),
     )
     .unwrap();
     fs::write(
         repo.join("src").join("math.rs"),
-        "pub fn bump(x: i32) -> i32 {\n\
-             x + 1\n\
-         }\n",
+        concat!("pub fn bump(x: i32) -> i32 {\n", "    x + 1\n", "}\n"),
     )
     .unwrap();
 }

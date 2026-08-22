@@ -305,7 +305,7 @@ pub(crate) fn build_coarsened_graph(
         all_paths.extend(p);
     }
     if !rs_files.is_empty() {
-        let rs_graph = crate::analyze::build_rs_graph_from_files(rs_files);
+        let rs_graph = crate::analyze::build_rs_graph_from_files(rs_files)?;
         let (n, e, p) = collect_graph_nodes_and_edges(&rs_graph, "rs");
         all_nodes.extend(n);
         all_edges.extend(e);
@@ -330,7 +330,7 @@ fn write_full_graph(
         write_graph_for_format(buf, &py_graph, "py", format)?;
     }
     if !rs_files.is_empty() {
-        let rs_graph = crate::analyze::build_rs_graph_from_files(rs_files);
+        let rs_graph = crate::analyze::build_rs_graph_from_files(rs_files)?;
         write_graph_for_format(buf, &rs_graph, "rs", format)?;
     }
     Ok(())

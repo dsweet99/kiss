@@ -5,6 +5,8 @@ use syn::{Attribute, Item, ItemFn};
 
 use super::model::{DirectTestDef, NamedDefinition, SourceModel};
 use kiss::Language;
+use kiss::ParsedRustFile;
+use kiss::rust_test_refs::{impl_owner_name, rust_test_functions_in};
 
 pub(super) fn build_rust_model(
     path: &Path,
@@ -14,10 +16,18 @@ pub(super) fn build_rust_model(
     let ast = syn::parse_file(&content)
         .map_err(|e| format!("failed to parse Rust source {}: {e}", path.display()))?;
     let mut definitions = Vec::new();
-    let mut direct_tests = Vec::new();
-    collect_items(&ast.items, "", &mut definitions, &mut direct_tests);
-    Ok(SourceModel {
+    collect_items(&ast.items, "", &mut definitions);
+    let parsed = ParsedRustFile {
         path: path.to_path_buf(),
+        source: content,
+        ast,
+    };
+    let direct_tests = rust_test_functions_in(&parsed)
+        .into_iter()
+        .map(|selector| direct_test_from_selector(selector, &definitions))
+        .collect();
+    Ok(SourceModel {
+        path: parsed.path,
         language: Language::Rust,
         direct_tests,
         definitions,
@@ -25,20 +35,41 @@ pub(super) fn build_rust_model(
     })
 }
 
-fn collect_items(
-    items: &[Item],
-    module_prefix: &str,
-    definitions: &mut Vec<NamedDefinition>,
-    direct_tests: &mut Vec<DirectTestDef>,
-) {
+fn direct_test_from_selector(selector: String, definitions: &[NamedDefinition]) -> DirectTestDef {
+    if let Some(def) = definitions
+        .iter()
+        .find(|def| def.test_selector.as_deref() == Some(selector.as_str()))
+    {
+        return DirectTestDef {
+            selector,
+            name: def.member.clone().unwrap_or_else(|| def.name.clone()),
+            owner: def.member.as_ref().map(|_| def.name.clone()),
+            start_line: def.start_line,
+            end_line: def.end_line,
+        };
+    }
+    let (owner, name) = match selector.rsplit_once("::") {
+        Some((owner, name)) => (Some(owner.to_string()), name.to_string()),
+        None => (None, selector.clone()),
+    };
+    DirectTestDef {
+        selector,
+        name,
+        owner,
+        start_line: 1,
+        end_line: 1,
+    }
+}
+
+fn collect_items(items: &[Item], module_prefix: &str, definitions: &mut Vec<NamedDefinition>) {
     for item in items {
         match item {
-            Item::Fn(func) => push_fn(func, module_prefix, None, definitions, direct_tests),
-            Item::Mod(module) => push_mod(module, module_prefix, definitions, direct_tests),
+            Item::Fn(func) => push_fn(func, module_prefix, None, definitions),
+            Item::Mod(module) => push_mod(module, module_prefix, definitions),
             Item::Struct(item) => push_named(item.ident.to_string(), item, definitions),
             Item::Enum(item) => push_named(item.ident.to_string(), item, definitions),
             Item::Trait(item) => push_trait(item, definitions),
-            Item::Impl(item_impl) => push_impl(item_impl, definitions, direct_tests),
+            Item::Impl(item_impl) => push_impl(item_impl, definitions),
             Item::Const(item) => push_named(item.ident.to_string(), item, definitions),
             Item::Static(item) => push_named(item.ident.to_string(), item, definitions),
             _ => {}
@@ -46,12 +77,7 @@ fn collect_items(
     }
 }
 
-fn push_mod(
-    module: &syn::ItemMod,
-    module_prefix: &str,
-    definitions: &mut Vec<NamedDefinition>,
-    direct_tests: &mut Vec<DirectTestDef>,
-) {
+fn push_mod(module: &syn::ItemMod, module_prefix: &str, definitions: &mut Vec<NamedDefinition>) {
     let name = module.ident.to_string();
     let (start_line, end_line) = span_lines(module);
     definitions.push(NamedDefinition {
@@ -70,7 +96,7 @@ fn push_mod(
     } else {
         format!("{module_prefix}::{name}")
     };
-    collect_items(nested, &nested_prefix, definitions, direct_tests);
+    collect_items(nested, &nested_prefix, definitions);
 }
 
 fn push_trait(item: &syn::ItemTrait, definitions: &mut Vec<NamedDefinition>) {
@@ -90,11 +116,7 @@ fn push_trait(item: &syn::ItemTrait, definitions: &mut Vec<NamedDefinition>) {
     }
 }
 
-fn push_impl(
-    item_impl: &syn::ItemImpl,
-    definitions: &mut Vec<NamedDefinition>,
-    direct_tests: &mut Vec<DirectTestDef>,
-) {
+fn push_impl(item_impl: &syn::ItemImpl, definitions: &mut Vec<NamedDefinition>) {
     let Some(owner_name) = impl_owner_name(&item_impl.self_ty) else {
         return;
     };
@@ -114,7 +136,7 @@ fn push_impl(
     }
     for impl_item in &item_impl.items {
         if let syn::ImplItem::Fn(method) = impl_item {
-            push_method(method, &owner_name, definitions, direct_tests);
+            push_method(method, &owner_name, definitions);
         }
     }
 }
@@ -136,11 +158,10 @@ fn push_fn(
     module_prefix: &str,
     owner: Option<&str>,
     definitions: &mut Vec<NamedDefinition>,
-    direct_tests: &mut Vec<DirectTestDef>,
 ) {
     let name = func.sig.ident.to_string();
     let (start_line, end_line) = span_lines(func);
-    let is_test = has_test_attribute(&func.attrs) && !has_ignore_attribute(&func.attrs);
+    let is_test = has_test_attribute(&func.attrs);
     let selector = is_test.then(|| {
         if module_prefix.is_empty() {
             name.clone()
@@ -148,15 +169,6 @@ fn push_fn(
             format!("{module_prefix}::{name}")
         }
     });
-    if is_test {
-        direct_tests.push(DirectTestDef {
-            selector: selector.clone().unwrap_or_default(),
-            name: name.clone(),
-            owner: owner.map(str::to_string),
-            start_line,
-            end_line,
-        });
-    }
     let (def_name, def_member) = match owner {
         Some(owner) => (owner.to_string(), Some(name)),
         None => (name, None),
@@ -171,25 +183,11 @@ fn push_fn(
     });
 }
 
-fn push_method(
-    method: &syn::ImplItemFn,
-    owner: &str,
-    definitions: &mut Vec<NamedDefinition>,
-    direct_tests: &mut Vec<DirectTestDef>,
-) {
+fn push_method(method: &syn::ImplItemFn, owner: &str, definitions: &mut Vec<NamedDefinition>) {
     let name = method.sig.ident.to_string();
     let (start_line, end_line) = span_lines(method);
-    let is_test = has_test_attribute(&method.attrs) && !has_ignore_attribute(&method.attrs);
+    let is_test = has_test_attribute(&method.attrs);
     let selector = is_test.then(|| format!("{owner}::{name}"));
-    if is_test {
-        direct_tests.push(DirectTestDef {
-            selector: selector.clone().unwrap_or_default(),
-            name: name.clone(),
-            owner: Some(owner.to_string()),
-            start_line,
-            end_line,
-        });
-    }
     definitions.push(NamedDefinition {
         name: owner.to_string(),
         member: Some(name),
@@ -202,17 +200,6 @@ fn push_method(
 
 fn has_test_attribute(attrs: &[Attribute]) -> bool {
     attrs.iter().any(|attr| attr.path().is_ident("test"))
-}
-
-fn has_ignore_attribute(attrs: &[Attribute]) -> bool {
-    attrs.iter().any(|attr| attr.path().is_ident("ignore"))
-}
-
-fn impl_owner_name(ty: &syn::Type) -> Option<String> {
-    match ty {
-        syn::Type::Path(path) => path.path.segments.last().map(|seg| seg.ident.to_string()),
-        _ => None,
-    }
 }
 
 fn span_lines<T: Spanned>(item: &T) -> (u32, u32) {

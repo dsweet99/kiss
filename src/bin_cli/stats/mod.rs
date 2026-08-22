@@ -1,3 +1,4 @@
+mod load;
 mod summary;
 mod table;
 mod top;
@@ -34,7 +35,7 @@ pub fn run_stats(args: RunStatsArgs<'_>) -> i32 {
             args.language_tables,
         )
     } else if let Some(n) = args.all {
-        top::run_stats_top(top::StatsTopArgs {
+        top::run_stats_top_status(top::StatsTopArgs {
             paths: args.paths,
             lang_filter: args.lang_filter,
             ignore: args.ignore,
@@ -43,8 +44,7 @@ pub fn run_stats(args: RunStatsArgs<'_>) -> i32 {
             rs_config: args.rs_config,
             gate_config: args.gate_config,
             language_tables: args.language_tables,
-        });
-        0
+        })
     } else {
         summary::run_stats_summary(
             args.paths,

@@ -49,11 +49,42 @@ fn static_reference_coverage_apis_are_removed_from_src() {
 
 #[test]
 fn kiss_check_stays_static_only_without_test_ref_analysis() {
-    assert!(kiss::is_test_file(std::path::Path::new("tests/test_x.py")));
-    assert!(kiss::is_rust_test_file(std::path::Path::new(
-        "src/foo_test.rs"
+    assert!(kiss::is_python_test_module_path(std::path::Path::new(
+        "tests/test_x.py"
     )));
     assert!(kiss::is_binary_entry_point(std::path::Path::new(
         "src/main.rs"
     )));
+}
+
+#[test]
+fn product_consumers_do_not_call_path_naming_test_predicates() {
+    let forbidden = [
+        "is_rust_test_file(",
+        "is_coverage_gate_file(",
+        "is_test_file(",
+    ];
+    let mut hits = Vec::new();
+    for path in workspace_src_files() {
+        let text = fs::read_to_string(&path).unwrap();
+        for needle in forbidden {
+            if contains_predicate_call(&text, needle) {
+                hits.push(format!("{}: {needle}", path.display()));
+            }
+        }
+    }
+    assert!(
+        hits.is_empty(),
+        "product consumers must not call path-naming test predicates\n{}",
+        hits.join("\n")
+    );
+}
+
+fn contains_predicate_call(text: &str, needle: &str) -> bool {
+    text.match_indices(needle).any(|(idx, _)| {
+        idx == 0 || {
+            let prev = text.as_bytes()[idx - 1];
+            !prev.is_ascii_alphanumeric() && prev != b'_'
+        }
+    })
 }

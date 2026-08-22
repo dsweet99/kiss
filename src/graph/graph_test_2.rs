@@ -1,8 +1,9 @@
 use super::tests::new_graph;
+use crate::config::Config;
 use crate::graph::{
-    DependencyGraph, build_dependency_graph, build_dependency_graph_from_import_lists,
-    cycle_size_violation, is_test_module, parent_prefix_match, qualified_module_name, resolve_bare,
-    resolve_dotted, resolve_import,
+    DependencyGraph, analyze_graph, build_dependency_graph,
+    build_dependency_graph_from_import_lists, cycle_size_violation, parent_prefix_match,
+    qualified_module_name, resolve_bare, resolve_dotted, resolve_import,
 };
 use crate::parsing::ParsedFile;
 use crate::parsing::create_parser;
@@ -188,7 +189,14 @@ fn test_test_importers_of_returns_test_modules_that_import_target() {
         ),
         (PathBuf::from("other/helper.py"), vec!["utils".to_string()]),
     ];
-    let graph = build_dependency_graph_from_import_lists(&files);
+    let graph = {
+        let mut graph = build_dependency_graph_from_import_lists(&files);
+        graph.compositions.insert(
+            "tests.test_utils".into(),
+            crate::code_roles::FileComposition::TestOnly,
+        );
+        graph
+    };
     let importers = graph.test_importers_of("utils");
     assert!(
         importers.iter().any(|m| m.contains("test_utils")),
@@ -211,9 +219,23 @@ fn test_is_test_module_singular_test_dir() {
         "test.helpers".into(),
         std::path::PathBuf::from("test/helpers.py"),
     );
+    g.compositions.insert(
+        "test.helpers".into(),
+        crate::code_roles::FileComposition::TestOnly,
+    );
+    assert_eq!(
+        g.compositions.get("test.helpers"),
+        Some(&crate::code_roles::FileComposition::TestOnly),
+        "Test-only composition, not directory name, identifies test modules"
+    );
+    let mut prod = DependencyGraph::new();
+    prod.paths.insert(
+        "test.helpers".into(),
+        std::path::PathBuf::from("test/helpers.py"),
+    );
     assert!(
-        is_test_module(&g, "test.helpers"),
-        "Modules under test/ (singular) should be recognized as test modules"
+        !prod.compositions.contains_key("test.helpers"),
+        "A test/ path without TestOnly composition is not a test module"
     );
 }
 
@@ -247,5 +269,80 @@ fn test_cycle_size_violation_suggestion_does_not_claim_unimplemented_min_cut() {
         !v.suggestion.to_lowercase().contains("min-cut"),
         "suggestion should not reference min-cut without that analysis; got: {}",
         v.suggestion
+    );
+}
+
+#[test]
+fn python_test_file_records_import_span_origins() {
+    use crate::parsing::parse_file;
+    let tmp = tempfile::TempDir::new().unwrap();
+    std::fs::write(tmp.path().join("helper.py"), "def g():\n    return 1\n").unwrap();
+    std::fs::write(
+        tmp.path().join("test_app.py"),
+        "from helper import g\n\ndef test_f():\n    assert g() == 1\n",
+    )
+    .unwrap();
+    let paths = vec![tmp.path().join("helper.py"), tmp.path().join("test_app.py")];
+    let mut parser = create_parser().unwrap();
+    let parsed: Vec<ParsedFile> = paths
+        .iter()
+        .map(|path| parse_file(&mut parser, path).unwrap())
+        .collect();
+    let roles = crate::code_roles::build_source_role_index(&parsed, &[], &paths, &[]).unwrap();
+    let refs: Vec<_> = parsed.iter().collect();
+    let ctx = crate::graph::build_python_context_graph(&refs, &roles);
+    let helper = qualified_module_name(&paths[0]);
+    let test_app = qualified_module_name(&paths[1]);
+    assert!(
+        !ctx.production_view().imports(&test_app, &helper),
+        "TestOnly python imports must not appear in the production view"
+    );
+    assert!(ctx.test_view().imports(&test_app, &helper));
+    assert!(ctx.test_importers_of(&helper).contains(&test_app));
+}
+
+#[test]
+fn production_gates_ignore_cycles_on_test_only_edges() {
+    use crate::parsing::parse_file;
+    let tmp = tempfile::TempDir::new().unwrap();
+    std::fs::write(tmp.path().join("prod.py"), "def f():\n    return 1\n").unwrap();
+    std::fs::write(
+        tmp.path().join("test_a.py"),
+        "from test_b import g\nfrom prod import f\n\ndef test_a():\n    assert f() == 1\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tmp.path().join("test_b.py"),
+        "from test_a import test_a\n\ndef g():\n    return 1\n",
+    )
+    .unwrap();
+    let paths = vec![
+        tmp.path().join("prod.py"),
+        tmp.path().join("test_a.py"),
+        tmp.path().join("test_b.py"),
+    ];
+    let mut parser = create_parser().unwrap();
+    let parsed: Vec<ParsedFile> = paths
+        .iter()
+        .map(|path| parse_file(&mut parser, path).unwrap())
+        .collect();
+    let roles = crate::code_roles::build_source_role_index(&parsed, &[], &paths, &[]).unwrap();
+    let refs: Vec<_> = parsed.iter().collect();
+    let ctx = crate::graph::build_python_context_graph(&refs, &roles);
+    assert!(
+        !ctx.test_view().find_cycles().cycles.is_empty(),
+        "fixture must contain a test-only import cycle"
+    );
+    let prod = ctx.production_view();
+    assert!(
+        prod.find_cycles().cycles.is_empty(),
+        "production view must omit cycles that exist only on test-only edges"
+    );
+    let mut cfg = Config::python_defaults();
+    cfg.cycle_size = 0;
+    let viols = analyze_graph(&prod, &cfg, false);
+    assert!(
+        !viols.iter().any(|v| v.metric == "cycle_size"),
+        "production gates must ignore test-only cycles, got {viols:?}"
     );
 }

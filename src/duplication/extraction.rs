@@ -1,3 +1,4 @@
+use crate::code_roles::{SourceRoleIndex, SourceSpan, skip_syn};
 use crate::minhash::normalize_code;
 use crate::parsing::ParsedFile;
 use crate::rust_parsing::ParsedRustFile;
@@ -25,6 +26,14 @@ pub(crate) fn is_nontrivial_chunk(normalized: &str, line_count: usize) -> bool {
 
 #[must_use]
 pub fn extract_chunks_for_duplication(parsed_files: &[&ParsedFile]) -> Vec<CodeChunk> {
+    extract_chunks_for_duplication_with_roles(parsed_files, None)
+}
+
+#[must_use]
+pub fn extract_chunks_for_duplication_with_roles(
+    parsed_files: &[&ParsedFile],
+    roles: Option<&SourceRoleIndex>,
+) -> Vec<CodeChunk> {
     let mut per_file: Vec<(usize, Vec<CodeChunk>)> = parsed_files
         .par_iter()
         .enumerate()
@@ -35,6 +44,7 @@ pub fn extract_chunks_for_duplication(parsed_files: &[&ParsedFile]) -> Vec<CodeC
                 &parsed.source,
                 &parsed.path,
                 &mut chunks,
+                roles,
             );
             (idx, chunks)
         })
@@ -50,9 +60,23 @@ pub fn extract_chunks_for_duplication(parsed_files: &[&ParsedFile]) -> Vec<CodeC
 
 #[must_use]
 pub fn extract_rust_chunks_for_duplication(parsed_files: &[&ParsedRustFile]) -> Vec<CodeChunk> {
+    extract_rust_chunks_for_duplication_with_roles(parsed_files, None)
+}
+
+#[must_use]
+pub fn extract_rust_chunks_for_duplication_with_roles(
+    parsed_files: &[&ParsedRustFile],
+    roles: Option<&SourceRoleIndex>,
+) -> Vec<CodeChunk> {
     let mut chunks = Vec::new();
     for parsed in parsed_files {
-        extract_rust_function_chunks(&parsed.ast, &parsed.source, &parsed.path, &mut chunks);
+        extract_rust_function_chunks(
+            &parsed.ast,
+            &parsed.source,
+            &parsed.path,
+            &mut chunks,
+            roles,
+        );
     }
     chunks
 }
@@ -62,9 +86,10 @@ pub(super) fn extract_rust_function_chunks(
     source: &str,
     file: &Path,
     chunks: &mut Vec<CodeChunk>,
+    roles: Option<&SourceRoleIndex>,
 ) {
     for item in &ast.items {
-        extract_chunks_from_item(item, source, file, chunks);
+        extract_chunks_from_item(item, source, file, chunks, roles);
     }
 }
 
@@ -73,32 +98,35 @@ pub(super) fn extract_chunks_from_item(
     source: &str,
     file: &Path,
     chunks: &mut Vec<CodeChunk>,
+    roles: Option<&SourceRoleIndex>,
 ) {
+    if skip_syn(roles, file, item) {
+        return;
+    }
     match item {
         Item::Fn(func) => {
-            let start = func.sig.fn_token.span.start().line;
-            let end = func.block.brace_token.span.close().end().line;
             add_rust_function_chunk(
                 &func.sig.ident.to_string(),
-                start,
-                end,
+                SourceSpan::of_syn(func),
                 source,
                 file,
                 chunks,
+                roles,
             );
         }
         Item::Impl(impl_block) => {
             for impl_item in &impl_block.items {
                 if let ImplItem::Fn(method) = impl_item {
-                    let start = method.sig.fn_token.span.start().line;
-                    let end = method.block.brace_token.span.close().end().line;
+                    if skip_syn(roles, file, method) {
+                        continue;
+                    }
                     add_rust_function_chunk(
                         &method.sig.ident.to_string(),
-                        start,
-                        end,
+                        SourceSpan::of_syn(method),
                         source,
                         file,
                         chunks,
+                        roles,
                     );
                 }
             }
@@ -106,7 +134,7 @@ pub(super) fn extract_chunks_from_item(
         Item::Mod(m) => {
             if let Some((_, items)) = &m.content {
                 for item in items {
-                    extract_chunks_from_item(item, source, file, chunks);
+                    extract_chunks_from_item(item, source, file, chunks, roles);
                 }
             }
         }
@@ -116,26 +144,51 @@ pub(super) fn extract_chunks_from_item(
 
 pub(super) fn add_rust_function_chunk(
     name: &str,
-    start_line: usize,
-    end_line: usize,
+    span: SourceSpan,
     source: &str,
     file: &Path,
     chunks: &mut Vec<CodeChunk>,
+    roles: Option<&SourceRoleIndex>,
 ) {
-    let line_count = end_line.saturating_sub(start_line) + 1;
-    let lines: Vec<&str> = source.lines().collect();
-    if start_line > 0 && end_line <= lines.len() {
-        let body_text: String = lines[start_line - 1..end_line].join("\n");
-        let normalized = normalize_code(&body_text);
-        if is_nontrivial_chunk(&normalized, line_count) {
-            chunks.push(CodeChunk {
-                file: file.to_path_buf(),
-                name: name.to_string(),
-                start_line,
-                end_line,
-                normalized,
-            });
+    let Some(body_text) = production_source(source, file, span, roles) else {
+        return;
+    };
+    let line_count = body_text.lines().count();
+    let normalized = normalize_code(&body_text);
+    if is_nontrivial_chunk(&normalized, line_count) {
+        chunks.push(CodeChunk {
+            file: file.to_path_buf(),
+            name: name.to_string(),
+            start_line: span.start.line,
+            end_line: span.end.line.max(span.start.line),
+            normalized,
+        });
+    }
+}
+
+fn production_source(
+    source: &str,
+    file: &Path,
+    span: SourceSpan,
+    roles: Option<&SourceRoleIndex>,
+) -> Option<String> {
+    let text = match roles {
+        Some(roles) => {
+            let segs = roles.production_segments(file, span);
+            if segs.is_empty() {
+                return None;
+            }
+            segs.iter()
+                .map(|seg| seg.slice_source(source))
+                .collect::<Vec<_>>()
+                .join("\n")
         }
+        None => span.slice_source(source),
+    };
+    if text.trim().is_empty() {
+        None
+    } else {
+        Some(text)
     }
 }
 
@@ -144,34 +197,35 @@ pub(super) fn extract_function_chunks(
     source: &str,
     file: &Path,
     chunks: &mut Vec<CodeChunk>,
+    roles: Option<&SourceRoleIndex>,
 ) {
     match node.kind() {
         "function_definition" | "async_function_definition" => {
             let name = get_child_by_field(node, "name", source).unwrap_or_default();
-            let (start_line, end_line) =
-                (node.start_position().row + 1, node.end_position().row + 1);
-            let line_count = end_line.saturating_sub(start_line) + 1;
             if let Some(body) = node.child_by_field_name("body") {
-                let normalized = normalize_code(&source[body.start_byte()..body.end_byte()]);
-                if is_nontrivial_chunk(&normalized, line_count) {
-                    chunks.push(CodeChunk {
-                        file: file.to_path_buf(),
-                        name,
-                        start_line,
-                        end_line,
-                        normalized,
-                    });
+                let span = SourceSpan::from_tree_sitter_node(body);
+                if let Some(body_text) = production_source(source, file, span, roles) {
+                    let normalized = normalize_code(&body_text);
+                    if is_nontrivial_chunk(&normalized, body_text.lines().count()) {
+                        chunks.push(CodeChunk {
+                            file: file.to_path_buf(),
+                            name,
+                            start_line: node.start_position().row + 1,
+                            end_line: node.end_position().row + 1,
+                            normalized,
+                        });
+                    }
                 }
             }
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
-                extract_function_chunks(child, source, file, chunks);
+                extract_function_chunks(child, source, file, chunks, roles);
             }
         }
         _ => {
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
-                extract_function_chunks(child, source, file, chunks);
+                extract_function_chunks(child, source, file, chunks, roles);
             }
         }
     }

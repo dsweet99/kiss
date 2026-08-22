@@ -1,16 +1,21 @@
 use rayon::prelude::*;
 use std::path::PathBuf;
 
+use kiss::code_roles::{
+    CodeRole, RoleBuildError, SourceRoleIndex, build_source_role_index, is_test_only_file,
+};
 use kiss::counts::analyze_file_with_statement_count;
 use kiss::units::count_code_units;
 use kiss::{
-    Config, ParsedFile, ParsedRustFile, Violation, analyze_rust_file, extract_rust_code_units,
+    Config, ParsedFile, ParsedRustFile, Violation, analyze_rust_file_include_rollup_with_roles,
+    analyze_rust_file_with_roles, compute_rust_file_metrics_with_roles, extract_rust_code_units,
     parse_files, parse_rust_files,
 };
 
 pub struct ParseResult {
     pub py_parsed: Vec<ParsedFile>,
     pub rs_parsed: Vec<ParsedRustFile>,
+    pub roles: SourceRoleIndex,
     pub violations: Vec<Violation>,
     pub code_unit_count: usize,
     pub statement_count: usize,
@@ -30,7 +35,7 @@ pub fn parse_all(
     rs_files: &[PathBuf],
     py_config: &Config,
     rs_config: &Config,
-) -> ParseResult {
+) -> Result<ParseResult, RoleBuildError> {
     parse_all_timed(ParseAllTimedParams {
         py_files,
         rs_files,
@@ -38,28 +43,176 @@ pub fn parse_all(
         rs_config,
         show_timing: false,
     })
-    .0
+    .map(|(result, _)| result)
 }
 
-pub fn parse_all_timed(p: ParseAllTimedParams<'_>) -> (ParseResult, String) {
-    let ((py_parsed, mut viols, py_units, py_stmts), py_timing) =
-        parse_and_analyze_py_timed(p.py_files, p.py_config, p.show_timing);
-    let (rs_parsed, rs_viols, rs_units, rs_stmts) = parse_and_analyze_rs(p.rs_files, p.rs_config);
+pub fn parse_all_timed(
+    p: ParseAllTimedParams<'_>,
+) -> Result<(ParseResult, String), RoleBuildError> {
+    let ((py_parsed, py_timing), rs_parsed) = parse_sources(p.py_files, p.rs_files, p.show_timing)?;
+    let roles = build_source_role_index(&py_parsed, &rs_parsed, p.py_files, p.rs_files)?;
+    let (py_units, py_stmts, mut viols) = analyze_py_parsed(&py_parsed, p.py_config, &roles);
+    let (rs_units, rs_stmts, rs_viols) = analyze_rs_parsed(&rs_parsed, p.rs_config, &roles)?;
     viols.extend(rs_viols);
-    (
+    let viols = drop_test_only_violations(viols, &roles);
+    Ok((
         ParseResult {
             py_parsed,
             rs_parsed,
+            roles,
             violations: viols,
             code_unit_count: py_units + rs_units,
             statement_count: py_stmts + rs_stmts,
         },
         py_timing,
-    )
+    ))
+}
+
+type ParseSourcesOut = ((Vec<ParsedFile>, String), Vec<ParsedRustFile>);
+
+fn parse_sources(
+    py_files: &[PathBuf],
+    rs_files: &[PathBuf],
+    show_timing: bool,
+) -> Result<ParseSourcesOut, RoleBuildError> {
+    let t0 = std::time::Instant::now();
+    let py_parsed = parse_py_files(py_files)?;
+    let t1 = std::time::Instant::now();
+    let rs_parsed = parse_rs_files(rs_files)?;
+    let timing = if show_timing {
+        format!(
+            "py: parse={:.2}s, analyze=0.00s",
+            t1.duration_since(t0).as_secs_f64()
+        )
+    } else {
+        String::new()
+    };
+    Ok(((py_parsed, timing), rs_parsed))
+}
+
+pub(crate) fn parse_py_files(files: &[PathBuf]) -> Result<Vec<ParsedFile>, RoleBuildError> {
+    if files.is_empty() {
+        return Ok(Vec::new());
+    }
+    let results = parse_files(files).map_err(|err| RoleBuildError::PythonParse {
+        path: files[0].clone(),
+        message: err.to_string(),
+    })?;
+    let mut parsed = Vec::new();
+    for (path, result) in files.iter().zip(results) {
+        match result {
+            Ok(file) => parsed.push(file),
+            Err(err) => {
+                return Err(RoleBuildError::PythonParse {
+                    path: path.clone(),
+                    message: err.to_string(),
+                });
+            }
+        }
+    }
+    Ok(parsed)
+}
+
+pub(crate) fn parse_rs_files(files: &[PathBuf]) -> Result<Vec<ParsedRustFile>, RoleBuildError> {
+    if files.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut parsed = Vec::new();
+    for (path, result) in files.iter().zip(parse_rust_files(files)) {
+        match result {
+            Ok(p) => parsed.push(p),
+            Err(err) => {
+                return Err(RoleBuildError::RustParse {
+                    path: path.clone(),
+                    message: err.to_string(),
+                });
+            }
+        }
+    }
+    Ok(parsed)
+}
+
+pub(crate) fn parse_classified(
+    py_files: &[PathBuf],
+    rs_files: &[PathBuf],
+) -> Result<(Vec<ParsedFile>, Vec<ParsedRustFile>, SourceRoleIndex), RoleBuildError> {
+    let py_parsed = parse_py_files(py_files)?;
+    let rs_parsed = parse_rs_files(rs_files)?;
+    let roles = build_source_role_index(&py_parsed, &rs_parsed, py_files, rs_files)?;
+    Ok((py_parsed, rs_parsed, roles))
+}
+
+fn analyze_py_parsed(parsed: &[ParsedFile], config: &Config, roles: &SourceRoleIndex) -> PyAgg {
+    parsed
+        .par_iter()
+        .filter(|p| !is_test_only_file(roles, &p.path))
+        .map(|p| py_file_agg(p, config))
+        .reduce(py_agg_empty, py_agg_merge)
+}
+
+fn analyze_rs_parsed(
+    parsed: &[ParsedRustFile],
+    config: &Config,
+    roles: &SourceRoleIndex,
+) -> Result<(usize, usize, Vec<Violation>), RoleBuildError> {
+    let mut unit_count = 0;
+    let mut stmt_count = 0;
+    let mut viols = Vec::new();
+    for p in parsed {
+        if is_test_only_file(roles, &p.path) {
+            continue;
+        }
+        unit_count += extract_rust_code_units(p).len();
+        stmt_count += compute_rust_file_metrics_with_roles(p, Some(roles)).statements;
+        viols.extend(analyze_rust_file_with_roles(p, config, Some(roles)));
+    }
+    let refs: Vec<&ParsedRustFile> = parsed.iter().collect();
+    let include_graph = kiss::rust_graph::build_include_graph(&refs);
+    let by_path: std::collections::HashMap<_, _> = parsed
+        .iter()
+        .map(|p| (kiss::rust_include::canonical_path(&p.path), p))
+        .collect();
+    for parent in parsed {
+        if is_test_only_file(roles, &parent.path) {
+            continue;
+        }
+        let included_paths = include_graph.transitive_from(&parent.path);
+        if included_paths.is_empty() {
+            continue;
+        }
+        let included: Vec<&ParsedRustFile> = included_paths
+            .iter()
+            .filter_map(|path| by_path.get(path).copied())
+            .collect();
+        viols.extend(analyze_rust_file_include_rollup_with_roles(
+            parent,
+            &included,
+            config,
+            Some(roles),
+        ));
+    }
+    Ok((unit_count, stmt_count, viols))
+}
+
+fn drop_test_only_violations(viols: Vec<Violation>, roles: &SourceRoleIndex) -> Vec<Violation> {
+    viols
+        .into_iter()
+        .filter(|v| {
+            !is_test_only_file(roles, &v.file)
+                && roles.role_for_span(
+                    &v.file,
+                    kiss::code_roles::SourceSpan::new(
+                        kiss::code_roles::SourcePosition::new(v.line, 0),
+                        kiss::code_roles::SourcePosition::new(v.line, 1),
+                    ),
+                ) != CodeRole::TestOnly
+        })
+        .collect()
 }
 
 type PyAgg = (usize, usize, Vec<Violation>);
 
+#[cfg(test)]
 pub fn py_parsed_or_log(r: Result<ParsedFile, kiss::ParseError>) -> Option<ParsedFile> {
     match r {
         Ok(p) => Some(p),
@@ -87,31 +240,22 @@ fn py_agg_merge(mut a: PyAgg, b: PyAgg) -> PyAgg {
     a
 }
 
+#[cfg(test)]
+type PyAnalyzeTimed = ((Vec<ParsedFile>, Vec<Violation>, usize, usize), String);
+
+#[cfg(test)]
 fn parse_and_analyze_py_timed(
     files: &[PathBuf],
     config: &Config,
     show_timing: bool,
-) -> ((Vec<ParsedFile>, Vec<Violation>, usize, usize), String) {
-    if files.is_empty() {
-        return ((Vec::new(), Vec::new(), 0, 0), String::new());
-    }
+) -> Result<PyAnalyzeTimed, RoleBuildError> {
     let t0 = std::time::Instant::now();
-    let results = match parse_files(files) {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("Failed to initialize Python parser: {e}");
-            return ((Vec::new(), Vec::new(), 0, 0), String::new());
-        }
-    };
+    let parsed = parse_py_files(files)?;
     let t1 = std::time::Instant::now();
-
-    let parsed: Vec<ParsedFile> = results.into_iter().filter_map(py_parsed_or_log).collect();
-
     let (unit_count, stmt_count, viols) = parsed
         .par_iter()
         .map(|p| py_file_agg(p, config))
         .reduce(py_agg_empty, py_agg_merge);
-
     let t2 = std::time::Instant::now();
     let timing = if show_timing {
         format!(
@@ -122,233 +266,20 @@ fn parse_and_analyze_py_timed(
     } else {
         String::new()
     };
-    ((parsed, viols, unit_count, stmt_count), timing)
-}
-
-pub fn parse_and_analyze_rs(
-    files: &[PathBuf],
-    config: &Config,
-) -> (Vec<ParsedRustFile>, Vec<Violation>, usize, usize) {
-    if files.is_empty() {
-        return (Vec::new(), Vec::new(), 0, 0);
-    }
-    let (mut parsed, mut viols, mut unit_count, mut stmt_count) = (Vec::new(), Vec::new(), 0, 0);
-    for result in parse_rust_files(files) {
-        match result {
-            Ok(p) => {
-                unit_count += extract_rust_code_units(&p).len();
-                stmt_count += kiss::compute_rust_file_metrics(&p).statements;
-                viols.extend(analyze_rust_file(&p, config));
-                parsed.push(p);
-            }
-            Err(e) => eprintln!("Error parsing Rust: {e}"),
-        }
-    }
-    let refs: Vec<&ParsedRustFile> = parsed.iter().collect();
-    let include_graph = kiss::rust_graph::build_include_graph(&refs);
-    let by_path: std::collections::HashMap<_, _> = parsed
-        .iter()
-        .map(|p| (kiss::rust_include::canonical_path(&p.path), p))
-        .collect();
-    for parent in &parsed {
-        let included_paths = include_graph.transitive_from(&parent.path);
-        if included_paths.is_empty() {
-            continue;
-        }
-        let included: Vec<&ParsedRustFile> = included_paths
-            .iter()
-            .filter_map(|path| by_path.get(path).copied())
-            .collect();
-        viols.extend(kiss::rust_counts::analyze_rust_file_include_rollup(
-            parent, &included, config,
-        ));
-    }
-    (parsed, viols, unit_count, stmt_count)
+    Ok(((parsed, viols, unit_count, stmt_count), timing))
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_all_empty() {
-        let py_cfg = Config::python_defaults();
-        let rs_cfg = Config::rust_defaults();
-        let result = parse_all(&[], &[], &py_cfg, &rs_cfg);
-        assert!(result.py_parsed.is_empty());
-        assert!(result.rs_parsed.is_empty());
-        assert_eq!(result.code_unit_count, 0);
-        assert_eq!(result.statement_count, 0);
-    }
-
-    #[test]
-    fn test_structural_thresholds_apply_to_python_test_files() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let test_path = tmp.path().join("test_big.py");
-        std::fs::write(
-            &test_path,
-            "def big():\n    x = 1\n    y = 2\n    z = 3\n    return x + y + z\n",
-        )
-        .unwrap();
-
-        let mut py_cfg = Config::python_defaults();
-        py_cfg.lines_per_file = 1;
-        py_cfg.statements_per_file = 1;
-        py_cfg.statements_per_function = 1;
-
-        let rs_cfg = Config::rust_defaults();
-
-        let result = parse_all(std::slice::from_ref(&test_path), &[], &py_cfg, &rs_cfg);
-        let fname = test_path.file_name().unwrap_or_default().to_string_lossy();
-
-        assert!(
-            result
-                .violations
-                .iter()
-                .any(|v| v.metric == "lines_per_file"
-                    && v.file.file_name().is_some_and(|n| n == fname.as_ref())),
-            "expected a lines_per_file violation for test file"
-        );
-        assert!(
-            result
-                .violations
-                .iter()
-                .any(|v| v.metric == "statements_per_file"
-                    && v.file.file_name().is_some_and(|n| n == fname.as_ref())),
-            "expected a statements_per_file violation for test file"
-        );
-        assert!(
-            result
-                .violations
-                .iter()
-                .any(|v| v.metric == "statements_per_function" && v.unit_name == "big"),
-            "expected a statements_per_function violation for function in test file"
-        );
-    }
-
-    #[test]
-    fn test_parse_all_with_files() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        std::fs::write(tmp.path().join("a.py"), "def f(): pass").unwrap();
-        std::fs::write(tmp.path().join("b.rs"), "fn main() {}").unwrap();
-        let py_cfg = Config::python_defaults();
-        let rs_cfg = Config::rust_defaults();
-        let result = parse_all(
-            &[tmp.path().join("a.py")],
-            &[tmp.path().join("b.rs")],
-            &py_cfg,
-            &rs_cfg,
-        );
-        assert_eq!(result.py_parsed.len(), 1);
-        assert_eq!(result.rs_parsed.len(), 1);
-        assert!(result.code_unit_count > 0);
-    }
-
-    #[test]
-    fn test_parse_all_timed_params_constructible() {
-        let py_cfg = Config::python_defaults();
-        let rs_cfg = Config::rust_defaults();
-        let params = ParseAllTimedParams {
-            py_files: &[],
-            rs_files: &[],
-            py_config: &py_cfg,
-            rs_config: &rs_cfg,
-            show_timing: false,
-        };
-        assert!(!params.show_timing);
-    }
-
-    #[test]
-    fn test_parse_all_timed_with_timing() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        std::fs::write(tmp.path().join("a.py"), "def f(): pass").unwrap();
-        let py_cfg = Config::python_defaults();
-        let rs_cfg = Config::rust_defaults();
-        let (result, timing) = parse_all_timed(ParseAllTimedParams {
-            py_files: &[tmp.path().join("a.py")],
-            rs_files: &[],
-            py_config: &py_cfg,
-            rs_config: &rs_cfg,
-            show_timing: true,
-        });
-        assert!(
-            !timing.is_empty(),
-            "timing string should be non-empty when show_timing=true"
-        );
-        assert_eq!(result.py_parsed.len(), 1);
-    }
-
-    #[test]
-    fn test_py_parsed_or_log_ok() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let p = tmp.path().join("ok.py");
-        std::fs::write(&p, "x = 1").unwrap();
-        let results = kiss::parse_files(&[p]).unwrap();
-        let first = results.into_iter().next().unwrap();
-        let out = py_parsed_or_log(first);
-        assert!(out.is_some());
-    }
-
-    #[test]
-    fn test_py_agg_empty_returns_zeros() {
-        let (units, stmts, viols) = py_agg_empty();
-        assert_eq!(units, 0);
-        assert_eq!(stmts, 0);
-        assert!(viols.is_empty());
-    }
-
-    #[test]
-    fn test_py_agg_merge_combines() {
-        let a: PyAgg = (2, 3, vec![]);
-        let b: PyAgg = (5, 7, vec![]);
-        let merged = py_agg_merge(a, b);
-        assert_eq!(merged.0, 7);
-        assert_eq!(merged.1, 10);
-    }
-
-    #[test]
-    fn test_parse_and_analyze_py_timed_empty() {
-        let cfg = Config::python_defaults();
-        let ((parsed, viols, units, stmts), timing) = parse_and_analyze_py_timed(&[], &cfg, false);
-        assert!(parsed.is_empty());
-        assert!(viols.is_empty());
-        assert_eq!(units, 0);
-        assert_eq!(stmts, 0);
-        assert!(timing.is_empty());
-    }
-
-    #[test]
-    fn test_py_file_agg_smoke() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let p = tmp.path().join("agg.py");
-        std::fs::write(&p, "def g(): pass\ndef h(): pass\n").unwrap();
-        let results = kiss::parse_files(&[p]).unwrap();
-        let parsed: Vec<_> = results.into_iter().filter_map(Result::ok).collect();
-        assert!(!parsed.is_empty());
-        let cfg = Config::python_defaults();
-        let (units, stmts, viols) = py_file_agg(&parsed[0], &cfg);
-        assert!(units > 0 || stmts > 0 || viols.is_empty());
-    }
-
-    impl ParseResult {
-        fn witness() -> Self {
-            Self {
-                py_parsed: vec![],
-                rs_parsed: vec![],
-                violations: vec![],
-                code_unit_count: 0,
-                statement_count: 0,
-            }
-        }
-    }
-
-    impl ParseAllTimedParams<'_> {
-        fn witness() {}
-    }
-
-    #[test]
-    fn witness_parse_types() {
-        let _ = ParseResult::witness();
-        ParseAllTimedParams::witness();
-    }
+pub fn parse_and_analyze_rs(
+    files: &[PathBuf],
+    config: &Config,
+) -> Result<(Vec<ParsedRustFile>, Vec<Violation>, usize, usize), RoleBuildError> {
+    let parsed = parse_rs_files(files)?;
+    let roles = build_source_role_index(&[], &parsed, &[], files)?;
+    let (units, stmts, viols) = analyze_rs_parsed(&parsed, config, &roles)?;
+    Ok((parsed, viols, units, stmts))
 }
+
+#[cfg(test)]
+#[path = "analyze_parse_test.rs"]
+mod analyze_parse_test;

@@ -2,8 +2,9 @@ use std::collections::BTreeMap;
 
 use syn::{ImplItem, Item};
 
-use crate::rust_counts::{count_impl_methods, get_impl_type_name};
-use crate::rust_fn_metrics::{compute_rust_function_metrics, count_non_doc_attrs, is_cfg_test_mod};
+use crate::code_roles::{SourceRoleIndex, skip_syn};
+use crate::rust_counts::get_impl_type_name;
+use crate::rust_fn_metrics::{compute_rust_function_metrics_with_roles, count_non_doc_attrs};
 
 use super::metric_stats::MetricStats;
 
@@ -23,9 +24,19 @@ pub(crate) fn push_rust_fn_metrics(
     stats.calls_per_function.push(m.calls);
 }
 
+#[cfg(test)]
 pub(crate) fn collect_rust_from_items(items: &[Item], stats: &mut MetricStats) {
+    collect_rust_from_items_with_roles(items, stats, None, None);
+}
+
+pub(crate) fn collect_rust_from_items_with_roles(
+    items: &[Item],
+    stats: &mut MetricStats,
+    path: Option<&std::path::Path>,
+    roles: Option<&SourceRoleIndex>,
+) {
     let mut inherent = BTreeMap::new();
-    collect_rust_from_items_inner(items, stats, &mut inherent);
+    collect_rust_from_items_inner(items, stats, &mut inherent, path, roles);
     for count in inherent.values() {
         stats.methods_per_class.push(*count);
     }
@@ -35,23 +46,28 @@ fn collect_rust_from_items_inner(
     items: &[Item],
     stats: &mut MetricStats,
     inherent: &mut BTreeMap<String, usize>,
+    path: Option<&std::path::Path>,
+    roles: Option<&SourceRoleIndex>,
 ) {
     for item in items {
+        if path.is_some_and(|p| skip_syn(roles, p, item)) {
+            continue;
+        }
         match item {
             Item::Fn(f) => push_rust_fn_metrics(
                 stats,
-                &compute_rust_function_metrics(
+                &compute_rust_function_metrics_with_roles(
                     &f.sig.inputs,
                     &f.block,
                     count_non_doc_attrs(&f.attrs),
+                    path,
+                    roles,
                 ),
             ),
-            Item::Impl(i) => collect_rust_impl(i, stats, inherent),
+            Item::Impl(i) => collect_rust_impl(i, stats, inherent, path, roles),
             Item::Mod(m) => {
-                if !is_cfg_test_mod(m)
-                    && let Some((_, items)) = &m.content
-                {
-                    collect_rust_from_items_inner(items, stats, inherent);
+                if let Some((_, items)) = &m.content {
+                    collect_rust_from_items_inner(items, stats, inherent, path, roles);
                 }
             }
             _ => {}
@@ -63,8 +79,17 @@ fn collect_rust_impl(
     i: &syn::ItemImpl,
     stats: &mut MetricStats,
     inherent: &mut BTreeMap<String, usize>,
+    path: Option<&std::path::Path>,
+    roles: Option<&SourceRoleIndex>,
 ) {
-    let mcnt = count_impl_methods(i);
+    let mcnt = i
+        .items
+        .iter()
+        .filter(|ii| match ii {
+            ImplItem::Fn(m) => !path.is_some_and(|p| skip_syn(roles, p, m)),
+            _ => false,
+        })
+        .count();
     if i.trait_.is_none() {
         let name = get_impl_type_name(i).unwrap_or_else(|| "<impl>".into());
         *inherent.entry(name).or_insert(0) += mcnt;
@@ -73,12 +98,17 @@ fn collect_rust_impl(
     }
     for ii in &i.items {
         if let ImplItem::Fn(m) = ii {
+            if path.is_some_and(|p| skip_syn(roles, p, m)) {
+                continue;
+            }
             push_rust_fn_metrics(
                 stats,
-                &compute_rust_function_metrics(
+                &compute_rust_function_metrics_with_roles(
                     &m.sig.inputs,
                     &m.block,
                     count_non_doc_attrs(&m.attrs),
+                    path,
+                    roles,
                 ),
             );
         }

@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import python
 from ops.qa import (
     cargo_executable_name,
     force_publication_target,
@@ -11,6 +12,8 @@ from ops.qa import (
 
 def test_publication_writer_command_rust_selector_uses_file_targets_force_metrics() -> None:
     from ops.qa import RUST_SELECTOR_PUBLISH_ARTIFACTS, publication_writer_command
+
+    assert python.__name__ == "python"
 
     artifact = next(iter(RUST_SELECTOR_PUBLISH_ARTIFACTS))
     cmd = publication_writer_command("rust", Path("/tmp/repo"), artifact, jobs=2)

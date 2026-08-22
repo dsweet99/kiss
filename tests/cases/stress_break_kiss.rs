@@ -4,10 +4,14 @@ use kiss::py_metrics::{compute_file_metrics, compute_function_metrics};
 use std::fmt::Write as _;
 use std::io::Write;
 
-pub fn parse(code: &str) -> kiss::ParsedFile {
+pub fn parse_result(code: &str) -> Result<kiss::ParsedFile, kiss::ParseError> {
     let mut tmp = tempfile::NamedTempFile::with_suffix(".py").unwrap();
     write!(tmp, "{code}").unwrap();
-    parse_file(&mut create_parser().unwrap(), tmp.path()).unwrap()
+    parse_file(&mut create_parser().unwrap(), tmp.path())
+}
+
+pub fn parse(code: &str) -> kiss::ParsedFile {
+    parse_result(code).unwrap()
 }
 
 fn get_func_node(p: &kiss::ParsedFile) -> tree_sitter::Node<'_> {
@@ -17,61 +21,28 @@ fn get_func_node(p: &kiss::ParsedFile) -> tree_sitter::Node<'_> {
 #[test]
 fn h1_syntax_error_in_function_body_still_produces_metrics() {
     let code = "def foo():\n    x = 1\n    if True\n        y = 2\n    return x, y\n";
-    let p = parse(code);
-    let root = p.tree.root_node();
-
-    let has_error = has_error_node(root);
     assert!(
-        has_error,
-        "Expected tree-sitter to produce ERROR nodes for broken syntax"
+        parse_result(code).is_err(),
+        "syntax errors must fail parse instead of producing metrics"
     );
-
-    let func = get_func_node(&p);
-    let m = compute_function_metrics(func, &p.source);
-
-    assert!(m.statements >= 1, "Should have at least 1 statement");
 }
 
 #[test]
 fn h1_error_node_in_return_corrupts_return_value_count() {
     let code = "def foo():\n    return (a b)\n";
-    let p = parse(code);
-
-    let has_error = has_error_node(p.tree.root_node());
-    assert!(has_error, "Expected ERROR node for `return (a b)`");
-
-    let func = get_func_node(&p);
-    let m = compute_function_metrics(func, &p.source);
     assert!(
-        m.has_error,
-        "function with syntax error in return should set has_error"
+        parse_result(code).is_err(),
+        "syntax errors in return expressions must fail parse"
     );
 }
 
 #[test]
 fn h1_unclosed_string_corrupts_entire_function() {
     let code = "def foo():\n    x = '''\n    y = 1\n    return y\n\ndef bar():\n    return 1\n";
-    let p = parse(code);
-    let fm = compute_file_metrics(&p);
-
     assert!(
-        fm.functions >= 1,
-        "should parse at least one function despite unclosed string, functions={}",
-        fm.functions
+        parse_result(code).is_err(),
+        "unclosed strings must fail parse rather than yield partial file metrics"
     );
-}
-
-fn has_error_node(node: tree_sitter::Node) -> bool {
-    if node.is_error() || node.is_missing() {
-        return true;
-    }
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if has_error_node(child) {
-            return true;
-        }
-    }
-    false
 }
 
 #[test]

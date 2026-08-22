@@ -2,10 +2,12 @@ import json
 import os
 from pathlib import Path
 
+import python
 from ops.qa import sample_phase_flags, sample_phase_flags_with_repo
 
 
 def test_sample_phase_flags_llvm_cov_nextest_parent_is_not_test_execution() -> None:
+    assert python.__name__ == "python"
 
     command = (
         "/home/user/.cargo/bin/cargo-llvm-cov llvm-cov nextest "

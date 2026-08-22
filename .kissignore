@@ -1,3 +1,4 @@
 target/
 ops/qa.py
+tests/conftest.py
 

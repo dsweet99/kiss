@@ -192,6 +192,14 @@ fn resolve_python_test_file_path_is_direct_only() {
 fn resolve_rust_test_file_path_is_direct_only() {
     let tmp = tempdir().unwrap();
     init_git_repo(tmp.path());
+    fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    let src = tmp.path().join("src");
+    fs::create_dir_all(&src).unwrap();
+    fs::write(src.join("lib.rs"), "").unwrap();
     let tests = tmp.path().join("tests");
     fs::create_dir_all(&tests).unwrap();
     fs::write(tests.join("smoke.rs"), "#[test]\nfn case_one() {}\n").unwrap();
@@ -208,6 +216,80 @@ fn resolve_rust_test_file_path_is_direct_only() {
         query.rust_files.is_empty(),
         "rust test-file path must not be a coverage source"
     );
+}
+
+#[test]
+fn resolve_mixed_file_test_only_helper_is_not_coverage_target() {
+    let tmp = tempdir().unwrap();
+    init_git_repo(tmp.path());
+    fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    let src = tmp.path().join("src");
+    fs::create_dir_all(&src).unwrap();
+    fs::write(
+        src.join("lib.rs"),
+        "pub fn prod() {}\n#[cfg(test)]\nmod tests {\n    fn helper() {}\n    #[test]\n    fn t() {}\n}\n",
+    )
+    .unwrap();
+
+    let helper = resolve_target_operands(
+        tmp.path(),
+        &["src/lib.rs::helper".into()],
+        Some(Language::Rust),
+        &[],
+        &[],
+    )
+    .unwrap();
+    assert!(
+        helper.rust_lines.is_empty() && helper.rust_files.is_empty(),
+        "test-only helper must not become a production coverage target, got {:?}",
+        helper.rust_lines
+    );
+
+    let prod = resolve_target_operands(
+        tmp.path(),
+        &["src/lib.rs::prod".into()],
+        Some(Language::Rust),
+        &[],
+        &[],
+    )
+    .unwrap();
+    assert!(
+        !prod.rust_lines.is_empty(),
+        "production symbol must remain a coverage target"
+    );
+}
+
+#[test]
+fn resolve_ignored_rust_test_remains_explicit_selector() {
+    let tmp = tempdir().unwrap();
+    init_git_repo(tmp.path());
+    fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    let src = tmp.path().join("src");
+    fs::create_dir_all(&src).unwrap();
+    fs::write(src.join("lib.rs"), "#[test]\n#[ignore]\nfn skipped() {}\n").unwrap();
+    let query = resolve_target_operands(
+        tmp.path(),
+        &["src/lib.rs::skipped".into()],
+        Some(Language::Rust),
+        &[],
+        &[],
+    )
+    .unwrap();
+    assert!(
+        query.direct_rust.iter().any(|s| s.contains("skipped")),
+        "ignored #[test] must remain an explicit selector, got {:?}",
+        query.direct_rust
+    );
+    assert!(query.rust_files.is_empty());
+    assert!(query.rust_lines.is_empty());
 }
 
 #[test]

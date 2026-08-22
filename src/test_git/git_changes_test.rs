@@ -75,6 +75,15 @@ fn diff_includes_deleted_tracked_file() {
 }
 
 #[test]
+fn resolve_changed_includes_missing_deleted_python_path() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    let rel = vec!["src/gone.py".to_string()];
+    let out = resolve_changed_source_paths(&root, &rel, &[], Some(TestLangFilter::Python));
+    assert_eq!(out, vec![root.join("src/gone.py")]);
+}
+
+#[test]
 fn resolve_changed_includes_missing_deleted_rust_path() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path().canonicalize().unwrap();
@@ -121,12 +130,21 @@ fn resolve_changed_skips_dir_prefix_ignore() {
 }
 
 #[test]
-fn resolve_changed_skips_missing_file() {
+fn resolve_changed_keeps_missing_python_path() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path().canonicalize().unwrap();
     let rel = vec!["nope.py".to_string()];
     let out = resolve_changed_source_paths(&root, &rel, &[], None);
-    assert!(out.is_empty());
+    assert_eq!(out, vec![root.join("nope.py")]);
+}
+
+#[test]
+fn resolve_changed_skips_missing_file() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    let rel = vec!["nope.rs".to_string()];
+    let out = resolve_changed_source_paths(&root, &rel, &[], None);
+    assert_eq!(out, vec![root.join("nope.rs")]);
 }
 
 #[test]

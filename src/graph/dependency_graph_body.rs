@@ -1,8 +1,11 @@
+use crate::code_roles::FileComposition;
+
 pub struct DependencyGraph {
     pub graph: DiGraph<String, ()>,
     pub nodes: HashMap<String, NodeIndex>,
     pub paths: HashMap<String, PathBuf>,
     pub path_to_module: HashMap<PathBuf, String>,
+    pub compositions: HashMap<String, FileComposition>,
 }
 
 #[derive(Debug, Default)]
@@ -25,6 +28,7 @@ impl DependencyGraph {
             nodes: HashMap::new(),
             paths: HashMap::new(),
             path_to_module: HashMap::new(),
+            compositions: HashMap::new(),
         }
     }
 
@@ -112,14 +116,15 @@ impl DependencyGraph {
         self.path_to_module.get(path).cloned()
     }
 
+    #[cfg(test)]
     pub fn test_importers_of(&self, module: &str) -> Vec<String> {
         let Some(&idx) = self.nodes.get(module) else {
             return Vec::new();
         };
         self.graph
-            .neighbors_directed(idx, Direction::Incoming)
+            .neighbors_directed(idx, petgraph::Direction::Incoming)
             .map(|i| self.graph[i].clone())
-            .filter(|m| is_test_module(self, m))
+            .filter(|m| self.compositions.get(m) == Some(&FileComposition::TestOnly))
             .collect()
     }
 
@@ -138,15 +143,6 @@ impl Default for DependencyGraph {
         Self::new()
     }
 }
-
-pub(crate) fn is_test_module(graph: &DependencyGraph, module_name: &str) -> bool {
-    let Some(p) = graph.paths.get(module_name) else {
-        return false;
-    };
-    p.components()
-        .any(|c| c.as_os_str() == OsStr::new("tests") || c.as_os_str() == OsStr::new("test"))
-}
-
 
 pub(crate) fn file_stem_str(path: &Path) -> &str {
     path.file_stem()
@@ -206,19 +202,13 @@ pub(crate) fn bare_module_name(path: &Path) -> String {
 }
 pub fn is_entry_point(name: &str) -> bool {
     let bare = name.rsplit('.').next().unwrap_or(name);
-    if name == "tests" || name.starts_with("tests.") || name.contains(".tests.") {
-        return true;
-    }
     if name == "bin" || name.starts_with("bin.") || name.contains(".bin.") {
         return true;
     }
     matches!(
         bare,
-        "main" | "lib" | "build" | "__main__" | "__init__" | "tests" | "conftest" | "setup"
-    ) || bare.starts_with("test_")
-        || bare.ends_with("_test")
-        || bare.contains("_integration")
-        || bare.contains("_bench")
+        "main" | "lib" | "build" | "__main__" | "__init__" | "setup"
+    )
 }
 pub(crate) fn is_orphan(fan_in: usize, fan_out: usize, module_name: &str) -> bool {
     fan_in == 0 && fan_out == 0 && !is_entry_point(module_name)

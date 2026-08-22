@@ -51,4 +51,5 @@ fn load_top_compatible_cache(
 }
 
 #[cfg(test)]
+#[path = "stats_top_tests.rs"]
 mod tests;

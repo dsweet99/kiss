@@ -18,10 +18,13 @@ use rust_llvm_cov_runner::{
     KissProfrawProcessGuard, discover_repo_root, redirect_this_process, sweep_kiss_profraw_dir,
 };
 
+#[doc = "kiss-coverage-off"]
 fn main() {
     std::process::exit(run_kiss_main());
 }
 
+#[doc = "kiss-coverage-off"]
+#[inline(never)]
 fn run_kiss_main() -> i32 {
     let t0 = std::time::Instant::now();
     set_sigpipe_default();
@@ -50,5 +53,14 @@ pub(crate) mod cwd_test_lock {
         MUTEX
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
+#[cfg(test)]
+mod run_kiss_main_test {
+    #[test]
+    fn run_kiss_main_rules_exits_zero() {
+        let _lock = super::cwd_test_lock::lock();
+        assert_eq!(super::run_kiss_main(), 0);
     }
 }

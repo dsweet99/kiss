@@ -52,12 +52,23 @@ pub fn create_parser() -> Result<Parser, ParseError> {
 pub fn parse_file(parser: &mut Parser, path: &Path) -> Result<ParsedFile, ParseError> {
     let source = std::fs::read_to_string(path)?;
     let tree = parser.parse(&source, None).ok_or(ParseError::ParseFailed)?;
+    if python_tree_has_error(tree.root_node()) {
+        return Err(ParseError::ParseFailed);
+    }
 
     Ok(ParsedFile {
         path: path.to_path_buf(),
         source,
         tree,
     })
+}
+
+fn python_tree_has_error(node: tree_sitter::Node<'_>) -> bool {
+    if node.is_error() || node.is_missing() {
+        return true;
+    }
+    let mut cursor = node.walk();
+    node.children(&mut cursor).any(python_tree_has_error)
 }
 
 pub fn parse_files(paths: &[PathBuf]) -> Result<Vec<Result<ParsedFile, ParseError>>, ParseError> {

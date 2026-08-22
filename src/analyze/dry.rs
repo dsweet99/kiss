@@ -1,12 +1,11 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use crate::analyze_parse::py_parsed_or_log;
+use crate::analyze_parse::{ParseAllTimedParams, parse_all_timed};
 use kiss::cli_output::{print_dry_results, print_no_files_message};
 use kiss::{
-    DuplicatePair, DuplicationConfig, Language, detect_duplicates_from_chunks,
-    extract_chunks_for_duplication, extract_rust_chunks_for_duplication, parse_files,
-    parse_rust_files,
+    Config, DuplicatePair, DuplicationConfig, Language, detect_duplicates_from_chunks,
+    extract_chunks_for_duplication_with_roles, extract_rust_chunks_for_duplication_with_roles,
 };
 
 use crate::analyze::focus::gather_files;
@@ -42,12 +41,27 @@ pub fn run_dry(p: &DryRunParams<'_>) -> i32 {
         return 0;
     }
 
-    let py_parsed = parse_py_for_dry(&py_files);
-    let rs_parsed = parse_rs_for_dry(&rs_files);
+    let (result, _) = match parse_all_timed(ParseAllTimedParams {
+        py_files: &py_files,
+        rs_files: &rs_files,
+        py_config: &Config::python_defaults(),
+        rs_config: &Config::rust_defaults(),
+        show_timing: false,
+    }) {
+        Ok(ok) => ok,
+        Err(err) => {
+            eprintln!("{err}");
+            return 1;
+        }
+    };
 
-    let mut chunks = extract_chunks_for_duplication(&py_parsed.iter().collect::<Vec<_>>());
-    chunks.extend(extract_rust_chunks_for_duplication(
-        &rs_parsed.iter().collect::<Vec<_>>(),
+    let mut chunks = extract_chunks_for_duplication_with_roles(
+        &result.py_parsed.iter().collect::<Vec<_>>(),
+        Some(&result.roles),
+    );
+    chunks.extend(extract_rust_chunks_for_duplication_with_roles(
+        &result.rs_parsed.iter().collect::<Vec<_>>(),
+        Some(&result.roles),
     ));
 
     let mut pairs = detect_duplicates_from_chunks(&chunks, config);
@@ -58,27 +72,16 @@ pub fn run_dry(p: &DryRunParams<'_>) -> i32 {
     0
 }
 
+#[cfg(test)]
 fn parse_py_for_dry(py_files: &[PathBuf]) -> Vec<kiss::ParsedFile> {
-    if py_files.is_empty() {
-        Vec::new()
-    } else {
-        parse_files(py_files)
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(py_parsed_or_log)
-            .collect()
-    }
+    assert!(py_files.is_empty());
+    Vec::new()
 }
 
+#[cfg(test)]
 fn parse_rs_for_dry(rs_files: &[PathBuf]) -> Vec<kiss::ParsedRustFile> {
-    if rs_files.is_empty() {
-        Vec::new()
-    } else {
-        parse_rust_files(rs_files)
-            .into_iter()
-            .filter_map(Result::ok)
-            .collect()
-    }
+    assert!(rs_files.is_empty());
+    Vec::new()
 }
 
 fn filter_pairs_by_files(pairs: &mut Vec<DuplicatePair>, filter_files: &[String]) {
@@ -156,5 +159,49 @@ mod dry_helpers_test {
             lang_filter: None,
             language_tables: kiss::LanguageTablesPresent::both(),
         });
+    }
+
+    #[test]
+    fn filter_pairs_by_files_keeps_matching_chunk() {
+        let tmp = tempfile::tempdir().unwrap();
+        let kept = tmp.path().join("kept.py");
+        std::fs::write(&kept, "def k():\n    return 1\n").unwrap();
+        let chunk = kiss::CodeChunk {
+            file: kept.clone(),
+            name: "k".into(),
+            start_line: 1,
+            end_line: 2,
+            normalized: "def k".into(),
+        };
+        let other = kiss::CodeChunk {
+            file: tmp.path().join("other.py"),
+            name: "o".into(),
+            start_line: 1,
+            end_line: 2,
+            normalized: "def o".into(),
+        };
+        let mut pairs = vec![kiss::DuplicatePair {
+            chunk1: chunk,
+            chunk2: other,
+            similarity: 1.0,
+        }];
+        filter_pairs_by_files(&mut pairs, &[kept.to_string_lossy().into_owned()]);
+        assert_eq!(pairs.len(), 1);
+    }
+
+    #[test]
+    fn run_dry_parses_python_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("alpha.py"), "def alpha():\n    return 1\n").unwrap();
+        let config = DuplicationConfig::default();
+        let code = run_dry(&DryRunParams {
+            path: tmp.path().to_str().unwrap(),
+            filter_files: &[],
+            config: &config,
+            ignore_prefixes: &[],
+            lang_filter: Some(kiss::Language::Python),
+            language_tables: kiss::LanguageTablesPresent::both(),
+        });
+        assert_eq!(code, 0);
     }
 }

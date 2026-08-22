@@ -159,6 +159,18 @@ mod tests {
     }
 
     #[test]
+    fn seed_binary_ids_for_empty_objects_is_empty() {
+        let tools = ExportTools {
+            llvm_profdata: PathBuf::from("llvm-profdata"),
+            llvm_cov: PathBuf::from("llvm-cov"),
+            llvm_readobj: PathBuf::from("llvm-readobj"),
+        };
+        let map = BinaryIdObjectMap::default();
+        let ids = seed_binary_ids_for_objects(&tools, &map, &[]).unwrap();
+        assert!(ids.is_empty());
+    }
+
+    #[test]
     fn filter_pool_inputs_passthrough_when_seed_ids_empty() {
         let tools = ExportTools {
             llvm_profdata: PathBuf::from("llvm-profdata"),

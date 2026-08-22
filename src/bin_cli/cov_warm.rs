@@ -6,7 +6,7 @@ use crate::analyze::cov_records_cache::{
     CovRecordsCacheKey, store_cov_records, try_load_cov_records,
 };
 use crate::analyze::gather_files;
-use crate::analyze::line_coverage::compute_line_coverage_records;
+use crate::analyze::line_coverage::{CoverageSourceFacts, compute_line_coverage_records};
 use crate::bin_cli::util::merge_check_ignore_prefixes;
 use crate::test_runner::check_line_coverage::{
     RequiredCoverageLanguages, load_check_runtime_coverage, repository_root_for_universe,
@@ -82,7 +82,13 @@ fn warm_cov_caches_after_tests_inner(
     else {
         return;
     };
-    let records = compute_line_coverage_records(&repo_root, &py_files, &rs_files, &snapshot);
+    let records = match CoverageSourceFacts::from_files(&py_files, &rs_files) {
+        Ok(facts) => compute_line_coverage_records(&repo_root, &facts, &snapshot),
+        Err(err) => {
+            eprintln!("{err}");
+            return;
+        }
+    };
     store_cov_records(&cache_key, &records);
 }
 

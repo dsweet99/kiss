@@ -1,6 +1,9 @@
+use std::path::Path;
+
 use syn::visit::Visit;
 use syn::{Block, Expr, Pat, Stmt};
 
+use crate::code_roles::{SourceRoleIndex, skip_syn};
 use crate::rust_parsing::ParsedRustFile;
 
 #[cfg(test)]
@@ -38,47 +41,94 @@ pub struct RustFileMetrics {
 
 #[must_use]
 pub fn compute_rust_file_metrics(parsed: &ParsedRustFile) -> RustFileMetrics {
+    compute_rust_file_metrics_with_roles(parsed, None)
+}
+
+#[must_use]
+pub fn compute_rust_file_metrics_with_roles(
+    parsed: &ParsedRustFile,
+    roles: Option<&SourceRoleIndex>,
+) -> RustFileMetrics {
     let mut metrics = RustFileMetrics::default();
-    accumulate_rust_file_metrics_from_items(&parsed.ast.items, &mut metrics);
+    accumulate_rust_file_metrics_from_items(&parsed.path, &parsed.ast.items, &mut metrics, roles);
     metrics
 }
 
-fn accumulate_rust_file_metrics_from_items(items: &[syn::Item], out: &mut RustFileMetrics) {
+fn accumulate_rust_file_metrics_from_items(
+    path: &Path,
+    items: &[syn::Item],
+    out: &mut RustFileMetrics,
+    roles: Option<&SourceRoleIndex>,
+) {
     for item in items {
-        match item {
-            syn::Item::Trait(_) => out.interface_types += 1,
-            syn::Item::Struct(_) | syn::Item::Enum(_) | syn::Item::Union(_) => {
-                add_concrete_type(out)
-            }
-            syn::Item::Use(u) if matches!(u.vis, syn::Visibility::Inherited) => {
-                add_import_names(out, &u.tree)
-            }
-            syn::Item::Fn(f) => {
-                out.functions += 1;
-                let mut visitor = FunctionMetricsVisitor::default();
-                visitor.visit_block(&f.block);
-                out.statements += visitor.statements;
-            }
-            syn::Item::Impl(imp) => {
-                for impl_item in &imp.items {
-                    if let syn::ImplItem::Fn(f) = impl_item {
-                        out.functions += 1;
-                        let mut visitor = FunctionMetricsVisitor::default();
-                        visitor.visit_block(&f.block);
-                        out.statements += visitor.statements;
-                    }
-                }
-            }
-            syn::Item::Mod(m) => {
-                if !is_cfg_test_mod(m)
-                    && let Some((_, nested_items)) = &m.content
-                {
-                    accumulate_rust_file_metrics_from_items(nested_items, out);
-                }
-            }
-            _ => {}
+        if skip_syn(roles, path, item) {
+            continue;
         }
+        accumulate_item(path, item, out, roles);
     }
+}
+
+fn accumulate_item(
+    path: &Path,
+    item: &syn::Item,
+    out: &mut RustFileMetrics,
+    roles: Option<&SourceRoleIndex>,
+) {
+    match item {
+        syn::Item::Trait(_) => out.interface_types += 1,
+        syn::Item::Struct(_) | syn::Item::Enum(_) | syn::Item::Union(_) => add_concrete_type(out),
+        syn::Item::Use(u) => {
+            if matches!(u.vis, syn::Visibility::Inherited) {
+                add_import_names(out, &u.tree);
+            }
+        }
+        syn::Item::Fn(f) => {
+            out.functions += 1;
+            out.statements += stmt_count(path, &f.block, roles);
+        }
+        syn::Item::Impl(imp) => add_impl_fn_metrics(path, imp, out, roles),
+        syn::Item::Mod(m) => add_mod_metrics(path, m, out, roles),
+        _ => {}
+    }
+}
+
+fn add_impl_fn_metrics(
+    path: &Path,
+    imp: &syn::ItemImpl,
+    out: &mut RustFileMetrics,
+    roles: Option<&SourceRoleIndex>,
+) {
+    for impl_item in &imp.items {
+        let syn::ImplItem::Fn(func) = impl_item else {
+            continue;
+        };
+        if skip_syn(roles, path, func) {
+            continue;
+        }
+        out.functions += 1;
+        out.statements += stmt_count(path, &func.block, roles);
+    }
+}
+
+fn add_mod_metrics(
+    path: &Path,
+    module: &syn::ItemMod,
+    out: &mut RustFileMetrics,
+    roles: Option<&SourceRoleIndex>,
+) {
+    if let Some((_, nested_items)) = &module.content {
+        accumulate_rust_file_metrics_from_items(path, nested_items, out, roles);
+    }
+}
+
+fn stmt_count(path: &Path, block: &Block, roles: Option<&SourceRoleIndex>) -> usize {
+    let mut visitor = FunctionMetricsVisitor {
+        path: Some(path),
+        roles,
+        ..FunctionMetricsVisitor::default()
+    };
+    visitor.visit_block(block);
+    visitor.statements
 }
 
 fn add_concrete_type(out: &mut RustFileMetrics) {
@@ -87,52 +137,6 @@ fn add_concrete_type(out: &mut RustFileMetrics) {
 
 fn add_import_names(out: &mut RustFileMetrics, tree: &syn::UseTree) {
     out.imports += count_use_names(tree);
-}
-
-pub fn is_cfg_test_mod(m: &syn::ItemMod) -> bool {
-    m.attrs.iter().any(|attr| {
-        if !attr.path().is_ident("cfg") {
-            return false;
-        }
-        attr.parse_args::<proc_macro2::TokenStream>()
-            .map(|ts| contains_test_ident(ts, false))
-            .unwrap_or(false)
-    })
-}
-
-fn contains_test_ident(tokens: proc_macro2::TokenStream, negated: bool) -> bool {
-    use proc_macro2::TokenTree;
-    let mut iter = tokens.into_iter();
-    while let Some(tt) = iter.next() {
-        match &tt {
-            TokenTree::Ident(id) if *id == "test" => {
-                if !negated {
-                    return true;
-                }
-            }
-            TokenTree::Ident(id) if *id == "not" => {
-                if let Some(TokenTree::Group(g)) = iter.next()
-                    && contains_test_ident(g.stream(), !negated)
-                {
-                    return true;
-                }
-            }
-            TokenTree::Ident(id) if *id == "all" || *id == "any" => {
-                if let Some(TokenTree::Group(g)) = iter.next()
-                    && contains_test_ident(g.stream(), negated)
-                {
-                    return true;
-                }
-            }
-            TokenTree::Group(g) => {
-                if contains_test_ident(g.stream(), negated) {
-                    return true;
-                }
-            }
-            _ => {}
-        }
-    }
-    false
 }
 
 #[must_use]
@@ -154,11 +158,25 @@ pub fn compute_rust_function_metrics(
     block: &Block,
     attr_count: usize,
 ) -> RustFunctionMetrics {
+    compute_rust_function_metrics_with_roles(inputs, block, attr_count, None, None)
+}
+
+pub fn compute_rust_function_metrics_with_roles(
+    inputs: &syn::punctuated::Punctuated<syn::FnArg, syn::token::Comma>,
+    block: &Block,
+    attr_count: usize,
+    path: Option<&Path>,
+    roles: Option<&SourceRoleIndex>,
+) -> RustFunctionMetrics {
     let mut metrics = RustFunctionMetrics::default();
 
     let non_self_args: Vec<_> = inputs
         .iter()
         .filter(|arg| !matches!(arg, syn::FnArg::Receiver(_)))
+        .filter(|arg| match (path, roles, arg) {
+            (Some(path), Some(roles), syn::FnArg::Typed(pat)) => !skip_syn(Some(roles), path, pat),
+            _ => true,
+        })
         .collect();
     metrics.arguments = non_self_args.len();
     metrics.bool_parameters = non_self_args
@@ -167,7 +185,11 @@ pub fn compute_rust_function_metrics(
         .count();
     metrics.attributes = attr_count;
 
-    let mut visitor = FunctionMetricsVisitor::default();
+    let mut visitor = FunctionMetricsVisitor {
+        path,
+        roles,
+        ..FunctionMetricsVisitor::default()
+    };
     visitor.visit_block(block);
 
     metrics.statements = visitor.statements;
@@ -186,7 +208,7 @@ pub(crate) fn is_bool_param(arg: &syn::FnArg) -> bool {
 }
 
 #[derive(Default)]
-pub struct FunctionMetricsVisitor {
+pub struct FunctionMetricsVisitor<'a> {
     pub statements: usize,
     pub max_depth: usize,
     pub current_depth: usize,
@@ -196,9 +218,11 @@ pub struct FunctionMetricsVisitor {
     pub max_closure_depth: usize,
     pub current_closure_depth: usize,
     pub calls: usize,
+    path: Option<&'a Path>,
+    roles: Option<&'a SourceRoleIndex>,
 }
 
-impl FunctionMetricsVisitor {
+impl FunctionMetricsVisitor<'_> {
     pub fn enter_block(&mut self) {
         self.current_depth += 1;
         self.max_depth = self.max_depth.max(self.current_depth);
@@ -232,8 +256,13 @@ impl FunctionMetricsVisitor {
     }
 }
 
-impl<'ast> Visit<'ast> for FunctionMetricsVisitor {
+impl<'ast> Visit<'ast> for FunctionMetricsVisitor<'_> {
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+        if let (Some(path), Some(roles)) = (self.path, self.roles)
+            && skip_syn(Some(roles), path, stmt)
+        {
+            return;
+        }
         let is_use_item = matches!(stmt, Stmt::Item(syn::Item::Use(_)));
 
         let is_inner_fn = matches!(stmt, Stmt::Item(syn::Item::Fn(_)));
@@ -255,7 +284,7 @@ impl<'ast> Visit<'ast> for FunctionMetricsVisitor {
     }
 }
 
-impl FunctionMetricsVisitor {
+impl FunctionMetricsVisitor<'_> {
     fn on_enter_expr(&mut self, expr: &Expr) {
         match expr {
             Expr::If(_) => {
@@ -263,7 +292,11 @@ impl FunctionMetricsVisitor {
                 self.enter_block();
             }
             Expr::Match(m) => {
-                self.branches += m.arms.len();
+                let arms = m.arms.iter().filter(|arm| match (self.path, self.roles) {
+                    (Some(path), Some(roles)) => !skip_syn(Some(roles), path, *arm),
+                    _ => true,
+                });
+                self.branches += arms.count();
                 self.enter_block();
             }
             Expr::While(_) | Expr::ForLoop(_) | Expr::Loop(_) => self.enter_block(),

@@ -233,18 +233,47 @@ fn test_count_use_names() {
     );
 }
 
+pub(super) fn classified_file_metrics(
+    parsed: &crate::rust_parsing::ParsedRustFile,
+) -> RustFileMetrics {
+    let roles = crate::code_roles::build_source_role_index(
+        &[],
+        std::slice::from_ref(parsed),
+        &[],
+        std::slice::from_ref(&parsed.path),
+    )
+    .unwrap();
+    compute_rust_file_metrics_with_roles(parsed, Some(&roles))
+}
+
+pub(super) fn mod_is_test_only(code: &str) -> bool {
+    use crate::code_roles::{CodeRole, SourceSpan};
+    let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+    writeln!(tmp, "{code}").unwrap();
+    let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
+    let roles = crate::code_roles::build_source_role_index(
+        &[],
+        std::slice::from_ref(&parsed),
+        &[],
+        std::slice::from_ref(&parsed.path),
+    )
+    .unwrap();
+    let syn::Item::Mod(module) = &parsed.ast.items[0] else {
+        panic!("expected mod");
+    };
+    roles.role_for_span(&parsed.path, SourceSpan::of_syn(module)) == CodeRole::TestOnly
+}
+
 #[test]
 fn cfg_test_detection_handles_nested_boolean_forms() {
-    let positive: syn::ItemMod =
-        syn::parse_str("#[cfg(any(feature = \"x\", all(test)))] mod m {}").unwrap();
-    assert!(is_cfg_test_mod(&positive));
-
-    let negative: syn::ItemMod =
-        syn::parse_str("#[cfg(all(not(test), feature = \"x\"))] mod m {}").unwrap();
-    assert!(!is_cfg_test_mod(&negative));
-
-    let double_negative: syn::ItemMod = syn::parse_str("#[cfg(not(not(test)))] mod m {}").unwrap();
-    assert!(is_cfg_test_mod(&double_negative));
+    assert!(mod_is_test_only("#[cfg(any(all(test)))] mod m {}"));
+    assert!(!mod_is_test_only(
+        r#"#[cfg(all(not(test), feature = "x"))] mod m {}"#
+    ));
+    assert!(mod_is_test_only("#[cfg(not(not(test)))] mod m {}"));
+    assert!(!mod_is_test_only(
+        r#"#[cfg(any(feature = "x", all(test)))] mod m {}"#
+    ));
 }
 
 #[test]
@@ -308,7 +337,7 @@ fn file_metrics_count_traits_concrete_types_and_nested_non_test_modules() {
     )
     .unwrap();
     let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
-    let metrics = compute_rust_file_metrics(&parsed);
+    let metrics = classified_file_metrics(&parsed);
 
     assert_eq!(metrics.interface_types, 1);
     assert_eq!(metrics.concrete_types, 3);
@@ -341,7 +370,12 @@ fn accumulate_file_metrics_visits_each_top_level_item_kind_directly() {
     .unwrap();
     let mut metrics = RustFileMetrics::default();
 
-    accumulate_rust_file_metrics_from_items(&file.items, &mut metrics);
+    accumulate_rust_file_metrics_from_items(
+        std::path::Path::new("t.rs"),
+        &file.items,
+        &mut metrics,
+        None,
+    );
 
     assert_eq!(metrics.interface_types, 1);
     assert_eq!(metrics.concrete_types, 3);

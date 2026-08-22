@@ -85,4 +85,3 @@ pub(crate) fn config_key_for(metric_id: &str) -> Option<&'static str> {
         .or_else(|| config_key_for_file(metric_id))
         .or_else(|| config_key_for_graph(metric_id))
 }
-

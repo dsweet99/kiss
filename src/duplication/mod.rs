@@ -14,7 +14,8 @@ mod tests;
 pub use crate::minhash::MinHashSignature;
 pub use clustering::{DuplicateCluster, cluster_duplicates};
 pub use extraction::{
-    CodeChunk, extract_chunks_for_duplication, extract_rust_chunks_for_duplication,
+    CodeChunk, extract_chunks_for_duplication, extract_chunks_for_duplication_with_roles,
+    extract_rust_chunks_for_duplication, extract_rust_chunks_for_duplication_with_roles,
 };
 
 pub struct DuplicationConfig {

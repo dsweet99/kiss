@@ -2,6 +2,7 @@ use std::path::Path;
 
 pub use kiss::reject_unconfigured_languages;
 
+#[doc = "kiss-coverage-off"]
 #[cfg(unix)]
 pub fn set_sigpipe_default() {
     unsafe {
@@ -9,6 +10,7 @@ pub fn set_sigpipe_default() {
     }
 }
 
+#[doc = "kiss-coverage-off"]
 #[cfg(not(unix))]
 pub fn set_sigpipe_default() {}
 
@@ -59,5 +61,10 @@ mod tests {
     fn merge_check_ignore_prefixes_preserves_user_prefixes() {
         let merged = merge_check_ignore_prefixes(&["custom/".to_string()]);
         assert_eq!(merged, vec!["fake_", "fixtures", "custom"]);
+    }
+
+    #[test]
+    fn validate_paths_accepts_existing_dot() {
+        super::validate_paths(&[".".to_string()]);
     }
 }

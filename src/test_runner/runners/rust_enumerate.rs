@@ -7,7 +7,7 @@ use rust_llvm_cov_runner::repo_relative_path;
 use crate::test_runner::lang_rust::workspace::{
     cargo_workspace_member_manifest_dirs, is_workspace_rust_selector_file_cached,
 };
-use kiss::rust_test_functions_in;
+use crate::test_runner::targets::rust_direct_test_selectors;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ParseErrorPolicy {
@@ -115,19 +115,13 @@ fn selectors_in_rust_file(path: &Path) -> Result<(PathBuf, Vec<String>), String>
     if !source_may_contain_rust_test_attr(&source) {
         return Ok((path.to_path_buf(), Vec::new()));
     }
-    let ast = syn::parse_file(&source).map_err(|e| {
+    let selectors = rust_direct_test_selectors(path).map_err(|e| {
         format!(
             "error: kiss test: failed to parse Rust workspace file {}: {e}",
             path.display()
         )
     })?;
-    let pf = kiss::ParsedRustFile {
-        path: path.to_path_buf(),
-        source,
-        ast,
-    };
-    let selectors = rust_test_functions_in(&pf);
-    Ok((pf.path, selectors))
+    Ok((path.to_path_buf(), selectors))
 }
 
 fn flatten_parsed_entries(

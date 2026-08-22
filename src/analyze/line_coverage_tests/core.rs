@@ -44,7 +44,7 @@ fn python_coverage_denominator_includes_match_break_continue() {
         "def f(xs):\n    for x in xs:\n        if x:\n            continue\n        break\n    match x:\n        case 1:\n            return 1\n    return 0\n",
     )
     .unwrap();
-    let denom = coverage_denominator_lines(&file).expect("readable python source");
+    let denom = coverage_denominator_lines_for_test(&file).expect("readable python source");
     let source = std::fs::read_to_string(&file).unwrap();
     for (idx, line) in source.lines().enumerate() {
         let n = idx + 1;
@@ -208,7 +208,7 @@ fn rust_coverage_denominator_skips_attribute_and_bare_else_lines() {
              }\n",
     )
     .unwrap();
-    let denom = coverage_denominator_lines(&file).expect("readable rust source");
+    let denom = coverage_denominator_lines_for_test(&file).expect("readable rust source");
     let source = std::fs::read_to_string(&file).unwrap();
     for (idx, line) in source.lines().enumerate() {
         let n = idx + 1;
@@ -239,8 +239,8 @@ fn metamorphic_rust_denominator_attribute_skip_stable_under_spacing() {
         "pub fn f() {\n    #[cfg(unix)]\n    {\n        let x = 1;\n        let _ = x;\n    }\n}\n",
     )
     .unwrap();
-    let da = coverage_denominator_lines(&a).expect("readable rust source");
-    let db = coverage_denominator_lines(&b).expect("readable rust source");
+    let da = coverage_denominator_lines_for_test(&a).expect("readable rust source");
+    let db = coverage_denominator_lines_for_test(&b).expect("readable rust source");
     assert_eq!(da.len(), db.len());
     for lines in [&da, &db] {
         for n in lines {
@@ -267,7 +267,7 @@ fn fuzz_rust_denominator_never_counts_attribute_only_lines() {
         };
         let file = tmp.path().join(format!("f{i}.rs"));
         std::fs::write(&file, format!("pub fn g() {{\n    {body}}}\n")).unwrap();
-        let denom = coverage_denominator_lines(&file).expect("readable rust source");
+        let denom = coverage_denominator_lines_for_test(&file).expect("readable rust source");
         let text = std::fs::read_to_string(&file).unwrap();
         for n in &denom {
             let row = text.lines().nth(n - 1).unwrap().trim();
@@ -295,8 +295,89 @@ fn cfg_test_only_scan_skips_inline_module_items_without_file_targets() {
         covered_lines: BTreeMap::new(),
     };
 
-    let records =
-        compute_line_coverage_records(tmp.path(), &[], std::slice::from_ref(&lib), &snapshot);
+    let records = compute_line_coverage_records_for_test(
+        tmp.path(),
+        &[],
+        std::slice::from_ref(&lib),
+        &snapshot,
+    )
+    .unwrap();
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].file, lib);
+}
+
+#[test]
+fn mixed_file_with_no_production_coverable_lines_emits_zero_over_zero() {
+    let tmp = tempfile::tempdir().unwrap();
+    let lib = tmp.path().join("lib.rs");
+    std::fs::write(
+        &lib,
+        "// production comment\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn t() {}\n}\n",
+    )
+    .unwrap();
+    let snapshot = RuntimeCoverageSnapshot {
+        identity: "id".to_string(),
+        covered_lines: BTreeMap::new(),
+    };
+    let records = compute_line_coverage_records_for_test(
+        tmp.path(),
+        &[],
+        std::slice::from_ref(&lib),
+        &snapshot,
+    )
+    .unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].total_lines, 0);
+    assert_eq!(records[0].covered_lines, 0);
+    assert_eq!(records[0].percent, 100);
+    assert_eq!(records[0].first_uncovered_line, None);
+}
+
+#[test]
+fn binary_entry_point_production_lines_are_coverage_gated() {
+    let tmp = tempfile::tempdir().unwrap();
+    let src = tmp.path().join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[[bin]]\nname = \"demo\"\npath = \"src/main.rs\"\n",
+    )
+    .unwrap();
+    let main = src.join("main.rs");
+    std::fs::write(
+        &main,
+        "fn main() {\n    let x = 1;\n    let y = x + 1;\n}\n",
+    )
+    .unwrap();
+    let snapshot = RuntimeCoverageSnapshot {
+        identity: "id".to_string(),
+        covered_lines: BTreeMap::new(),
+    };
+    let records = compute_line_coverage_records_for_test(
+        tmp.path(),
+        &[],
+        std::slice::from_ref(&main),
+        &snapshot,
+    )
+    .unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].file, main);
+    assert!(
+        records[0].total_lines > 0,
+        "binary entry-point production lines must be coverage-gated"
+    );
+}
+
+#[test]
+fn coverage_path_does_not_use_host_cfg_test() {
+    let src = include_str!("../line_coverage.rs");
+    let cfg = include_str!("../line_coverage_cfg.rs");
+    assert!(
+        !src.contains("cfg!(") && !cfg.contains("cfg!(") && !cfg.contains("std::env::consts::OS"),
+        "coverage path must not classify with host cfg! or target OS"
+    );
+    assert!(
+        !cfg.contains("fn cfg_expr_active"),
+        "coverage path must not retain the leftover cfg evaluator"
+    );
 }

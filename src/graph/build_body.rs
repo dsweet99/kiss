@@ -87,6 +87,73 @@ pub fn build_dependency_graph_from_import_lists(
     graph
 }
 
+pub fn build_python_context_graph(
+    parsed_files: &[&ParsedFile],
+    roles: &crate::code_roles::SourceRoleIndex,
+) -> crate::graph::ContextDependencyGraph {
+    let graph = build_dependency_graph(parsed_files);
+    let mut ctx = crate::graph::ContextDependencyGraph::empty();
+    let pairs: Vec<(String, PathBuf)> = graph
+        .paths
+        .iter()
+        .map(|(module, path)| (module.clone(), path.clone()))
+        .collect();
+    for (module, path) in pairs {
+        ctx.register_module(&module, path, roles);
+    }
+    let mut bare_to_qualified: HashMap<String, Vec<String>> = HashMap::new();
+    for parsed in parsed_files {
+        let qualified = qualified_module_name(&parsed.path);
+        let bare = bare_module_name(&parsed.path);
+        bare_to_qualified
+            .entry(bare)
+            .or_default()
+            .push(qualified);
+    }
+    for parsed in parsed_files {
+        add_python_file_origins(&mut ctx, parsed, roles, &graph, &bare_to_qualified);
+    }
+    ctx
+}
+
+fn add_python_file_origins(
+    ctx: &mut crate::graph::ContextDependencyGraph,
+    parsed: &ParsedFile,
+    roles: &crate::code_roles::SourceRoleIndex,
+    graph: &DependencyGraph,
+    bare_to_qualified: &HashMap<String, Vec<String>>,
+) {
+    let from = qualified_module_name(&parsed.path);
+    let from_parent = from.rsplit_once('.').map(|(parent, _)| parent);
+    let spanned = extract_imports_spanned(parsed.tree.root_node(), &parsed.source);
+    for (import, span) in spanned {
+        let targets = python_import_targets(&import, from_parent, graph, bare_to_qualified);
+        let contexts = crate::code_roles::contexts_for_span(roles, &parsed.path, span);
+        for target in targets {
+            ctx.record_origin(
+                &from,
+                &target,
+                crate::graph::EdgeOrigin {
+                    source_span: span,
+                    contexts,
+                },
+            );
+        }
+    }
+}
+
+fn python_import_targets(
+    import: &str,
+    from_parent: Option<&str>,
+    graph: &DependencyGraph,
+    bare_to_qualified: &HashMap<String, Vec<String>>,
+) -> Vec<String> {
+    if graph.nodes.contains_key(import) {
+        return vec![import.to_string()];
+    }
+    resolve_import(import, from_parent, bare_to_qualified)
+}
+
 pub(crate) fn parent_prefix_match(candidates: &[String], parent: Option<&str>) -> Option<String> {
     let prefix = format!("{}.", parent?);
     let mut hits = candidates.iter().filter(|c| c.starts_with(&prefix));

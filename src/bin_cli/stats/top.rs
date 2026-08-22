@@ -13,10 +13,7 @@ pub struct StatsTopArgs<'a> {
     pub language_tables: kiss::LanguageTablesPresent,
 }
 
-pub fn run_stats_top(args: StatsTopArgs<'_>) {
-    finalize_stats_top_status(run_stats_top_status(args));
-}
-
+#[cfg(test)]
 pub(super) fn finalize_stats_top_status(status: i32) {
     if status == 0 {
         return;
@@ -44,10 +41,19 @@ pub(super) fn run_stats_top_status(args: StatsTopArgs<'_>) -> i32 {
         paths = args.paths.join(", "),
         prov = config_provenance()
     );
-    let py_units = collect_py_units(&py_files);
-    let rs_units = collect_rs_units(&rs_files);
-    let mut all_units = py_units;
-    all_units.extend(rs_units);
+    let all_units = match collect_py_units(&py_files).and_then(|py| {
+        collect_rs_units(&rs_files).map(|rs| {
+            let mut units = py;
+            units.extend(rs);
+            units
+        })
+    }) {
+        Ok(units) => units,
+        Err(err) => {
+            eprintln!("{err}");
+            return 1;
+        }
+    };
     print_all_top_metrics(&all_units, args.n);
     0
 }
@@ -64,79 +70,31 @@ pub(super) fn merge_fresh_items(_py: Option<()>, _rs: Option<()>) -> Option<()> 
 
 #[cfg(test)]
 pub fn collect_all_units(py_files: &[PathBuf], rs_files: &[PathBuf]) -> Vec<kiss::UnitMetrics> {
-    let py_units = collect_py_units(py_files);
-    let rs_units = collect_rs_units(rs_files);
-    let mut units = py_units;
-    units.extend(rs_units);
+    let mut units = collect_py_units(py_files).expect("python stats units");
+    units.extend(collect_rs_units(rs_files).expect("rust stats units"));
     units
 }
 
-fn collect_py_units(py_files: &[PathBuf]) -> Vec<kiss::UnitMetrics> {
-    use kiss::parsing::parse_files;
-    use kiss::{build_dependency_graph, collect_detailed_py};
+fn collect_py_units(py_files: &[PathBuf]) -> Result<Vec<kiss::UnitMetrics>, kiss::RoleBuildError> {
+    use kiss::{build_python_context_graph, collect_detailed_py};
 
-    collect_lang_units(LangCollect {
-        files: py_files,
-
-        parse: |files| {
-            parse_files(files)
-                .unwrap_or_else(|_| Vec::new())
-                .into_iter()
-                .filter_map(Result::ok)
-                .collect()
-        },
-        build_graph: build_dependency_graph,
-        collect_detailed: collect_detailed_py,
-    })
-}
-
-fn collect_rs_units(rs_files: &[PathBuf]) -> Vec<kiss::UnitMetrics> {
-    use kiss::collect_detailed_rs;
-    use kiss::rust_graph::build_rust_dependency_graph;
-    use kiss::rust_parsing::parse_rust_files;
-
-    collect_lang_units(LangCollect {
-        files: rs_files,
-        parse: |files| {
-            parse_rust_files(files)
-                .into_iter()
-                .filter_map(Result::ok)
-                .collect()
-        },
-        build_graph: build_rust_dependency_graph,
-        collect_detailed: collect_detailed_rs,
-    })
-}
-
-struct LangCollect<'a, P, FParse, FBuild, FCollect>
-where
-    FParse: FnOnce(&[PathBuf]) -> Vec<P>,
-    FBuild: FnOnce(&[&P]) -> kiss::DependencyGraph,
-    FCollect: FnOnce(&[&P], Option<&kiss::DependencyGraph>) -> Vec<kiss::UnitMetrics>,
-{
-    files: &'a [PathBuf],
-    parse: FParse,
-    build_graph: FBuild,
-    collect_detailed: FCollect,
-}
-
-fn collect_lang_units<P, FParse, FBuild, FCollect>(
-    args: LangCollect<'_, P, FParse, FBuild, FCollect>,
-) -> Vec<kiss::UnitMetrics>
-where
-    FParse: FnOnce(&[PathBuf]) -> Vec<P>,
-    FBuild: FnOnce(&[&P]) -> kiss::DependencyGraph,
-    FCollect: FnOnce(&[&P], Option<&kiss::DependencyGraph>) -> Vec<kiss::UnitMetrics>,
-{
-    if args.files.is_empty() {
-        return Vec::new();
-    }
-    let parsed = (args.parse)(args.files);
-    let parsed_refs: Vec<&P> = parsed.iter().collect();
-    let graph = (args.build_graph)(&parsed_refs);
-    let mut units = (args.collect_detailed)(&parsed_refs, Some(&graph));
+    let (parsed, roles) = super::load::load_production_python(py_files)?;
+    let refs: Vec<_> = parsed.iter().collect();
+    let graph = build_python_context_graph(&refs, &roles).production_view();
+    let mut units = collect_detailed_py(&refs, Some(&graph));
     append_cycle_units(&mut units, &graph);
-    units
+    Ok(units)
+}
+
+fn collect_rs_units(rs_files: &[PathBuf]) -> Result<Vec<kiss::UnitMetrics>, kiss::RoleBuildError> {
+    use kiss::{build_rust_dependency_graph_with_roles, collect_detailed_rs_with_roles};
+
+    let (parsed, roles) = super::load::load_production_rust(rs_files)?;
+    let refs: Vec<_> = parsed.iter().collect();
+    let graph = build_rust_dependency_graph_with_roles(&refs, Some(&roles));
+    let mut units = collect_detailed_rs_with_roles(&refs, Some(&graph), Some(&roles));
+    append_cycle_units(&mut units, &graph);
+    Ok(units)
 }
 
 pub(super) fn append_cycle_units(

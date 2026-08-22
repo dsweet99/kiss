@@ -374,7 +374,6 @@ fn partition_changed_paths_split() {
     fs::write(&tst, "def test_f(): pass\n").unwrap();
     fs::write(&rust_src, "fn f() {}\n").unwrap();
     fs::write(&rust_inc, "fn included() {}\n").unwrap();
-    fs::write(&cargo, "[package]\n").unwrap();
     fs::write(&rust_test, "#[test]\nfn test_f() {}\n").unwrap();
     let paths = vec![
         lib.clone(),
@@ -384,11 +383,11 @@ fn partition_changed_paths_split() {
         cargo.clone(),
         rust_test.clone(),
     ];
-    let (src, tst_paths) = partition_changed_paths(&paths);
+    let (src, tst_paths) = partition_changed_paths(&paths).unwrap();
     assert!(src.iter().any(|p| p == &lib));
     assert!(src.iter().any(|p| p == &rust_src));
     assert!(src.iter().any(|p| p == &rust_inc));
     assert!(src.iter().any(|p| p == &cargo));
     assert!(tst_paths.iter().any(|p| p == &tst));
-    assert!(tst_paths.iter().any(|p| p == &rust_test));
+    assert!(src.iter().any(|p| p == &rust_test));
 }

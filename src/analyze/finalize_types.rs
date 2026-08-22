@@ -83,6 +83,7 @@ mod finalize_types_touch {
             result: ParseResult {
                 py_parsed: Vec::new(),
                 rs_parsed: Vec::new(),
+                roles: kiss::code_roles::SourceRoleIndex::empty(),
                 violations: Vec::new(),
                 code_unit_count: 0,
                 statement_count: 0,

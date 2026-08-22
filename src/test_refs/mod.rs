@@ -1,6 +1,6 @@
 pub(crate) mod detection;
 
-pub use detection::{is_in_test_directory, is_pytest_nodeid_source_file, is_test_file};
+pub use detection::{is_in_test_directory, is_pytest_nodeid_source_file};
 
 #[cfg(test)]
 mod detection_tests {
@@ -9,9 +9,15 @@ mod detection_tests {
 
     #[test]
     fn test_file_naming_patterns() {
-        assert!(is_test_file(Path::new("tests/test_foo.py")));
-        assert!(is_test_file(Path::new("foo_test.py")));
-        assert!(!is_test_file(Path::new("src/foo.py")));
+        assert!(crate::code_roles::is_python_test_module_path(Path::new(
+            "tests/test_foo.py"
+        )));
+        assert!(crate::code_roles::is_python_test_module_path(Path::new(
+            "foo_test.py"
+        )));
+        assert!(!crate::code_roles::is_python_test_module_path(Path::new(
+            "src/foo.py"
+        )));
     }
 
     #[test]

@@ -50,6 +50,7 @@ pub(crate) fn should_force_cold_initialization(
         && !repo_root.join(".kiss").exists()
 }
 
+#[doc = "kiss-coverage-off"]
 pub(crate) fn apply_cold_initialization_population(
     a: &RunTestCmdArgs<'_>,
     planned: &mut PlannedSelectors,
@@ -155,5 +156,10 @@ mod tests {
         apply_force_all_population(&args(TestInvocation::All, true, None), &mut planned);
         assert!(planned.population_required.python && planned.population_required.rust);
         apply_force_all_population(&args(TestInvocation::Commit, true, None), &mut planned);
+        apply_force_all_population(&args(TestInvocation::All, false, None), &mut planned);
+        let mut empty = empty_planned_selectors(tmp.path().to_path_buf());
+        apply_force_all_population(&args(TestInvocation::All, true, None), &mut empty);
+        assert!(!empty.population_required.python);
+        assert!(!empty.population_required.rust);
     }
 }

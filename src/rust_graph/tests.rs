@@ -316,6 +316,9 @@ fn rust_imports_and_push_include_edges() {
         use_roots: vec!["std".into()],
         mod_decls: vec!["child".into()],
         include_literals: vec!["child.rs".into()],
+        use_spans: vec![],
+        mod_spans: vec![],
+        include_spans: vec![],
     };
     let ast = parse_rust_code("use std::io; mod child;");
     let mut use_roots = Vec::new();
@@ -331,4 +334,70 @@ fn rust_imports_and_push_include_edges() {
     let mac: syn::Macro = syn::parse_quote!(include!("child.rs"));
     super::extract_imports::push_include_edges(&mac, &mut mod_decls, &mut include_literals);
     assert_eq!(include_literals, vec!["child.rs"]);
+}
+
+#[test]
+fn mixed_file_keeps_dual_origins_on_same_endpoint() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::write(src.join("lib.rs"), "mod helper;\nmod mixed;\n").unwrap();
+    std::fs::write(src.join("helper.rs"), "pub fn f() {}\n").unwrap();
+    std::fs::write(
+        src.join("mixed.rs"),
+        "use helper;\n#[cfg(test)]\nmod tests {\n    use helper;\n}\n",
+    )
+    .unwrap();
+    let paths = vec![
+        src.join("lib.rs"),
+        src.join("helper.rs"),
+        src.join("mixed.rs"),
+    ];
+    let parsed: Vec<_> = paths
+        .iter()
+        .map(|path| crate::rust_parsing::parse_rust_file(path).unwrap())
+        .collect();
+    let roles = crate::code_roles::build_source_role_index(&[], &parsed, &[], &paths).unwrap();
+    let refs: Vec<_> = parsed.iter().collect();
+    let ctx = build_rust_context_graph(&refs, &roles);
+    let mixed = qualified_rust_module_name(&src.join("mixed.rs"));
+    let tests = format!("{mixed}::tests");
+    assert!(ctx.production_view().imports(&mixed, "helper"));
+    assert!(!ctx.production_view().imports(&tests, "helper"));
+    assert!(ctx.test_view().imports(&tests, "helper"));
+    assert!(ctx.test_importers_of("helper").contains(&tests));
+    assert!(!ctx.test_importers_of("helper").contains(&mixed));
+}
+
+#[test]
+fn include_in_inline_test_mod_keeps_inline_importer() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::write(src.join("lib.rs"), "mod mixed;\n").unwrap();
+    std::fs::write(
+        src.join("mixed.rs"),
+        "#[cfg(test)]\nmod tests {\n    include!(\"frag.rs\");\n}\n",
+    )
+    .unwrap();
+    std::fs::write(src.join("frag.rs"), "pub fn g() {}\n").unwrap();
+    let paths = vec![
+        src.join("lib.rs"),
+        src.join("mixed.rs"),
+        src.join("frag.rs"),
+    ];
+    let parsed: Vec<_> = paths
+        .iter()
+        .map(|path| crate::rust_parsing::parse_rust_file(path).unwrap())
+        .collect();
+    let roles = crate::code_roles::build_source_role_index(&[], &parsed, &[], &paths).unwrap();
+    let refs: Vec<_> = parsed.iter().collect();
+    let ctx = build_rust_context_graph(&refs, &roles);
+    let mixed = qualified_rust_module_name(&src.join("mixed.rs"));
+    let tests = format!("{mixed}::tests");
+    let frag = qualified_rust_module_name(&src.join("frag.rs"));
+    assert!(!ctx.production_view().imports(&mixed, &frag));
+    assert!(ctx.test_view().imports(&tests, &frag));
+    assert!(ctx.test_importers_of(&frag).contains(&tests));
+    assert!(!ctx.test_importers_of(&frag).contains(&mixed));
 }

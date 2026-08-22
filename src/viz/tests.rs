@@ -246,7 +246,7 @@ fn test_build_py_graph_empty() {
 
 #[test]
 fn test_build_rs_graph_empty() {
-    let graph = crate::analyze::build_rs_graph_from_files(&[]);
+    let graph = crate::analyze::build_rs_graph_from_files(&[]).unwrap();
     assert!(graph.nodes.is_empty());
 }
 

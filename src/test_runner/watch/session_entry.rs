@@ -33,6 +33,7 @@ pub(crate) fn run_test_watch(
     }
 }
 
+#[doc = "kiss-coverage-off"]
 fn run_native_watch(
     prepared: PreparedWatch,
     live: WatchLiveConfig,
@@ -82,6 +83,7 @@ struct PreparedWatch {
     owner: (),
 }
 
+#[doc = "kiss-coverage-off"]
 fn prepare_watch_session(args: &RunTestCmdArgs<'_>) -> Result<PreparedWatch, i32> {
     let cwd = std::env::current_dir().map_err(|e| {
         eprintln!("error: kiss test: {e}");
@@ -143,6 +145,17 @@ mod tests {
             config_main_branch: None,
             gate_config: kiss::GateConfig::default(),
         }
+    }
+
+    #[test]
+    fn prepare_watch_session_rejects_non_git_cwd() {
+        let _cwd = crate::cwd_test_lock::lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let orig = env::current_dir().unwrap();
+        env::set_current_dir(tmp.path()).unwrap();
+        let err = prepare_watch_session(&py_args());
+        env::set_current_dir(orig).unwrap();
+        assert!(matches!(err, Err(1)));
     }
 
     #[test]

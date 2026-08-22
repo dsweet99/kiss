@@ -9,7 +9,7 @@ use crate::analyze::cov_records_cache::{
 };
 use crate::analyze_cache::fnv1a64;
 
-const SCHEMA_VERSION: &str = "kiss-cov-file-list-v2";
+const SCHEMA_VERSION: &str = "kiss-cov-file-list-v4";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct CovFileListCache {
@@ -86,8 +86,17 @@ fn file_list_fingerprint(key: &CovFileListKey<'_>) -> Option<String> {
         h = fnv1a64(h, prefix.as_bytes());
         h = fnv1a64(h, &[0]);
     }
+    let cargo = key.repo_root.join("Cargo.toml");
+    h = fnv1a64(h, cargo.to_string_lossy().as_bytes());
+    if let Ok(bytes) = fs::read(&cargo) {
+        h = fnv1a64(h, &bytes);
+    }
     let want_py = matches!(key.lang_filter, None | Some(Language::Python));
     let want_rs = matches!(key.lang_filter, None | Some(Language::Rust));
+    if want_rs {
+        let extra = kiss::code_roles::workspace_preflight_fingerprint(key.repo_root).ok()?;
+        h = fnv1a64(h, extra.as_bytes());
+    }
     if want_py {
         h = fnv1a64(
             h,

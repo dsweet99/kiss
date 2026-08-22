@@ -43,7 +43,7 @@ fn test_analyzer_basic() {
     assert!(analyze_rust_file(&parsed, &Config::default()).is_empty());
     let p = std::path::PathBuf::from("t.rs");
     let mut v = Vec::new();
-    RustAnalyzer::new(&p, &Config::default(), &mut v)
+    RustAnalyzer::new(&p, &Config::default(), &mut v, None)
         .analyze_item(&syn::parse_str::<syn::File>("fn foo() {}").unwrap().items[0]);
 }
 
@@ -55,7 +55,7 @@ fn test_analyzer_checks() {
         ..Default::default()
     };
     let mut v = Vec::new();
-    RustAnalyzer::new(&p, &cfg, &mut v).check_methods_per_class(1, "S", 10);
+    RustAnalyzer::new(&p, &cfg, &mut v, None).check_methods_per_class(1, "S", 10);
     assert_eq!(v.len(), 1);
 }
 
@@ -69,11 +69,18 @@ fn analyze_skips_cfg_test_mod_for_per_function_rules() {
     let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
     writeln!(tmp, "{src}").unwrap();
     let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
+    let roles = crate::code_roles::build_source_role_index(
+        &[],
+        std::slice::from_ref(&parsed),
+        &[],
+        std::slice::from_ref(&parsed.path),
+    )
+    .unwrap();
     let cfg = Config {
         statements_per_function: 1,
         ..Default::default()
     };
-    let viols = analyze_rust_file(&parsed, &cfg);
+    let viols = analyze_rust_file_with_roles(&parsed, &cfg, Some(&roles));
     assert!(
         !viols.iter().any(|v| v.metric == "statements_per_function"),
         "cfg(test) mod inner functions should not be checked: {viols:?}"
@@ -126,6 +133,44 @@ fn analyze_rust_file_include_rollup_empty_included() {
     writeln!(tmp, "fn foo() {{}}").unwrap();
     let parent = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
     assert!(analyze_rust_file_include_rollup(&parent, &[], &Config::default()).is_empty());
+}
+
+#[test]
+fn include_rollup_with_roles_skips_test_only_fragment() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let parent_path = tmp.path().join("lib.rs");
+    let frag_path = tmp.path().join("frag.rs");
+    std::fs::write(
+        &parent_path,
+        "fn parent() {}\n#[cfg(test)]\nmod tests {\n    include!(\"frag.rs\");\n}\n",
+    )
+    .unwrap();
+    std::fs::write(
+        &frag_path,
+        "fn child() { let _ = 1; let _ = 2; let _ = 3; }\n",
+    )
+    .unwrap();
+    let paths = vec![parent_path.clone(), frag_path.clone()];
+    let parsed: Vec<_> = paths
+        .iter()
+        .map(|path| crate::rust_parsing::parse_rust_file(path).unwrap())
+        .collect();
+    let roles = crate::code_roles::build_source_role_index(&[], &parsed, &[], &paths).unwrap();
+    let cfg = Config {
+        statements_per_file: 1,
+        ..Default::default()
+    };
+    let without = analyze_rust_file_include_rollup(&parsed[0], &[&parsed[1]], &cfg);
+    assert!(
+        without.iter().any(|v| v.metric == "statements_per_file"),
+        "unclassified rollup should count fragment statements: {without:?}"
+    );
+    let with =
+        analyze_rust_file_include_rollup_with_roles(&parsed[0], &[&parsed[1]], &cfg, Some(&roles));
+    assert!(
+        with.iter().all(|v| v.metric != "statements_per_file"),
+        "role-aware rollup should omit test-only fragment statements: {with:?}"
+    );
 }
 
 #[test]

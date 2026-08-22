@@ -6,7 +6,7 @@ pub mod types;
 use crate::graph::DependencyGraph;
 
 pub use python::collect_detailed_py;
-pub use rust::collect_detailed_rs;
+pub use rust::{collect_detailed_rs, collect_detailed_rs_with_roles};
 pub use table::format_detailed_table;
 pub use types::UnitMetrics;
 

@@ -31,6 +31,7 @@ pub mod test_refs;
 pub mod test_section_config;
 pub mod units;
 
+pub mod code_roles;
 pub mod lang_analysis;
 pub mod rust_counts;
 pub mod rust_fn_metrics;
@@ -51,8 +52,9 @@ pub mod test_utils;
 
 pub use cli_output::print_dry_results;
 pub use comments::{
-    COMMENT_METRIC, DOC_METRIC, collect_comment_violations, collect_doc_violations,
-    has_non_doc_comments,
+    COMMENT_METRIC, DOC_METRIC, collect_comment_violations, collect_comment_violations_with_roles,
+    collect_doc_violations, collect_doc_violations_with_roles, has_non_doc_comments,
+    has_non_doc_comments_with_roles,
 };
 pub use config::{
     Config, ConfigError, ConfigLanguage, LanguageTablesPresent, find_repo_root, is_similar,
@@ -63,24 +65,27 @@ pub use counts::analyze_file;
 pub use counts::analyze_file_with_statement_count;
 pub use defaults::default_config_toml;
 pub use discovery::{
-    Language, SourceFile, find_python_files, find_rust_files, find_source_files,
-    find_source_files_with_ignore, gather_files_by_lang, gather_files_by_lang_opts,
-    DEFAULT_CHECK_IGNORE_PREFIXES, default_check_ignore_prefixes, merge_check_ignore_prefixes,
+    DEFAULT_CHECK_IGNORE_PREFIXES, Language, SourceFile, default_check_ignore_prefixes,
+    find_python_files, find_rust_files, find_source_files, find_source_files_with_ignore,
+    gather_files_by_lang, gather_files_by_lang_opts, merge_check_ignore_prefixes,
     normalize_ignore_prefixes,
 };
 pub use duplication::{
     CodeChunk, DuplicateCluster, DuplicatePair, DuplicationConfig, MinHashSignature,
     cluster_duplicates, cluster_duplicates_from_chunks, detect_duplicates,
     detect_duplicates_from_chunks, extract_chunks_for_duplication,
-    extract_rust_chunks_for_duplication,
+    extract_chunks_for_duplication_with_roles, extract_rust_chunks_for_duplication,
+    extract_rust_chunks_for_duplication_with_roles,
 };
 pub use gate_config::{
     GateConfig, MatchedUnitTestSecondsRule, TestCoverageScope, catch_all_limit, exceeds_limit,
     format_nested_toml_table, limit_for_selector, matched_rule_for_selector,
 };
 pub use graph::{
-    CycleInfo, DependencyGraph, GraphKeyMaxima, ModuleGraphMetrics, analyze_graph,
-    build_dependency_graph, compute_cyclomatic_complexity, graph_key_maxima,
+    ContextDependencyGraph, CycleInfo, DependencyGraph, EdgeOrigin, GraphKeyMaxima,
+    ModuleGraphMetrics, RoleDependencyGraphs, analyze_graph, build_dependency_graph,
+    build_python_context_graph, compute_cyclomatic_complexity, graph_key_maxima,
+    module_name_for_path, path_for_module_name,
 };
 pub use layout_cycles::{CycleBreakSuggestion, LayoutCycleAnalysis, analyze_cycles};
 pub use layout_layers::{LayerInfo, compute_layers};
@@ -99,9 +104,10 @@ pub use stats::{
     format_stats_table, get_metric_def,
 };
 pub use stats_detailed::{
-    UnitMetrics, collect_detailed_py, collect_detailed_rs, format_detailed_table, truncate,
+    UnitMetrics, collect_detailed_py, collect_detailed_rs, collect_detailed_rs_with_roles,
+    format_detailed_table, truncate,
 };
-pub use test_refs::{is_in_test_directory, is_test_file};
+pub use test_refs::is_in_test_directory;
 pub use test_section_config::{
     TestSectionConfig, effective_python_pytest_args, pytest_plugin_cli_args,
 };
@@ -109,17 +115,26 @@ pub use units::count_code_units;
 pub use units::{CodeUnit, CodeUnitKind, extract_code_units};
 pub use violation::{Violation, ViolationBuilder};
 
-pub use rust_counts::{analyze_rust_file, analyze_rust_file_include_rollup};
+pub use rust_counts::{
+    analyze_rust_file, analyze_rust_file_include_rollup,
+    analyze_rust_file_include_rollup_with_roles, analyze_rust_file_with_roles,
+};
 pub use rust_fn_metrics::{
     RustFileMetrics, RustFunctionMetrics, RustTypeMetrics, compute_rust_file_metrics,
-    compute_rust_function_metrics, count_non_doc_attrs,
+    compute_rust_file_metrics_with_roles, compute_rust_function_metrics, count_non_doc_attrs,
 };
-pub use rust_graph::build_rust_dependency_graph;
-pub use rust_graph::{IncludeGraph, build_include_graph, expand_rust_files};
+pub use rust_graph::{
+    IncludeGraph, build_include_graph, build_rust_context_graph, build_rust_dependency_graph,
+    build_rust_dependency_graph_with_roles, expand_rust_files,
+};
 pub use rust_parsing::{ParsedRustFile, RustParseError, parse_rust_file, parse_rust_files};
-pub use rust_test_refs::{is_binary_entry_point, is_rust_test_file, rust_test_functions_in};
+pub use rust_test_refs::is_binary_entry_point;
 pub use rust_units::{RustCodeUnit, extract_rust_code_units};
 
+pub use code_roles::{
+    CodeRole, FileComposition, RoleBuildError, SourceRoleIndex,
+    is_default_pytest_collect_candidate, is_python_test_module_path, is_test_only_file,
+};
 pub use global_metrics::GlobalMetrics;
 
 #[cfg(test)]

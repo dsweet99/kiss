@@ -87,6 +87,52 @@ pub(crate) fn extract_imports_for_cache(node: Node, source: &str) -> Vec<String>
     imports
 }
 
+pub(crate) fn extract_imports_spanned(
+    node: Node,
+    source: &str,
+) -> Vec<(String, crate::code_roles::SourceSpan)> {
+    let mut out = Vec::new();
+    extract_imports_spanned_rec(node, source, &mut out);
+    out
+}
+
+fn extract_imports_spanned_rec(
+    node: Node,
+    source: &str,
+    out: &mut Vec<(String, crate::code_roles::SourceSpan)>,
+) {
+    match node.kind() {
+        "import_statement" | "import_from_statement" => {
+            let span = crate::code_roles::SourceSpan::from_tree_sitter_node(node);
+            let mut names = Vec::new();
+            extract_imports_recursive(node, source, &mut names);
+            for name in names {
+                out.push((name, span));
+            }
+        }
+        "call" => {
+            if let Some(module) = extract_dynamic_import_module(node, source) {
+                let span = crate::code_roles::SourceSpan::from_tree_sitter_node(node);
+                let mut names = Vec::new();
+                push_dotted_segments(&module, &mut names);
+                for name in names {
+                    out.push((name, span));
+                }
+            }
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                extract_imports_spanned_rec(child, source, out);
+            }
+        }
+        _ => {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                extract_imports_spanned_rec(child, source, out);
+            }
+        }
+    }
+}
+
 pub(crate) fn extract_imports_recursive(node: Node, source: &str, imports: &mut Vec<String>) {
     match node.kind() {
         "import_statement" => collect_graph_py_import_names(node, source, imports),

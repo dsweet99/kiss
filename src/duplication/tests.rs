@@ -105,6 +105,7 @@ fn test_python_duplication() {
         &parsed.source,
         &parsed.path,
         &mut chunks,
+        None,
     );
     assert!(!chunks.is_empty());
 }
@@ -140,18 +141,22 @@ fn test_rust_duplication() {
     let source = "fn bar() {\n    let x = 1;\n    let y = 2;\n    let z = 3;\n    let a = 4;\n    let b = 5;\n}";
     let ast: syn::File = syn::parse_str(source).unwrap();
     let mut chunks = Vec::new();
-    extraction::extract_rust_function_chunks(&ast, source, Path::new("test.rs"), &mut chunks);
-    extraction::extract_chunks_from_item(&ast.items[0], source, Path::new("test.rs"), &mut chunks);
+    extraction::extract_rust_function_chunks(&ast, source, Path::new("test.rs"), &mut chunks, None);
+    extraction::extract_chunks_from_item(
+        &ast.items[0],
+        source,
+        Path::new("test.rs"),
+        &mut chunks,
+        None,
+    );
     if let syn::Item::Fn(f) = &ast.items[0] {
-        let start = f.sig.fn_token.span.start().line;
-        let end = f.block.brace_token.span.close().end().line;
         extraction::add_rust_function_chunk(
             "bar",
-            start,
-            end,
+            crate::code_roles::SourceSpan::of_syn(f),
             source,
             Path::new("test.rs"),
             &mut chunks,
+            None,
         );
     }
 }
@@ -298,5 +303,42 @@ def compute_b(data):
     assert!(
         pairs.is_empty(),
         "expected no duplicate pairs when only numeric literals differ, got {pairs:?}"
+    );
+}
+
+#[test]
+fn mixed_rust_chunk_drops_test_only_subranges_before_thresholds() {
+    let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+    write!(
+        tmp,
+        "fn mixed() {{\n    let a = 1;\n    #[cfg(test)]\n    {{\n        let c = 3;\n        let d = 4;\n        let e = 5;\n        let f = 6;\n        let g = 7;\n        let h = 8;\n    }}\n}}\n"
+    )
+    .unwrap();
+    let parsed = parse_rust_file(tmp.path()).unwrap();
+    let roles = crate::code_roles::build_source_role_index(
+        &[],
+        std::slice::from_ref(&parsed),
+        &[],
+        std::slice::from_ref(&parsed.path),
+    )
+    .unwrap();
+    let unfiltered = extract_rust_chunks_for_duplication(&[&parsed]);
+    let filtered = extract_rust_chunks_for_duplication_with_roles(&[&parsed], Some(&roles));
+    assert!(
+        !unfiltered.is_empty(),
+        "test-only lines must be enough to form a chunk before filtering"
+    );
+    assert!(
+        unfiltered[0].normalized.contains("c = 3") || unfiltered[0].normalized.contains("let c"),
+        "unfiltered fingerprint must include test-only text, got {:?}",
+        unfiltered[0].normalized
+    );
+    assert!(
+        filtered.is_empty(),
+        "production-only remainder must fall below duplication thresholds, got {filtered:?}"
+    );
+    assert_ne!(
+        unfiltered[0].normalized, "",
+        "unfiltered chunk must keep a fingerprint"
     );
 }

@@ -9,7 +9,7 @@ from typing import NamedTuple
 from python.adversarial_cheat import (
     TRUE_COVERAGE_CEILING,
     CheatMetrics,
-    _is_test_module_path,
+    _is_harness_test_module_path,
     _load_coverage_maps,
     cheat_gaps,
     format_cheat_report,
@@ -25,7 +25,7 @@ class FixCheatMetrics(NamedTuple):
 
 
 def cheat_test_paths_flagged(kiss_partial: dict[str, float]) -> list[str]:
-    return sorted(p for p in kiss_partial if _is_test_module_path(p))
+    return sorted(p for p in kiss_partial if _is_harness_test_module_path(p))
 
 
 def fix_cheat_satisfied(metrics: FixCheatMetrics) -> bool:

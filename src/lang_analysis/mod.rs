@@ -1,7 +1,7 @@
 mod analysis;
 mod graph;
 mod parser;
-mod test_refs;
+mod roles;
 mod units;
 
 use std::path::Path;
@@ -9,7 +9,7 @@ use std::path::Path;
 pub use analysis::{LanguageAnalysis, PythonAnalysis, RustAnalysis};
 pub use graph::{LanguageGraph, build_graphs};
 pub use parser::LanguageParser;
-pub use test_refs::LanguageTestRefs;
+pub use roles::{LanguageCodeRoles, classify_parsed_sources, parse_then_classify};
 pub use units::LanguageUnits;
 
 use crate::discovery::Language;

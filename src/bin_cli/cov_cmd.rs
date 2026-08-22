@@ -2,8 +2,9 @@ use crate::analyze;
 use crate::analyze::cov_records_cache::{
     CovRecordsCacheKey, store_cov_records, try_load_cov_records,
 };
-use crate::analyze::line_coverage::RuntimeCoverageSnapshot;
-use crate::analyze::line_coverage::compute_line_coverage_records;
+use crate::analyze::line_coverage::{
+    CoverageSourceFacts, RuntimeCoverageSnapshot, compute_line_coverage_records,
+};
 use crate::analyze::{build_focus_filter, gather_files};
 use crate::bin_cli::cov_sibling_gates::{
     SiblingGateResult, apply_time_gate_eval, evaluate_max_num_tests_gate,
@@ -204,7 +205,7 @@ fn compute_and_store_records(
     snapshot: &RuntimeCoverageSnapshot,
     timing: bool,
     t0: Instant,
-) -> Vec<analyze::line_coverage::LineCoverageRecord> {
+) -> Result<Vec<analyze::line_coverage::LineCoverageRecord>, kiss::RoleBuildError> {
     if timing {
         eprintln!(
             "TIMING:coverage_snapshot_load_or_refresh_ms:{}",
@@ -212,8 +213,8 @@ fn compute_and_store_records(
         );
     }
     let t_records = Instant::now();
-    let records =
-        compute_line_coverage_records(repo_root, &files.py_files, &files.rs_files, snapshot);
+    let facts = CoverageSourceFacts::from_files(&files.py_files, &files.rs_files)?;
+    let records = compute_line_coverage_records(repo_root, &facts, snapshot);
     if timing {
         eprintln!(
             "TIMING:coverage_records_compute_ms:{}",
@@ -221,7 +222,7 @@ fn compute_and_store_records(
         );
     }
     store_cov_records(cache_key, &records);
-    records
+    Ok(records)
 }
 
 pub fn run_cov_command(args: &CovCommandArgs<'_>) -> i32 {
@@ -359,14 +360,20 @@ fn evaluate_gathered_cov(p: EvaluateGatheredCov<'_>) -> i32 {
     {
         eprintln!("TIMING:python_generation_id:{id}");
     }
-    let records = compute_and_store_records(
+    let records = match compute_and_store_records(
         &cache_key,
         &repo_root,
         p.files,
         &validated.snapshot,
         p.args.timing,
         t0,
-    );
+    ) {
+        Ok(records) => records,
+        Err(err) => {
+            eprintln!("{err}");
+            return 1;
+        }
+    };
     evaluate_records_with_time(&records, &eval_ctx)
 }
 

@@ -31,13 +31,6 @@ pub fn format_candidate_list(candidates: &[String], max: usize) -> String {
     }
 }
 
-pub fn is_coverage_gate_file(path: &Path) -> bool {
-    !crate::test_refs::is_test_file(path)
-        && !crate::test_refs::is_in_test_directory(path)
-        && !crate::rust_test_refs::is_rust_test_file(path)
-        && !crate::rust_test_refs::is_binary_entry_point(path)
-}
-
 pub fn min_per_file_coverage(
     definitions: &[(PathBuf, String, usize)],
     unreferenced: &[(PathBuf, String, usize)],
@@ -50,12 +43,7 @@ pub fn min_gate_eligible_per_file_coverage(
     definitions: &[(PathBuf, String, usize)],
     unreferenced: &[(PathBuf, String, usize)],
 ) -> usize {
-    let map = file_coverage_map(definitions, unreferenced);
-    map.iter()
-        .filter(|(path, _)| is_coverage_gate_file(path))
-        .map(|(_, pct)| *pct)
-        .min()
-        .unwrap_or(100)
+    min_per_file_coverage(definitions, unreferenced)
 }
 
 pub fn file_coverage_map(
@@ -244,21 +232,28 @@ mod tests {
     }
 
     #[test]
+    fn test_gate_eligible_coverage_uses_supplied_records() {
+        let defs = vec![
+            (PathBuf::from("src/lib.py"), "prod".into(), 1),
+            (PathBuf::from("src/main.rs"), "main".into(), 1),
+        ];
+        let unref = vec![(PathBuf::from("src/main.rs"), "main".into(), 1)];
+
+        assert_eq!(min_per_file_coverage(&defs, &unref), 0);
+        assert_eq!(min_gate_eligible_per_file_coverage(&defs, &unref), 0);
+    }
+
+    #[test]
     fn test_gate_eligible_coverage_ignores_tests_and_binary_entry_points() {
         let defs = vec![
             (PathBuf::from("src/lib.py"), "prod".into(), 1),
-            (PathBuf::from("tests/test_lib.py"), "test_prod".into(), 1),
             (PathBuf::from("src/main.rs"), "main".into(), 1),
         ];
-        let unref = vec![
-            (PathBuf::from("tests/test_lib.py"), "test_prod".into(), 1),
-            (PathBuf::from("src/main.rs"), "main".into(), 1),
-        ];
-
-        assert_eq!(min_per_file_coverage(&defs, &unref), 0);
-        assert_eq!(min_gate_eligible_per_file_coverage(&defs, &unref), 100);
-        assert!(!is_coverage_gate_file(Path::new("tests/test_lib.py")));
-        assert!(!is_coverage_gate_file(Path::new("src/main.rs")));
+        let unref = vec![(PathBuf::from("src/lib.py"), "prod".into(), 1)];
+        assert_eq!(
+            min_gate_eligible_per_file_coverage(&defs, &unref),
+            min_per_file_coverage(&defs, &unref)
+        );
     }
 
     #[test]
@@ -300,11 +295,9 @@ mod tests {
 
     #[test]
     fn witness_coverage_gate_helpers() {
-        use std::path::Path;
         let defs = vec![(PathBuf::from("src/a.py"), "f".into(), 1)];
         let unref: Vec<(PathBuf, String, usize)> = vec![];
         let file_pcts = HashMap::new();
-        assert!(is_coverage_gate_file(Path::new("src/a.py")));
         assert_eq!(min_per_file_coverage(&defs, &unref), 100);
         assert_eq!(min_gate_eligible_per_file_coverage(&defs, &unref), 100);
         let _ = CoverageGateFailureCtx::witness(90, &unref, &file_pcts);

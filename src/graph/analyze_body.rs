@@ -141,7 +141,6 @@ pub(crate) fn collect_module_violations(
         let metrics = graph.module_metrics(module_name);
 
         if orphan_module_enabled
-            && !is_test_module(graph, module_name)
             && !is_init_module(graph, module_name)
             && is_orphan(metrics.fan_in, metrics.fan_out, module_name)
             && !is_path_covered_by_another(graph, module_name, seen_paths)

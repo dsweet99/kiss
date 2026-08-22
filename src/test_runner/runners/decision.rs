@@ -6,6 +6,8 @@ use super::enumerate_tests_in_changed_files;
 mod decision_prior;
 #[path = "decision_rust_paths.rs"]
 mod decision_rust_paths;
+#[path = "importer_select.rs"]
+mod importer_select;
 use crate::test_runner::coverage_decision::{
     ChangedSource, CoverageDecisionEngine, LanguagePlanner, SelectionBasis, TestSelector,
 };
@@ -331,21 +333,37 @@ struct ChangedTestSelectors {
 fn changed_test_selectors_by_language(
     repo_root: &Path,
     test_paths: &[PathBuf],
+    ignore: &[String],
 ) -> Result<ChangedTestSelectors, String> {
     let enumerated = enumerate_tests_in_changed_files(repo_root, test_paths)?;
     let mut changed = ChangedTestSelectors::default();
-    for nodeid in enumerated.python_nodeids {
+    for nodeid in &enumerated.python_nodeids {
         changed
             .python
-            .push(TestSelector::new(kiss::Language::Python, nodeid));
+            .push(TestSelector::new(kiss::Language::Python, nodeid.clone()));
     }
-    for (path, id) in enumerated.rust_tests {
-        if kiss::Language::is_rust_path(&path) {
+    for (path, id) in &enumerated.rust_tests {
+        if kiss::Language::is_rust_path(path) {
             changed
                 .rust
-                .push(TestSelector::new(kiss::Language::Rust, id));
+                .push(TestSelector::new(kiss::Language::Rust, id.clone()));
         }
     }
+    importer_select::expand_unresolved_test_helpers(
+        repo_root,
+        test_paths,
+        ignore,
+        &enumerated,
+        &mut changed.python,
+        &mut changed.rust,
+    )?;
+    importer_select::append_importer_tests(
+        repo_root,
+        ignore,
+        test_paths,
+        &mut changed.python,
+        &mut changed.rust,
+    )?;
     Ok(changed)
 }
 

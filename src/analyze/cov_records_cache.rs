@@ -10,7 +10,7 @@ use crate::analyze::line_coverage::{
 use crate::analyze_cache::{fnv1a64, mix_sorted_paths_len_mtime};
 use crate::test_runner::check_line_coverage::RequiredCoverageLanguages;
 
-const SCHEMA_VERSION: &str = "kiss-cov-records-v3";
+const SCHEMA_VERSION: &str = "kiss-cov-records-v5";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct CovRecordsCache {
@@ -86,6 +86,12 @@ fn cov_records_fingerprint(key: &CovRecordsCacheKey<'_>) -> Option<String> {
     }
     h = mix_sorted_paths_len_mtime(h, key.py_files);
     h = mix_sorted_paths_len_mtime(h, key.rs_files);
+    h = fnv1a64(
+        h,
+        kiss::code_roles::role_input_fingerprint(key.py_files, key.rs_files)
+            .ok()?
+            .as_bytes(),
+    );
     if key.required.python {
         h = fnv1a64(h, python_backend_identity(key.repo_root)?.as_bytes());
     }

@@ -1,7 +1,8 @@
+use crate::code_roles::SourceRoleIndex;
 use crate::rust_parsing::ParsedRustFile;
 use crate::violation::Violation;
 
-use super::{clap_docs, comment_violation, doc_violation};
+use super::{clap_docs, comment_violation, doc_violation, skip_test_only_line};
 
 #[derive(Clone, Copy)]
 enum ScanMode {
@@ -9,33 +10,46 @@ enum ScanMode {
     Doc,
 }
 
-pub(super) fn append_rust_comment_violations(parsed: &ParsedRustFile, out: &mut Vec<Violation>) {
-    append_rust_comment_kind(parsed, out, ScanMode::Plain);
+pub(super) fn append_rust_comment_violations(
+    parsed: &ParsedRustFile,
+    roles: Option<&SourceRoleIndex>,
+    out: &mut Vec<Violation>,
+) {
+    append_rust_comment_kind(parsed, roles, out, ScanMode::Plain);
 }
 
-pub(super) fn append_rust_doc_violations(parsed: &ParsedRustFile, out: &mut Vec<Violation>) {
-    append_rust_comment_kind(parsed, out, ScanMode::Doc);
+pub(super) fn append_rust_doc_violations(
+    parsed: &ParsedRustFile,
+    roles: Option<&SourceRoleIndex>,
+    out: &mut Vec<Violation>,
+) {
+    append_rust_comment_kind(parsed, roles, out, ScanMode::Doc);
 }
 
-fn append_rust_comment_kind(parsed: &ParsedRustFile, out: &mut Vec<Violation>, mode: ScanMode) {
+fn append_rust_comment_kind(
+    parsed: &ParsedRustFile,
+    roles: Option<&SourceRoleIndex>,
+    out: &mut Vec<Violation>,
+    mode: ScanMode,
+) {
     let bytes = parsed.source.as_bytes();
     let clap_help = clap_docs::help_doc_ranges(&parsed.ast);
     let mut i = 0;
     while i < bytes.len() {
         if let Some((is_doc, next)) = take_line_comment(bytes, i) {
-            push_kind(parsed, out, mode, is_doc, i, &clap_help);
+            push_kind(parsed, roles, out, mode, is_doc, i, &clap_help);
             i = next;
             continue;
         }
         if let Some((is_doc, next)) = take_block_comment(bytes, i) {
-            push_kind(parsed, out, mode, is_doc, i, &clap_help);
+            push_kind(parsed, roles, out, mode, is_doc, i, &clap_help);
             i = next;
             continue;
         }
         if matches!(mode, ScanMode::Doc)
             && let Some(next) = take_doc_attribute(bytes, i)
         {
-            push_kind(parsed, out, mode, true, i, &clap_help);
+            push_kind(parsed, roles, out, mode, true, i, &clap_help);
             i = next;
             continue;
         }
@@ -78,6 +92,7 @@ fn skip_attr_to_bracket_end(bytes: &[u8], mut i: usize) -> Option<usize> {
 
 fn push_kind(
     parsed: &ParsedRustFile,
+    roles: Option<&SourceRoleIndex>,
     out: &mut Vec<Violation>,
     mode: ScanMode,
     is_doc: bool,
@@ -92,6 +107,9 @@ fn push_kind(
         return;
     }
     let line = line_number(&parsed.source, byte_idx);
+    if skip_test_only_line(roles, &parsed.path, line) {
+        return;
+    }
     out.push(if want_doc {
         doc_violation(&parsed.path, line)
     } else {

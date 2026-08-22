@@ -81,6 +81,12 @@ mod run_coverage {
     use std::fs;
 
     #[test]
+    fn run_with_cli_rejects_watch_combined_with_dry_run() {
+        let cli = parse_cli_from(["kiss", "test", "--watch", "--dry-run"]);
+        assert_eq!(run_with_cli(cli), 2);
+    }
+
+    #[test]
     fn run_entrypoint_and_explicit_cli_paths_return_success() {
         let _cwd_guard = crate::cwd_test_lock::lock();
         let entry_tmp = tempfile::tempdir().unwrap();

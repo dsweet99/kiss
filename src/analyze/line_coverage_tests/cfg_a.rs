@@ -1,5 +1,16 @@
-use super::line_coverage_cfg::{cfg_expr_active, literal_string_value};
 use super::*;
+
+fn leftover_cfg_evaluator_absent() {
+    let cfg = include_str!("../line_coverage_cfg.rs");
+    assert!(
+        !cfg.contains("fn cfg_expr_active")
+            && !cfg.contains("fn stmt_cfg_active")
+            && !cfg.contains("fn item_cfg_active")
+            && !cfg.contains("cfg!(")
+            && !cfg.contains("std::env::consts::OS"),
+        "product coverage must not keep the leftover cfg evaluator"
+    );
+}
 
 #[test]
 fn rust_coverage_denominator_ignores_inactive_cfg_blocks() {
@@ -28,50 +39,33 @@ fn rust_coverage_denominator_ignores_inactive_cfg_blocks() {
 
     let record = compute_file_line_coverage(tmp.path(), &file, &snapshot);
 
-    assert_eq!(record.total_lines, 2);
-    assert_eq!(record.covered_lines, 2);
-    assert_eq!(record.percent, 100);
+    assert!(
+        record.total_lines > 2,
+        "unknown platform cfg must stay coverable, got {record:?}"
+    );
+    assert!(record.percent < 100);
 }
 
 #[test]
 fn cfg_expression_evaluator_is_conservative_for_common_platform_forms() {
-    assert_eq!(cfg_expr_active("unix".parse().unwrap()), Some(true));
-    assert_eq!(cfg_expr_active("not(unix)".parse().unwrap()), Some(false));
-    assert_eq!(
-        cfg_expr_active("target_os = \"linux\"".parse().unwrap()),
-        Some(true)
-    );
-    assert_eq!(
-        cfg_expr_active("not(target_os = \"linux\")".parse().unwrap()),
-        Some(false)
-    );
-    assert_eq!(
-        cfg_expr_active("any(not(unix), target_os = \"linux\")".parse().unwrap()),
-        Some(true)
-    );
-    assert_eq!(
-        cfg_expr_active("all(unix, target_os = \"linux\")".parse().unwrap()),
-        Some(true)
-    );
+    leftover_cfg_evaluator_absent();
 }
 
 #[test]
 fn cfg_expression_evaluator_keeps_unknown_forms_active() {
-    assert_eq!(
-        cfg_expr_active("feature = \"extra\"".parse().unwrap()),
-        None
-    );
-    assert_eq!(
-        cfg_expr_active("any(not(unix), feature = \"extra\")".parse().unwrap()),
-        None
-    );
-    assert_eq!(
-        cfg_expr_active("all(unix, feature = \"extra\")".parse().unwrap()),
-        None
-    );
-    assert_eq!(
-        literal_string_value(&proc_macro2::Literal::string("other")),
-        None
+    leftover_cfg_evaluator_absent();
+    let tmp = tempfile::tempdir().unwrap();
+    let file = tmp.path().join("src").join("feat.rs");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(
+        &file,
+        "#[cfg(feature = \"extra\")]\npub fn gated() {\n    let x = 1;\n    let _ = x;\n}\n",
+    )
+    .unwrap();
+    let denom = coverage_denominator_lines_for_test(&file).expect("readable rust source");
+    assert!(
+        !denom.is_empty(),
+        "unknown feature cfg must stay coverable, got {denom:?}"
     );
 }
 
@@ -95,12 +89,13 @@ fn runtime_records_skip_cfg_test_only_rust_modules() {
         covered_lines: BTreeMap::new(),
     };
 
-    let records = compute_line_coverage_records(
+    let records = compute_line_coverage_records_for_test(
         tmp.path(),
         &[],
         &[lib, support.clone(), prod.clone()],
         &snapshot,
-    );
+    )
+    .unwrap();
     let files = records
         .iter()
         .map(|record| record.file.clone())
@@ -128,14 +123,19 @@ fn cfg_any_test_feature_module_is_test_only() {
         covered_lines: BTreeMap::new(),
     };
 
-    let records =
-        compute_line_coverage_records(tmp.path(), &[], &[lib, maybe_support.clone()], &snapshot);
+    let records = compute_line_coverage_records_for_test(
+        tmp.path(),
+        &[],
+        &[lib, maybe_support.clone()],
+        &snapshot,
+    )
+    .unwrap();
     let files = records
         .iter()
         .map(|record| record.file.clone())
         .collect::<BTreeSet<_>>();
 
-    assert!(!files.contains(&maybe_support));
+    assert!(files.contains(&maybe_support));
 }
 
 #[test]
@@ -155,12 +155,13 @@ fn runtime_records_skip_children_of_cfg_test_only_rust_modules() {
         covered_lines: BTreeMap::new(),
     };
 
-    let records = compute_line_coverage_records(
+    let records = compute_line_coverage_records_for_test(
         tmp.path(),
         &[],
         &[lib, mod_file.clone(), child.clone()],
         &snapshot,
-    );
+    )
+    .unwrap();
     let files = records
         .iter()
         .map(|record| record.file.clone())
@@ -189,12 +190,13 @@ fn production_reference_keeps_shared_child_module_eligible() {
         covered_lines: BTreeMap::new(),
     };
 
-    let records = compute_line_coverage_records(
+    let records = compute_line_coverage_records_for_test(
         tmp.path(),
         &[],
         &[lib, prod, mod_file.clone(), child.clone()],
         &snapshot,
-    );
+    )
+    .unwrap();
     let files = records
         .iter()
         .map(|record| record.file.clone())
@@ -212,105 +214,26 @@ fn cfg_test_only_scan_tolerates_missing_and_malformed_rust_files() {
     let missing = src.join("missing.rs");
     let malformed = src.join("malformed.rs");
     std::fs::write(&malformed, "mod nope {\n").unwrap();
-
-    let test_only = cfg_test_only_rust_files(&[missing, malformed]);
-
-    assert!(test_only.is_empty());
+    let snapshot = RuntimeCoverageSnapshot {
+        identity: "id".to_string(),
+        covered_lines: BTreeMap::new(),
+    };
+    assert!(
+        compute_line_coverage_records_for_test(tmp.path(), &[], &[malformed], &snapshot).is_err()
+    );
+    assert!(
+        compute_line_coverage_records_for_test(tmp.path(), &[], &[missing], &snapshot).is_err()
+    );
 }
 
 #[test]
 fn cfg_helpers_cover_item_and_expr_variants_exhaustively() {
-    use super::line_coverage_cfg::{expr_cfg_active, item_cfg_active, stmt_cfg_active};
-
-    let item_snippets = [
-        "const C: i32 = 1;",
-        "enum E { A }",
-        "extern crate std;",
-        "fn f() {}",
-        "extern \"C\" { fn g(); }",
-        "impl Foo { fn h(&self) {} }",
-        "macro_rules! m { () => {}; }",
-        "mod nested {}",
-        "static S: i32 = 1;",
-        "struct St;",
-        "trait Tr {}",
-        "trait Alias = Tr;",
-        "type T = i32;",
-        "union U { x: i32 }",
-        "use std::collections::BTreeSet;",
-    ];
-    for snippet in item_snippets {
-        let item: syn::Item = syn::parse_str(snippet).unwrap();
-        assert!(item_cfg_active(&item), "item should be active: {snippet}");
-        let stmt = syn::Stmt::Item(item);
-        assert!(
-            stmt_cfg_active(&stmt),
-            "stmt item should be active: {snippet}"
-        );
-    }
-
-    let inactive: syn::Item = syn::parse_str("#[cfg(not(unix))] struct Off;").unwrap();
-    assert!(!item_cfg_active(&inactive));
-
-    let expr_snippets = [
-        "[1, 2]",
-        "x = 1",
-        "async { 1 }",
-        "fut.await",
-        "1 + 2",
-        "{ 1 }",
-        "break",
-        "f()",
-        "1 as i32",
-        "|x| x",
-        "const { 1 }",
-        "continue",
-        "s.field",
-        "for x in xs { let _ = x; }",
-        "(1)",
-        "if true { 1 } else { 0 }",
-        "xs[0]",
-        "_",
-        "let Some(x) = opt",
-        "1",
-        "loop { break; }",
-        "println!(\"x\")",
-        "match x { _ => 1 }",
-        "x.method()",
-        "(1 + 2)",
-        "path::to::Value",
-        "0..1",
-        "&x",
-        "[0; 2]",
-        "return",
-        "Point { x: 1 }",
-        "falliable?",
-        "try { 1 }",
-        "(1, 2)",
-        "-1",
-        "unsafe { 1 }",
-        "while false {}",
-    ];
-    let mut parsed = 0usize;
-    for snippet in expr_snippets {
-        let Ok(expr) = syn::parse_str::<syn::Expr>(snippet) else {
-            continue;
-        };
-        parsed += 1;
-        assert!(expr_cfg_active(&expr), "expr should be active: {snippet}");
-        let stmt = syn::Stmt::Expr(expr, None);
-        assert!(
-            stmt_cfg_active(&stmt),
-            "stmt expr should be active: {snippet}"
-        );
-    }
-    assert!(
-        parsed >= 30,
-        "expected most expr snippets to parse, got {parsed}"
-    );
-
-    let local: syn::Stmt = syn::parse_str("let x = 1;").unwrap();
-    assert!(stmt_cfg_active(&local));
-    let mac: syn::Stmt = syn::parse_str("println!(\"hi\");").unwrap();
-    assert!(stmt_cfg_active(&mac));
+    leftover_cfg_evaluator_absent();
+    let off: syn::ItemFn = syn::parse_str("#[coverage(off)] fn f() { let x = 1; }").unwrap();
+    assert!(super::line_coverage_cfg::coverage_off_attrs(&off.attrs));
+    let doc_off: syn::ItemFn =
+        syn::parse_str("#[doc = \"kiss-coverage-off\"] fn g() { let y = 1; }").unwrap();
+    assert!(super::line_coverage_cfg::coverage_off_attrs(&doc_off.attrs));
+    let live: syn::ItemFn = syn::parse_str("fn h() { let z = 1; }").unwrap();
+    assert!(!super::line_coverage_cfg::coverage_off_attrs(&live.attrs));
 }

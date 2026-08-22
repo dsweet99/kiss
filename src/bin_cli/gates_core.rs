@@ -60,7 +60,7 @@ fn test_clamp_keeps_default_coverage_threshold() {
 
     let ignore = crate::bin_cli::util::merge_check_ignore_prefixes(&[]);
     let path = tmp.path().to_string_lossy().to_string();
-    let gate = kiss::config_gen::infer_gate_config_for_paths(&[path], None, &ignore);
+    let gate = kiss::config_gen::infer_gate_config_for_paths(&[path], None, &ignore).unwrap();
     assert_eq!(
         gate.test_coverage_threshold,
         kiss::defaults::gate::TEST_COVERAGE_THRESHOLD,

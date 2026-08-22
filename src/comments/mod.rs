@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use crate::code_roles::{CodeRole, SourceRoleIndex};
 use crate::parsing::ParsedFile;
 use crate::rust_parsing::ParsedRustFile;
 use crate::violation::Violation;
@@ -15,12 +16,20 @@ pub fn collect_comment_violations(
     py_parsed: &[ParsedFile],
     rs_parsed: &[ParsedRustFile],
 ) -> Vec<Violation> {
+    collect_comment_violations_with_roles(py_parsed, rs_parsed, None)
+}
+
+pub fn collect_comment_violations_with_roles(
+    py_parsed: &[ParsedFile],
+    rs_parsed: &[ParsedRustFile],
+    roles: Option<&SourceRoleIndex>,
+) -> Vec<Violation> {
     let mut out = Vec::new();
     for parsed in py_parsed {
-        python::append_python_comment_violations(parsed, &mut out);
+        python::append_python_comment_violations(parsed, roles, &mut out);
     }
     for parsed in rs_parsed {
-        rust_scan::append_rust_comment_violations(parsed, &mut out);
+        rust_scan::append_rust_comment_violations(parsed, roles, &mut out);
     }
     out
 }
@@ -30,6 +39,16 @@ pub fn collect_doc_violations(
     rs_parsed: &[ParsedRustFile],
     docs_allowed: &[String],
     repo_root: &Path,
+) -> Vec<Violation> {
+    collect_doc_violations_with_roles(py_parsed, rs_parsed, docs_allowed, repo_root, None)
+}
+
+pub fn collect_doc_violations_with_roles(
+    py_parsed: &[ParsedFile],
+    rs_parsed: &[ParsedRustFile],
+    docs_allowed: &[String],
+    repo_root: &Path,
+    roles: Option<&SourceRoleIndex>,
 ) -> Vec<Violation> {
     let allowed: Vec<String> = docs_allowed
         .iter()
@@ -41,19 +60,35 @@ pub fn collect_doc_violations(
         if path_in_allowed_dirs(&parsed.path, repo_root, &allowed) {
             continue;
         }
-        python::append_python_doc_violations(parsed, &mut out);
+        python::append_python_doc_violations(parsed, roles, &mut out);
     }
     for parsed in rs_parsed {
         if path_in_allowed_dirs(&parsed.path, repo_root, &allowed) {
             continue;
         }
-        rust_scan::append_rust_doc_violations(parsed, &mut out);
+        rust_scan::append_rust_doc_violations(parsed, roles, &mut out);
     }
     out
 }
 
 pub fn has_non_doc_comments(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile]) -> bool {
-    !collect_comment_violations(py_parsed, rs_parsed).is_empty()
+    has_non_doc_comments_with_roles(py_parsed, rs_parsed, None)
+}
+
+pub fn has_non_doc_comments_with_roles(
+    py_parsed: &[ParsedFile],
+    rs_parsed: &[ParsedRustFile],
+    roles: Option<&SourceRoleIndex>,
+) -> bool {
+    !collect_comment_violations_with_roles(py_parsed, rs_parsed, roles).is_empty()
+}
+
+pub(super) fn skip_test_only_line(
+    roles: Option<&SourceRoleIndex>,
+    path: &Path,
+    line: usize,
+) -> bool {
+    roles.is_some_and(|roles| roles.role_at(path, line) == CodeRole::TestOnly)
 }
 
 fn path_in_allowed_dirs(path: &Path, repo_root: &Path, allowed: &[String]) -> bool {

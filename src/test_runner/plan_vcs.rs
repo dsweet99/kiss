@@ -58,7 +58,10 @@ pub(crate) fn plan_selectors(req: PlanSelectorsRequest<'_>) -> Result<PlannedSel
         &ignore_norm,
         lang_filter,
     );
-    let (source_changed, test_changed) = runners::partition_changed_paths(&abs_paths);
+    let roles = runners::roles_for_universe(&repo_root, &ignore_norm)
+        .map_err(|err| format!("error: kiss test: {err}"))?;
+    let (source_changed, test_changed) =
+        runners::partition_changed_paths_with_roles(&abs_paths, &roles);
     let selector_plan = runners::combined_selectors_with_direct(runners::CombinedSelectorInput {
         repo_root: &repo_root,
         source_paths: &source_changed,

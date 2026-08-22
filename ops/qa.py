@@ -988,7 +988,7 @@ def copy_fixture(destination: Path) -> None:
     shutil.copytree(ROOT, destination, dirs_exist_ok=True, ignore=ignored)
 
 
-def test_file(path: Path) -> bool:
+def harness_oracle_test_file(path: Path) -> bool:
     return (
         path.name.startswith("test_")
         or path.name.endswith("_test.py")
@@ -1002,7 +1002,7 @@ def language_ignores(root: Path, language: str) -> list[str]:
         ignored = [
             path.name
             for path in root.rglob("*.py")
-            if test_file(path.relative_to(root)) and path.relative_to(root) != PY_TEST
+            if harness_oracle_test_file(path.relative_to(root)) and path.relative_to(root) != PY_TEST
         ]
     else:
         # kiss --ignore matches filename prefixes. Never emit the RS_SOURCE basename

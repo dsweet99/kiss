@@ -244,6 +244,41 @@ fn combined_selectors_routes_changed_python_and_rust_tests() {
 }
 
 #[test]
+fn changed_python_helper_without_selector_selects_language_universe() {
+    crate::test_runner::lang_python::collect::reset_python_collect_memo_for_tests();
+    let tmp = tempfile::TempDir::new().unwrap();
+    let tests = tmp.path().join("tests");
+    std::fs::create_dir_all(&tests).unwrap();
+    std::fs::write(
+        tests.join("test_app.py"),
+        "def test_app():\n    assert True\n",
+    )
+    .unwrap();
+    let helper = tests.join("helpers.py");
+    std::fs::write(&helper, "def helper():\n    return 1\n").unwrap();
+
+    let plan = combined_selectors(
+        tmp.path(),
+        &[],
+        std::slice::from_ref(&helper),
+        &BTreeMap::new(),
+        &[],
+        Some(kiss::Language::Python),
+        &[],
+    )
+    .unwrap();
+
+    assert!(
+        plan.selectors
+            .python
+            .iter()
+            .any(|selector| selector.ends_with("test_app.py::test_app")),
+        "unresolved Python helper must fall back to the language test universe, got {:?}",
+        plan.selectors.python
+    );
+}
+
+#[test]
 #[allow(non_snake_case)]
 fn EngineBackers_empty_when_no_language_has_work() {
     let tmp = tempfile::TempDir::new().unwrap();

@@ -155,7 +155,7 @@ fn test_qualified_module_name_includes_full_package_path() {
 
 #[test]
 fn test_helpers_imports_and_complexity() {
-    assert!(is_entry_point("main") && is_entry_point("test_foo") && !is_entry_point("utils"));
+    assert!(is_entry_point("main") && !is_entry_point("test_foo") && !is_entry_point("utils"));
     assert!(
         is_entry_point("bin.lock_server"),
         "Rust src/bin/*.rs should be entry points"

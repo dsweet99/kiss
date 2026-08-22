@@ -267,6 +267,22 @@ mod tests {
         }));
     }
 
+    #[test]
+    fn directory_target_registers_existing_path_recursive() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        let regs = resolve_watch_registrations(
+            tmp.path(),
+            &TestInvocation::Targets(vec!["src".into()]),
+            &[],
+        )
+        .unwrap();
+        assert!(regs.iter().any(|r| {
+            path_eq_canon(&r.path, &src) && matches!(r.kind, WatchRootKind::Recursive)
+        }));
+    }
+
     fn path_eq_canon(left: &Path, right: &Path) -> bool {
         match (left.canonicalize(), right.canonicalize()) {
             (Ok(a), Ok(b)) => a == b,

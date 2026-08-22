@@ -33,60 +33,63 @@ pub(crate) struct FullPipelineInput<'a> {
     pub t2: Instant,
 }
 
-fn build_metric_stats<T, FCollect>(
-    parsed: &[T],
-    graph: Option<&DependencyGraph>,
-    init: FCollect,
-) -> kiss::MetricStats
-where
-    FCollect: FnOnce(&[T]) -> kiss::MetricStats,
-{
-    let mut stats = if parsed.is_empty() {
+fn build_python_metric_stats(
+    py_parsed: &[ParsedFile],
+    py_graph: Option<&DependencyGraph>,
+    roles: &kiss::code_roles::SourceRoleIndex,
+) -> kiss::MetricStats {
+    let refs: Vec<_> = py_parsed
+        .iter()
+        .filter(|p| !kiss::code_roles::is_test_only_file(roles, &p.path))
+        .collect();
+    let mut stats = if refs.is_empty() {
         kiss::MetricStats::default()
     } else {
-        init(parsed)
+        kiss::MetricStats::collect(&refs)
     };
-    if let Some(graph) = graph {
+    if let Some(graph) = py_graph {
         stats.collect_graph_metrics(graph);
     }
     stats
 }
 
-fn build_python_metric_stats(
-    py_parsed: &[ParsedFile],
-    py_graph: Option<&DependencyGraph>,
-) -> kiss::MetricStats {
-    build_metric_stats(py_parsed, py_graph, |files| {
-        let refs: Vec<_> = files.iter().collect();
-        kiss::MetricStats::collect(&refs)
-    })
-}
-
 fn build_rust_metric_stats(
     rs_parsed: &[ParsedRustFile],
     rs_graph: Option<&DependencyGraph>,
+    roles: &kiss::code_roles::SourceRoleIndex,
 ) -> kiss::MetricStats {
-    build_metric_stats(rs_parsed, rs_graph, |files| {
-        let refs: Vec<_> = files.iter().collect();
-        kiss::MetricStats::collect_rust(&refs)
-    })
+    let refs: Vec<_> = rs_parsed
+        .iter()
+        .filter(|p| !kiss::code_roles::is_test_only_file(roles, &p.path))
+        .collect();
+    let mut stats = if refs.is_empty() {
+        kiss::MetricStats::default()
+    } else {
+        kiss::MetricStats::collect_rust_with_roles(&refs, Some(roles))
+    };
+    if let Some(graph) = rs_graph {
+        stats.collect_graph_metrics(graph);
+    }
+    stats
 }
 
-pub(crate) fn run_full_pipeline(in_: FullPipelineInput<'_>) -> FullPipelineResult {
+pub(crate) fn run_full_pipeline(
+    in_: FullPipelineInput<'_>,
+) -> Result<FullPipelineResult, kiss::code_roles::RoleBuildError> {
     let (result, parse_timing) = parse_all_timed(ParseAllTimedParams {
         py_files: in_.py_files,
         rs_files: in_.rs_files,
         py_config: in_.opts.py_config,
         rs_config: in_.opts.rs_config,
         show_timing: in_.opts.show_timing,
-    });
-    run_full_pipeline_with_parse(FullPipelineWithParseInput {
+    })?;
+    Ok(run_full_pipeline_with_parse(FullPipelineWithParseInput {
         opts: in_.opts,
         focus: in_.focus,
         result,
         parse_timing,
         timings: (in_.t0, in_.t1, in_.t2),
-    })
+    }))
 }
 
 struct FullPipelineWithParseInput<'a> {
@@ -104,30 +107,46 @@ fn run_full_pipeline_with_parse(in_: FullPipelineWithParseInput<'_>) -> FullPipe
     log_parse_timing(opts.show_timing, &in_.parse_timing);
     let mut result = in_.result;
     if opts.gate_config.comment_removal_enabled {
-        result.violations.extend(kiss::collect_comment_violations(
+        result
+            .violations
+            .extend(kiss::collect_comment_violations_with_roles(
+                &result.py_parsed,
+                &result.rs_parsed,
+                Some(&result.roles),
+            ));
+    }
+    result
+        .violations
+        .extend(kiss::collect_doc_violations_with_roles(
             &result.py_parsed,
             &result.rs_parsed,
+            &opts.gate_config.docs_allowed,
+            &crate::analyze_cache::repo_root_for_universe(opts.universe),
+            Some(&result.roles),
         ));
-    }
-    result.violations.extend(kiss::collect_doc_violations(
-        &result.py_parsed,
-        &result.rs_parsed,
-        &opts.gate_config.docs_allowed,
-        &crate::analyze_cache::repo_root_for_universe(opts.universe),
-    ));
-    let file_count = result.py_parsed.len() + result.rs_parsed.len();
+    let file_count = result
+        .py_parsed
+        .iter()
+        .filter(|p| !kiss::code_roles::is_test_only_file(&result.roles, &p.path))
+        .count()
+        + result
+            .rs_parsed
+            .iter()
+            .filter(|p| !kiss::code_roles::is_test_only_file(&result.roles, &p.path))
+            .count();
     let viols = filter_viols_by_focus(result.violations.clone(), focus);
-    let rs = run_rust_analysis(&result.rs_parsed, opts.gate_config);
+    let rs = run_rust_analysis(&result.rs_parsed, opts.gate_config, &result.roles);
     let ((py_graph, graph_viols_all), py_dups_all) = run_parallel_py_analysis(ParallelPyIn {
         py_parsed: &result.py_parsed,
         rs_graph: rs.graph.as_ref(),
         opts,
         file_count,
+        roles: &result.roles,
     });
     let rs_dups_all = rs.dups.clone();
 
-    let py_stats = build_python_metric_stats(&result.py_parsed, py_graph.as_ref());
-    let rs_stats = build_rust_metric_stats(&result.rs_parsed, rs.graph.as_ref());
+    let py_stats = build_python_metric_stats(&result.py_parsed, py_graph.as_ref(), &result.roles);
+    let rs_stats = build_rust_metric_stats(&result.rs_parsed, rs.graph.as_ref(), &result.roles);
 
     FullPipelineResult {
         result,
@@ -153,13 +172,19 @@ pub(crate) fn run_analyze_uncached(in_: RunAnalyzeUncached<'_>) -> AnalyzeResult
         t0,
         t1,
     } = in_;
-    let (result, parse_timing) = parse_all_timed(ParseAllTimedParams {
+    let (result, parse_timing) = match parse_all_timed(ParseAllTimedParams {
         py_files,
         rs_files,
         py_config: opts.py_config,
         rs_config: opts.rs_config,
         show_timing: opts.show_timing,
-    });
+    }) {
+        Ok(ok) => ok,
+        Err(err) => {
+            eprintln!("{err}");
+            return AnalyzeResult { success: false };
+        }
+    };
 
     let pipeline = run_full_pipeline_with_parse(FullPipelineWithParseInput {
         opts,
@@ -197,6 +222,7 @@ pub(crate) fn empty_full_pipeline_result_for_tests() -> FullPipelineResult {
         result: ParseResult {
             py_parsed: Vec::new(),
             rs_parsed: Vec::new(),
+            roles: kiss::code_roles::SourceRoleIndex::empty(),
             violations: Vec::new(),
             code_unit_count: 0,
             statement_count: 0,
