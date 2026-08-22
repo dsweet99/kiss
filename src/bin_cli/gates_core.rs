@@ -90,8 +90,8 @@ fn test_cli_and_commands() {
         Commands::Mv { .. }
     ));
     assert!(matches!(
-        Cli::try_parse_from(["kiss", "clamp"]).unwrap().command,
-        Commands::Clamp { .. }
+        Cli::try_parse_from(["kiss", "check"]).unwrap().command,
+        Commands::Check { .. }
     ));
     ensure_default_config_exists();
 }

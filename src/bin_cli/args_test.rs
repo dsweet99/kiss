@@ -57,6 +57,13 @@ fn config_subcommand_is_removed() {
 }
 
 #[test]
+fn init_mimic_and_clamp_commands_are_removed() {
+    assert!(Cli::try_parse_from(["kiss", "init"]).is_err());
+    assert!(Cli::try_parse_from(["kiss", "mimic", "."]).is_err());
+    assert!(Cli::try_parse_from(["kiss", "clamp"]).is_err());
+}
+
+#[test]
 fn help_subcommand_is_removed() {
     assert!(Cli::try_parse_from(["kiss", "help"]).is_err());
     assert!(Cli::try_parse_from(["kiss", "help", "check"]).is_err());
@@ -189,11 +196,12 @@ fn top_level_help_describes_commands_and_global_flags() {
         help.contains("Run static complexity, graph, duplicate, comment, doc, and orphan checks")
     );
     assert!(help.contains("Show metric statistics for the codebase"));
-    assert!(help.contains("Generate .kissconfig thresholds from an existing codebase"));
-    assert!(help.contains("Generate .kissconfig from the current directory"));
-    assert!(!help.contains("Shortcut: generate .kissconfig from current directory"));
-    assert!(help.contains("Write a default .kissconfig"));
-    assert!(!help.contains("into `REPO_PATH`"));
+    assert!(!help.contains("Generate .kissconfig thresholds from an existing codebase"));
+    assert!(!help.contains("Generate .kissconfig from the current directory"));
+    assert!(!help.contains("Write a default .kissconfig"));
+    assert!(Cli::command().find_subcommand("init").is_none());
+    assert!(Cli::command().find_subcommand("mimic").is_none());
+    assert!(Cli::command().find_subcommand("clamp").is_none());
     assert!(help.contains("Detect duplicate code blocks"));
     assert!(help.contains("Display all available rules and their current thresholds"));
     assert!(!help.contains("Show effective configuration (merged from all sources)"));
@@ -214,7 +222,10 @@ fn top_level_help_describes_commands_and_global_flags() {
     assert!(help.contains("Rename or move a Python or Rust symbol (beta)"));
     assert!(help.contains("Usage:"));
     assert!(help.contains("Examples:"));
-    assert!(help.contains("kiss clamp"));
+    assert!(help.contains("kiss check"));
+    assert!(!help.contains("kiss clamp"));
+    assert!(!help.contains("kiss mimic"));
+    assert!(!help.contains("kiss init"));
     assert!(!help.contains("EXAMPLES:"));
 }
 
@@ -229,6 +240,7 @@ fn check_and_cov_help_describe_options() {
     assert!(check.contains("Codebase root, optionally followed by focus paths"));
     assert!(check.contains("Path prefix to exclude"));
     assert!(check.contains("Print analysis stage timings"));
+    assert!(check.contains("If .kissconfig is missing, writes one from current-codebase maxima."));
     assert!(check.contains("Usage:"));
     assert!(Cli::command().find_subcommand("cov").is_none());
     let mut command = Cli::command();

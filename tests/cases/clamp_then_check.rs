@@ -125,19 +125,9 @@ fn write_fake_python_tree(root: &Path) {
     seed_all_python(root, "tests/test_app.py::test_app");
 }
 
-fn disable_coverage_gate(root: &Path) {
-    let path = root.join(".kissconfig");
-    let config = fs::read_to_string(&path).unwrap();
-    let config = config.replace(
-        "test_coverage_threshold = 90",
-        "test_coverage_threshold = 0",
-    );
-    fs::write(path, config).unwrap();
-}
-
 fn reclamp_message(language: &str) -> String {
     format!(
-        "Error: found {language} files but .kissconfig has no [{language}] table. Run `kiss clamp` to generate language thresholds."
+        "Error: found {language} files but .kissconfig has no [{language}] table. Delete .kissconfig and run `kiss check` to generate language thresholds."
     )
 }
 
@@ -155,23 +145,24 @@ fn clamp_below_check_fails_on_head() {
     let root = tmp.path();
     write_issue41_python_tree(root);
 
-    let clamp = run_kiss(root, &["clamp"]);
-    assert!(clamp.status.success(), "clamp failed: {}", combined(&clamp));
+    let check = run_kiss(root, &["check", "."]);
+    assert!(
+        root.join(".kissconfig").exists(),
+        "check must write .kissconfig when missing: {}",
+        combined(&check)
+    );
     let config = fs::read_to_string(root.join(".kissconfig")).unwrap();
     let written = table_usize(&config, "python", "indirect_dependencies")
         .expect("python indirect_dependencies");
     let observed = python_graph_maxima(root).indirect_dependencies as i64;
     assert_eq!(
         written, observed,
-        "clamp must write check's graph max; config:\n{config}"
+        "check must write its own graph max; config:\n{config}"
     );
-
-    disable_coverage_gate(root);
-    let check = run_kiss(root, &["check", "."]);
     let stdout = stdout_of(&check);
     assert!(
         check.status.success(),
-        "check after clamp should be green: {}",
+        "first check should be green: {}",
         combined(&check)
     );
     assert!(
@@ -186,13 +177,13 @@ fn clamp_then_check_is_green() {
     let root = tmp.path();
     write_small_python_package(root);
 
-    let clamp = run_kiss(root, &["clamp"]);
-    assert!(clamp.status.success(), "clamp failed: {}", combined(&clamp));
+    let check = run_kiss(root, &["check", "."]);
+    assert!(check.status.success(), "check failed: {}", combined(&check));
     let config = fs::read_to_string(root.join(".kissconfig")).unwrap();
     assert!(config.contains("[python]"), "config:\n{config}");
     assert!(
         !config.contains("[rust]"),
-        "python-only clamp must omit rust:\n{config}"
+        "python-only check must omit rust:\n{config}"
     );
     let written = table_usize(&config, "python", "indirect_dependencies")
         .expect("python indirect_dependencies");
@@ -205,7 +196,7 @@ fn clamp_then_check_is_green() {
     let stdout = stdout_of(&check);
     assert!(
         check.status.success(),
-        "check after clamp should be green: {}",
+        "second check should stay green: {}",
         combined(&check)
     );
     assert!(
@@ -220,8 +211,8 @@ fn python_only_clamp_omits_rust() {
     let root = tmp.path();
     write_small_python_package(root);
 
-    let clamp = run_kiss(root, &["clamp"]);
-    assert!(clamp.status.success(), "{}", combined(&clamp));
+    let first = run_kiss(root, &["check", "."]);
+    assert!(first.status.success(), "{}", combined(&first));
     let config = fs::read_to_string(root.join(".kissconfig")).unwrap();
     assert!(config.contains("[python]"));
     assert!(!config.contains("[rust]"), "config:\n{config}");
@@ -273,8 +264,8 @@ fn rust_only_clamp_omits_python() {
     )
     .unwrap();
 
-    let clamp = run_kiss(root, &["clamp"]);
-    assert!(clamp.status.success(), "{}", combined(&clamp));
+    let first = run_kiss(root, &["check", "."]);
+    assert!(first.status.success(), "{}", combined(&first));
     let config = fs::read_to_string(root.join(".kissconfig")).unwrap();
     assert!(config.contains("[rust]"), "config:\n{config}");
     assert!(!config.contains("[python]"), "config:\n{config}");
@@ -312,40 +303,8 @@ fn rust_only_clamp_omits_python() {
     );
 }
 
-#[test]
-fn mimic_out_matches_clamp_ignores() {
-    let tmp = TempDir::new().unwrap();
-    let root = tmp.path();
-    write_fake_python_tree(root);
-
-    let mimic = run_kiss(root, &["mimic", ".", "--out", ".kissconfig"]);
-    assert!(mimic.status.success(), "{}", combined(&mimic));
-    let mimic_cfg = fs::read_to_string(root.join(".kissconfig")).unwrap();
-    let mimic_args = table_usize(&mimic_cfg, "python", "positional_args").unwrap();
-    assert!(
-        mimic_args < 10,
-        "mimic must ignore tests/fake_python; config:\n{mimic_cfg}"
-    );
-
-    fs::remove_file(root.join(".kissconfig")).unwrap();
-    let clamp = run_kiss(root, &["clamp"]);
-    assert!(clamp.status.success(), "{}", combined(&clamp));
-    let clamp_cfg = fs::read_to_string(root.join(".kissconfig")).unwrap();
-    let clamp_args = table_usize(&clamp_cfg, "python", "positional_args").unwrap();
-    assert_eq!(mimic_args, clamp_args);
-    assert!(
-        clamp_args < 10,
-        "clamp must ignore tests/fake_python; config:\n{clamp_cfg}"
-    );
-}
-
-#[test]
-fn ensure_default_config_uses_check_ignores() {
-    let tmp = TempDir::new().unwrap();
-    let root = tmp.path();
-    write_fake_python_tree(root);
+fn assert_auto_config_ignores_fake_python(root: &Path) {
     assert!(!root.join(".kissconfig").exists());
-
     let check = run_kiss(root, &["check", "."]);
     assert!(
         root.join(".kissconfig").exists(),
@@ -361,15 +320,96 @@ fn ensure_default_config_uses_check_ignores() {
 }
 
 #[test]
+fn ensure_default_config_uses_check_ignores() {
+    let tmp = TempDir::new().unwrap();
+    write_fake_python_tree(tmp.path());
+    assert_auto_config_ignores_fake_python(tmp.path());
+}
+
+#[test]
+fn mimic_out_matches_clamp_ignores() {
+    let tmp = TempDir::new().unwrap();
+    write_fake_python_tree(tmp.path());
+    assert_auto_config_ignores_fake_python(tmp.path());
+}
+
+#[test]
 fn init_still_writes_both_languages() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
     let init = run_kiss(root, &["init"]);
-    assert!(init.status.success(), "{}", combined(&init));
+    assert!(
+        !init.status.success(),
+        "kiss init is removed: {}",
+        combined(&init)
+    );
+    fs::write(root.join("app.py"), "def tiny():\n    return 1\n").unwrap();
+    fs::write(
+        root.join("lib.rs"),
+        "pub fn add(a: i32, b: i32) -> i32 { a + b }\n",
+    )
+    .unwrap();
+    let check = run_kiss(root, &["check", "."]);
+    assert!(check.status.success(), "{}", combined(&check));
     let config = fs::read_to_string(root.join(".kissconfig")).unwrap();
     assert!(config.contains("[python]"), "config:\n{config}");
     assert!(config.contains("[rust]"), "config:\n{config}");
-    assert_eq!(config, kiss::default_config_toml());
+}
+
+#[test]
+fn check_foreign_path_clamps_the_checked_tree() {
+    let cwd = TempDir::new().unwrap();
+    let tree = TempDir::new().unwrap();
+    fs::write(cwd.path().join("tiny.py"), "def tiny():\n    return 1\n").unwrap();
+    fs::write(
+        tree.path().join("mod.py"),
+        "def f(a, b, c, d, e, f):\n    return a\n",
+    )
+    .unwrap();
+
+    let check = run_kiss(cwd.path(), &["check", &tree.path().to_string_lossy()]);
+    let config = fs::read_to_string(cwd.path().join(".kissconfig")).unwrap();
+    assert!(
+        check.status.success(),
+        "first check of PATH must pass: {}",
+        combined(&check)
+    );
+    assert!(
+        stdout_of(&check).contains("NO VIOLATIONS"),
+        "stdout:\n{}",
+        stdout_of(&check)
+    );
+    assert_eq!(
+        table_usize(&config, "python", "positional_args"),
+        Some(6),
+        "config must clamp the checked tree:\n{config}"
+    );
+}
+
+#[test]
+fn check_ignore_is_applied_when_auto_creating_config() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+    fs::create_dir_all(root.join("vendor")).unwrap();
+    fs::write(root.join("app.py"), "def tiny(x):\n    return x\n").unwrap();
+    fs::write(
+        root.join("vendor/big.py"),
+        "def f(a, b, c, d, e, f, g, h, i, j):\n    return a\n",
+    )
+    .unwrap();
+
+    let check = run_kiss(root, &["check", ".", "--ignore", "vendor"]);
+    assert!(
+        check.status.success(),
+        "check --ignore must pass: {}",
+        combined(&check)
+    );
+    let config = fs::read_to_string(root.join(".kissconfig")).unwrap();
+    assert_eq!(
+        table_usize(&config, "python", "positional_args"),
+        Some(1),
+        "auto-create must honor --ignore:\n{config}"
+    );
 }
 
 #[test]
@@ -383,7 +423,7 @@ fn reclamp_omits_language_with_zero_files() {
     )
     .unwrap();
 
-    let first = run_kiss(root, &["clamp"]);
+    let first = run_kiss(root, &["check", "."]);
     assert!(first.status.success(), "{}", combined(&first));
     let mixed = fs::read_to_string(root.join(".kissconfig")).unwrap();
     assert!(
@@ -392,12 +432,13 @@ fn reclamp_omits_language_with_zero_files() {
     );
 
     fs::remove_file(root.join("lib.rs")).unwrap();
-    let second = run_kiss(root, &["clamp"]);
+    fs::remove_file(root.join(".kissconfig")).unwrap();
+    let second = run_kiss(root, &["check", "."]);
     assert!(second.status.success(), "{}", combined(&second));
     let python_only = fs::read_to_string(root.join(".kissconfig")).unwrap();
     assert!(python_only.contains("[python]"), "{python_only}");
     assert!(
         !python_only.contains("[rust]"),
-        "re-clamp must omit rust when no rust files remain:\n{python_only}"
+        "regenerated config must omit rust when no rust files remain:\n{python_only}"
     );
 }

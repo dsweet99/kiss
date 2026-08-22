@@ -1,16 +1,24 @@
-use crate::bin_cli::mimic::run_mimic_with_quiet;
+use crate::bin_cli::mimic::run_mimic;
 use crate::bin_cli::util::merge_check_ignore_prefixes;
 use kiss::{Config, ConfigLanguage, GateConfig, LanguageTablesPresent, kissconfig_path_from_cwd};
 use std::path::{Path, PathBuf};
 
 pub fn ensure_default_config_exists() {
+    ensure_default_config_from(&[".".to_string()], &[]);
+}
+
+pub fn ensure_default_config_from(paths: &[String], ignore: &[String]) {
     let local_config = Path::new(".kissconfig");
     if local_config.exists() {
         return;
     }
-    let quiet = false;
-    let ignore = merge_check_ignore_prefixes(&[]);
-    let code = run_mimic_with_quiet(&[".".to_string()], Some(local_config), None, &ignore, quiet);
+    let ignore = merge_check_ignore_prefixes(ignore);
+    let roots = if paths.is_empty() {
+        vec![".".to_string()]
+    } else {
+        vec![paths[0].clone()]
+    };
+    let code = run_mimic(&roots, Some(local_config), None, &ignore);
     if code != 0 {
         std::process::exit(code);
     }
@@ -27,40 +35,6 @@ pub fn load_language_tables(
         return LanguageTablesPresent::from_path(path);
     }
     LanguageTablesPresent::from_path(&kissconfig_path_from_cwd())
-}
-
-pub fn run_init_command(repo_path: &Path) -> i32 {
-    if !repo_path.exists() {
-        eprintln!("Error: Repo path does not exist: {}", repo_path.display());
-        return 1;
-    }
-    if !repo_path.is_dir() {
-        eprintln!(
-            "Error: Repo path is not a directory: {}",
-            repo_path.display()
-        );
-        return 1;
-    }
-
-    let config_path = repo_path.join(".kissconfig");
-    if config_path.exists() {
-        println!(
-            "Skipped writing {} because it already exists; did not overwrite it.",
-            config_path.display()
-        );
-        return 0;
-    }
-
-    match std::fs::write(&config_path, kiss::default_config_toml()) {
-        Ok(()) => {
-            println!("Wrote default config to {}", config_path.display());
-            0
-        }
-        Err(e) => {
-            eprintln!("Error: Could not write {}: {}", config_path.display(), e);
-            1
-        }
-    }
 }
 
 pub fn load_test_section_config(
@@ -112,42 +86,31 @@ pub fn config_provenance() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::Parser;
+    use crate::bin_cli::args::Cli;
+
+    fn init_parse_is_err(args: &[&str]) {
+        assert!(Cli::try_parse_from(args).is_err());
+    }
 
     #[test]
     fn test_run_init_command_nonexistent_path() {
-        let result = run_init_command(Path::new("/nonexistent/path/xyz"));
-        assert_eq!(result, 1);
+        init_parse_is_err(&["kiss", "init", "/nonexistent/path/xyz"]);
     }
 
     #[test]
     fn test_run_init_command_file_not_dir() {
-        let tmp = tempfile::NamedTempFile::new().unwrap();
-        let result = run_init_command(tmp.path());
-        assert_eq!(result, 1);
+        init_parse_is_err(&["kiss", "init", "/etc/hosts"]);
     }
 
     #[test]
     fn test_run_init_command_existing_config() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        std::fs::write(tmp.path().join(".kissconfig"), "# existing").unwrap();
-        let result = run_init_command(tmp.path());
-        assert_eq!(result, 0);
+        init_parse_is_err(&["kiss", "init"]);
     }
 
     #[test]
     fn test_run_init_command_writes_test_section_defaults() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        assert_eq!(run_init_command(tmp.path()), 0);
-        let created = std::fs::read_to_string(tmp.path().join(".kissconfig")).unwrap();
-        assert!(
-            created.contains("num_jobs = 4")
-                && created.contains("watch_settle_seconds = 1.0")
-                && created.contains("pytest_plugins = []")
-                && created.contains("ignore = []")
-                && created.contains("max_num_tests = 999999")
-                && created.contains("[test.max_unit_test_seconds]"),
-            "kiss init must write [test] defaults:\n{created}"
-        );
+        init_parse_is_err(&["kiss", "init"]);
     }
 
     #[test]
@@ -162,7 +125,7 @@ mod tests {
         ensure_default_config_exists();
         assert!(
             Path::new(".kissconfig").exists(),
-            "missing local .kissconfig should be created by clamp"
+            "missing local .kissconfig should be created from codebase maxima"
         );
         let created = std::fs::read_to_string(".kissconfig").unwrap();
         assert!(
@@ -183,6 +146,31 @@ mod tests {
         );
 
         std::env::set_current_dir(orig_dir).unwrap();
+    }
+
+    #[test]
+    fn test_ensure_default_config_from_uses_given_root() {
+        let _cwd_guard = crate::cwd_test_lock::lock();
+        let cwd = tempfile::TempDir::new().unwrap();
+        let other = tempfile::TempDir::new().unwrap();
+        std::fs::write(cwd.path().join("tiny.py"), "def tiny():\n    return 1\n").unwrap();
+        std::fs::write(
+            other.path().join("mod.py"),
+            "def f(a, b, c, d, e, f):\n    return a\n",
+        )
+        .unwrap();
+        let orig_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(cwd.path()).unwrap();
+        ensure_default_config_from(
+            &[other.path().to_string_lossy().into_owned()],
+            &[],
+        );
+        let created = std::fs::read_to_string(".kissconfig").unwrap();
+        std::env::set_current_dir(orig_dir).unwrap();
+        assert!(
+            created.contains("positional_args = 6"),
+            "config must use the given root, not cwd:\n{created}"
+        );
     }
 
     #[test]

@@ -49,13 +49,6 @@ fn call_handler_dispatchers(
         ignore: vec![],
         cfg,
     });
-    let _ = handlers::dispatch_mimic(options::MimicDispatchOptions {
-        lang: None,
-        paths: vec![".".to_string()],
-        out: None,
-        ignore: vec![],
-    });
-    assert_eq!(handlers::dispatch_clamp(None, vec![]), 0);
     let _ = handlers::dispatch_dry(options::DryDispatchOptions {
         lang: None,
         path: ".".to_string(),
@@ -270,17 +263,15 @@ fn dispatch_private_routers_cover_additional_command_variants() {
     );
     let _ = dispatch_analyze(
         None,
-        Commands::Mimic {
+        Commands::Coverage {
             paths: vec![".".to_string()],
-            out: None,
+            all: false,
             ignore: vec![],
+            timing: false,
+            jobs: None,
         },
         &cfg,
         &test,
-    );
-    assert_eq!(
-        dispatch_analyze(None, Commands::Clamp { ignore: vec![] }, &cfg, &test),
-        0
     );
     let _ = dispatch_tools(
         None,

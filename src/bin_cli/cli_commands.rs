@@ -6,7 +6,10 @@ use super::parse_positive_usize;
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    #[command(about = "Run static complexity, graph, duplicate, comment, doc, and orphan checks")]
+    #[command(
+        about = "Run static complexity, graph, duplicate, comment, doc, and orphan checks",
+        after_help = "If .kissconfig is missing, writes one from current-codebase maxima."
+    )]
     Check {
         #[arg(
             default_value = ".",
@@ -40,37 +43,6 @@ pub enum Commands {
         table: bool,
         #[arg(long, value_name = "PREFIX", help = "Path prefix to exclude")]
         ignore: Vec<String>,
-    },
-    #[command(about = "Generate .kissconfig thresholds from an existing codebase")]
-    Mimic {
-        #[arg(
-            required = true,
-            value_name = "PATH",
-            help = "Files or directories to analyze"
-        )]
-        paths: Vec<String>,
-        #[arg(
-            long,
-            short,
-            value_name = "FILE",
-            help = "Write config to FILE instead of stdout"
-        )]
-        out: Option<PathBuf>,
-        #[arg(long, value_name = "PREFIX", help = "Path prefix to exclude")]
-        ignore: Vec<String>,
-    },
-    #[command(
-        about = "Generate .kissconfig from the current directory",
-        after_help = "Same as: kiss mimic . --out .kissconfig"
-    )]
-    Clamp {
-        #[arg(long, value_name = "PREFIX", help = "Path prefix to exclude")]
-        ignore: Vec<String>,
-    },
-    #[command(about = "Write a default .kissconfig")]
-    Init {
-        #[arg(default_value = ".", help = "Directory to write .kissconfig into")]
-        repo_path: PathBuf,
     },
     #[command(about = "Detect duplicate code blocks")]
     Dry {

@@ -71,7 +71,7 @@ impl LanguageTablesPresent {
 
 pub fn missing_language_table_message(language: &str) -> String {
     format!(
-        "Error: found {language} files but .kissconfig has no [{language}] table. Run `kiss clamp` to generate language thresholds."
+        "Error: found {language} files but .kissconfig has no [{language}] table. Delete .kissconfig and run `kiss check` to generate language thresholds."
     )
 }
 

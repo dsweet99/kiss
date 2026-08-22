@@ -97,14 +97,18 @@ fn cli_on_empty_directory() {
 
 #[test]
 fn cli_mimic_command_runs() {
-    let tmp = TempDir::new().unwrap();
-    fs::write(tmp.path().join("mod.py"), "def foo(): x = 1").unwrap();
-    let output = kiss_binary().arg("mimic").arg(tmp.path()).output().unwrap();
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("[python]") || stdout.contains("Generated"),
-        "kiss mimic should produce config. stdout: {stdout}"
-    );
+    for args in [vec!["init"], vec!["mimic", "."], vec!["clamp"]] {
+        let output = kiss_binary().args(&args).output().unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !output.status.success(),
+            "removed command {args:?} should fail. stderr: {stderr}"
+        );
+        assert!(
+            stderr.contains("unrecognized subcommand") || stderr.contains("error"),
+            "removed command {args:?} should be rejected. stderr: {stderr}"
+        );
+    }
 }
 
 #[test]

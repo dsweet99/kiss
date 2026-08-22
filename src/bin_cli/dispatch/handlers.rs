@@ -1,20 +1,15 @@
-use std::path::Path;
-
 use crate::analyze;
 use crate::analyze::DryRunParams;
-use crate::bin_cli::mimic::run_mimic;
 use crate::bin_cli::stats::{RunStatsArgs, run_stats};
 use crate::bin_cli::test_cmd::run_test_command;
 use crate::bin_cli::util;
 use crate::bin_cli::{check_cmd, cov_cmd};
 use crate::rules::run_rules;
 use crate::viz::{VizCoarsen, run_viz};
-use kiss::Language;
 
 use super::options::{
-    CheckDispatchOptions, CovDispatchOptions, DryDispatchOptions, MimicDispatchOptions,
-    MvDispatchOptions, RulesDispatchOptions, StatsDispatchOptions, TestDispatchOptions,
-    VizDispatchOptions,
+    CheckDispatchOptions, CovDispatchOptions, DryDispatchOptions, MvDispatchOptions,
+    RulesDispatchOptions, StatsDispatchOptions, TestDispatchOptions, VizDispatchOptions,
 };
 
 pub(in crate::bin_cli::dispatch) fn dispatch_check(o: CheckDispatchOptions<'_>) -> i32 {
@@ -63,24 +58,6 @@ pub(in crate::bin_cli::dispatch) fn dispatch_stats(o: StatsDispatchOptions) -> i
         gate_config: o.cfg.gate,
         language_tables: o.cfg.language_tables,
     })
-}
-
-pub(in crate::bin_cli::dispatch) fn dispatch_mimic(o: MimicDispatchOptions) -> i32 {
-    let ignore = util::merge_check_ignore_prefixes(&o.ignore);
-    run_mimic(&o.paths, o.out.as_deref(), o.lang, &ignore)
-}
-
-pub(in crate::bin_cli::dispatch) fn dispatch_clamp(
-    lang: Option<Language>,
-    ignore: Vec<String>,
-) -> i32 {
-    let ignore = util::merge_check_ignore_prefixes(&ignore);
-    run_mimic(
-        &[".".to_string()],
-        Some(Path::new(".kissconfig")),
-        lang,
-        &ignore,
-    )
 }
 
 pub(in crate::bin_cli::dispatch) fn dispatch_dry(o: DryDispatchOptions) -> i32 {

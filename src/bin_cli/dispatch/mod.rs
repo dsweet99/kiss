@@ -7,16 +7,15 @@ mod test_dispatch;
 mod test_dispatch_b;
 
 use crate::bin_cli::args::{Cli, Commands, parse_test_invocation, validate_test_branch_options};
-use crate::bin_cli::config_session::run_init_command;
 
 use handlers::{
-    dispatch_check, dispatch_clamp, dispatch_cov, dispatch_dry, dispatch_mimic, dispatch_mv,
-    dispatch_rules, dispatch_stats, dispatch_test, dispatch_viz,
+    dispatch_check, dispatch_cov, dispatch_dry, dispatch_mv, dispatch_rules, dispatch_stats,
+    dispatch_test, dispatch_viz,
 };
 use options::{
-    CheckDispatchOptions, CovDispatchOptions, DryDispatchOptions, MimicDispatchOptions,
-    MvDispatchOptions, MvOutputFlags, RulesDispatchOptions, StatsDispatchOptions,
-    TestDispatchOptions, TriConfig, VizDispatchOptions,
+    CheckDispatchOptions, CovDispatchOptions, DryDispatchOptions, MvDispatchOptions,
+    MvOutputFlags, RulesDispatchOptions, StatsDispatchOptions, TestDispatchOptions, TriConfig,
+    VizDispatchOptions,
 };
 
 use kiss::GateConfig;
@@ -69,14 +68,6 @@ fn dispatch_analyze(
             ignore,
             cfg,
         }),
-        Commands::Mimic { paths, out, ignore } => dispatch_mimic(MimicDispatchOptions {
-            lang,
-            paths,
-            out,
-            ignore,
-        }),
-        Commands::Clamp { ignore } => dispatch_clamp(lang, ignore),
-        Commands::Init { repo_path } => run_init_command(&repo_path),
         _ => 2,
     }
 }
@@ -249,10 +240,7 @@ pub fn dispatch(
             command:
                 command @ (Commands::Check { .. }
                 | Commands::Coverage { .. }
-                | Commands::Stats { .. }
-                | Commands::Mimic { .. }
-                | Commands::Clamp { .. }
-                | Commands::Init { .. }),
+                | Commands::Stats { .. }),
         } => dispatch_analyze(lang, command, &cfg, test_section),
         Cli {
             lang,

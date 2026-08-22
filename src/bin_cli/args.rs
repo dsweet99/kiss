@@ -8,13 +8,10 @@ pub use cli_commands::Commands;
 
 const AFTER_HELP: &str = "\
 Examples:
-  kiss clamp                      Generate .kissconfig from the current directory
-  kiss check .                    Run static analysis on the current directory
+  kiss check .                    Run static analysis; write .kissconfig if missing
   kiss check . src/module/        Check one module against the full codebase
   kiss test                       Run tests and enforce runtime coverage
   kiss check --lang rust src/     Analyze only Rust files in src/
-  kiss mimic . --out .kissconfig  Generate config from a codebase
-  kiss init                       Write a default .kissconfig
   kiss viz graph.md               Write a Mermaid dependency graph
 ";
 

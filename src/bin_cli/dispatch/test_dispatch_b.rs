@@ -18,7 +18,11 @@ fn public_dispatch_routes_analyze_and_tool_groups() {
                 config: None,
                 lang: Some(kiss::Language::Python),
                 defaults: true,
-                command: Commands::Clamp { ignore: vec![] },
+                command: Commands::Check {
+                    paths: vec![".".to_string()],
+                    ignore: vec![],
+                    timing: false,
+                },
             },
             &py,
             &rs,
@@ -53,10 +57,12 @@ fn public_dispatch_routes_analyze_and_tool_groups() {
                 config: None,
                 lang: Some(kiss::Language::Python),
                 defaults: true,
-                command: Commands::Mimic {
+                command: Commands::Coverage {
                     paths: vec![".".to_string()],
-                    out: None,
+                    all: false,
                     ignore: vec![],
+                    timing: false,
+                    jobs: None,
                 },
             },
             &py,

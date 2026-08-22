@@ -161,13 +161,12 @@ fn cli_corpus_exercises_mixed_repo_reporting_paths() {
     let repo = TempDir::new().unwrap();
     write_mixed_repo(repo.path());
 
-    let mimic_out = repo.path().join("mimic.toml");
     let graph_out = repo.path().join("graph.mmd");
     for args in [
         vec!["stats", "--all", "5", "."],
         vec!["stats", "--table", "."],
         vec!["dry", "--shingle-size", "3", "--minhash-size", "8", "."],
-        vec!["mimic", "--out", mimic_out.to_str().unwrap(), "."],
+        vec!["check", "."],
         vec!["viz", graph_out.to_str().unwrap(), "--zoom", "0.5", "."],
         vec!["rules"],
     ] {
@@ -184,7 +183,6 @@ fn cli_corpus_exercises_mixed_repo_reporting_paths() {
         );
     }
 
-    assert!(fs::read_to_string(mimic_out).unwrap().contains("[global]"));
     assert!(fs::read_to_string(graph_out).unwrap().contains("graph"));
 }
 

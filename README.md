@@ -26,9 +26,9 @@ cargo install kiss-ai
 
 In your repo:
 ```bash
-kiss clamp
+kiss check
 ```
-`kiss clamp` configures kiss to the statistics of your codebase right now. This will be the upper-bound of the complexity of your codebase. Over time, you can reduce the complexity by changing the constraints in `.kissconfig`
+If `.kissconfig` is missing, `kiss check` writes one from the current codebase maxima. Those values are the upper bound of complexity today. Over time, you can reduce complexity by tightening the constraints in `.kissconfig`.
 
 When your LLM runs `kiss check` it will see whether any of the code it has written has violated a constraint. Example shape (not a live dump of this repository):
 ```

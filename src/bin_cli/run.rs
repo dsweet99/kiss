@@ -1,7 +1,7 @@
 use crate::bin_cli::args::{Cli, Commands};
 use crate::bin_cli::config_session::{
-    ensure_default_config_exists, load_configs, load_gate_config, load_test_section_config,
-    run_init_command,
+    ensure_default_config_exists, ensure_default_config_from, load_configs, load_gate_config,
+    load_test_section_config,
 };
 use crate::bin_cli::dispatch::dispatch;
 use clap::Parser;
@@ -25,13 +25,10 @@ pub(crate) fn run_with_cli(cli: Cli) -> i32 {
             output_dir, runner_map, platform, command,
         );
     }
-    if let Commands::Init { repo_path } = &cli.command {
-        return run_init_command(repo_path);
-    }
     if let Some(code) = prepare_watch_flags(&cli) {
         return code;
     }
-    ensure_default_config_exists();
+    prepare_default_config(&cli);
     let (py_config, rs_config) = load_configs(cli.config.as_ref(), cli.defaults);
     let gate_config = load_gate_config(cli.config.as_ref(), cli.defaults);
     let test_section = match load_test_section_config(cli.config.as_ref(), cli.defaults) {
@@ -42,6 +39,15 @@ pub(crate) fn run_with_cli(cli: Cli) -> i32 {
         }
     };
     dispatch(cli, &py_config, &rs_config, &gate_config, &test_section)
+}
+
+fn prepare_default_config(cli: &Cli) {
+    match &cli.command {
+        Commands::Check { paths, ignore, .. } => {
+            ensure_default_config_from(paths, ignore);
+        }
+        _ => ensure_default_config_exists(),
+    }
 }
 
 fn prepare_watch_flags(cli: &Cli) -> Option<i32> {
@@ -113,26 +119,31 @@ mod run_coverage {
             }),
             0
         );
-        std::env::set_current_dir(orig_dir).unwrap();
+        std::env::set_current_dir(&orig_dir).unwrap();
 
         let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join("ok.py"), "def f():\n    return 1\n").unwrap();
         let config_path = tmp.path().join(".kissconfig");
         assert!(!config_path.exists());
+        std::env::set_current_dir(tmp.path()).unwrap();
         assert_eq!(
             run_with_cli(Cli {
                 config: None,
                 lang: None,
-                defaults: true,
-                command: Commands::Init {
-                    repo_path: tmp.path().to_path_buf(),
+                defaults: false,
+                command: Commands::Check {
+                    paths: vec![".".to_string()],
+                    ignore: Vec::new(),
+                    timing: false,
                 },
             }),
             0
         );
         assert!(
             config_path.exists(),
-            "init should write a default config into the requested repo"
+            "check should write .kissconfig when it is missing"
         );
+        std::env::set_current_dir(&orig_dir).unwrap();
     }
 
     #[test]
@@ -254,22 +265,6 @@ mod run_coverage {
                 0
             );
         }
-
-        let mimic_out = tmp.path().join("mimic.toml");
-        assert_eq!(
-            run_with_cli(Cli {
-                config: None,
-                lang: None,
-                defaults: false,
-                command: Commands::Mimic {
-                    paths: vec![".".to_string()],
-                    out: Some(mimic_out.clone()),
-                    ignore: Vec::new(),
-                },
-            }),
-            0
-        );
-        assert!(fs::read_to_string(&mimic_out).unwrap().contains("[global]"));
 
         let viz_out = tmp.path().join("graph.mmd");
         assert_eq!(
