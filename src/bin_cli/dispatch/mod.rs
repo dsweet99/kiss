@@ -22,6 +22,8 @@ use kiss::TestSectionConfig;
 
 fn dispatch_analyze(
     lang: Option<kiss::Language>,
+    defaults: bool,
+    config: Option<std::path::PathBuf>,
     command: Commands,
     cfg: &TriConfig<'_>,
     test_section: &TestSectionConfig,
@@ -36,6 +38,8 @@ fn dispatch_analyze(
             paths,
             ignore,
             timing,
+            defaults,
+            config,
             cfg,
         }),
         Commands::Coverage {
@@ -234,11 +238,11 @@ pub fn dispatch(
     match cli {
         Cli {
             lang,
-            defaults: _,
-            config: _,
+            defaults,
+            config,
             command:
                 command @ (Commands::Check { .. } | Commands::Coverage { .. } | Commands::Stats { .. }),
-        } => dispatch_analyze(lang, command, &cfg, test_section),
+        } => dispatch_analyze(lang, defaults, config, command, &cfg, test_section),
         Cli {
             lang,
             defaults,

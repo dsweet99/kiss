@@ -46,6 +46,7 @@ fn empty_inputs(fp: &str) -> FullCacheInputs<'static> {
         rs_paths: Vec::new(),
         py_dups_all: &[],
         rs_dups_all: &[],
+        file_content_digests: Vec::new(),
     }
 }
 
@@ -259,6 +260,21 @@ fn fingerprint_includes_gate_docs_allowed() {
 }
 
 #[test]
+fn fingerprint_includes_gate_orphan_allowed() {
+    let py = Config::python_defaults();
+    let rs = Config::rust_defaults();
+    let g0 = GateConfig::default();
+    let g1 = GateConfig {
+        orphan_allowed: vec!["src/plugins".to_string()],
+        ..g0.clone()
+    };
+    assert_ne!(
+        fingerprint_for_check(&[], &[], &py, &rs, &g0),
+        fingerprint_for_check(&[], &[], &py, &rs, &g1),
+    );
+}
+
+#[test]
 fn fingerprint_covers_all_config_fields() {
     let field_count = std::mem::size_of::<Config>() / std::mem::size_of::<usize>();
     assert_eq!(
@@ -302,10 +318,7 @@ fn fingerprint_includes_role_file_bytes_not_just_len_mtime() {
     assert_eq!(content1.len(), content2.len());
     std::fs::write(&py, content1).unwrap();
     let files = vec![py.clone()];
-    let py_cfg = Config::python_defaults();
-    let rs_cfg = Config::rust_defaults();
-    let gate = GateConfig::default();
-    let fp1 = fingerprint_for_check(&files, &[], &py_cfg, &rs_cfg, &gate);
+    let stored = super::content_digest::content_digests_for_paths(&files);
     let mtime = std::fs::metadata(&py).unwrap().modified().unwrap();
     std::fs::write(&py, content2).unwrap();
     std::fs::OpenOptions::new()
@@ -314,9 +327,8 @@ fn fingerprint_includes_role_file_bytes_not_just_len_mtime() {
         .unwrap()
         .set_modified(mtime)
         .unwrap();
-    let fp2 = fingerprint_for_check(&files, &[], &py_cfg, &rs_cfg, &gate);
-    assert_ne!(
-        fp1, fp2,
-        "role file bytes must change the check fingerprint when length and mtime match"
+    assert!(
+        !super::content_digest::verify_content_digests(&stored, &files, &[]),
+        "same length and mtime must still miss cache when file bytes change"
     );
 }

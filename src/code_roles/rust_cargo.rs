@@ -1,6 +1,7 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Mutex, OnceLock};
 
 use serde::Deserialize;
 
@@ -15,11 +16,6 @@ pub struct CargoRoot {
     pub package: String,
     pub kinds: Vec<String>,
     pub manifest_path: PathBuf,
-}
-
-#[derive(Deserialize)]
-struct LocateProject {
-    root: PathBuf,
 }
 
 #[derive(Deserialize)]
@@ -91,30 +87,61 @@ fn locate_workspace(
     if let Some(hit) = memo.get(manifest) {
         return Ok(hit.clone());
     }
-    let output = Command::new("cargo")
-        .args([
-            "locate-project",
-            "--workspace",
-            "--message-format",
-            "json",
-            "--manifest-path",
-        ])
-        .arg(manifest)
-        .output()
-        .map_err(|err| cargo_err(manifest, &err.to_string()))?;
-    if !output.status.success() {
-        return Err(cargo_err(
-            manifest,
-            &String::from_utf8_lossy(&output.stderr),
-        ));
+    let root = workspace_manifest_for(manifest);
+    memo.insert(manifest.to_path_buf(), root.clone());
+    Ok(root)
+}
+
+fn workspace_manifest_for(package_manifest: &Path) -> PathBuf {
+    if manifest_has_workspace_table(package_manifest) {
+        return package_manifest.to_path_buf();
     }
-    let located: LocateProject = serde_json::from_slice(&output.stdout)
-        .map_err(|err| cargo_err(manifest, &err.to_string()))?;
-    memo.insert(manifest.to_path_buf(), located.root.clone());
-    Ok(located.root)
+    let start = package_manifest.parent().unwrap_or(package_manifest);
+    for ancestor in start.ancestors() {
+        let candidate = ancestor.join("Cargo.toml");
+        if manifest_has_workspace_table(&candidate) {
+            return candidate;
+        }
+    }
+    package_manifest.to_path_buf()
+}
+
+fn manifest_has_workspace_table(path: &Path) -> bool {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    text.lines().any(|line| {
+        let trimmed = line.trim();
+        trimmed == "[workspace]" || trimmed.starts_with("[workspace.")
+    })
+}
+
+fn metadata_memo() -> &'static Mutex<HashMap<PathBuf, Vec<CargoRoot>>> {
+    static CACHE: OnceLock<Mutex<HashMap<PathBuf, Vec<CargoRoot>>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 fn load_workspace_roots(workspace_manifest: &Path) -> Result<Vec<CargoRoot>, RoleBuildError> {
+    let key = crate::rust_include::canonical_path(workspace_manifest);
+    if let Some(hit) = metadata_memo()
+        .lock()
+        .expect("cargo metadata cache")
+        .get(&key)
+        .cloned()
+    {
+        return Ok(hit);
+    }
+    let roots = load_workspace_roots_uncached(workspace_manifest)?;
+    metadata_memo()
+        .lock()
+        .expect("cargo metadata cache")
+        .insert(key, roots.clone());
+    Ok(roots)
+}
+
+fn load_workspace_roots_uncached(
+    workspace_manifest: &Path,
+) -> Result<Vec<CargoRoot>, RoleBuildError> {
     let output = Command::new("cargo")
         .args([
             "metadata",
@@ -177,6 +204,21 @@ fn target_contexts(kinds: &[String]) -> (CodeContextSet, bool) {
     (CodeContextSet::both(), true)
 }
 
+pub fn cargo_entry_src_paths(files: &[PathBuf]) -> HashSet<PathBuf> {
+    let Ok((roots, _)) = cargo_roots_for_files(files) else {
+        return HashSet::new();
+    };
+    roots
+        .into_iter()
+        .filter(|root| {
+            root.kinds
+                .iter()
+                .any(|kind| matches!(kind.as_str(), "bin" | "example" | "custom-build"))
+        })
+        .map(|root| root.src_path)
+        .collect()
+}
+
 pub fn workspace_roots_at(repo_root: &Path) -> Result<Vec<CargoRoot>, RoleBuildError> {
     let manifest = repo_root.join("Cargo.toml");
     if !manifest.is_file() {
@@ -226,5 +268,21 @@ mod cargo_test {
         std::fs::write(&file, "pub fn f() {}\n").unwrap();
         let found = nearest_manifest(&file).unwrap();
         assert!(found.ends_with("Cargo.toml"));
+    }
+
+    #[test]
+    fn workspace_manifest_walks_to_workspace_table() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("Cargo.toml"),
+            "[workspace]\nmembers = [\"crate\"]\n",
+        )
+        .unwrap();
+        let crate_dir = tmp.path().join("crate");
+        std::fs::create_dir_all(crate_dir.join("src")).unwrap();
+        let pkg = crate_dir.join("Cargo.toml");
+        std::fs::write(&pkg, "[package]\nname=\"c\"\nversion=\"0.1.0\"\n").unwrap();
+        let found = workspace_manifest_for(&pkg);
+        assert_eq!(found, tmp.path().join("Cargo.toml"));
     }
 }

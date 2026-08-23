@@ -1,8 +1,10 @@
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use kiss::lang_analysis::build_graphs as build_lang_graphs;
 use kiss::{
-    Config, DependencyGraph, GateConfig, ParsedFile, ParsedRustFile, Violation, analyze_graph,
+    Config, ContextDependencyGraph, DependencyGraph, GateConfig, ParsedFile, ParsedRustFile,
+    Violation, analyze_graph, orphan_violations,
 };
 
 pub struct GraphConfigs<'a> {
@@ -14,6 +16,10 @@ pub struct GraphConfigs<'a> {
 pub struct AnalyzeGraphsIn<'a> {
     pub py_graph: Option<&'a DependencyGraph>,
     pub rs_graph: Option<&'a DependencyGraph>,
+    pub py_ctx: Option<&'a ContextDependencyGraph>,
+    pub rs_ctx: Option<&'a ContextDependencyGraph>,
+    pub entries: &'a HashSet<PathBuf>,
+    pub repo_root: &'a Path,
     pub configs: GraphConfigs<'a>,
 }
 
@@ -56,26 +62,69 @@ pub(crate) fn build_py_graph(
     py_parsed: &[ParsedFile],
     roles: &kiss::code_roles::SourceRoleIndex,
 ) -> Option<DependencyGraph> {
-    if py_parsed.is_empty() {
-        None
-    } else {
-        Some(py_context_graph(py_parsed, roles).production_view())
-    }
+    build_py_graphs(py_parsed, roles).0
 }
 
 pub(crate) fn build_rs_graph(
     rs_parsed: &[ParsedRustFile],
     roles: &kiss::code_roles::SourceRoleIndex,
 ) -> Option<DependencyGraph> {
-    if rs_parsed.is_empty() {
-        None
+    build_rs_graphs(rs_parsed, roles).0
+}
+
+pub(crate) fn build_py_graphs(
+    py_parsed: &[ParsedFile],
+    roles: &kiss::code_roles::SourceRoleIndex,
+) -> (Option<DependencyGraph>, ContextDependencyGraph) {
+    if py_parsed.is_empty() {
+        (None, ContextDependencyGraph::empty())
     } else {
-        Some(
-            build_role_graphs(&[], rs_parsed, roles)
-                .rust
-                .production_view(),
-        )
+        let ctx = py_context_graph(py_parsed, roles);
+        (Some(ctx.production_view()), ctx)
     }
+}
+
+pub(crate) fn build_rs_graphs(
+    rs_parsed: &[ParsedRustFile],
+    roles: &kiss::code_roles::SourceRoleIndex,
+) -> (Option<DependencyGraph>, ContextDependencyGraph) {
+    if rs_parsed.is_empty() {
+        (None, ContextDependencyGraph::empty())
+    } else {
+        let ctx = build_role_graphs(&[], rs_parsed, roles).rust;
+        (Some(ctx.production_view()), ctx)
+    }
+}
+
+pub(crate) fn append_orphan_violations(
+    py_ctx: Option<&ContextDependencyGraph>,
+    py_prod: Option<&DependencyGraph>,
+    rs_ctx: Option<&ContextDependencyGraph>,
+    rs_prod: Option<&DependencyGraph>,
+    entries: &HashSet<PathBuf>,
+    orphan_allowed: &[String],
+    repo_root: &Path,
+) -> Vec<Violation> {
+    let mut out = Vec::new();
+    if let (Some(ctx), Some(prod)) = (py_ctx, py_prod) {
+        out.extend(orphan_violations(
+            ctx,
+            prod,
+            entries,
+            orphan_allowed,
+            repo_root,
+        ));
+    }
+    if let (Some(ctx), Some(prod)) = (rs_ctx, rs_prod) {
+        out.extend(orphan_violations(
+            ctx,
+            prod,
+            entries,
+            orphan_allowed,
+            repo_root,
+        ));
+    }
+    out
 }
 
 pub(crate) fn build_role_graphs(
@@ -131,18 +180,23 @@ pub(crate) fn graph_stats(
 
 #[allow(dead_code)]
 pub fn analyze_graphs(in_: &AnalyzeGraphsIn<'_>) -> Vec<Violation> {
-    let AnalyzeGraphsIn {
-        py_graph,
-        rs_graph,
-        configs,
-    } = in_;
-    let orphan = configs.gate.orphan_module_enabled;
     let mut viols = Vec::new();
-    if let Some(g) = py_graph {
-        viols.extend(analyze_graph(g, configs.py_config, orphan));
+    if let Some(g) = in_.py_graph {
+        viols.extend(analyze_graph(g, in_.configs.py_config, false));
     }
-    if let Some(g) = rs_graph {
-        viols.extend(analyze_graph(g, configs.rs_config, orphan));
+    if let Some(g) = in_.rs_graph {
+        viols.extend(analyze_graph(g, in_.configs.rs_config, false));
+    }
+    if in_.configs.gate.orphan_module_enabled {
+        viols.extend(append_orphan_violations(
+            in_.py_ctx,
+            in_.py_graph,
+            in_.rs_ctx,
+            in_.rs_graph,
+            in_.entries,
+            &in_.configs.gate.orphan_allowed,
+            in_.repo_root,
+        ));
     }
     viols
 }
@@ -248,6 +302,79 @@ mod colliding_language_names {
         assert!(
             rs_prod.paths.values().all(|p| !p.ends_with("helper.py")),
             "rust production graph must not own the python helper"
+        );
+    }
+}
+
+#[cfg(test)]
+mod analyze_graphs_orphan {
+    use super::{AnalyzeGraphsIn, GraphConfigs, analyze_graphs, build_py_graphs};
+    use kiss::{Config, GateConfig};
+    use std::collections::HashSet;
+
+    fn isolate_graphs(tmp: &tempfile::TempDir) -> (kiss::DependencyGraph, kiss::ContextDependencyGraph) {
+        let utils = tmp.path().join("utils.py");
+        std::fs::write(&utils, "def f():\n    return 1\n").unwrap();
+        let (py, _, roles) =
+            crate::analyze_parse::parse_classified(std::slice::from_ref(&utils), &[]).unwrap();
+        let (prod, ctx) = build_py_graphs(&py, &roles);
+        (prod.expect("python production graph"), ctx)
+    }
+
+    #[test]
+    fn analyze_graphs_emits_orphan_when_enabled() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (prod, ctx) = isolate_graphs(&tmp);
+        let entries = HashSet::new();
+        let py_config = Config::python_defaults();
+        let rs_config = Config::rust_defaults();
+        let gate = GateConfig::default();
+        let viols = analyze_graphs(&AnalyzeGraphsIn {
+            py_graph: Some(&prod),
+            rs_graph: None,
+            py_ctx: Some(&ctx),
+            rs_ctx: None,
+            entries: &entries,
+            repo_root: tmp.path(),
+            configs: GraphConfigs {
+                py_config: &py_config,
+                rs_config: &rs_config,
+                gate: &gate,
+            },
+        });
+        assert!(
+            viols.iter().any(|v| v.metric == "orphan_module"),
+            "analyze_graphs must emit orphan_module via orphan_violations: {viols:#?}"
+        );
+    }
+
+    #[test]
+    fn analyze_graphs_skips_orphan_when_disabled() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (prod, ctx) = isolate_graphs(&tmp);
+        let entries = HashSet::new();
+        let py_config = Config::python_defaults();
+        let rs_config = Config::rust_defaults();
+        let gate = GateConfig {
+            orphan_module_enabled: false,
+            ..GateConfig::default()
+        };
+        let viols = analyze_graphs(&AnalyzeGraphsIn {
+            py_graph: Some(&prod),
+            rs_graph: None,
+            py_ctx: Some(&ctx),
+            rs_ctx: None,
+            entries: &entries,
+            repo_root: tmp.path(),
+            configs: GraphConfigs {
+                py_config: &py_config,
+                rs_config: &rs_config,
+                gate: &gate,
+            },
+        });
+        assert!(
+            !viols.iter().any(|v| v.metric == "orphan_module"),
+            "disabled orphan gate must not emit orphan_module: {viols:#?}"
         );
     }
 }

@@ -5,7 +5,7 @@ use kiss::check_universe_cache::{CachedDuplicateCluster, FullCheckCache};
 use kiss::stats::MetricStats;
 use kiss::{DependencyGraph, DuplicateCluster, Violation};
 
-use super::{content_digest, graph_counts, store_full_cache};
+use super::{graph_counts, store_full_cache};
 
 #[derive(Default)]
 pub struct FullCacheInputs<'a> {
@@ -27,14 +27,12 @@ pub struct FullCacheInputs<'a> {
     pub rs_paths: Vec<String>,
     pub py_dups_all: &'a [DuplicateCluster],
     pub rs_dups_all: &'a [DuplicateCluster],
+    pub file_content_digests: Vec<(String, u64)>,
 }
 
 pub fn store_full_cache_from_run(inputs: FullCacheInputs<'_>) {
     let (graph_nodes, graph_edges) = graph_counts(inputs.py_graph, inputs.rs_graph);
-    let py_path_bufs: Vec<PathBuf> = inputs.py_paths.iter().map(PathBuf::from).collect();
-    let rs_path_bufs: Vec<PathBuf> = inputs.rs_paths.iter().map(PathBuf::from).collect();
-    let mut file_content_digests = content_digest::content_digests_for_paths(&py_path_bufs);
-    file_content_digests.extend(content_digest::content_digests_for_paths(&rs_path_bufs));
+    let mut file_content_digests = inputs.file_content_digests;
     file_content_digests.sort_by(|a, b| a.0.cmp(&b.0));
     let cache = FullCheckCache {
         fingerprint: inputs.fingerprint,

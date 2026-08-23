@@ -14,6 +14,8 @@ pub(crate) struct CheckDispatchOptions<'a> {
     pub paths: Vec<String>,
     pub ignore: Vec<String>,
     pub timing: bool,
+    pub defaults: bool,
+    pub config: Option<std::path::PathBuf>,
     pub cfg: &'a TriConfig<'a>,
 }
 

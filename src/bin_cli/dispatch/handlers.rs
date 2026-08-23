@@ -21,6 +21,8 @@ pub(in crate::bin_cli::dispatch) fn dispatch_check(o: CheckDispatchOptions<'_>) 
         gate_config: o.cfg.gate,
         ignore: &o.ignore,
         timing: o.timing,
+        defaults: o.defaults,
+        config: o.config.as_deref(),
         language_tables: o.cfg.language_tables,
     };
     check_cmd::run_check_command(&args)

@@ -111,8 +111,14 @@ pub fn production_line_count(roles: &SourceRoleIndex, path: &Path, source: &str)
     if n == 0 {
         return 0;
     }
-    let candidates: Vec<usize> = (1..=n).collect();
-    roles.production_lines(path, &candidates).len()
+    match roles.file_composition(path) {
+        FileComposition::ProductionOnly => n,
+        FileComposition::TestOnly => 0,
+        FileComposition::Mixed => {
+            let candidates: Vec<usize> = (1..=n).collect();
+            roles.production_lines(path, &candidates).len()
+        }
+    }
 }
 
 #[must_use]
@@ -121,14 +127,24 @@ pub fn skip_syn(
     path: &Path,
     node: &impl syn::spanned::Spanned,
 ) -> bool {
-    roles.is_some_and(|roles| {
-        roles.role_for_span(path, SourceSpan::of_syn(node)) == CodeRole::TestOnly
+    roles.is_some_and(|roles| match roles.file_composition(path) {
+        FileComposition::ProductionOnly => false,
+        FileComposition::TestOnly => true,
+        FileComposition::Mixed => {
+            roles.role_for_span(path, SourceSpan::of_syn(node)) == CodeRole::TestOnly
+        }
     })
 }
 
 fn facts_for<'a>(index: &'a SourceRoleIndex, path: &Path) -> Option<&'a FileRoleFacts> {
-    let canon = canonical_path(path);
-    index.files.get(&canon).or_else(|| index.files.get(path))
+    index.files.get(path).or_else(|| {
+        let canon = canonical_path(path);
+        if canon.as_path() == path {
+            None
+        } else {
+            index.files.get(&canon)
+        }
+    })
 }
 
 fn line_contexts(

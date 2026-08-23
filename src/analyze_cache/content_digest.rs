@@ -8,6 +8,7 @@ fn content_digest(bytes: &[u8]) -> u64 {
     fnv1a64(0, bytes)
 }
 
+#[cfg(test)]
 pub(super) fn content_digests_for_paths(paths: &[PathBuf]) -> Vec<(String, u64)> {
     let mut digests: Vec<(String, u64)> = paths
         .iter()

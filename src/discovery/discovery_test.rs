@@ -275,12 +275,13 @@ fn test_process_source_entry_and_ext_entry() {
 
     let tmp = TempDir::new().unwrap();
     fs::write(tmp.path().join("test.py"), "").unwrap();
-    let results = Mutex::new(Vec::new());
+    let mut results = Vec::new();
     for entry in ignore::WalkBuilder::new(tmp.path()).build() {
-        let state = process_source_entry(entry, &[], &results);
-        assert!(matches!(state, WalkState::Continue));
+        if let Some(file) = source_file_from_entry(entry, &[]) {
+            results.push(file);
+        }
     }
-    assert!(!results.into_inner().unwrap().is_empty());
+    assert!(!results.is_empty());
 
     let results2 = Mutex::new(Vec::new());
     for entry in ignore::WalkBuilder::new(tmp.path()).build() {

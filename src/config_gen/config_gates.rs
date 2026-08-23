@@ -165,6 +165,24 @@ fn test_infer_gate_config_no_orphans_module_enabled() {
 }
 
 #[test]
+fn test_infer_gate_test_imported_isolate_enables_orphan() {
+    let tmp = TempDir::new().unwrap();
+    std::fs::write(tmp.path().join("utils.py"), "def f():\n    return 1\n").unwrap();
+    std::fs::create_dir_all(tmp.path().join("tests")).unwrap();
+    std::fs::write(
+        tmp.path().join("tests/test_foo.py"),
+        "from utils import f\n\ndef test_f():\n    assert f() == 1\n",
+    )
+    .unwrap();
+    let paths = vec![tmp.path().to_string_lossy().to_string()];
+    let gate = infer_gate_config_for_paths(&paths, Some(Language::Python), &[]).unwrap();
+    assert!(
+        gate.orphan_module_enabled,
+        "test-imported isolate must not count as an orphan for infer"
+    );
+}
+
+#[test]
 fn test_infer_gate_config_comment_removal_enabled() {
     let tmp = TempDir::new().unwrap();
     std::fs::write(

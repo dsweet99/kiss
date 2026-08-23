@@ -70,7 +70,24 @@ pub(crate) fn maybe_store_full_cache(inp: FullCacheStoreInput<'_>) {
         rs_graph: inp.rs_graph,
         py_dups_all: inp.py_dups_all,
         rs_dups_all: inp.rs_dups_all,
+        file_content_digests: parsed_content_digests(inp.result),
     });
+}
+
+fn parsed_content_digests(result: &ParseResult) -> Vec<(String, u64)> {
+    let py = result.py_parsed.iter().map(|p| {
+        (
+            p.path.to_string_lossy().to_string(),
+            crate::analyze_cache::fnv1a64(0, p.source.as_bytes()),
+        )
+    });
+    let rs = result.rs_parsed.iter().map(|p| {
+        (
+            p.path.to_string_lossy().to_string(),
+            crate::analyze_cache::fnv1a64(0, p.source.as_bytes()),
+        )
+    });
+    py.chain(rs).collect()
 }
 
 #[cfg(test)]

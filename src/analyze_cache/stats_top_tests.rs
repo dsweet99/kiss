@@ -1,3 +1,4 @@
+use super::super::content_digest::content_digests_for_paths;
 use super::try_run_cached_stats_summary;
 use crate::analyze_cache::{FullCacheInputs, store_full_cache_from_run};
 use kiss::{Config, GateConfig, MetricStats};
@@ -40,6 +41,7 @@ fn try_run_cached_stats_summary_requires_stats_for_present_languages() {
         rs_paths: Vec::new(),
         py_dups_all: &[],
         rs_dups_all: &[],
+        file_content_digests: content_digests_for_paths(&py_files),
     });
 
     assert!(
@@ -84,6 +86,7 @@ fn try_run_cached_stats_summary_requires_rust_stats_for_rust_files() {
             .collect(),
         py_dups_all: &[],
         rs_dups_all: &[],
+        file_content_digests: content_digests_for_paths(&rs_files),
     });
 
     assert!(
@@ -129,6 +132,7 @@ fn try_run_cached_stats_summary_returns_full_cache_when_stats_present() {
         rs_paths: Vec::new(),
         py_dups_all: &[],
         rs_dups_all: &[],
+        file_content_digests: content_digests_for_paths(&py_files),
     });
 
     let got = try_run_cached_stats_summary(universe, &py_files, &rs_files, &py_cfg, &rs_cfg, &gate)

@@ -21,6 +21,7 @@ fn default_gate_config_scope_is_codebase() {
     );
     assert!(!GateConfig::default().comment_removal_enabled);
     assert!(GateConfig::default().docs_allowed.is_empty());
+    assert!(GateConfig::default().orphan_allowed.is_empty());
 }
 
 #[test]
@@ -171,6 +172,7 @@ duplication_enabled = false
 orphan_module_enabled = false
 comment_removal_enabled = true
 docs_allowed = [\"docs\", \"src/api\"]
+orphan_allowed = [\"src/plugins\"]
 
 [test]
 test_coverage_threshold = 91
@@ -193,6 +195,7 @@ max_num_tests = 12
         gate.docs_allowed,
         vec!["docs".to_string(), "src/api".to_string()]
     );
+    assert_eq!(gate.orphan_allowed, vec!["src/plugins".to_string()]);
 
     let zero = GateConfig::try_load_from_content("[test]\nmax_num_tests = 0").unwrap();
     assert_eq!(zero.max_num_tests, 0);

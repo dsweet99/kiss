@@ -107,9 +107,14 @@ fn test_gather_parse_and_graphs() {
         rs_config: &Config::rust_defaults(),
         gate: &gate,
     };
+    let entries = std::collections::HashSet::new();
     let _ = crate::analyze::analyze_graphs(&AnalyzeGraphsIn {
         py_graph: py_g.as_ref(),
         rs_graph: rs_g.as_ref(),
+        py_ctx: None,
+        rs_ctx: None,
+        entries: &entries,
+        repo_root: tmp.path(),
         configs: cfg,
     });
 }

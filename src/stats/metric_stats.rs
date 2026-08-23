@@ -119,8 +119,11 @@ impl MetricStats {
             }
         }
 
+        let metrics_by_module = crate::graph::all_module_metrics(graph);
         for name in graph.paths.keys() {
-            let m = graph.module_metrics(name);
+            let Some(m) = metrics_by_module.get(name) else {
+                continue;
+            };
             self.fan_in.push(m.fan_in);
             self.fan_out.push(m.fan_out);
             self.indirect_dependencies.push(m.indirect_dependencies);

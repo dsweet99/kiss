@@ -13,6 +13,7 @@ mod finalize;
 mod finalize_types;
 mod focus;
 mod graph_api;
+mod lang_sides;
 pub(crate) mod line_coverage;
 mod options;
 mod parallel;

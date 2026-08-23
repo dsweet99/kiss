@@ -91,7 +91,46 @@ pub fn build_python_context_graph(
     parsed_files: &[&ParsedFile],
     roles: &crate::code_roles::SourceRoleIndex,
 ) -> crate::graph::ContextDependencyGraph {
-    let graph = build_dependency_graph(parsed_files);
+    let spanned_files = collect_python_import_spans(parsed_files);
+    let import_lists = import_lists_from_spans(&spanned_files);
+    let graph = build_dependency_graph_from_import_lists(&import_lists);
+    finish_python_context_graph(parsed_files, roles, graph, &spanned_files)
+}
+
+fn collect_python_import_spans(
+    parsed_files: &[&ParsedFile],
+) -> Vec<(PathBuf, Vec<(String, crate::code_roles::SourceSpan)>)> {
+    parsed_files
+        .par_iter()
+        .map(|parsed| {
+            (
+                parsed.path.clone(),
+                extract_imports_spanned(parsed.tree.root_node(), &parsed.source),
+            )
+        })
+        .collect()
+}
+
+fn import_lists_from_spans(
+    spanned_files: &[(PathBuf, Vec<(String, crate::code_roles::SourceSpan)>)],
+) -> Vec<(PathBuf, Vec<String>)> {
+    spanned_files
+        .iter()
+        .map(|(path, spanned)| {
+            (
+                path.clone(),
+                spanned.iter().map(|(name, _)| name.clone()).collect(),
+            )
+        })
+        .collect()
+}
+
+fn finish_python_context_graph(
+    parsed_files: &[&ParsedFile],
+    roles: &crate::code_roles::SourceRoleIndex,
+    graph: DependencyGraph,
+    spanned_files: &[(PathBuf, Vec<(String, crate::code_roles::SourceSpan)>)],
+) -> crate::graph::ContextDependencyGraph {
     let mut ctx = crate::graph::ContextDependencyGraph::empty();
     let pairs: Vec<(String, PathBuf)> = graph
         .paths
@@ -110,8 +149,8 @@ pub fn build_python_context_graph(
             .or_default()
             .push(qualified);
     }
-    for parsed in parsed_files {
-        add_python_file_origins(&mut ctx, parsed, roles, &graph, &bare_to_qualified);
+    for (parsed, (_, spanned)) in parsed_files.iter().zip(spanned_files.iter()) {
+        add_python_file_origins(&mut ctx, parsed, roles, &graph, &bare_to_qualified, spanned);
     }
     ctx
 }
@@ -122,19 +161,19 @@ fn add_python_file_origins(
     roles: &crate::code_roles::SourceRoleIndex,
     graph: &DependencyGraph,
     bare_to_qualified: &HashMap<String, Vec<String>>,
+    spanned: &[(String, crate::code_roles::SourceSpan)],
 ) {
     let from = qualified_module_name(&parsed.path);
     let from_parent = from.rsplit_once('.').map(|(parent, _)| parent);
-    let spanned = extract_imports_spanned(parsed.tree.root_node(), &parsed.source);
     for (import, span) in spanned {
-        let targets = python_import_targets(&import, from_parent, graph, bare_to_qualified);
-        let contexts = crate::code_roles::contexts_for_span(roles, &parsed.path, span);
+        let targets = python_import_targets(import, from_parent, graph, bare_to_qualified);
+        let contexts = crate::code_roles::contexts_for_span(roles, &parsed.path, *span);
         for target in targets {
             ctx.record_origin(
                 &from,
                 &target,
                 crate::graph::EdgeOrigin {
-                    source_span: span,
+                    source_span: *span,
                     contexts,
                 },
             );

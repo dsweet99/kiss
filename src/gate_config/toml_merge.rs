@@ -21,6 +21,9 @@ pub(super) fn merge_global_lenient(config: &mut GateConfig, global: &toml::Table
     apply_lenient_string_list(global, "docs_allowed", "directory names", |v| {
         config.docs_allowed = v;
     });
+    apply_lenient_string_list(global, "orphan_allowed", "directory names", |v| {
+        config.orphan_allowed = v;
+    });
 }
 
 pub(super) fn merge_global_strict(
@@ -50,6 +53,9 @@ pub(super) fn merge_global_strict(
     )?;
     if let Some(v) = global.get("docs_allowed") {
         config.docs_allowed = parse_string_list_key(v, "docs_allowed", "directory names")?;
+    }
+    if let Some(v) = global.get("orphan_allowed") {
+        config.orphan_allowed = parse_string_list_key(v, "orphan_allowed", "directory names")?;
     }
     Ok(())
 }

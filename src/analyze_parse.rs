@@ -50,9 +50,18 @@ pub fn parse_all_timed(
     p: ParseAllTimedParams<'_>,
 ) -> Result<(ParseResult, String), RoleBuildError> {
     let ((py_parsed, py_timing), rs_parsed) = parse_sources(p.py_files, p.rs_files, p.show_timing)?;
+    let t_roles = std::time::Instant::now();
     let roles = build_source_role_index(&py_parsed, &rs_parsed, p.py_files, p.rs_files)?;
-    let (py_units, py_stmts, mut viols) = analyze_py_parsed(&py_parsed, p.py_config, &roles);
-    let (rs_units, rs_stmts, rs_viols) = analyze_rs_parsed(&rs_parsed, p.rs_config, &roles)?;
+    log_phase_timing(p.show_timing, "roles", t_roles);
+    let t_an = std::time::Instant::now();
+    let (py_agg, rs_agg) = std::thread::scope(|scope| {
+        let py_handle = scope.spawn(|| analyze_py_parsed(&py_parsed, p.py_config, &roles));
+        let rs_agg = analyze_rs_parsed(&rs_parsed, p.rs_config, &roles);
+        (py_handle.join().expect("python analyze thread"), rs_agg)
+    });
+    log_phase_timing(p.show_timing, "analyze", t_an);
+    let (py_units, py_stmts, mut viols) = py_agg;
+    let (rs_units, rs_stmts, rs_viols) = rs_agg?;
     viols.extend(rs_viols);
     let viols = drop_test_only_violations(viols, &roles);
     Ok((
@@ -79,10 +88,12 @@ fn parse_sources(
     let py_parsed = parse_py_files(py_files)?;
     let t1 = std::time::Instant::now();
     let rs_parsed = parse_rs_files(rs_files)?;
+    let t2 = std::time::Instant::now();
     let timing = if show_timing {
         format!(
-            "py: parse={:.2}s, analyze=0.00s",
-            t1.duration_since(t0).as_secs_f64()
+            "py: parse={:.2}s, rs: parse={:.2}s",
+            t1.duration_since(t0).as_secs_f64(),
+            t2.duration_since(t1).as_secs_f64()
         )
     } else {
         String::new()
@@ -111,6 +122,21 @@ pub(crate) fn parse_py_files(files: &[PathBuf]) -> Result<Vec<ParsedFile>, RoleB
         }
     }
     Ok(parsed)
+}
+
+pub(crate) fn parse_py_files_pooled(files: &[PathBuf]) -> Result<Vec<ParsedFile>, RoleBuildError> {
+    let n = std::thread::available_parallelism()
+        .map(|p| p.get())
+        .unwrap_or(8)
+        .clamp(1, 8);
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(n)
+        .build()
+        .map_err(|err| RoleBuildError::PythonParse {
+            path: files.first().cloned().unwrap_or_default(),
+            message: err.to_string(),
+        })?
+        .install(|| parse_py_files(files))
 }
 
 pub(crate) fn parse_rs_files(files: &[PathBuf]) -> Result<Vec<ParsedRustFile>, RoleBuildError> {
@@ -142,7 +168,11 @@ pub(crate) fn parse_classified(
     Ok((py_parsed, rs_parsed, roles))
 }
 
-fn analyze_py_parsed(parsed: &[ParsedFile], config: &Config, roles: &SourceRoleIndex) -> PyAgg {
+pub(crate) fn analyze_py_parsed(
+    parsed: &[ParsedFile],
+    config: &Config,
+    roles: &SourceRoleIndex,
+) -> PyAgg {
     parsed
         .par_iter()
         .filter(|p| !is_test_only_file(roles, &p.path))
@@ -150,7 +180,7 @@ fn analyze_py_parsed(parsed: &[ParsedFile], config: &Config, roles: &SourceRoleI
         .reduce(py_agg_empty, py_agg_merge)
 }
 
-fn analyze_rs_parsed(
+pub(crate) fn analyze_rs_parsed(
     parsed: &[ParsedRustFile],
     config: &Config,
     roles: &SourceRoleIndex,
@@ -192,6 +222,12 @@ fn analyze_rs_parsed(
         ));
     }
     Ok((unit_count, stmt_count, viols))
+}
+
+fn log_phase_timing(show: bool, label: &str, started: std::time::Instant) {
+    if show {
+        eprintln!("[TIMING] {label}={:.2}s", started.elapsed().as_secs_f64());
+    }
 }
 
 fn drop_test_only_violations(viols: Vec<Violation>, roles: &SourceRoleIndex) -> Vec<Violation> {

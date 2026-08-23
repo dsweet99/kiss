@@ -73,6 +73,7 @@ duplication_enabled = true
 orphan_module_enabled = true
 comment_removal_enabled = false
 docs_allowed = []
+orphan_allowed = []
 
 [test]
 test_coverage_threshold = {gate_coverage}
@@ -216,6 +217,10 @@ mod tests {
         assert!(
             toml.contains("docs_allowed = []"),
             "init default must emit docs_allowed=[]:\n{toml}"
+        );
+        assert!(
+            toml.contains("orphan_allowed = []"),
+            "init default must emit orphan_allowed=[]:\n{toml}"
         );
         assert!(
             toml.contains("test_coverage_threshold = 90"),

@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 #[must_use]
@@ -30,8 +32,24 @@ pub fn resolve_include_path(includer: &Path, lit: &str) -> PathBuf {
     }
 }
 
+thread_local! {
+    static CANON_CACHE: RefCell<HashMap<PathBuf, PathBuf>> = RefCell::new(HashMap::new());
+}
+
 pub fn canonical_path(path: &Path) -> PathBuf {
-    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+    if path.is_absolute() {
+        let hit = CANON_CACHE.with(|cache| cache.borrow().get(path).cloned());
+        if let Some(hit) = hit {
+            return hit;
+        }
+    }
+    let value = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    if path.is_absolute() {
+        CANON_CACHE.with(|cache| {
+            cache.borrow_mut().insert(path.to_path_buf(), value.clone());
+        });
+    }
+    value
 }
 
 pub fn extract_include_literal_from_macro(mac: &syn::Macro) -> Option<String> {

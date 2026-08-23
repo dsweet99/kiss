@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use rayon::prelude::*;
+
 use super::error::RoleBuildError;
 
 pub const ROLE_SCHEMA_VERSION: &str = "roles-v2";
@@ -19,11 +21,23 @@ pub fn role_input_fingerprint(
     let mut h = fnv1a64_local(0xcbf2_9ce4_8422_2325, ROLE_SCHEMA_VERSION.as_bytes());
     let mut paths: Vec<&std::path::PathBuf> = py_files.iter().chain(rs_files).collect();
     paths.sort();
-    for path in paths {
-        let canon = crate::rust_include::canonical_path(path);
-        h = fnv1a64_local(h, canon.to_string_lossy().as_bytes());
-        if let Ok(bytes) = std::fs::read(&canon) {
-            h = fnv1a64_local(h, &bytes);
+    let metas: Vec<(String, Option<(u64, u128)>)> = paths
+        .into_par_iter()
+        .map(|path| {
+            let key = path.to_string_lossy().into_owned();
+            let meta = std::fs::metadata(path).ok().and_then(|meta| {
+                let modified = meta.modified().ok()?;
+                let d = modified.duration_since(std::time::UNIX_EPOCH).ok()?;
+                Some((meta.len(), d.as_nanos()))
+            });
+            (key, meta)
+        })
+        .collect();
+    for (key, meta) in metas {
+        h = fnv1a64_local(h, key.as_bytes());
+        if let Some((len, nanos)) = meta {
+            h = fnv1a64_local(h, &len.to_le_bytes());
+            h = fnv1a64_local(h, &nanos.to_le_bytes());
         }
     }
     mix_cargo(h, rs_files)

@@ -39,6 +39,8 @@ fn call_handler_dispatchers(
         paths: vec![".".to_string()],
         ignore: vec![],
         timing: false,
+        defaults: false,
+        config: None,
         cfg,
     });
     let _ = handlers::dispatch_stats(options::StatsDispatchOptions {
@@ -119,6 +121,8 @@ fn call_router_dispatchers(
     cfg: &options::TriConfig<'_>,
 ) {
     let _ = dispatch_analyze(
+        None,
+        false,
         None,
         Commands::Check {
             paths: vec![".".to_string()],
@@ -214,7 +218,10 @@ fn dispatch_private_routers_reject_commands_from_the_other_group() {
         language_tables: kiss::LanguageTablesPresent::both(),
     };
 
-    assert_eq!(dispatch_analyze(None, Commands::Rules, &cfg, &test), 2);
+    assert_eq!(
+        dispatch_analyze(None, false, None, Commands::Rules, &cfg, &test),
+        2
+    );
     assert_eq!(
         dispatch_tools(
             None,
@@ -252,6 +259,8 @@ fn dispatch_private_routers_cover_additional_command_variants() {
 
     let _ = dispatch_analyze(
         None,
+        false,
+        None,
         Commands::Stats {
             paths: vec![".".to_string()],
             all: None,
@@ -262,6 +271,8 @@ fn dispatch_private_routers_cover_additional_command_variants() {
         &test,
     );
     let _ = dispatch_analyze(
+        None,
+        false,
         None,
         Commands::Coverage {
             paths: vec![".".to_string()],

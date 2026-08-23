@@ -48,11 +48,12 @@ const GLOBAL_KEYS: &[&str] = &[
     "orphan_module_enabled",
     "comment_removal_enabled",
     "docs_allowed",
+    "orphan_allowed",
 ];
 
 const GATE_RENAMED_MSG: &str = "\
 [gate] was renamed: put min_similarity/duplication_enabled/orphan_module_enabled/\
-comment_removal_enabled/docs_allowed under [global], and test_coverage_threshold/\
+comment_removal_enabled/docs_allowed/orphan_allowed under [global], and test_coverage_threshold/\
 test_coverage_scope/max_unit_test_seconds/max_num_tests under [test]";
 
 #[derive(Debug, Clone)]
@@ -66,6 +67,7 @@ pub struct GateConfig {
     pub orphan_module_enabled: bool,
     pub comment_removal_enabled: bool,
     pub docs_allowed: Vec<String>,
+    pub orphan_allowed: Vec<String>,
 }
 
 impl Default for GateConfig {
@@ -80,6 +82,7 @@ impl Default for GateConfig {
             orphan_module_enabled: true,
             comment_removal_enabled: false,
             docs_allowed: Vec::new(),
+            orphan_allowed: Vec::new(),
         }
     }
 }

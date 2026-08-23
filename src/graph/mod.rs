@@ -11,17 +11,20 @@ mod dependency_graph {
 mod graph_analyze;
 mod graph_build;
 mod graph_python;
+mod orphan;
 
 pub use context::{
     ContextDependencyGraph, EdgeOrigin, RoleDependencyGraphs, module_name_for_path,
     path_for_module_name,
 };
 pub use dependency_graph::{
-    CycleInfo, DependencyGraph, ModuleGraphMetrics, is_entry_point, qualified_module_name,
+    CycleInfo, DependencyGraph, ModuleGraphMetrics, all_module_metrics, is_entry_point,
+    qualified_module_name,
 };
 pub use graph_analyze::{
     GraphKeyMaxima, analyze_graph, compute_cyclomatic_complexity, graph_key_maxima,
 };
+pub use orphan::{collect_orphan_entry_paths, orphan_violations};
 pub use graph_build::{build_dependency_graph, build_python_context_graph};
 pub(crate) use graph_python::{
     extract_dynamic_import_module, extract_imports_for_cache, is_dunder_import,

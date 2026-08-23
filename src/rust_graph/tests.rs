@@ -401,3 +401,26 @@ fn include_in_inline_test_mod_keeps_inline_importer() {
     assert!(ctx.test_importers_of(&frag).contains(&tests));
     assert!(!ctx.test_importers_of(&frag).contains(&mixed));
 }
+
+#[test]
+fn path_attr_mod_edges_to_renamed_file() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::write(src.join("lib.rs"), "#[path = \"renamed.rs\"]\nmod foo;\n").unwrap();
+    std::fs::write(src.join("renamed.rs"), "pub fn f() {}\n").unwrap();
+    let paths = vec![src.join("lib.rs"), src.join("renamed.rs")];
+    let parsed: Vec<_> = paths
+        .iter()
+        .map(|path| crate::rust_parsing::parse_rust_file(path).unwrap())
+        .collect();
+    let roles = crate::code_roles::build_source_role_index(&[], &parsed, &[], &paths).unwrap();
+    let refs: Vec<_> = parsed.iter().collect();
+    let ctx = build_rust_context_graph(&refs, &roles);
+    let lib = qualified_rust_module_name(&src.join("lib.rs"));
+    let renamed = qualified_rust_module_name(&src.join("renamed.rs"));
+    assert!(
+        ctx.production_view().imports(&lib, &renamed),
+        "#[path] must add an edge to the renamed file's module"
+    );
+}

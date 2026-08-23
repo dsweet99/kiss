@@ -57,41 +57,9 @@ impl DependencyGraph {
         let Some(&idx) = self.nodes.get(module) else {
             return ModuleGraphMetrics::default();
         };
-        let fan_out = self
-            .graph
-            .neighbors_directed(idx, petgraph::Direction::Outgoing)
-            .count();
-        let (total_reachable, depth) = self.compute_reachable_and_depth(idx);
-        ModuleGraphMetrics {
-            fan_in: self
-                .graph
-                .neighbors_directed(idx, petgraph::Direction::Incoming)
-                .count(),
-            fan_out,
-            indirect_dependencies: total_reachable.saturating_sub(fan_out),
-            dependency_depth: depth,
-        }
-    }
-
-    pub(crate) fn compute_reachable_and_depth(&self, start: NodeIndex) -> (usize, usize) {
-        use std::collections::{HashSet, VecDeque};
-        let mut visited = HashSet::new();
-        let mut queue = VecDeque::new();
-        let mut max_depth = 0;
-        visited.insert(start);
-        queue.push_back((start, 0));
-        while let Some((node, depth)) = queue.pop_front() {
-            for neighbor in self
-                .graph
-                .neighbors_directed(node, petgraph::Direction::Outgoing)
-            {
-                if visited.insert(neighbor) {
-                    max_depth = max_depth.max(depth + 1);
-                    queue.push_back((neighbor, depth + 1));
-                }
-            }
-        }
-        (visited.len() - 1, max_depth)
+        let mut stamp = vec![0u32; self.graph.node_count()];
+        let mut stamp_gen = 0u32;
+        metrics_at(self, idx, &mut stamp, &mut stamp_gen)
     }
 
     pub(crate) fn is_cycle(&self, scc: &[NodeIndex]) -> bool {
@@ -210,6 +178,72 @@ pub fn is_entry_point(name: &str) -> bool {
         "main" | "lib" | "build" | "__main__" | "__init__" | "setup"
     )
 }
+fn metrics_at(
+    graph: &DependencyGraph,
+    idx: NodeIndex,
+    stamp: &mut [u32],
+    stamp_gen: &mut u32,
+) -> ModuleGraphMetrics {
+    let fan_out = graph
+        .graph
+        .neighbors_directed(idx, petgraph::Direction::Outgoing)
+        .count();
+    let (total_reachable, depth) = compute_reachable_and_depth(graph, idx, stamp, stamp_gen);
+    ModuleGraphMetrics {
+        fan_in: graph
+            .graph
+            .neighbors_directed(idx, petgraph::Direction::Incoming)
+            .count(),
+        fan_out,
+        indirect_dependencies: total_reachable.saturating_sub(fan_out),
+        dependency_depth: depth,
+    }
+}
+
+fn compute_reachable_and_depth(
+    graph: &DependencyGraph,
+    start: NodeIndex,
+    stamp: &mut [u32],
+    stamp_gen: &mut u32,
+) -> (usize, usize) {
+    use std::collections::VecDeque;
+    *stamp_gen = stamp_gen.wrapping_add(1);
+    if *stamp_gen == 0 {
+        stamp.fill(0);
+        *stamp_gen = 1;
+    }
+    let mut queue = VecDeque::new();
+    let mut max_depth = 0;
+    let mut reached = 0;
+    stamp[start.index()] = *stamp_gen;
+    queue.push_back((start, 0));
+    while let Some((node, depth)) = queue.pop_front() {
+        for neighbor in graph
+            .graph
+            .neighbors_directed(node, petgraph::Direction::Outgoing)
+        {
+            let i = neighbor.index();
+            if stamp[i] != *stamp_gen {
+                stamp[i] = *stamp_gen;
+                reached += 1;
+                max_depth = max_depth.max(depth + 1);
+                queue.push_back((neighbor, depth + 1));
+            }
+        }
+    }
+    (reached, max_depth)
+}
+
+pub fn all_module_metrics(graph: &DependencyGraph) -> HashMap<String, ModuleGraphMetrics> {
+    let mut stamp = vec![0u32; graph.graph.node_count()];
+    let mut stamp_gen = 0u32;
+    let mut out = HashMap::with_capacity(graph.nodes.len());
+    for (name, &idx) in &graph.nodes {
+        out.insert(name.clone(), metrics_at(graph, idx, &mut stamp, &mut stamp_gen));
+    }
+    out
+}
+
 pub(crate) fn is_orphan(fan_in: usize, fan_out: usize, module_name: &str) -> bool {
     fan_in == 0 && fan_out == 0 && !is_entry_point(module_name)
 }

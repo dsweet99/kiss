@@ -174,10 +174,18 @@ impl OriginEnv<'_> {
         }
     }
 
-    fn mods(&mut self, mod_spans: &[(String, String, SourceSpan)]) {
-        for (suffix, child, span) in mod_spans {
+    fn mods(&mut self, mod_spans: &[(String, String, Option<String>, SourceSpan)]) {
+        for (suffix, child, path_lit, span) in mod_spans {
             let from = qualify_owner(&self.module_name, suffix);
             self.ensure(&from, *span);
+            if let Some(lit) = path_lit {
+                let target = crate::rust_include::resolve_include_path(&self.parsed.path, lit);
+                let key = crate::rust_include::canonical_path(&target);
+                if let Some(child_module) = self.ctx.inner().path_to_module.get(&key).cloned() {
+                    self.edge(&from, &child_module, *span);
+                }
+                continue;
+            }
             let expected = resolve::qualify_child_module(&from, child);
             if self.internal_modules.contains(&expected) {
                 self.edge(&from, &expected, *span);
@@ -242,7 +250,7 @@ pub(crate) struct RustImports {
     pub(crate) mod_decls: Vec<String>,
     pub(crate) include_literals: Vec<String>,
     pub(crate) use_spans: Vec<(String, String, SourceSpan)>,
-    pub(crate) mod_spans: Vec<(String, String, SourceSpan)>,
+    pub(crate) mod_spans: Vec<(String, String, Option<String>, SourceSpan)>,
     pub(crate) include_spans: Vec<(String, String, SourceSpan)>,
 }
 

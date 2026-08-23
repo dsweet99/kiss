@@ -52,6 +52,7 @@ pub fn generate_config_toml_by_language(p: &GenerateConfigParams<'_>) -> String 
         p.gate.comment_removal_enabled
     );
     write_toml_string_list(&mut out, "docs_allowed", &p.gate.docs_allowed);
+    write_toml_string_list(&mut out, "orphan_allowed", &p.gate.orphan_allowed);
     out.push('\n');
     let _ = writeln!(out, "[test]");
     let _ = writeln!(
@@ -193,6 +194,10 @@ mod coverage_witness {
             "auto-created docs_allowed:\n{toml}"
         );
         assert!(
+            toml.contains("orphan_allowed = []"),
+            "auto-created orphan_allowed:\n{toml}"
+        );
+        assert!(
             toml.contains("test_coverage_threshold = 0\n"),
             "auto-created coverage:\n{toml}"
         );
@@ -226,6 +231,10 @@ mod coverage_witness {
         assert!(
             toml.contains("docs_allowed = []"),
             "global docs_allowed emission:\n{toml}"
+        );
+        assert!(
+            toml.contains("orphan_allowed = []"),
+            "global orphan_allowed emission:\n{toml}"
         );
         assert!(
             toml.contains(

@@ -85,7 +85,7 @@ pub use graph::{
     ContextDependencyGraph, CycleInfo, DependencyGraph, EdgeOrigin, GraphKeyMaxima,
     ModuleGraphMetrics, RoleDependencyGraphs, analyze_graph, build_dependency_graph,
     build_python_context_graph, compute_cyclomatic_complexity, graph_key_maxima,
-    module_name_for_path, path_for_module_name,
+    collect_orphan_entry_paths, module_name_for_path, orphan_violations, path_for_module_name,
 };
 pub use layout_cycles::{CycleBreakSuggestion, LayoutCycleAnalysis, analyze_cycles};
 pub use layout_layers::{LayerInfo, compute_layers};

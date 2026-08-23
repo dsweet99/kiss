@@ -19,7 +19,7 @@ use path_helpers::{cache_path_full, same_cached_paths};
 pub(crate) use stats_top::try_run_cached_stats_summary;
 pub use store_full::{FullCacheInputs, store_full_cache_from_run};
 
-const CACHE_SCHEMA_VERSION: &str = "v14-static-roles";
+const CACHE_SCHEMA_VERSION: &str = "v15-orphan-allowed";
 
 pub fn fnv1a64(mut h: u64, bytes: &[u8]) -> u64 {
     for &b in bytes {
@@ -109,6 +109,17 @@ fn mix_gate_into_fingerprint(mut h: u64, gate: &GateConfig) -> u64 {
         h = fnv1a64(h, dir.as_bytes());
         h = fnv1a64(h, &[0]);
     }
+    h = fnv1a64(
+        h,
+        u64::try_from(gate.orphan_allowed.len())
+            .unwrap_or(u64::MAX)
+            .to_le_bytes()
+            .as_slice(),
+    );
+    for dir in &gate.orphan_allowed {
+        h = fnv1a64(h, dir.as_bytes());
+        h = fnv1a64(h, &[0]);
+    }
     h
 }
 
@@ -125,7 +136,6 @@ pub fn fingerprint_for_check(
     h = mix_config_into_fingerprint(h, py_config);
     h = mix_config_into_fingerprint(h, rs_config);
     h = mix_gate_into_fingerprint(h, gate_config);
-    h = mix_sorted_paths_len_mtime(h, py_files.iter().chain(rs_files));
     h = fnv1a64(
         h,
         kiss::code_roles::role_input_fingerprint(py_files, rs_files)

@@ -120,6 +120,7 @@ pub(crate) fn finalize_analysis(in_: FinalizeAnalysisIn<'_>) -> AnalyzeResult {
 
     let RustAnalysis {
         graph: rs_graph_owned,
+        ctx: _,
         dups: rs_dups_vec,
     } = products.rs;
 
@@ -159,6 +160,30 @@ pub(crate) fn finalize_analysis(in_: FinalizeAnalysisIn<'_>) -> AnalyzeResult {
         rs_dups: &outcome.rs_dups,
         t_phase2: outcome.t_phase2,
     });
+    let t_teardown = Instant::now();
+    let leftover = (
+        products.result,
+        products.py_graph,
+        products.graph_viols_all,
+        products.py_dups_all,
+        products.py_stats,
+        products.rs_stats,
+        rs_graph_owned,
+        rs_dups_vec,
+        outcome,
+        viols,
+    );
+    if opts.suppress_final_status {
+        drop(leftover);
+    } else {
+        std::mem::forget(leftover);
+    }
+    if opts.show_timing {
+        eprintln!(
+            "[TIMING] teardown={:.2}s",
+            t_teardown.elapsed().as_secs_f64()
+        );
+    }
 
     AnalyzeResult { success }
 }

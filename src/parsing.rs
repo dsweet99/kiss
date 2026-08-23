@@ -64,11 +64,7 @@ pub fn parse_file(parser: &mut Parser, path: &Path) -> Result<ParsedFile, ParseE
 }
 
 fn python_tree_has_error(node: tree_sitter::Node<'_>) -> bool {
-    if node.is_error() || node.is_missing() {
-        return true;
-    }
-    let mut cursor = node.walk();
-    node.children(&mut cursor).any(python_tree_has_error)
+    node.has_error()
 }
 
 pub fn parse_files(paths: &[PathBuf]) -> Result<Vec<Result<ParsedFile, ParseError>>, ParseError> {

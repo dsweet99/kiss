@@ -9,7 +9,7 @@ pub(crate) struct ImportSink<'a> {
     pub mod_decls: &'a mut Vec<String>,
     pub include_literals: &'a mut Vec<String>,
     pub use_spans: &'a mut Vec<(String, String, SourceSpan)>,
-    pub mod_spans: &'a mut Vec<(String, String, SourceSpan)>,
+    pub mod_spans: &'a mut Vec<(String, String, Option<String>, SourceSpan)>,
     pub include_spans: &'a mut Vec<(String, String, SourceSpan)>,
     pub module_suffix: String,
 }
@@ -31,7 +31,7 @@ fn dummy_sink<'a>(
     mod_decls: &'a mut Vec<String>,
     include_literals: &'a mut Vec<String>,
     use_spans: &'a mut Vec<(String, String, SourceSpan)>,
-    mod_spans: &'a mut Vec<(String, String, SourceSpan)>,
+    mod_spans: &'a mut Vec<(String, String, Option<String>, SourceSpan)>,
     include_spans: &'a mut Vec<(String, String, SourceSpan)>,
 ) -> ImportSink<'a> {
     ImportSink {
@@ -90,6 +90,7 @@ fn extract_imports_from_mod(mod_item: &syn::ItemMod, sink: &mut ImportSink<'_>) 
         sink.mod_spans.push((
             sink.module_suffix.clone(),
             mod_item.ident.to_string(),
+            crate::code_roles::declared_mod_path(mod_item),
             SourceSpan::of_syn(mod_item),
         ));
     }

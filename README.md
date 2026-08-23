@@ -14,7 +14,7 @@ kiss will help your agent produce simpler, clearer, more maintainable code. kiss
 ## The Problem: Missing Global Context
 LLMs operate locally, focusing on whatever code they are editing plus bits and pieces of other, relevant code. They ignore the overall structure of the codebase because they don't see it. Over time, code tends to be a little more tangled, a little less DRY, harder to read and harder to update. To counteract this, LLMs need global information about the codebase.
 
-kiss attempts to provide that in the form of stats about files, functions, etc., code-graph metrics, detected duplication, and low runtime line coverage. `kiss check` stays fast and static; run `kiss test` when you need coverage enforcement. kiss's output is compact, so it won't bloat context.
+kiss attempts to provide that in the form of stats about files, functions, etc., code-graph metrics, detected duplication, and low runtime line coverage. `kiss check` stays fast and static; run `kiss test` when you need coverage enforcement. kiss's output is compact, so it won't bloat context. `orphan_module` is a static isolation check: a production module with no production or test-only import edges, that is not a recognized entry, and is not under `orphan_allowed`.
 
 ## Installation
 

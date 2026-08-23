@@ -137,8 +137,32 @@ pub fn find_source_files_with_ignore(root: &Path, ignore_prefixes: &[String]) ->
         .git_exclude(true)
         .add_custom_ignore_filename(".kissignore")
         .build_parallel()
-        .run(|| Box::new(|entry| process_source_entry(entry, ignore_prefixes, &results)));
+        .run(|| {
+            let mut sink = LocalSink {
+                local: Vec::new(),
+                out: &results,
+            };
+            Box::new(move |entry| {
+                if let Some(file) = source_file_from_entry(entry, ignore_prefixes) {
+                    sink.local.push(file);
+                }
+                WalkState::Continue
+            })
+        });
     results.into_inner().unwrap()
+}
+
+struct LocalSink<'a, T> {
+    local: Vec<T>,
+    out: &'a Mutex<Vec<T>>,
+}
+
+impl<T> Drop for LocalSink<'_, T> {
+    fn drop(&mut self) {
+        if !self.local.is_empty() {
+            self.out.lock().unwrap().append(&mut self.local);
+        }
+    }
 }
 
 pub fn gather_files_by_lang(
@@ -158,7 +182,7 @@ pub fn gather_files_by_lang_opts(
     let (mut py_files, mut rs_files) = (Vec::new(), Vec::new());
     for path in paths {
         for sf in find_source_files_with_ignore(Path::new(path), ignore_prefixes) {
-            let canonical = sf.path.canonicalize().unwrap_or(sf.path);
+            let canonical = sf.path;
             match (sf.language, lang_filter) {
                 (Language::Python, None | Some(Language::Python)) => py_files.push(canonical),
                 (Language::Rust, None | Some(Language::Rust)) => rs_files.push(canonical),
@@ -177,25 +201,21 @@ pub fn gather_files_by_lang_opts(
     (py_files, rs_files)
 }
 
-fn process_source_entry(
+fn source_file_from_entry(
     entry: Result<ignore::DirEntry, ignore::Error>,
     ignore_prefixes: &[String],
-    results: &Mutex<Vec<SourceFile>>,
-) -> WalkState {
-    let Ok(entry) = entry else {
-        return WalkState::Continue;
-    };
+) -> Option<SourceFile> {
+    let entry = entry.ok()?;
     if !entry.file_type().is_some_and(|ft| ft.is_file()) {
-        return WalkState::Continue;
+        return None;
     }
     let path = entry.into_path();
     if should_ignore(&path, ignore_prefixes) {
-        return WalkState::Continue;
+        return None;
     }
-    if let Some(language) = Language::from_path(&path) {
-        results.lock().unwrap().push(SourceFile { path, language });
-    }
-    WalkState::Continue
+    let language = Language::from_path(&path)?;
+    let path = path.canonicalize().unwrap_or(path);
+    Some(SourceFile { path, language })
 }
 
 fn find_files_by_extension(root: &Path, ext: &str) -> Vec<PathBuf> {

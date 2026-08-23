@@ -28,9 +28,11 @@ pub use index::{
     SourceRoleIndex, contexts_at, contexts_for_span, is_test_only_file, production_line_count,
     skip_syn,
 };
-pub(crate) use python::classify_python;
+pub use python::classify_python;
 pub use python_path::{is_default_pytest_collect_candidate, is_python_test_module_path};
-pub(crate) use rust::classify_rust;
+pub use rust::classify_rust;
+pub(crate) use rust_cargo::cargo_entry_src_paths;
+pub(crate) use rust_modules::declared_mod_path;
 pub use span::{SourcePosition, SourceSpan};
 pub use types::{CodeContextSet, CodeRole, FileComposition};
 

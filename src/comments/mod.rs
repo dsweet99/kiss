@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use rayon::prelude::*;
+
 use crate::code_roles::{CodeRole, SourceRoleIndex};
 use crate::parsing::ParsedFile;
 use crate::rust_parsing::ParsedRustFile;
@@ -24,10 +26,14 @@ pub fn collect_comment_violations_with_roles(
     rs_parsed: &[ParsedRustFile],
     roles: Option<&SourceRoleIndex>,
 ) -> Vec<Violation> {
-    let mut out = Vec::new();
-    for parsed in py_parsed {
-        python::append_python_comment_violations(parsed, roles, &mut out);
-    }
+    let mut out: Vec<Violation> = py_parsed
+        .par_iter()
+        .flat_map(|parsed| {
+            let mut file_out = Vec::new();
+            python::append_python_comment_violations(parsed, roles, &mut file_out);
+            file_out
+        })
+        .collect();
     for parsed in rs_parsed {
         rust_scan::append_rust_comment_violations(parsed, roles, &mut out);
     }
@@ -50,11 +56,7 @@ pub fn collect_doc_violations_with_roles(
     repo_root: &Path,
     roles: Option<&SourceRoleIndex>,
 ) -> Vec<Violation> {
-    let allowed: Vec<String> = docs_allowed
-        .iter()
-        .map(|p| p.trim().trim_end_matches('/').to_string())
-        .filter(|p| !p.is_empty())
-        .collect();
+    let allowed = normalize_allowed_dirs(docs_allowed);
     let mut out = Vec::new();
     for parsed in py_parsed {
         if path_in_allowed_dirs(&parsed.path, repo_root, &allowed) {
@@ -91,7 +93,14 @@ pub(super) fn skip_test_only_line(
     roles.is_some_and(|roles| roles.role_at(path, line) == CodeRole::TestOnly)
 }
 
-fn path_in_allowed_dirs(path: &Path, repo_root: &Path, allowed: &[String]) -> bool {
+pub(crate) fn normalize_allowed_dirs(dirs: &[String]) -> Vec<String> {
+    dirs.iter()
+        .map(|p| p.trim().trim_end_matches('/').to_string())
+        .filter(|p| !p.is_empty())
+        .collect()
+}
+
+pub(crate) fn path_in_allowed_dirs(path: &Path, repo_root: &Path, allowed: &[String]) -> bool {
     let rel = repo_relative(path, repo_root);
     allowed
         .iter()

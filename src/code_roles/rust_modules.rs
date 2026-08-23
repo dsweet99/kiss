@@ -134,6 +134,20 @@ fn pick_mod_file(
     }
 }
 
+pub(crate) fn declared_mod_path(module: &ItemMod) -> Option<String> {
+    if let Some(direct) = direct_path_attr(&module.attrs) {
+        return Some(direct);
+    }
+    let mut atoms = AtomInterner::new();
+    for attr in &module.attrs {
+        if let Ok(Some((_, path_val))) = conditional_path_attr(attr, &mut atoms, Path::new("<mod>"))
+        {
+            return Some(path_val);
+        }
+    }
+    None
+}
+
 fn direct_path_attr(attrs: &[Attribute]) -> Option<String> {
     for attr in attrs {
         if !attr.path().is_ident("path") {

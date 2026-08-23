@@ -4,6 +4,9 @@ use crate::analyze::options::{AnalyzeOptions, AnalyzeResult};
 use crate::analyze::parallel::{ParallelPyIn, run_parallel_py_analysis, run_rust_analysis};
 use crate::analyze::params::RunAnalyzeUncached;
 use crate::analyze::print::log_parse_timing;
+use crate::analyze::lang_sides::{PySide, RsSide, parse_and_split_sides};
+use crate::analyze::parallel::build_graph_violations;
+use crate::analyze::parallel::BuildGraphViols;
 use crate::analyze_parse::{ParseAllTimedParams, ParseResult, parse_all_timed};
 use kiss::{DependencyGraph, ParsedFile, ParsedRustFile};
 use std::path::PathBuf;
@@ -106,6 +109,7 @@ fn run_full_pipeline_with_parse(in_: FullPipelineWithParseInput<'_>) -> FullPipe
     let timings = in_.timings;
     log_parse_timing(opts.show_timing, &in_.parse_timing);
     let mut result = in_.result;
+    let t_cd = std::time::Instant::now();
     if opts.gate_config.comment_removal_enabled {
         result
             .violations
@@ -124,6 +128,12 @@ fn run_full_pipeline_with_parse(in_: FullPipelineWithParseInput<'_>) -> FullPipe
             &crate::analyze_cache::repo_root_for_universe(opts.universe),
             Some(&result.roles),
         ));
+    if opts.show_timing {
+        eprintln!(
+            "[TIMING] comments_docs={:.2}s",
+            t_cd.elapsed().as_secs_f64()
+        );
+    }
     let file_count = result
         .py_parsed
         .iter()
@@ -135,18 +145,36 @@ fn run_full_pipeline_with_parse(in_: FullPipelineWithParseInput<'_>) -> FullPipe
             .filter(|p| !kiss::code_roles::is_test_only_file(&result.roles, &p.path))
             .count();
     let viols = filter_viols_by_focus(result.violations.clone(), focus);
+    let t_rs = std::time::Instant::now();
     let rs = run_rust_analysis(&result.rs_parsed, opts.gate_config, &result.roles);
-    let ((py_graph, graph_viols_all), py_dups_all) = run_parallel_py_analysis(ParallelPyIn {
-        py_parsed: &result.py_parsed,
-        rs_graph: rs.graph.as_ref(),
+    if opts.show_timing {
+        eprintln!("[TIMING] rust_analysis={:.2}s", t_rs.elapsed().as_secs_f64());
+    }
+    let t_py = std::time::Instant::now();
+    let (((py_graph, graph_viols_all), py_dups_all), mut py_stats) = run_py_graph_and_stats(
+        &result.py_parsed,
+        &result.roles,
+        &kiss::collect_orphan_entry_paths(&[], &result.rs_parsed, None, rs.graph.as_ref()),
+        &rs,
         opts,
         file_count,
-        roles: &result.roles,
-    });
+    );
+    if let Some(graph) = py_graph.as_ref() {
+        py_stats.collect_graph_metrics(graph);
+    }
+    if opts.show_timing {
+        eprintln!(
+            "[TIMING] py_graph_dups+file_stats={:.2}s",
+            t_py.elapsed().as_secs_f64()
+        );
+    }
     let rs_dups_all = rs.dups.clone();
 
-    let py_stats = build_python_metric_stats(&result.py_parsed, py_graph.as_ref(), &result.roles);
+    let t_st = std::time::Instant::now();
     let rs_stats = build_rust_metric_stats(&result.rs_parsed, rs.graph.as_ref(), &result.roles);
+    if opts.show_timing {
+        eprintln!("[TIMING] rs_stats={:.2}s", t_st.elapsed().as_secs_f64());
+    }
 
     FullPipelineResult {
         result,
@@ -172,25 +200,26 @@ pub(crate) fn run_analyze_uncached(in_: RunAnalyzeUncached<'_>) -> AnalyzeResult
         t0,
         t1,
     } = in_;
-    let (result, parse_timing) = match parse_all_timed(ParseAllTimedParams {
-        py_files,
-        rs_files,
-        py_config: opts.py_config,
-        rs_config: opts.rs_config,
-        show_timing: opts.show_timing,
-    }) {
-        Ok(ok) => ok,
+    let t_split = Instant::now();
+    let (py_parsed, py_side, rs_side) = match parse_and_split_sides(py_files, rs_files, opts) {
+        Ok(sides) => sides,
         Err(err) => {
             eprintln!("{err}");
             return AnalyzeResult { success: false };
         }
     };
-
-    let pipeline = run_full_pipeline_with_parse(FullPipelineWithParseInput {
+    if opts.show_timing {
+        eprintln!(
+            "[TIMING] parse_and_split={:.2}s",
+            t_split.elapsed().as_secs_f64()
+        );
+    }
+    let pipeline = assemble_split_pipeline(AssembleSplit {
         opts,
         focus,
-        result,
-        parse_timing,
+        py_parsed,
+        py_side,
+        rs_side,
         timings: (t0, t1, Instant::now()),
     });
 
@@ -214,6 +243,143 @@ pub(crate) fn run_analyze_uncached(in_: RunAnalyzeUncached<'_>) -> AnalyzeResult
     })
 }
 
+struct AssembleSplit<'a> {
+    opts: &'a AnalyzeOptions<'a>,
+    focus: &'a FocusFilter,
+    py_parsed: Vec<ParsedFile>,
+    py_side: PySide,
+    rs_side: RsSide,
+    timings: (Instant, Instant, Instant),
+}
+
+fn assemble_split_pipeline(inp: AssembleSplit<'_>) -> FullPipelineResult {
+    let AssembleSplit {
+        opts,
+        focus,
+        py_parsed,
+        py_side,
+        rs_side,
+        timings,
+    } = inp;
+    let file_count = count_production_files(&py_parsed, &py_side.roles)
+        + count_production_files_rs(&rs_side.parsed, &rs_side.roles);
+    let rs_dups_all = rs_side.analysis.dups.clone();
+    let mut roles = py_side.roles;
+    roles.merge_from(rs_side.roles);
+    let mut viols = py_side.viols;
+    viols.extend(rs_side.viols);
+    viols.extend(py_side.comments);
+    viols.extend(rs_side.comments);
+    viols.extend(kiss::collect_doc_violations_with_roles(
+        &py_parsed,
+        &rs_side.parsed,
+        &opts.gate_config.docs_allowed,
+        &crate::analyze_cache::repo_root_for_universe(opts.universe),
+        Some(&roles),
+    ));
+    let entries = kiss::collect_orphan_entry_paths(
+        &py_parsed,
+        &rs_side.parsed,
+        py_side.graph.as_ref(),
+        rs_side.analysis.graph.as_ref(),
+    );
+    let graph_viols_all = build_graph_violations(BuildGraphViols {
+        py_graph: py_side.graph.as_ref(),
+        rs_graph: rs_side.analysis.graph.as_ref(),
+        py_ctx: Some(&py_side.ctx),
+        rs_ctx: Some(&rs_side.analysis.ctx),
+        entries: &entries,
+        py_config: opts.py_config,
+        rs_config: opts.rs_config,
+        file_count,
+        orphan_enabled: opts.gate_config.orphan_module_enabled,
+        orphan_allowed: &opts.gate_config.orphan_allowed,
+        repo_root: &crate::analyze_cache::repo_root_for_universe(opts.universe),
+    });
+    let py_stats = graph_only_stats(py_side.graph.as_ref());
+    let rs_stats = graph_only_stats(rs_side.analysis.graph.as_ref());
+    let result = ParseResult {
+        code_unit_count: py_side.units + rs_side.units,
+        statement_count: py_side.stmts + rs_side.stmts,
+        py_parsed,
+        rs_parsed: rs_side.parsed,
+        roles,
+        violations: viols,
+    };
+    FullPipelineResult {
+        viols: filter_viols_by_focus(result.violations.clone(), focus),
+        file_count,
+        py_graph: py_side.graph,
+        rs: rs_side.analysis,
+        graph_viols_all,
+        py_dups_all: py_side.dups,
+        rs_dups_all,
+        py_stats,
+        rs_stats,
+        timings,
+        result,
+    }
+}
+
+type PyGraphDupViols = (
+    (Option<DependencyGraph>, Vec<kiss::Violation>),
+    Vec<kiss::DuplicateCluster>,
+);
+
+fn run_py_graph_and_stats(
+    py_parsed: &[ParsedFile],
+    roles: &kiss::code_roles::SourceRoleIndex,
+    rust_entries: &std::collections::HashSet<PathBuf>,
+    rs: &crate::analyze::parallel::RustAnalysis,
+    opts: &AnalyzeOptions<'_>,
+    file_count: usize,
+) -> (PyGraphDupViols, kiss::MetricStats) {
+    let repo_root = crate::analyze_cache::repo_root_for_universe(opts.universe);
+    rayon::join(
+        || {
+            run_parallel_py_analysis(ParallelPyIn {
+                py_parsed,
+                rust_entries,
+                rs_graph: rs.graph.as_ref(),
+                rs_ctx: Some(&rs.ctx),
+                opts,
+                file_count,
+                roles,
+                repo_root: &repo_root,
+            })
+        },
+        || build_python_metric_stats(py_parsed, None, roles),
+    )
+}
+
+fn count_production_files(
+    parsed: &[ParsedFile],
+    roles: &kiss::code_roles::SourceRoleIndex,
+) -> usize {
+    parsed
+        .iter()
+        .filter(|p| !kiss::code_roles::is_test_only_file(roles, &p.path))
+        .count()
+}
+
+fn count_production_files_rs(
+    parsed: &[ParsedRustFile],
+    roles: &kiss::code_roles::SourceRoleIndex,
+) -> usize {
+    parsed
+        .iter()
+        .filter(|p| !kiss::code_roles::is_test_only_file(roles, &p.path))
+        .count()
+}
+
+fn graph_only_stats(graph: Option<&DependencyGraph>) -> kiss::MetricStats {
+    let mut stats = kiss::MetricStats::default();
+    if let Some(graph) = graph {
+        stats.collect_graph_metrics(graph);
+    }
+    stats
+}
+
 #[cfg(test)]
 pub(crate) fn empty_full_pipeline_result_for_tests() -> FullPipelineResult {
     use crate::analyze::parallel::RustAnalysis;
@@ -232,6 +398,7 @@ pub(crate) fn empty_full_pipeline_result_for_tests() -> FullPipelineResult {
         py_graph: None,
         rs: RustAnalysis {
             graph: None,
+            ctx: kiss::ContextDependencyGraph::empty(),
             dups: Vec::new(),
         },
         graph_viols_all: Vec::new(),

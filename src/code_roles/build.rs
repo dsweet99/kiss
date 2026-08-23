@@ -14,9 +14,13 @@ pub fn build_source_role_index(
 ) -> Result<SourceRoleIndex, RoleBuildError> {
     let py_refs: Vec<&ParsedFile> = py_parsed.iter().collect();
     let rs_refs: Vec<&ParsedRustFile> = rs_parsed.iter().collect();
-    let mut index = classify_python(&py_refs, py_files)?;
-    index.merge_from(classify_rust(&rs_refs, rs_files)?);
-    Ok(index)
+    std::thread::scope(|scope| {
+        let py_handle = scope.spawn(|| classify_python(&py_refs, py_files));
+        let rust_index = classify_rust(&rs_refs, rs_files)?;
+        let mut index = py_handle.join().expect("python roles thread")?;
+        index.merge_from(rust_index);
+        Ok(index)
+    })
 }
 
 #[cfg(test)]

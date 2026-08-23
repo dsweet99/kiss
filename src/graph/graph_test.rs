@@ -80,7 +80,8 @@ fn test_graph_imports_and_cycles() {
     assert!(g.is_cycle(&[idx_a, idx_b]) && !g.is_cycle(&[]) && !g.is_cycle(&[idx_a]));
     g.add_dependency("a", "c");
     g.add_dependency("c", "d");
-    let (reachable, depth) = g.compute_reachable_and_depth(*g.nodes.get("a").unwrap());
+    let metrics = g.module_metrics("a");
+    let (reachable, depth) = (metrics.indirect_dependencies + metrics.fan_out, metrics.dependency_depth);
     assert!(reachable >= 2 && depth >= 2);
 }
 
