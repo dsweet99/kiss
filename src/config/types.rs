@@ -54,6 +54,15 @@ impl LanguageTablesPresent {
     }
 
     #[must_use]
+    pub fn from_path_or_both(path: &std::path::Path) -> Self {
+        if path.exists() {
+            Self::from_path(path)
+        } else {
+            Self::both()
+        }
+    }
+
+    #[must_use]
     pub fn missing_language(
         self,
         py_files: &[std::path::PathBuf],

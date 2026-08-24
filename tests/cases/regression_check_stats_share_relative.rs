@@ -28,10 +28,12 @@ fn regression_check_stats_share_cache_with_relative_path() {
         )],
     );
 
+    let config = crate::common::write_builtin_language_config(repo.path());
     let run = |cmd: &str| {
         kiss_binary()
             .current_dir(repo.path())
-            .arg("--defaults")
+            .arg("--config")
+            .arg(&config)
             .arg(cmd)
             .arg("--lang")
             .arg("python")

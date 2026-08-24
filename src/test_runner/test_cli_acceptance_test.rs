@@ -11,8 +11,19 @@ fn kiss_bin() -> PathBuf {
 
 #[test]
 fn kiss_test_dot_dry_run_smoke() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let config = tmp.path().join("builtin.kissconfig");
+    std::fs::write(&config, "[python]\n[rust]\n").unwrap();
     let output = Command::new(kiss_bin())
-        .args(["--defaults", "test", ".", "--dry-run", "--lang", "rust"])
+        .args([
+            "--config",
+            config.to_str().unwrap(),
+            "test",
+            ".",
+            "--dry-run",
+            "--lang",
+            "rust",
+        ])
         .output()
         .expect("spawn kiss");
     assert!(

@@ -22,7 +22,6 @@ use kiss::TestSectionConfig;
 
 fn dispatch_analyze(
     lang: Option<kiss::Language>,
-    defaults: bool,
     config: Option<std::path::PathBuf>,
     command: Commands,
     cfg: &TriConfig<'_>,
@@ -38,7 +37,6 @@ fn dispatch_analyze(
             paths,
             ignore,
             timing,
-            defaults,
             config,
             cfg,
         }),
@@ -70,6 +68,7 @@ fn dispatch_analyze(
             table,
             ignore,
             cfg,
+            config,
         }),
         _ => 2,
     }
@@ -77,7 +76,6 @@ fn dispatch_analyze(
 
 fn dispatch_tools(
     lang: Option<kiss::Language>,
-    defaults: bool,
     config: Option<std::path::PathBuf>,
     command: Commands,
     cfg: &TriConfig<'_>,
@@ -103,11 +101,7 @@ fn dispatch_tools(
             ignore,
             language_tables: cfg.language_tables,
         }),
-        Commands::Rules => dispatch_rules(RulesDispatchOptions {
-            lang,
-            defaults,
-            cfg,
-        }),
+        Commands::Rules => dispatch_rules(RulesDispatchOptions { lang, cfg }),
         Commands::Viz {
             out,
             paths,
@@ -123,14 +117,9 @@ fn dispatch_tools(
             ignore,
             language_tables: cfg.language_tables,
         }),
-        test_command @ Commands::Test { .. } => dispatch_test_command(
-            lang,
-            defaults,
-            config.as_ref(),
-            test_command,
-            cfg,
-            test_section,
-        ),
+        test_command @ Commands::Test { .. } => {
+            dispatch_test_command(lang, config.as_ref(), test_command, cfg, test_section)
+        }
         Commands::Mv {
             query,
             new_name,
@@ -155,7 +144,6 @@ fn dispatch_tools(
 
 fn dispatch_test_command(
     lang: Option<kiss::Language>,
-    defaults: bool,
     config_path: Option<&std::path::PathBuf>,
     command: Commands,
     cfg: &TriConfig<'_>,
@@ -211,7 +199,7 @@ fn dispatch_test_command(
                 extra,
                 test_cfg: test_section,
                 cfg,
-                reload_kissconfig: !defaults,
+                reload_kissconfig: true,
                 config_path,
             })
         }
@@ -227,8 +215,7 @@ pub fn dispatch(
     gate_config: &GateConfig,
     test_section: &TestSectionConfig,
 ) -> i32 {
-    let language_tables =
-        crate::bin_cli::config_session::load_language_tables(cli.config.as_ref(), cli.defaults);
+    let language_tables = crate::bin_cli::config_session::load_language_tables(cli.config.as_ref());
     let cfg = TriConfig {
         py: py_config,
         rs: rs_config,
@@ -238,16 +225,14 @@ pub fn dispatch(
     match cli {
         Cli {
             lang,
-            defaults,
             config,
             command:
                 command @ (Commands::Check { .. } | Commands::Coverage { .. } | Commands::Stats { .. }),
-        } => dispatch_analyze(lang, defaults, config, command, &cfg, test_section),
+        } => dispatch_analyze(lang, config, command, &cfg, test_section),
         Cli {
             lang,
-            defaults,
             config,
             command,
-        } => dispatch_tools(lang, defaults, config, command, &cfg, test_section),
+        } => dispatch_tools(lang, config, command, &cfg, test_section),
     }
 }

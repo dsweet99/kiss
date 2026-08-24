@@ -24,47 +24,33 @@ pub fn ensure_default_config_from(paths: &[String], ignore: &[String]) {
     }
 }
 
-pub fn load_language_tables(
-    config_path: Option<&PathBuf>,
-    use_defaults: bool,
-) -> LanguageTablesPresent {
-    if use_defaults {
-        return LanguageTablesPresent::both();
-    }
-    if let Some(path) = config_path {
-        return LanguageTablesPresent::from_path(path);
-    }
-    LanguageTablesPresent::from_path(&kissconfig_path_from_cwd())
+pub fn load_language_tables(config_path: Option<&PathBuf>) -> LanguageTablesPresent {
+    let path = match config_path {
+        Some(path) => path.clone(),
+        None => kissconfig_path_from_cwd(),
+    };
+    LanguageTablesPresent::from_path_or_both(&path)
 }
 
 pub fn load_test_section_config(
     config_path: Option<&PathBuf>,
-    use_defaults: bool,
 ) -> Result<kiss::TestSectionConfig, kiss::ConfigError> {
-    if use_defaults {
-        Ok(kiss::TestSectionConfig::default())
-    } else if let Some(path) = config_path {
-        kiss::TestSectionConfig::try_load_from(path)
+    if let Some(path) = config_path {
+        kiss::TestSectionConfig::try_load_path_only(path)
     } else {
         kiss::TestSectionConfig::try_load()
     }
 }
 
-pub fn load_gate_config(config_path: Option<&PathBuf>, use_defaults: bool) -> GateConfig {
-    if use_defaults {
-        GateConfig::default()
-    } else if let Some(path) = config_path {
+pub fn load_gate_config(config_path: Option<&PathBuf>) -> GateConfig {
+    if let Some(path) = config_path {
         GateConfig::load_from(path)
     } else {
         GateConfig::load()
     }
 }
 
-pub fn load_configs(config_path: Option<&PathBuf>, use_defaults: bool) -> (Config, Config) {
-    let defaults = || (Config::python_defaults(), Config::rust_defaults());
-    if use_defaults {
-        return defaults();
-    }
+pub fn load_configs(config_path: Option<&PathBuf>) -> (Config, Config) {
     let Some(path) = config_path else {
         return (
             Config::load_for_language(ConfigLanguage::Python),
@@ -72,15 +58,23 @@ pub fn load_configs(config_path: Option<&PathBuf>, use_defaults: bool) -> (Confi
         );
     };
     (
-        Config::load_for_language_with_override(path, ConfigLanguage::Python),
-        Config::load_for_language_with_override(path, ConfigLanguage::Rust),
+        Config::load_from_for_language(path, ConfigLanguage::Python),
+        Config::load_from_for_language(path, ConfigLanguage::Rust),
     )
 }
 
-pub fn config_provenance() -> String {
-    let local = Path::new(".kissconfig");
-    let local_status = if local.exists() { "found" } else { "not found" };
-    format!("Config: defaults + ./.kissconfig ({local_status})")
+pub fn config_provenance(config: Option<&Path>) -> String {
+    match config {
+        Some(path) => {
+            let status = if path.exists() { "found" } else { "not found" };
+            format!("Config: defaults + {} ({status})", path.display())
+        }
+        None => {
+            let local = Path::new(".kissconfig");
+            let local_status = if local.exists() { "found" } else { "not found" };
+            format!("Config: defaults + ./.kissconfig ({local_status})")
+        }
+    }
 }
 
 #[cfg(test)]
@@ -197,11 +191,67 @@ mod tests {
 
     #[test]
     fn test_load_test_section_config_defaults() {
-        let cfg = load_test_section_config(None, true).unwrap();
+        let missing = PathBuf::from("/nonexistent/kiss-override.toml");
+        let cfg = load_test_section_config(Some(&missing)).unwrap();
 
         assert_eq!(
             cfg.main_branch,
             kiss::TestSectionConfig::default().main_branch
+        );
+    }
+
+    #[test]
+    fn load_configs_uses_only_the_override_file() {
+        let _cwd_guard = crate::cwd_test_lock::lock();
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(
+            tmp.path().join(".kissconfig"),
+            "[python]\nstatements_per_function = 100\n",
+        )
+        .unwrap();
+        let custom = tmp.path().join("custom.toml");
+        std::fs::write(&custom, "[python]\nstatements_per_function = 42\n").unwrap();
+        let orig_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+        let (py, _) = load_configs(Some(&custom));
+        std::env::set_current_dir(orig_dir).unwrap();
+        assert_eq!(py.statements_per_function, 42);
+    }
+
+    #[test]
+    fn load_gate_config_uses_only_the_override_file() {
+        let _cwd_guard = crate::cwd_test_lock::lock();
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(
+            tmp.path().join(".kissconfig"),
+            "[test]\ntest_coverage_threshold = 11\n",
+        )
+        .unwrap();
+        let custom = tmp.path().join("custom.toml");
+        std::fs::write(&custom, "[test]\ntest_coverage_threshold = 22\n").unwrap();
+        let orig_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+        let gate = load_gate_config(Some(&custom));
+        std::env::set_current_dir(orig_dir).unwrap();
+        assert_eq!(gate.test_coverage_threshold, 22);
+    }
+
+    #[test]
+    fn config_provenance_names_override_file() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let custom = tmp.path().join("custom.toml");
+        std::fs::write(&custom, "[python]\n").unwrap();
+        let text = config_provenance(Some(&custom));
+        assert!(
+            text.contains("custom.toml") && text.contains("found"),
+            "{text}"
+        );
+        assert!(!text.contains("./.kissconfig"), "{text}");
+        let missing = tmp.path().join("absent.toml");
+        let missing_text = config_provenance(Some(&missing));
+        assert!(
+            missing_text.contains("absent.toml") && missing_text.contains("not found"),
+            "{missing_text}"
         );
     }
 }

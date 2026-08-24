@@ -36,20 +36,23 @@ fn cli_rules_shows_both_languages_by_default() {
 }
 #[test]
 fn cli_rules_with_defaults_flag() {
+    let tmp = TempDir::new().unwrap();
+    let config = crate::common::write_builtin_language_config(tmp.path());
     let output = kiss_binary()
         .arg("rules")
-        .arg("--defaults")
+        .arg("--config")
+        .arg(&config)
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success());
     assert!(
         stdout.contains("DEFINITION:"),
-        "Should output definitions with --defaults. stdout: {stdout}"
+        "Should output definitions with --config builtin. stdout: {stdout}"
     );
     assert!(
         stdout.contains("RULE:"),
-        "Should output rules with --defaults. stdout: {stdout}"
+        "Should output rules with --config builtin. stdout: {stdout}"
     );
     assert!(
         stdout.contains("35"),
@@ -103,9 +106,12 @@ fn cli_rules_filter_rust_only() {
 
 #[test]
 fn cli_rules_shows_key_thresholds() {
+    let tmp = TempDir::new().unwrap();
+    let config = crate::common::write_builtin_language_config(tmp.path());
     let output = kiss_binary()
         .arg("rules")
-        .arg("--defaults")
+        .arg("--config")
+        .arg(&config)
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -210,8 +216,12 @@ fn cli_rules_with_custom_file_and_local_layers_merges() {
 
     assert!(output.status.success());
     assert!(
-        stdout.contains("statements_per_function <= 100"),
-        "Local .kissconfig should be preserved. stdout: {stdout}"
+        !stdout.contains("statements_per_function <= 100"),
+        "--config must replace local .kissconfig. stdout: {stdout}"
+    );
+    assert!(
+        stdout.contains("statements_per_function <= 35"),
+        "Unset keys should keep built-in defaults. stdout: {stdout}"
     );
     assert!(
         !stdout.contains("lines_per_file <= 111"),
@@ -219,7 +229,7 @@ fn cli_rules_with_custom_file_and_local_layers_merges() {
     );
     assert!(
         stdout.contains("positional_args <= 1"),
-        "Explicit --config should override local settings. stdout: {stdout}"
+        "Explicit --config should apply. stdout: {stdout}"
     );
 }
 
@@ -251,6 +261,10 @@ fn cli_rules_nonexistent_file_warns() {
         .output()
         .unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "missing --config should warn and continue. stderr: {stderr}"
+    );
     assert!(
         stderr.contains("Warning") || stderr.contains("Could not read"),
         "Should warn about missing file. stderr: {stderr}"

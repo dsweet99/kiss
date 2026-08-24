@@ -57,9 +57,10 @@ pub use comments::{
     has_non_doc_comments_with_roles,
 };
 pub use config::{
-    Config, ConfigError, ConfigLanguage, LanguageTablesPresent, find_repo_root, is_similar,
-    kissconfig_path_for_repo, kissconfig_path_from_cwd, missing_language_table_message,
-    reject_unconfigured_languages,
+    Config, ConfigError, ConfigLanguage, ConfigPathOverrideGuard, LanguageTablesPresent,
+    active_kissconfig_path, find_repo_root, is_similar, kissconfig_path_for_repo,
+    kissconfig_path_from_cwd, missing_language_table_message, reject_unconfigured_languages,
+    set_config_path_override,
 };
 pub use counts::analyze_file;
 pub use counts::analyze_file_with_statement_count;
@@ -84,8 +85,8 @@ pub use gate_config::{
 pub use graph::{
     ContextDependencyGraph, CycleInfo, DependencyGraph, EdgeOrigin, GraphKeyMaxima,
     ModuleGraphMetrics, RoleDependencyGraphs, analyze_graph, build_dependency_graph,
-    build_python_context_graph, compute_cyclomatic_complexity, graph_key_maxima,
-    collect_orphan_entry_paths, module_name_for_path, orphan_violations, path_for_module_name,
+    build_python_context_graph, collect_orphan_entry_paths, compute_cyclomatic_complexity,
+    graph_key_maxima, module_name_for_path, orphan_violations, path_for_module_name,
 };
 pub use layout_cycles::{CycleBreakSuggestion, LayoutCycleAnalysis, analyze_cycles};
 pub use layout_layers::{LayerInfo, compute_layers};

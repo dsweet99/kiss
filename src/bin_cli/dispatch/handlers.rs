@@ -21,7 +21,6 @@ pub(in crate::bin_cli::dispatch) fn dispatch_check(o: CheckDispatchOptions<'_>) 
         gate_config: o.cfg.gate,
         ignore: &o.ignore,
         timing: o.timing,
-        defaults: o.defaults,
         config: o.config.as_deref(),
         language_tables: o.cfg.language_tables,
     };
@@ -59,6 +58,7 @@ pub(in crate::bin_cli::dispatch) fn dispatch_stats(o: StatsDispatchOptions) -> i
         rs_config: o.cfg.rs,
         gate_config: o.cfg.gate,
         language_tables: o.cfg.language_tables,
+        config: o.config.as_deref(),
     })
 }
 
@@ -86,7 +86,7 @@ pub(in crate::bin_cli::dispatch) fn dispatch_dry(o: DryDispatchOptions) -> i32 {
 }
 
 pub(in crate::bin_cli::dispatch) fn dispatch_rules(o: RulesDispatchOptions<'_>) -> i32 {
-    run_rules(o.cfg.py, o.cfg.rs, o.cfg.gate, o.lang, o.defaults);
+    run_rules(o.cfg.py, o.cfg.rs, o.cfg.gate, o.lang);
     0
 }
 

@@ -17,7 +17,6 @@ fn public_dispatch_routes_analyze_and_tool_groups() {
             Cli {
                 config: None,
                 lang: Some(kiss::Language::Python),
-                defaults: true,
                 command: Commands::Check {
                     paths: vec![".".to_string()],
                     ignore: vec![],
@@ -36,7 +35,6 @@ fn public_dispatch_routes_analyze_and_tool_groups() {
             Cli {
                 config: None,
                 lang: Some(kiss::Language::Python),
-                defaults: true,
                 command: Commands::Stats {
                     paths: vec![".".to_string()],
                     all: Some(1),
@@ -56,7 +54,6 @@ fn public_dispatch_routes_analyze_and_tool_groups() {
             Cli {
                 config: None,
                 lang: Some(kiss::Language::Python),
-                defaults: true,
                 command: Commands::Coverage {
                     paths: vec![".".to_string()],
                     all: false,
@@ -77,7 +74,6 @@ fn public_dispatch_routes_analyze_and_tool_groups() {
             Cli {
                 config: None,
                 lang: None,
-                defaults: true,
                 command: Commands::Rules,
             },
             &py,
@@ -92,7 +88,6 @@ fn public_dispatch_routes_analyze_and_tool_groups() {
             Cli {
                 config: None,
                 lang: Some(kiss::Language::Python),
-                defaults: true,
                 command: Commands::Dry {
                     path: ".".to_string(),
                     filter_files: vec![],
@@ -115,7 +110,6 @@ fn public_dispatch_routes_analyze_and_tool_groups() {
             Cli {
                 config: None,
                 lang: Some(kiss::Language::Python),
-                defaults: true,
                 command: Commands::Mv {
                     query: "sample.py::value".to_string(),
                     new_name: "new_value".to_string(),
@@ -138,7 +132,6 @@ fn public_dispatch_routes_analyze_and_tool_groups() {
             Cli {
                 config: None,
                 lang: None,
-                defaults: true,
                 command: Commands::Test {
                     operands: vec!["all".to_string()],
                     main_branch: None,
@@ -183,7 +176,6 @@ fn dispatch_test_command_routes_valid_test_mode() {
     };
     let code = super::dispatch_test_command(
         None,
-        true,
         None,
         Commands::Test {
             operands: vec!["commit".to_string()],
@@ -225,7 +217,6 @@ fn dispatch_test_command_rejects_removed_validate_selection() {
     };
     let code = super::dispatch_test_command(
         Some(kiss::Language::Python),
-        true,
         None,
         Commands::Test {
             operands: vec!["validate-selection".to_string()],

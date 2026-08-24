@@ -14,6 +14,7 @@ pub fn run_cli_entrypoint() -> i32 {
 pub use run_cli_entrypoint as run;
 
 pub(crate) fn run_with_cli(cli: Cli) -> i32 {
+    let _config_override = kiss::ConfigPathOverrideGuard::enter(cli.config.as_deref());
     if let Commands::RustLlvmCovTargetRunner {
         output_dir,
         runner_map,
@@ -29,9 +30,9 @@ pub(crate) fn run_with_cli(cli: Cli) -> i32 {
         return code;
     }
     prepare_default_config(&cli);
-    let (py_config, rs_config) = load_configs(cli.config.as_ref(), cli.defaults);
-    let gate_config = load_gate_config(cli.config.as_ref(), cli.defaults);
-    let test_section = match load_test_section_config(cli.config.as_ref(), cli.defaults) {
+    let (py_config, rs_config) = load_configs(cli.config.as_ref());
+    let gate_config = load_gate_config(cli.config.as_ref());
+    let test_section = match load_test_section_config(cli.config.as_ref()) {
         Ok(config) => config,
         Err(err) => {
             eprintln!("Error: {err}");
@@ -42,6 +43,9 @@ pub(crate) fn run_with_cli(cli: Cli) -> i32 {
 }
 
 fn prepare_default_config(cli: &Cli) {
+    if cli.config.is_some() {
+        return;
+    }
     match &cli.command {
         Commands::Check { paths, ignore, .. } => {
             ensure_default_config_from(paths, ignore);
@@ -114,7 +118,6 @@ mod run_coverage {
             run_with_cli(Cli {
                 config: None,
                 lang: None,
-                defaults: true,
                 command: Commands::Rules,
             }),
             0
@@ -130,7 +133,6 @@ mod run_coverage {
             run_with_cli(Cli {
                 config: None,
                 lang: None,
-                defaults: false,
                 command: Commands::Check {
                     paths: vec![".".to_string()],
                     ignore: Vec::new(),
@@ -159,7 +161,6 @@ mod run_coverage {
         let code = run_with_cli(Cli {
             config: None,
             lang: None,
-            defaults: true,
             command: Commands::RustLlvmCovTargetRunner {
                 output_dir: output_dir.clone(),
                 runner_map,
@@ -195,7 +196,6 @@ mod run_coverage {
         let code = run_with_cli(Cli {
             config: None,
             lang: None,
-            defaults: false,
             command: Commands::Rules,
         });
 
@@ -259,7 +259,6 @@ mod run_coverage {
                 run_with_cli(Cli {
                     config: None,
                     lang: None,
-                    defaults: false,
                     command,
                 }),
                 0
@@ -271,7 +270,6 @@ mod run_coverage {
             run_with_cli(Cli {
                 config: None,
                 lang: None,
-                defaults: false,
                 command: Commands::Viz {
                     out: viz_out.clone(),
                     paths: vec![".".to_string()],
@@ -285,6 +283,30 @@ mod run_coverage {
         assert!(fs::read_to_string(&viz_out).unwrap().contains("graph"));
 
         std::env::set_current_dir(original).unwrap();
+    }
+
+    #[test]
+    fn run_with_cli_config_does_not_write_local_kissconfig() {
+        let _cwd_guard = crate::cwd_test_lock::lock();
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join("ok.py"), "def f():\n    return 1\n").unwrap();
+        let custom = tmp.path().join("custom.toml");
+        fs::write(&custom, "[python]\n[rust]\n").unwrap();
+        let original = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+        assert_eq!(
+            run_with_cli(Cli {
+                config: Some(custom),
+                lang: None,
+                command: Commands::Rules,
+            }),
+            0
+        );
+        std::env::set_current_dir(original).unwrap();
+        assert!(
+            !tmp.path().join(".kissconfig").exists(),
+            "--config should not write .kissconfig"
+        );
     }
 
     #[cfg(unix)]

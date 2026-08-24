@@ -19,22 +19,21 @@ fn test_language_and_config() {
     assert_eq!(parse_language("python"), Ok(Language::Python));
     assert_eq!(parse_language("rust"), Ok(Language::Rust));
     assert!(parse_language("invalid").is_err());
-    let (py, rs) = load_configs(None, false);
+    let (py, rs) = load_configs(None);
     assert!(py.statements_per_function > 0 && rs.statements_per_function > 0);
-    let (py_def, _) = load_configs(None, true);
+    let tmp = tempfile::TempDir::new().unwrap();
+    let builtin = tmp.path().join("builtin.toml");
+    std::fs::write(&builtin, "[python]\n[rust]\n").unwrap();
+    let (py_def, _) = load_configs(Some(&builtin));
     assert_eq!(
         py_def.statements_per_function,
         kiss::defaults::python::STATEMENTS_PER_FUNCTION
     );
-    let tmp = tempfile::TempDir::new().unwrap();
     let path = tmp.path().join("kiss.toml");
     std::fs::write(&path, "[test]\ntest_coverage_threshold = 80\n").unwrap();
+    assert_eq!(load_gate_config(Some(&path)).test_coverage_threshold, 80);
     assert_eq!(
-        load_gate_config(Some(&path), false).test_coverage_threshold,
-        80
-    );
-    assert_eq!(
-        load_gate_config(Some(&path), true).test_coverage_threshold,
+        load_gate_config(Some(&builtin)).test_coverage_threshold,
         kiss::defaults::gate::TEST_COVERAGE_THRESHOLD
     );
 }
@@ -116,15 +115,18 @@ fn test_gather_stats_normalize_validate() {
     let py_cfg = Config::load_for_language(ConfigLanguage::Python);
     let rs_cfg = Config::load_for_language(ConfigLanguage::Rust);
     let gate_cfg = GateConfig::load();
-    run_stats_summary(
-        std::slice::from_ref(&p),
-        Some(Language::Python),
-        &[],
-        &py_cfg,
-        &rs_cfg,
-        &gate_cfg,
-        kiss::LanguageTablesPresent::both(),
-    );
+    run_stats_summary(&RunStatsArgs {
+        paths: std::slice::from_ref(&p),
+        lang_filter: Some(Language::Python),
+        ignore: &[],
+        all: None,
+        table: false,
+        py_config: &py_cfg,
+        rs_config: &rs_cfg,
+        gate_config: &gate_cfg,
+        language_tables: kiss::LanguageTablesPresent::both(),
+        config: None,
+    });
     run_stats_table(
         std::slice::from_ref(&p),
         Some(Language::Rust),
@@ -152,6 +154,7 @@ fn exercise_stats_modes_and_mimic(p: &str) {
         rs_config: &kiss::Config::rust_defaults(),
         gate_config: &gate,
         language_tables: kiss::LanguageTablesPresent::both(),
+        config: None,
     });
     run_stats(RunStatsArgs {
         paths,
@@ -163,6 +166,7 @@ fn exercise_stats_modes_and_mimic(p: &str) {
         rs_config: &kiss::Config::rust_defaults(),
         gate_config: &gate,
         language_tables: kiss::LanguageTablesPresent::both(),
+        config: None,
     });
     run_stats(RunStatsArgs {
         paths,
@@ -174,6 +178,7 @@ fn exercise_stats_modes_and_mimic(p: &str) {
         rs_config: &kiss::Config::rust_defaults(),
         gate_config: &gate,
         language_tables: kiss::LanguageTablesPresent::both(),
+        config: None,
     });
     run_mimic(paths, None, Some(Language::Python), &[]);
 }

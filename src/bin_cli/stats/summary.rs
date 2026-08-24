@@ -18,17 +18,18 @@ struct StatsSummaryInput<'a> {
     lang_filter: Option<Language>,
     ignore: &'a [String],
     gate: &'a GateConfig,
+    config: Option<&'a Path>,
 }
 
-pub fn run_stats_summary(
-    paths: &[String],
-    lang_filter: Option<Language>,
-    ignore: &[String],
-    py_cfg: &Config,
-    rs_cfg: &Config,
-    gate: &GateConfig,
-    language_tables: kiss::LanguageTablesPresent,
-) -> i32 {
+pub fn run_stats_summary(args: &super::RunStatsArgs<'_>) -> i32 {
+    let paths = args.paths;
+    let lang_filter = args.lang_filter;
+    let ignore = args.ignore;
+    let py_cfg = args.py_config;
+    let rs_cfg = args.rs_config;
+    let gate = args.gate_config;
+    let language_tables = args.language_tables;
+    let config = args.config;
     let (py_files, rs_files) = gather_files_by_lang(paths, lang_filter, ignore);
     if py_files.is_empty() && rs_files.is_empty() {
         eprintln!("No source files found.");
@@ -49,6 +50,7 @@ pub fn run_stats_summary(
         gate,
         lang_filter,
         ignore,
+        config,
     }) {
         return 0;
     }
@@ -62,6 +64,7 @@ pub fn run_stats_summary(
         lang_filter,
         ignore,
         gate,
+        config,
     })
 }
 
@@ -118,6 +121,7 @@ fn run_stats_summary_from_pipeline(input: StatsSummaryInput<'_>) -> i32 {
         input.lang_filter,
         input.ignore,
         input.gate,
+        input.config,
     );
     0
 }
@@ -142,6 +146,7 @@ fn print_summary_from_pipeline(
     lang_filter: Option<Language>,
     ignore: &[String],
     gate: &GateConfig,
+    config: Option<&Path>,
 ) {
     let duplicate_total = pipeline.py_dups_all.len() + pipeline.rs_dups_all.len();
     let orphan_total = pipeline
@@ -172,7 +177,7 @@ fn print_summary_from_pipeline(
 
     println!("kiss stats - Summary Statistics");
     println!("Analyzed from: {}", paths.join(", "));
-    println!("{}", config_provenance());
+    println!("{}", config_provenance(config));
     println!();
     println!(
         "Analyzed: {} files, {} code_units, {} statements, {} graph_nodes, {} graph_edges",
@@ -233,6 +238,7 @@ struct CachedStatsSummaryArgs<'a> {
     gate: &'a GateConfig,
     lang_filter: Option<Language>,
     ignore: &'a [String],
+    config: Option<&'a Path>,
 }
 
 fn maybe_print_cached_stats_summary(args: CachedStatsSummaryArgs<'_>) -> bool {
@@ -256,6 +262,7 @@ fn maybe_print_cached_stats_summary(args: CachedStatsSummaryArgs<'_>) -> bool {
         },
         args.ignore,
         args.gate,
+        args.config,
     );
     true
 }
@@ -267,6 +274,7 @@ fn print_cached_summary(
     include: TimingLangInclude,
     ignore: &[String],
     gate: &GateConfig,
+    config: Option<&Path>,
 ) {
     let dup_total = cache.py_duplicates.len() + cache.rs_duplicates.len();
     let orphan_total = cache
@@ -278,7 +286,7 @@ fn print_cached_summary(
 
     println!("kiss stats - Summary Statistics");
     println!("Analyzed from: {}", paths.join(", "));
-    println!("{}", config_provenance());
+    println!("{}", config_provenance(config));
     println!();
     println!(
         "Analyzed: {} files, {} code_units, {} statements, {} graph_nodes, {} graph_edges",
@@ -390,6 +398,7 @@ mod coverage_witness {
             lang_filter: None,
             ignore: &[],
             gate: &gate,
+            config: None,
         };
     }
 }

@@ -69,7 +69,7 @@ impl TestSectionConfig {
 
     pub fn load() -> Self {
         let mut c = Self::default();
-        if let Ok(s) = std::fs::read_to_string(crate::config::kissconfig_path_from_cwd()) {
+        if let Ok(s) = std::fs::read_to_string(crate::config::active_kissconfig_path()) {
             c.merge_from_toml(&s);
         }
         c
@@ -77,7 +77,7 @@ impl TestSectionConfig {
 
     pub fn try_load() -> Result<Self, ConfigError> {
         let mut c = Self::default();
-        if let Ok(s) = std::fs::read_to_string(crate::config::kissconfig_path_from_cwd()) {
+        if let Ok(s) = std::fs::read_to_string(crate::config::active_kissconfig_path()) {
             c.try_merge_from_toml(&s)?;
         }
         Ok(c)

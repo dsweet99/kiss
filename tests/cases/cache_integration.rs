@@ -17,8 +17,10 @@ fn chmod(path: &std::path::Path, mode: u32) {
 }
 
 fn run_python_check(repo: &Path, home: &Path) -> Output {
+    let config = crate::common::write_builtin_language_config(home);
     kiss_binary()
-        .arg("--defaults")
+        .arg("--config")
+        .arg(&config)
         .arg("check")
         .arg("--lang")
         .arg("python")
@@ -185,8 +187,9 @@ fn check_cache_invalidates_on_same_size_content_change() {
 }
 
 fn run_mixed_cmd(home: &Path, repo: &Path, args: &[&str]) -> Output {
+    let config = crate::common::write_builtin_language_config(home);
     let mut cmd = kiss_binary();
-    cmd.arg("--defaults");
+    cmd.arg("--config").arg(&config);
     for arg in args {
         cmd.arg(arg);
     }

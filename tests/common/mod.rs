@@ -17,6 +17,14 @@ pub fn cache_dir_under(repo: &Path) -> PathBuf {
     repo.join(".kiss")
 }
 
+pub const BUILTIN_LANGUAGE_CONFIG: &str = "[python]\n[rust]\n";
+
+pub fn write_builtin_language_config(dir: &Path) -> PathBuf {
+    let path = dir.join("builtin.kissconfig");
+    fs::write(&path, BUILTIN_LANGUAGE_CONFIG).unwrap();
+    path
+}
+
 pub fn is_full_check_cache_file(path: &Path) -> bool {
     let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
         return false;

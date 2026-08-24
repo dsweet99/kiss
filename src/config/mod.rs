@@ -7,7 +7,10 @@ mod types;
 mod validation;
 
 pub use error::ConfigError;
-pub use paths::{find_repo_root, kissconfig_path_for_repo, kissconfig_path_from_cwd};
+pub use paths::{
+    ConfigPathOverrideGuard, active_kissconfig_path, find_repo_root, kissconfig_path_for_repo,
+    kissconfig_path_from_cwd, set_config_path_override,
+};
 pub use types::{
     Config, ConfigLanguage, LanguageTablesPresent, missing_language_table_message,
     reject_unconfigured_languages,

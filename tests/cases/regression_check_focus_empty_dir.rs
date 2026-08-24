@@ -24,10 +24,12 @@ fn cli_check_focus_dir_with_source_restricts_report() {
     )
     .unwrap();
     seed_python_runtime_coverage(root, &[("test_focus.py::test_focus", vec![])]);
+    let config = crate::common::write_builtin_language_config(root);
 
     let out = kiss_binary()
         .arg("check")
-        .arg("--defaults")
+        .arg("--config")
+        .arg(&config)
         .arg(root)
         .arg(root.join("focus_dir"))
         .output()
@@ -48,10 +50,12 @@ fn cli_check_focus_dir_with_no_source_does_not_leak_universe() {
     write_violating_py(&root.join("src").join("big.py"));
     fs::write(root.join("non_src").join("readme.txt"), "hello\n").unwrap();
     seed_python_runtime_coverage(root, &[("test_focus.py::test_focus", vec![])]);
+    let config = crate::common::write_builtin_language_config(root);
 
     let universe_only = kiss_binary()
         .arg("check")
-        .arg("--defaults")
+        .arg("--config")
+        .arg(&config)
         .arg(root)
         .output()
         .unwrap();
@@ -63,7 +67,8 @@ fn cli_check_focus_dir_with_no_source_does_not_leak_universe() {
 
     let focused = kiss_binary()
         .arg("check")
-        .arg("--defaults")
+        .arg("--config")
+        .arg(&config)
         .arg(root)
         .arg(root.join("non_src"))
         .output()

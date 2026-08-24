@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+use crate::Config;
 use crate::code_roles::build_source_role_index;
 use crate::graph::{
     analyze_graph, build_python_context_graph, collect_orphan_entry_paths, orphan_violations,
@@ -8,7 +9,6 @@ use crate::graph::{
 use crate::parsing::{ParsedFile, create_parser, parse_file};
 use crate::rust_graph::build_rust_context_graph;
 use crate::rust_parsing::{ParsedRustFile, parse_rust_file};
-use crate::Config;
 
 fn parse_py(path: &Path) -> ParsedFile {
     let mut parser = create_parser().expect("parser");
@@ -71,7 +71,10 @@ fn python_test_import_clears_orphan() {
     let utils = tmp.path().join("utils.py");
     let test = tmp.path().join("tests").join("test_foo.py");
     write(&utils, "def f():\n    return 1\n");
-    write(&test, "from utils import f\n\ndef test_f():\n    assert f() == 1\n");
+    write(
+        &test,
+        "from utils import f\n\ndef test_f():\n    assert f() == 1\n",
+    );
     let (viols, _) = py_report(&[utils, test], &[], tmp.path());
     assert!(
         orphan_names(&viols).is_empty(),
@@ -113,7 +116,11 @@ fn rust_cfg_test_use_clears_orphan() {
         &src.join("mixed.rs"),
         "#[cfg(test)]\nmod tests {\n    use helper;\n}\n",
     );
-    let files = vec![src.join("lib.rs"), src.join("helper.rs"), src.join("mixed.rs")];
+    let files = vec![
+        src.join("lib.rs"),
+        src.join("helper.rs"),
+        src.join("mixed.rs"),
+    ];
     let viols = rs_report(&files, &[], tmp.path());
     assert!(
         !orphan_names(&viols).iter().any(|n| n.contains("helper")),
@@ -144,7 +151,10 @@ fn rust_isolate_is_orphan() {
     let tmp = tempfile::TempDir::new().unwrap();
     write(&tmp.path().join("src/lib.rs"), "pub fn f() {}\n");
     write(&tmp.path().join("src/lonely.rs"), "pub fn g() {}\n");
-    let files = vec![tmp.path().join("src/lib.rs"), tmp.path().join("src/lonely.rs")];
+    let files = vec![
+        tmp.path().join("src/lib.rs"),
+        tmp.path().join("src/lonely.rs"),
+    ];
     let viols = rs_report(&files, &[], tmp.path());
     assert!(
         orphan_names(&viols).iter().any(|n| n.contains("lonely")),
@@ -176,7 +186,10 @@ fn pyproject_scripts_are_entries() {
         "[project]\nname = \"d\"\nversion = \"0\"\n[project.scripts]\ntool = \"pkg.cli:main\"\n",
     );
     write(&tmp.path().join("pkg/__init__.py"), "");
-    write(&tmp.path().join("pkg/cli.py"), "def main():\n    return 0\n");
+    write(
+        &tmp.path().join("pkg/cli.py"),
+        "def main():\n    return 0\n",
+    );
     let files = vec![
         tmp.path().join("pkg/__init__.py"),
         tmp.path().join("pkg/cli.py"),
@@ -197,7 +210,10 @@ fn pyproject_gui_scripts_are_entries() {
     );
     write(&tmp.path().join("pkg/__init__.py"), "");
     write(&tmp.path().join("pkg/ui.py"), "def run():\n    return 0\n");
-    let files = vec![tmp.path().join("pkg/__init__.py"), tmp.path().join("pkg/ui.py")];
+    let files = vec![
+        tmp.path().join("pkg/__init__.py"),
+        tmp.path().join("pkg/ui.py"),
+    ];
     let (viols, _) = py_report(&files, &[], tmp.path());
     assert!(
         !orphan_names(&viols).iter().any(|n| n.ends_with("ui")),
@@ -213,7 +229,10 @@ fn setup_cfg_console_scripts_are_entries() {
         "[options.entry_points]\nconsole_scripts =\n    tool = pkg.cli:main\n",
     );
     write(&tmp.path().join("pkg/__init__.py"), "");
-    write(&tmp.path().join("pkg/cli.py"), "def main():\n    return 0\n");
+    write(
+        &tmp.path().join("pkg/cli.py"),
+        "def main():\n    return 0\n",
+    );
     let files = vec![
         tmp.path().join("pkg/__init__.py"),
         tmp.path().join("pkg/cli.py"),
@@ -267,7 +286,11 @@ fn orphan_allowed_exempts_plugin_path() {
     let tmp = tempfile::TempDir::new().unwrap();
     let plugin = tmp.path().join("src/plugins/hook.py");
     write(&plugin, "def run():\n    return 1\n");
-    let (with_allow, _) = py_report(std::slice::from_ref(&plugin), &["src/plugins".into()], tmp.path());
+    let (with_allow, _) = py_report(
+        std::slice::from_ref(&plugin),
+        &["src/plugins".into()],
+        tmp.path(),
+    );
     let (no_allow, _) = py_report(std::slice::from_ref(&plugin), &[], tmp.path());
     assert!(
         !with_allow.iter().any(|v| v.metric == "orphan_module"),
@@ -320,9 +343,6 @@ fn analyze_graph_false_emits_no_orphan() {
 fn orphan_scanners_do_not_mention_runtime_coverage() {
     let src = include_str!("orphan.rs");
     for needle in [".kiss", "profraw", "coverage"] {
-        assert!(
-            !src.contains(needle),
-            "orphan.rs must not mention {needle}"
-        );
+        assert!(!src.contains(needle), "orphan.rs must not mention {needle}");
     }
 }

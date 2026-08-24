@@ -34,6 +34,7 @@ pub(crate) struct WatchLiveConfig {
     pub rs_config: Config,
     pub coverage_all: bool,
     pub settle: Duration,
+    pub language_tables: kiss::LanguageTablesPresent,
     seed: WatchReloadSeed,
     kissconfig_sig: PathSignature,
     kissconfig_digest: u64,
@@ -71,6 +72,7 @@ impl WatchLiveConfig {
             rs_config,
             coverage_all: seed.coverage_all,
             settle,
+            language_tables: kiss::LanguageTablesPresent::from_path_or_both(config_path),
             kissconfig_sig: PathSignature::from_path(config_path),
             kissconfig_digest: file_digest(config_path),
             seed,
@@ -115,8 +117,13 @@ impl WatchLiveConfig {
         self.kissconfig_sig = sig;
         self.kissconfig_digest = digest;
         machine.set_settle(self.settle);
-        *filter =
-            WatchPathFilter::build(repo_root, &self.ignore, self.lang_filter, &self.invocation);
+        *filter = WatchPathFilter::build_with_config(
+            repo_root,
+            &self.ignore,
+            self.lang_filter,
+            &self.invocation,
+            &self.seed.config_path,
+        );
         crate::test_runner::emit_test_progress("kiss test: Reloaded .kissconfig");
         Ok(true)
     }
@@ -145,7 +152,12 @@ impl WatchLiveConfig {
             kiss::effective_python_pytest_args(&test_cfg.pytest_plugins, &self.seed.extra);
         self.config_main_branch = test_cfg.main_branch.clone();
         self.settle = Duration::from_secs_f64(test_cfg.watch_settle_seconds);
+        self.language_tables = kiss::LanguageTablesPresent::from_path_or_both(path);
         Ok(())
+    }
+
+    pub(crate) fn watched_config_path(&self) -> &Path {
+        &self.seed.config_path
     }
 }
 

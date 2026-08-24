@@ -21,6 +21,26 @@ fn witness_cli_types() {
 }
 
 #[test]
+fn defaults_flag_is_removed() {
+    assert!(Cli::try_parse_from(["kiss", "--defaults", "rules"]).is_err());
+    assert!(Cli::try_parse_from(["kiss", "rules", "--defaults"]).is_err());
+}
+
+#[test]
+fn config_flag_parses_before_and_after_subcommand() {
+    let before = Cli::parse_from(["kiss", "--config", "custom.toml", "rules"]);
+    assert_eq!(
+        before.config.as_deref(),
+        Some(std::path::Path::new("custom.toml"))
+    );
+    let after = Cli::parse_from(["kiss", "rules", "--config", "other.toml"]);
+    assert_eq!(
+        after.config.as_deref(),
+        Some(std::path::Path::new("other.toml"))
+    );
+}
+
+#[test]
 fn cov_subcommand_parses_as_coverage() {
     assert!(Cli::try_parse_from(["kiss", "cov"]).is_err());
     assert!(Cli::command().find_subcommand("cov").is_none());
@@ -191,7 +211,8 @@ fn top_level_help_describes_commands_and_global_flags() {
     assert!(!help.contains(" (Python and Rust)"));
     assert!(help.contains("Path to custom config file (default: .kissconfig)"));
     assert!(help.contains("Filter by language: python (py) or rust (rs)"));
-    assert!(help.contains("Use built-in defaults, ignoring config files"));
+    assert!(!help.contains("Use built-in defaults, ignoring config files"));
+    assert!(!help.contains("--defaults"));
     assert!(
         help.contains("Run static complexity, graph, duplicate, comment, doc, and orphan checks")
     );

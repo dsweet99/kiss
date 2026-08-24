@@ -57,6 +57,7 @@ fn maybe_print_cached_stats_summary_returns_false_on_miss() {
         gate: &gate,
         lang_filter: None,
         ignore: &[],
+        config: None,
     }));
 }
 

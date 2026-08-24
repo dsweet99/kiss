@@ -60,8 +60,7 @@ pub(crate) fn run_parallel_py_analysis(in_: ParallelPyIn<'_>) -> (GraphResult, D
     let dup_enabled = opts.gate_config.duplication_enabled;
     let min_sim = opts.gate_config.min_similarity;
     let (py_graph, py_ctx) = build_py_graphs(py_parsed, roles);
-    let mut entries =
-        kiss::collect_orphan_entry_paths(py_parsed, &[], py_graph.as_ref(), rs_graph);
+    let mut entries = kiss::collect_orphan_entry_paths(py_parsed, &[], py_graph.as_ref(), rs_graph);
     entries.extend(rust_entries.iter().cloned());
     let (gv, py_dups) = rayon::join(
         || {

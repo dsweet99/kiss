@@ -154,12 +154,7 @@ fn wait_for_settled_batch(
     }) {
         SettlePoll::Ready(paths) => {
             if paths.iter().any(|p| filter.is_ignore_file(p)) {
-                *filter = WatchPathFilter::build(
-                    repo_root,
-                    filter.cli_ignore(),
-                    filter.lang_filter(),
-                    filter.invocation(),
-                );
+                *filter = filter.rebuild();
             }
             WaitOutcome::Settled(paths)
         }

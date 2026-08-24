@@ -24,14 +24,32 @@ pub(crate) struct WatchPathFilter {
     lang_filter: Option<Language>,
     invocation: TestInvocation,
     exact_files: Option<Vec<PathBuf>>,
+    watched_config: PathBuf,
 }
 
 impl WatchPathFilter {
+    #[cfg(test)]
     pub(crate) fn build(
         repo_root: &Path,
         cli_ignore: &[String],
         lang_filter: Option<Language>,
         invocation: &TestInvocation,
+    ) -> Self {
+        Self::build_with_config(
+            repo_root,
+            cli_ignore,
+            lang_filter,
+            invocation,
+            Path::new(".kissconfig"),
+        )
+    }
+
+    pub(crate) fn build_with_config(
+        repo_root: &Path,
+        cli_ignore: &[String],
+        lang_filter: Option<Language>,
+        invocation: &TestInvocation,
+        config_path: &Path,
     ) -> Self {
         Self {
             repo_root: repo_root.to_path_buf(),
@@ -40,19 +58,18 @@ impl WatchPathFilter {
             lang_filter,
             invocation: invocation.clone(),
             exact_files: exact_file_targets(invocation),
+            watched_config: config_rel_for_watch(repo_root, config_path),
         }
     }
 
-    pub(crate) fn cli_ignore(&self) -> &[String] {
-        &self.cli_ignore
-    }
-
-    pub(crate) fn lang_filter(&self) -> Option<Language> {
-        self.lang_filter
-    }
-
-    pub(crate) fn invocation(&self) -> &TestInvocation {
-        &self.invocation
+    pub(crate) fn rebuild(&self) -> Self {
+        Self::build_with_config(
+            &self.repo_root,
+            &self.cli_ignore,
+            self.lang_filter,
+            &self.invocation,
+            &self.watched_config,
+        )
     }
 
     pub(crate) fn is_ignore_file(&self, rel: &Path) -> bool {
@@ -67,11 +84,11 @@ impl WatchPathFilter {
 
     #[cfg(test)]
     pub(crate) fn is_kissconfig_file(&self, rel: &Path) -> bool {
-        is_kissconfig_path(rel)
+        self.is_watched_config(rel)
     }
 
     pub(crate) fn is_relevant(&self, rel: &Path) -> bool {
-        if is_kissconfig_path(rel) {
+        if self.is_watched_config(rel) {
             return true;
         }
         if is_hard_excluded(rel) {
@@ -87,9 +104,13 @@ impl WatchPathFilter {
         self.is_support_or_source(rel)
     }
 
+    fn is_watched_config(&self, rel: &Path) -> bool {
+        rel == self.watched_config.as_path()
+    }
+
     fn is_support_or_source(&self, rel: &Path) -> bool {
         if self.is_ignore_file(rel)
-            || is_kissconfig_path(rel)
+            || self.is_watched_config(rel)
             || is_git_support_path(rel, &self.invocation)
             || is_support_input(rel)
         {
@@ -167,8 +188,18 @@ fn is_git_support_path(rel: &Path, invocation: &TestInvocation) -> bool {
         && (rel.starts_with(".git/refs/heads") || rel == Path::new(".git/packed-refs"))
 }
 
-fn is_kissconfig_path(rel: &Path) -> bool {
-    rel == Path::new(".kissconfig")
+fn config_rel_for_watch(repo_root: &Path, config_path: &Path) -> PathBuf {
+    if config_path.as_os_str().is_empty() {
+        return PathBuf::from(".kissconfig");
+    }
+    let abs = if config_path.is_absolute() {
+        config_path.to_path_buf()
+    } else {
+        repo_root.join(config_path)
+    };
+    abs.strip_prefix(repo_root)
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|_| config_path.to_path_buf())
 }
 
 fn is_support_input(rel: &Path) -> bool {
@@ -209,6 +240,35 @@ mod tests {
         assert!(f.is_relevant(Path::new(".kissconfig")));
         assert!(!f.is_kissconfig_file(Path::new("nested/.kissconfig")));
         assert!(!f.is_relevant(Path::new("nested/.kissconfig")));
+    }
+
+    #[test]
+    fn config_override_file_is_watch_relevant() {
+        let tmp = tempfile::tempdir().unwrap();
+        let f = WatchPathFilter::build_with_config(
+            tmp.path(),
+            &[],
+            None,
+            &TestInvocation::All,
+            Path::new("custom.toml"),
+        );
+        assert!(f.is_kissconfig_file(Path::new("custom.toml")));
+        assert!(f.is_relevant(Path::new("custom.toml")));
+        assert!(!f.is_kissconfig_file(Path::new(".kissconfig")));
+        assert!(!f.is_relevant(Path::new(".kissconfig")));
+
+        std::fs::write(tmp.path().join(".gitignore"), "custom.toml\n").unwrap();
+        let ignored = WatchPathFilter::build_with_config(
+            tmp.path(),
+            &[],
+            None,
+            &TestInvocation::All,
+            Path::new("custom.toml"),
+        );
+        assert!(
+            ignored.is_relevant(Path::new("custom.toml")),
+            "--config FILE must remain watch-relevant when gitignored"
+        );
     }
 
     #[test]

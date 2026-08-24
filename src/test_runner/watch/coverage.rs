@@ -35,6 +35,7 @@ pub(crate) struct WatchCoverageParams<'a> {
     pub py_config: &'a kiss::Config,
     pub rs_config: &'a kiss::Config,
     pub coverage_all: bool,
+    pub language_tables: kiss::LanguageTablesPresent,
 }
 
 #[cfg(test)]
@@ -67,6 +68,7 @@ mod tests {
             py_config: &py,
             rs_config: &rs,
             coverage_all: true,
+            language_tables: kiss::LanguageTablesPresent::both(),
         };
         assert!(params.coverage_all);
         assert!(std::ptr::eq(params.py_config, &py));

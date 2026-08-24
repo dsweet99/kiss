@@ -58,7 +58,10 @@ fn insert_unparsed_discovered(
         if parsed_keys.contains(&key) {
             continue;
         }
-        let ctx = contexts.get(&key).copied().unwrap_or_else(|| path_seed_context(path));
+        let ctx = contexts
+            .get(&key)
+            .copied()
+            .unwrap_or_else(|| path_seed_context(path));
         index.insert(path.clone(), FileRoleFacts::new(ctx, Vec::new()));
     }
 }
@@ -82,7 +85,9 @@ fn seed_unparsed_discovered(
         if parsed_keys.contains(&key) {
             continue;
         }
-        contexts.entry(key).or_insert_with(|| path_seed_context(path));
+        contexts
+            .entry(key)
+            .or_insert_with(|| path_seed_context(path));
     }
 }
 

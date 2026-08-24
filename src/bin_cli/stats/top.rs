@@ -11,6 +11,7 @@ pub struct StatsTopArgs<'a> {
     pub rs_config: &'a Config,
     pub gate_config: &'a GateConfig,
     pub language_tables: kiss::LanguageTablesPresent,
+    pub config: Option<&'a std::path::Path>,
 }
 
 #[cfg(test)]
@@ -39,7 +40,7 @@ pub(super) fn run_stats_top_status(args: StatsTopArgs<'_>) -> i32 {
         "kiss stats --all {n} - Top Outliers\nAnalyzed from: {paths}\n{prov}\n",
         n = args.n,
         paths = args.paths.join(", "),
-        prov = config_provenance()
+        prov = config_provenance(args.config)
     );
     let all_units = match collect_py_units(&py_files).and_then(|py| {
         collect_rs_units(&rs_files).map(|rs| {

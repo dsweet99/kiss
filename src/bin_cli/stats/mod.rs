@@ -24,6 +24,7 @@ pub struct RunStatsArgs<'a> {
     pub rs_config: &'a Config,
     pub gate_config: &'a GateConfig,
     pub language_tables: kiss::LanguageTablesPresent,
+    pub config: Option<&'a std::path::Path>,
 }
 
 pub fn run_stats(args: RunStatsArgs<'_>) -> i32 {
@@ -33,6 +34,7 @@ pub fn run_stats(args: RunStatsArgs<'_>) -> i32 {
             args.lang_filter,
             args.ignore,
             args.language_tables,
+            args.config,
         )
     } else if let Some(n) = args.all {
         top::run_stats_top_status(top::StatsTopArgs {
@@ -44,17 +46,10 @@ pub fn run_stats(args: RunStatsArgs<'_>) -> i32 {
             rs_config: args.rs_config,
             gate_config: args.gate_config,
             language_tables: args.language_tables,
+            config: args.config,
         })
     } else {
-        summary::run_stats_summary(
-            args.paths,
-            args.lang_filter,
-            args.ignore,
-            args.py_config,
-            args.rs_config,
-            args.gate_config,
-            args.language_tables,
-        )
+        summary::run_stats_summary(&args)
     }
 }
 

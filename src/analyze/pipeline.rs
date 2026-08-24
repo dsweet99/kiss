@@ -1,12 +1,12 @@
 use crate::analyze::finalize::{AnalysisProducts, FinalizeAnalysisIn, finalize_analysis};
 use crate::analyze::focus::{FocusFilter, filter_viols_by_focus};
+use crate::analyze::lang_sides::{PySide, RsSide, parse_and_split_sides};
 use crate::analyze::options::{AnalyzeOptions, AnalyzeResult};
+use crate::analyze::parallel::BuildGraphViols;
+use crate::analyze::parallel::build_graph_violations;
 use crate::analyze::parallel::{ParallelPyIn, run_parallel_py_analysis, run_rust_analysis};
 use crate::analyze::params::RunAnalyzeUncached;
 use crate::analyze::print::log_parse_timing;
-use crate::analyze::lang_sides::{PySide, RsSide, parse_and_split_sides};
-use crate::analyze::parallel::build_graph_violations;
-use crate::analyze::parallel::BuildGraphViols;
 use crate::analyze_parse::{ParseAllTimedParams, ParseResult, parse_all_timed};
 use kiss::{DependencyGraph, ParsedFile, ParsedRustFile};
 use std::path::PathBuf;
@@ -148,7 +148,10 @@ fn run_full_pipeline_with_parse(in_: FullPipelineWithParseInput<'_>) -> FullPipe
     let t_rs = std::time::Instant::now();
     let rs = run_rust_analysis(&result.rs_parsed, opts.gate_config, &result.roles);
     if opts.show_timing {
-        eprintln!("[TIMING] rust_analysis={:.2}s", t_rs.elapsed().as_secs_f64());
+        eprintln!(
+            "[TIMING] rust_analysis={:.2}s",
+            t_rs.elapsed().as_secs_f64()
+        );
     }
     let t_py = std::time::Instant::now();
     let (((py_graph, graph_viols_all), py_dups_all), mut py_stats) = run_py_graph_and_stats(

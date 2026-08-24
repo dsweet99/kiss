@@ -39,7 +39,6 @@ fn call_handler_dispatchers(
         paths: vec![".".to_string()],
         ignore: vec![],
         timing: false,
-        defaults: false,
         config: None,
         cfg,
     });
@@ -50,6 +49,7 @@ fn call_handler_dispatchers(
         table: false,
         ignore: vec![],
         cfg,
+        config: None,
     });
     let _ = handlers::dispatch_dry(options::DryDispatchOptions {
         lang: None,
@@ -63,11 +63,7 @@ fn call_handler_dispatchers(
         language_tables: kiss::LanguageTablesPresent::both(),
     });
     assert_eq!(
-        handlers::dispatch_rules(options::RulesDispatchOptions {
-            lang: None,
-            defaults: true,
-            cfg,
-        }),
+        handlers::dispatch_rules(options::RulesDispatchOptions { lang: None, cfg }),
         0
     );
     let _ = handlers::dispatch_viz(options::VizDispatchOptions {
@@ -122,7 +118,6 @@ fn call_router_dispatchers(
 ) {
     let _ = dispatch_analyze(
         None,
-        false,
         None,
         Commands::Check {
             paths: vec![".".to_string()],
@@ -132,16 +127,12 @@ fn call_router_dispatchers(
         cfg,
         test,
     );
-    assert_eq!(
-        dispatch_tools(None, true, None, Commands::Rules, cfg, test),
-        0
-    );
+    assert_eq!(dispatch_tools(None, None, Commands::Rules, cfg, test), 0);
     assert_eq!(
         dispatch(
             Cli {
                 config: None,
                 lang: None,
-                defaults: true,
                 command: Commands::Rules,
             },
             py,
@@ -155,7 +146,6 @@ fn call_router_dispatchers(
         run_with_cli(Cli {
             config: None,
             lang: None,
-            defaults: true,
             command: Commands::Rules,
         }),
         0
@@ -178,7 +168,6 @@ fn dispatch_test_command_rejects_invalid_modes_before_running_tests() {
     assert_eq!(
         super::dispatch_test_command(
             None,
-            true,
             None,
             Commands::Test {
                 operands: vec!["all".to_string()],
@@ -200,7 +189,7 @@ fn dispatch_test_command_rejects_invalid_modes_before_running_tests() {
         2
     );
     assert_eq!(
-        super::dispatch_test_command(None, true, None, Commands::Rules, &cfg, &test),
+        super::dispatch_test_command(None, None, Commands::Rules, &cfg, &test),
         2
     );
 }
@@ -219,13 +208,12 @@ fn dispatch_private_routers_reject_commands_from_the_other_group() {
     };
 
     assert_eq!(
-        dispatch_analyze(None, false, None, Commands::Rules, &cfg, &test),
+        dispatch_analyze(None, None, Commands::Rules, &cfg, &test),
         2
     );
     assert_eq!(
         dispatch_tools(
             None,
-            true,
             None,
             Commands::Check {
                 paths: vec![".".to_string()],
@@ -259,7 +247,6 @@ fn dispatch_private_routers_cover_additional_command_variants() {
 
     let _ = dispatch_analyze(
         None,
-        false,
         None,
         Commands::Stats {
             paths: vec![".".to_string()],
@@ -272,7 +259,6 @@ fn dispatch_private_routers_cover_additional_command_variants() {
     );
     let _ = dispatch_analyze(
         None,
-        false,
         None,
         Commands::Coverage {
             paths: vec![".".to_string()],
@@ -286,7 +272,6 @@ fn dispatch_private_routers_cover_additional_command_variants() {
     );
     let _ = dispatch_tools(
         None,
-        true,
         None,
         Commands::Dry {
             path: ".".to_string(),
@@ -302,7 +287,6 @@ fn dispatch_private_routers_cover_additional_command_variants() {
     );
     let _ = dispatch_tools(
         None,
-        true,
         None,
         Commands::Mv {
             query: "sample.py::old".to_string(),
@@ -335,7 +319,6 @@ fn dispatch_test_rejects_watch_with_dry_run() {
     assert_eq!(
         super::dispatch_test_command(
             None,
-            true,
             None,
             Commands::Test {
                 operands: vec![".".to_string()],

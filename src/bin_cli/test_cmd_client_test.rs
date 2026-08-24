@@ -164,6 +164,7 @@ fn evaluate_watch_coverage_threshold_zero_returns_ok() {
         py_config: &py,
         rs_config: &rs,
         coverage_all: false,
+        language_tables: kiss::LanguageTablesPresent::both(),
     };
     let result = evaluate_watch_coverage(&cycle, &cov);
     assert_eq!(result.exit_code, 0);
@@ -229,10 +230,47 @@ fn evaluate_watch_coverage_fails_when_language_table_missing() {
         py_config: &py,
         rs_config: &rs,
         coverage_all: false,
+        language_tables: kiss::LanguageTablesPresent::none(),
     };
     let result = evaluate_watch_coverage(&cycle, &cov);
     assert_eq!(result.exit_code, 1);
     assert_eq!(result.error.as_deref(), Some("coverage gate failed"));
+}
+
+#[test]
+fn evaluate_watch_coverage_uses_params_tables_when_cwd_has_no_kissconfig() {
+    let _repo = isolated_python_repo();
+    let py = kiss::Config::python_defaults();
+    let rs = kiss::Config::rust_defaults();
+    let gate = kiss::GateConfig {
+        test_coverage_threshold: 0,
+        max_unit_test_seconds: Vec::new(),
+        ..kiss::GateConfig::default()
+    };
+    let cycle = crate::test_runner::RunTestCmdArgs {
+        invocation: TestInvocation::All,
+        main_branch_cli: None,
+        base_branch_cli: None,
+        dry_run: true,
+        force_rerun: false,
+        force_bad: false,
+        metrics: false,
+        jobs: 1,
+        extra: &[],
+        python_extra: &[],
+        ignore: &[],
+        lang_filter: Some(kiss::Language::Python),
+        config_main_branch: None,
+        gate_config: gate.clone(),
+    };
+    let cov = WatchCoverageParams {
+        py_config: &py,
+        rs_config: &rs,
+        coverage_all: false,
+        language_tables: kiss::LanguageTablesPresent::both(),
+    };
+    let result = evaluate_watch_coverage(&cycle, &cov);
+    assert_eq!(result.exit_code, 0);
 }
 
 #[test]

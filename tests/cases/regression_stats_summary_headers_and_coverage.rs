@@ -2,6 +2,8 @@ use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
 
+use crate::common::write_builtin_language_config;
+
 fn kiss_binary() -> Command {
     Command::new(env!("CARGO_BIN_EXE_kiss"))
 }
@@ -65,9 +67,11 @@ fn parse_violation_counts(stdout: &str) -> (usize, usize) {
 fn cli_stats_summary_emits_analyzed_header_with_five_global_metrics() {
     let tmp = TempDir::new().unwrap();
     build_corpus(tmp.path());
+    let config = write_builtin_language_config(tmp.path());
     let output = kiss_binary()
         .arg("stats")
-        .arg("--defaults")
+        .arg("--config")
+        .arg(&config)
         .arg(tmp.path())
         .output()
         .unwrap();
@@ -97,9 +101,11 @@ fn cli_stats_summary_emits_analyzed_header_with_five_global_metrics() {
 fn cli_stats_summary_emits_violations_header_with_duplicate_and_orphan_counts() {
     let tmp = TempDir::new().unwrap();
     build_corpus(tmp.path());
+    let config = write_builtin_language_config(tmp.path());
     let output = kiss_binary()
         .arg("stats")
-        .arg("--defaults")
+        .arg("--config")
+        .arg(&config)
         .arg(tmp.path())
         .output()
         .unwrap();
@@ -152,9 +158,11 @@ fn cli_stats_summary_emits_violations_header_with_duplicate_and_orphan_counts() 
 fn cli_stats_summary_table_omits_coverage_rows() {
     let tmp = TempDir::new().unwrap();
     build_corpus(tmp.path());
+    let config = write_builtin_language_config(tmp.path());
     let output = kiss_binary()
         .arg("stats")
-        .arg("--defaults")
+        .arg("--config")
+        .arg(&config)
         .arg(tmp.path())
         .output()
         .unwrap();
@@ -262,10 +270,12 @@ fn cli_stats_summary_defaults_can_disable_local_config_and_restore_defaults() {
         "local config disables gate checks: expected both zero.\nstdout:\n{local_stdout}"
     );
 
+    let config = write_builtin_language_config(tmp.path());
     let default_out = kiss_binary()
         .current_dir(tmp.path())
         .arg("stats")
-        .arg("--defaults")
+        .arg("--config")
+        .arg(&config)
         .arg(tmp.path())
         .env("HOME", &home)
         .output()
@@ -273,11 +283,11 @@ fn cli_stats_summary_defaults_can_disable_local_config_and_restore_defaults() {
     let default_stdout = String::from_utf8_lossy(&default_out.stdout);
     assert!(
         default_out.status.success(),
-        "stats --defaults should succeed:\n{default_stdout}"
+        "stats --config builtin should succeed:\n{default_stdout}"
     );
     let (default_dup, default_orphan) = parse_violation_counts(&default_stdout);
     assert!(
         default_dup > 0 && default_orphan > 0,
-        "defaults should ignore local .kissconfig and re-enable checks:\n{default_stdout}"
+        "builtin --config should ignore local .kissconfig and re-enable checks:\n{default_stdout}"
     );
 }

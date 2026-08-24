@@ -178,3 +178,14 @@ fn effective_python_pytest_args_prefixes_plugins() {
         ]
     );
 }
+
+#[test]
+fn test_section_load_uses_config_path_override_not_cwd_kissconfig() {
+    let cwd = tempfile::TempDir::new().unwrap();
+    let _cwd_guard = CwdGuard::enter(cwd.path());
+    std::fs::write(cwd.path().join(".kissconfig"), "[test]\nnum_jobs = 4\n").unwrap();
+    let custom = cwd.path().join("custom.toml");
+    std::fs::write(&custom, "[test]\nnum_jobs = 11\n").unwrap();
+    let _override = crate::config::ConfigPathOverrideGuard::enter(Some(&custom));
+    assert_eq!(TestSectionConfig::load().num_jobs, 11);
+}

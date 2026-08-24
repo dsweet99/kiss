@@ -14,7 +14,6 @@ pub(crate) struct CheckDispatchOptions<'a> {
     pub paths: Vec<String>,
     pub ignore: Vec<String>,
     pub timing: bool,
-    pub defaults: bool,
     pub config: Option<std::path::PathBuf>,
     pub cfg: &'a TriConfig<'a>,
 }
@@ -37,6 +36,7 @@ pub(crate) struct StatsDispatchOptions<'a> {
     pub table: bool,
     pub ignore: Vec<String>,
     pub cfg: &'a TriConfig<'a>,
+    pub config: Option<std::path::PathBuf>,
 }
 
 #[cfg(test)]

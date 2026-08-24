@@ -18,7 +18,6 @@ pub(crate) struct DryDispatchOptions {
 
 pub(crate) struct RulesDispatchOptions<'a> {
     pub lang: Option<Language>,
-    pub defaults: bool,
     pub cfg: &'a TriConfig<'a>,
 }
 

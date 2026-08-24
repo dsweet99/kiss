@@ -53,7 +53,6 @@ pub fn run_rules(
     rs_config: &Config,
     gate_config: &GateConfig,
     lang_filter: Option<Language>,
-    _use_defaults: bool,
 ) {
     print_summary_term_definitions();
     print_rule_specs("global", global::GLOBAL_RULE_SPECS, py_config, gate_config);

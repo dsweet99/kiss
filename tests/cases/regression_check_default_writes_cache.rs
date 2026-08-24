@@ -23,8 +23,10 @@ fn regression_check_default_writes_cache_and_replays() {
             vec![("default.py", vec![1, 2])],
         )],
     );
+    let config = crate::common::write_builtin_language_config(home.path());
     let cold = kiss_binary()
-        .arg("--defaults")
+        .arg("--config")
+        .arg(&config)
         .arg("check")
         .arg("--lang")
         .arg("python")
@@ -40,7 +42,8 @@ fn regression_check_default_writes_cache_and_replays() {
     );
 
     let warm = kiss_binary()
-        .arg("--defaults")
+        .arg("--config")
+        .arg(&config)
         .arg("check")
         .arg("--lang")
         .arg("python")

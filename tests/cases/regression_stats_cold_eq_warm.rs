@@ -23,8 +23,10 @@ fn regression_stats_cold_and_warm_are_identical() {
     )
     .unwrap();
 
+    let config = crate::common::write_builtin_language_config(repo.path());
     let cold = kiss_binary()
-        .arg("--defaults")
+        .arg("--config")
+        .arg(&config)
         .arg("stats")
         .arg("--all")
         .arg(repo.path())
@@ -33,7 +35,8 @@ fn regression_stats_cold_and_warm_are_identical() {
         .unwrap();
 
     let warm = kiss_binary()
-        .arg("--defaults")
+        .arg("--config")
+        .arg(&config)
         .arg("stats")
         .arg("--all")
         .arg(repo.path())

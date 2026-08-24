@@ -101,8 +101,13 @@ where
     F: FnMut(RunTestCmdArgs<'_>) -> RunTestOnceOutcome,
     C: FnMut(&RunTestCmdArgs<'_>, &WatchLiveConfig) -> WatchCoverageResult,
 {
-    let mut filter =
-        WatchPathFilter::build(repo_root, &live.ignore, live.lang_filter, &live.invocation);
+    let mut filter = WatchPathFilter::build_with_config(
+        repo_root,
+        &live.ignore,
+        live.lang_filter,
+        &live.invocation,
+        live.watched_config_path(),
+    );
     let mut machine = SettleMachine::new(live.settle);
     let mut queued: Option<QueuedCycle> = None;
     let mut last_reply = None;

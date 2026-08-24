@@ -14,7 +14,6 @@ pub struct CheckCommandArgs<'a> {
     pub gate_config: &'a kiss::GateConfig,
     pub ignore: &'a [String],
     pub timing: bool,
-    pub defaults: bool,
     pub config: Option<&'a Path>,
     pub language_tables: kiss::LanguageTablesPresent,
 }
@@ -81,9 +80,6 @@ fn lang_check_command(exe: &Path, args: &CheckCommandArgs<'_>, lang: &str) -> Co
     cmd.arg("check").arg("--lang").arg(lang);
     if args.timing {
         cmd.arg("--timing");
-    }
-    if args.defaults {
-        cmd.arg("--defaults");
     }
     if let Some(path) = args.config {
         cmd.arg("--config").arg(path);
@@ -173,7 +169,6 @@ mod coverage_witness {
             gate_config: Box::leak(Box::new(kiss::GateConfig::default())),
             ignore: &[],
             timing: true,
-            defaults: true,
             config: Some(Path::new("/tmp/kiss-extra.toml")),
             language_tables: kiss::LanguageTablesPresent::both(),
         }
@@ -202,7 +197,6 @@ mod coverage_witness {
             gate_config: &gate,
             ignore: &[],
             timing: false,
-            defaults: false,
             config: None,
             language_tables: kiss::LanguageTablesPresent::both(),
         };
@@ -259,7 +253,6 @@ mod coverage_witness {
             .get_args()
             .map(|a| a.to_string_lossy().into_owned())
             .collect();
-        assert!(forwarded.iter().any(|a| a == "--defaults"));
         assert!(forwarded.iter().any(|a| a == "--config"));
         assert!(forwarded.iter().any(|a| a == "/tmp/kiss-extra.toml"));
     }

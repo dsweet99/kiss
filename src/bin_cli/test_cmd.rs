@@ -121,6 +121,7 @@ fn run_watch_tests(args: &TestCommandArgs<'_>, run_args: RunTestCmdArgs<'_>) -> 
                     py_config: &live.py_config,
                     rs_config: &live.rs_config,
                     coverage_all: live.coverage_all,
+                    language_tables: live.language_tables,
                 },
             )
         },
@@ -266,7 +267,7 @@ pub(crate) fn evaluate_watch_coverage(
         jobs: cycle.jobs,
         allow_refresh: true,
         pytest_args: cycle.python_extra,
-        language_tables: kiss::LanguageTablesPresent::from_path(&kiss::kissconfig_path_from_cwd()),
+        language_tables: cov.language_tables,
     });
     if crate::test_runner::consume_rust_batch_interrupted() {
         return WatchCoverageResult::interrupted();

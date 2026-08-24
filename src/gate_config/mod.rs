@@ -120,11 +120,7 @@ impl GateConfig {
     }
 
     pub fn load_from(path: &Path) -> Self {
-        let mut config = Self::load();
-        if let Ok(c) = std::fs::read_to_string(path) {
-            config.merge_from_toml(&c);
-        }
-        config
+        load_from_file(path)
     }
 
     pub fn try_load_from(path: &Path) -> Result<Self, ConfigError> {

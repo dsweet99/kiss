@@ -6,21 +6,9 @@ fn test_rules_functions_no_panic() {
     let rs_config = Config::rust_defaults();
     let gate_config = GateConfig::default();
 
-    run_rules(&py_config, &rs_config, &gate_config, None, false);
-    run_rules(
-        &py_config,
-        &rs_config,
-        &gate_config,
-        Some(Language::Python),
-        true,
-    );
-    run_rules(
-        &py_config,
-        &rs_config,
-        &gate_config,
-        Some(Language::Rust),
-        true,
-    );
+    run_rules(&py_config, &rs_config, &gate_config, None);
+    run_rules(&py_config, &rs_config, &gate_config, Some(Language::Python));
+    run_rules(&py_config, &rs_config, &gate_config, Some(Language::Rust));
 }
 
 #[test]

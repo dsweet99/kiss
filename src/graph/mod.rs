@@ -24,12 +24,12 @@ pub use dependency_graph::{
 pub use graph_analyze::{
     GraphKeyMaxima, analyze_graph, compute_cyclomatic_complexity, graph_key_maxima,
 };
-pub use orphan::{collect_orphan_entry_paths, orphan_violations};
 pub use graph_build::{build_dependency_graph, build_python_context_graph};
 pub(crate) use graph_python::{
     extract_dynamic_import_module, extract_imports_for_cache, is_dunder_import,
     is_importlib_import_module,
 };
+pub use orphan::{collect_orphan_entry_paths, orphan_violations};
 
 #[cfg(test)]
 pub(crate) use dependency_graph::{bare_module_name, is_crate_root_aggregator, is_orphan};

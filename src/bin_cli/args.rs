@@ -41,13 +41,6 @@ pub struct Cli {
     )]
     pub lang: Option<Language>,
 
-    #[arg(
-        long,
-        global = true,
-        help = "Use built-in defaults, ignoring config files"
-    )]
-    pub defaults: bool,
-
     #[command(subcommand)]
     pub command: Commands,
 }

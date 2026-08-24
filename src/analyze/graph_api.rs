@@ -312,7 +312,9 @@ mod analyze_graphs_orphan {
     use kiss::{Config, GateConfig};
     use std::collections::HashSet;
 
-    fn isolate_graphs(tmp: &tempfile::TempDir) -> (kiss::DependencyGraph, kiss::ContextDependencyGraph) {
+    fn isolate_graphs(
+        tmp: &tempfile::TempDir,
+    ) -> (kiss::DependencyGraph, kiss::ContextDependencyGraph) {
         let utils = tmp.path().join("utils.py");
         std::fs::write(&utils, "def f():\n    return 1\n").unwrap();
         let (py, _, roles) =

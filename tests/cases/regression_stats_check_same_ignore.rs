@@ -48,10 +48,12 @@ fn stats_ignores_fake_duplicates_like_check() {
     let fake = tmp.path().join("tests/fake_python");
     fs::create_dir_all(&fake).unwrap();
     write_clone_pair(&fake);
+    let config = crate::common::write_builtin_language_config(tmp.path());
 
     let stats = kiss_binary()
         .current_dir(tmp.path())
-        .arg("--defaults")
+        .arg("--config")
+        .arg(&config)
         .arg("stats")
         .arg(".")
         .env("HOME", home.path())
@@ -74,7 +76,8 @@ fn stats_ignores_fake_duplicates_like_check() {
 
     let check = kiss_binary()
         .current_dir(tmp.path())
-        .arg("--defaults")
+        .arg("--config")
+        .arg(&config)
         .arg("check")
         .arg(".")
         .env("HOME", home.path())

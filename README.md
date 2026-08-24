@@ -103,7 +103,7 @@ FIRST STEP: After the user's first request, before doing anything else, call `ki
 ```
 
 
-The rules that `kiss rules` dumps to stdout are enforced by `kiss check` for static rules and by `kiss test` for coverage, time, and test-count gates. Threshold numbers come from your `.kissconfig` (or built-in defaults with `--defaults`). Run `kiss rules` for the live catalog. Example line:
+The rules that `kiss rules` dumps to stdout are enforced by `kiss check` for static rules and by `kiss test` for coverage, time, and test-count gates. Threshold numbers come from your `.kissconfig`, or from `--config FILE` when you pass that flag. Run `kiss rules` for the live catalog. Example line:
 
 ```
 RULE: [Python] [positional_args <= 3] positional_args is the maximum number of positional parameters in a Python function definition.

@@ -13,9 +13,11 @@ fn cli_check_default_gate_emits_hint_on_coverage_failure() {
     let tmp = TempDir::new().unwrap();
     fs::write(tmp.path().join("orphan.py"), "def orphan():\n    pass\n").unwrap();
     seed_python_runtime_coverage(tmp.path(), &[("tests/test_orphan.py::test_orphan", vec![])]);
+    let config = crate::common::write_builtin_language_config(tmp.path());
     let output = kiss_binary()
         .arg("__coverage")
-        .arg("--defaults")
+        .arg("--config")
+        .arg(&config)
         .arg(tmp.path())
         .output()
         .unwrap();

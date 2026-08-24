@@ -1,5 +1,6 @@
 use crate::bin_cli::config_session::config_provenance;
 use kiss::Language;
+use std::path::Path;
 
 #[cfg(test)]
 pub fn run_stats_table(
@@ -8,7 +9,7 @@ pub fn run_stats_table(
     ignore: &[String],
     language_tables: kiss::LanguageTablesPresent,
 ) {
-    let status = run_stats_table_status(paths, lang_filter, ignore, language_tables);
+    let status = run_stats_table_status(paths, lang_filter, ignore, language_tables, None);
     if status != 0 {
         std::process::exit(status);
     }
@@ -19,6 +20,7 @@ pub(super) fn run_stats_table_status(
     lang_filter: Option<Language>,
     ignore: &[String],
     language_tables: kiss::LanguageTablesPresent,
+    config: Option<&Path>,
 ) -> i32 {
     let (py_files, rs_files) = kiss::discovery::gather_files_by_lang(paths, lang_filter, ignore);
     if py_files.is_empty() && rs_files.is_empty() {
@@ -32,7 +34,7 @@ pub(super) fn run_stats_table_status(
     println!(
         "kiss stats --table - Per-Unit Metrics\nAnalyzed from: {}\n{}\n",
         paths.join(", "),
-        config_provenance()
+        config_provenance(config)
     );
     if let Err(err) = print_py_table(&py_files).and_then(|()| print_rs_table(&rs_files)) {
         eprintln!("{err}");
@@ -108,7 +110,13 @@ mod tests {
         let paths = vec![tmp.path().to_string_lossy().to_string()];
 
         assert_eq!(
-            super::run_stats_table_status(&paths, None, &[], kiss::LanguageTablesPresent::both()),
+            super::run_stats_table_status(
+                &paths,
+                None,
+                &[],
+                kiss::LanguageTablesPresent::both(),
+                None,
+            ),
             1
         );
     }

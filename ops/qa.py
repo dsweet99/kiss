@@ -1028,7 +1028,7 @@ def kiss_command(
     *options: str,
     trailing_test_args: tuple[str, ...] = (),
 ) -> list[str]:
-    # Honor the fixture `.kissconfig` (do not pass `--defaults`). Sparse
+    # Honor the fixture `.kissconfig`. Sparse
     # `--ignore` populations cannot meet the default 90% codebase threshold;
     # `qa_fixture` sets `test_coverage_threshold = 0` so finish_with_coverage
     # does not turn successful test runs into VIOLATION exits.
@@ -1470,7 +1470,7 @@ def witness_env(repo: Path, marker_dir: Path) -> dict[str, str]:
 
 
 def witness_check_command(language: str, repo: Path, jobs: int | None = None) -> list[str]:
-    # Honor the fixture `.kissconfig` (do not pass `--defaults`).
+    # Honor the fixture `.kissconfig`.
     command = [str(KISS), "--lang", language, "__coverage"]
     if jobs is not None:
         command.extend(["-j", str(jobs)])
@@ -1479,7 +1479,7 @@ def witness_check_command(language: str, repo: Path, jobs: int | None = None) ->
 
 
 def witness_test_command(language: str, repo: Path, jobs: int | None = None) -> list[str]:
-    # Honor the fixture `.kissconfig` (do not pass `--defaults`).
+    # Honor the fixture `.kissconfig`.
     command = [str(KISS), "--lang", language, "test"]
     if jobs is not None:
         command.extend(["-j", str(jobs)])
@@ -1708,7 +1708,7 @@ def publication_writer_command(
             command.extend(["-j", str(jobs)])
         return command
     if language == "rust":
-        # Honor fixture `.kissconfig` (no `--defaults`).
+        # Honor fixture `.kissconfig`.
         # - Selector/reverse artifacts need AcceptMode::Subset (file targets) so
         #   SelectorEntries publish hits rust_entry_state / rust_reverse_* barriers.
         # - Aggregate/population/index artifacts need AcceptMode::All (`test .`) so
@@ -1922,7 +1922,6 @@ def run_aggregate_benchmark_trial(
         f"timing-aggregate-parallel-j{jobs}-{trial}",
         [
             str(KISS),
-            "--defaults",
             "--lang",
             "rust",
             "__coverage",
@@ -2411,7 +2410,6 @@ def reverse_index_concurrency_stress() -> None:
                 cwd = fixture.root if i % 2 == 0 else fixture.nested
                 shared = [
                     str(KISS),
-                    "--defaults",
                     "--lang",
                     "rust",
                     "test",
@@ -2422,9 +2420,9 @@ def reverse_index_concurrency_stress() -> None:
                     str(jobs),
                 ]
                 file_cmd = list(shared)
-                file_cmd[5] = rel
+                file_cmd[4] = rel
                 symbol_cmd = list(shared)
-                symbol_cmd[5] = symbol
+                symbol_cmd[4] = symbol
                 file_readers.append((file_cmd, cwd))
                 symbol_readers.append((symbol_cmd, cwd))
             t0 = time.monotonic()
@@ -2460,7 +2458,6 @@ def reverse_index_concurrency_stress() -> None:
                     f"reverse-hit-zero-entry-{iteration}",
                     [
                         str(KISS),
-                        "--defaults",
                         "--lang",
                         "rust",
                         "test",
@@ -3182,7 +3179,6 @@ def concurrent_cache_recovery() -> None:
                 (
                     [
                         str(KISS),
-                        "--defaults",
                         "--lang",
                         "rust",
                         "test",
@@ -3199,7 +3195,6 @@ def concurrent_cache_recovery() -> None:
                 (
                     [
                         str(KISS),
-                        "--defaults",
                         "--lang",
                         "rust",
                         "test",
@@ -3510,7 +3505,6 @@ def aggregate_coverage() -> None:
     with qa_fixture("kiss-qa-rust-aggregate-") as fixture:
         command = [
             str(KISS),
-            "--defaults",
             "--lang",
             "rust",
             "__coverage",

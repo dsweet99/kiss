@@ -7,9 +7,7 @@ use crate::duplication::{
     extract_chunks_for_duplication_with_roles, extract_rust_chunks_for_duplication_with_roles,
 };
 use crate::gate_config::GateConfig;
-use crate::graph::{
-    build_python_context_graph, collect_orphan_entry_paths, orphan_violations,
-};
+use crate::graph::{build_python_context_graph, collect_orphan_entry_paths, orphan_violations};
 use crate::lang_analysis::parse_then_classify;
 use crate::parsing::ParsedFile;
 use crate::rust_graph::build_rust_context_graph;
