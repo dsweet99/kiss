@@ -5,6 +5,7 @@ target/
 results/
 *.md~
 .kiss/
+src/analyze/.kissconfig
 .kpop/
 .cursor/
 .config/
