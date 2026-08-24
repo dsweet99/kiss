@@ -1,4 +1,3 @@
-"""Shared stubs for adversarial foil CLI tests."""
 
 from __future__ import annotations
 
@@ -6,18 +5,18 @@ from pathlib import Path
 
 import pytest
 
-import python.adversarial_common as cli
-import ops.adversarial_foil as foil_mod
 import python.adversarial as adv
+import python.adversarial_common as cli
+import python.adversarial_foil_cli as foil_mod
 
 
 def stub_foil_env(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> tuple[Path, Path]:
     kiss = tmp_path / "kiss"
-    ops_dir = kiss / "ops"
-    ops_dir.mkdir(parents=True)
-    (ops_dir / "coverage_metrics.py").write_text("# stub\n", encoding="utf-8")
+    python_dir = kiss / "python"
+    python_dir.mkdir(parents=True)
+    (python_dir / "coverage_metrics_cli.py").write_text("# stub\n", encoding="utf-8")
     adv_root = tmp_path / "kiss-adversarial"
     monkeypatch.setattr(cli, "repo_root", lambda: kiss)
     monkeypatch.setattr(cli, "adversarial_root", lambda: adv_root)

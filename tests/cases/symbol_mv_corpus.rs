@@ -2,8 +2,10 @@ use crate::support::mv_harness::{apply_move_sequence, write_failure_artifacts};
 use crate::symbol_mv_matrix::scenario_specs;
 
 #[test]
-#[ignore = "heavy corpus-style validation"]
 fn heavy_mv_sequences_capture_failure_artifacts_on_semantic_breakage() {
+    if std::env::var_os("KISS_HEAVY_MV_TESTS").is_none() {
+        return;
+    }
     let mut failures: Vec<String> = Vec::new();
     for scenario in scenario_specs().into_iter().filter(|s| s.should_succeed) {
         let outcome = apply_move_sequence(&scenario, 2).expect("sequence should run");

@@ -2,18 +2,12 @@
 #[path = "ast_rust_test.rs"]
 mod ast_rust_test;
 
-// Rust AST extraction (Task 3).
-//
-// Walks a `syn::File` to enumerate function/method definitions and call
-// sites for `kiss mv`. Rust spans expose only line/column locations (not
-// byte ranges), so byte offsets are derived from line/column via a single
-// prefix scan of the source.
 use super::ast_models::{
     AstResult, Definition, FallbackReason, ParseOutcome, Reference, SymbolKind, TraitImpl,
 };
 use super::ast_rust_span::{compute_line_offsets, ident_byte_span, item_full_span};
-use super::ast_rust_visitors::{CallVisitor, NestedDefVisitor, collect_impl};
 pub(super) use super::ast_rust_visitors::impl_owner_name;
+use super::ast_rust_visitors::{CallVisitor, NestedDefVisitor, collect_impl};
 use crate::Language;
 use syn::visit::Visit;
 use syn::{Item, ItemFn};
@@ -194,4 +188,3 @@ pub(super) fn collect_top_fn(
     };
     visitor.visit_item_fn(item_fn);
 }
-

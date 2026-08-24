@@ -1,4 +1,3 @@
-"""Tests for kiss subprocess integration in python coverage helpers."""
 
 from __future__ import annotations
 
@@ -8,7 +7,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 import python.coverage_kiss as coverage_kiss
 import python.coverage_metrics as metrics
 
@@ -17,8 +15,8 @@ def test_run_kiss_check_all_parses_violations(tmp_path: Path, monkeypatch: pytes
     repo = tmp_path / "repo"
     repo.mkdir()
     violation = (
-        "VIOLATION:test_coverage:pkg/a.py:10:foo: 42% covered. "
-        "Add test coverage for this code unit."
+        "VIOLATION:test_coverage:pkg/a.py:10:<file>: 42% covered. "
+        "Add test coverage for this file."
     )
 
     def fake_run(cmd, **kwargs):
@@ -48,7 +46,7 @@ def test_run_kiss_check_all_bad_rc_raises(tmp_path: Path, monkeypatch: pytest.Mo
         return subprocess.CompletedProcess(cmd, 2, "boom", "err")
 
     monkeypatch.setattr(coverage_kiss.subprocess, "run", fake_run)
-    with pytest.raises(RuntimeError, match="kiss check --all failed"):
+    with pytest.raises(RuntimeError, match="kiss __coverage --all failed"):
         coverage_kiss.run_kiss_check_all(repo)
 
 

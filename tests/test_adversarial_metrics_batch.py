@@ -1,11 +1,10 @@
-"""Tests for adversarial metrics batch helpers."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
-
+from click.testing import CliRunner
 from python.adversarial_metrics_batch import (
     RepoMetricsRow,
     format_metric,
@@ -13,6 +12,7 @@ from python.adversarial_metrics_batch import (
     parse_files_compared,
     run_metrics_batch,
 )
+from python.adversarial_metrics_cli import metrics as adversarial_metrics_command
 
 
 def test_parse_files_compared_variants() -> None:
@@ -62,7 +62,6 @@ def test_measure_repo_success(tmp_path: Path) -> None:
 def test_print_summary_table() -> None:
     import click
     from click.testing import CliRunner
-
     from python.adversarial_metrics_batch import print_summary_table
 
     rows = [
@@ -88,3 +87,23 @@ def test_run_metrics_batch_empty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
         "python.adversarial_common.repo_root", lambda: kiss, raising=False
     )
     assert run_metrics_batch() == 0
+
+
+def test_metrics_cli_delegates_to_batch_runner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    called = {"ensure": False, "batch": False}
+
+    monkeypatch.setattr(
+        "python.adversarial_metrics_cli.ensure_import_path",
+        lambda: called.__setitem__("ensure", True),
+    )
+    monkeypatch.setattr(
+        "python.adversarial_metrics_batch.run_metrics_batch",
+        lambda: called.__setitem__("batch", True) or 5,
+    )
+
+    result = CliRunner().invoke(adversarial_metrics_command)
+
+    assert result.exit_code == 5
+    assert called == {"ensure": True, "batch": True}

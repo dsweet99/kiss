@@ -1,8 +1,11 @@
+use crate::code_roles::FileComposition;
+
 pub struct DependencyGraph {
     pub graph: DiGraph<String, ()>,
     pub nodes: HashMap<String, NodeIndex>,
     pub paths: HashMap<String, PathBuf>,
     pub path_to_module: HashMap<PathBuf, String>,
+    pub compositions: HashMap<String, FileComposition>,
 }
 
 #[derive(Debug, Default)]
@@ -25,6 +28,7 @@ impl DependencyGraph {
             nodes: HashMap::new(),
             paths: HashMap::new(),
             path_to_module: HashMap::new(),
+            compositions: HashMap::new(),
         }
     }
 
@@ -53,43 +57,9 @@ impl DependencyGraph {
         let Some(&idx) = self.nodes.get(module) else {
             return ModuleGraphMetrics::default();
         };
-        let fan_out = self
-            .graph
-            .neighbors_directed(idx, petgraph::Direction::Outgoing)
-            .count();
-        let (total_reachable, depth) = self.compute_reachable_and_depth(idx);
-        ModuleGraphMetrics {
-            fan_in: self
-                .graph
-                .neighbors_directed(idx, petgraph::Direction::Incoming)
-                .count(),
-            fan_out,
-            indirect_dependencies: total_reachable.saturating_sub(fan_out),
-            dependency_depth: depth,
-        }
-    }
-
-    /// BFS from `start`, returning (`total_reachable`, `max_depth`).
-    /// `total_reachable` counts all nodes reachable at depth >= 1 (excludes start itself).
-    pub(crate) fn compute_reachable_and_depth(&self, start: NodeIndex) -> (usize, usize) {
-        use std::collections::{HashSet, VecDeque};
-        let mut visited = HashSet::new();
-        let mut queue = VecDeque::new();
-        let mut max_depth = 0;
-        visited.insert(start);
-        queue.push_back((start, 0));
-        while let Some((node, depth)) = queue.pop_front() {
-            for neighbor in self
-                .graph
-                .neighbors_directed(node, petgraph::Direction::Outgoing)
-            {
-                if visited.insert(neighbor) {
-                    max_depth = max_depth.max(depth + 1);
-                    queue.push_back((neighbor, depth + 1));
-                }
-            }
-        }
-        (visited.len() - 1, max_depth)
+        let mut stamp = vec![0u32; self.graph.node_count()];
+        let mut stamp_gen = 0u32;
+        metrics_at(self, idx, &mut stamp, &mut stamp_gen)
     }
 
     pub(crate) fn is_cycle(&self, scc: &[NodeIndex]) -> bool {
@@ -110,25 +80,22 @@ impl DependencyGraph {
         }
     }
 
-    /// Returns the qualified module name for a path, if the path is in this graph.
     pub fn module_for_path(&self, path: &std::path::Path) -> Option<String> {
         self.path_to_module.get(path).cloned()
     }
 
-    /// Returns test modules that import the given module (directly).
-    /// Used for coverage: "candidate" tests that could cover definitions in `module`.
+    #[cfg(test)]
     pub fn test_importers_of(&self, module: &str) -> Vec<String> {
         let Some(&idx) = self.nodes.get(module) else {
             return Vec::new();
         };
         self.graph
-            .neighbors_directed(idx, Direction::Incoming)
+            .neighbors_directed(idx, petgraph::Direction::Incoming)
             .map(|i| self.graph[i].clone())
-            .filter(|m| is_test_module(self, m))
+            .filter(|m| self.compositions.get(m) == Some(&FileComposition::TestOnly))
             .collect()
     }
 
-    /// True if `from_module` has a direct edge to `to_module` (`from_module` imports `to_module`).
     pub fn imports(&self, from_module: &str, to_module: &str) -> bool {
         let (Some(&from_idx), Some(&to_idx)) =
             (self.nodes.get(from_module), self.nodes.get(to_module))
@@ -145,15 +112,6 @@ impl Default for DependencyGraph {
     }
 }
 
-pub(crate) fn is_test_module(graph: &DependencyGraph, module_name: &str) -> bool {
-    let Some(p) = graph.paths.get(module_name) else {
-        return false;
-    };
-    p.components()
-        .any(|c| c.as_os_str() == OsStr::new("tests") || c.as_os_str() == OsStr::new("test"))
-}
-
-// --- module naming (merged from former `names.rs`) ---
 pub(crate) fn file_stem_str(path: &Path) -> &str {
     path.file_stem()
         .map_or("unknown", |s| s.to_str().unwrap_or("unknown"))
@@ -181,7 +139,6 @@ pub(crate) fn trim_src_suffix(mut dirs: Vec<String>) -> Vec<String> {
 pub(crate) fn join_qualified_dirs_and_stem(dirs: &[String], stem: &str) -> String {
     format!("{}.{}", dirs.join("."), stem)
 }
-/// Qualified module id from path (dirs + stem; `pkg/__init__.py` → `pkg`).
 pub fn qualified_module_name(path: &Path) -> String {
     let stem = file_stem_str(path);
     let dirs = trim_src_suffix(parent_dir_strings(path));
@@ -213,26 +170,84 @@ pub(crate) fn bare_module_name(path: &Path) -> String {
 }
 pub fn is_entry_point(name: &str) -> bool {
     let bare = name.rsplit('.').next().unwrap_or(name);
-    if name == "tests" || name.starts_with("tests.") || name.contains(".tests.") {
-        return true;
-    }
     if name == "bin" || name.starts_with("bin.") || name.contains(".bin.") {
         return true;
     }
     matches!(
         bare,
-        "main" | "lib" | "build" | "__main__" | "__init__" | "tests" | "conftest" | "setup"
-    ) || bare.starts_with("test_")
-        || bare.ends_with("_test")
-        || bare.contains("_integration")
-        || bare.contains("_bench")
+        "main" | "lib" | "build" | "__main__" | "__init__" | "setup"
+    )
 }
+fn metrics_at(
+    graph: &DependencyGraph,
+    idx: NodeIndex,
+    stamp: &mut [u32],
+    stamp_gen: &mut u32,
+) -> ModuleGraphMetrics {
+    let fan_out = graph
+        .graph
+        .neighbors_directed(idx, petgraph::Direction::Outgoing)
+        .count();
+    let (total_reachable, depth) = compute_reachable_and_depth(graph, idx, stamp, stamp_gen);
+    ModuleGraphMetrics {
+        fan_in: graph
+            .graph
+            .neighbors_directed(idx, petgraph::Direction::Incoming)
+            .count(),
+        fan_out,
+        indirect_dependencies: total_reachable.saturating_sub(fan_out),
+        dependency_depth: depth,
+    }
+}
+
+fn compute_reachable_and_depth(
+    graph: &DependencyGraph,
+    start: NodeIndex,
+    stamp: &mut [u32],
+    stamp_gen: &mut u32,
+) -> (usize, usize) {
+    use std::collections::VecDeque;
+    *stamp_gen = stamp_gen.wrapping_add(1);
+    if *stamp_gen == 0 {
+        stamp.fill(0);
+        *stamp_gen = 1;
+    }
+    let mut queue = VecDeque::new();
+    let mut max_depth = 0;
+    let mut reached = 0;
+    stamp[start.index()] = *stamp_gen;
+    queue.push_back((start, 0));
+    while let Some((node, depth)) = queue.pop_front() {
+        for neighbor in graph
+            .graph
+            .neighbors_directed(node, petgraph::Direction::Outgoing)
+        {
+            let i = neighbor.index();
+            if stamp[i] != *stamp_gen {
+                stamp[i] = *stamp_gen;
+                reached += 1;
+                max_depth = max_depth.max(depth + 1);
+                queue.push_back((neighbor, depth + 1));
+            }
+        }
+    }
+    (reached, max_depth)
+}
+
+pub fn all_module_metrics(graph: &DependencyGraph) -> HashMap<String, ModuleGraphMetrics> {
+    let mut stamp = vec![0u32; graph.graph.node_count()];
+    let mut stamp_gen = 0u32;
+    let mut out = HashMap::with_capacity(graph.nodes.len());
+    for (name, &idx) in &graph.nodes {
+        out.insert(name.clone(), metrics_at(graph, idx, &mut stamp, &mut stamp_gen));
+    }
+    out
+}
+
 pub(crate) fn is_orphan(fan_in: usize, fan_out: usize, module_name: &str) -> bool {
     fan_in == 0 && fan_out == 0 && !is_entry_point(module_name)
 }
 
-/// Rust crate roots (`src/lib.rs`, `src/main.rs`, `src/build.rs`) aggregate the whole crate;
-/// their indirect-dependency counts reflect project size, not a single module's coupling.
 pub(crate) fn is_crate_root_aggregator(graph: &DependencyGraph, module_name: &str) -> bool {
     let Some(path) = graph.paths.get(module_name) else {
         return false;

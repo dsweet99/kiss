@@ -1,5 +1,3 @@
-//! Additional Rust regressions for parser-first `kiss mv`.
-
 use kiss::Language;
 use kiss::symbol_mv::{MvOptions, run_mv_command};
 use std::fs;
@@ -39,6 +37,7 @@ fn caller(a: &A<u8>, b: &B<u8>) -> u32 {
         json: false,
         lang_filter: Some(Language::Rust),
         ignore: vec![],
+        language_tables: Default::default(),
     };
     assert_eq!(run_mv_command(opts), 0);
 
@@ -80,6 +79,7 @@ fn caller() -> u32 { X::helper() }
         json: false,
         lang_filter: Some(Language::Rust),
         ignore: vec![],
+        language_tables: Default::default(),
     };
     assert_eq!(run_mv_command(opts), 0);
 
@@ -121,6 +121,7 @@ fn caller(x: &X) -> u32 { x.into_y(1).helper() }
         json: false,
         lang_filter: Some(Language::Rust),
         ignore: vec![],
+        language_tables: Default::default(),
     };
     assert_eq!(run_mv_command(opts), 0);
 
@@ -162,6 +163,7 @@ fn outer() -> u32 {
         json: false,
         lang_filter: Some(Language::Rust),
         ignore: vec![],
+        language_tables: Default::default(),
     };
     assert_eq!(run_mv_command(opts), 0);
 

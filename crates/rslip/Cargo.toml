@@ -1,0 +1,20 @@
+[package]
+name = "rslip"
+version = "0.1.0"
+edition = "2024"
+description = "Rust-first Python line coverage and pytest-result cache for Kiss"
+license = "MIT"
+repository = "https://github.com/dsweet99/kiss"
+readme = "README.md"
+keywords = ["coverage", "pytest", "python", "testing", "kiss"]
+categories = ["development-tools::testing"]
+
+[dependencies]
+fs2 = "0.4.3"
+kiss-publication-barrier = { path = "../kiss-publication-barrier" }
+rpytest-runner = { path = "../rpytest-runner" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"

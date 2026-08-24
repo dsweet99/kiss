@@ -1,4 +1,3 @@
-"""Batch verification across multiple adversarial counterexample repos."""
 
 from __future__ import annotations
 

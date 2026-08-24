@@ -17,11 +17,18 @@ impl From<std::io::Error> for ParseError {
 
 impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::IoError(e) => write!(f, "IO error: {e}"),
-            Self::ParserInitError => write!(f, "Failed to initialize Python parser"),
-            Self::ParseFailed => write!(f, "Failed to parse Python code"),
-        }
+        write_parse_error(self, f)
+    }
+}
+
+pub(crate) fn write_parse_error(
+    err: &ParseError,
+    f: &mut impl std::fmt::Write,
+) -> std::fmt::Result {
+    match err {
+        ParseError::IoError(e) => write!(f, "IO error: {e}"),
+        ParseError::ParserInitError => write!(f, "Failed to initialize Python parser"),
+        ParseError::ParseFailed => write!(f, "Failed to parse Python code"),
     }
 }
 
@@ -45,12 +52,19 @@ pub fn create_parser() -> Result<Parser, ParseError> {
 pub fn parse_file(parser: &mut Parser, path: &Path) -> Result<ParsedFile, ParseError> {
     let source = std::fs::read_to_string(path)?;
     let tree = parser.parse(&source, None).ok_or(ParseError::ParseFailed)?;
+    if python_tree_has_error(tree.root_node()) {
+        return Err(ParseError::ParseFailed);
+    }
 
     Ok(ParsedFile {
         path: path.to_path_buf(),
         source,
         tree,
     })
+}
+
+fn python_tree_has_error(node: tree_sitter::Node<'_>) -> bool {
+    node.has_error()
 }
 
 pub fn parse_files(paths: &[PathBuf]) -> Result<Vec<Result<ParsedFile, ParseError>>, ParseError> {
@@ -61,8 +75,6 @@ pub fn parse_files(paths: &[PathBuf]) -> Result<Vec<Result<ParsedFile, ParseErro
 
     Ok(paths
         .par_iter()
-        // Creating a tree-sitter parser + setting the language is relatively expensive.
-        // Reuse one parser per Rayon worker thread instead of per file.
         .map_init(
             || create_parser().map_or_else(|_| ParserSlot::Failed, ParserSlot::Ready),
             |slot, path| match slot {
@@ -77,6 +89,18 @@ pub fn parse_files(paths: &[PathBuf]) -> Result<Vec<Result<ParsedFile, ParseErro
 mod tests {
     use super::*;
     use std::io::Write;
+
+    impl ParsedFile {
+        fn witness_from_source(source: &str) -> Self {
+            let mut parser = create_parser().unwrap();
+            let tree = parser.parse(source, None).unwrap();
+            Self {
+                path: PathBuf::from("witness.py"),
+                source: source.to_string(),
+                tree,
+            }
+        }
+    }
 
     #[test]
     fn test_create_parser() {
@@ -151,10 +175,26 @@ mod tests {
 
     #[test]
     fn test_parse_error_display_fmt() {
-        use std::fmt::Write;
-        let err = ParseError::ParseFailed;
-        let mut s = String::new();
-        write!(&mut s, "{err}").unwrap();
-        assert!(!s.is_empty());
+        for err in [
+            ParseError::ParseFailed,
+            ParseError::ParserInitError,
+            ParseError::IoError(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "file not found",
+            )),
+        ] {
+            let mut direct = String::new();
+            write_parse_error(&err, &mut direct).unwrap();
+            let display = format!("{err}");
+            assert!(!direct.is_empty());
+            assert_eq!(direct, display);
+            assert_eq!(direct, err.to_string());
+        }
+    }
+
+    #[test]
+    fn witness_parsed_file_type() {
+        let file = ParsedFile::witness_from_source("x = 1");
+        assert!(file.source.contains('x'));
     }
 }

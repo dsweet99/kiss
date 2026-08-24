@@ -54,7 +54,6 @@ fn metric_values_file<'a>(stats: &'a MetricStats, metric_id: &str) -> Option<&'a
         "interface_types_per_file" => &stats.interface_types_per_file,
         "concrete_types_per_file" => &stats.concrete_types_per_file,
         "imported_names_per_file" => &stats.imported_names_per_file,
-        "inv_test_coverage" => &stats.inv_test_coverage,
         _ => return None,
     })
 }

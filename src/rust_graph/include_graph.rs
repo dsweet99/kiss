@@ -97,7 +97,13 @@ pub fn expand_rust_files(files: Vec<std::path::PathBuf>) -> Vec<std::path::PathB
 mod include_graph_tests {
     use super::*;
     use std::collections::HashMap;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
+
+    impl IncludeGraph {
+        fn witness(direct: HashMap<PathBuf, Vec<PathBuf>>) -> Self {
+            Self { direct }
+        }
+    }
 
     #[test]
     fn include_graph_transitive_from_follows_direct_edges() {
@@ -107,5 +113,34 @@ mod include_graph_tests {
         direct.insert(root.clone(), vec![child.clone()]);
         let graph = IncludeGraph { direct };
         assert_eq!(graph.transitive_from(&root), vec![child]);
+    }
+
+    #[test]
+    fn include_graph_transitive_from_skips_self_cycles() {
+        let root = PathBuf::from("/tmp/root.rs");
+        let child = PathBuf::from("/tmp/child.rs");
+        let mut direct = HashMap::new();
+        direct.insert(root.clone(), vec![root.clone(), child.clone()]);
+        direct.insert(child.clone(), vec![root.clone()]);
+        let graph = IncludeGraph { direct };
+
+        assert_eq!(graph.transitive_from(&root), vec![child, root]);
+    }
+
+    #[test]
+    fn expand_rust_files_keeps_unparseable_roots() {
+        let tmp = tempfile::tempdir().unwrap();
+        let missing = tmp.path().join("missing.rs");
+
+        assert_eq!(
+            expand_rust_files(vec![missing.clone()]),
+            vec![crate::rust_include::canonical_path(&missing)]
+        );
+    }
+
+    #[test]
+    fn witness_include_graph_type() {
+        let graph = IncludeGraph::witness(HashMap::new());
+        assert!(graph.transitive_from(Path::new("/tmp/root.rs")).is_empty());
     }
 }

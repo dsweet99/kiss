@@ -1,4 +1,3 @@
-//! First file with duplicated code (to trigger duplication detection)
 
 pub fn process_user_data(name: &str, age: i32, email: &str) -> String {
     let validated_name = name.trim().to_uppercase();

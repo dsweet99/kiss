@@ -1,4 +1,3 @@
-"""Shared path helpers for adversarial and coverage CLIs."""
 
 from __future__ import annotations
 

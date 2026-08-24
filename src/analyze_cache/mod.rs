@@ -2,35 +2,62 @@ mod content_digest;
 mod emit;
 
 use crate::analyze::FocusFilter;
-use crate::analyze::{
-    compute_test_coverage_from_lists, filter_duplicates_by_focus, filter_viols_by_focus,
-};
+use crate::analyze::{filter_duplicates_by_focus, filter_viols_by_focus};
 use emit::{emit_cached_bypass, emit_cached_gated};
+use kiss::DependencyGraph;
 use kiss::check_cache;
-use kiss::check_cache::{CachedCodeChunk, CachedViolation};
-use kiss::check_universe_cache::{CachedCoverageItem, CachedDuplicateCluster, FullCheckCache};
-use kiss::stats::MetricStats;
+use kiss::check_universe_cache::FullCheckCache;
 use kiss::{Config, DuplicateCluster, GateConfig, Violation};
-use kiss::{DependencyGraph, ParsedFile, ParsedRustFile};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 mod path_helpers;
 mod stats_top;
-#[cfg(test)]
-mod test_helpers;
-use path_helpers::{cache_path_full, same_cached_paths};
+mod store_full;
 pub(crate) use content_digest::load_verified_full_cache;
-pub(crate) use stats_top::{
-    maybe_store_stats_top_cache, try_run_cached_stats_summary, try_run_cached_stats_top,
-};
+use path_helpers::{cache_path_full, same_cached_paths};
+pub(crate) use stats_top::try_run_cached_stats_summary;
+pub use store_full::{FullCacheInputs, store_full_cache_from_run};
 
-const CACHE_SCHEMA_VERSION: &str = "v9";
+const CACHE_SCHEMA_VERSION: &str = "v15-orphan-allowed";
 
 pub fn fnv1a64(mut h: u64, bytes: &[u8]) -> u64 {
     for &b in bytes {
         h ^= u64::from(b);
         h = h.wrapping_mul(0x0100_0000_01b3);
+    }
+    h
+}
+
+#[must_use]
+pub fn mtime_ns_since_epoch(meta: &std::fs::Metadata) -> u128 {
+    meta.modified()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map_or(0, |d| {
+            u128::from(d.as_secs()) * 1_000_000_000_u128 + u128::from(d.subsec_nanos())
+        })
+}
+
+#[must_use]
+pub fn mix_path_len_mtime(mut h: u64, path: &Path) -> u64 {
+    h = fnv1a64(h, path.to_string_lossy().as_bytes());
+    if let Ok(meta) = std::fs::metadata(path) {
+        h = fnv1a64(h, meta.len().to_le_bytes().as_slice());
+        h = fnv1a64(h, mtime_ns_since_epoch(&meta).to_le_bytes().as_slice());
+    }
+    h
+}
+
+#[must_use]
+pub fn mix_sorted_paths_len_mtime<'a, I>(mut h: u64, files: I) -> u64
+where
+    I: IntoIterator<Item = &'a PathBuf>,
+{
+    let mut paths: Vec<&PathBuf> = files.into_iter().collect();
+    paths.sort_by(|a, b| a.to_string_lossy().cmp(&b.to_string_lossy()));
+    for path in paths {
+        h = mix_path_len_mtime(h, path);
     }
     h
 }
@@ -67,10 +94,32 @@ fn mix_config_into_fingerprint(mut h: u64, cfg: &Config) -> u64 {
 }
 
 fn mix_gate_into_fingerprint(mut h: u64, gate: &GateConfig) -> u64 {
-    h = fnv1a64(h, gate.test_coverage_threshold.to_le_bytes().as_slice());
     h = fnv1a64(h, gate.min_similarity.to_bits().to_le_bytes().as_slice());
     h = fnv1a64(h, &[u8::from(gate.duplication_enabled)]);
     h = fnv1a64(h, &[u8::from(gate.orphan_module_enabled)]);
+    h = fnv1a64(h, &[u8::from(gate.comment_removal_enabled)]);
+    h = fnv1a64(
+        h,
+        u64::try_from(gate.docs_allowed.len())
+            .unwrap_or(u64::MAX)
+            .to_le_bytes()
+            .as_slice(),
+    );
+    for dir in &gate.docs_allowed {
+        h = fnv1a64(h, dir.as_bytes());
+        h = fnv1a64(h, &[0]);
+    }
+    h = fnv1a64(
+        h,
+        u64::try_from(gate.orphan_allowed.len())
+            .unwrap_or(u64::MAX)
+            .to_le_bytes()
+            .as_slice(),
+    );
+    for dir in &gate.orphan_allowed {
+        h = fnv1a64(h, dir.as_bytes());
+        h = fnv1a64(h, &[0]);
+    }
     h
 }
 
@@ -87,47 +136,22 @@ pub fn fingerprint_for_check(
     h = mix_config_into_fingerprint(h, py_config);
     h = mix_config_into_fingerprint(h, rs_config);
     h = mix_gate_into_fingerprint(h, gate_config);
-
-    let mut all_files: Vec<&PathBuf> = py_files.iter().chain(rs_files).collect();
-    all_files.sort_by(|a, b| a.to_string_lossy().cmp(&b.to_string_lossy()));
-
-    for p in &all_files {
-        h = fnv1a64(h, p.to_string_lossy().as_bytes());
-        if let Ok(meta) = std::fs::metadata(p) {
-            h = fnv1a64(h, meta.len().to_le_bytes().as_slice());
-            let mtime_ns = meta
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                .map_or(0, |d| {
-                    u128::from(d.as_secs()) * 1_000_000_000_u128 + u128::from(d.subsec_nanos())
-                });
-            h = fnv1a64(h, mtime_ns.to_le_bytes().as_slice());
-        }
-    }
+    h = fnv1a64(
+        h,
+        kiss::code_roles::role_input_fingerprint(py_files, rs_files)
+            .unwrap_or_else(|err| format!("role-fp-err:{err}"))
+            .as_bytes(),
+    );
     format!("{h:016x}")
 }
 
-pub fn store_full_cache(cache: &FullCheckCache) {
-    let dir = check_cache::cache_dir();
+pub fn store_full_cache(repo_root: &std::path::Path, cache: &FullCheckCache) {
+    let dir = check_cache::cache_dir(repo_root);
     let _ = std::fs::create_dir_all(&dir);
     let Ok(bytes) = bincode::serialize(cache) else {
         return;
     };
-    let _ = std::fs::write(cache_path_full(&cache.fingerprint), bytes);
-}
-
-pub fn coverage_violation(file: PathBuf, name: String, line: usize, file_pct: usize) -> Violation {
-    Violation {
-        file,
-        line,
-        unit_name: name,
-        metric: "test_coverage".to_string(),
-        value: 0,
-        threshold: 0,
-        message: format!("{file_pct}% covered. Add test coverage for this code unit."),
-        suggestion: String::new(),
-    }
+    let _ = std::fs::write(cache_path_full(repo_root, &cache.fingerprint), bytes);
 }
 
 fn cached_duplicates(
@@ -185,50 +209,6 @@ fn cached_duplicates(
     (viols, py_dups, rs_dups, cache)
 }
 
-fn cached_coverage_viols(cache: &FullCheckCache, focus: &FocusFilter) -> Vec<Violation> {
-    let defs: Vec<_> = cache
-        .definitions
-        .iter()
-        .cloned()
-        .map(CachedCoverageItem::into_tuple)
-        .collect();
-    let unref: Vec<_> = cache
-        .unreferenced
-        .iter()
-        .cloned()
-        .map(CachedCoverageItem::into_tuple)
-        .collect();
-    let (_, _, _, unreferenced) = compute_test_coverage_from_lists(&defs, &unref, focus);
-
-    if !cache.coverage_violations.is_empty() {
-        return cache
-            .coverage_violations
-            .iter()
-            .map(|v| v.clone().into_violation())
-            .filter(|v| {
-                crate::analyze::is_focus_file(&v.file, focus)
-                    && crate::analyze::is_coverage_report_target(
-                        &v.file,
-                        &v.unit_name,
-                        true,
-                    )
-            })
-            .collect();
-    }
-
-    let file_pcts = kiss::cli_output::file_coverage_map(&defs, &unreferenced);
-    unreferenced
-        .into_iter()
-        .filter(|(path, name, _)| {
-            crate::analyze::is_coverage_report_target(path, name, true)
-        })
-        .map(|(file, name, line)| {
-            let pct = file_pcts.get(&file).copied().unwrap_or(0);
-            coverage_violation(file, name, line, pct)
-        })
-        .collect()
-}
-
 pub fn try_run_cached_all(
     opts: &crate::analyze::AnalyzeOptions<'_>,
     py_files: &[PathBuf],
@@ -242,16 +222,22 @@ pub fn try_run_cached_all(
         opts.rs_config,
         opts.gate_config,
     );
-    let cache = load_verified_full_cache(&fp, py_files, rs_files)?;
+    let repo_root = repo_root_for_universe(opts.universe);
+    let cache = load_verified_full_cache(&repo_root, &fp, py_files, rs_files)?;
     if !same_cached_paths(py_files, rs_files, focus, &cache) {
         return None;
     }
-
     if opts.bypass_gate {
         Some(emit_cached_bypass(cache, opts, focus))
     } else {
         Some(emit_cached_gated(cache, opts, focus))
     }
+}
+
+pub(crate) fn repo_root_for_universe(universe: &str) -> PathBuf {
+    crate::test_runner::check_line_coverage::repository_root_for_universe(std::path::Path::new(
+        universe,
+    ))
 }
 
 pub fn graph_counts(
@@ -265,127 +251,21 @@ pub fn graph_counts(
     (nodes, edges)
 }
 
-#[allow(dead_code)]
-pub fn coverage_lists(
-    py_parsed: &[ParsedFile],
-    rs_parsed: &[ParsedRustFile],
-) -> (Vec<CachedCoverageItem>, Vec<CachedCoverageItem>) {
-    let py_refs: Vec<&ParsedFile> = py_parsed.iter().collect();
-    let rs_refs: Vec<&ParsedRustFile> = rs_parsed.iter().collect();
-    let py_cov = kiss::analyze_test_refs_quick(&py_refs);
-    let rs_cov = kiss::analyze_rust_test_refs(&rs_refs, None);
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
 
-    let to_cached = |file: PathBuf, name: String, line: usize| CachedCoverageItem {
-        file: file.to_string_lossy().to_string(),
-        name,
-        line,
-    };
+    fn fnv1a64_witness() -> u64 {
+        fnv1a64(0xcbf2_9ce4_8422_2325_u64, b"witness")
+    }
 
-    let mut definitions: Vec<CachedCoverageItem> = py_cov
-        .definitions
-        .into_iter()
-        .map(|d| to_cached(d.file, d.name, d.line))
-        .collect();
-    definitions.extend(
-        rs_cov
-            .definitions
-            .into_iter()
-            .map(|d| to_cached(d.file, d.name, d.line)),
-    );
-    let mut unreferenced: Vec<CachedCoverageItem> = py_cov
-        .unreferenced
-        .into_iter()
-        .map(|d| to_cached(d.file, d.name, d.line))
-        .collect();
-    unreferenced.extend(
-        rs_cov
-            .unreferenced
-            .into_iter()
-            .map(|d| to_cached(d.file, d.name, d.line)),
-    );
-    (definitions, unreferenced)
-}
-
-pub struct FullCacheInputs<'a> {
-    pub fingerprint: String,
-    pub py_file_count: usize,
-    pub rs_file_count: usize,
-    pub code_unit_count: usize,
-    pub statement_count: usize,
-    pub violations: &'a [Violation],
-    pub graph_viols_all: &'a [Violation],
-    pub coverage_violations: &'a [Violation],
-    pub py_graph: Option<&'a DependencyGraph>,
-    pub rs_graph: Option<&'a DependencyGraph>,
-    pub py_stats: Option<&'a MetricStats>,
-    pub rs_stats: Option<&'a MetricStats>,
-    pub focus_paths: Vec<String>,
-    pub focus_restrict: bool,
-    pub py_paths: Vec<String>,
-    pub rs_paths: Vec<String>,
-    pub py_dups_all: &'a [DuplicateCluster],
-    pub rs_dups_all: &'a [DuplicateCluster],
-    pub definitions: Vec<CachedCoverageItem>,
-    pub unreferenced: Vec<CachedCoverageItem>,
-}
-
-pub fn store_full_cache_from_run(inputs: FullCacheInputs<'_>) {
-    let (graph_nodes, graph_edges) = graph_counts(inputs.py_graph, inputs.rs_graph);
-    let py_path_bufs: Vec<PathBuf> = inputs.py_paths.iter().map(PathBuf::from).collect();
-    let rs_path_bufs: Vec<PathBuf> = inputs.rs_paths.iter().map(PathBuf::from).collect();
-    let mut file_content_digests = content_digest::content_digests_for_paths(&py_path_bufs);
-    file_content_digests.extend(content_digest::content_digests_for_paths(&rs_path_bufs));
-    file_content_digests.sort_by(|a, b| a.0.cmp(&b.0));
-    let cache = FullCheckCache {
-        fingerprint: inputs.fingerprint,
-        py_stats: inputs.py_stats.cloned(),
-        rs_stats: inputs.rs_stats.cloned(),
-        focus_paths: inputs.focus_paths,
-        focus_restrict: inputs.focus_restrict,
-        py_paths: inputs.py_paths,
-        rs_paths: inputs.rs_paths,
-        py_file_count: inputs.py_file_count,
-        rs_file_count: inputs.rs_file_count,
-        code_unit_count: inputs.code_unit_count,
-        statement_count: inputs.statement_count,
-        graph_nodes,
-        graph_edges,
-        file_content_digests,
-        base_violations: inputs
-            .violations
-            .iter()
-            .map(CachedViolation::from)
-            .collect(),
-        graph_violations: inputs
-            .graph_viols_all
-            .iter()
-            .map(CachedViolation::from)
-            .collect(),
-        coverage_violations: inputs
-            .coverage_violations
-            .iter()
-            .map(CachedViolation::from)
-            .collect(),
-        py_duplicates: inputs
-            .py_dups_all
-            .iter()
-            .map(|c| CachedDuplicateCluster {
-                avg_similarity: c.avg_similarity,
-                chunks: c.chunks.iter().map(CachedCodeChunk::from).collect(),
-            })
-            .collect(),
-        rs_duplicates: inputs
-            .rs_dups_all
-            .iter()
-            .map(|c| CachedDuplicateCluster {
-                avg_similarity: c.avg_similarity,
-                chunks: c.chunks.iter().map(CachedCodeChunk::from).collect(),
-            })
-            .collect(),
-        definitions: inputs.definitions,
-        unreferenced: inputs.unreferenced,
-    };
-    store_full_cache(&cache);
+    #[test]
+    fn witness_hash_and_full_cache_inputs() {
+        let h0 = 0xcbf2_9ce4_8422_2325_u64;
+        assert_eq!(fnv1a64(h0, b""), h0);
+        assert_ne!(fnv1a64(h0, b"a"), fnv1a64(h0, b"b"));
+        assert_eq!(fnv1a64_witness(), fnv1a64(h0, b"witness"));
+    }
 }
 
 #[cfg(test)]

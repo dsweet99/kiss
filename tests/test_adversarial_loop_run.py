@@ -1,11 +1,9 @@
-"""Tests for adversarial loop orchestration."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
-
 import python.adversarial_loop as adv_loop
 
 _LOOP_CALLS: list[list[str]] = []

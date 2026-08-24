@@ -91,8 +91,7 @@ pub(crate) fn build_cluster_labels(
         let title = cluster_title(&member_paths);
         let count = members.len();
         let suffix = if count == 1 { "node" } else { "nodes" };
-        // Single line: embedded `\n` inside `c0["..."]` breaks many Mermaid parsers (labels
-        // split across source lines; rendered graph shows only generic ids like `c0`).
+
         labels.push(format!("{title} ({count} {suffix})"));
     }
     labels

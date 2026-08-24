@@ -1,28 +1,16 @@
-"""API handler with big try/except blocks and functions that do too much."""
 
 import base64
 import logging
 import time
 from collections.abc import Mapping
+
 from common import serializer
 from common.sdatetime import now_isoformat
+
 logger = logging.getLogger(__name__)
 
 
 def handle_api_request(request):
-    """
-    This function does way too many things:
-    - Request parsing
-    - Authentication
-    - Authorization
-    - Rate limiting
-    - Input validation
-    - Business logic routing
-    - Response formatting
-    - Error handling
-    - Logging
-    - Metrics
-    """
     start_time = time.time()
     request_id = f"req_{int(start_time * 1000)}"
 
@@ -264,7 +252,6 @@ def handle_api_request(request):
 
 
 def process_batch_operations(operations, context):
-    """Another function with a massive try/except and too many responsibilities."""
     results = []
     errors = []
     stats = {
@@ -404,7 +391,6 @@ class _SimpleResponse:
 
 
 class ApiHandler:
-    """Minimal stub for api_handler_test imports in the fake_python suite."""
 
     def process(self, _data):
         return {"ok": True}

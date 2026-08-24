@@ -1,4 +1,3 @@
-//! A type with too many methods (threshold: 15)
 
 pub struct GodClass {
     data: Vec<i32>,
@@ -31,7 +30,6 @@ impl GodClass {
     pub fn method20(&self) -> i32 { 20 }
 }
 
-/// Another type with excessive methods
 pub struct AnotherGodClass {
     value: String,
 }

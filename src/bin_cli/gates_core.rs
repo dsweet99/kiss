@@ -9,8 +9,8 @@ use crate::bin_cli::stats::{
     run_stats_summary, run_stats_table,
 };
 use crate::bin_cli::util::validate_paths;
-use kiss::normalize_ignore_prefixes;
 use kiss::Language;
+use kiss::normalize_ignore_prefixes;
 use kiss::truncate;
 use kiss::{Config, ConfigLanguage, GateConfig};
 
@@ -19,23 +19,51 @@ fn test_language_and_config() {
     assert_eq!(parse_language("python"), Ok(Language::Python));
     assert_eq!(parse_language("rust"), Ok(Language::Rust));
     assert!(parse_language("invalid").is_err());
-    let (py, rs) = load_configs(None, false);
+    let (py, rs) = load_configs(None);
     assert!(py.statements_per_function > 0 && rs.statements_per_function > 0);
-    let (py_def, _) = load_configs(None, true);
+    let tmp = tempfile::TempDir::new().unwrap();
+    let builtin = tmp.path().join("builtin.toml");
+    std::fs::write(&builtin, "[python]\n[rust]\n").unwrap();
+    let (py_def, _) = load_configs(Some(&builtin));
     assert_eq!(
         py_def.statements_per_function,
         kiss::defaults::python::STATEMENTS_PER_FUNCTION
     );
-    let tmp = tempfile::TempDir::new().unwrap();
     let path = tmp.path().join("kiss.toml");
-    std::fs::write(&path, "[gate]\ntest_coverage_threshold = 80\n").unwrap();
+    std::fs::write(&path, "[test]\ntest_coverage_threshold = 80\n").unwrap();
+    assert_eq!(load_gate_config(Some(&path)).test_coverage_threshold, 80);
     assert_eq!(
-        load_gate_config(Some(&path), false).test_coverage_threshold,
-        80
-    );
-    assert_eq!(
-        load_gate_config(Some(&path), true).test_coverage_threshold,
+        load_gate_config(Some(&builtin)).test_coverage_threshold,
         kiss::defaults::gate::TEST_COVERAGE_THRESHOLD
+    );
+}
+
+#[test]
+fn test_clamp_keeps_default_coverage_threshold() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    std::fs::write(
+        tmp.path().join("app.py"),
+        "def covered():\n    return 1\n\ndef uncovered():\n    return 2\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tmp.path().join("test_app.py"),
+        "from app import covered\n\ndef test_covered():\n    assert covered() == 1\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tmp.path().join("fake_extra.py"),
+        "def ignored_uncovered():\n    return 3\n",
+    )
+    .unwrap();
+
+    let ignore = crate::bin_cli::util::merge_check_ignore_prefixes(&[]);
+    let path = tmp.path().to_string_lossy().to_string();
+    let gate = kiss::config_gen::infer_gate_config_for_paths(&[path], None, &ignore).unwrap();
+    assert_eq!(
+        gate.test_coverage_threshold,
+        kiss::defaults::gate::TEST_COVERAGE_THRESHOLD,
+        "clamp must not infer coverage from static references after the kiss cov split"
     );
 }
 
@@ -61,8 +89,8 @@ fn test_cli_and_commands() {
         Commands::Mv { .. }
     ));
     assert!(matches!(
-        Cli::try_parse_from(["kiss", "clamp"]).unwrap().command,
-        Commands::Clamp { .. }
+        Cli::try_parse_from(["kiss", "check"]).unwrap().command,
+        Commands::Check { .. }
     ));
     ensure_default_config_exists();
 }
@@ -87,15 +115,24 @@ fn test_gather_stats_normalize_validate() {
     let py_cfg = Config::load_for_language(ConfigLanguage::Python);
     let rs_cfg = Config::load_for_language(ConfigLanguage::Rust);
     let gate_cfg = GateConfig::load();
-    run_stats_summary(
+    run_stats_summary(&RunStatsArgs {
+        paths: std::slice::from_ref(&p),
+        lang_filter: Some(Language::Python),
+        ignore: &[],
+        all: None,
+        table: false,
+        py_config: &py_cfg,
+        rs_config: &rs_cfg,
+        gate_config: &gate_cfg,
+        language_tables: kiss::LanguageTablesPresent::both(),
+        config: None,
+    });
+    run_stats_table(
         std::slice::from_ref(&p),
-        Some(Language::Python),
+        Some(Language::Rust),
         &[],
-        &py_cfg,
-        &rs_cfg,
-        &gate_cfg,
+        kiss::LanguageTablesPresent::both(),
     );
-    run_stats_table(std::slice::from_ref(&p), Some(Language::Rust), &[]);
     assert_eq!(
         normalize_ignore_prefixes(&["src/".to_string(), String::new()]),
         vec!["src"]
@@ -104,6 +141,7 @@ fn test_gather_stats_normalize_validate() {
 }
 
 fn exercise_stats_modes_and_mimic(p: &str) {
+    let gate = kiss::GateConfig::default();
     let p_owned = p.to_string();
     let paths = std::slice::from_ref(&p_owned);
     run_stats(RunStatsArgs {
@@ -114,7 +152,9 @@ fn exercise_stats_modes_and_mimic(p: &str) {
         table: false,
         py_config: &kiss::Config::python_defaults(),
         rs_config: &kiss::Config::rust_defaults(),
-        gate_config: &kiss::GateConfig::default(),
+        gate_config: &gate,
+        language_tables: kiss::LanguageTablesPresent::both(),
+        config: None,
     });
     run_stats(RunStatsArgs {
         paths,
@@ -124,7 +164,9 @@ fn exercise_stats_modes_and_mimic(p: &str) {
         table: false,
         py_config: &kiss::Config::python_defaults(),
         rs_config: &kiss::Config::rust_defaults(),
-        gate_config: &kiss::GateConfig::default(),
+        gate_config: &gate,
+        language_tables: kiss::LanguageTablesPresent::both(),
+        config: None,
     });
     run_stats(RunStatsArgs {
         paths,
@@ -134,7 +176,9 @@ fn exercise_stats_modes_and_mimic(p: &str) {
         table: true,
         py_config: &kiss::Config::python_defaults(),
         rs_config: &kiss::Config::rust_defaults(),
-        gate_config: &kiss::GateConfig::default(),
+        gate_config: &gate,
+        language_tables: kiss::LanguageTablesPresent::both(),
+        config: None,
     });
     run_mimic(paths, None, Some(Language::Python), &[]);
 }
@@ -154,7 +198,7 @@ fn test_stats_top_helpers() {
     std::fs::write(tmp.path().join("b.rs"), "fn bar() { let z = 3; }").unwrap();
     let py_files = vec![tmp.path().join("a.py")];
     let rs_files = vec![tmp.path().join("b.rs")];
-    let units = collect_all_units(&py_files, &rs_files, None);
+    let units = collect_all_units(&py_files, &rs_files);
     assert!(!units.is_empty());
     print_all_top_metrics(&units, 2);
     print_top_for_metric(&units, 1, "test_metric", |u| u.statements);

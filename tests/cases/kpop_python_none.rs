@@ -2,7 +2,6 @@ use crate::common::{first_function_or_async_node, parse_python_source};
 
 #[test]
 fn kpop_python_none_keyword_only_args() {
-    // RULE: keyword_only_args
     let p1 = parse_python_source("def f(*, a):\n    return a\n");
     let m1 =
         kiss::py_metrics::compute_function_metrics(first_function_or_async_node(&p1), &p1.source);
@@ -21,7 +20,6 @@ fn kpop_python_none_keyword_only_args() {
 
 #[test]
 fn kpop_python_none_nested_function_depth() {
-    // RULE: nested_function_depth
     let p0 = parse_python_source("def f():\n    return 1\n");
     let m0 =
         kiss::py_metrics::compute_function_metrics(first_function_or_async_node(&p0), &p0.source);
@@ -42,7 +40,6 @@ fn kpop_python_none_nested_function_depth() {
 
 #[test]
 fn kpop_python_none_statements_per_try_block() {
-    // RULE: statements_per_try_block
     let p = parse_python_source(
         "def f():\n    try:\n        a = 1\n        b = 2\n    except Exception:\n        c = 3\n    return 0\n",
     );
@@ -55,7 +52,6 @@ fn kpop_python_none_statements_per_try_block() {
 
 #[test]
 fn kpop_python_none_boolean_parameters() {
-    // RULE: boolean_parameters
     let p1 = parse_python_source("def f(a=True, b=False, c=None):\n    return 1\n");
     let m1 =
         kiss::py_metrics::compute_function_metrics(first_function_or_async_node(&p1), &p1.source);
@@ -69,7 +65,6 @@ fn kpop_python_none_boolean_parameters() {
 
 #[test]
 fn kpop_python_none_decorators_per_function() {
-    // RULE: decorators_per_function
     let p0 = parse_python_source("def f():\n    return 1\n");
     let f0 = first_function_or_async_node(&p0);
     let m0 = kiss::py_metrics::compute_function_metrics(f0, &p0.source);
@@ -77,7 +72,6 @@ fn kpop_python_none_decorators_per_function() {
 
     let p3 = parse_python_source("@a\n@b\n@c\ndef f():\n    return 1\n");
     let f3 = {
-        // decorated_definition contains function_definition child
         let root = p3.tree.root_node();
         let decorated = (0..root.child_count())
             .filter_map(|i| root.child(i))
@@ -94,7 +88,6 @@ fn kpop_python_none_decorators_per_function() {
 
 #[test]
 fn kpop_python_none_methods_per_class() {
-    // RULE: methods_per_class
     let p = parse_python_source(
         "class C:\n    def a(self):\n        return 1\n    async def b(self):\n        return 2\n    @dec\n    def c(self):\n        return 3\n",
     );
@@ -109,7 +102,6 @@ fn kpop_python_none_methods_per_class() {
 
 #[test]
 fn kpop_python_none_statements_per_file() {
-    // RULE: statements_per_file (inside function/method bodies)
     let p = parse_python_source(
         "def f():\n    x = 1\n    y = 2\n    return x + y\nclass C:\n    def m(self):\n        a = 1\n        return a\n",
     );
@@ -119,7 +111,6 @@ fn kpop_python_none_statements_per_file() {
 
 #[test]
 fn kpop_python_none_functions_per_file() {
-    // RULE: functions_per_file (functions/methods)
     let p = parse_python_source(
         "def a():\n    return 1\ndef b():\n    return 2\nclass C:\n    def m(self):\n        return 3\n",
     );
@@ -129,7 +120,6 @@ fn kpop_python_none_functions_per_file() {
 
 #[test]
 fn kpop_python_none_interface_and_concrete_types_per_file() {
-    // RULE: interface_types_per_file, concrete_types_per_file
     let p = parse_python_source(
         "from typing import Protocol\nclass P(Protocol):\n    pass\nclass C:\n    pass\n",
     );
@@ -140,11 +130,10 @@ fn kpop_python_none_interface_and_concrete_types_per_file() {
 
 #[test]
 fn kpop_python_none_imported_names_per_file() {
-    // RULE: imported_names_per_file (excluding TYPE_CHECKING-only imports)
     let p = parse_python_source(
         "from typing import TYPE_CHECKING\nimport os\nif TYPE_CHECKING:\n    import json\nfrom typing import Any, List\n",
     );
     let fm = kiss::py_metrics::compute_file_metrics(&p);
-    // typing TYPE_CHECKING counts as one imported name, os counts as one, Any+List count as two.
+
     assert_eq!(fm.imports, 4);
 }

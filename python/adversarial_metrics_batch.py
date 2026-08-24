@@ -1,4 +1,3 @@
-"""Metrics batch logic for adversarial calibration."""
 
 from __future__ import annotations
 
@@ -48,7 +47,7 @@ def measure_repo(
     stdout = sys.stdout
     try:
         sys.stdout = buffer
-        run_comparison(repo_path)  # type: ignore[operator]
+        run_comparison(repo_path)
     except RuntimeError as exc:
         sys.stdout = stdout
         return (

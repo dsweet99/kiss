@@ -1,4 +1,3 @@
-//! A function with too many arguments (threshold: 8)
 
 pub fn too_many_parameters(
     arg1: i32,

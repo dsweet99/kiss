@@ -1,4 +1,3 @@
-"""Helpers for adversarial commands that accept one or more counterexample repos."""
 
 from __future__ import annotations
 

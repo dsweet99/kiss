@@ -1,4 +1,3 @@
-"""Parse kiss check --all output into per-file coverage percentages."""
 
 from __future__ import annotations
 
@@ -39,11 +38,11 @@ def _parse_violation_lines(stdout: str, repo: Path) -> dict[str, float]:
 
 
 def run_kiss_check_all(repo: Path) -> dict[str, float]:
-    cmd = [_kiss_binary(), "check", "--all", str(repo.resolve())]
+    cmd = [_kiss_binary(), "__coverage", "--all", str(repo.resolve())]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode not in (0, 1):
         raise RuntimeError(
-            "kiss check --all failed\n"
+            "kiss __coverage --all failed\n"
             f"command: {' '.join(cmd)}\n"
             f"stdout:\n{result.stdout}\n"
             f"stderr:\n{result.stderr}"

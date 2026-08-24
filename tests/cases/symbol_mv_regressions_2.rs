@@ -21,6 +21,7 @@ fn regression_move_to_destination_should_relocate_definition() {
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0);
@@ -56,6 +57,7 @@ fn regression_python_method_should_scope_to_class() {
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0);
@@ -88,6 +90,7 @@ fn regression_should_rename_references_in_other_files_within_paths() {
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0);
@@ -131,6 +134,7 @@ fn regression_move_to_destination_should_not_move_unrelated_source_statements() 
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0);
@@ -190,6 +194,7 @@ fn regression_python_method_should_not_rename_other_types_in_other_files() {
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0);
@@ -225,6 +230,7 @@ fn regression_toplevel_rename_should_not_touch_method_calls() {
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0);
@@ -268,6 +274,7 @@ fn regression_python_method_rename_should_respect_owner() {
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0);
@@ -304,6 +311,7 @@ fn regression_class_scoping_should_use_exact_match() {
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0);
@@ -337,6 +345,7 @@ fn regression_method_move_should_be_rejected() {
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     let exit_code = run_mv_command(opts);

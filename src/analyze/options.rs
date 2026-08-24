@@ -1,6 +1,5 @@
 use kiss::{Config, GateConfig, Language};
 
-/// Options for a full universe analysis run.
 pub struct AnalyzeOptions<'a> {
     pub universe: &'a str,
     pub focus_paths: &'a [String],
@@ -11,16 +10,22 @@ pub struct AnalyzeOptions<'a> {
     pub gate_config: &'a GateConfig,
     pub ignore_prefixes: &'a [String],
     pub show_timing: bool,
-    /// If true, suppress "NO VIOLATIONS" sentinel (used by shrink mode after constraint check)
     pub suppress_final_status: bool,
+    pub language_tables: kiss::LanguageTablesPresent,
 }
 
-/// Result of running analysis, including computed global metrics.
 #[derive(Debug, Clone)]
 pub struct AnalyzeResult {
-    /// Whether the analysis passed (no violations).
     pub success: bool,
-    /// Global metrics computed during analysis.
-    /// `None` on cache hit (metrics not recomputed); `Some` on full analysis.
-    pub metrics: Option<kiss::GlobalMetrics>,
+}
+
+#[cfg(test)]
+mod options_tests {
+    use super::*;
+
+    #[test]
+    fn analyze_result_carries_success_flag() {
+        let result = AnalyzeResult { success: true };
+        assert!(result.success);
+    }
 }

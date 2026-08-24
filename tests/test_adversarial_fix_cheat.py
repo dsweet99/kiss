@@ -1,4 +1,3 @@
-"""Tests for adversarial fix-cheat command and verification."""
 
 from __future__ import annotations
 
@@ -42,8 +41,8 @@ def test_build_fix_cheat_prompt_contains_paths_and_thresholds(tmp_path: Path) ->
     kiss = tmp_path / "kiss"
     repo = tmp_path / "repo"
     kiss.mkdir()
-    (kiss / "ops").mkdir()
-    (kiss / "ops" / "adversarial.py").write_text("# stub\n", encoding="utf-8")
+    (kiss / "python").mkdir()
+    (kiss / "python" / "adversarial_cli.py").write_text("# stub\n", encoding="utf-8")
     repo.mkdir()
     text = fix_cheat_mod.build_fix_cheat_prompt(kiss, [repo])
     assert str(repo.resolve()) in text
@@ -70,8 +69,8 @@ def test_build_fix_cheat_prompt_multiple_repos(tmp_path: Path) -> None:
     repo_a = tmp_path / "a"
     repo_b = tmp_path / "b"
     kiss.mkdir()
-    (kiss / "ops").mkdir()
-    (kiss / "ops" / "adversarial.py").write_text("# stub\n", encoding="utf-8")
+    (kiss / "python").mkdir()
+    (kiss / "python" / "adversarial_cli.py").write_text("# stub\n", encoding="utf-8")
     repo_a.mkdir()
     repo_b.mkdir()
     text = fix_cheat_mod.build_fix_cheat_prompt(kiss, [repo_a, repo_b])

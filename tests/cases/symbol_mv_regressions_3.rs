@@ -25,6 +25,7 @@ fn regression_move_rename_should_update_recursive_calls() {
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0);
@@ -70,6 +71,7 @@ fn regression_move_rename_should_not_touch_comments_or_strings() {
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0);
@@ -115,6 +117,7 @@ fn regression_move_rename_should_move_python_decorators_and_preserve_literals() 
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0);
@@ -162,6 +165,7 @@ fn regression_rename_updates_parenthesized_from_import() {
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0);
@@ -191,6 +195,7 @@ fn regression_rename_updates_backslash_continued_from_import() {
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0);
@@ -224,6 +229,7 @@ fn regression_rename_nonlocal_binding() {
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0);
@@ -255,6 +261,7 @@ fn regression_rename_global_binding_in_same_file() {
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0);
@@ -284,6 +291,7 @@ fn regression_rename_await_expression() {
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0);
@@ -313,6 +321,7 @@ fn regression_rename_del_statement() {
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0);
@@ -346,6 +355,7 @@ fn regression_rename_raise_from_exception_cause() {
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0);
@@ -375,6 +385,7 @@ fn regression_rename_updates_backslash_inside_parenthesized_from_import() {
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0);

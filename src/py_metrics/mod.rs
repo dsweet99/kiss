@@ -1,5 +1,3 @@
-//! Python AST metrics for kiss.
-
 mod body_walk;
 mod compute;
 mod file_stats;
@@ -16,6 +14,8 @@ mod walk;
 pub use compute::{compute_class_metrics, compute_file_metrics, compute_function_metrics};
 pub use nesting::count_node_kind;
 pub use types::{ClassMetrics, FileMetrics, FunctionMetrics};
+#[allow(unused_imports)]
+pub(crate) use walk::FunctionVisit;
 pub(crate) use walk::{PyWalkAction, walk_py_ast};
 
 #[cfg(test)]
@@ -23,3 +23,6 @@ mod py_metrics_test;
 
 #[cfg(test)]
 mod py_metrics_test_2;
+
+#[cfg(test)]
+mod py_metrics_test_3;

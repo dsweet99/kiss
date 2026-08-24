@@ -5,12 +5,8 @@ use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::EdgeRef;
 use std::collections::HashMap;
 
-/// Contains the layers, ordered from 0 (foundation) upward.
-/// Each inner Vec contains module names at that layer level.
 #[derive(Debug, Clone, Default)]
 pub struct LayerInfo {
-    /// layers[0] = foundation/utilities (no dependencies)
-    /// layers[1] = modules that only depend on layer 0, etc.
     pub layers: Vec<Vec<String>>,
 }
 
@@ -38,14 +34,6 @@ impl LayerInfo {
     }
 }
 
-/// Computes layer assignments for all modules in the dependency graph.
-///
-/// Algorithm:
-/// 1. Find SCCs using Tarjan's algorithm
-/// 2. Build condensation graph (DAG where each SCC is a single node)
-/// 3. Assign layer levels: nodes with no outgoing edges get layer 0,
-///    others get max(layer of dependencies) + 1
-/// 4. All modules in the same SCC share the same layer
 #[must_use]
 pub fn compute_layers(graph: &DependencyGraph) -> LayerInfo {
     if graph.nodes.is_empty() {

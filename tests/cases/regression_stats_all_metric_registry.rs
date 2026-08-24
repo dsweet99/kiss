@@ -176,46 +176,6 @@ fn regression_stats_all_emits_every_file_scope_metric_with_data() {
 }
 
 #[test]
-fn regression_stats_all_ranks_uncovered_above_covered_for_inv_test_coverage() {
-    let tmp = TempDir::new().unwrap();
-    fs::write(
-        tmp.path().join("uncovered.rs"),
-        "pub fn alpha() {}\npub fn beta() {}\n",
-    )
-    .unwrap();
-    fs::write(
-        tmp.path().join("covered.rs"),
-        "pub fn gamma() {}\npub fn delta() {}\n",
-    )
-    .unwrap();
-    fs::write(
-        tmp.path().join("covered_test.rs"),
-        "#[test]\nfn t1() { gamma(); delta(); }\n",
-    )
-    .unwrap();
-
-    let stdout = run_stats_all_with_n(tmp.path(), Some(1));
-    let lines: Vec<&str> = stdout
-        .lines()
-        .filter(|l| l.starts_with("STAT:inv_test_coverage:"))
-        .collect();
-    assert!(
-        lines
-            .iter()
-            .any(|l| l.starts_with("STAT:inv_test_coverage:100:") && l.contains("uncovered.rs")),
-        "expected an inv_test_coverage:100 line for uncovered.rs at the top of the ranking.\n\
-         lines: {lines:?}\nfull stdout:\n{stdout}"
-    );
-    assert!(
-        lines.iter().all(|l| !l.contains("covered.rs:")
-            || l.contains("uncovered.rs:")
-            || !l.starts_with("STAT:inv_test_coverage:0:")),
-        "with --all=1, the covered file (inv_test_coverage=0) must rank below the uncovered \
-         file and be omitted.\nlines: {lines:?}"
-    );
-}
-
-#[test]
 fn regression_stats_all_emits_cycle_size_when_corpus_has_cycle() {
     let tmp = TempDir::new().unwrap();
     fs::write(
@@ -243,7 +203,9 @@ fn regression_stats_all_emits_cycle_size_when_corpus_has_cycle() {
         "expected at least one STAT:cycle_size: line for a 3-module cycle.\nstdout:\n{stdout}"
     );
     assert!(
-        cycle_lines.iter().any(|l| l.starts_with("STAT:cycle_size:3:")),
+        cycle_lines
+            .iter()
+            .any(|l| l.starts_with("STAT:cycle_size:3:")),
         "expected cycle_size value of 3 for the a → b → c → a cycle.\nlines: {cycle_lines:?}"
     );
 }

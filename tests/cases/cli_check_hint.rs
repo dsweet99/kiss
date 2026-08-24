@@ -1,6 +1,7 @@
+use crate::common::seed_python_runtime_coverage;
+use kiss::cli_output::VIOLATIONS_FIX_HINT;
 use std::fs;
 use std::process::Command;
-use kiss::cli_output::VIOLATIONS_FIX_HINT;
 use tempfile::TempDir;
 
 fn kiss_binary() -> Command {
@@ -10,24 +11,20 @@ fn kiss_binary() -> Command {
 #[test]
 fn cli_check_default_gate_emits_hint_on_coverage_failure() {
     let tmp = TempDir::new().unwrap();
-    let home = TempDir::new().unwrap();
     fs::write(tmp.path().join("orphan.py"), "def orphan():\n    pass\n").unwrap();
-    fs::write(
-        tmp.path().join(".kissconfig"),
-        "[gate]\ntest_coverage_threshold = 90\n",
-    )
-    .unwrap();
+    seed_python_runtime_coverage(tmp.path(), &[("tests/test_orphan.py::test_orphan", vec![])]);
+    let config = crate::common::write_builtin_language_config(tmp.path());
     let output = kiss_binary()
-        .current_dir(tmp.path())
-        .env("HOME", home.path())
-        .arg("check")
-        .arg(".")
+        .arg("__coverage")
+        .arg("--config")
+        .arg(&config)
+        .arg(tmp.path())
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("GATE_FAILED:test_coverage:"),
-        "expected coverage gate failure. stdout: {stdout}"
+        stdout.contains("VIOLATION:test_coverage:"),
+        "expected coverage violation. stdout: {stdout}"
     );
     assert!(
         stdout.contains(VIOLATIONS_FIX_HINT),

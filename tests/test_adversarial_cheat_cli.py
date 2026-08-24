@@ -1,17 +1,15 @@
-"""Tests for adversarial cheat CLI persistence."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
-from click.testing import CliRunner
-
-import ops.adversarial_cheat as cheat_cli
 import python.adversarial as adv
 import python.adversarial_cheat as cheat_mod
+import python.adversarial_cheat_cli as cheat_cli
 import python.adversarial_common as cli
-from ops.adversarial_cheat import cheat
+from click.testing import CliRunner
+from python.adversarial_cheat_cli import cheat
 
 
 @pytest.mark.parametrize("expect_success", [True, False])
@@ -19,8 +17,8 @@ def test_cheat_cli(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, expect_success: bool
 ) -> None:
     kiss = tmp_path / "kiss"
-    (kiss / "ops").mkdir(parents=True)
-    (kiss / "ops" / "adversarial.py").write_text("# stub\n", encoding="utf-8")
+    (kiss / "python").mkdir(parents=True)
+    (kiss / "python" / "adversarial_cli.py").write_text("# stub\n", encoding="utf-8")
     adv_root = tmp_path / "kiss-adversarial"
     monkeypatch.setattr(cli, "adversarial_root", lambda: adv_root)
 
@@ -35,7 +33,7 @@ def test_cheat_cli(
 
     gaps = (("src/a.py", 100.0, 5.0),) if expect_success else ()
     metrics = cheat_mod.CheatMetrics(expect_success, gaps)
-    output = "kiss check: pass\n" if expect_success else "kiss check: fail\n"
+    output = "kiss test: pass\n" if expect_success else "kiss test: fail\n"
     monkeypatch.setattr(cheat_mod, "verify_cheat", lambda *_: (expect_success, metrics, output))
 
     result = CliRunner().invoke(cheat, [])
@@ -50,8 +48,8 @@ def test_cheat_success_moves_repo_to_kiss_adversarial(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     kiss = tmp_path / "kiss"
-    (kiss / "ops").mkdir(parents=True)
-    (kiss / "ops" / "adversarial.py").write_text("# stub\n", encoding="utf-8")
+    (kiss / "python").mkdir(parents=True)
+    (kiss / "python" / "adversarial_cli.py").write_text("# stub\n", encoding="utf-8")
     adv_root = tmp_path / "kiss-adversarial"
     monkeypatch.setattr(cli, "repo_root", lambda: kiss)
     monkeypatch.setattr(cli, "adversarial_root", lambda: adv_root)
@@ -72,7 +70,7 @@ def test_cheat_success_moves_repo_to_kiss_adversarial(
         lambda *_: (
             True,
             cheat_mod.CheatMetrics(True, (("src/a.py", 100.0, 5.0),)),
-            "kiss check: pass\n",
+            "kiss test: pass\n",
         ),
     )
 
@@ -89,7 +87,7 @@ def test_cheat_failure_leaves_no_kiss_adversarial_repo(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     kiss = tmp_path / "kiss"
-    (kiss / "ops").mkdir(parents=True)
+    kiss.mkdir(parents=True)
     adv_root = tmp_path / "kiss-adversarial"
     monkeypatch.setattr(cli, "adversarial_root", lambda: adv_root)
 
@@ -104,7 +102,7 @@ def test_cheat_failure_leaves_no_kiss_adversarial_repo(
     monkeypatch.setattr(
         cheat_mod,
         "verify_cheat",
-        lambda *_: (False, cheat_mod.CheatMetrics(False, ()), "kiss check: fail\n"),
+        lambda *_: (False, cheat_mod.CheatMetrics(False, ()), "kiss test: fail\n"),
     )
 
     work_dir = tmp_path / "cheat_repo"

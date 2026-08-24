@@ -1,11 +1,8 @@
-use std::fs;
-use std::process::Command;
+use std::{fs, process::Command};
 use tempfile::TempDir;
-
 fn kiss_binary() -> Command {
     Command::new(env!("CARGO_BIN_EXE_kiss"))
 }
-
 #[test]
 fn cli_rules_command_runs() {
     let output = kiss_binary().arg("rules").output().unwrap();
@@ -20,11 +17,10 @@ fn cli_rules_command_runs() {
         "Should output definitions. stdout: {stdout}"
     );
     assert!(
-        stdout.contains("RULE:"),
-        "Should output rules. stdout: {stdout}"
+        stdout.contains("RULE: [global]") && stdout.contains("RULE: [test]"),
+        "Should output global and test rules. stdout: {stdout}"
     );
 }
-
 #[test]
 fn cli_rules_shows_both_languages_by_default() {
     let output = kiss_binary().arg("rules").output().unwrap();
@@ -38,23 +34,25 @@ fn cli_rules_shows_both_languages_by_default() {
         "Should show Rust rules. stdout: {stdout}"
     );
 }
-
 #[test]
 fn cli_rules_with_defaults_flag() {
+    let tmp = TempDir::new().unwrap();
+    let config = crate::common::write_builtin_language_config(tmp.path());
     let output = kiss_binary()
         .arg("rules")
-        .arg("--defaults")
+        .arg("--config")
+        .arg(&config)
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success());
     assert!(
         stdout.contains("DEFINITION:"),
-        "Should output definitions with --defaults. stdout: {stdout}"
+        "Should output definitions with --config builtin. stdout: {stdout}"
     );
     assert!(
         stdout.contains("RULE:"),
-        "Should output rules with --defaults. stdout: {stdout}"
+        "Should output rules with --config builtin. stdout: {stdout}"
     );
     assert!(
         stdout.contains("35"),
@@ -77,8 +75,8 @@ fn cli_rules_filter_python_only() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success());
     assert!(
-        stdout.contains("[Python]"),
-        "Should show Python rules. stdout: {stdout}"
+        stdout.contains("[Python]") && stdout.contains("RULE: [global]"),
+        "Should show Python and global rules. stdout: {stdout}"
     );
     assert!(
         !stdout.contains("[Rust]"),
@@ -108,9 +106,12 @@ fn cli_rules_filter_rust_only() {
 
 #[test]
 fn cli_rules_shows_key_thresholds() {
+    let tmp = TempDir::new().unwrap();
+    let config = crate::common::write_builtin_language_config(tmp.path());
     let output = kiss_binary()
         .arg("rules")
-        .arg("--defaults")
+        .arg("--config")
+        .arg(&config)
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -129,109 +130,64 @@ fn cli_rules_shows_key_thresholds() {
 }
 
 #[test]
-fn cli_config_command_runs() {
-    let output = kiss_binary().arg("config").output().unwrap();
+fn cli_rules_ignores_home_kissconfig_without_local() {
+    let tmp = TempDir::new().unwrap();
+    let repo = tmp.path().join("repo");
+    let home = tmp.path().join("home");
+    std::fs::create_dir(&repo).unwrap();
+    std::fs::create_dir(&home).unwrap();
+    fs::write(repo.join("sample.py"), "def foo():\n    return 1\n").unwrap();
+    fs::write(
+        home.join(".kissconfig"),
+        "[python]\nstatements_per_function = 99\n",
+    )
+    .unwrap();
+
+    let output = kiss_binary()
+        .current_dir(&repo)
+        .env("HOME", &home)
+        .arg("rules")
+        .output()
+        .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
     assert!(
         output.status.success(),
-        "kiss config should succeed. stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
+        "rules should succeed. stderr: {stderr}"
     );
     assert!(
-        stdout.contains("[python]") || stdout.contains("[rust]"),
-        "Should output config sections. stdout: {stdout}"
+        !stdout.contains("statements_per_function <= 99"),
+        "Home .kissconfig must not be merged. stdout: {stdout}"
     );
 }
 
 #[test]
-fn cli_config_shows_effective_configuration() {
-    let output = kiss_binary().arg("config").output().unwrap();
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("Effective configuration"),
-        "Should show header. stdout: {stdout}"
-    );
-    assert!(
-        stdout.contains("[python]"),
-        "Should show python section. stdout: {stdout}"
-    );
-    assert!(
-        stdout.contains("[rust]"),
-        "Should show rust section. stdout: {stdout}"
-    );
-    assert!(
-        stdout.contains("[gate]"),
-        "Should show gate section. stdout: {stdout}"
-    );
-}
-
-#[test]
-fn cli_config_with_defaults_flag() {
-    let output = kiss_binary()
-        .arg("config")
-        .arg("--defaults")
-        .output()
-        .unwrap();
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(output.status.success());
-    assert!(
-        stdout.contains("built-in defaults"),
-        "Should indicate defaults source. stdout: {stdout}"
-    );
-    assert!(
-        stdout.contains("statements_per_function = 35"),
-        "Python statements should be 35. stdout: {stdout}"
-    );
-    assert!(
-        stdout.contains("statements_per_function = 35"),
-        "Rust statements should be 35. stdout: {stdout}"
-    );
-}
-
-#[test]
-fn cli_config_shows_gate_settings() {
-    let output = kiss_binary()
-        .arg("config")
-        .arg("--defaults")
-        .output()
-        .unwrap();
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("test_coverage_threshold = 0"),
-        "Should show default coverage. stdout: {stdout}"
-    );
-    assert!(
-        stdout.contains("min_similarity = 0.90"),
-        "Should show default similarity. stdout: {stdout}"
-    );
-}
-
-#[test]
-fn cli_config_with_custom_file() {
+fn cli_missing_local_kissconfig_is_created_by_clamp() {
     let tmp = TempDir::new().unwrap();
-    let config_path = tmp.path().join("custom.kissconfig");
-    fs::write(&config_path, "[python]\nstatements_per_function = 99\n").unwrap();
+    let repo = tmp.path().join("repo");
+    std::fs::create_dir(&repo).unwrap();
+    fs::write(repo.join("sample.py"), "def foo():\n    return 1\n").unwrap();
+
     let output = kiss_binary()
-        .arg("config")
-        .arg("--config")
-        .arg(&config_path)
+        .current_dir(&repo)
+        .arg("rules")
         .output()
         .unwrap();
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
     assert!(
-        stdout.contains("99"),
-        "Should reflect custom config value. stdout: {stdout}"
+        output.status.success(),
+        "rules should succeed. stderr: {stderr}"
     );
     assert!(
-        stdout.contains(&config_path.to_string_lossy().to_string())
-            || stdout.contains("custom.kissconfig"),
-        "Should show config source. stdout: {stdout}"
+        repo.join(".kissconfig").exists(),
+        "kiss should clamp-write ./.kissconfig when missing"
     );
 }
 
 #[test]
-fn cli_config_with_custom_file_and_local_layers_merges() {
+fn cli_rules_with_custom_file_and_local_layers_merges() {
     let tmp = TempDir::new().unwrap();
     let repo = tmp.path().join("repo");
     let home = tmp.path().join("home");
@@ -251,7 +207,7 @@ fn cli_config_with_custom_file_and_local_layers_merges() {
     let output = kiss_binary()
         .current_dir(&repo)
         .env("HOME", &home)
-        .arg("config")
+        .arg("rules")
         .arg("--config")
         .arg(&config_path)
         .output()
@@ -260,77 +216,20 @@ fn cli_config_with_custom_file_and_local_layers_merges() {
 
     assert!(output.status.success());
     assert!(
-        stdout.contains("Source:"),
-        "Should show source. stdout: {stdout}"
+        !stdout.contains("statements_per_function <= 100"),
+        "--config must replace local .kissconfig. stdout: {stdout}"
     );
     assert!(
-        stdout.contains(&config_path.to_string_lossy().to_string())
-            || stdout.contains("custom.kissconfig"),
-        "Should show custom config source. stdout: {stdout}"
+        stdout.contains("statements_per_function <= 35"),
+        "Unset keys should keep built-in defaults. stdout: {stdout}"
     );
     assert!(
-        stdout.contains("statements_per_function = 100"),
-        "Local .kissconfig should be preserved. stdout: {stdout}"
+        !stdout.contains("lines_per_file <= 111"),
+        "Home .kissconfig should not be merged. stdout: {stdout}"
     );
     assert!(
-        stdout.contains("lines_per_file = 111"),
-        "Home .kissconfig shared key should be preserved. stdout: {stdout}"
-    );
-    assert!(
-        stdout.contains("positional_args = 1"),
-        "Explicit --config should override local settings. stdout: {stdout}"
-    );
-}
-
-#[test]
-fn cli_config_shows_python_specific_settings() {
-    let output = kiss_binary()
-        .arg("config")
-        .arg("--defaults")
-        .output()
-        .unwrap();
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("positional_args"),
-        "Should show positional_args. stdout: {stdout}"
-    );
-    assert!(
-        stdout.contains("keyword_only_args"),
-        "Should show keyword_only_args. stdout: {stdout}"
-    );
-    assert!(
-        stdout.contains("decorators_per_function"),
-        "Should show decorators_per_function. stdout: {stdout}"
-    );
-    assert!(
-        stdout.contains("statements_per_try_block"),
-        "Should show statements_per_try_block. stdout: {stdout}"
-    );
-}
-
-#[test]
-fn cli_config_shows_rust_specific_settings() {
-    let output = kiss_binary()
-        .arg("config")
-        .arg("--defaults")
-        .output()
-        .unwrap();
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("positional_args = 8"),
-        "Should show Rust positional_args. stdout: {stdout}"
-    );
-    assert!(
-        stdout.contains("interface_types_per_file"),
-        "Should show interface_types_per_file. stdout: {stdout}"
-    );
-    assert!(
-        stdout.contains("concrete_types_per_file"),
-        "Should show concrete_types_per_file. stdout: {stdout}"
-    );
-    assert!(
-        stdout.contains("annotations_per_function"),
-        "Should show annotations_per_function. stdout: {stdout}"
+        stdout.contains("positional_args <= 1"),
+        "Explicit --config should apply. stdout: {stdout}"
     );
 }
 
@@ -354,14 +253,18 @@ fn cli_rules_with_custom_config_file() {
 }
 
 #[test]
-fn cli_config_nonexistent_file_warns() {
+fn cli_rules_nonexistent_file_warns() {
     let output = kiss_binary()
-        .arg("config")
+        .arg("rules")
         .arg("--config")
         .arg("/nonexistent/path/config")
         .output()
         .unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "missing --config should warn and continue. stderr: {stderr}"
+    );
     assert!(
         stderr.contains("Warning") || stderr.contains("Could not read"),
         "Should warn about missing file. stderr: {stderr}"

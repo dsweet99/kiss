@@ -1,28 +1,9 @@
-//! Failing regression tests for the bug found by KPOP round 6
-//! (`_kpop/exp_log_mv_serious_bug_6.md`):
-//!
-//! `kiss mv` silently misses every use of a free function as a *value*
-//! (passed as a callback argument, used as a kwarg value, assigned to a
-//! variable, used as a function pointer). The definition and direct
-//! `foo(...)` call sites are rewritten correctly, but bare-identifier
-//! value-uses are left unchanged, breaking the program post-rename
-//! (Python `NameError`, Rust unresolved-reference compile error).
-//!
-//! Root cause: `ast_python.rs::walk_py` only emits a `Reference` from a
-//! whitelist of "calling" AST node kinds (`call`, `decorator`, `await`,
-//! `import_*`, etc.); `collect_py_call` only records the *function* of a
-//! call, never argument identifiers. The Rust walker has the analogous
-//! gap.
-
 use kiss::symbol_mv::run_mv_command;
 use std::fs;
 use tempfile::TempDir;
 
 use super::symbol_mv_regressions_11::{py, rs};
 
-/// Python: `my_fn` used as a callback argument, kwarg value, and assignment
-/// RHS must all be renamed. Otherwise `python -c 'import a'` raises
-/// `NameError` at runtime after the rename "succeeds".
 #[test]
 fn regression_python_function_as_value_should_be_renamed() {
     let tmp = TempDir::new().unwrap();
@@ -73,9 +54,6 @@ ref = my_fn
     );
 }
 
-/// Rust: a top-level `fn` used as a function pointer (assigned bare to a
-/// variable, or to an explicitly typed `fn(...)` binding) must be renamed.
-/// Otherwise the file no longer compiles after the rename.
 #[test]
 fn regression_rust_function_as_pointer_value_should_be_renamed() {
     let tmp = TempDir::new().unwrap();

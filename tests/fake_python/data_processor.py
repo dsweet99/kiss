@@ -1,9 +1,9 @@
-"""Data processor with overly long functions."""
 
 import csv
 import os
 from collections.abc import Mapping
 from typing import Any
+
 from common import serializer
 from common.sdatetime import now_isoformat
 
@@ -17,19 +17,6 @@ def _is_non_empty_value(value: Any) -> bool:
 
 
 def process_data_file(filepath, output_dir, config):
-    """
-    This function is WAY too long. It does:
-    - File validation
-    - Format detection
-    - Parsing
-    - Transformation
-    - Validation
-    - Output writing
-    - Logging
-    - Cleanup
-
-    Should be broken into many smaller functions.
-    """
     # Step 1: Validate input file exists
     if not isinstance(config, Mapping):
         if config is None:

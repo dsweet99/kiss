@@ -1,4 +1,3 @@
-"""Tests for kiss binary resolution in python coverage helpers."""
 
 from __future__ import annotations
 
@@ -6,7 +5,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-
 import python.coverage_kiss as coverage_kiss
 
 
@@ -41,4 +39,4 @@ def test_run_kiss_check_all_uses_resolved_binary(
     monkeypatch.setattr(coverage_kiss, "_kiss_binary", lambda: "/resolved/kiss")
     monkeypatch.setattr(coverage_kiss.subprocess, "run", fake_run)
     coverage_kiss.run_kiss_check_all(repo)
-    assert seen == [["/resolved/kiss", "check", "--all", str(repo.resolve())]]
+    assert seen == [["/resolved/kiss", "__coverage", "--all", str(repo.resolve())]]

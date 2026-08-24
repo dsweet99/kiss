@@ -1,11 +1,9 @@
-"""Tests for batch adversarial verification."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
-
 import python.adversarial as adv
 import python.adversarial_fix_cheat as fix_cheat_mod
 import python.adversarial_verify_batch as verify_batch

@@ -1,3 +1,4 @@
+use crate::common::seed_python_runtime_coverage;
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
@@ -13,12 +14,15 @@ fn bug_check_reports_indirect_dependencies_for_fan_in_zero_entry() {
     fs::write(root.join("entry.py"), "import hub\n").unwrap();
     fs::write(root.join("hub.py"), "import leaf\n").unwrap();
     fs::write(root.join("leaf.py"), "VALUE = 1\n").unwrap();
+    seed_python_runtime_coverage(root, &[("tests/test_entry.py::test_entry", vec![])]);
     fs::write(
         root.join(".kissconfig"),
-        "[gate]\n\
-         test_coverage_threshold = 0\n\
+        "[global]\n\
          duplication_enabled = false\n\
          orphan_module_enabled = false\n\
+         \n\
+[test]\n\
+         test_coverage_threshold = 0\n\
          \n\
          [python]\n\
          indirect_dependencies = 0\n",
@@ -30,14 +34,12 @@ fn bug_check_reports_indirect_dependencies_for_fan_in_zero_entry() {
         .arg("check")
         .arg("--lang")
         .arg("python")
-        .arg("--all")
         .arg(".")
         .output()
         .expect("kiss check should run");
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
-        stdout.contains("VIOLATION:indirect_dependencies")
-            && stdout.contains("entry"),
+        stdout.contains("VIOLATION:indirect_dependencies") && stdout.contains("entry"),
         "expected indirect_dependencies violation for entry module; stdout:\n{stdout}"
     );
 }

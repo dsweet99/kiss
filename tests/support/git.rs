@@ -2,14 +2,40 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 pub fn git_command(repo: &Path) -> Command {
-    let mut c = Command::new("git");
-    c.current_dir(repo)
-        .env_remove("GIT_INDEX_FILE")
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_OBJECT_DIRECTORY")
-        .env_remove("GIT_COMMON_DIR");
-    c
+    kiss::scrubbed_git_command(repo)
+}
+
+pub fn init_git_repo(dir: &Path) {
+    assert!(
+        git_command(dir)
+            .args(["init", "-b", "main"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    for kv in [("user.email", "t@t.t"), ("user.name", "t")] {
+        git_command(dir)
+            .args(["config", kv.0, kv.1])
+            .status()
+            .unwrap();
+    }
+}
+
+pub fn commit_all(dir: &Path, message: &str) {
+    assert!(
+        git_command(dir)
+            .args(["add", "-A"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        git_command(dir)
+            .args(["commit", "-m", message])
+            .status()
+            .unwrap()
+            .success()
+    );
 }
 
 #[test]
@@ -49,5 +75,5 @@ fn should_scan_rust_file(path: &Path) -> bool {
 }
 
 fn bare_git_command_allowed(path: &Path) -> bool {
-    path == Path::new("src/test_git.rs") || path == Path::new("tests/support/git.rs")
+    path == Path::new("src/shared_helpers.rs")
 }

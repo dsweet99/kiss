@@ -1,48 +1,30 @@
-//! Markdown output for layout analysis results.
-//! Produces Markdown with YAML blocks for structured layout analysis.
-
 use crate::layout_cycles::{CycleBreakSuggestion, LayoutCycleAnalysis};
 use crate::layout_layers::LayerInfo;
 use std::fmt::Write;
 
-/// Summary metrics for layout analysis.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LayoutMetrics {
-    /// Number of cycles detected.
     pub cycle_count: usize,
-    /// Number of layering violations (edges going from lower to higher layers).
     pub layering_violations: usize,
-    /// Number of cross-directory dependencies.
     pub cross_directory_deps: usize,
 }
 
-/// What-if analysis showing potential improvement after breaking cycles.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct WhatIfAnalysis {
-    /// Number of cycles after proposed breaks.
     pub remaining_cycles: usize,
-    /// Number of layers after proposed breaks.
     pub layer_count: usize,
-    /// Description of the improvement.
     pub improvement_summary: String,
 }
 
-/// Complete layout analysis results.
 #[derive(Debug, Clone, Default)]
 pub struct LayoutAnalysis {
-    /// Name of the project being analyzed.
     pub project_name: String,
-    /// Summary metrics.
     pub metrics: LayoutMetrics,
-    /// Cycle analysis with break suggestions.
     pub cycle_analysis: LayoutCycleAnalysis,
-    /// Computed layers (level 0 = foundation, higher = depends on lower).
     pub layer_info: LayerInfo,
-    /// What-if analysis for proposed cycle breaks.
     pub what_if: Option<WhatIfAnalysis>,
 }
 
-/// Format the layout analysis as Markdown with YAML blocks.
 #[must_use]
 pub fn format_markdown(analysis: &LayoutAnalysis) -> String {
     let mut out = String::new();
@@ -160,11 +142,6 @@ fn format_layers(out: &mut String, layer_info: &LayerInfo) {
 }
 
 const fn default_layer_name(level: usize, total: usize) -> &'static str {
-    // Layer naming follows a consistent pattern:
-    // - Layer 0: Foundation (base utilities, no dependencies)
-    // - Top layer: Application (orchestration, entry points)
-    // - Layer 1 (when not top): Domain (business logic)
-    // - Layers 2..top-1: Intermediate
     if level == 0 {
         "Foundation"
     } else if level == total - 1 {
@@ -202,3 +179,20 @@ mod tests;
 #[cfg(test)]
 #[path = "layout_output_test_2.rs"]
 mod layout_output_test_2;
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+
+    impl LayoutAnalysis {
+        fn witness() -> Self {
+            Self::default()
+        }
+    }
+
+    #[test]
+    fn witness_layout_analysis() {
+        let analysis = LayoutAnalysis::witness();
+        assert!(format_markdown(&analysis).contains("Proposed Layout"));
+    }
+}

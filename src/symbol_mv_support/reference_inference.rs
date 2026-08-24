@@ -22,9 +22,6 @@ pub(super) use reference_inference_rust::{
     method_return_type, strip_rust_type_prefix, type_after_pattern_last_before,
 };
 
-// Receiver-type inference for owner-qualified `kiss mv` rename. Extracted
-// from `reference.rs` to keep that file under the `lines_per_file` gate.
-
 pub(super) fn infer_python_receiver_type_at(
     content: &str,
     upto: usize,
@@ -109,9 +106,6 @@ pub(super) fn rfind_word_boundary(haystack: &str, pat: &str) -> Option<usize> {
     None
 }
 
-/// Return the first (leftmost) base-class name in the `class Foo(Bar, Baz):`
-/// header for `class_name`, or `None` if the class declaration has no
-/// parenthesized bases.
 fn python_class_first_base(content: &str, class_name: &str) -> Option<String> {
     let needle = format!("class {class_name}");
     let pos = content.find(&needle)?;
@@ -127,9 +121,6 @@ fn python_class_first_base(content: &str, class_name: &str) -> Option<String> {
     (!bare.is_empty()).then_some(bare)
 }
 
-/// Walk Python `class X(...)` declarations and return every X whose base
-/// list mentions `parent` (transitively closed). Used to propagate a
-/// parent-class method rename to subclass overrides — see KPOP H1.
 pub(super) fn python_subclasses_of(
     content: &str,
     parent: &str,

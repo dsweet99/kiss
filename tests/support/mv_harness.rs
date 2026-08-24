@@ -1,5 +1,3 @@
-//! Shared `kiss mv` integration-test helpers.
-
 use super::mv_oracles::{OracleBundle, run_post_move_oracles_from_root};
 use crate::symbol_mv_matrix::{ScenarioSpec, fixture_root};
 use kiss::symbol_mv::{MvOptions, MvRequest, parse_mv_query, plan_edits};
@@ -185,6 +183,7 @@ fn build_options(root: &Path, spec: &ScenarioSpec, override_query: Option<String
         json: false,
         lang_filter: Some(spec.language),
         ignore: vec![],
+        language_tables: Default::default(),
     }
 }
 
@@ -217,6 +216,7 @@ fn build_inverse_options(opts: &MvOptions, root: &Path) -> Result<MvOptions, Str
         json: false,
         lang_filter: opts.lang_filter,
         ignore: vec![],
+        language_tables: Default::default(),
     })
 }
 
@@ -281,7 +281,7 @@ fn collect_snapshot_entries(
 fn should_skip_snapshot_path(name: &OsStr) -> bool {
     matches!(
         name.to_string_lossy().as_ref(),
-        "__pycache__" | ".pytest_cache" | "target" | "Cargo.lock"
+        "__pycache__" | ".pytest_cache" | ".testmondata" | "target" | "Cargo.lock"
     )
 }
 

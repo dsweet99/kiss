@@ -2,7 +2,7 @@ use ignore::{WalkBuilder, WalkState};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Language {
     Python,
     Rust,
@@ -12,9 +12,11 @@ impl Language {
     pub fn from_path(path: &Path) -> Option<Self> {
         if crate::rust_include::is_rust_source_path(path) {
             Some(Self::Rust)
-        } else if path.extension().and_then(|e| e.to_str()).is_some_and(|s| {
-            s.eq_ignore_ascii_case("py")
-        }) {
+        } else if path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|s| s.eq_ignore_ascii_case("py"))
+        {
             Some(Self::Python)
         } else {
             None
@@ -30,6 +32,14 @@ impl Language {
         match self {
             Self::Python => "py",
             Self::Rust => "rs",
+        }
+    }
+
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Python => "python",
+            Self::Rust => "rust",
         }
     }
 }
@@ -49,12 +59,53 @@ pub fn find_rust_files(root: &Path) -> Vec<PathBuf> {
 
 const ALWAYS_IGNORED: &[&str] = &["__pycache__", "node_modules", ".venv", "venv", "env"];
 
-fn has_ignored_prefix(name: &str, prefixes: &[String]) -> bool {
-    prefixes.iter().any(|prefix| name.starts_with(prefix))
-}
-
 fn is_always_ignored(name: &str) -> bool {
     ALWAYS_IGNORED.contains(&name)
+}
+
+fn prefix_components(prefix: &str) -> Vec<&str> {
+    prefix
+        .split(['/', '\\'])
+        .filter(|part| !part.is_empty() && *part != ".")
+        .collect()
+}
+
+fn path_has_prefix_components(path: &Path, prefix: &str) -> bool {
+    let pref = prefix_components(prefix);
+    if pref.is_empty() {
+        return false;
+    }
+    let comps: Vec<&str> = path
+        .components()
+        .filter_map(|c| match c {
+            std::path::Component::Normal(name) => name.to_str(),
+            _ => None,
+        })
+        .collect();
+    comps
+        .windows(pref.len())
+        .any(|window| window == pref.as_slice())
+}
+
+#[must_use]
+pub fn ignore_prefix_matches(path: &str, prefix: &str) -> bool {
+    if prefix.is_empty() {
+        return false;
+    }
+    let path = Path::new(path);
+    if path_has_prefix_components(path, prefix) {
+        return true;
+    }
+    path.components()
+        .filter_map(|c| c.as_os_str().to_str())
+        .any(|name| name.starts_with(prefix))
+}
+
+#[must_use]
+pub fn path_ignored_by_prefixes(path: &str, prefixes: &[String]) -> bool {
+    prefixes
+        .iter()
+        .any(|prefix| ignore_prefix_matches(path, prefix))
 }
 
 fn should_ignore(path: &Path, ignore_prefixes: &[String]) -> bool {
@@ -64,16 +115,13 @@ fn should_ignore(path: &Path, ignore_prefixes: &[String]) -> bool {
     } else {
         &[]
     };
-    if dir_components.iter().any(|c| {
-        c.as_os_str()
-            .to_str()
-            .is_some_and(|s| has_ignored_prefix(s, ignore_prefixes) || is_always_ignored(s))
-    }) {
+    if dir_components
+        .iter()
+        .any(|c| c.as_os_str().to_str().is_some_and(is_always_ignored))
+    {
         return true;
     }
-    path.file_name()
-        .and_then(|n| n.to_str())
-        .is_some_and(|name| has_ignored_prefix(name, ignore_prefixes))
+    path_ignored_by_prefixes(&path.to_string_lossy(), ignore_prefixes)
 }
 
 pub fn find_source_files(root: &Path) -> Vec<SourceFile> {
@@ -89,8 +137,32 @@ pub fn find_source_files_with_ignore(root: &Path, ignore_prefixes: &[String]) ->
         .git_exclude(true)
         .add_custom_ignore_filename(".kissignore")
         .build_parallel()
-        .run(|| Box::new(|entry| process_source_entry(entry, ignore_prefixes, &results)));
+        .run(|| {
+            let mut sink = LocalSink {
+                local: Vec::new(),
+                out: &results,
+            };
+            Box::new(move |entry| {
+                if let Some(file) = source_file_from_entry(entry, ignore_prefixes) {
+                    sink.local.push(file);
+                }
+                WalkState::Continue
+            })
+        });
     results.into_inner().unwrap()
+}
+
+struct LocalSink<'a, T> {
+    local: Vec<T>,
+    out: &'a Mutex<Vec<T>>,
+}
+
+impl<T> Drop for LocalSink<'_, T> {
+    fn drop(&mut self) {
+        if !self.local.is_empty() {
+            self.out.lock().unwrap().append(&mut self.local);
+        }
+    }
 }
 
 pub fn gather_files_by_lang(
@@ -98,10 +170,19 @@ pub fn gather_files_by_lang(
     lang_filter: Option<Language>,
     ignore_prefixes: &[String],
 ) -> (Vec<PathBuf>, Vec<PathBuf>) {
+    gather_files_by_lang_opts(paths, lang_filter, ignore_prefixes, true)
+}
+
+pub fn gather_files_by_lang_opts(
+    paths: &[String],
+    lang_filter: Option<Language>,
+    ignore_prefixes: &[String],
+    expand_rust_includes: bool,
+) -> (Vec<PathBuf>, Vec<PathBuf>) {
     let (mut py_files, mut rs_files) = (Vec::new(), Vec::new());
     for path in paths {
         for sf in find_source_files_with_ignore(Path::new(path), ignore_prefixes) {
-            let canonical = sf.path.canonicalize().unwrap_or(sf.path);
+            let canonical = sf.path;
             match (sf.language, lang_filter) {
                 (Language::Python, None | Some(Language::Python)) => py_files.push(canonical),
                 (Language::Rust, None | Some(Language::Rust)) => rs_files.push(canonical),
@@ -109,29 +190,32 @@ pub fn gather_files_by_lang(
             }
         }
     }
-    let rs_files = crate::rust_graph::expand_rust_files(rs_files);
+    py_files.sort();
+    rs_files.sort();
+    let mut rs_files = if expand_rust_includes {
+        crate::rust_graph::expand_rust_files(rs_files)
+    } else {
+        rs_files
+    };
+    rs_files.sort();
     (py_files, rs_files)
 }
 
-fn process_source_entry(
+fn source_file_from_entry(
     entry: Result<ignore::DirEntry, ignore::Error>,
     ignore_prefixes: &[String],
-    results: &Mutex<Vec<SourceFile>>,
-) -> WalkState {
-    let Ok(entry) = entry else {
-        return WalkState::Continue;
-    };
+) -> Option<SourceFile> {
+    let entry = entry.ok()?;
     if !entry.file_type().is_some_and(|ft| ft.is_file()) {
-        return WalkState::Continue;
+        return None;
     }
     let path = entry.into_path();
     if should_ignore(&path, ignore_prefixes) {
-        return WalkState::Continue;
+        return None;
     }
-    if let Some(language) = Language::from_path(&path) {
-        results.lock().unwrap().push(SourceFile { path, language });
-    }
-    WalkState::Continue
+    let language = Language::from_path(&path)?;
+    let path = path.canonicalize().unwrap_or(path);
+    Some(SourceFile { path, language })
 }
 
 fn find_files_by_extension(root: &Path, ext: &str) -> Vec<PathBuf> {
@@ -166,6 +250,21 @@ fn process_ext_entry(
         results.lock().unwrap().push(entry.into_path());
     }
     WalkState::Continue
+}
+
+pub const DEFAULT_CHECK_IGNORE_PREFIXES: &[&str] = &["fake_", "fixtures"];
+
+pub fn default_check_ignore_prefixes() -> Vec<String> {
+    DEFAULT_CHECK_IGNORE_PREFIXES
+        .iter()
+        .map(|prefix| (*prefix).to_string())
+        .collect()
+}
+
+pub fn merge_check_ignore_prefixes(user: &[String]) -> Vec<String> {
+    let mut ignore = default_check_ignore_prefixes();
+    ignore.extend(user.iter().cloned());
+    normalize_ignore_prefixes(&ignore)
 }
 
 pub fn normalize_ignore_prefixes(prefixes: &[String]) -> Vec<String> {

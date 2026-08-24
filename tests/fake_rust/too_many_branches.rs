@@ -1,4 +1,3 @@
-//! A function with too many branches (threshold: 8)
 
 pub fn branch_heavy(code: i32) -> &'static str {
     if code == 1 {

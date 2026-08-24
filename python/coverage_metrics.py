@@ -1,4 +1,3 @@
-"""Compare kiss static test-reference coverage to runtime line coverage."""
 
 from __future__ import annotations
 
@@ -72,20 +71,18 @@ def report_metrics(comparison: CoverageComparison) -> None:
 
 
 def run_comparison(repo: Path) -> None:
-    """Collect runtime and kiss coverage for REPO and print comparison metrics."""
     true = run_true_coverage(repo)
     kiss_partial = run_kiss_check_all(repo)
     comparison = compare_coverage(true, kiss_partial)
     report_metrics(comparison)
 
 
-@click.command()
+@click.command(help="Compare kiss coverage estimates to runtime line coverage for REPO.")
 @click.argument(
     "repo",
     type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path),
 )
 def coverage_metrics_cli(repo: Path) -> None:
-    """Compare kiss coverage estimates to runtime line coverage for REPO."""
     try:
         run_comparison(repo.resolve())
     except RuntimeError as exc:

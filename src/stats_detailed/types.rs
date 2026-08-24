@@ -1,20 +1,10 @@
-/// Per-unit metrics carried into `kiss stats --table` and `kiss stats --all`.
-///
-/// Field names are internal; metric IDs surfaced to the user (e.g. on `STAT:` lines)
-/// come from the canonical registry `kiss::stats::METRICS`. Each `Option<usize>` is
-/// `Some` when the metric is meaningful for the unit's `kind` and the underlying
-/// language collector populates it; otherwise `None` so the metric is skipped for
-/// that unit when computing top-N outliers.
-///
-/// Construct via `UnitMetrics::new(file, name, kind, line)` and set the metrics
-/// that apply to the unit; everything else stays `None`.
 #[derive(Debug, Clone)]
 pub struct UnitMetrics {
     pub file: String,
     pub name: String,
     pub kind: &'static str,
     pub line: usize,
-    // function-scope
+
     pub statements: Option<usize>,
     pub arguments: Option<usize>,
     pub args_positional: Option<usize>,
@@ -29,17 +19,16 @@ pub struct UnitMetrics {
     pub boolean_parameters: Option<usize>,
     pub annotations: Option<usize>,
     pub calls: Option<usize>,
-    // type-scope
+
     pub methods: Option<usize>,
-    // file-scope
+
     pub lines: Option<usize>,
     pub imports: Option<usize>,
     pub file_statements: Option<usize>,
     pub file_functions: Option<usize>,
     pub interface_types: Option<usize>,
     pub concrete_types: Option<usize>,
-    pub inv_test_coverage: Option<usize>,
-    // module-scope
+
     pub fan_in: Option<usize>,
     pub fan_out: Option<usize>,
     pub indirect_deps: Option<usize>,
@@ -76,7 +65,6 @@ impl UnitMetrics {
             file_functions: None,
             interface_types: None,
             concrete_types: None,
-            inv_test_coverage: None,
             fan_in: None,
             fan_out: None,
             indirect_deps: None,

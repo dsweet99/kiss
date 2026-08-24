@@ -1,4 +1,5 @@
 use super::cli_integration::create_god_class_file;
+use crate::common::seed_python_runtime_coverage;
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
@@ -11,12 +12,12 @@ fn kiss_binary() -> Command {
 fn cli_with_lang_filter_python() {
     let tmp = TempDir::new().unwrap();
     create_god_class_file(tmp.path());
+    seed_python_runtime_coverage(tmp.path(), &[("tests/test_god.py::test_god", vec![])]);
     let output = kiss_binary()
         .arg("check")
         .arg(tmp.path())
         .arg("--lang")
         .arg("python")
-        .arg("--all")
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -35,7 +36,6 @@ fn cli_with_lang_filter_rust() {
         .arg(tmp.path())
         .arg("--lang")
         .arg("rust")
-        .arg("--all")
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -87,12 +87,7 @@ fn cli_invalid_lang_reports_error() {
 #[test]
 fn cli_on_empty_directory() {
     let tmp = TempDir::new().unwrap();
-    let output = kiss_binary()
-        .arg("check")
-        .arg(tmp.path())
-        .arg("--all")
-        .output()
-        .unwrap();
+    let output = kiss_binary().arg("check").arg(tmp.path()).output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         stdout.contains("No files") || stdout.contains("No Python") || stdout.contains("No Rust"),
@@ -102,14 +97,18 @@ fn cli_on_empty_directory() {
 
 #[test]
 fn cli_mimic_command_runs() {
-    let tmp = TempDir::new().unwrap();
-    fs::write(tmp.path().join("mod.py"), "def foo(): x = 1").unwrap();
-    let output = kiss_binary().arg("mimic").arg(tmp.path()).output().unwrap();
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("[python]") || stdout.contains("Generated"),
-        "kiss mimic should produce config. stdout: {stdout}"
-    );
+    for args in [vec!["init"], vec!["mimic", "."], vec!["clamp"]] {
+        let output = kiss_binary().args(&args).output().unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !output.status.success(),
+            "removed command {args:?} should fail. stderr: {stderr}"
+        );
+        assert!(
+            stderr.contains("unrecognized subcommand") || stderr.contains("error"),
+            "removed command {args:?} should be rejected. stderr: {stderr}"
+        );
+    }
 }
 
 #[test]

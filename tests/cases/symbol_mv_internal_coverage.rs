@@ -1,6 +1,3 @@
-//! Integration tests exercising `symbol_mv_support` AST walkers via complex
-//! rename scenarios.
-
 use kiss::Language;
 use kiss::symbol_mv::{MvOptions, run_mv_command};
 use std::fs;
@@ -16,6 +13,7 @@ fn run_mv(lang: Language, query: &str, new_name: &str, root: &std::path::Path) {
         json: false,
         lang_filter: Some(lang),
         ignore: vec![],
+        language_tables: Default::default(),
     };
     assert_eq!(run_mv_command(opts), 0);
 }

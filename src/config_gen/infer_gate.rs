@@ -1,136 +1,100 @@
-use std::path::PathBuf;
+use std::path::Path;
 
-use crate::cli_output::min_per_file_coverage;
-use crate::config::Config;
+use crate::code_roles::{RoleBuildError, SourceRoleIndex, is_test_only_file};
 use crate::discovery::{Language, gather_files_by_lang};
 use crate::duplication::{
     DuplicationConfig, cluster_duplicates, detect_duplicates_from_chunks,
-    extract_chunks_for_duplication, extract_rust_chunks_for_duplication,
+    extract_chunks_for_duplication_with_roles, extract_rust_chunks_for_duplication_with_roles,
 };
 use crate::gate_config::GateConfig;
-use crate::graph::{analyze_graph, build_dependency_graph};
-use crate::parsing::{ParsedFile, parse_files};
-use crate::rust_graph::build_rust_dependency_graph;
-use crate::rust_parsing::{ParsedRustFile, parse_rust_files};
-use crate::rust_test_refs::analyze_rust_test_refs;
-use crate::test_refs::analyze_test_refs;
-
-type DefLineList = Vec<(PathBuf, String, usize)>;
+use crate::graph::{build_python_context_graph, collect_orphan_entry_paths, orphan_violations};
+use crate::lang_analysis::parse_then_classify;
+use crate::parsing::ParsedFile;
+use crate::rust_graph::build_rust_context_graph;
+use crate::rust_parsing::ParsedRustFile;
 
 pub fn infer_gate_config_for_paths(
     paths: &[String],
     lang: Option<Language>,
     ignore: &[String],
-) -> GateConfig {
+) -> Result<GateConfig, RoleBuildError> {
     let (py_files, rs_files) = gather_files_by_lang(paths, lang, ignore);
     let mut gate = GateConfig::default();
 
-    let py_parsed = if py_files.is_empty() {
-        Vec::new()
-    } else {
-        parse_files(&py_files)
-            .ok()
-            .into_iter()
-            .flatten()
-            .filter_map(Result::ok)
-            .collect::<Vec<ParsedFile>>()
-    };
-    let rs_parsed = if rs_files.is_empty() {
-        Vec::new()
-    } else {
-        parse_rust_files(&rs_files)
-            .into_iter()
-            .filter_map(Result::ok)
-            .collect::<Vec<ParsedRustFile>>()
-    };
+    let (py_parsed, rs_parsed, roles) = parse_then_classify(&py_files, &rs_files)?;
+    let repo_root = paths
+        .first()
+        .map(Path::new)
+        .unwrap_or_else(|| Path::new("."));
+    gate.orphan_module_enabled =
+        !has_orphan_modules(&py_parsed, &rs_parsed, Some(&roles), repo_root);
 
-    gate.test_coverage_threshold = compute_min_per_file_test_coverage(&py_parsed, &rs_parsed);
+    let py_prod: Vec<ParsedFile> = py_parsed
+        .into_iter()
+        .filter(|p| !is_test_only_file(&roles, &p.path))
+        .collect();
+    let rs_prod: Vec<ParsedRustFile> = rs_parsed
+        .into_iter()
+        .filter(|p| !is_test_only_file(&roles, &p.path))
+        .collect();
+
     gate.duplication_enabled =
-        !has_reportable_duplicates(&py_parsed, &rs_parsed, gate.min_similarity);
-    gate.orphan_module_enabled = !has_orphan_modules(&py_parsed, &rs_parsed);
-    gate
+        !has_reportable_duplicates(&py_prod, &rs_prod, Some(&roles), gate.min_similarity);
+    gate.comment_removal_enabled =
+        !crate::has_non_doc_comments_with_roles(&py_prod, &rs_prod, Some(&roles));
+    Ok(gate)
 }
 
-pub(crate) fn compute_min_per_file_test_coverage(
+pub(crate) fn has_orphan_modules(
     py_parsed: &[ParsedFile],
     rs_parsed: &[ParsedRustFile],
-) -> usize {
-    let (definitions, unreferenced) = collect_defs_and_unrefs(py_parsed, rs_parsed);
-    min_per_file_coverage(&definitions, &unreferenced)
-}
-
-pub(super) fn extend_defs_from_py(
-    definitions: &mut DefLineList,
-    unreferenced: &mut DefLineList,
-    py_parsed: &[ParsedFile],
-) {
-    if py_parsed.is_empty() {
-        return;
-    }
-    let refs: Vec<&ParsedFile> = py_parsed.iter().collect();
-    let a = analyze_test_refs(&refs, None);
-    definitions.extend(
-        a.definitions
-            .iter()
-            .map(|d| (d.file.clone(), d.name.clone(), d.line)),
-    );
-    unreferenced.extend(
-        a.unreferenced
-            .iter()
-            .map(|d| (d.file.clone(), d.name.clone(), d.line)),
-    );
-}
-
-pub(super) fn extend_defs_from_rs(
-    definitions: &mut DefLineList,
-    unreferenced: &mut DefLineList,
-    rs_parsed: &[ParsedRustFile],
-) {
-    if rs_parsed.is_empty() {
-        return;
-    }
-    let refs: Vec<&ParsedRustFile> = rs_parsed.iter().collect();
-    let a = analyze_rust_test_refs(&refs, None);
-    definitions.extend(
-        a.definitions
-            .iter()
-            .map(|d| (d.file.clone(), d.name.clone(), d.line)),
-    );
-    unreferenced.extend(
-        a.unreferenced
-            .iter()
-            .map(|d| (d.file.clone(), d.name.clone(), d.line)),
-    );
-}
-
-pub(super) fn collect_defs_and_unrefs(
-    py_parsed: &[ParsedFile],
-    rs_parsed: &[ParsedRustFile],
-) -> (DefLineList, DefLineList) {
-    let mut definitions = DefLineList::new();
-    let mut unreferenced = DefLineList::new();
-    extend_defs_from_py(&mut definitions, &mut unreferenced, py_parsed);
-    extend_defs_from_rs(&mut definitions, &mut unreferenced, rs_parsed);
-    (definitions, unreferenced)
-}
-
-pub(crate) fn has_orphan_modules(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile]) -> bool {
+    roles: Option<&SourceRoleIndex>,
+    repo_root: &Path,
+) -> bool {
+    let empty_roles = SourceRoleIndex::empty();
+    let roles = roles.unwrap_or(&empty_roles);
     let py_refs: Vec<&ParsedFile> = py_parsed.iter().collect();
     let rs_refs: Vec<&ParsedRustFile> = rs_parsed.iter().collect();
-    let py_config = Config::python_defaults();
-    let rs_config = Config::rust_defaults();
+    let py_ctx = if py_parsed.is_empty() {
+        crate::graph::ContextDependencyGraph::empty()
+    } else {
+        build_python_context_graph(&py_refs, roles)
+    };
+    let rs_ctx = if rs_parsed.is_empty() {
+        crate::graph::ContextDependencyGraph::empty()
+    } else {
+        build_rust_context_graph(&rs_refs, roles)
+    };
+    let py_prod = py_ctx.production_view();
+    let rs_prod = rs_ctx.production_view();
+    let entries = collect_orphan_entry_paths(
+        py_parsed,
+        rs_parsed,
+        (!py_parsed.is_empty()).then_some(&py_prod),
+        (!rs_parsed.is_empty()).then_some(&rs_prod),
+    );
     let has_orphan = |viols: &[crate::Violation]| viols.iter().any(|v| v.metric == "orphan_module");
-    if !py_parsed.is_empty() {
-        let graph = build_dependency_graph(&py_refs);
-        if has_orphan(&analyze_graph(&graph, &py_config, true)) {
-            return true;
-        }
+    if !py_parsed.is_empty()
+        && has_orphan(&orphan_violations(
+            &py_ctx,
+            &py_prod,
+            &entries,
+            &[],
+            repo_root,
+        ))
+    {
+        return true;
     }
-    if !rs_parsed.is_empty() {
-        let graph = build_rust_dependency_graph(&rs_refs);
-        if has_orphan(&analyze_graph(&graph, &rs_config, true)) {
-            return true;
-        }
+    if !rs_parsed.is_empty()
+        && has_orphan(&orphan_violations(
+            &rs_ctx,
+            &rs_prod,
+            &entries,
+            &[],
+            repo_root,
+        ))
+    {
+        return true;
     }
     false
 }
@@ -138,6 +102,7 @@ pub(crate) fn has_orphan_modules(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRu
 pub(crate) fn has_reportable_duplicates(
     py_parsed: &[ParsedFile],
     rs_parsed: &[ParsedRustFile],
+    roles: Option<&crate::code_roles::SourceRoleIndex>,
     min_similarity: f64,
 ) -> bool {
     let config = DuplicationConfig {
@@ -146,8 +111,10 @@ pub(crate) fn has_reportable_duplicates(
     };
     let py_refs: Vec<&ParsedFile> = py_parsed.iter().collect();
     let rs_refs: Vec<&ParsedRustFile> = rs_parsed.iter().collect();
-    let mut chunks = extract_chunks_for_duplication(&py_refs);
-    chunks.extend(extract_rust_chunks_for_duplication(&rs_refs));
+    let mut chunks = extract_chunks_for_duplication_with_roles(&py_refs, roles);
+    chunks.extend(extract_rust_chunks_for_duplication_with_roles(
+        &rs_refs, roles,
+    ));
     if chunks.len() < 2 {
         return false;
     }

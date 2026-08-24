@@ -60,7 +60,7 @@ pub(crate) fn log_parse_timing(show: bool, timing: &str) {
 pub(crate) fn log_timing_phase2(show: bool, t3: std::time::Instant, t4: std::time::Instant) {
     if show {
         eprintln!(
-            "[TIMING] graph_analysis={:.2}s, test_refs={:.2}s",
+            "[TIMING] graph_analysis={:.2}s, dup_prep={:.2}s",
             t4.duration_since(t3).as_secs_f64(),
             std::time::Instant::now().duration_since(t4).as_secs_f64()
         );
@@ -79,4 +79,27 @@ pub(crate) fn log_timing_phase1(
         t2.duration_since(t1).as_secs_f64(),
         t3.duration_since(t2).as_secs_f64()
     );
+}
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+
+    impl PrintResultsCtx {
+        fn witness() -> Self {
+            Self {
+                show_timing: false,
+                t_phase2: None,
+                suppress_final_status: true,
+            }
+        }
+    }
+
+    #[test]
+    fn witness_print_results() {
+        let ctx = PrintResultsCtx::witness();
+        assert!(print_all_results_with_dups(&[], &[], &[], ctx));
+        log_parse_timing(false, "");
+        log_timing_phase2(false, std::time::Instant::now(), std::time::Instant::now());
+    }
 }

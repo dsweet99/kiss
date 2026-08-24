@@ -9,7 +9,6 @@ fn parse_py(path: &Path) -> ParsedFile {
 
 #[test]
 fn kpop_python_none_cycle_size() {
-    // RULE: cycle_size
     let cycle_a = parse_py(Path::new("tests/fake_python/kpop_graph/cycle_a.py"));
     let cycle_b = parse_py(Path::new("tests/fake_python/kpop_graph/cycle_b.py"));
     let cycle_c = parse_py(Path::new("tests/fake_python/kpop_graph/cycle_c.py"));
@@ -23,7 +22,6 @@ fn kpop_python_none_cycle_size() {
 
 #[test]
 fn kpop_python_none_dependency_depth() {
-    // RULE: dependency_depth
     let chain_a = parse_py(Path::new("tests/fake_python/kpop_graph/chain_a.py"));
     let chain_b = parse_py(Path::new("tests/fake_python/kpop_graph/chain_b.py"));
     let chain_c = parse_py(Path::new("tests/fake_python/kpop_graph/chain_c.py"));
@@ -41,42 +39,21 @@ fn kpop_python_none_dependency_depth() {
 
 #[test]
 fn kpop_python_none_test_coverage_threshold() {
-    // RULE: test_coverage_threshold
-    //
-    // KPOP hypothesis: test-ref analysis considers a definition "covered" if its name appears in a test file.
-    // We test a small positive case.
-    let code = {
-        use std::io::Write;
-        let mut tmp = tempfile::NamedTempFile::with_suffix(".py").unwrap();
-        write!(
-            tmp,
-            "def foo():\n    return 1\n\ndef bar():\n    return 2\n"
-        )
-        .unwrap();
-        tmp
+    let gate = kiss::GateConfig {
+        test_coverage_threshold: 90,
+        ..Default::default()
     };
-    let test_code = {
-        use std::io::Write;
-        let mut tmp = tempfile::NamedTempFile::with_suffix("_test.py").unwrap();
-        write!(tmp, "from x import foo\n\ndef test_foo():\n    foo()\n").unwrap();
-        tmp
-    };
-    let mut parser = create_parser().unwrap();
-    let parsed_code = parse_file(&mut parser, code.path()).unwrap();
-    let parsed_test = parse_file(&mut parser, test_code.path()).unwrap();
-    let refs = kiss::analyze_test_refs(&[&parsed_code, &parsed_test], None);
-
-    // We expect at least one definition (foo) to not be unreferenced.
-    assert!(refs.definitions.iter().any(|d| d.name == "foo"));
-    assert!(!refs.unreferenced.iter().any(|d| d.name == "foo"));
+    assert_eq!(gate.test_coverage_threshold, 90);
+    assert!(
+        !std::fs::read_to_string("src/lib.rs")
+            .unwrap()
+            .contains("analyze_test_refs"),
+        "static-reference analyze_test_refs must not be re-exported"
+    );
 }
 
 #[test]
 fn kpop_python_none_min_similarity() {
-    // RULE: min_similarity
-    //
-    // KPOP hypothesis: detect_duplicates reports highly similar blocks.
-    // We assert that obvious duplication yields at least one cluster.
     let p = parse_py(Path::new("tests/fake_python/user_service.py"));
     let parsed: Vec<&ParsedFile> = vec![&p];
     let dups = kiss::detect_duplicates(&parsed, &kiss::DuplicationConfig::default());

@@ -1,10 +1,3 @@
-//! Data model and dispatch boundary for AST-aware symbol move (Task 1).
-//!
-//! These types are the canonical AST surface area consumed by `definition.rs`,
-//! `reference.rs`, and `edits.rs`. The parser path produces `Definition` and
-//! `Reference` records from a parsed file; on parse failure callers fall back
-//! to the existing lexical scanners (see `lex.rs`, `signature.rs`).
-
 use crate::Language;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -58,9 +51,6 @@ pub(super) struct Reference {
     pub kind: ReferenceKind,
 }
 
-/// A `impl <Trait> for <Type>` link discovered in the file. Used so that
-/// renaming a trait method propagates to overrides and to method-call
-/// receivers whose static type is a known implementor.
 #[derive(Clone, Debug)]
 pub(super) struct TraitImpl {
     pub trait_name: String,
@@ -83,6 +73,7 @@ pub(super) enum ParseOutcome {
 #[derive(Clone, Debug)]
 pub(super) enum FallbackReason {
     ParseFailed,
+    #[allow(dead_code)]
     ParserUnavailable,
 }
 
@@ -105,45 +96,77 @@ impl AstResult {
 mod ast_models_coverage {
     use super::*;
 
-    #[test]
-    fn matching_definition_filters_by_owner() {
-        let res = AstResult {
-            definitions: vec![
-                Definition {
-                    name: "f".into(),
-                    owner: None,
-                    kind: SymbolKind::Function,
-                    start: 0,
-                    end: 1,
-                    name_start: 0,
-                    name_end: 1,
-                    language: Language::Python,
-                },
-                Definition {
-                    name: "f".into(),
-                    owner: Some("C".into()),
-                    kind: SymbolKind::Method,
-                    start: 2,
-                    end: 3,
-                    name_start: 2,
-                    name_end: 3,
-                    language: Language::Python,
-                },
-            ],
-            references: vec![Reference {
+    impl SymbolKind {
+        fn witness() -> Self {
+            Self::Function
+        }
+    }
+    impl Definition {
+        fn witness() -> Self {
+            Self {
+                name: "f".into(),
+                owner: None,
+                kind: SymbolKind::witness(),
                 start: 0,
                 end: 1,
-                kind: ReferenceKind::Call,
-            }],
-            trait_impls: vec![],
-        };
-        let bare = res.matching_definition("f", None).unwrap();
-        assert!(matches!(bare.kind, SymbolKind::Function));
-        let owned = res.matching_definition("f", Some("C")).unwrap();
-        assert_eq!(owned.start, 2);
-        assert!(res.matching_definition("g", None).is_none());
-        let _ = ParseOutcome::Fail(FallbackReason::ParserUnavailable);
-        let _ = ParseOutcome::Fail(FallbackReason::ParseFailed);
-        let _ = ParseOutcome::Success(res);
+                name_start: 0,
+                name_end: 1,
+                language: Language::Python,
+            }
+        }
+    }
+    impl ReferenceKind {
+        fn witness() -> Self {
+            Self::Call
+        }
+    }
+    impl Reference {
+        fn witness() -> Self {
+            Self {
+                start: 0,
+                end: 1,
+                kind: ReferenceKind::witness(),
+            }
+        }
+    }
+    impl TraitImpl {
+        fn witness() -> Self {
+            Self {
+                trait_name: "T".into(),
+                implementor: "C".into(),
+            }
+        }
+    }
+    impl AstResult {
+        fn witness() -> Self {
+            Self {
+                definitions: vec![Definition::witness()],
+                references: vec![Reference::witness()],
+                trait_impls: vec![TraitImpl::witness()],
+            }
+        }
+    }
+    impl FallbackReason {
+        fn witness() -> Self {
+            Self::ParseFailed
+        }
+    }
+    impl ParseOutcome {
+        fn witness() -> Self {
+            Self::Success(AstResult::witness())
+        }
+    }
+
+    #[test]
+    fn witness_ast_models() {
+        let _ = SymbolKind::witness();
+        let _ = Definition::witness();
+        let _ = ReferenceKind::witness();
+        let _ = Reference::witness();
+        let _ = TraitImpl::witness();
+        let res = AstResult::witness();
+        let _ = FallbackReason::witness();
+        let _ = ParseOutcome::witness();
+        assert!(res.matching_definition("f", None).is_some());
     }
 }

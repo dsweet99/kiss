@@ -19,11 +19,10 @@ fn test_fast_communities_assigns_all_nodes() {
 
 #[test]
 fn test_should_use_fast_coarsen_regressions() {
-    // Guard against regressions that re-enable the slow Leiden path for aggressive zoom values.
-    assert!(should_use_fast_coarsen(2_000, 0, 10)); // node threshold
-    assert!(should_use_fast_coarsen(100, 10_000, 50)); // edge threshold
-    assert!(should_use_fast_coarsen(1_000, 0, 100)); // aggressive coarsen (target << nodes)
-    assert!(!should_use_fast_coarsen(100, 0, 90)); // not aggressive, small graph
+    assert!(should_use_fast_coarsen(2_000, 0, 10));
+    assert!(should_use_fast_coarsen(100, 10_000, 50));
+    assert!(should_use_fast_coarsen(1_000, 0, 100));
+    assert!(!should_use_fast_coarsen(100, 0, 90));
 }
 
 #[test]
@@ -119,9 +118,6 @@ fn test_coarsen_with_target_respects_explicit_count() {
 
 #[test]
 fn test_build_cluster_labels_titles_clusters_with_common_directory_name() {
-    // Regression: a cluster of files all under the same directory should be
-    // labelled with that directory name (a meaningful cluster identifier),
-    // not as a list of full file paths.
     let nodes: Vec<String> = (0..5).map(|i| format!("rs:n{i}")).collect();
     let mut paths_map: BTreeMap<String, PathBuf> = BTreeMap::new();
     for (i, n) in nodes.iter().enumerate() {
@@ -149,8 +145,6 @@ fn test_build_cluster_labels_titles_clusters_with_common_directory_name() {
 
 #[test]
 fn test_build_cluster_labels_collapses_multilevel_common_prefix() {
-    // When members share more than one directory level, the title should
-    // include the deepest common prefix (here `pkg/sub`).
     let nodes: Vec<String> = vec!["py:a".into(), "py:b".into(), "py:c".into()];
     let mut paths_map: BTreeMap<String, PathBuf> = BTreeMap::new();
     paths_map.insert("py:a".into(), PathBuf::from("/repo/src/pkg/sub/x.py"));
@@ -176,4 +170,50 @@ fn test_choose_prefix_depth_and_group_nodes() {
 
     let groups = paths::group_nodes(&nodes, &per_paths, depth);
     assert!(!groups.is_empty());
+}
+
+#[test]
+fn merge_communities_to_target_merges_connected_singletons() {
+    let nodes: Vec<String> = vec!["a".into(), "b".into(), "c".into()];
+    let mut edges: BTreeSet<(String, String)> = BTreeSet::new();
+    edges.insert(("a".to_string(), "b".to_string()));
+    edges.insert(("b".to_string(), "c".to_string()));
+
+    edges.insert(("a".to_string(), "missing".to_string()));
+    edges.insert(("ghost".to_string(), "b".to_string()));
+
+    let initial = vec![vec![0], vec![1], vec![2]];
+    let merged = leiden::merge_communities_to_target(&nodes, &edges, initial, 2);
+    assert_eq!(merged.len(), 2);
+    let mut members: Vec<usize> = merged.into_iter().flatten().collect();
+    members.sort_unstable();
+    assert_eq!(members, vec![0, 1, 2]);
+
+    let already = leiden::merge_communities_to_target(&nodes, &edges, vec![vec![0, 1], vec![2]], 2);
+    assert_eq!(already.len(), 2);
+
+    let partitioned = leiden::leiden_partition(&nodes, &edges);
+    assert!(!partitioned.is_empty());
+    let _ = leiden::leiden_or_merge_to_target(&nodes, &edges, 2);
+}
+
+#[test]
+fn test_path_coarsen_edge_branches() {
+    let nodes: Vec<String> = vec!["same".into(), "same".into(), "same".into(), "same".into()];
+    let empty_paths: BTreeMap<String, PathBuf> = BTreeMap::new();
+    let per_paths: Vec<Option<PathBuf>> = vec![None, None, None, None];
+
+    assert_eq!(paths::choose_prefix_depth(&nodes, &per_paths, 0, 3), 0);
+    assert!(paths::fast_communities_from_paths(&[], &empty_paths, 3).is_empty());
+
+    let merged = paths::merge_overflow(vec![vec![0], vec![1], vec![2], vec![3]], 2);
+    assert_eq!(merged.len(), 2);
+    assert_eq!(merged[1], vec![1, 2, 3]);
+
+    let (a, b) = paths::split_largest_once(&nodes, &[0, 1, 2, 3]);
+    assert_eq!(a, vec![0, 2]);
+    assert_eq!(b, vec![1, 3]);
+
+    let split = paths::split_until_target(&nodes, vec![vec![0, 1, 2, 3]], 3);
+    assert_eq!(split.len(), 3);
 }

@@ -20,10 +20,17 @@ impl From<syn::Error> for RustParseError {
 
 impl std::fmt::Display for RustParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::IoError(e) => write!(f, "IO error: {e}"),
-            Self::SynError(e) => write!(f, "Syn parse error: {e}"),
-        }
+        write_rust_parse_error(self, f)
+    }
+}
+
+pub(crate) fn write_rust_parse_error(
+    err: &RustParseError,
+    f: &mut impl std::fmt::Write,
+) -> std::fmt::Result {
+    match err {
+        RustParseError::IoError(e) => write!(f, "IO error: {e}"),
+        RustParseError::SynError(e) => write!(f, "Syn parse error: {e}"),
     }
 }
 
@@ -46,8 +53,6 @@ pub fn parse_rust_file(path: &Path) -> Result<ParsedRustFile, RustParseError> {
     })
 }
 
-// Note: Cannot use par_iter() here because syn::File contains proc_macro2 types
-// which are not Send. Parallelism is applied during analysis instead.
 pub fn parse_rust_files(paths: &[PathBuf]) -> Vec<Result<ParsedRustFile, RustParseError>> {
     paths.iter().map(|path| parse_rust_file(path)).collect()
 }
@@ -57,6 +62,16 @@ mod tests {
     use super::*;
     use std::io::Write;
     use tempfile::NamedTempFile;
+
+    impl ParsedRustFile {
+        fn witness_from_source(source: &str) -> Self {
+            Self {
+                path: PathBuf::from("witness.rs"),
+                source: source.to_string(),
+                ast: syn::parse_file(source).unwrap(),
+            }
+        }
+    }
 
     #[test]
     fn parses_simple_rust_file() {
@@ -115,12 +130,20 @@ impl Counter {{
 
     #[test]
     fn test_rust_parse_error_display_fmt() {
-        use std::fmt::Write;
-        let err =
-            RustParseError::IoError(std::io::Error::new(std::io::ErrorKind::NotFound, "test"));
-        let mut s = String::new();
-        write!(&mut s, "{err}").unwrap();
-        assert!(s.contains("IO error"));
+        for err in [
+            RustParseError::IoError(std::io::Error::new(std::io::ErrorKind::NotFound, "test")),
+            RustParseError::SynError(syn::Error::new(
+                proc_macro2::Span::call_site(),
+                "bad syntax",
+            )),
+        ] {
+            let mut direct = String::new();
+            write_rust_parse_error(&err, &mut direct).unwrap();
+            let display = format!("{err}");
+            assert!(!direct.is_empty());
+            assert_eq!(direct, display);
+            assert_eq!(direct, err.to_string());
+        }
     }
 
     #[test]
@@ -142,5 +165,11 @@ impl Counter {{
         let results = parse_rust_files(&paths);
         assert_eq!(results.len(), 2);
         assert!(results.iter().all(std::result::Result::is_ok));
+    }
+
+    #[test]
+    fn witness_parsed_rust_file_type() {
+        let parsed = ParsedRustFile::witness_from_source("fn witness_fn() {}");
+        assert!(parsed.source.contains("witness_fn"));
     }
 }

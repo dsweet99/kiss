@@ -1,17 +1,8 @@
-//! Python-path regressions for review findings against parser-first `kiss mv`.
-//! Sibling of `review_findings.rs`; split per `lines_per_file` advice
-//! in `.llm_style/style.md`.
-
 use kiss::Language;
 use kiss::symbol_mv::{MvOptions, run_mv_command};
 use std::fs;
 use tempfile::TempDir;
 
-/// Bug: `infer_python_receiver_type_at` only matches `x = ...` assignment
-/// patterns. A receiver introduced via a parameter annotation
-/// (`def caller(x: C)`) yields no inferred type, so the AST `Method`
-/// reference is dropped and `x.helper()` is not renamed.
-/// Code ref: `src/symbol_mv_support/reference.rs::infer_python_receiver_type_at`.
 #[test]
 fn review_python_param_typed_receiver_should_be_renamed() {
     let tmp = TempDir::new().unwrap();
@@ -39,6 +30,7 @@ def caller(x: C):
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
     assert_eq!(run_mv_command(opts), 0);
 
@@ -50,11 +42,6 @@ def caller(x: C):
     );
 }
 
-/// Bug: `type_from_assignment_rhs` requires the RHS's first character to be
-/// ASCII uppercase, which rejects dotted constructors like `pkg.C()`. The
-/// receiver type is therefore inferred as `None` and the method site is
-/// dropped from the AST owner-qualified rename.
-/// Code ref: `src/symbol_mv_support/reference.rs::type_from_assignment_rhs`.
 #[test]
 fn review_python_dotted_constructor_receiver_should_be_renamed() {
     let tmp = TempDir::new().unwrap();
@@ -91,6 +78,7 @@ def caller():
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
     assert_eq!(run_mv_command(opts), 0);
 
@@ -101,10 +89,6 @@ def caller():
     );
 }
 
-/// Bug: `walk_py` has no arm for the tree-sitter `decorator` node kind, so
-/// `@helper` is never recorded as a reference. Renaming the top-level
-/// `helper` rewrites the def + bare calls but leaves `@helper` untouched.
-/// Code ref: `src/symbol_mv_support/ast_python.rs::walk_py` (match arms).
 #[test]
 fn review_python_decorator_call_site_should_be_renamed() {
     let tmp = TempDir::new().unwrap();
@@ -136,6 +120,7 @@ def caller():
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
     assert_eq!(run_mv_command(opts), 0);
 
@@ -150,13 +135,6 @@ def caller():
     );
 }
 
-/// Bug: `infer_python_receiver_type_at` only handles the direct `x = ...`
-/// assignment pattern; in a chained/multi-target assignment
-/// `x = y = C()`, the RHS after `"x = "` is `"y = C()"`, so
-/// `type_from_assignment_rhs` reads up to the first `(`, sees a non-uppercase
-/// leading char, and returns `None`. The `x.helper()` Method site is then
-/// dropped from the owner-qualified rename.
-/// Code ref: `src/symbol_mv_support/reference.rs::type_from_assignment_rhs`.
 #[test]
 fn review_python_chained_assignment_receiver_should_be_renamed() {
     let tmp = TempDir::new().unwrap();
@@ -185,6 +163,7 @@ def caller():
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
     assert_eq!(run_mv_command(opts), 0);
 
@@ -196,13 +175,6 @@ def caller():
     );
 }
 
-/// Bug: `type_from_python_param_annotation` extracts the annotation by taking
-/// only `[A-Za-z0-9_.]` characters, then takes `rsplit('.').next()` on the
-/// resulting bare name. For `def caller(x: Optional[C])`, extraction stops at
-/// `[`, yielding `"Optional"`, and the receiver type for `x` resolves to
-/// `Optional` instead of the wrapped `C`. The owner-qualified Method site is
-/// dropped and `x.helper()` is not renamed.
-/// Code ref: `src/symbol_mv_support/reference.rs::type_from_python_param_annotation`.
 #[test]
 fn review_python_optional_param_annotation_receiver_should_be_renamed() {
     let tmp = TempDir::new().unwrap();
@@ -233,6 +205,7 @@ def caller(x: Optional[C]):
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
     assert_eq!(run_mv_command(opts), 0);
 
@@ -244,14 +217,6 @@ def caller(x: Optional[C]):
     );
 }
 
-/// Bug: `infer_python_receiver_type_at` searches for the substring
-/// `format!("{receiver} = ")` without a left word-boundary check. For
-/// receiver `x`, the substring `"x = "` also occurs inside `"prev_x = D()"`,
-/// so a same-named-suffix variable appearing before the call site is
-/// mistakenly read as the binding for `x`. The receiver type resolves to
-/// the wrong class (D), the Method site is filtered out by
-/// `method_receiver_matches`, and `x.helper()` is not renamed.
-/// Code ref: `src/symbol_mv_support/reference.rs::infer_python_receiver_type_at`.
 #[test]
 fn review_python_receiver_substring_must_not_steal_binding() {
     let tmp = TempDir::new().unwrap();
@@ -290,6 +255,7 @@ def use(_v):
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
     assert_eq!(run_mv_command(opts), 0);
 
@@ -308,15 +274,6 @@ def use(_v):
     );
 }
 
-/// Bug: `walk_py` recurses unconditionally into function bodies, and
-/// `collect_py_def` uses the `owner` of the surrounding *class* (None for
-/// top-level functions) regardless of the enclosing function. An inner
-/// `def helper` defined inside `def outer()` therefore registers as a
-/// second top-level Definition with the same name and owner=None.
-/// `ast_definition_ident_offsets` returns BOTH name spans, so renaming the
-/// outer `helper` also rewrites the unrelated inner `def helper` shadow.
-/// Code ref: `src/symbol_mv_support/ast_python.rs::walk_py` (function arm)
-///           + `src/symbol_mv_support/ast_plan.rs::ast_definition_ident_offsets`.
 #[test]
 fn review_python_inner_function_shadow_must_not_be_renamed() {
     let tmp = TempDir::new().unwrap();
@@ -350,6 +307,7 @@ def caller():
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
     assert_eq!(run_mv_command(opts), 0);
 

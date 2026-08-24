@@ -1,4 +1,3 @@
-//! A function with high cyclomatic complexity (threshold: 20)
 
 pub fn complex_state_machine(state: i32, event: i32) -> i32 {
     let mut next_state = state;

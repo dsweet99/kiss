@@ -1,5 +1,3 @@
-//! CLI / request options for `kiss mv`.
-
 use std::path::PathBuf;
 
 use crate::Language;
@@ -16,6 +14,7 @@ pub struct MvOptions {
     pub json: bool,
     pub lang_filter: Option<Language>,
     pub ignore: Vec<String>,
+    pub language_tables: crate::LanguageTablesPresent,
 }
 
 #[derive(Debug, Clone)]
@@ -25,4 +24,43 @@ pub struct MvRequest {
     pub paths: Vec<String>,
     pub to: Option<PathBuf>,
     pub ignore: Vec<String>,
+}
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+    use crate::symbol_mv::query::parse_mv_query;
+
+    impl MvOptions {
+        fn witness() -> Self {
+            Self {
+                query: "q".into(),
+                new_name: "n".into(),
+                paths: vec![],
+                to: None,
+                dry_run: true,
+                json: false,
+                lang_filter: None,
+                ignore: vec![],
+                language_tables: crate::LanguageTablesPresent::both(),
+            }
+        }
+    }
+    impl MvRequest {
+        fn witness() -> Self {
+            Self {
+                query: parse_mv_query("a.py::foo").unwrap(),
+                new_name: "n".into(),
+                paths: vec![],
+                to: None,
+                ignore: vec![],
+            }
+        }
+    }
+
+    #[test]
+    fn witness_mv_opts() {
+        let _ = MvOptions::witness();
+        let _ = MvRequest::witness();
+    }
 }

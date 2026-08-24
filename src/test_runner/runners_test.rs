@@ -1,9 +1,15 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
+use rpytest_runner::TestStatus;
+use rust_llvm_cov_runner::RustLineCoverage;
 use tempfile::TempDir;
 
 use super::runners::*;
+use super::rust_coverage_index::{
+    rebuild_rust_coverage_index, write_rust_population_manifest_for_args, write_test_entry,
+};
 
 #[test]
 fn py_selector_uses_double_colon() {
@@ -19,7 +25,12 @@ fn py_selector_class_method() {
 
 #[test]
 fn shell_quote_simple() {
-    let v = vec!["python".into(), "-m".into(), "pytest".into(), "a.py::t".into()];
+    let v = vec![
+        "python".into(),
+        "-m".into(),
+        "pytest".into(),
+        "a.py::t".into(),
+    ];
     let s = shell_quote_line(&v);
     assert!(s.contains("python"));
     assert!(s.contains("pytest"));
@@ -34,14 +45,13 @@ fn merge_exit_codes_max() {
 #[test]
 fn enumerate_tests_in_changed_files_finds_py() {
     let tmp = TempDir::new().unwrap();
-    fs::write(
-        tmp.path().join("test_z.py"),
-        "def test_one():\n    assert 1\n",
-    )
-    .unwrap();
-    let paths = vec![tmp.path().join("test_z.py")];
-    let got = enumerate_tests_in_changed_files(&paths).unwrap();
-    assert!(got.iter().any(|(_, id)| id == "test_one"));
+    let tests = tmp.path().join("tests");
+    fs::create_dir(&tests).unwrap();
+    let test_file = tests.join("test_z.py");
+    fs::write(&test_file, "def test_one():\n    assert 1\n").unwrap();
+    let paths = vec![test_file];
+    let got = enumerate_tests_in_changed_files(tmp.path(), &paths).unwrap();
+    assert!(got.python_nodeids.contains("tests/test_z.py::test_one"));
 }
 
 #[test]
@@ -49,33 +59,301 @@ fn enumerate_tests_in_changed_files_errors_on_bad_rs() {
     let tmp = TempDir::new().unwrap();
     fs::write(tmp.path().join("broken.rs"), "fn broken(\n").unwrap();
     let paths = vec![tmp.path().join("broken.rs")];
-    let err = enumerate_tests_in_changed_files(&paths).unwrap_err();
+    let err = enumerate_tests_in_changed_files(tmp.path(), &paths).unwrap_err();
     assert!(err.contains("failed to parse"));
     assert!(err.contains("broken.rs"));
 }
 
 #[test]
-fn discover_for_paths_empty_paths_ok() {
+fn combined_selectors_uses_existing_rust_index_for_source_changes() {
     let tmp = TempDir::new().unwrap();
-    let defs = discover_for_paths(tmp.path(), &[], None, &[]).unwrap();
-    assert!(defs.is_empty());
+    let src = tmp.path().join("src");
+    fs::create_dir(&src).unwrap();
+    let lib = src.join("lib.rs");
+    fs::write(
+        &lib,
+        "pub fn value() -> u32 { 1 }\n#[cfg(test)]\nmod tests { #[test] fn gets_value() {} }\n",
+    )
+    .unwrap();
+    write_test_entry(
+        tmp.path(),
+        "abc",
+        "tests::gets_value",
+        TestStatus::Passed,
+        RustLineCoverage {
+            files: std::collections::BTreeMap::from([(
+                lib.to_string_lossy().to_string(),
+                std::collections::BTreeSet::from([1]),
+            )]),
+        },
+    );
+    rebuild_rust_coverage_index(tmp.path()).unwrap();
+    write_rust_population_manifest_for_args(tmp.path(), &["tests::gets_value".to_string()], &[])
+        .unwrap();
+
+    let plan = combined_selectors(
+        tmp.path(),
+        std::slice::from_ref(&lib),
+        &[],
+        &BTreeMap::new(),
+        &[],
+        None,
+        &[],
+    )
+    .unwrap();
+
+    assert_eq!(plan.selectors.rust, vec!["tests::gets_value".to_string()]);
+    assert_eq!(plan.source_paths.rust, vec![lib]);
+    assert!(!plan.population_required.rust);
+}
+
+#[test]
+fn combined_selectors_repopulates_when_rust_test_args_change() {
+    let tmp = TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+    fs::create_dir(&src).unwrap();
+    let lib = src.join("lib.rs");
+    fs::write(
+        &lib,
+        "pub fn value() -> u32 { 1 }\n#[cfg(test)]\nmod tests { #[test] fn gets_value() {} }\n",
+    )
+    .unwrap();
+    write_test_entry(
+        tmp.path(),
+        "abc",
+        "tests::gets_value",
+        TestStatus::Passed,
+        RustLineCoverage {
+            files: std::collections::BTreeMap::from([(
+                lib.to_string_lossy().to_string(),
+                std::collections::BTreeSet::from([1]),
+            )]),
+        },
+    );
+    rebuild_rust_coverage_index(tmp.path()).unwrap();
+    write_rust_population_manifest_for_args(tmp.path(), &["tests::gets_value".to_string()], &[])
+        .unwrap();
+
+    let plan = combined_selectors(
+        tmp.path(),
+        std::slice::from_ref(&lib),
+        &[],
+        &BTreeMap::new(),
+        &["--exact".to_string()],
+        None,
+        &[],
+    )
+    .unwrap();
+
+    assert_eq!(plan.selectors.rust, vec!["tests::gets_value".to_string()]);
+    assert!(plan.population_required.rust);
+}
+
+#[test]
+fn combined_selectors_prefers_rust_changed_line_matches() {
+    let tmp = TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+    fs::create_dir(&src).unwrap();
+    let lib = src.join("lib.rs");
+    fs::write(
+        &lib,
+        "pub fn first() {}\npub fn second() {}\n#[cfg(test)]\nmod tests { #[test] fn first() {} #[test] fn second() {} }\n",
+    )
+    .unwrap();
+    write_test_entry(
+        tmp.path(),
+        "line1",
+        "tests::first",
+        TestStatus::Passed,
+        RustLineCoverage {
+            files: std::collections::BTreeMap::from([(
+                lib.to_string_lossy().to_string(),
+                std::collections::BTreeSet::from([1]),
+            )]),
+        },
+    );
+    write_test_entry(
+        tmp.path(),
+        "line2",
+        "tests::second",
+        TestStatus::Passed,
+        RustLineCoverage {
+            files: std::collections::BTreeMap::from([(
+                lib.to_string_lossy().to_string(),
+                std::collections::BTreeSet::from([2]),
+            )]),
+        },
+    );
+    rebuild_rust_coverage_index(tmp.path()).unwrap();
+    write_rust_population_manifest_for_args(
+        tmp.path(),
+        &["tests::first".to_string(), "tests::second".to_string()],
+        &[],
+    )
+    .unwrap();
+
+    let plan = combined_selectors(
+        tmp.path(),
+        std::slice::from_ref(&lib),
+        &[],
+        &BTreeMap::from([(lib.clone(), BTreeSet::from([2]))]),
+        &[],
+        None,
+        &[],
+    )
+    .unwrap();
+
+    assert_eq!(plan.selectors.rust, vec!["tests::second".to_string()]);
+    assert_eq!(plan.source_paths.rust, vec![lib]);
+    assert!(!plan.population_required.rust);
+}
+
+#[test]
+fn combined_selectors_requires_complete_rust_population_manifest() {
+    let tmp = TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+    fs::create_dir(&src).unwrap();
+    let lib = src.join("lib.rs");
+    fs::write(
+        &lib,
+        "pub fn value() -> u32 { 1 }\n#[cfg(test)]\nmod tests { #[test] fn gets_value() {} }\n",
+    )
+    .unwrap();
+    write_test_entry(
+        tmp.path(),
+        "abc",
+        "tests::gets_value",
+        TestStatus::Passed,
+        RustLineCoverage {
+            files: std::collections::BTreeMap::from([(
+                lib.to_string_lossy().to_string(),
+                std::collections::BTreeSet::from([1]),
+            )]),
+        },
+    );
+
+    let plan = combined_selectors(
+        tmp.path(),
+        std::slice::from_ref(&lib),
+        &[],
+        &BTreeMap::new(),
+        &[],
+        None,
+        &[],
+    )
+    .unwrap();
+
+    assert_eq!(plan.selectors.rust, vec!["tests::gets_value".to_string()]);
+    assert!(plan.population_required.rust);
+}
+
+#[test]
+fn combined_selectors_carries_changed_rust_tests_into_population_plan() {
+    let tmp = TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+    let tests = tmp.path().join("tests");
+    fs::create_dir(&src).unwrap();
+    fs::create_dir(&tests).unwrap();
+    let lib = src.join("lib.rs");
+    let changed_test = tests.join("changed_test.rs");
+    fs::write(
+        &lib,
+        "pub fn value() -> u32 { 1 }\n#[cfg(test)]\nmod tests { #[test] fn gets_value() {} }\n",
+    )
+    .unwrap();
+    fs::write(&changed_test, "#[test]\nfn changed_extra() {}\n").unwrap();
+
+    let plan = combined_selectors(
+        tmp.path(),
+        std::slice::from_ref(&lib),
+        std::slice::from_ref(&changed_test),
+        &BTreeMap::new(),
+        &[],
+        None,
+        &[changed_test
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_string()],
+    )
+    .unwrap();
+
+    assert!(plan.population_required.rust);
+    assert!(
+        plan.selectors
+            .rust
+            .contains(&"tests::gets_value".to_string())
+    );
+    assert!(plan.selectors.rust.contains(&"changed_extra".to_string()));
+}
+
+#[test]
+fn combined_selectors_marks_missing_rust_index_for_population() {
+    let tmp = TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+    fs::create_dir(&src).unwrap();
+    let lib = src.join("lib.rs");
+    fs::write(&lib, "pub fn value() -> u32 { 1 }\n").unwrap();
+
+    let plan = combined_selectors(
+        tmp.path(),
+        std::slice::from_ref(&lib),
+        &[],
+        &BTreeMap::new(),
+        &[],
+        None,
+        &[],
+    )
+    .unwrap();
+
+    assert!(plan.selectors.rust.is_empty());
+    assert_eq!(plan.source_paths.rust, vec![lib]);
+    assert!(plan.population_required.rust);
 }
 
 #[test]
 fn combined_selectors_empty_without_sources() {
     let tmp = TempDir::new().unwrap();
-    let (py, rs) = combined_selectors(tmp.path(), &[], &[], None, &[]).unwrap();
-    assert!(py.is_empty());
-    assert!(rs.is_empty());
+    let plan = combined_selectors(tmp.path(), &[], &[], &BTreeMap::new(), &[], None, &[]).unwrap();
+    assert!(plan.selectors.python.is_empty());
+    assert!(plan.selectors.rust.is_empty());
+    assert!(plan.source_paths.rust.is_empty());
+    assert!(!plan.population_required.rust);
 }
 
 #[test]
-fn build_pytest_and_cargo_argv_non_empty() {
+fn build_pytest_argv_non_empty() {
     let py = build_pytest_argv(&["a.py::t".into()], &["-q".into()]);
     assert_eq!(py[0], "python");
     assert!(py.iter().any(|s| s == "pytest"));
-    let c = build_cargo_test_argv(&["smoke_sub".into()], &[]);
-    assert_eq!(c[0..4], ["cargo", "test", "--", "smoke_sub"]);
+}
+
+#[test]
+fn rust_coverage_batch_dry_run_lines_render_one_nextest_batch() {
+    let selectors = vec!["alpha".to_string(), "beta".to_string()];
+    let lines =
+        build_rust_coverage_batch_dry_run_lines(&selectors, &["--exact".into()], 8).unwrap();
+
+    assert_eq!(lines[0], "RUST BATCH selectors=2 jobs=8");
+    assert!(lines[1].starts_with("cargo llvm-cov nextest"));
+    assert!(lines[1].contains("'--build-jobs' 8"));
+    assert!(lines[1].contains("'--test-threads' 8"));
+    assert!(lines[1].contains("'--message-format-version' 0.1"));
+    assert!(!lines[1].contains("llvm-cov test"));
+    assert!(!lines[1].contains("--no-clean"));
+    assert_eq!(lines[2], "RUST SELECTOR alpha");
+    assert_eq!(lines[3], "RUST SELECTOR beta");
+}
+
+#[test]
+fn rust_coverage_batch_dry_run_lines_return_unsupported_argument_error() {
+    let selectors = vec!["alpha".to_string()];
+    let err =
+        build_rust_coverage_batch_dry_run_lines(&selectors, &["--format".into(), "json".into()], 8)
+            .unwrap_err();
+
+    assert!(err.contains("unsupported Rust test argument"));
+    assert!(err.contains("--format"));
 }
 
 #[test]
@@ -84,39 +362,32 @@ fn shlex_quote_spaces() {
 }
 
 #[test]
-#[cfg(unix)]
-fn run_command_true_zero() {
-    let tmp = TempDir::new().unwrap();
-    let code = run_command_inherit(
-        &["sh".into(), "-c".into(), "exit 0".into()],
-        tmp.path(),
-    )
-    .unwrap();
-    assert_eq!(code, 0);
-}
-
-#[test]
 fn partition_changed_paths_split() {
     let tmp = TempDir::new().unwrap();
     let lib = tmp.path().join("lib.py");
     let tst = tmp.path().join("test_lib.py");
+    let rust_src = tmp.path().join("lib.rs");
+    let rust_inc = tmp.path().join("fragment.inc");
+    let cargo = tmp.path().join("Cargo.toml");
+    let rust_test = tmp.path().join("lib_test.rs");
     fs::write(&lib, "def f(): pass\n").unwrap();
     fs::write(&tst, "def test_f(): pass\n").unwrap();
-    let paths = vec![lib.clone(), tst.clone()];
-    let (src, tst_paths) = partition_changed_paths(&paths);
+    fs::write(&rust_src, "fn f() {}\n").unwrap();
+    fs::write(&rust_inc, "fn included() {}\n").unwrap();
+    fs::write(&rust_test, "#[test]\nfn test_f() {}\n").unwrap();
+    let paths = vec![
+        lib.clone(),
+        tst.clone(),
+        rust_src.clone(),
+        rust_inc.clone(),
+        cargo.clone(),
+        rust_test.clone(),
+    ];
+    let (src, tst_paths) = partition_changed_paths(&paths).unwrap();
     assert!(src.iter().any(|p| p == &lib));
+    assert!(src.iter().any(|p| p == &rust_src));
+    assert!(src.iter().any(|p| p == &rust_inc));
+    assert!(src.iter().any(|p| p == &cargo));
     assert!(tst_paths.iter().any(|p| p == &tst));
-}
-
-#[test]
-fn collect_selectors_from_defs_smoke() {
-    use std::path::PathBuf;
-    let defs: Vec<crate::test_discovery::DefEntry> = vec![(
-        PathBuf::from("/x/a.py"),
-        "f".into(),
-        1,
-        Some(vec![(PathBuf::from("/x/test_a.py"), "test_f".into())]),
-    )];
-    let s = collect_selectors_from_defs(&defs);
-    assert!(s.iter().any(|(p, id)| p.ends_with("test_a.py") && id == "test_f"));
+    assert!(src.iter().any(|p| p == &rust_test));
 }

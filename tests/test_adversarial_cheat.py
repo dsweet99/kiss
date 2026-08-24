@@ -1,4 +1,3 @@
-"""Tests for adversarial cheat command and verification."""
 
 from __future__ import annotations
 
@@ -6,11 +5,10 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from click.testing import CliRunner
-
-import ops.adversarial_cheat as cheat_cli
 import python.adversarial_cheat as cheat_mod
-from ops.adversarial_cheat import cheat_verify
+import python.adversarial_cheat_cli as cheat_cli
+from click.testing import CliRunner
+from python.adversarial_cheat_cli import cheat_verify
 
 
 @pytest.mark.parametrize(
@@ -47,8 +45,8 @@ def test_build_cheat_prompt_contains_paths_and_thresholds(tmp_path: Path) -> Non
     kiss = tmp_path / "kiss"
     repo = tmp_path / "repo"
     kiss.mkdir()
-    (kiss / "ops").mkdir()
-    (kiss / "ops" / "adversarial.py").write_text("# stub\n", encoding="utf-8")
+    (kiss / "python").mkdir()
+    (kiss / "python" / "adversarial_cli.py").write_text("# stub\n", encoding="utf-8")
     repo.mkdir()
     text = cheat_mod.build_cheat_prompt(kiss, repo, "python")
     assert str(repo.resolve()) in text
@@ -110,7 +108,7 @@ def test_cheat_report_and_verify(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 
     metrics = cheat_mod.CheatMetrics(True, (("src/a.py", 100.0, 12.0),))
     report = cheat_mod.format_cheat_report(metrics)
-    assert "kiss check: pass" in report
+    assert "kiss test: pass" in report
     assert "cheat gap count: 1" in report
 
     monkeypatch.setattr(cheat_mod, "run_kiss_check", lambda _r: (0, "kiss ok\n"))

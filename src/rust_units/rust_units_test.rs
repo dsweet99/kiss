@@ -132,8 +132,7 @@ fn extracts_impl_method_parent_type() {
 
 #[test]
 fn visit_item_handles_non_fn_items() {
-    let file: syn::File =
-        syn::parse_str("const X: i32 = 1;\nuse std::io;\nfn bar() {}\n").unwrap();
+    let file: syn::File = syn::parse_str("const X: i32 = 1;\nuse std::io;\nfn bar() {}\n").unwrap();
     let mut visitor = CodeUnitVisitor::new("const X: i32 = 1;\nuse std::io;\nfn bar() {}\n");
     for item in &file.items {
         visitor.visit_item(item);
@@ -157,6 +156,10 @@ fn nested_fn_in_block_increments_line_estimate() {
 #[test]
 fn empty_mod_without_content_not_recorded() {
     let units = parse_and_extract("mod empty;\nfn foo() {}\n");
-    assert!(!units.iter().any(|u| u.name == "empty" && u.kind == CodeUnitKind::Module));
+    assert!(
+        !units
+            .iter()
+            .any(|u| u.name == "empty" && u.kind == CodeUnitKind::Module)
+    );
     assert!(units.iter().any(|u| u.name == "foo"));
 }

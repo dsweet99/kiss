@@ -19,7 +19,6 @@ fn dot_escape(s: &str) -> String {
 }
 
 fn mermaid_escape_label(s: &str) -> String {
-    // Mermaid labels render HTML; keep it simple and safe.
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
@@ -27,7 +26,6 @@ fn mermaid_escape_label(s: &str) -> String {
 }
 
 fn mermaid_node_id(prefix: &str, name: &str) -> String {
-    // Mermaid identifiers should be simple; normalize to [a-z0-9_].
     let mut out = String::with_capacity(prefix.len() + name.len() + 3);
     out.push_str(prefix);
     out.push_str("__");
@@ -56,7 +54,6 @@ fn write_graph_dot(
     graph: &DependencyGraph,
     prefix: &str,
 ) -> std::io::Result<()> {
-    // Keep output stable for diffs: sort nodes/edges.
     let mut nodes: BTreeSet<String> = BTreeSet::new();
     for name in graph.nodes.keys() {
         nodes.insert(name.clone());
@@ -137,8 +134,6 @@ pub(crate) fn write_coarsened_mermaid(
     g: &CoarsenedGraph,
 ) -> std::io::Result<()> {
     for (i, label) in g.labels.iter().enumerate() {
-        // Embedded newlines split `c0["..."]` across lines and break many Mermaid parsers
-        // (rendered diagram shows bare ids like `c0` / stray digits instead of the label).
         let label = label.replace('\n', " — ");
         let label = mermaid_escape_label(&label);
         writeln!(out, "  c{i}[\"{label}\"]")?;
@@ -310,7 +305,7 @@ pub(crate) fn build_coarsened_graph(
         all_paths.extend(p);
     }
     if !rs_files.is_empty() {
-        let rs_graph = crate::analyze::build_rs_graph_from_files(rs_files);
+        let rs_graph = crate::analyze::build_rs_graph_from_files(rs_files)?;
         let (n, e, p) = collect_graph_nodes_and_edges(&rs_graph, "rs");
         all_nodes.extend(n);
         all_edges.extend(e);
@@ -335,7 +330,7 @@ fn write_full_graph(
         write_graph_for_format(buf, &py_graph, "py", format)?;
     }
     if !rs_files.is_empty() {
-        let rs_graph = crate::analyze::build_rs_graph_from_files(rs_files);
+        let rs_graph = crate::analyze::build_rs_graph_from_files(rs_files)?;
         write_graph_for_format(buf, &rs_graph, "rs", format)?;
     }
     Ok(())
@@ -347,9 +342,16 @@ pub fn run_viz(
     lang_filter: Option<Language>,
     ignore: &[String],
     coarsen: VizCoarsen,
+    language_tables: kiss::LanguageTablesPresent,
 ) -> std::io::Result<()> {
     let coarsen = validate_coarsen(coarsen)?;
     let (py_files, rs_files) = kiss::discovery::gather_files_by_lang(paths, lang_filter, ignore);
+    if let Some(language) = language_tables.missing_language(&py_files, &rs_files) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            kiss::missing_language_table_message(language),
+        ));
+    }
     if py_files.is_empty() && rs_files.is_empty() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,

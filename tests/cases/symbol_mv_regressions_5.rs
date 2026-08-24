@@ -25,6 +25,7 @@ fn regression_rust_rename_should_update_multiline_use_group() {
         json: false,
         lang_filter: Some(Language::Rust),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0);
@@ -62,6 +63,7 @@ fn regression_rust_rename_should_update_pub_crate_use() {
         json: false,
         lang_filter: Some(Language::Rust),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     assert_eq!(run_mv_command(opts), 0);

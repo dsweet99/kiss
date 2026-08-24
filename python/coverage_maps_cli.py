@@ -1,4 +1,3 @@
-"""Emit JSON kiss/runtime coverage maps for a repo (subprocess entry point)."""
 
 from __future__ import annotations
 

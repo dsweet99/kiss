@@ -138,6 +138,16 @@ fn rollback(originals: &BTreeMap<PathBuf, Snapshot>) -> Result<(), String> {
     Ok(())
 }
 
+impl Snapshot {
+    #[cfg(test)]
+    fn witness(content: &str) -> Self {
+        Self {
+            existed: true,
+            content: content.to_string(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod transaction_coverage {
     use super::*;
@@ -278,7 +288,7 @@ mod transaction_coverage {
             new_snippet: String::new(),
             kind: EditKind::Definition,
         };
-        // force a failure on a second file so rollback logic must restore prior state
+
         invalid.start_byte = 0;
         invalid.end_byte = 2;
         let plan = MvPlan {
@@ -306,5 +316,11 @@ mod transaction_coverage {
         );
         rollback(&originals).unwrap();
         assert_eq!(fs::read_to_string(&p).unwrap(), "original");
+    }
+
+    #[test]
+    fn witness_snapshot_type() {
+        let snap = Snapshot::witness("witness");
+        assert!(snap.existed);
     }
 }

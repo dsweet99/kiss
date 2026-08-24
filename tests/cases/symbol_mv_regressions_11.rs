@@ -1,7 +1,3 @@
-//! Failing regression tests for bugs found by KPOP bug hunt
-//! (`_kpop/exp_log_mv_bug_hunt_post_lexical.md`). Each test pins the
-//! semantically-correct behavior and currently fails against `kiss mv`.
-
 use kiss::Language;
 use kiss::symbol_mv::{MvOptions, run_mv_command};
 use std::fs;
@@ -17,6 +13,7 @@ pub fn py(query: &str, new_name: &str, root: &std::path::Path) -> MvOptions {
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     }
 }
 
@@ -30,11 +27,10 @@ pub fn rs(query: &str, new_name: &str, root: &std::path::Path) -> MvOptions {
         json: false,
         lang_filter: Some(Language::Rust),
         ignore: vec![],
+        language_tables: Default::default(),
     }
 }
 
-/// Bug H1 — Renaming a Python parent-class method should also update
-/// subclass overrides; otherwise polymorphism is silently broken.
 #[test]
 fn regression_h1_python_subclass_override_should_be_renamed() {
     let tmp = TempDir::new().unwrap();
@@ -77,8 +73,6 @@ class Square(Shape):
     );
 }
 
-/// Bug H2 — `super().method()` calls inside subclasses must follow when the
-/// parent method is renamed; otherwise the subclass raises `AttributeError`.
 #[test]
 fn regression_h2_python_super_call_should_be_renamed() {
     let tmp = TempDir::new().unwrap();
@@ -114,9 +108,6 @@ class Child(Base):
     );
 }
 
-/// Bug H5 — Renaming a Rust trait method must update overrides in
-/// `impl Trait for T` blocks and any callers; otherwise the impl no longer
-/// satisfies the trait and the project stops compiling.
 #[test]
 fn regression_h5_rust_trait_default_override_should_be_renamed() {
     let tmp = TempDir::new().unwrap();
@@ -171,10 +162,6 @@ fn use_it(g: &Polite) -> String {
     );
 }
 
-/// Bug H6 (showstopper) — A Rust inherent method must be renameable when its
-/// `impl` block contains a `self.method()` self-call. Currently `kiss mv`
-/// refuses such renames with a spurious "trait-receiver ambiguity" error
-/// even though no trait is involved.
 #[test]
 fn regression_h6_rust_self_method_call_in_impl_must_be_renameable() {
     let tmp = TempDir::new().unwrap();
@@ -220,9 +207,6 @@ fn use_it(c: &C) -> u32 { c.get() }
     );
 }
 
-/// Bug H7 — Python forward-ref string annotations (`t: "Tree"`) must
-/// participate in receiver-type inference. Otherwise callers using forward
-/// refs are missed and the rename produces runtime `AttributeError`.
 #[test]
 fn regression_h7_python_forward_ref_string_annotation_should_resolve_receiver() {
     let tmp = TempDir::new().unwrap();
@@ -261,11 +245,6 @@ def use_it(t: \"Tree\") -> \"Tree\":
     );
 }
 
-/// Bug H10 — Moving a top-level symbol into a destination file that already
-/// has a same-named top-level symbol must not silently produce duplicate
-/// definitions. The tool should refuse the move (non-zero exit, no edits)
-/// rather than emit shadowing definitions that change which body callers in
-/// the destination resolve to.
 #[test]
 fn regression_h10_move_into_file_with_name_collision_must_refuse() {
     let tmp = TempDir::new().unwrap();
@@ -297,6 +276,7 @@ def other():
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
 
     let exit_code = run_mv_command(opts);

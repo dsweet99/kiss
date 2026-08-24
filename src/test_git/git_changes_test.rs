@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::path::Path;
 use std::process::Command;
 
@@ -5,9 +6,6 @@ use tempfile::TempDir;
 
 use super::*;
 
-// Use the production scrubbed-env builder so these tests don't pick
-// up `GIT_INDEX_FILE`/`GIT_DIR` from an outer pre-commit wrapper and
-// silently operate on the real repo's index.
 fn git_in(dir: &Path) -> Command {
     super::git_command(dir)
 }
@@ -29,9 +27,9 @@ fn init_repo(tmp: &TempDir) {
 }
 
 #[test]
-fn assert_git_repo_rejects_without_git() {
+fn require_git_repo_root_rejects_without_git() {
     let tmp = TempDir::new().unwrap();
-    assert!(assert_git_repo(tmp.path()).is_err());
+    assert!(require_git_repo_root(tmp.path()).is_err());
 }
 
 #[test]
@@ -39,16 +37,12 @@ fn repo_root_and_commit_changed_paths() {
     let tmp = TempDir::new().unwrap();
     init_repo(&tmp);
     std::fs::write(tmp.path().join("a.py"), "x=1\n").unwrap();
-    git_in(tmp.path())
-        .args(["add", "."])
-        .status()
-        .unwrap();
+    git_in(tmp.path()).args(["add", "."]).status().unwrap();
     git_in(tmp.path())
         .args(["commit", "-m", "m"])
         .status()
         .unwrap();
-    assert_git_repo(tmp.path()).unwrap();
-    let root = git_repo_root(tmp.path()).unwrap();
+    let root = require_git_repo_root(tmp.path()).unwrap();
     assert_eq!(root, tmp.path().canonicalize().unwrap());
     std::fs::write(tmp.path().join("b.py"), "y=1\n").unwrap();
     let names = changed_paths_commit(tmp.path()).unwrap();
@@ -56,23 +50,69 @@ fn repo_root_and_commit_changed_paths() {
 }
 
 #[test]
-fn diff_filter_drops_deleted_file() {
+fn diff_includes_deleted_tracked_file() {
     let tmp = TempDir::new().unwrap();
     init_repo(&tmp);
+    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
     std::fs::write(tmp.path().join("keep.py"), "x=1\n").unwrap();
-    git_in(tmp.path())
-        .args(["add", "."])
-        .status()
-        .unwrap();
+    std::fs::write(tmp.path().join("src").join("gone.rs"), "x=1\n").unwrap();
+    git_in(tmp.path()).args(["add", "."]).status().unwrap();
     git_in(tmp.path())
         .args(["commit", "-m", "m"])
         .status()
         .unwrap();
     std::fs::remove_file(tmp.path().join("keep.py")).unwrap();
+    std::fs::remove_file(tmp.path().join("src").join("gone.rs")).unwrap();
     let names = changed_paths_commit(tmp.path()).unwrap();
     assert!(
-        !names.iter().any(|n| n.contains("keep.py")),
-        "deleted tracked file should not appear with AM filter, got {names:?}"
+        names.iter().any(|n| n.contains("keep.py")),
+        "deleted tracked file should appear with D filter, got {names:?}"
+    );
+    assert!(
+        names.iter().any(|n| n.ends_with("gone.rs")),
+        "deleted rust source should appear for population planning, got {names:?}"
+    );
+}
+
+#[test]
+fn resolve_changed_includes_missing_deleted_python_path() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    let rel = vec!["src/gone.py".to_string()];
+    let out = resolve_changed_source_paths(&root, &rel, &[], Some(TestLangFilter::Python));
+    assert_eq!(out, vec![root.join("src/gone.py")]);
+}
+
+#[test]
+fn resolve_changed_includes_missing_deleted_rust_path() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    let rel = vec!["src/gone.rs".to_string()];
+    let out = resolve_changed_source_paths(&root, &rel, &[], Some(TestLangFilter::Rust));
+    assert_eq!(out, vec![root.join("src/gone.rs")]);
+    assert!(
+        resolve_changed_source_paths(&root, &rel, &[], Some(TestLangFilter::Python)).is_empty()
+    );
+}
+
+#[test]
+fn resolve_changed_includes_rust_compile_time_inputs() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    std::fs::create_dir_all(root.join(".cargo")).unwrap();
+    std::fs::write(root.join("Cargo.toml"), "[package]\n").unwrap();
+    std::fs::write(root.join(".cargo").join("config.toml"), "[build]\n").unwrap();
+    let rel = vec![
+        "Cargo.toml".to_string(),
+        ".cargo/config.toml".to_string(),
+        "Cargo.lock".to_string(),
+    ];
+    let rust = resolve_changed_source_paths(&root, &rel, &[], Some(TestLangFilter::Rust));
+    assert!(rust.iter().any(|path| path.ends_with("Cargo.toml")));
+    assert!(rust.iter().any(|path| path.ends_with(".cargo/config.toml")));
+    assert!(rust.iter().any(|path| path.ends_with("Cargo.lock")));
+    assert!(
+        resolve_changed_source_paths(&root, &rel, &[], Some(TestLangFilter::Python)).is_empty()
     );
 }
 
@@ -90,12 +130,21 @@ fn resolve_changed_skips_dir_prefix_ignore() {
 }
 
 #[test]
-fn resolve_changed_skips_missing_file() {
+fn resolve_changed_keeps_missing_python_path() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path().canonicalize().unwrap();
     let rel = vec!["nope.py".to_string()];
     let out = resolve_changed_source_paths(&root, &rel, &[], None);
-    assert!(out.is_empty());
+    assert_eq!(out, vec![root.join("nope.py")]);
+}
+
+#[test]
+fn resolve_changed_skips_missing_file() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    let rel = vec!["nope.rs".to_string()];
+    let out = resolve_changed_source_paths(&root, &rel, &[], None);
+    assert_eq!(out, vec![root.join("nope.rs")]);
 }
 
 #[test]
@@ -104,10 +153,7 @@ fn subdir_cwd_still_resolves_paths() {
     let tmp = TempDir::new().unwrap();
     init_repo(&tmp);
     std::fs::write(tmp.path().join("root.py"), "x=1\n").unwrap();
-    git_in(tmp.path())
-        .args(["add", "."])
-        .status()
-        .unwrap();
+    git_in(tmp.path()).args(["add", "."]).status().unwrap();
     git_in(tmp.path())
         .args(["commit", "-m", "m"])
         .status()
@@ -146,10 +192,7 @@ fn resolve_main_branch_name_finds_local_main() {
     let tmp = TempDir::new().unwrap();
     init_repo(&tmp);
     std::fs::write(tmp.path().join("f.py"), "x=1\n").unwrap();
-    git_in(tmp.path())
-        .args(["add", "."])
-        .status()
-        .unwrap();
+    git_in(tmp.path()).args(["add", "."]).status().unwrap();
     git_in(tmp.path())
         .args(["commit", "-m", "m"])
         .status()
@@ -163,10 +206,7 @@ fn merge_base_timestamp_and_list_refs() {
     let tmp = TempDir::new().unwrap();
     init_repo(&tmp);
     std::fs::write(tmp.path().join("f.py"), "x=1\n").unwrap();
-    git_in(tmp.path())
-        .args(["add", "."])
-        .status()
-        .unwrap();
+    git_in(tmp.path()).args(["add", "."]).status().unwrap();
     git_in(tmp.path())
         .args(["commit", "-m", "m"])
         .status()
@@ -183,10 +223,7 @@ fn changed_paths_since_head_includes_worktree() {
     let tmp = TempDir::new().unwrap();
     init_repo(&tmp);
     std::fs::write(tmp.path().join("a.py"), "x=1\n").unwrap();
-    git_in(tmp.path())
-        .args(["add", "."])
-        .status()
-        .unwrap();
+    git_in(tmp.path()).args(["add", "."]).status().unwrap();
     git_in(tmp.path())
         .args(["commit", "-m", "m"])
         .status()
@@ -197,13 +234,62 @@ fn changed_paths_since_head_includes_worktree() {
 }
 
 #[test]
+fn parse_unified_diff_changed_lines() {
+    let diff = "\
+diff --git a/src/lib.rs b/src/lib.rs
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1 +1,2 @@
++changed
+@@ -10,2 +11,0 @@
+diff --git a/src/main.rs b/src/main.rs
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -4,0 +5 @@
++added
+";
+
+    let lines = parse_changed_lines_from_unified_diff(diff);
+
+    assert_eq!(lines["src/lib.rs"], BTreeSet::from([1, 2]));
+    assert_eq!(lines["src/main.rs"], BTreeSet::from([5]));
+}
+
+#[test]
+fn changed_lines_commit_reports_new_line_numbers() {
+    let tmp = TempDir::new().unwrap();
+    init_repo(&tmp);
+    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+    std::fs::write(tmp.path().join("src").join("lib.rs"), "one\ntwo\nthree\n").unwrap();
+    git_in(tmp.path()).args(["add", "."]).status().unwrap();
+    git_in(tmp.path())
+        .args(["commit", "-m", "m"])
+        .status()
+        .unwrap();
+    std::fs::write(
+        tmp.path().join("src").join("lib.rs"),
+        "one\ntwo changed\nthree\nfour\n",
+    )
+    .unwrap();
+
+    let lines = changed_lines_commit(tmp.path()).unwrap();
+
+    assert_eq!(lines["src/lib.rs"], BTreeSet::from([2, 4]));
+}
+
+#[test]
 fn resolve_changed_respects_ignore_and_lang() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path().canonicalize().unwrap();
     std::fs::write(tmp.path().join("skip_me.py"), "x=1\n").unwrap();
     let rel = vec!["skip_me.py".to_string()];
     let ign = vec!["skip_me.py".to_string()];
-    let out = resolve_changed_source_paths(&root, &rel, &ign, Some(crate::test_git::TestLangFilter::Rust));
+    let out = resolve_changed_source_paths(
+        &root,
+        &rel,
+        &ign,
+        Some(crate::test_git::TestLangFilter::Rust),
+    );
     assert!(out.is_empty());
 }
 
@@ -226,10 +312,7 @@ fn auto_detect_fork_with_two_branches() {
     let tmp = TempDir::new().unwrap();
     init_repo(&tmp);
     std::fs::write(tmp.path().join("f.py"), "x=1\n").unwrap();
-    git_in(tmp.path())
-        .args(["add", "."])
-        .status()
-        .unwrap();
+    git_in(tmp.path()).args(["add", "."]).status().unwrap();
     git_in(tmp.path())
         .args(["commit", "-m", "m"])
         .status()
@@ -239,10 +322,7 @@ fn auto_detect_fork_with_two_branches() {
         .status()
         .unwrap();
     std::fs::write(tmp.path().join("g.py"), "y=1\n").unwrap();
-    git_in(tmp.path())
-        .args(["add", "."])
-        .status()
-        .unwrap();
+    git_in(tmp.path()).args(["add", "."]).status().unwrap();
     git_in(tmp.path())
         .args(["commit", "-m", "f"])
         .status()

@@ -1,5 +1,3 @@
-//! Additional Python regressions for parser-first `kiss mv`.
-
 use kiss::Language;
 use kiss::symbol_mv::{MvOptions, run_mv_command};
 use std::fs;
@@ -34,6 +32,7 @@ def outer():
         json: false,
         lang_filter: Some(Language::Python),
         ignore: vec![],
+        language_tables: Default::default(),
     };
     assert_eq!(run_mv_command(opts), 0);
 

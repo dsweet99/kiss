@@ -6,13 +6,7 @@ use crate::analyze::params::RunAnalyzeUncached;
 use crate::analyze::pipeline::run_analyze_uncached;
 use kiss::cli_output::print_no_files_message;
 
-fn empty_repo_metrics() -> kiss::GlobalMetrics {
-    kiss::GlobalMetrics::default()
-}
-
-fn focus_filter_for_opts(
-    opts: &AnalyzeOptions<'_>,
-) -> FocusFilter {
+fn focus_filter_for_opts(opts: &AnalyzeOptions<'_>) -> FocusFilter {
     build_focus_filter(
         opts.focus_paths,
         opts.universe,
@@ -27,36 +21,31 @@ fn try_cache_hit(
     rs_files: &[std::path::PathBuf],
     focus: &FocusFilter,
 ) -> Option<AnalyzeResult> {
-    if opts.show_timing
-        || opts.suppress_final_status
-    {
+    if opts.show_timing || opts.suppress_final_status {
         return None;
     }
-    crate::analyze_cache::try_run_cached_all(opts, py_files, rs_files, focus).map(|ok| {
-        AnalyzeResult {
-            success: ok,
-            metrics: None,
-        }
-    })
+    crate::analyze_cache::try_run_cached_all(opts, py_files, rs_files, focus)
+        .map(|ok| AnalyzeResult { success: ok })
 }
 
-/// Run analysis and return a simple success/failure bool.
-/// Use `run_analyze_with_result` if you need the computed metrics.
 pub fn run_analyze(opts: &AnalyzeOptions<'_>) -> bool {
     run_analyze_with_result(opts).success
 }
 
-/// Run analysis and return detailed result including global metrics.
 pub fn run_analyze_with_result(opts: &AnalyzeOptions<'_>) -> AnalyzeResult {
     let t0 = std::time::Instant::now();
     let universe_root = Path::new(opts.universe);
     let (py_files, rs_files) = gather_files(universe_root, opts.lang_filter, opts.ignore_prefixes);
+    if let Err(code) = crate::bin_cli::util::reject_unconfigured_languages(
+        &py_files,
+        &rs_files,
+        opts.language_tables,
+    ) {
+        return AnalyzeResult { success: code == 0 };
+    }
     if py_files.is_empty() && rs_files.is_empty() {
         print_no_files_message(opts.lang_filter, universe_root);
-        return AnalyzeResult {
-            success: true,
-            metrics: Some(empty_repo_metrics()),
-        };
+        return AnalyzeResult { success: true };
     }
     let focus = focus_filter_for_opts(opts);
     if let Some(hit) = try_cache_hit(opts, &py_files, &rs_files, &focus) {
@@ -77,9 +66,28 @@ pub fn run_analyze_with_result(opts: &AnalyzeOptions<'_>) -> AnalyzeResult {
 mod entry_touch {
     use super::*;
 
-    #[test]
-    fn empty_repo_matches_default_metrics() {
-        assert_eq!(empty_repo_metrics(), kiss::GlobalMetrics::default());
+    fn sample_opts<'a>(
+        universe: &'a str,
+        focus: &'a [String],
+        py_cfg: &'a kiss::Config,
+        rs_cfg: &'a kiss::Config,
+        gate: &'a kiss::GateConfig,
+        show_timing: bool,
+        suppress_final_status: bool,
+    ) -> AnalyzeOptions<'a> {
+        AnalyzeOptions {
+            universe,
+            focus_paths: focus,
+            py_config: py_cfg,
+            rs_config: rs_cfg,
+            lang_filter: None,
+            bypass_gate: false,
+            gate_config: gate,
+            ignore_prefixes: &[],
+            show_timing,
+            suppress_final_status,
+            language_tables: kiss::LanguageTablesPresent::both(),
+        }
     }
 
     #[test]
@@ -90,18 +98,7 @@ mod entry_touch {
         let py_cfg = kiss::Config::python_defaults();
         let rs_cfg = kiss::Config::rust_defaults();
         let gate = kiss::GateConfig::default();
-        let opts = AnalyzeOptions {
-            universe: &universe,
-            focus_paths: &focus,
-            py_config: &py_cfg,
-            rs_config: &rs_cfg,
-            lang_filter: None,
-            bypass_gate: false,
-            gate_config: &gate,
-            ignore_prefixes: &[],
-            show_timing: false,
-            suppress_final_status: false,
-        };
+        let opts = sample_opts(&universe, &focus, &py_cfg, &rs_cfg, &gate, false, false);
         let filter = focus_filter_for_opts(&opts);
         assert!(!filter.is_active());
     }
@@ -114,18 +111,7 @@ mod entry_touch {
         let py_cfg = kiss::Config::python_defaults();
         let rs_cfg = kiss::Config::rust_defaults();
         let gate = kiss::GateConfig::default();
-        let opts = AnalyzeOptions {
-            universe: &universe,
-            focus_paths: &focus,
-            py_config: &py_cfg,
-            rs_config: &rs_cfg,
-            lang_filter: None,
-            bypass_gate: false,
-            gate_config: &gate,
-            ignore_prefixes: &[],
-            show_timing: true,
-            suppress_final_status: false,
-        };
+        let opts = sample_opts(&universe, &focus, &py_cfg, &rs_cfg, &gate, true, false);
         let focus_filter = FocusFilter::unrestricted();
         assert!(try_cache_hit(&opts, &[], &[], &focus_filter).is_none());
     }
@@ -138,18 +124,7 @@ mod entry_touch {
         let py_cfg = kiss::Config::python_defaults();
         let rs_cfg = kiss::Config::rust_defaults();
         let gate = kiss::GateConfig::default();
-        let opts = AnalyzeOptions {
-            universe: &universe,
-            focus_paths: &focus,
-            py_config: &py_cfg,
-            rs_config: &rs_cfg,
-            lang_filter: None,
-            bypass_gate: false,
-            gate_config: &gate,
-            ignore_prefixes: &[],
-            show_timing: false,
-            suppress_final_status: true,
-        };
+        let opts = sample_opts(&universe, &focus, &py_cfg, &rs_cfg, &gate, false, true);
         let focus_filter = FocusFilter::unrestricted();
         assert!(try_cache_hit(&opts, &[], &[], &focus_filter).is_none());
     }
@@ -162,18 +137,7 @@ mod entry_touch {
         let py_cfg = kiss::Config::python_defaults();
         let rs_cfg = kiss::Config::rust_defaults();
         let gate = kiss::GateConfig::default();
-        let opts = AnalyzeOptions {
-            universe: &universe,
-            focus_paths: &focus,
-            py_config: &py_cfg,
-            rs_config: &rs_cfg,
-            lang_filter: None,
-            bypass_gate: false,
-            gate_config: &gate,
-            ignore_prefixes: &[],
-            show_timing: false,
-            suppress_final_status: true,
-        };
+        let opts = sample_opts(&universe, &focus, &py_cfg, &rs_cfg, &gate, false, true);
         let result = run_analyze_with_result(&opts);
         assert!(result.success);
     }

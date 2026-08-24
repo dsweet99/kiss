@@ -1,3 +1,4 @@
+#![allow(unused_imports, dead_code)]
 use std::collections::HashSet;
 
 use tree_sitter::Node;
@@ -51,13 +52,10 @@ fn compute_max_indentation(node: Node, current_depth: usize) -> usize {
     })
 }
 
-// NOTE: The functions below are retained for readability/tests and as reference implementations.
-// The production fast-path uses `analyze_body()` to compute these in a single traversal.
-
 #[cfg_attr(test, allow(dead_code))]
 fn count_branches(node: Node) -> usize {
     let mut cursor = node.walk();
-    // Count if/elif and match case clauses as branches (Python 3.10+ match/case support)
+
     node.children(&mut cursor)
         .map(|c| {
             usize::from(matches!(
@@ -105,6 +103,7 @@ fn collect_local_variables(node: Node, source: &str, vars: &mut HashSet<String>)
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
 
     #[test]
@@ -139,7 +138,6 @@ mod tests {
 
     #[test]
     fn test_boolean_params_count() {
-        // Test that boolean_params counts parameters with True/False defaults
         let p = parse("def f(a=True, b=False): pass");
         let params = get_func_node(&p).child_by_field_name("parameters").unwrap();
         let counts = count_parameters(params, &p.source);
@@ -148,7 +146,6 @@ mod tests {
             "Should count 2 boolean parameters (a=True, b=False)"
         );
 
-        // Also test typed parameters
         let p2 = parse("def f(a: bool = True, b: int = 5): pass");
         let params2 = get_func_node(&p2)
             .child_by_field_name("parameters")
@@ -159,7 +156,6 @@ mod tests {
             "Should count 1 boolean parameter (a: bool = True)"
         );
 
-        // Test compute_function_metrics returns correct boolean_parameters
         let p3 = parse("def f(a=True, b=False): x = 1");
         let m = compute_function_metrics(get_func_node(&p3), &p3.source);
         assert_eq!(
@@ -195,18 +191,15 @@ mod tests {
 
     #[test]
     fn test_import_statements_not_counted() {
-        // Statement definition: any statement within a function body that is not an import or signature.
-        // import statements inside function bodies should NOT be counted
         let p = parse("def f():\n    import os\n    x = 1\n    print(x)");
         let body = get_func_node(&p).child_by_field_name("body").unwrap();
-        // Should be 2 statements (assignment + expression), not 3
+
         assert_eq!(
             count_statements(body),
             2,
             "import statements should not be counted"
         );
 
-        // Also test from imports
         let p2 = parse("def f():\n    from os import path\n    y = 2");
         let body2 = get_func_node(&p2).child_by_field_name("body").unwrap();
         assert_eq!(
@@ -215,7 +208,6 @@ mod tests {
             "from imports should not be counted"
         );
 
-        // Verify import_statement and import_from_statement are not statements
         assert!(
             !is_statement("import_statement"),
             "import_statement should not be a statement"
@@ -265,25 +257,24 @@ mod tests {
 
     #[test]
     fn test_return_values() {
-        // Single value
         let p1 = parse("def f():\n    return x");
         assert_eq!(
             compute_function_metrics(get_func_node(&p1), &p1.source).max_return_values,
             1
         );
-        // Multiple values (tuple)
+
         let p2 = parse("def f():\n    return a, b, c");
         assert_eq!(
             compute_function_metrics(get_func_node(&p2), &p2.source).max_return_values,
             3
         );
-        // Bare return
+
         let p3 = parse("def f():\n    return");
         assert_eq!(
             compute_function_metrics(get_func_node(&p3), &p3.source).max_return_values,
             0
         );
-        // Max across multiple returns
+
         let p4 = parse("def f():\n    if x:\n        return a, b\n    return a, b, c, d");
         assert_eq!(
             compute_function_metrics(get_func_node(&p4), &p4.source).max_return_values,
@@ -311,29 +302,5 @@ mod tests {
             .find(|n| n.kind() == "class_definition")
             .expect("expected class_definition node");
         assert!(is_interface_type(cls, &p.source));
-    }
-
-    #[test]
-    fn test_touch_return_helpers_for_static_coverage() {
-        let p_ret = parse("def g():\n    return a, b, c");
-        let ret = p_ret
-            .tree
-            .root_node()
-            .child(0)
-            .unwrap()
-            .child_by_field_name("body")
-            .unwrap()
-            .child(0)
-            .unwrap();
-        assert_eq!(count_return_values(ret), 3);
-    }
-
-    #[test]
-    fn test_touch_statement_counters_for_static_coverage() {
-        let p2 = parse("class C:\n    def m(self):\n        x = 1\n        return x\n");
-        let root2 = p2.tree.root_node();
-        assert!(count_file_statements(root2) > 0);
-        let class_body = root2.child(0).unwrap().child_by_field_name("body").unwrap();
-        assert!(count_class_statements(class_body) > 0);
     }
 }

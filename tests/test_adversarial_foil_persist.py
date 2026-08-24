@@ -1,16 +1,14 @@
-"""Tests for adversarial foil CLI persistence."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
-from click.testing import CliRunner
-
-import ops.adversarial_foil as foil_mod
 import python.adversarial as adv
+import python.adversarial_foil_cli as foil_mod
 import python.adversarial_loop as adv_loop
-from ops.adversarial_foil import foil
+from click.testing import CliRunner
+from python.adversarial_foil_cli import foil
 from python.adversarial_foil_stubs import stub_foil_env
 
 

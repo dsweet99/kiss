@@ -1,28 +1,17 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use kiss::{DuplicateCluster, Language, Violation, find_source_files_with_ignore};
+use kiss::{DuplicateCluster, Language, Violation, gather_files_by_lang};
 
-/// Files under `root` matching `lang` and not ignored.
 pub fn gather_files(
     root: &Path,
     lang: Option<Language>,
     ignore_prefixes: &[String],
 ) -> (Vec<PathBuf>, Vec<PathBuf>) {
-    let all = find_source_files_with_ignore(root, ignore_prefixes);
-    let (mut py, mut rs) = (Vec::new(), Vec::new());
-    for sf in all {
-        let path = sf.path.canonicalize().unwrap_or(sf.path);
-        match (sf.language, lang) {
-            (Language::Python, None | Some(Language::Python)) => py.push(path),
-            (Language::Rust, None | Some(Language::Rust)) => rs.push(path),
-            _ => {}
-        }
-    }
-    (py, rs)
+    let root = root.to_string_lossy().into_owned();
+    gather_files_by_lang(&[root], lang, ignore_prefixes)
 }
 
-/// Canonical paths for the given focus path list (files or directories).
 pub fn build_focus_set(
     focus_paths: &[String],
     lang: Option<Language>,
@@ -44,11 +33,6 @@ pub fn build_focus_set(
     focus_set
 }
 
-/// Whether analysis results should be restricted to a focus subset.
-///
-/// When `restrict` is false, every file is in focus (no filter). When true,
-/// only paths in `paths` are in focus; an empty `paths` set means the user
-/// specified focus path(s) that matched zero source files.
 #[derive(Debug, Clone)]
 pub struct FocusFilter {
     restrict: bool,
@@ -75,10 +59,6 @@ impl FocusFilter {
     #[must_use]
     pub fn is_active(&self) -> bool {
         self.restrict
-    }
-
-    pub fn paths(&self) -> &HashSet<PathBuf> {
-        &self.paths
     }
 
     pub fn cache_focus_paths(&self) -> Vec<String> {
@@ -115,10 +95,7 @@ pub fn is_focus_file(file: &Path, filter: &FocusFilter) -> bool {
     !filter.restrict || filter.paths.contains(file)
 }
 
-pub fn filter_viols_by_focus(
-    mut viols: Vec<Violation>,
-    filter: &FocusFilter,
-) -> Vec<Violation> {
+pub fn filter_viols_by_focus(mut viols: Vec<Violation>, filter: &FocusFilter) -> Vec<Violation> {
     viols.retain(|v| is_focus_file(&v.file, filter));
     viols
 }

@@ -1,5 +1,3 @@
-//! Inline tests for `ast_rust.rs`. Split out per `lines_per_file` rule.
-
 use super::super::ast_models::{ParseOutcome, ReferenceKind, SymbolKind};
 use super::super::ast_rust_span::compute_line_offsets;
 use super::parse_rust;
@@ -166,5 +164,9 @@ fn parses_stmt_macro_reference() {
     let ParseOutcome::Success(res) = parse_rust(src) else {
         panic!("parse should succeed");
     };
-    assert!(res.references.iter().any(|r| &src[r.start..r.end] == "helper"));
+    assert!(
+        res.references
+            .iter()
+            .any(|r| &src[r.start..r.end] == "helper")
+    );
 }

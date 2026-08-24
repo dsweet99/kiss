@@ -5,6 +5,6 @@ use crate::parsing::ParsedFile;
 use rayon::prelude::*;
 
 use super::dependency_graph::{DependencyGraph, bare_module_name, qualified_module_name};
-use super::graph_python::extract_imports_for_cache;
+use super::graph_python::{extract_imports_for_cache, extract_imports_spanned};
 
 include!("build_body.rs");

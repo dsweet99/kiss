@@ -1,19 +1,31 @@
-//! Machine-readable rule output for LLM consumption.
-//!
-//! This module generates structured RULE: lines with metric IDs, operators, thresholds, and
-//! descriptions suitable for parsing by automation/LLMs. For human-friendly sentence templates,
-//! see `kiss::rule_defs` in the library crate.
-//!
-//! Both modules now use canonical metric IDs to ensure consistency.
-
 use kiss::{Config, GateConfig, Language};
-use std::path::PathBuf;
 
+mod global;
 mod python;
 mod rust_rules;
+mod test_rules;
 
 #[cfg(test)]
 mod tests;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ThresholdOp {
+    AtMost,
+    AtLeast,
+    StrictLess,
+    Equal,
+}
+
+impl ThresholdOp {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::AtMost => "<=",
+            Self::AtLeast => ">=",
+            Self::StrictLess => "<",
+            Self::Equal => "==",
+        }
+    }
+}
 
 pub(crate) enum ThresholdValue {
     Usize(fn(&Config, &GateConfig) -> usize),
@@ -31,7 +43,7 @@ impl ThresholdValue {
 
 pub(crate) struct RuleSpec {
     pub(crate) metric: &'static str,
-    pub(crate) op: &'static str,
+    pub(crate) op: ThresholdOp,
     pub(crate) threshold: ThresholdValue,
     pub(crate) description: &'static str,
 }
@@ -41,9 +53,10 @@ pub fn run_rules(
     rs_config: &Config,
     gate_config: &GateConfig,
     lang_filter: Option<Language>,
-    _use_defaults: bool,
 ) {
     print_summary_term_definitions();
+    print_rule_specs("global", global::GLOBAL_RULE_SPECS, py_config, gate_config);
+    print_rule_specs("test", test_rules::TEST_RULE_SPECS, py_config, gate_config);
     match lang_filter {
         Some(Language::Python) => print_threshold_rules("Python", py_config, gate_config),
         Some(Language::Rust) => print_threshold_rules("Rust", rs_config, gate_config),
@@ -74,88 +87,49 @@ fn print_threshold_rules(lang: &str, c: &Config, g: &GateConfig) {
     } else {
         rust_rules::RS_RULE_SPECS
     };
+    print_rule_specs(lang, specs, c, g);
+}
+
+fn print_rule_specs(section: &str, specs: &[RuleSpec], c: &Config, g: &GateConfig) {
     for spec in specs {
-        println!(
-            "RULE: [{lang}] [{} {} {}] {}",
-            spec.metric,
-            spec.op,
-            spec.threshold.format(c, g),
-            spec.description
-        );
+        println!("{}", format_rule_line(section, spec, c, g));
     }
 }
 
-pub fn run_config(
-    py: &Config,
-    rs: &Config,
-    gate: &GateConfig,
-    config_path: Option<&PathBuf>,
-    use_defaults: bool,
-) {
-    println!("# Effective configuration");
-    if use_defaults {
-        println!("# Source: built-in defaults");
-    } else if let Some(path) = config_path {
-        println!("# Source: {}", path.display());
+fn format_rule_line(section: &str, spec: &RuleSpec, c: &Config, g: &GateConfig) -> String {
+    let value = spec.threshold.format(c, g);
+    let op = display_op(spec.metric, spec.op, &value);
+    let extra = alias_note(section, spec.metric);
+    format!(
+        "RULE: [{section}] [{} {op} {value}] {}{extra}",
+        spec.metric, spec.description
+    )
+}
+
+fn display_op(metric: &str, op: ThresholdOp, value: &str) -> &'static str {
+    if metric == "cycle_size" && value == "0" {
+        "=="
     } else {
-        println!("# Source: .kissconfig or ~/.kissconfig (merged)");
+        op.as_str()
     }
-    println!("\n[gate]");
-    println!("test_coverage_threshold = {}", gate.test_coverage_threshold);
-    println!("min_similarity = {:.2}", gate.min_similarity);
-    println!("duplication_enabled = {}", gate.duplication_enabled);
-    println!("\n[python]");
-    print_python_config(py);
-    println!("\n[rust]");
-    print_rust_config(rs);
 }
 
-fn print_python_config(c: &Config) {
-    println!("statements_per_function = {}", c.statements_per_function);
-    println!("statements_per_file = {}", c.statements_per_file);
-    println!("lines_per_file = {}", c.lines_per_file);
-    println!("positional_args = {}", c.arguments_positional);
-    println!("keyword_only_args = {}", c.arguments_keyword_only);
-    println!("methods_per_class = {}", c.methods_per_class);
-    println!("max_indentation_depth = {}", c.max_indentation_depth);
-    println!("branches_per_function = {}", c.branches_per_function);
-    println!("returns_per_function = {}", c.returns_per_function);
-    println!(
-        "local_variables_per_function = {}",
-        c.local_variables_per_function
-    );
-    println!("nested_function_depth = {}", c.nested_function_depth);
-    println!("interface_types_per_file = {}", c.interface_types_per_file);
-    println!("concrete_types_per_file = {}", c.concrete_types_per_file);
-    println!("imported_names_per_file = {}", c.imported_names_per_file);
-    println!("statements_per_try_block = {}", c.statements_per_try_block);
-    println!("boolean_parameters = {}", c.boolean_parameters);
-    println!("decorators_per_function = {}", c.annotations_per_function);
-    println!("cycle_size = {}", c.cycle_size);
-    println!("indirect_dependencies = {}", c.indirect_dependencies);
-    println!("dependency_depth = {}", c.dependency_depth);
+fn alias_note(section: &str, metric: &str) -> String {
+    let keys = toml_aliases(section, metric);
+    if keys.is_empty() {
+        return String::new();
+    }
+    format!(" TOML key(s): {}.", keys.join(", "))
 }
 
-fn print_rust_config(c: &Config) {
-    println!("statements_per_function = {}", c.statements_per_function);
-    println!("statements_per_file = {}", c.statements_per_file);
-    println!("lines_per_file = {}", c.lines_per_file);
-    println!("positional_args = {}", c.arguments_positional);
-    println!("methods_per_class = {}", c.methods_per_class);
-    println!("interface_types_per_file = {}", c.interface_types_per_file);
-    println!("concrete_types_per_file = {}", c.concrete_types_per_file);
-    println!("max_indentation_depth = {}", c.max_indentation_depth);
-    println!("branches_per_function = {}", c.branches_per_function);
-    println!("returns_per_function = {}", c.returns_per_function);
-    println!(
-        "local_variables_per_function = {}",
-        c.local_variables_per_function
-    );
-    println!("nested_function_depth = {}", c.nested_function_depth);
-    println!("imported_names_per_file = {}", c.imported_names_per_file);
-    println!("boolean_parameters = {}", c.boolean_parameters);
-    println!("annotations_per_function = {}", c.annotations_per_function);
-    println!("cycle_size = {}", c.cycle_size);
-    println!("indirect_dependencies = {}", c.indirect_dependencies);
-    println!("dependency_depth = {}", c.dependency_depth);
+fn toml_aliases(section: &str, metric: &str) -> &'static [&'static str] {
+    match (section, metric) {
+        ("Rust", "positional_args") => &["arguments"],
+        (_, "max_indentation_depth") => &["max_indentation"],
+        (_, "local_variables_per_function") => &["local_variables"],
+        ("Python", "annotations_per_function") => &["decorators_per_function"],
+        ("Rust", "annotations_per_function") => &["attributes_per_function"],
+        (_, "concrete_types_per_file") => &["classes_per_file", "types_per_file"],
+        _ => &[],
+    }
 }

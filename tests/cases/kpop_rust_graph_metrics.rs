@@ -10,10 +10,6 @@ fn parse_rs(path: &Path) -> ParsedRustFile {
 
 #[test]
 fn bug_rust_indirect_dependencies_should_not_count_external_imports() {
-    // RULE: [Rust] [indirect_dependencies]
-    //
-    // Hypothesis: dependency counts include external crates/stdlib paths, inflating coupling.
-    // Prediction: rust_graph_ext_a has exactly 1 direct dep (rust_graph_ext_b), 0 indirect.
     let a = parse_rs(Path::new("tests/fake_rust/rust_graph_ext_a.rs"));
     let b = parse_rs(Path::new("tests/fake_rust/rust_graph_ext_b.rs"));
     let parsed: Vec<&ParsedRustFile> = vec![&a, &b];
@@ -26,15 +22,6 @@ fn bug_rust_indirect_dependencies_should_not_count_external_imports() {
 
 #[test]
 fn bug_orphan_module_should_not_flag_crate_use_imports_in_rust() {
-    // RULE: [Rust] [orphan_module]
-    //
-    // Hypothesis: Rust `use crate::foo::...` imports are ignored, so internal modules
-    // only referenced via `crate::` appear orphan.
-    //
-    // Prediction: When `orphan_crate_use_importer.rs` uses `crate::orphan_crate_use_target`,
-    // the target module should not be flagged as orphan_module.
-    //
-    // Test: Copy fixtures into a temp `src/` crate root, build graph, and run orphan analysis.
     use std::fs;
     use tempfile::TempDir;
 
@@ -46,7 +33,6 @@ fn bug_orphan_module_should_not_flag_crate_use_imports_in_rust() {
     let src = tmp.path().join("src");
     fs::create_dir_all(&src).unwrap();
 
-    // Declare the modules so Rust semantics match the fixture.
     fs::write(
         src.join("lib.rs"),
         "mod orphan_crate_use_importer;\nmod orphan_crate_use_target;\n",
@@ -73,14 +59,6 @@ fn bug_orphan_module_should_not_flag_crate_use_imports_in_rust() {
 
 #[test]
 fn bug_orphan_module_should_not_flag_include_macro_in_rust() {
-    // RULE: [Rust] [orphan_module]
-    //
-    // Hypothesis: `include!("file.rs")` is not recognized as a dependency edge, so the included
-    // file (analyzed as its own module) is incorrectly flagged orphan_module.
-    //
-    // Prediction: orphan_include_target should NOT be orphan when it is included by lib.rs.
-    //
-    // Test: Copy fixtures into a temp `src/` crate root, build graph, and run orphan analysis.
     use std::fs;
     use tempfile::TempDir;
 
@@ -131,7 +109,10 @@ fn include_inc_fragment_not_orphan_when_included() {
 
     assert!(
         !viols.iter().any(|v| {
-            v.metric == "orphan_module" && v.file.file_name().is_some_and(|n| n == "include_inc_fragment.inc")
+            v.metric == "orphan_module"
+                && v.file
+                    .file_name()
+                    .is_some_and(|n| n == "include_inc_fragment.inc")
         }),
         "included .inc fragment should not be orphan; got:\n{viols:#?}"
     );

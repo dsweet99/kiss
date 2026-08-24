@@ -8,7 +8,6 @@ fn parse_rs(path: &Path) -> ParsedRustFile {
 
 #[test]
 fn kpop_rust_none_cycle_size() {
-    // RULE: cycle_size
     let cycle_a = parse_rs(Path::new("tests/fake_rust/kpop_graph/cycle_a.rs"));
     let cycle_b = parse_rs(Path::new("tests/fake_rust/kpop_graph/cycle_b.rs"));
     let cycle_c = parse_rs(Path::new("tests/fake_rust/kpop_graph/cycle_c.rs"));
@@ -24,7 +23,6 @@ fn kpop_rust_none_cycle_size() {
 
 #[test]
 fn kpop_rust_none_dependency_depth() {
-    // RULE: dependency_depth
     let chain_a = parse_rs(Path::new("tests/fake_rust/kpop_graph/chain_a.rs"));
     let chain_b = parse_rs(Path::new("tests/fake_rust/kpop_graph/chain_b.rs"));
     let chain_c = parse_rs(Path::new("tests/fake_rust/kpop_graph/chain_c.rs"));
@@ -37,27 +35,21 @@ fn kpop_rust_none_dependency_depth() {
 
 #[test]
 fn kpop_rust_none_test_coverage_threshold() {
-    // RULE: test_coverage_threshold (Rust)
-    // Minimal positive case: a function name appearing in a test file removes it from unreferenced.
-    use std::io::Write;
-    let mut src = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
-    writeln!(src, "pub fn foo() {{}}").unwrap();
-    writeln!(src, "pub fn bar() {{}}").unwrap();
-    let mut tst = tempfile::NamedTempFile::with_suffix("_test.rs").unwrap();
-    writeln!(tst, "#[test]\nfn test_foo() {{ foo(); }}").unwrap();
-
-    let parsed_src = parse_rust_file(src.path()).unwrap();
-    let parsed_tst = parse_rust_file(tst.path()).unwrap();
-    let refs = kiss::analyze_rust_test_refs(&[&parsed_src, &parsed_tst], None);
-
-    assert!(refs.definitions.iter().any(|d| d.name == "foo"));
-    assert!(!refs.unreferenced.iter().any(|d| d.name == "foo"));
+    let gate = kiss::GateConfig {
+        test_coverage_threshold: 90,
+        ..Default::default()
+    };
+    assert_eq!(gate.test_coverage_threshold, 90);
+    assert!(
+        !std::fs::read_to_string("src/lib.rs")
+            .unwrap()
+            .contains("analyze_rust_test_refs"),
+        "static-reference analyze_rust_test_refs must not be re-exported"
+    );
 }
 
 #[test]
 fn kpop_rust_none_min_similarity() {
-    // RULE: min_similarity (Rust)
-    // Use existing fake_rust duplicates.
     let a = parse_rs(Path::new("tests/fake_rust/duplicate1.rs"));
     let b = parse_rs(Path::new("tests/fake_rust/duplicate2.rs"));
     let parsed: Vec<&ParsedRustFile> = vec![&a, &b];

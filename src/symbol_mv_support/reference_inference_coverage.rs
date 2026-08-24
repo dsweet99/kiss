@@ -31,6 +31,28 @@ fn touch_reference_inference_helpers_for_coverage_gate() {
 }
 
 #[test]
+fn rust_receiver_helpers_cover_constructors_generics_and_missing_types() {
+    assert_eq!(extract_receiver("Factory::new()."), "@method:new|Factory:");
+    assert_eq!(extract_receiver("value.map()."), "@method:map|value");
+    assert_eq!(extract_receiver("run()."), "@method:run|");
+
+    let src = "impl<T: Clone> Trait for Service<T> { fn build(&self) -> Output { todo!() } fn call(&self) { self.build(); } }";
+    let upto = src.find("build();").unwrap();
+    assert_eq!(
+        infer_receiver_type_at(src, upto, "self"),
+        Some("Service".to_string())
+    );
+    assert_eq!(
+        method_return_type(src, upto, "build", Some("Service")),
+        Some("Output".to_string())
+    );
+    assert_eq!(
+        type_after_pattern_last_before("let x = 1", 9, "let x: "),
+        None
+    );
+}
+
+#[test]
 fn infer_rust_receiver_type_from_function_param() {
     let src = "fn call(f: &Foo) { f.beta(); }";
     let upto = src.find("beta").expect("test fixture should contain beta");

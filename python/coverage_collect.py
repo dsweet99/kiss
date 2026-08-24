@@ -1,4 +1,3 @@
-"""Run external tools to collect runtime line coverage."""
 
 from __future__ import annotations
 
@@ -48,7 +47,6 @@ def _sklearn_shadows_site_package(repo: Path) -> bool:
 
 
 def slipcover_invocation(repo: Path) -> tuple[Path, list[str]]:
-    """Return (cwd, extra pytest args after ``-m pytest``)."""
     targets = pytest_targets(repo)
     base = ["--continue-on-collection-errors"]
     if _sklearn_shadows_site_package(repo):

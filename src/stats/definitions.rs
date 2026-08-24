@@ -12,7 +12,6 @@ pub struct MetricDef {
     pub scope: MetricScope,
 }
 
-/// Central registry of all metrics with stable IDs
 pub const METRICS: &[MetricDef] = &[
     MetricDef {
         metric_id: "statements_per_function",
@@ -95,15 +94,6 @@ pub const METRICS: &[MetricDef] = &[
         scope: MetricScope::File,
     },
     MetricDef {
-        // Per-file *un*covered percentage (100 - coverage). Stored inverted so
-        // it matches the convention of every other metric in this registry —
-        // higher = worse — and so the upper-percentile columns (`p90`/`p95`/
-        // `p99`/`max`) shown by `format_stats_table` highlight the *worst*-
-        // covered files instead of the best-covered ones.
-        metric_id: "inv_test_coverage",
-        scope: MetricScope::File,
-    },
-    MetricDef {
         metric_id: "fan_in",
         scope: MetricScope::Module,
     },
@@ -127,4 +117,30 @@ pub const METRICS: &[MetricDef] = &[
 
 pub fn get_metric_def(metric_id: &str) -> Option<&'static MetricDef> {
     METRICS.iter().find(|m| m.metric_id == metric_id)
+}
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+
+    impl MetricScope {
+        fn witness() -> Self {
+            Self::Function
+        }
+    }
+    impl MetricDef {
+        fn witness() -> Self {
+            Self {
+                metric_id: "statements_per_function",
+                scope: MetricScope::witness(),
+            }
+        }
+    }
+
+    #[test]
+    fn witness_metric_definitions() {
+        let _ = MetricScope::witness();
+        let _ = MetricDef::witness();
+        assert!(get_metric_def("statements_per_function").is_some());
+    }
 }

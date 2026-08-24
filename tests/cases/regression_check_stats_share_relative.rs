@@ -1,16 +1,4 @@
-//! Regression for `kiss check` and `kiss stats` not sharing the analyze
-//! cache when invoked with a *relative* path argument (the default).
-//!
-//! Before the fix, `kiss check` canonicalized discovered file paths
-//! (`src/analyze/focus.rs::gather_files`) while `kiss stats`'s
-//! `collect_files` did not, so the two commands hashed different path
-//! strings into `fingerprint_for_check` and produced two separate
-//! `check_full_*.bin` files when the input root was relative (`.`).
-//! After the fix (use `kiss::discovery::gather_files_by_lang` in stats),
-//! both commands produce the same fingerprint and share one cache file.
-//! See `_kpop/exp_log_check_stats_share.md` (round 2).
-
-use crate::common::list_full_check_cache_files;
+use crate::common::{list_full_check_cache_files, seed_python_runtime_coverage};
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
@@ -32,11 +20,20 @@ fn regression_check_stats_share_cache_with_relative_path() {
         "from share import covered_function\n\ndef test_covered_function():\n    assert covered_function(2) == 4\n",
     )
     .unwrap();
+    seed_python_runtime_coverage(
+        repo.path(),
+        &[(
+            "test_share.py::test_covered_function",
+            vec![("share.py", vec![1, 2])],
+        )],
+    );
 
+    let config = crate::common::write_builtin_language_config(repo.path());
     let run = |cmd: &str| {
         kiss_binary()
             .current_dir(repo.path())
-            .arg("--defaults")
+            .arg("--config")
+            .arg(&config)
             .arg(cmd)
             .arg("--lang")
             .arg("python")
@@ -47,14 +44,14 @@ fn regression_check_stats_share_cache_with_relative_path() {
     };
 
     let _check = run("check");
-    let after_check = list_full_check_cache_files(home.path());
+    let after_check = list_full_check_cache_files(repo.path());
     assert_eq!(
         after_check.len(),
         1,
         "expected exactly one cache file after `kiss check .`; got {after_check:?}"
     );
     let _stats = run("stats");
-    let after_stats = list_full_check_cache_files(home.path());
+    let after_stats = list_full_check_cache_files(repo.path());
     assert_eq!(
         after_stats.len(),
         1,

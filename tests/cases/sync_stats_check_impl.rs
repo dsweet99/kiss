@@ -1,3 +1,4 @@
+use crate::common::seed_python_runtime_coverage;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::process::Command;
@@ -6,28 +7,16 @@ pub(super) fn kiss_binary() -> Command {
     Command::new(env!("CARGO_BIN_EXE_kiss"))
 }
 
-/// Metric IDs that are NOT directly comparable between `stats --all` and `check`.
-///
-/// Architectural asymmetries (by design):
-/// - `cycle_size`, `inv_test_coverage`: aggregate-only (no per-unit STAT line).
-/// - `duplication`, `orphan_module`, `test_coverage`: gate-only (check emits, stats doesn't).
-/// - `fan_in`, `fan_out`: stats reports them but check never emits violations for them.
-/// - `dependency_depth`: check emits with module-qualified name differing from stats' filename.
-///
-/// Known gaps (check omits enforcement that stats still reports):
-/// - `positional_args`: check skips for methods; stats still list STATs for all units. The sync
-///   test cannot match method-only rows to check output, so the metric is excluded in full.
 const NON_SHARED_METRICS: &[&str] = &[
-    // Architectural
     "cycle_size",
-    "inv_test_coverage",
     "duplication",
     "orphan_module",
+    "comment",
     "test_coverage",
     "fan_in",
     "fan_out",
     "dependency_depth",
-    "positional_args", // check skips inside_class methods
+    "positional_args",
 ];
 
 fn is_shared_metric(id: &str) -> bool {
@@ -50,7 +39,6 @@ fn file_stem_of(path: &str) -> String {
         .to_string()
 }
 
-/// Parse `STAT:<metric_id>:<value>:<file>:<line>:<name>` lines.
 pub(super) fn parse_stat_lines(stdout: &str) -> Vec<MetricEntry> {
     stdout
         .lines()
@@ -219,12 +207,15 @@ def test_helpers():
 fn write_zero_threshold_config(path: &std::path::Path) {
     fs::write(
         path,
-        r"[gate]
-test_coverage_threshold = 0
+        r"[global]
 min_similarity = 1.0
 duplication_enabled = false
 orphan_module_enabled = false
 
+[test]
+test_coverage_threshold = 0
+[python]
+[rust]
 [thresholds]
 statements_per_function = 0
 methods_per_class = 0
@@ -299,7 +290,6 @@ pub(super) fn run_check(
         .arg("check")
         .arg("--lang")
         .arg("python")
-        .arg("--all")
         .arg(corpus)
         .env("HOME", home)
         .output()
@@ -362,6 +352,7 @@ pub(super) fn sync_stats_test_body(
     home: &std::path::Path,
 ) -> (String, String, String) {
     build_sync_corpus(tmp);
+    seed_python_runtime_coverage(tmp, &[("test_big_module.py::test_complex", vec![])]);
 
     let config_path = tmp.join(".kissconfig");
     write_zero_threshold_config(&config_path);

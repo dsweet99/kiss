@@ -25,7 +25,7 @@ pub(crate) fn apply_thresholds(config: &mut Config, table: &toml::Table) {
         "max_indentation_depth" => max_indentation_depth,
         "interface_types_per_file" => interface_types_per_file,
         "concrete_types_per_file" => concrete_types_per_file,
-        // Back-compat alias.
+
         "classes_per_file" => concrete_types_per_file,
         "nested_function_depth" => nested_function_depth, "returns_per_function" => returns_per_function,
         "return_values_per_function" => return_values_per_function,
@@ -51,7 +51,7 @@ pub(crate) fn apply_shared(config: &mut Config, table: &toml::Table) {
         "functions_per_file" => functions_per_file,
         "interface_types_per_file" => interface_types_per_file,
         "concrete_types_per_file" => concrete_types_per_file,
-        // Back-compat alias.
+
         "types_per_file" => concrete_types_per_file,
         "imported_names_per_file" => imported_names_per_file,
         "cycle_size" => cycle_size,
@@ -78,7 +78,7 @@ pub(crate) fn apply_python(config: &mut Config, table: &toml::Table) {
         "functions_per_file" => functions_per_file,
         "interface_types_per_file" => interface_types_per_file,
         "concrete_types_per_file" => concrete_types_per_file,
-        // Back-compat alias.
+
         "types_per_file" => concrete_types_per_file,
         "cycle_size" => cycle_size, "indirect_dependencies" => indirect_dependencies, "dependency_depth" => dependency_depth);
 }
@@ -97,7 +97,7 @@ pub(crate) fn apply_rust(config: &mut Config, table: &toml::Table) {
         "functions_per_file" => functions_per_file,
         "interface_types_per_file" => interface_types_per_file,
         "concrete_types_per_file" => concrete_types_per_file,
-        // Back-compat alias.
+
         "types_per_file" => concrete_types_per_file,
         "returns_per_function" => returns_per_function,
         "nested_function_depth" => nested_function_depth, "boolean_parameters" => boolean_parameters,
@@ -156,7 +156,6 @@ impl Config {
         self.merge_from_toml_with_path(content, lang, None);
     }
 
-    /// Result-based merge that returns errors instead of printing to stderr.
     pub(crate) fn try_merge_from_toml(
         &mut self,
         content: &str,
@@ -169,7 +168,7 @@ impl Config {
             })?;
         check_unknown_sections(&table)?;
         validate_config_keys(&table, lang)?;
-        // All validations passed, apply using the regular merge (which won't print errors)
+
         self.merge_from_toml_with_path(content, lang, None);
         Ok(())
     }

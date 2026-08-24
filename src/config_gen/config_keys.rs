@@ -33,7 +33,6 @@ fn common_config_key_graph(metric_id: &str) -> Option<&'static str> {
     }
 }
 
-/// Map `metric_id` to config key (common keys shared by Python and Rust)
 pub(crate) fn common_config_key(metric_id: &str) -> Option<&'static str> {
     common_config_key_fn(metric_id)
         .or_else(|| common_config_key_file(metric_id))

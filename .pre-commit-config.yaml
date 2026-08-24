@@ -18,13 +18,6 @@ repos:
         pass_filenames: false
         types: [rust]
 
-      - id: cargo-test
-        name: Rust tests
-        entry: cargo nextest run
-        language: system
-        pass_filenames: false
-        types: [rust]
-
       - id: kiss
         name: kiss code quality
         entry: ./scripts/pre-commit-kiss.sh

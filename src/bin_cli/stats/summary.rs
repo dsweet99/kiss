@@ -1,8 +1,12 @@
 use crate::bin_cli::config_session::config_provenance;
+use crate::bin_cli::util::merge_check_ignore_prefixes;
+use crate::test_runner::unit_test_timing::{
+    TimingLangInclude, unit_test_runtime_sec_report_for_universe,
+};
 use kiss::check_universe_cache::FullCheckCache;
 use kiss::discovery::gather_files_by_lang;
 use kiss::{Config, GateConfig, Language, compute_summaries, format_stats_table};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 struct StatsSummaryInput<'a> {
@@ -14,24 +18,41 @@ struct StatsSummaryInput<'a> {
     lang_filter: Option<Language>,
     ignore: &'a [String],
     gate: &'a GateConfig,
+    config: Option<&'a Path>,
 }
 
-pub fn run_stats_summary(
-    paths: &[String],
-    lang_filter: Option<Language>,
-    ignore: &[String],
-    py_cfg: &Config,
-    rs_cfg: &Config,
-    gate: &GateConfig,
-) {
+pub fn run_stats_summary(args: &super::RunStatsArgs<'_>) -> i32 {
+    let paths = args.paths;
+    let lang_filter = args.lang_filter;
+    let ignore = args.ignore;
+    let py_cfg = args.py_config;
+    let rs_cfg = args.rs_config;
+    let gate = args.gate_config;
+    let language_tables = args.language_tables;
+    let config = args.config;
     let (py_files, rs_files) = gather_files_by_lang(paths, lang_filter, ignore);
     if py_files.is_empty() && rs_files.is_empty() {
         eprintln!("No source files found.");
-        std::process::exit(1);
+        return 1;
+    }
+    if let Err(code) =
+        crate::bin_cli::util::reject_unconfigured_languages(&py_files, &rs_files, language_tables)
+    {
+        return code;
     }
 
-    if maybe_print_cached_stats_summary(paths, &py_files, &rs_files, py_cfg, rs_cfg, gate) {
-        return;
+    if maybe_print_cached_stats_summary(CachedStatsSummaryArgs {
+        paths,
+        py_files: &py_files,
+        rs_files: &rs_files,
+        py_cfg,
+        rs_cfg,
+        gate,
+        lang_filter,
+        ignore,
+        config,
+    }) {
+        return 0;
     }
 
     run_stats_summary_from_pipeline(StatsSummaryInput {
@@ -43,10 +64,11 @@ pub fn run_stats_summary(
         lang_filter,
         ignore,
         gate,
-    });
+        config,
+    })
 }
 
-fn run_stats_summary_from_pipeline(input: StatsSummaryInput<'_>) {
+fn run_stats_summary_from_pipeline(input: StatsSummaryInput<'_>) -> i32 {
     let focus_filter = crate::analyze::FocusFilter::unrestricted();
     let universe = input.paths.first().map(String::as_str).unwrap_or_default();
     let now = Instant::now();
@@ -61,9 +83,10 @@ fn run_stats_summary_from_pipeline(input: StatsSummaryInput<'_>) {
         ignore_prefixes: input.ignore,
         show_timing: false,
         suppress_final_status: false,
+        language_tables: kiss::LanguageTablesPresent::both(),
     };
 
-    let pipeline = crate::analyze::run_full_pipeline(crate::analyze::FullPipelineInput {
+    let pipeline = match crate::analyze::run_full_pipeline(crate::analyze::FullPipelineInput {
         opts: &options,
         py_files: input.py_files,
         rs_files: input.rs_files,
@@ -71,7 +94,13 @@ fn run_stats_summary_from_pipeline(input: StatsSummaryInput<'_>) {
         t0: now,
         t1: now,
         t2: now,
-    });
+    }) {
+        Ok(pipeline) => pipeline,
+        Err(err) => {
+            eprintln!("{err}");
+            return 1;
+        }
+    };
     crate::analyze::maybe_store_full_cache(crate::analyze::FullCacheStoreInput {
         opts: &options,
         py_files: input.py_files,
@@ -79,19 +108,46 @@ fn run_stats_summary_from_pipeline(input: StatsSummaryInput<'_>) {
         focus: &focus_filter,
         result: &pipeline.result,
         graph_viols_all: &pipeline.graph_viols_all,
-        coverage_violations: &pipeline.cov_viols,
         py_graph: pipeline.py_graph.as_ref(),
         rs_graph: pipeline.rs.graph.as_ref(),
         py_dups_all: &pipeline.py_dups_all,
         rs_dups_all: &pipeline.rs_dups_all,
-        coverage_cache_lists: pipeline.coverage_cache_lists.clone(),
         py_stats: Some(&pipeline.py_stats),
         rs_stats: Some(&pipeline.rs_stats),
     });
-    print_summary_from_pipeline(input.paths, &pipeline);
+    print_summary_from_pipeline(
+        input.paths,
+        &pipeline,
+        input.lang_filter,
+        input.ignore,
+        input.gate,
+        input.config,
+    );
+    0
 }
 
-fn print_summary_from_pipeline(paths: &[String], pipeline: &crate::analyze::FullPipelineResult) {
+fn maybe_print_unit_test_runtime_line(
+    paths: &[String],
+    lang_filter: Option<Language>,
+    include: TimingLangInclude,
+    ignore: &[String],
+    rules: &[(String, f64)],
+) {
+    if let Some(report) =
+        unit_test_runtime_section_for_rules(paths, lang_filter, include, ignore, rules)
+    {
+        println!("{report}");
+    }
+}
+
+fn print_summary_from_pipeline(
+    paths: &[String],
+    pipeline: &crate::analyze::FullPipelineResult,
+    lang_filter: Option<Language>,
+    ignore: &[String],
+    gate: &GateConfig,
+    config: Option<&Path>,
+) {
     let duplicate_total = pipeline.py_dups_all.len() + pipeline.rs_dups_all.len();
     let orphan_total = pipeline
         .result
@@ -121,7 +177,7 @@ fn print_summary_from_pipeline(paths: &[String], pipeline: &crate::analyze::Full
 
     println!("kiss stats - Summary Statistics");
     println!("Analyzed from: {}", paths.join(", "));
-    println!("{}", config_provenance());
+    println!("{}", config_provenance(config));
     println!();
     println!(
         "Analyzed: {} files, {} code_units, {} statements, {} graph_nodes, {} graph_edges",
@@ -131,7 +187,21 @@ fn print_summary_from_pipeline(paths: &[String], pipeline: &crate::analyze::Full
         graph_nodes,
         graph_edges
     );
-    println!("Violations: {duplicate_total} duplicate, {orphan_total} orphan\n");
+    println!(
+        "{}\n",
+        format_violation_counts(
+            duplicate_total,
+            orphan_total,
+            count_metric(
+                pipeline.result.violations.iter().map(|v| v.metric.as_str()),
+                "comment"
+            ),
+            count_metric(
+                pipeline.result.violations.iter().map(|v| v.metric.as_str()),
+                "doc"
+            ),
+        )
+    );
 
     if !pipeline.result.py_parsed.is_empty() {
         println!(
@@ -147,26 +217,65 @@ fn print_summary_from_pipeline(paths: &[String], pipeline: &crate::analyze::Full
             format_stats_table(&compute_summaries(&pipeline.rs_stats))
         );
     }
+    maybe_print_unit_test_runtime_line(
+        paths,
+        lang_filter,
+        TimingLangInclude {
+            python: !pipeline.result.py_parsed.is_empty(),
+            rust: !pipeline.result.rs_parsed.is_empty(),
+        },
+        ignore,
+        &gate.max_unit_test_seconds,
+    );
 }
 
-fn maybe_print_cached_stats_summary(
-    paths: &[String],
-    py_files: &[PathBuf],
-    rs_files: &[PathBuf],
-    py_cfg: &Config,
-    rs_cfg: &Config,
-    gate: &GateConfig,
-) -> bool {
+struct CachedStatsSummaryArgs<'a> {
+    paths: &'a [String],
+    py_files: &'a [PathBuf],
+    rs_files: &'a [PathBuf],
+    py_cfg: &'a Config,
+    rs_cfg: &'a Config,
+    gate: &'a GateConfig,
+    lang_filter: Option<Language>,
+    ignore: &'a [String],
+    config: Option<&'a Path>,
+}
+
+fn maybe_print_cached_stats_summary(args: CachedStatsSummaryArgs<'_>) -> bool {
     let Some(cache) = crate::analyze_cache::try_run_cached_stats_summary(
-        py_files, rs_files, py_cfg, rs_cfg, gate,
+        args.paths.first().map(String::as_str).unwrap_or("."),
+        args.py_files,
+        args.rs_files,
+        args.py_cfg,
+        args.rs_cfg,
+        args.gate,
     ) else {
         return false;
     };
-    print_cached_summary(paths, &cache);
+    print_cached_summary(
+        args.paths,
+        &cache,
+        args.lang_filter,
+        TimingLangInclude {
+            python: !args.py_files.is_empty(),
+            rust: !args.rs_files.is_empty(),
+        },
+        args.ignore,
+        args.gate,
+        args.config,
+    );
     true
 }
 
-fn print_cached_summary(paths: &[String], cache: &FullCheckCache) {
+fn print_cached_summary(
+    paths: &[String],
+    cache: &FullCheckCache,
+    lang_filter: Option<Language>,
+    include: TimingLangInclude,
+    ignore: &[String],
+    gate: &GateConfig,
+    config: Option<&Path>,
+) {
     let dup_total = cache.py_duplicates.len() + cache.rs_duplicates.len();
     let orphan_total = cache
         .base_violations
@@ -177,7 +286,7 @@ fn print_cached_summary(paths: &[String], cache: &FullCheckCache) {
 
     println!("kiss stats - Summary Statistics");
     println!("Analyzed from: {}", paths.join(", "));
-    println!("{}", config_provenance());
+    println!("{}", config_provenance(config));
     println!();
     println!(
         "Analyzed: {} files, {} code_units, {} statements, {} graph_nodes, {} graph_edges",
@@ -187,7 +296,21 @@ fn print_cached_summary(paths: &[String], cache: &FullCheckCache) {
         cache.graph_nodes,
         cache.graph_edges
     );
-    println!("Violations: {dup_total} duplicate, {orphan_total} orphan\n");
+    println!(
+        "{}\n",
+        format_violation_counts(
+            dup_total,
+            orphan_total,
+            count_metric(
+                cache.base_violations.iter().map(|v| v.metric.as_str()),
+                "comment"
+            ),
+            count_metric(
+                cache.base_violations.iter().map(|v| v.metric.as_str()),
+                "doc"
+            ),
+        )
+    );
 
     if cache.py_file_count > 0
         && let Some(stats) = &cache.py_stats
@@ -207,52 +330,75 @@ fn print_cached_summary(paths: &[String], cache: &FullCheckCache) {
             format_stats_table(&compute_summaries(stats))
         );
     }
+    maybe_print_unit_test_runtime_line(
+        paths,
+        lang_filter,
+        include,
+        ignore,
+        &gate.max_unit_test_seconds,
+    );
+}
+
+fn unit_test_runtime_section_for_rules(
+    paths: &[String],
+    lang_filter: Option<Language>,
+    include: TimingLangInclude,
+    ignore: &[String],
+    rules: &[(String, f64)],
+) -> Option<String> {
+    let universe = Path::new(paths.first().map(String::as_str).unwrap_or("."));
+    let merged = merge_check_ignore_prefixes(ignore);
+    let pytest_args = kiss::TestSectionConfig::load().pytest_plugin_cli_args();
+    unit_test_runtime_sec_report_for_universe(
+        universe,
+        lang_filter,
+        include,
+        &merged,
+        rules,
+        &pytest_args,
+    )
+}
+
+fn format_violation_counts(duplicate: usize, orphan: usize, comment: usize, doc: usize) -> String {
+    format!("Violations: {duplicate} duplicate, {orphan} orphan, {comment} comment, {doc} doc")
+}
+
+fn count_metric<'a, I>(metrics: I, metric: &str) -> usize
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    metrics.into_iter().filter(|name| *name == metric).count()
 }
 
 #[cfg(test)]
-mod summary_tests {
+#[path = "summary_test.rs"]
+mod summary_tests;
+
+#[cfg(test)]
+mod coverage_witness {
     use super::*;
     use kiss::{Config, GateConfig};
 
-    #[test]
-    fn maybe_print_cached_stats_summary_returns_false_on_miss() {
-        let paths = vec![".".to_string()];
-        let py: Vec<PathBuf> = Vec::new();
-        let rs: Vec<PathBuf> = Vec::new();
-        let py_cfg = Config::default();
-        let rs_cfg = Config::default();
-        let gate = GateConfig::default();
-        assert!(!maybe_print_cached_stats_summary(
-            &paths, &py, &rs, &py_cfg, &rs_cfg, &gate
-        ));
+    impl StatsSummaryInput<'_> {
+        fn witness() {}
     }
 
     #[test]
-    fn print_cached_summary_emits_stats_header() {
-        use kiss::check_universe_cache::FullCheckCache;
-        let cache = FullCheckCache {
-            fingerprint: "test".into(),
-            py_stats: None,
-            rs_stats: None,
-            py_paths: vec![],
-            focus_paths: vec![],
-            focus_restrict: false,
-            rs_paths: vec![],
-            py_file_count: 1,
-            rs_file_count: 0,
-            code_unit_count: 3,
-            statement_count: 5,
-            graph_nodes: 1,
-            graph_edges: 0,
-            base_violations: vec![],
-            graph_violations: vec![],
-            coverage_violations: vec![],
-            py_duplicates: vec![],
-            rs_duplicates: vec![],
-            definitions: vec![],
-            unreferenced: vec![],
-            file_content_digests: vec![],
+    fn witness_stats_summary_input() {
+        StatsSummaryInput::witness();
+        let py_cfg = Config::default();
+        let rs_cfg = Config::default();
+        let gate = GateConfig::default();
+        let _ = StatsSummaryInput {
+            paths: &[],
+            py_files: &[],
+            rs_files: &[],
+            py_cfg: &py_cfg,
+            rs_cfg: &rs_cfg,
+            lang_filter: None,
+            ignore: &[],
+            gate: &gate,
+            config: None,
         };
-        print_cached_summary(&[".".into()], &cache);
     }
 }

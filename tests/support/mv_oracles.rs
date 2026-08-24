@@ -35,18 +35,22 @@ pub fn run_post_move_oracles_from_root(language: kiss::Language, root: &Path) ->
                 &["-m", "compileall", "-q", "."],
                 &[("PYTHONPATH", root.as_os_str())],
             );
-            let import_smoke = run_cmd(
-                root,
-                "python",
-                &["-m", "pytest", "--collect-only", "-q"],
-                &[("PYTHONPATH", root.as_os_str())],
-            );
             let behavior = run_cmd(
                 root,
                 "python",
                 &["-m", "pytest", "-q"],
                 &[("PYTHONPATH", root.as_os_str())],
             );
+            let import_smoke = if behavior.success {
+                CommandOutcome::success()
+            } else {
+                run_cmd(
+                    root,
+                    "python",
+                    &["-m", "pytest", "--collect-only", "-q"],
+                    &[("PYTHONPATH", root.as_os_str())],
+                )
+            };
             build_python_bundle(&py_compile, &import_smoke, &behavior)
         }
         kiss::Language::Rust => {
@@ -103,6 +107,15 @@ fn build_rust_bundle(cargo_check: &CommandOutcome, cargo_test: &CommandOutcome) 
 struct CommandOutcome {
     success: bool,
     output: String,
+}
+
+impl CommandOutcome {
+    fn success() -> Self {
+        Self {
+            success: true,
+            output: String::new(),
+        }
+    }
 }
 
 fn run_cmd(root: &Path, program: &str, args: &[&str], envs: &[(&str, &OsStr)]) -> CommandOutcome {

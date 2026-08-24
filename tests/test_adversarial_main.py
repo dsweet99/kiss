@@ -1,4 +1,3 @@
-"""Tests for adversarial CLI entry wiring."""
 
 from __future__ import annotations
 
@@ -8,16 +7,25 @@ import subprocess
 import sys
 
 import click
-from click.testing import CliRunner
-
 import python.adversarial_common as cli
-from ops.adversarial import _load_command, main
+from click.testing import CliRunner
+from python.adversarial_cli import _load_command, main
 
 
 def test_load_command_imports_metrics() -> None:
     cmd = _load_command("metrics")
     assert cmd is not None
     assert cmd.name == "metrics"
+
+
+def test_load_command_returns_none_for_unknown_or_non_click(monkeypatch) -> None:
+    assert _load_command("missing") is None
+    monkeypatch.setitem(
+        importlib.import_module("python.adversarial_cli")._COMMAND_SPECS,
+        "path",
+        ("pathlib", "Path"),
+    )
+    assert _load_command("path") is None
 
 
 def test_main_group_help_lists_subcommands() -> None:
@@ -33,12 +41,12 @@ def test_main_invokes_metrics_help() -> None:
 
 
 def test_adversarial_module_exports_main() -> None:
-    mod = importlib.import_module("ops.adversarial")
+    mod = importlib.import_module("python.adversarial_cli")
     assert isinstance(mod.main, click.Group)
 
 
 def test_adversarial_script_help() -> None:
-    script = cli.repo_root() / "ops" / "adversarial.py"
+    script = cli.repo_root() / "python" / "adversarial_cli.py"
     env = {**os.environ, "PYTHONPATH": str(cli.repo_root())}
     result = subprocess.run(
         [sys.executable, str(script), "--help"],
@@ -53,7 +61,7 @@ def test_adversarial_script_help() -> None:
 
 
 def test_adversarial_script_help_without_pythonpath() -> None:
-    script = cli.repo_root() / "ops" / "adversarial.py"
+    script = cli.repo_root() / "python" / "adversarial_cli.py"
     env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
     result = subprocess.run(
         [sys.executable, str(script), "--help"],

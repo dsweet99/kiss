@@ -93,7 +93,6 @@ fn test_collect_use_paths() {
 
 #[test]
 fn extracts_function_scoped_use() {
-    // Function-scoped imports should be captured (matching Python behavior)
     let ast = parse_rust_code(
         r"
 fn foo() {
@@ -151,7 +150,7 @@ mod inner {
 #[test]
 fn mod_decls_prefer_child_module_under_same_parent() {
     use std::io::Write;
-    // Two different `foo.rs` modules exist; `mod foo;` in `a/mod.rs` should only depend on `a.foo`.
+
     fn has_edge(g: &DependencyGraph, from: &str, to: &str) -> bool {
         let from_idx = *g.nodes.get(from).expect("from node");
         let to_idx = *g.nodes.get(to).expect("to node");
@@ -204,8 +203,7 @@ fn test_qualified_rust_module_name() {
 #[test]
 fn test_same_stem_different_dirs_no_collision() {
     use std::io::Write;
-    // Two files with the same stem in different directories should have
-    // distinct module identities in the graph.
+
     let tmp = tempfile::TempDir::new().unwrap();
     let dir_a = tmp.path().join("src").join("foo");
     let dir_b = tmp.path().join("src").join("bar");
@@ -224,7 +222,6 @@ fn test_same_stem_different_dirs_no_collision() {
     let refs: Vec<&crate::rust_parsing::ParsedRustFile> = vec![&pa, &pb];
     let graph = build_rust_dependency_graph(&refs);
 
-    // Should have 2 distinct nodes, not 1 collapsed node
     assert_eq!(
         graph.nodes.len(),
         2,
@@ -303,7 +300,13 @@ fn extract_imports_from_block_and_expr_directly() {
 #[test]
 fn resolve_import_ignores_unknown_modules() {
     let mut graph = DependencyGraph::default();
-    resolve_import("missing", "module", &HashSet::new(), &HashMap::new(), &mut graph);
+    resolve_import(
+        "missing",
+        "module",
+        &HashSet::new(),
+        &HashMap::new(),
+        &mut graph,
+    );
     assert!(graph.nodes.is_empty());
 }
 
@@ -313,14 +316,111 @@ fn rust_imports_and_push_include_edges() {
         use_roots: vec!["std".into()],
         mod_decls: vec!["child".into()],
         include_literals: vec!["child.rs".into()],
+        use_spans: vec![],
+        mod_spans: vec![],
+        include_spans: vec![],
     };
     let ast = parse_rust_code("use std::io; mod child;");
     let mut use_roots = Vec::new();
     let mut mod_decls = Vec::new();
     let mut include_literals = Vec::new();
-    extract_imports_from_items(&ast.items, &mut use_roots, &mut mod_decls, &mut include_literals);
+    extract_imports_from_items(
+        &ast.items,
+        &mut use_roots,
+        &mut mod_decls,
+        &mut include_literals,
+    );
     assert!(!use_roots.is_empty());
     let mac: syn::Macro = syn::parse_quote!(include!("child.rs"));
     super::extract_imports::push_include_edges(&mac, &mut mod_decls, &mut include_literals);
     assert_eq!(include_literals, vec!["child.rs"]);
+}
+
+#[test]
+fn mixed_file_keeps_dual_origins_on_same_endpoint() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::write(src.join("lib.rs"), "mod helper;\nmod mixed;\n").unwrap();
+    std::fs::write(src.join("helper.rs"), "pub fn f() {}\n").unwrap();
+    std::fs::write(
+        src.join("mixed.rs"),
+        "use helper;\n#[cfg(test)]\nmod tests {\n    use helper;\n}\n",
+    )
+    .unwrap();
+    let paths = vec![
+        src.join("lib.rs"),
+        src.join("helper.rs"),
+        src.join("mixed.rs"),
+    ];
+    let parsed: Vec<_> = paths
+        .iter()
+        .map(|path| crate::rust_parsing::parse_rust_file(path).unwrap())
+        .collect();
+    let roles = crate::code_roles::build_source_role_index(&[], &parsed, &[], &paths).unwrap();
+    let refs: Vec<_> = parsed.iter().collect();
+    let ctx = build_rust_context_graph(&refs, &roles);
+    let mixed = qualified_rust_module_name(&src.join("mixed.rs"));
+    let tests = format!("{mixed}::tests");
+    assert!(ctx.production_view().imports(&mixed, "helper"));
+    assert!(!ctx.production_view().imports(&tests, "helper"));
+    assert!(ctx.test_view().imports(&tests, "helper"));
+    assert!(ctx.test_importers_of("helper").contains(&tests));
+    assert!(!ctx.test_importers_of("helper").contains(&mixed));
+}
+
+#[test]
+fn include_in_inline_test_mod_keeps_inline_importer() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::write(src.join("lib.rs"), "mod mixed;\n").unwrap();
+    std::fs::write(
+        src.join("mixed.rs"),
+        "#[cfg(test)]\nmod tests {\n    include!(\"frag.rs\");\n}\n",
+    )
+    .unwrap();
+    std::fs::write(src.join("frag.rs"), "pub fn g() {}\n").unwrap();
+    let paths = vec![
+        src.join("lib.rs"),
+        src.join("mixed.rs"),
+        src.join("frag.rs"),
+    ];
+    let parsed: Vec<_> = paths
+        .iter()
+        .map(|path| crate::rust_parsing::parse_rust_file(path).unwrap())
+        .collect();
+    let roles = crate::code_roles::build_source_role_index(&[], &parsed, &[], &paths).unwrap();
+    let refs: Vec<_> = parsed.iter().collect();
+    let ctx = build_rust_context_graph(&refs, &roles);
+    let mixed = qualified_rust_module_name(&src.join("mixed.rs"));
+    let tests = format!("{mixed}::tests");
+    let frag = qualified_rust_module_name(&src.join("frag.rs"));
+    assert!(!ctx.production_view().imports(&mixed, &frag));
+    assert!(ctx.test_view().imports(&tests, &frag));
+    assert!(ctx.test_importers_of(&frag).contains(&tests));
+    assert!(!ctx.test_importers_of(&frag).contains(&mixed));
+}
+
+#[test]
+fn path_attr_mod_edges_to_renamed_file() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::write(src.join("lib.rs"), "#[path = \"renamed.rs\"]\nmod foo;\n").unwrap();
+    std::fs::write(src.join("renamed.rs"), "pub fn f() {}\n").unwrap();
+    let paths = vec![src.join("lib.rs"), src.join("renamed.rs")];
+    let parsed: Vec<_> = paths
+        .iter()
+        .map(|path| crate::rust_parsing::parse_rust_file(path).unwrap())
+        .collect();
+    let roles = crate::code_roles::build_source_role_index(&[], &parsed, &[], &paths).unwrap();
+    let refs: Vec<_> = parsed.iter().collect();
+    let ctx = build_rust_context_graph(&refs, &roles);
+    let lib = qualified_rust_module_name(&src.join("lib.rs"));
+    let renamed = qualified_rust_module_name(&src.join("renamed.rs"));
+    assert!(
+        ctx.production_view().imports(&lib, &renamed),
+        "#[path] must add an edge to the renamed file's module"
+    );
 }

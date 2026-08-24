@@ -1,4 +1,3 @@
-"""Shared stubs for adversarial metrics CLI tests."""
 
 from __future__ import annotations
 

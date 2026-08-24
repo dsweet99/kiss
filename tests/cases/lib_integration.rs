@@ -179,7 +179,7 @@ fn builds_dependency_graph() {
         !graph.nodes.is_empty(),
         "Should have at least one node in graph"
     );
-    // Module names are now qualified with full package path: "tests.fake_python.applicationmanager"
+
     assert!(
         graph
             .nodes
@@ -193,8 +193,6 @@ fn builds_dependency_graph() {
 
 #[test]
 fn repro_orphan_module_with_dotted_import_and_ambiguous_bare_name() {
-    // Regression test for dotted import resolution:
-    // ensure dotted imports are resolved to internal modules and do not create orphans.
     let mut parser = create_parser().expect("parser should initialize");
 
     let pkg1_sub =

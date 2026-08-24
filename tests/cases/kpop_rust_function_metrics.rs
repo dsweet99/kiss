@@ -21,10 +21,6 @@ fn parse_first_fn(
 
 #[test]
 fn bug_rust_local_variables_should_count_typed_tuple_pattern_bindings() {
-    // RULE: [Rust] [local_variables_per_function] counts local bindings introduced in a function.
-    //
-    // Hypothesis: typed patterns like `let (a, b): (i32, i32) = ...` are not counted.
-    // Prediction: local_variables should be 2 (a and b), but current implementation reports 0.
     let (inputs, block, attr_count) =
         parse_first_fn("fn f() {\n    let (a, b): (i32, i32) = (1, 2);\n    let _ = (a, b);\n}\n");
     let m = compute_rust_function_metrics(&inputs, &block, attr_count);

@@ -1,5 +1,3 @@
-//! Query parsing for `kiss mv`.
-
 use std::path::PathBuf;
 
 use crate::Language;
@@ -68,9 +66,15 @@ pub fn validate_new_name(new_name: &str, language: Language) -> Result<(), Strin
 mod query_tests {
     use super::*;
 
+    impl ParsedQuery {
+        pub(crate) fn witness() -> Self {
+            parse_mv_query("a.py::foo").unwrap()
+        }
+    }
+
     #[test]
     fn language_name_alias_matches_language_label() {
-        let q = parse_mv_query("a.py::foo").unwrap();
+        let q = ParsedQuery::witness();
         #[allow(deprecated)]
         let alias = q.language_name();
         assert_eq!(alias, q.language_label());

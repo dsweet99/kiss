@@ -148,3 +148,19 @@ fn test_code_unit_kind_as_str() {
     assert_eq!(CodeUnitKind::Enum.as_str(), "enum");
     assert_eq!(CodeUnitKind::TraitImplMethod.as_str(), "trait_impl_method");
 }
+
+#[test]
+fn witness_code_unit_kind_display_and_unit() {
+    assert_eq!(format!("{}", CodeUnitKind::Module), "module");
+    let unit = CodeUnit {
+        kind: CodeUnitKind::Function,
+        name: "f".into(),
+        start_line: 1,
+        end_line: 2,
+        start_byte: 0,
+        end_byte: 1,
+    };
+    assert_eq!(unit.name, "f");
+    let parsed = parse_python_source("x = 1");
+    assert!(get_child_by_field(parsed.tree.root_node(), "missing", &parsed.source).is_none());
+}

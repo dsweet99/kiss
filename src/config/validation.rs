@@ -19,15 +19,19 @@ pub(crate) fn check_unknown_keys(
 }
 
 pub(crate) fn check_unknown_sections(table: &toml::Table) -> Result<(), ConfigError> {
-    const VALID: &[&str] = &["python", "rust", "shared", "thresholds", "gate", "test"];
+    const VALID: &[&str] = &["python", "rust", "shared", "thresholds", "global", "test"];
     for key in table.keys() {
         if VALID.contains(&key.as_str()) {
             continue;
         }
-        let hint = VALID
-            .iter()
-            .find(|v| similar(key, v))
-            .map(|s| (*s).to_string());
+        let hint = if key == "gate" {
+            Some("global".to_string())
+        } else {
+            VALID
+                .iter()
+                .find(|v| similar(key, v))
+                .map(|s| (*s).to_string())
+        };
         return Err(ConfigError::UnknownSection {
             section: key.clone(),
             hint,
@@ -99,4 +103,51 @@ pub(crate) fn get_usize(table: &toml::Table, key: &str) -> Option<usize> {
 
 pub fn is_similar(a: &str, b: &str) -> bool {
     similar(a, b)
+}
+
+pub(crate) fn parse_string_list(
+    value: &toml::Value,
+    empty_label: &str,
+) -> Result<Vec<String>, String> {
+    let arr = value
+        .as_array()
+        .ok_or_else(|| "expected an array of strings".to_string())?;
+    let mut out = Vec::with_capacity(arr.len());
+    for item in arr {
+        let s = item
+            .as_str()
+            .ok_or_else(|| "expected an array of strings".to_string())?;
+        let name = s.trim();
+        if name.is_empty() {
+            return Err(format!("{empty_label} must be non-empty"));
+        }
+        out.push(name.to_string());
+    }
+    Ok(out)
+}
+
+pub(crate) fn parse_string_list_key(
+    value: &toml::Value,
+    key: &str,
+    empty_label: &str,
+) -> Result<Vec<String>, ConfigError> {
+    parse_string_list(value, empty_label).map_err(|message| ConfigError::InvalidValue {
+        key: key.into(),
+        message,
+    })
+}
+
+pub(crate) fn apply_lenient_string_list(
+    table: &toml::Table,
+    key: &str,
+    empty_label: &str,
+    set: impl FnOnce(Vec<String>),
+) {
+    let Some(v) = table.get(key) else {
+        return;
+    };
+    match parse_string_list(v, empty_label) {
+        Ok(values) => set(values),
+        Err(message) => eprintln!("Warning: Config key '{key}' {message}"),
+    }
 }

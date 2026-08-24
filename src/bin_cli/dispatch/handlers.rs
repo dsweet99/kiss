@@ -1,26 +1,35 @@
-use std::path::Path;
-
 use crate::analyze;
 use crate::analyze::DryRunParams;
-use crate::bin_cli::check_cmd::{CheckCommandArgs, run_check_command};
-use crate::bin_cli::mimic::run_mimic;
-use crate::bin_cli::test_cmd::run_test_command;
-use crate::bin_cli::shrink::{RunShrinkArgs, ShrinkFullContext, run_shrink};
 use crate::bin_cli::stats::{RunStatsArgs, run_stats};
-use crate::bin_cli::util::{validate_min_similarity, validate_paths};
-use kiss::normalize_ignore_prefixes;
-use crate::rules::{run_config, run_rules};
+use crate::bin_cli::test_cmd::run_test_command;
+use crate::bin_cli::util;
+use crate::bin_cli::{check_cmd, cov_cmd};
+use crate::rules::run_rules;
 use crate::viz::{VizCoarsen, run_viz};
-use kiss::Language;
 
 use super::options::{
-    CheckDispatchOptions, ConfigDispatchOptions, DryDispatchOptions, MimicDispatchOptions,
-    MvDispatchOptions, RulesDispatchOptions, TestDispatchOptions, ShrinkDispatchOptions,
-    StatsDispatchOptions, VizDispatchOptions,
+    CheckDispatchOptions, CovDispatchOptions, DryDispatchOptions, MvDispatchOptions,
+    RulesDispatchOptions, StatsDispatchOptions, TestDispatchOptions, VizDispatchOptions,
 };
 
 pub(in crate::bin_cli::dispatch) fn dispatch_check(o: CheckDispatchOptions<'_>) -> i32 {
-    let args = CheckCommandArgs {
+    let args = check_cmd::CheckCommandArgs {
+        paths: &o.paths,
+        lang_filter: o.lang,
+        py_config: o.cfg.py,
+        rs_config: o.cfg.rs,
+        gate_config: o.cfg.gate,
+        ignore: &o.ignore,
+        timing: o.timing,
+        config: o.config.as_deref(),
+        language_tables: o.cfg.language_tables,
+    };
+    check_cmd::run_check_command(&args)
+}
+
+pub(in crate::bin_cli::dispatch) fn dispatch_cov(o: CovDispatchOptions<'_>) -> i32 {
+    let pytest_args = o.test_cfg.pytest_plugin_cli_args();
+    let args = cov_cmd::CovCommandArgs {
         paths: &o.paths,
         lang_filter: o.lang,
         py_config: o.cfg.py,
@@ -29,12 +38,16 @@ pub(in crate::bin_cli::dispatch) fn dispatch_check(o: CheckDispatchOptions<'_>) 
         bypass_gate: o.bypass_gate,
         ignore: &o.ignore,
         timing: o.timing,
+        jobs: o.jobs.unwrap_or(o.test_cfg.num_jobs),
+        allow_refresh: true,
+        pytest_args: &pytest_args,
+        language_tables: o.cfg.language_tables,
     };
-    run_check_command(&args)
+    cov_cmd::run_cov_command(&args)
 }
 
 pub(in crate::bin_cli::dispatch) fn dispatch_stats(o: StatsDispatchOptions) -> i32 {
-    let ignore = normalize_ignore_prefixes(&o.ignore);
+    let ignore = util::merge_check_ignore_prefixes(&o.ignore);
     run_stats(RunStatsArgs {
         paths: &o.paths,
         lang_filter: o.lang,
@@ -44,33 +57,14 @@ pub(in crate::bin_cli::dispatch) fn dispatch_stats(o: StatsDispatchOptions) -> i
         py_config: o.cfg.py,
         rs_config: o.cfg.rs,
         gate_config: o.cfg.gate,
-    });
-    0
-}
-
-pub(in crate::bin_cli::dispatch) fn dispatch_mimic(o: MimicDispatchOptions) -> i32 {
-    let ignore = normalize_ignore_prefixes(&o.ignore);
-    run_mimic(&o.paths, o.out.as_deref(), o.lang, &ignore);
-    0
-}
-
-pub(in crate::bin_cli::dispatch) fn dispatch_clamp(
-    lang: Option<Language>,
-    ignore: Vec<String>,
-) -> i32 {
-    let ignore = normalize_ignore_prefixes(&ignore);
-    run_mimic(
-        &[".".to_string()],
-        Some(Path::new(".kissconfig")),
-        lang,
-        &ignore,
-    );
-    0
+        language_tables: o.cfg.language_tables,
+        config: o.config.as_deref(),
+    })
 }
 
 pub(in crate::bin_cli::dispatch) fn dispatch_dry(o: DryDispatchOptions) -> i32 {
-    let ignore = normalize_ignore_prefixes(&o.ignore);
-    if let Err(msg) = validate_min_similarity(o.min_similarity) {
+    let ignore = util::merge_check_ignore_prefixes(&o.ignore);
+    if let Err(msg) = util::validate_min_similarity(o.min_similarity) {
         eprintln!("Error: {msg}");
         return 1;
     }
@@ -86,70 +80,76 @@ pub(in crate::bin_cli::dispatch) fn dispatch_dry(o: DryDispatchOptions) -> i32 {
         config: &config,
         ignore_prefixes: &ignore,
         lang_filter: o.lang,
+        language_tables: o.language_tables,
     };
-    analyze::run_dry(&params);
-    0
+    analyze::run_dry(&params)
 }
 
 pub(in crate::bin_cli::dispatch) fn dispatch_rules(o: RulesDispatchOptions<'_>) -> i32 {
-    run_rules(o.cfg.py, o.cfg.rs, o.cfg.gate, o.lang, o.defaults);
-    0
-}
-
-pub(in crate::bin_cli::dispatch) fn dispatch_config(o: ConfigDispatchOptions<'_>) -> i32 {
-    run_config(
-        o.cfg.py,
-        o.cfg.rs,
-        o.cfg.gate,
-        o.config.as_ref(),
-        o.defaults,
-    );
+    run_rules(o.cfg.py, o.cfg.rs, o.cfg.gate, o.lang);
     0
 }
 
 pub(in crate::bin_cli::dispatch) fn dispatch_viz(o: VizDispatchOptions) -> i32 {
-    let ignore = normalize_ignore_prefixes(&o.ignore);
-    validate_paths(&o.paths);
+    let ignore = util::merge_check_ignore_prefixes(&o.ignore);
+    util::validate_paths(&o.paths);
     let coarsen = o
         .num_nodes
         .map_or(VizCoarsen::Zoom(o.zoom), VizCoarsen::NumNodes);
-    if let Err(e) = run_viz(&o.out, &o.paths, o.lang, &ignore, coarsen) {
-        eprintln!("Error: {e}");
+    if let Err(e) = run_viz(
+        &o.out,
+        &o.paths,
+        o.lang,
+        &ignore,
+        coarsen,
+        o.language_tables,
+    ) {
+        eprint_viz_error(&e);
         return 1;
     }
     0
 }
 
-pub(in crate::bin_cli::dispatch) fn dispatch_shrink(o: ShrinkDispatchOptions<'_>) -> i32 {
-    let ctx = ShrinkFullContext {
-        lang_filter: o.lang,
-        py_config: o.cfg.py,
-        rs_config: o.cfg.rs,
-        gate_config: o.cfg.gate,
-    };
-    run_shrink(RunShrinkArgs {
-        target: o.target,
-        paths: &o.paths,
-        ignore: &o.ignore,
-        ctx: &ctx,
-    })
+fn eprint_viz_error(e: &std::io::Error) {
+    let msg = e.to_string();
+    if msg.starts_with("Error:") {
+        eprintln!("{msg}");
+    } else {
+        eprintln!("Error: {msg}");
+    }
 }
 
 pub(in crate::bin_cli::dispatch) fn dispatch_test(o: TestDispatchOptions<'_>) -> i32 {
-    run_test_command(
-        o.mode,
-        o.main_branch.as_deref(),
-        o.base_branch.as_deref(),
-        o.dry_run,
-        &o.ignore,
-        &o.extra,
-        o.lang,
-        o.test_cfg,
-    )
+    let cli_ignore = o.ignore.clone();
+    let ignore = o.test_cfg.merged_ignore(&o.ignore);
+    run_test_command(crate::bin_cli::test_cmd::TestCommandArgs {
+        invocation: o.invocation,
+        main_branch: o.main_branch.as_deref(),
+        base_branch: o.base_branch.as_deref(),
+        dry_run: o.dry_run,
+        force: o.force,
+        force_bad: o.force_bad,
+        metrics: o.metrics,
+        coverage_all: o.coverage_all,
+        watch: o.watch,
+        jobs: o.jobs.unwrap_or(o.test_cfg.num_jobs),
+        jobs_cli: o.jobs,
+        ignore: &ignore,
+        cli_ignore: &cli_ignore,
+        extra: &o.extra,
+        lang_filter: o.lang,
+        test_cfg: o.test_cfg,
+        py_config: o.cfg.py,
+        rs_config: o.cfg.rs,
+        gate_config: o.cfg.gate,
+        reload_kissconfig: o.reload_kissconfig,
+        config_path: o.config_path,
+        language_tables: o.cfg.language_tables,
+    })
 }
 
 pub(in crate::bin_cli::dispatch) fn dispatch_mv(o: MvDispatchOptions) -> i32 {
-    let ignore = normalize_ignore_prefixes(&o.ignore);
+    let ignore = util::merge_check_ignore_prefixes(&o.ignore);
     let opts = kiss::symbol_mv::MvOptions {
         query: o.query,
         new_name: o.new_name,
@@ -159,6 +159,53 @@ pub(in crate::bin_cli::dispatch) fn dispatch_mv(o: MvDispatchOptions) -> i32 {
         json: o.mv_flags.json,
         lang_filter: o.lang,
         ignore,
+        language_tables: o.language_tables,
     };
     kiss::symbol_mv::run_mv_command(opts)
+}
+
+#[cfg(test)]
+mod viz_error_tests {
+    use super::*;
+    use std::io::{Error, ErrorKind};
+    use std::path::PathBuf;
+
+    #[test]
+    fn eprint_viz_error_both_prefix_branches() {
+        eprint_viz_error(&Error::new(
+            ErrorKind::InvalidInput,
+            "Error: found rust files",
+        ));
+        eprint_viz_error(&Error::new(
+            ErrorKind::InvalidInput,
+            "No source files found.",
+        ));
+    }
+
+    #[test]
+    fn dispatch_viz_prints_reclamp_without_double_prefix() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("a.py"), "x = 1\n").unwrap();
+        let code = dispatch_viz(VizDispatchOptions {
+            lang: None,
+            out: tmp.path().join("g.mmd"),
+            paths: vec![tmp.path().to_string_lossy().into_owned()],
+            zoom: 1.0,
+            num_nodes: None,
+            ignore: vec![],
+            language_tables: kiss::LanguageTablesPresent::none(),
+        });
+        assert_eq!(code, 1);
+        let empty = tempfile::tempdir().unwrap();
+        let empty_code = dispatch_viz(VizDispatchOptions {
+            lang: None,
+            out: PathBuf::from("g.mmd"),
+            paths: vec![empty.path().to_string_lossy().into_owned()],
+            zoom: 1.0,
+            num_nodes: None,
+            ignore: vec![],
+            language_tables: kiss::LanguageTablesPresent::both(),
+        });
+        assert_eq!(empty_code, 1);
+    }
 }

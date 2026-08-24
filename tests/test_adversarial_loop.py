@@ -1,12 +1,10 @@
-"""Tests for adversarial loop CLI."""
 
 from __future__ import annotations
 
 import pytest
-from click.testing import CliRunner
-
 import python.adversarial_loop as adv_loop
-from ops.adversarial_loop import loop
+from click.testing import CliRunner
+from python.adversarial_loop_cli import loop
 
 
 def test_loop_cli_success(monkeypatch: pytest.MonkeyPatch) -> None:

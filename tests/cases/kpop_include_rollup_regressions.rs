@@ -1,5 +1,3 @@
-//! Regression tests for include! rollup and graph edge resolution.
-
 use kiss::config::Config;
 use kiss::rust_counts::{analyze_rust_file, analyze_rust_file_include_rollup};
 use kiss::rust_graph::build_rust_dependency_graph;
@@ -18,14 +16,6 @@ fn read_fake_rust_fixture(name: &str) -> String {
     fs::read_to_string(repo_path("tests/fake_rust").join(name)).unwrap()
 }
 
-struct ChdirGuard(PathBuf);
-
-impl Drop for ChdirGuard {
-    fn drop(&mut self) {
-        let _ = std::env::set_current_dir(&self.0);
-    }
-}
-
 fn duplicate_child_include_fixture() -> (TempDir, PathBuf, PathBuf, PathBuf) {
     let tmp = TempDir::new().unwrap();
     let src = tmp.path().join("src");
@@ -40,6 +30,15 @@ fn duplicate_child_include_fixture() -> (TempDir, PathBuf, PathBuf, PathBuf) {
         PathBuf::from("src/a/child.rs"),
         PathBuf::from("src/b/child.rs"),
     )
+}
+
+fn parse_rust_file_with_relative_path(
+    root: &Path,
+    rel: &Path,
+) -> kiss::rust_parsing::ParsedRustFile {
+    let mut parsed = parse_rust_file(&root.join(rel)).unwrap();
+    parsed.path = rel.to_path_buf();
+    parsed
 }
 
 fn assert_canonical_include_edge(
@@ -73,12 +72,10 @@ fn assert_canonical_include_edge(
 #[test]
 fn include_edge_uses_canonical_path_when_parsed_paths_are_relative() {
     let (tmp, path_lib, path_child_a, path_child_b) = duplicate_child_include_fixture();
-    let _cwd = ChdirGuard(std::env::current_dir().unwrap());
-    std::env::set_current_dir(tmp.path()).unwrap();
 
-    let lib = parse_rust_file(&path_lib).unwrap();
-    let parsed_a = parse_rust_file(&path_child_a).unwrap();
-    let parsed_b = parse_rust_file(&path_child_b).unwrap();
+    let lib = parse_rust_file_with_relative_path(tmp.path(), &path_lib);
+    let parsed_a = parse_rust_file_with_relative_path(tmp.path(), &path_child_a);
+    let parsed_b = parse_rust_file_with_relative_path(tmp.path(), &path_child_b);
     let graph = build_rust_dependency_graph(&[&lib, &parsed_a, &parsed_b]);
     assert_canonical_include_edge(&graph, &path_lib, &path_child_a, &path_child_b);
 }
@@ -219,7 +216,9 @@ fn include_in_mod_block_resolves_and_rollup_counts_body() {
     assert!(
         !viols.iter().any(|v| {
             v.metric == "orphan_module"
-                && v.file.file_name().is_some_and(|n| n == "include_mod_block_body.inc")
+                && v.file
+                    .file_name()
+                    .is_some_and(|n| n == "include_mod_block_body.inc")
         }),
         "body included from mod block should not be orphan; got:\n{viols:#?}"
     );
@@ -229,8 +228,7 @@ fn include_in_mod_block_resolves_and_rollup_counts_body() {
     let viols = analyze_rust_file_include_rollup(&lib, &[&body], &cfg);
     assert!(
         viols.iter().any(|v| {
-            v.metric == "statements_per_file"
-                && v.message.contains("include_mod_block_body.inc")
+            v.metric == "statements_per_file" && v.message.contains("include_mod_block_body.inc")
         }),
         "rollup should cite mod-block include body; got:\n{viols:#?}"
     );
@@ -261,8 +259,13 @@ fn nested_include_chain_not_orphan() {
     assert!(
         !viols.iter().any(|v| {
             v.metric == "orphan_module"
-                && (v.file.file_name().is_some_and(|n| n == "include_nested_outer.inc")
-                    || v.file.file_name().is_some_and(|n| n == "include_nested_inner.inc"))
+                && (v
+                    .file
+                    .file_name()
+                    .is_some_and(|n| n == "include_nested_outer.inc")
+                    || v.file
+                        .file_name()
+                        .is_some_and(|n| n == "include_nested_inner.inc"))
         }),
         "nested include chain should not orphan fragments; got:\n{viols:#?}"
     );

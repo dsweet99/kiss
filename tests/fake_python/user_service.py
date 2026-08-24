@@ -1,8 +1,6 @@
-"""Fake user service module with duplicated functions for testing."""
 
 
 class UserService:
-    """Service for managing users."""
 
     def __init__(self, db):
         self.db = db
@@ -10,7 +8,6 @@ class UserService:
         self.logger = None
 
     def create_user(self, name, email, role="member"):
-        """Create a new user in the database."""
         if not name or not email:
             raise ValueError("Name and email are required")
         if "@" not in email:
@@ -26,7 +23,6 @@ class UserService:
         return result
 
     def update_user(self, user_id, name, email, role="member"):
-        """Update an existing user in the database."""
         if not name or not email:
             raise ValueError("Name and email are required")
         if "@" not in email:
@@ -42,7 +38,6 @@ class UserService:
         return result
 
     def delete_user(self, user_id):
-        """Delete a user from the database."""
         if user_id not in self.cache:
             existing = self.db.find("users", user_id)
             if not existing:
@@ -53,7 +48,6 @@ class UserService:
         return True
 
     def get_user(self, user_id):
-        """Get a user by ID."""
         if user_id in self.cache:
             return self.cache[user_id]
         user = self.db.find("users", user_id)
@@ -62,7 +56,6 @@ class UserService:
         return user
 
     def list_active_users(self):
-        """List all active users."""
         users = self.db.query("users", {"active": True})
         result = []
         for user in users:
@@ -72,7 +65,6 @@ class UserService:
         return result
 
     def list_inactive_users(self):
-        """List all inactive users."""
         users = self.db.query("users", {"active": False})
         result = []
         for user in users:
@@ -82,7 +74,6 @@ class UserService:
         return result
 
     def create_admin(self, name, email, role="admin"):
-        """Create a new admin user in the database."""
         if not name or not email:
             raise ValueError("Name and email are required")
         if "@" not in email:
@@ -98,7 +89,6 @@ class UserService:
         return result
 
     def update_admin(self, user_id, name, email, role="admin"):
-        """Update an existing admin user in the database."""
         if not name or not email:
             raise ValueError("Name and email are required")
         if "@" not in email:
@@ -114,7 +104,6 @@ class UserService:
         return result
 
     def search_users_by_name(self, name):
-        """Search users by name prefix."""
         all_users = self.db.query("users", {})
         matches = []
         for user in all_users:
@@ -124,7 +113,6 @@ class UserService:
         return matches
 
     def search_users_by_email(self, email):
-        """Search users by email domain."""
         all_users = self.db.query("users", {})
         matches = []
         for user in all_users:

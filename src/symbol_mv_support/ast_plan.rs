@@ -2,14 +2,6 @@
 #[path = "ast_plan_coverage.rs"]
 mod ast_plan_coverage;
 
-// AST-first planning helpers (Tasks 4 & 5).
-//
-// Call sites prefer the AST path; on parse failure they fall back to the
-// lexical helpers in `lex.rs` / `signature.rs` and emit a single-shape
-// warning so the fallback is observable. Returned offsets are byte offsets
-// into the original source string and may be unioned with lexical hits to
-// preserve current behavior during the transition.
-
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::Path;
@@ -18,16 +10,6 @@ use crate::Language;
 
 use super::ast_models::{AstResult, FallbackReason, ParseOutcome};
 
-/// Owners that should be treated as equivalent to the queried `owner` for
-/// rename planning.
-///
-/// - **Rust**: `{owner}` plus, when `owner` names a trait defined in this
-///   file, every `T` such that `impl owner for T { ... }` appears here.
-///   Propagates a trait-method rename to overrides and to method-call sites
-///   whose static receiver type implements the trait (KPOP H5).
-/// - **Python**: `{owner}` plus every (transitively) declared subclass
-///   `class X(owner): ...`. Propagates a parent-class method rename to
-///   subclass overrides (KPOP H1).
 fn owner_aliases(
     result: &AstResult,
     content: &str,
@@ -182,11 +164,6 @@ pub(super) fn ast_definition_ident_offsets_from_result(
     owner: Option<&str>,
     language: Language,
 ) -> Vec<(usize, usize)> {
-    // For free-function renames (owner=None) keep the historical "exactly one
-    // matching definition" behavior, so nested same-named function shadows
-    // are left alone. The owner-aliasing expansion below is only for
-    // owner-bearing renames (Python class methods, Rust impl/trait methods),
-    // where the H1/H5 fixes intentionally rename overrides too.
     if owner.is_none() {
         let Some(def) = result.matching_definition(name, owner) else {
             return Vec::new();

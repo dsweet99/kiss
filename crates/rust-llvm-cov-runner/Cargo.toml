@@ -1,0 +1,24 @@
+[package]
+name = "rust-llvm-cov-runner"
+version = "0.1.0"
+edition = "2024"
+description = "Small cargo llvm-cov execution boundary for Kiss"
+license = "MIT"
+repository = "https://github.com/dsweet99/kiss"
+readme = "README.md"
+keywords = ["coverage", "testing", "rust", "llvm-cov", "kiss"]
+categories = ["development-tools::testing"]
+
+[dependencies]
+cargo-config2 = "0.1.44"
+fs2 = "0.4.3"
+kiss-publication-barrier = { path = "../kiss-publication-barrier" }
+libc = "0.2"
+rpytest-runner = { path = "../rpytest-runner" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1.0.150"
+sha2 = "0.11.0"
+toml = "1"
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,4 +1,3 @@
-use kiss::check_universe_cache::CachedCoverageItem;
 use kiss::stats::MetricStats;
 use kiss::{DuplicateCluster, Violation};
 
@@ -13,29 +12,18 @@ pub(crate) struct FullCacheStoreInput<'a> {
     pub focus: &'a FocusFilter,
     pub result: &'a ParseResult,
     pub graph_viols_all: &'a [Violation],
-    pub coverage_violations: &'a [Violation],
     pub py_graph: Option<&'a kiss::DependencyGraph>,
     pub rs_graph: Option<&'a kiss::DependencyGraph>,
     pub py_dups_all: &'a [DuplicateCluster],
     pub rs_dups_all: &'a [DuplicateCluster],
     pub py_stats: Option<&'a MetricStats>,
     pub rs_stats: Option<&'a MetricStats>,
-    pub coverage_cache_lists: Option<(Vec<CachedCoverageItem>, Vec<CachedCoverageItem>)>,
 }
 
 pub(crate) fn maybe_store_full_cache(inp: FullCacheStoreInput<'_>) {
-    // Cache writes are independent of `--all`: every successful `kiss check`
-    // run primes the cache so subsequent invocations (with or without
-    // `--all`) can hit it. We still skip writes when the user asked for
-    // timing breakdowns, so the timed run isn't influenced by I/O it would
-    // not normally do. Suppressed-status callers (for example shrink
-    // pre-flight) also avoid priming the user-facing cache.
     if inp.opts.show_timing || inp.opts.suppress_final_status {
         return;
     }
-    let Some((definitions, unreferenced)) = inp.coverage_cache_lists else {
-        return;
-    };
     let fp = crate::analyze_cache::fingerprint_for_check(
         inp.py_files,
         inp.rs_files,
@@ -46,9 +34,20 @@ pub(crate) fn maybe_store_full_cache(inp: FullCacheStoreInput<'_>) {
     let focus_paths = inp.focus.cache_focus_paths();
     let focus_restrict = inp.focus.is_active();
     crate::analyze_cache::store_full_cache_from_run(crate::analyze_cache::FullCacheInputs {
+        repo_root: crate::analyze_cache::repo_root_for_universe(inp.opts.universe),
         fingerprint: fp,
-        py_file_count: inp.result.py_parsed.len(),
-        rs_file_count: inp.result.rs_parsed.len(),
+        py_file_count: inp
+            .result
+            .py_parsed
+            .iter()
+            .filter(|p| !kiss::code_roles::is_test_only_file(&inp.result.roles, &p.path))
+            .count(),
+        rs_file_count: inp
+            .result
+            .rs_parsed
+            .iter()
+            .filter(|p| !kiss::code_roles::is_test_only_file(&inp.result.roles, &p.path))
+            .count(),
         code_unit_count: inp.result.code_unit_count,
         statement_count: inp.result.statement_count,
         py_stats: inp.py_stats,
@@ -67,12 +66,40 @@ pub(crate) fn maybe_store_full_cache(inp: FullCacheStoreInput<'_>) {
             .collect(),
         violations: &inp.result.violations,
         graph_viols_all: inp.graph_viols_all,
-        coverage_violations: inp.coverage_violations,
         py_graph: inp.py_graph,
         rs_graph: inp.rs_graph,
         py_dups_all: inp.py_dups_all,
         rs_dups_all: inp.rs_dups_all,
-        definitions,
-        unreferenced,
+        file_content_digests: parsed_content_digests(inp.result),
     });
+}
+
+fn parsed_content_digests(result: &ParseResult) -> Vec<(String, u64)> {
+    let py = result.py_parsed.iter().map(|p| {
+        (
+            p.path.to_string_lossy().to_string(),
+            crate::analyze_cache::fnv1a64(0, p.source.as_bytes()),
+        )
+    });
+    let rs = result.rs_parsed.iter().map(|p| {
+        (
+            p.path.to_string_lossy().to_string(),
+            crate::analyze_cache::fnv1a64(0, p.source.as_bytes()),
+        )
+    });
+    py.chain(rs).collect()
+}
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+
+    impl FullCacheStoreInput<'_> {
+        fn witness() {}
+    }
+
+    #[test]
+    fn witness_cache_types() {
+        FullCacheStoreInput::witness();
+    }
 }

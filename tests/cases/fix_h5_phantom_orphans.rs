@@ -1,21 +1,16 @@
 use kiss::Config;
 use kiss::graph::{DependencyGraph, analyze_graph};
 
-/// Bug H5: If the same file path appears under two different module names
-/// in the dependency graph, `analyze_graph` should deduplicate by path
-/// and not produce phantom orphan violations.
 #[test]
 fn same_path_two_module_names_no_phantom_orphan() {
     let mut g = DependencyGraph::new();
 
-    // Same file registered under two qualified names
     let path = std::path::PathBuf::from("src/utils.py");
     g.get_or_create_node("utils");
     g.paths.insert("utils".into(), path.clone());
     g.get_or_create_node("pkg.utils");
     g.paths.insert("pkg.utils".into(), path);
 
-    // Another module that imports "utils" (only one of the two names)
     g.get_or_create_node("main");
     g.paths
         .insert("main".into(), std::path::PathBuf::from("src/main.py"));
@@ -23,7 +18,6 @@ fn same_path_two_module_names_no_phantom_orphan() {
 
     let viols = analyze_graph(&g, &Config::python_defaults(), true);
 
-    // "pkg.utils" should NOT be flagged as orphan since it's the same file as "utils"
     let orphan_viols: Vec<_> = viols
         .iter()
         .filter(|v| v.metric == "orphan_module")

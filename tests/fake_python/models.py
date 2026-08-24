@@ -1,4 +1,3 @@
-"""Too many classes in one file - should be split up."""
 
 from typing import Optional
 
@@ -6,7 +5,6 @@ from common.sdatetime import now_isoformat
 
 
 class User:
-    """User model."""
 
     def __init__(self, iid: int, username: str, email: str):
         self.id = iid
@@ -31,7 +29,6 @@ class User:
 
 
 class Product:
-    """Product model."""
 
     def __init__(self, iid: int, name: str, price: float, category_id: int):
         self.id = iid
@@ -60,7 +57,6 @@ class Product:
 
 
 class Category:
-    """Category model."""
 
     def __init__(self, iid: int, name: str, parent_id: Optional[int] = None):
         self.id = iid
@@ -83,7 +79,6 @@ class Category:
 
 
 class Order:
-    """Order model."""
 
     def __init__(self, iid: int, user_id: int, status: str = "pending"):
         self.id = iid
@@ -126,7 +121,6 @@ class Order:
 
 
 class OrderItem:
-    """Order item model."""
 
     def __init__(self, iid: int, order_id: int, product_id: int, quantity: int, price: float):
         self.id = iid
@@ -154,7 +148,6 @@ class OrderItem:
 
 
 class Review:
-    """Review model."""
 
     def __init__(self, iid: int, user_id: int, product_id: int, rating: int, comment: str = ""):
         self.id = iid
@@ -181,7 +174,6 @@ class Review:
 
 
 class Address:
-    """Address model."""
 
     def __init__(self, iid: int, user_id: int, street: str, city: str, state: str, zip_code: str, country: str):
         self.id = iid
@@ -213,7 +205,6 @@ class Address:
 
 
 class Payment:
-    """Payment model."""
 
     def __init__(self, iid: int, order_id: int, amount: float, method: str):
         self.id = iid
@@ -242,7 +233,6 @@ class Payment:
 
 
 class Coupon:
-    """Coupon model."""
 
     def __init__(self, iid: int, code: str, discount_type: str, discount_value: float):
         self.id = iid
@@ -281,7 +271,6 @@ class Coupon:
 
 
 class Notification:
-    """Notification model."""
 
     def __init__(self, iid: int, user_id: int, title: str, message: str, notification_type: str = "info"):
         self.id = iid

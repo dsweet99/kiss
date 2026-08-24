@@ -1,4 +1,3 @@
-/// Threshold value that effectively disables a check (for N/A metrics in a language)
 pub const NOT_APPLICABLE: usize = usize::MAX;
 
 pub mod python {
@@ -57,18 +56,36 @@ pub mod duplication {
 }
 
 pub mod gate {
-    pub const TEST_COVERAGE_THRESHOLD: usize = 0;
+    pub const TEST_COVERAGE_THRESHOLD: usize = 90;
+    pub const TEST_COVERAGE_SCOPE: &str = "codebase";
+    pub const TEST_COVERAGE_SCOPE_TOML: &str = "\"codebase\"";
+    pub const MAX_UNIT_TEST_SECONDS: f64 = 2.0;
+    pub const MAX_NUM_TESTS: usize = 999_999;
 }
 
 pub fn default_config_toml() -> String {
     format!(
-        r"# Default kiss configuration
+        r#"# Default kiss configuration
 
-[gate]
-test_coverage_threshold = {gate_coverage}
+[global]
 min_similarity = {min_sim}
 duplication_enabled = true
 orphan_module_enabled = true
+comment_removal_enabled = false
+docs_allowed = []
+orphan_allowed = []
+
+[test]
+test_coverage_threshold = {gate_coverage}
+test_coverage_scope = {gate_scope}
+max_num_tests = {max_num_tests}
+num_jobs = 4
+watch_settle_seconds = 1.0
+pytest_plugins = []
+ignore = []
+
+[test.max_unit_test_seconds]
+"*" = {max_unit_test_seconds}
 
 [python]
 statements_per_function = {py_statements}
@@ -115,8 +132,11 @@ imported_names_per_file = {rs_imports}
 cycle_size = {cycle_size}
 indirect_dependencies = {rs_indirect_deps}
 dependency_depth = {rs_dep_depth}
-",
+"#,
         gate_coverage = gate::TEST_COVERAGE_THRESHOLD,
+        gate_scope = gate::TEST_COVERAGE_SCOPE_TOML,
+        max_unit_test_seconds = gate::MAX_UNIT_TEST_SECONDS,
+        max_num_tests = gate::MAX_NUM_TESTS,
         min_sim = duplication::MIN_SIMILARITY,
         py_statements = python::STATEMENTS_PER_FUNCTION,
         py_pos_args = python::POSITIONAL_ARGS,
@@ -171,12 +191,50 @@ mod tests {
     fn test_defaults_are_reasonable() {
         assert!(python::STATEMENTS_PER_FUNCTION > 0);
         assert!(rust::STATEMENTS_PER_FUNCTION > 0);
-        assert_eq!(gate::TEST_COVERAGE_THRESHOLD, 0);
+        assert!(gate::TEST_COVERAGE_THRESHOLD <= 100);
     }
 
     #[test]
     fn test_default_config_toml_parses() {
         let toml = default_config_toml();
         assert!(toml.parse::<toml::Table>().is_ok());
+        assert!(
+            toml.contains("[test.max_unit_test_seconds]\n\"*\" = 2"),
+            "init default must emit nested asterisk mapping:\n{toml}"
+        );
+        assert!(
+            !toml.contains("max_unit_test_seconds = "),
+            "init default must not emit scalar max_unit_test_seconds:\n{toml}"
+        );
+        assert!(
+            toml.contains("[global]\n"),
+            "init default must emit [global]:\n{toml}"
+        );
+        assert!(
+            toml.contains("comment_removal_enabled = false"),
+            "init default must emit comment_removal_enabled=false:\n{toml}"
+        );
+        assert!(
+            toml.contains("docs_allowed = []"),
+            "init default must emit docs_allowed=[]:\n{toml}"
+        );
+        assert!(
+            toml.contains("orphan_allowed = []"),
+            "init default must emit orphan_allowed=[]:\n{toml}"
+        );
+        assert!(
+            toml.contains("test_coverage_threshold = 90"),
+            "init default must emit coverage under [test]:\n{toml}"
+        );
+        assert!(
+            toml.contains("max_num_tests = 999999"),
+            "init default must emit max_num_tests under [test]:\n{toml}"
+        );
+        assert!(
+            toml.contains(
+                "num_jobs = 4\nwatch_settle_seconds = 1.0\npytest_plugins = []\nignore = []\n"
+            ),
+            "init default must emit [test] runtime defaults:\n{toml}"
+        );
     }
 }

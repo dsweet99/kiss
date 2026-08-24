@@ -19,6 +19,33 @@ fn tmp_repo_three_files() -> TempDir {
     tmp
 }
 
+fn permissive_config(mut cfg: Config) -> Config {
+    cfg.statements_per_function = usize::MAX;
+    cfg.methods_per_class = usize::MAX;
+    cfg.statements_per_file = usize::MAX;
+    cfg.lines_per_file = usize::MAX;
+    cfg.functions_per_file = usize::MAX;
+    cfg.arguments_positional = usize::MAX;
+    cfg.arguments_keyword_only = usize::MAX;
+    cfg.max_indentation_depth = usize::MAX;
+    cfg.interface_types_per_file = usize::MAX;
+    cfg.concrete_types_per_file = usize::MAX;
+    cfg.nested_function_depth = usize::MAX;
+    cfg.returns_per_function = usize::MAX;
+    cfg.return_values_per_function = usize::MAX;
+    cfg.branches_per_function = usize::MAX;
+    cfg.local_variables_per_function = usize::MAX;
+    cfg.imported_names_per_file = usize::MAX;
+    cfg.statements_per_try_block = usize::MAX;
+    cfg.boolean_parameters = usize::MAX;
+    cfg.annotations_per_function = usize::MAX;
+    cfg.calls_per_function = usize::MAX;
+    cfg.cycle_size = usize::MAX;
+    cfg.indirect_dependencies = usize::MAX;
+    cfg.dependency_depth = usize::MAX;
+    cfg
+}
+
 #[test]
 fn test_structs() {
     let py_cfg = Config::python_defaults();
@@ -35,10 +62,12 @@ fn test_structs() {
         ignore_prefixes: &[],
         show_timing: false,
         suppress_final_status: false,
+        language_tables: kiss::LanguageTablesPresent::both(),
     };
     let _ = ParseResult {
         py_parsed: vec![],
         rs_parsed: vec![],
+        roles: kiss::code_roles::SourceRoleIndex::empty(),
         violations: vec![],
         code_unit_count: 0,
         statement_count: 0,
@@ -65,7 +94,8 @@ fn test_gather_parse_and_graphs() {
         &rs,
         &Config::python_defaults(),
         &Config::rust_defaults(),
-    );
+    )
+    .unwrap();
     assert_eq!(result.py_parsed.len(), 2);
     assert_eq!(result.rs_parsed.len(), 1);
 
@@ -77,9 +107,14 @@ fn test_gather_parse_and_graphs() {
         rs_config: &Config::rust_defaults(),
         gate: &gate,
     };
+    let entries = std::collections::HashSet::new();
     let _ = crate::analyze::analyze_graphs(&AnalyzeGraphsIn {
         py_graph: py_g.as_ref(),
         rs_graph: rs_g.as_ref(),
+        py_ctx: None,
+        rs_ctx: None,
+        entries: &entries,
+        repo_root: tmp.path(),
         configs: cfg,
     });
 }
@@ -91,19 +126,17 @@ fn test_print_functions_and_helpers() {
     assert_eq!(n, 0);
     assert_eq!(e, 0);
     let focus = crate::analyze::FocusFilter::unrestricted();
-    assert!(crate::analyze::is_focus_file(
-        Path::new("any.py"),
-        &focus
-    ));
+    assert!(crate::analyze::is_focus_file(Path::new("any.py"), &focus));
     let dups = filter_duplicates_by_focus(vec![], &focus);
     assert!(dups.is_empty());
 }
 
 #[test]
 fn test_detect_duplicates() {
-    let py_dups = crate::analyze::detect_py_duplicates(&[], 0.9);
+    let roles = kiss::code_roles::SourceRoleIndex::empty();
+    let py_dups = crate::analyze::detect_py_duplicates(&[], 0.9, &roles);
     assert!(py_dups.is_empty());
-    let rs_dups = crate::analyze::detect_rs_duplicates(&[], 0.9);
+    let rs_dups = crate::analyze::detect_rs_duplicates(&[], 0.9, &roles);
     assert!(rs_dups.is_empty());
 }
 
@@ -139,6 +172,7 @@ fn test_run_analyze_no_files() {
         ignore_prefixes: &[],
         show_timing: false,
         suppress_final_status: false,
+        language_tables: kiss::LanguageTablesPresent::both(),
     };
     assert!(run_analyze(&opts));
 
@@ -146,8 +180,43 @@ fn test_run_analyze_no_files() {
     let (parsed, viols, units, _) = crate::analyze_parse::parse_and_analyze_rs(
         &[tmp.path().join("lib.rs")],
         &Config::rust_defaults(),
-    );
+    )
+    .unwrap();
     assert_eq!(parsed.len(), 1);
     assert!(viols.is_empty());
     assert!(units > 0);
+}
+
+#[test]
+fn test_run_analyze_current_repo_in_process() {
+    let py_cfg = permissive_config(Config::python_defaults());
+    let rs_cfg = permissive_config(Config::rust_defaults());
+    let gate_cfg = GateConfig {
+        test_coverage_threshold: 0,
+        duplication_enabled: false,
+        orphan_module_enabled: false,
+        docs_allowed: vec!["src/".into()],
+        ..GateConfig::default()
+    };
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let src_root = repo_root.join("src");
+    let universe = src_root.to_str().unwrap();
+    let focus = vec![universe.to_string()];
+    let opts = AnalyzeOptions {
+        universe,
+        focus_paths: &focus,
+        py_config: &py_cfg,
+        rs_config: &rs_cfg,
+        lang_filter: None,
+        bypass_gate: false,
+        gate_config: &gate_cfg,
+        ignore_prefixes: &[],
+        show_timing: false,
+        suppress_final_status: true,
+        language_tables: kiss::LanguageTablesPresent::both(),
+    };
+
+    let result = crate::analyze::run_analyze_with_result(&opts);
+
+    assert!(result.success);
 }

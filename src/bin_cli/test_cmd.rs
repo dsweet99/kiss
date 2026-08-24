@@ -1,27 +1,357 @@
+use std::cell::Cell;
+use std::path::PathBuf;
+use std::time::Duration;
+
 use kiss::TestSectionConfig;
 
-use crate::test_git::TestChangeMode;
-use crate::test_runner::{run_test, RunTestCmdArgs};
+use crate::bin_cli::args::TestInvocation;
+use crate::bin_cli::cov_cmd::{CovCommandArgs, run_cov_command};
+use crate::bin_cli::cov_warm::warm_cov_caches_after_tests;
+use crate::test_runner::{
+    RunTestCmdArgs, WatchCoverageParams, WatchCoverageResult, run_test, run_test_watch,
+};
 
-#[allow(clippy::too_many_arguments)]
-pub fn run_test_command(
-    mode: TestChangeMode,
-    main_branch: Option<&str>,
-    base_branch: Option<&str>,
-    dry_run: bool,
-    ignore: &[String],
-    extra: &[String],
-    lang_filter: Option<kiss::Language>,
-    test_cfg: &TestSectionConfig,
-) -> i32 {
-    run_test(RunTestCmdArgs {
-        mode,
-        main_branch_cli: main_branch,
-        base_branch_cli: base_branch,
-        dry_run,
-        extra,
-        ignore,
-        lang_filter,
-        config_main_branch: test_cfg.main_branch.as_deref(),
-    })
+pub struct TestCommandArgs<'a> {
+    pub invocation: TestInvocation,
+    pub main_branch: Option<&'a str>,
+    pub base_branch: Option<&'a str>,
+    pub dry_run: bool,
+    pub force: bool,
+    pub force_bad: bool,
+    pub metrics: bool,
+    pub coverage_all: bool,
+    pub watch: bool,
+    pub jobs: usize,
+    pub jobs_cli: Option<usize>,
+    pub ignore: &'a [String],
+    pub cli_ignore: &'a [String],
+    pub extra: &'a [String],
+    pub lang_filter: Option<kiss::Language>,
+    pub test_cfg: &'a TestSectionConfig,
+    pub py_config: &'a kiss::Config,
+    pub rs_config: &'a kiss::Config,
+    pub gate_config: &'a kiss::GateConfig,
+    pub reload_kissconfig: bool,
+    pub config_path: Option<&'a PathBuf>,
+    pub language_tables: kiss::LanguageTablesPresent,
 }
+
+thread_local! {
+    static CLIENT_RESULT_OVERRIDE: Cell<Option<Result<Option<i32>, String>>> = const { Cell::new(None) };
+}
+
+#[cfg(test)]
+pub(crate) fn set_client_result_override_for_test(value: Option<Result<Option<i32>, String>>) {
+    CLIENT_RESULT_OVERRIDE.with(|c| c.set(value));
+}
+
+pub fn run_test_command(args: TestCommandArgs<'_>) -> i32 {
+    run_test_command_with(args, run_test)
+}
+
+fn reject_test_universe_languages(args: &TestCommandArgs<'_>) -> Result<(), i32> {
+    if args.language_tables.python && args.language_tables.rust {
+        return Ok(());
+    }
+    let universe = universe_root_for_test_invocation(&args.invocation);
+    let path = universe.to_string_lossy().into_owned();
+    let (py_files, rs_files) =
+        kiss::gather_files_by_lang(std::slice::from_ref(&path), args.lang_filter, args.ignore);
+    crate::bin_cli::util::reject_unconfigured_languages(&py_files, &rs_files, args.language_tables)
+}
+
+pub(crate) fn run_test_command_with(
+    args: TestCommandArgs<'_>,
+    run_local: impl FnOnce(RunTestCmdArgs<'_>) -> i32,
+) -> i32 {
+    let python_extra_owned =
+        kiss::effective_python_pytest_args(&args.test_cfg.pytest_plugins, args.extra);
+    let run_args = RunTestCmdArgs {
+        invocation: args.invocation.clone(),
+        main_branch_cli: args.main_branch,
+        base_branch_cli: args.base_branch,
+        dry_run: args.dry_run,
+        force_rerun: args.force,
+        force_bad: args.force_bad,
+        metrics: args.metrics,
+        jobs: args.jobs,
+        extra: args.extra,
+        python_extra: &python_extra_owned,
+        ignore: args.ignore,
+        lang_filter: args.lang_filter,
+        config_main_branch: args.test_cfg.main_branch.as_deref(),
+        gate_config: args.gate_config.clone(),
+    };
+    if args.watch {
+        run_watch_tests(&args, run_args)
+    } else if args.dry_run {
+        run_dry_tests(&args, run_args, run_local)
+    } else {
+        run_local_tests_after_client(&args, run_args, run_local)
+    }
+}
+
+#[doc = "kiss-coverage-off"]
+fn run_watch_tests(args: &TestCommandArgs<'_>, run_args: RunTestCmdArgs<'_>) -> i32 {
+    if let Err(code) = reject_test_universe_languages(args) {
+        return code;
+    }
+    let settle = Duration::from_secs_f64(args.test_cfg.watch_settle_seconds);
+    let seed = crate::test_runner::WatchReloadSeed {
+        cli_ignore: args.cli_ignore.to_vec(),
+        jobs_cli: args.jobs_cli,
+        extra: args.extra.to_vec(),
+        coverage_all: args.coverage_all,
+        enabled: args.reload_kissconfig,
+        config_path: args
+            .config_path
+            .cloned()
+            .unwrap_or_else(|| PathBuf::from(".kissconfig")),
+    };
+    run_test_watch(
+        run_args,
+        settle,
+        seed,
+        args.py_config.clone(),
+        args.rs_config.clone(),
+        |cycle, live| {
+            evaluate_watch_coverage(
+                cycle,
+                &WatchCoverageParams {
+                    py_config: &live.py_config,
+                    rs_config: &live.rs_config,
+                    coverage_all: live.coverage_all,
+                    language_tables: live.language_tables,
+                },
+            )
+        },
+    )
+}
+
+fn run_dry_tests(
+    args: &TestCommandArgs<'_>,
+    run_args: RunTestCmdArgs<'_>,
+    run_local: impl FnOnce(RunTestCmdArgs<'_>) -> i32,
+) -> i32 {
+    if let Err(code) = reject_test_universe_languages(args) {
+        return code;
+    }
+    run_local(run_args)
+}
+
+fn run_local_tests_after_client(
+    args: &TestCommandArgs<'_>,
+    run_args: RunTestCmdArgs<'_>,
+    run_local: impl FnOnce(RunTestCmdArgs<'_>) -> i32,
+) -> i32 {
+    if let Some(code) = wait_out_live_watcher() {
+        return code;
+    }
+    if let Err(code) = reject_test_universe_languages(args) {
+        return code;
+    }
+    let code = run_local(run_args);
+    if code != 0 {
+        return code;
+    }
+    finish_with_coverage(args, code)
+}
+
+fn wait_out_live_watcher() -> Option<i32> {
+    #[cfg(unix)]
+    let result = match try_wait_out_live_watcher() {
+        Ok(()) => None,
+        Err(e) => {
+            eprintln!("error: kiss test: {e}");
+            Some(1)
+        }
+    };
+    #[cfg(not(unix))]
+    let result = None;
+    result
+}
+
+#[cfg(unix)]
+fn try_wait_out_live_watcher() -> Result<(), String> {
+    if let Some(overridden) = CLIENT_RESULT_OVERRIDE.with(Cell::take) {
+        return match overridden {
+            Ok(_) => Ok(()),
+            Err(e) => Err(e),
+        };
+    }
+
+    use crate::test_runner::{
+        NudgeRequestMsg, nudge_watcher_with_retry_on_wait, probe_live_watcher,
+    };
+
+    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+    let repo_root = crate::test_git::require_git_repo_root(&cwd)?;
+    let Some(session) = probe_live_watcher(&repo_root)? else {
+        return Ok(());
+    };
+    let pid = session.pid;
+    let mut printed_waiting = false;
+    let _reply = nudge_watcher_with_retry_on_wait(
+        &repo_root,
+        &session,
+        &NudgeRequestMsg::default(),
+        &mut || {
+            if !printed_waiting {
+                printed_waiting = true;
+                println!("kiss test: waiting for watcher (pid {pid})");
+            }
+        },
+    )?;
+    Ok(())
+}
+
+/// Coverage after a green test run. One-shot and watch both call this.
+/// `allow_refresh` is the only policy difference: watch may rebuild a missing
+/// snapshot; one-shot fails closed.
+struct AfterTestCoverage<'a> {
+    invocation: &'a TestInvocation,
+    lang_filter: Option<kiss::Language>,
+    ignore: &'a [String],
+    gate_config: &'a kiss::GateConfig,
+    py_config: &'a kiss::Config,
+    rs_config: &'a kiss::Config,
+    coverage_all: bool,
+    jobs: usize,
+    allow_refresh: bool,
+    pytest_args: &'a [String],
+    language_tables: kiss::LanguageTablesPresent,
+}
+
+fn run_after_test_coverage(p: AfterTestCoverage<'_>) -> i32 {
+    let universe = universe_root_for_test_invocation(p.invocation);
+    warm_cov_caches_after_tests(
+        &universe,
+        p.lang_filter,
+        p.ignore,
+        p.gate_config,
+        p.pytest_args,
+    );
+    let universe_s = universe.to_string_lossy().into_owned();
+    let paths = [universe_s];
+    let started = std::time::Instant::now();
+    let code = run_cov_command(&CovCommandArgs {
+        paths: &paths,
+        lang_filter: p.lang_filter,
+        py_config: p.py_config,
+        rs_config: p.rs_config,
+        gate_config: p.gate_config,
+        bypass_gate: p.coverage_all,
+        ignore: p.ignore,
+        timing: false,
+        jobs: p.jobs,
+        allow_refresh: p.allow_refresh,
+        pytest_args: p.pytest_args,
+        language_tables: p.language_tables,
+    });
+    crate::test_runner::emit_stage_time("cov_score", started.elapsed());
+    code
+}
+
+pub(crate) fn evaluate_watch_coverage(
+    cycle: &RunTestCmdArgs<'_>,
+    cov: &WatchCoverageParams<'_>,
+) -> WatchCoverageResult {
+    let cov_code = run_after_test_coverage(AfterTestCoverage {
+        invocation: &cycle.invocation,
+        lang_filter: cycle.lang_filter,
+        ignore: cycle.ignore,
+        gate_config: &cycle.gate_config,
+        py_config: cov.py_config,
+        rs_config: cov.rs_config,
+        coverage_all: cov.coverage_all,
+        jobs: cycle.jobs,
+        allow_refresh: true,
+        pytest_args: cycle.python_extra,
+        language_tables: cov.language_tables,
+    });
+    if crate::test_runner::consume_rust_batch_interrupted() {
+        return WatchCoverageResult::interrupted();
+    }
+    if cov_code == 0 {
+        WatchCoverageResult::ok(0)
+    } else {
+        WatchCoverageResult::failed(cov_code, "coverage gate failed")
+    }
+}
+
+pub(crate) fn finish_with_coverage(args: &TestCommandArgs<'_>, test_exit: i32) -> i32 {
+    let python_extra =
+        kiss::effective_python_pytest_args(&args.test_cfg.pytest_plugins, args.extra);
+    let cov_code = run_after_test_coverage(AfterTestCoverage {
+        invocation: &args.invocation,
+        lang_filter: args.lang_filter,
+        ignore: args.ignore,
+        gate_config: args.gate_config,
+        py_config: args.py_config,
+        rs_config: args.rs_config,
+        coverage_all: args.coverage_all,
+        jobs: args.jobs,
+        allow_refresh: false,
+        pytest_args: &python_extra,
+        language_tables: args.language_tables,
+    });
+    if cov_code != 0 { cov_code } else { test_exit }
+}
+
+fn universe_root_for_test_invocation(invocation: &TestInvocation) -> PathBuf {
+    match invocation {
+        TestInvocation::Targets(targets) if targets.len() == 1 => {
+            let raw = &targets[0];
+            let path_part = raw.split_once("::").map_or(raw.as_str(), |(p, _)| p);
+            if path_part.is_empty() || path_part == "." || path_part == "./" {
+                PathBuf::from(".")
+            } else {
+                PathBuf::from(path_part)
+            }
+        }
+        _ => PathBuf::from("."),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn universe_root_defaults_to_dot_for_all_modes() {
+        assert_eq!(
+            universe_root_for_test_invocation(&TestInvocation::All),
+            PathBuf::from(".")
+        );
+        assert_eq!(
+            universe_root_for_test_invocation(&TestInvocation::Commit),
+            PathBuf::from(".")
+        );
+    }
+
+    #[test]
+    fn universe_root_uses_single_path_target() {
+        assert_eq!(
+            universe_root_for_test_invocation(&TestInvocation::Targets(vec!["src/foo".into()])),
+            PathBuf::from("src/foo")
+        );
+        assert_eq!(
+            universe_root_for_test_invocation(&TestInvocation::Targets(vec![
+                "src/lib.rs::my_test".into()
+            ])),
+            PathBuf::from("src/lib.rs")
+        );
+        assert_eq!(
+            universe_root_for_test_invocation(&TestInvocation::Targets(vec![".".into()])),
+            PathBuf::from(".")
+        );
+        assert_eq!(
+            universe_root_for_test_invocation(&TestInvocation::Targets(vec!["./".into()])),
+            PathBuf::from(".")
+        );
+    }
+}
+
+#[cfg(test)]
+#[path = "test_cmd_client_test.rs"]
+mod client_tests;

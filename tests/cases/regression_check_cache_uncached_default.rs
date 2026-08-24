@@ -1,48 +1,30 @@
-//! Regression test for the `kiss check` cache-bypass bug.
-//!
-//! `kiss check` reads and writes its full-check cache
-//! (`~/.cache/kiss/check_full_*.bin`) only when `--all` (i.e.
-//! `opts.bypass_gate`) is set. Without `--all`, both the read site
-//! (`src/analyze/entry.rs::try_cache_hit`) and the write site
-//! (`src/analyze/cache.rs::maybe_store_full_cache`) early-return, so the
-//! default inner-loop invocation of `kiss check` pays the full per-run
-//! analysis cost forever and never primes the cache for a later `--all`
-//! invocation either.
-//!
-//! Symptom: in a real ~3,900-file repo, `kiss check` takes ~1.7 s wall on
-//! every run; `kiss check --all` warms in ~5 s and subsequent `--all` runs
-//! drop to ~0.1 s. The cache works — it just isn't engaged for the
-//! command users actually type.
-//!
-//! This test pins the contract: after a successful `kiss check` run from
-//! a clean cache, at least one `check_full_*.bin` artifact must exist in
-//! the cache directory. It fails today and will pass once the cache write
-//! path is made independent of `--all` (or, equivalently, both sites are
-//! widened to operate in the gated default flow too).
-
+use crate::common::seed_python_runtime_coverage;
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
 
 fn write_corpus(dir: &std::path::Path) {
-    // One trivial source file plus a co-located test reference, so the
-    // default `test_coverage` gate can pass and `kiss check` exits 0
-    // without `--all`. The gate firing is unrelated to the cache bug —
-    // we just don't want it masking what we're trying to measure.
     fs::write(dir.join("lib.py"), "def add(a, b):\n    return a + b\n").unwrap();
     fs::write(
         dir.join("test_lib.py"),
         "from lib import add\n\ndef test_add():\n    assert add(1, 2) == 3\n",
     )
     .unwrap();
-    // Permissive config so no structural violations and the gate is
-    // satisfied by the static test reference above.
+    seed_python_runtime_coverage(
+        dir,
+        &[("test_lib.py::test_add", vec![("lib.py", vec![1, 2])])],
+    );
+
     fs::write(
         dir.join(".kissconfig"),
-        "[gate]\n\
-         test_coverage_threshold = 0\n\
+        "[global]\n\
          duplication_enabled = false\n\
          orphan_module_enabled = false\n\
+         \n\
+[test]\n\
+         test_coverage_threshold = 0\n\
+         [python]\n\
+         [rust]\n\
          \n\
          [thresholds]\n\
          statements_per_function = 100\n\
@@ -91,17 +73,13 @@ fn count_check_full_files(cache_dir: &std::path::Path) -> usize {
     it.filter_map(Result::ok).filter(is_check_full_file).count()
 }
 
-/// `kiss check` (no `--all`) must populate the full-check cache so that
-/// repeated invocations on an unchanged tree can be served cheaply. Today
-/// the cache is gated on `--all` and never written by the default flow,
-/// so this assertion fails until the gate is removed or widened.
 #[test]
 fn kiss_check_default_writes_full_check_cache() {
     let corpus = TempDir::new().unwrap();
     write_corpus(corpus.path());
 
     let home = TempDir::new().unwrap();
-    let cache_dir = home.path().join(".cache").join("kiss");
+    let cache_dir = corpus.path().join(".kiss");
 
     assert_eq!(
         count_check_full_files(&cache_dir),
@@ -140,5 +118,12 @@ fn kiss_check_default_writes_full_check_cache() {
                 .map(|e| e.file_name().to_string_lossy().into_owned())
                 .collect::<Vec<_>>())
             .unwrap_or_default(),
+    );
+
+    let home_cache = home.path().join(".cache").join("kiss");
+    assert_eq!(
+        count_check_full_files(&home_cache),
+        0,
+        "check_full_*.bin must not land under HOME/.cache/kiss"
     );
 }

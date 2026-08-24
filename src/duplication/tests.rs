@@ -59,12 +59,11 @@ fn test_structs_and_helpers() {
     assert!(clustering::compute_cluster_similarity(&[0, 1], &ps) > 0.0);
     assert!(extraction::is_nontrivial_chunk("a b c d e f g h i j k", 10));
     assert!(!extraction::is_nontrivial_chunk("a b c", 10));
-    assert!(!extraction::is_nontrivial_chunk("a b c d e f g h i j k", 3)); // too few lines
+    assert!(!extraction::is_nontrivial_chunk("a b c d e f g h i j k", 3));
 }
 
 #[test]
 fn test_python_duplication() {
-    // Multi-line function (>= 5 lines) to pass MIN_CHUNK_LINES filter
     let code = "def foo():\n    x = 1\n    y = 2\n    z = 3\n    a = 4\n    b = 5\n    return x + y + z + a + b";
     let mut tmp1 = tempfile::NamedTempFile::with_suffix(".py").unwrap();
     let mut tmp2 = tempfile::NamedTempFile::with_suffix(".py").unwrap();
@@ -106,6 +105,7 @@ fn test_python_duplication() {
         &parsed.source,
         &parsed.path,
         &mut chunks,
+        None,
     );
     assert!(!chunks.is_empty());
 }
@@ -134,7 +134,6 @@ fn test_cluster_duplicates_from_chunks_smoke() {
 
 #[test]
 fn test_rust_duplication() {
-    // Multi-line function (>= 5 lines) to pass MIN_CHUNK_LINES filter
     let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
     write!(tmp, "fn foo() {{\n    let x = 1;\n    let y = 2;\n    let z = 3;\n    let a = 4;\n    let b = 5;\n}}").unwrap();
     let parsed = parse_rust_file(tmp.path()).unwrap();
@@ -142,18 +141,22 @@ fn test_rust_duplication() {
     let source = "fn bar() {\n    let x = 1;\n    let y = 2;\n    let z = 3;\n    let a = 4;\n    let b = 5;\n}";
     let ast: syn::File = syn::parse_str(source).unwrap();
     let mut chunks = Vec::new();
-    extraction::extract_rust_function_chunks(&ast, source, Path::new("test.rs"), &mut chunks);
-    extraction::extract_chunks_from_item(&ast.items[0], source, Path::new("test.rs"), &mut chunks);
+    extraction::extract_rust_function_chunks(&ast, source, Path::new("test.rs"), &mut chunks, None);
+    extraction::extract_chunks_from_item(
+        &ast.items[0],
+        source,
+        Path::new("test.rs"),
+        &mut chunks,
+        None,
+    );
     if let syn::Item::Fn(f) = &ast.items[0] {
-        let start = f.sig.fn_token.span.start().line;
-        let end = f.block.brace_token.span.close().end().line;
         extraction::add_rust_function_chunk(
             "bar",
-            start,
-            end,
+            crate::code_roles::SourceSpan::of_syn(f),
             source,
             Path::new("test.rs"),
             &mut chunks,
+            None,
         );
     }
 }
@@ -174,21 +177,21 @@ fn test_cmp_chunk_key_and_min_chunk() {
         end_line: 5,
         normalized: "y".into(),
     };
-    // Test cmp_chunk_key from mod.rs
+
     assert!(cmp_chunk_key(&c1, &c2).is_lt());
-    // Test clustering::cmp_chunk_key
+
     assert!(clustering::cmp_chunk_key(&c1, &c2).is_lt());
-    // Test min_chunk_in_cluster
+
     let cluster = DuplicateCluster {
         chunks: vec![c2.clone(), c1.clone()],
         avg_similarity: 0.9,
     };
     let min = clustering::min_chunk_in_cluster(&cluster).unwrap();
     assert_eq!(min.file, PathBuf::from("a.py"));
-    // Test sort_clusters_deterministic
+
     let mut clusters = vec![cluster];
     clustering::sort_clusters_deterministic(&mut clusters);
-    // Test chunks_are_nested
+
     assert!(!chunks_are_nested(&c1, &c2));
 }
 
@@ -214,6 +217,45 @@ fn test_cluster_from_pairs() {
     let clusters = clustering::cluster_from_pairs(&chunks, pairs);
     assert_eq!(clusters.len(), 1);
     assert_eq!(clusters[0].chunks.len(), 2);
+}
+
+#[test]
+fn clustering_handles_empty_and_unmatched_inputs() {
+    assert!(cluster_duplicates(&[], &[]).is_empty());
+
+    let chunks = vec![
+        CodeChunk {
+            file: "a.py".into(),
+            name: "f1".into(),
+            start_line: 1,
+            end_line: 10,
+            normalized: "x y z a b c d e f g".into(),
+        },
+        CodeChunk {
+            file: "b.py".into(),
+            name: "f2".into(),
+            start_line: 1,
+            end_line: 10,
+            normalized: "x y z a b c d e f g".into(),
+        },
+    ];
+    let pair = DuplicatePair {
+        chunk1: CodeChunk {
+            file: "missing.py".into(),
+            name: "missing".into(),
+            start_line: 1,
+            end_line: 10,
+            normalized: "x".into(),
+        },
+        chunk2: chunks[1].clone(),
+        similarity: 0.99,
+    };
+
+    assert!(cluster_duplicates(&[pair], &chunks).is_empty());
+    assert_eq!(
+        clustering::compute_cluster_similarity(&[0, 1], &HashMap::new()),
+        0.0
+    );
 }
 
 #[test]
@@ -261,5 +303,42 @@ def compute_b(data):
     assert!(
         pairs.is_empty(),
         "expected no duplicate pairs when only numeric literals differ, got {pairs:?}"
+    );
+}
+
+#[test]
+fn mixed_rust_chunk_drops_test_only_subranges_before_thresholds() {
+    let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
+    write!(
+        tmp,
+        "fn mixed() {{\n    let a = 1;\n    #[cfg(test)]\n    {{\n        let c = 3;\n        let d = 4;\n        let e = 5;\n        let f = 6;\n        let g = 7;\n        let h = 8;\n    }}\n}}\n"
+    )
+    .unwrap();
+    let parsed = parse_rust_file(tmp.path()).unwrap();
+    let roles = crate::code_roles::build_source_role_index(
+        &[],
+        std::slice::from_ref(&parsed),
+        &[],
+        std::slice::from_ref(&parsed.path),
+    )
+    .unwrap();
+    let unfiltered = extract_rust_chunks_for_duplication(&[&parsed]);
+    let filtered = extract_rust_chunks_for_duplication_with_roles(&[&parsed], Some(&roles));
+    assert!(
+        !unfiltered.is_empty(),
+        "test-only lines must be enough to form a chunk before filtering"
+    );
+    assert!(
+        unfiltered[0].normalized.contains("c = 3") || unfiltered[0].normalized.contains("let c"),
+        "unfiltered fingerprint must include test-only text, got {:?}",
+        unfiltered[0].normalized
+    );
+    assert!(
+        filtered.is_empty(),
+        "production-only remainder must fall below duplication thresholds, got {filtered:?}"
+    );
+    assert_ne!(
+        unfiltered[0].normalized, "",
+        "unfiltered chunk must keep a fingerprint"
     );
 }

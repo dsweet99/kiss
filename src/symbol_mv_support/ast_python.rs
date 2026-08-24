@@ -1,23 +1,21 @@
-//! Python AST extraction for `kiss mv` definitions and references.
-
 use tree_sitter::{Node, Parser};
 
 use crate::Language;
 
-use super::ast_python_walk::walk_py;
 use super::ast_models::{
     AstResult, Definition, FallbackReason, ParseOutcome, Reference, ReferenceKind, SymbolKind,
 };
+use super::ast_python_walk::walk_py;
 
 pub(super) fn parse_python(content: &str) -> ParseOutcome {
     let mut parser = Parser::new();
     let lang = tree_sitter_python::LANGUAGE;
-    if parser.set_language(&lang.into()).is_err() {
-        return ParseOutcome::Fail(FallbackReason::ParserUnavailable);
-    }
-    let Some(tree) = parser.parse(content, None) else {
-        return ParseOutcome::Fail(FallbackReason::ParseFailed);
-    };
+    parser
+        .set_language(&lang.into())
+        .expect("tree-sitter Python grammar should be available");
+    let tree = parser
+        .parse(content, None)
+        .expect("tree-sitter parse should not be cancelled without a timeout");
     let root = tree.root_node();
     if root.has_error() {
         return ParseOutcome::Fail(FallbackReason::ParseFailed);
@@ -39,16 +37,6 @@ pub(super) fn parse_python(content: &str) -> ParseOutcome {
     })
 }
 
-/// Decide whether a bare `identifier` node represents a *use* of a name
-/// (i.e. a reference site) rather than a binding/definition site. Catches
-/// callback-style uses like `map(my_fn, …)`, kwarg values like `key=my_fn`,
-/// assignment RHS like `ref = my_fn`, container literals, return values,
-/// etc. — fixes KPOP round 6 H2 ("function-as-value not renamed").
-///
-/// References that are emitted via dedicated branches above (calls,
-/// decorators, imports, await, raise-from, global/nonlocal/delete) are
-/// also re-emitted here when the walker recurses into them; the planner
-/// dedupes by (start, end), so duplicates are harmless.
 pub(super) fn python_identifier_is_value(node: Node<'_>) -> bool {
     let Some(parent) = node.parent() else {
         return true;
@@ -59,15 +47,13 @@ pub(super) fn python_identifier_is_value(node: Node<'_>) -> bool {
             .is_some_and(|n| n.id() == node.id())
     };
     match parent.kind() {
-        // Definition NAME positions are bindings, not references.
         "function_definition"
         | "async_function_definition"
         | "class_definition"
         | "typed_parameter"
         | "default_parameter"
         | "typed_default_parameter" => false,
-        // Bare parameter names: `def f(x):` parses `x` as an identifier
-        // child of a `parameters` node.
+
         "parameters"
         | "lambda_parameters"
         | "import_from_statement"
@@ -83,9 +69,7 @@ pub(super) fn python_identifier_is_value(node: Node<'_>) -> bool {
         {
             false
         }
-        // Attribute access `obj.attr`: the `attr` part is the attribute
-        // (handled separately as Method when it heads a call); the
-        // `object` part IS a name reference and falls through.
+
         "attribute" if same("attribute") => false,
         _ => true,
     }

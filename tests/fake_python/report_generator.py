@@ -1,10 +1,8 @@
-"""Report generator - copy-pasted formatting code across methods."""
 
 import time
 
 
 class ReportGenerator:
-    """Generates various reports - lots of duplicated formatting logic."""
 
     def __init__(self, config):
         self.config = config
@@ -12,7 +10,6 @@ class ReportGenerator:
         self.date_format = config.get("date_format", "%Y-%m-%d")
 
     def generate_sales_report(self, sales_data: list[dict]) -> str:
-        """Generate sales report with duplicated header/footer formatting."""
         lines = []
 
         # Header - DUPLICATED BLOCK A
@@ -52,7 +49,6 @@ class ReportGenerator:
         return "\n".join(lines)
 
     def generate_inventory_report(self, inventory_data: list[dict]) -> str:
-        """Generate inventory report - same header/footer as sales report."""
         lines = []
 
         # Header - DUPLICATED BLOCK A (copy-pasted!)
@@ -101,7 +97,6 @@ class ReportGenerator:
         return "\n".join(lines)
 
     def generate_employee_report(self, employee_data: list[dict]) -> str:
-        """Generate employee report - again, same header/footer."""
         lines = []
 
         # Header - DUPLICATED BLOCK A (third copy!)
@@ -148,7 +143,6 @@ class ReportGenerator:
         return "\n".join(lines)
 
     def generate_expense_report(self, expense_data: list[dict]) -> str:
-        """Generate expense report - you guessed it, same header/footer."""
         lines = []
 
         # Header - DUPLICATED BLOCK A (fourth copy!)

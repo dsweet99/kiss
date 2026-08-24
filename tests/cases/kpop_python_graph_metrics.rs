@@ -12,12 +12,6 @@ fn parse_py(path: &Path) -> ParsedFile {
 
 #[test]
 fn bug_indirect_dependencies_should_not_count_external_modules() {
-    // RULE: [Python] [indirect_dependencies]
-    //
-    // Hypothesis: dependency counts include external imports (stdlib/3rd party),
-    // inflating coupling metrics.
-    //
-    // Prediction: `tests.fake_python.graph_ext_a` has 1 direct dep (graph_ext_b), 0 indirect.
     let a = parse_py(Path::new("tests/fake_python/graph_ext_a.py"));
     let b = parse_py(Path::new("tests/fake_python/graph_ext_b.py"));
     let parsed_files: Vec<&ParsedFile> = vec![&a, &b];
@@ -30,13 +24,6 @@ fn bug_indirect_dependencies_should_not_count_external_modules() {
 
 #[test]
 fn bug_indirect_dependencies_violation_should_include_entry_modules() {
-    // RULE: [Python] [indirect_dependencies]
-    //
-    // Hypothesis: `kiss check` suppresses indirect dependency violations for modules
-    // with fan_in == 0, even though `kiss stats` includes those modules in its distribution.
-    //
-    // Prediction: An entry module with 1 indirect dependency and threshold 0 should emit an
-    // `indirect_dependencies` violation.
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
     fs::write(root.join("entry.py"), "import hub\n").unwrap();

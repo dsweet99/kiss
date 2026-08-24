@@ -1,12 +1,13 @@
+use crate::code_roles::production_line_count;
 use crate::graph::DependencyGraph;
 use crate::parsing::ParsedFile;
 use crate::py_metrics::{compute_file_metrics, walk_py_ast};
-use crate::rust_fn_metrics::compute_rust_file_metrics;
+use crate::rust_fn_metrics::compute_rust_file_metrics_with_roles;
 use crate::rust_parsing::ParsedRustFile;
 use rayon::prelude::*;
 
 use super::collect_py::StatsVisitor;
-use super::collect_rust::collect_rust_from_items;
+use super::collect_rust::collect_rust_from_items_with_roles;
 
 use serde::{Deserialize, Serialize};
 
@@ -32,17 +33,6 @@ pub struct MetricStats {
     pub interface_types_per_file: Vec<usize>,
     pub concrete_types_per_file: Vec<usize>,
     pub imported_names_per_file: Vec<usize>,
-    /// Per-file *uncovered* percentage in `[0, 100]` (i.e. `100 - coverage`).
-    ///
-    /// Stored inverted so it matches the rest of the registry — higher = worse
-    /// — and so the upper-percentile columns shown by `format_stats_table`
-    /// surface the worst-covered files. Populated separately from
-    /// `MetricStats::collect{,_rust}` because the underlying coverage computation
-    /// requires a project-wide test-reference scan (`analyze_test_refs` /
-    /// `analyze_rust_test_refs`). The summary path in `bin_cli/stats/summary.rs`
-    /// runs that scan and pushes one entry per file via
-    /// `extend_inv_test_coverage`.
-    pub inv_test_coverage: Vec<usize>,
     pub fan_in: Vec<usize>,
     pub fan_out: Vec<usize>,
     pub cycle_size: Vec<usize>,
@@ -62,11 +52,7 @@ impl MetricStats {
                 stats.functions_per_file.push(fm.functions);
                 stats.interface_types_per_file.push(fm.interface_types);
                 stats.concrete_types_per_file.push(fm.concrete_types);
-                // Skip __init__.py for imported_names_per_file to stay in sync
-                // with `kiss check` (`src/counts/mod.rs::check_file_metrics`)
-                // and `kiss stats --all`
-                // (`src/stats_detailed/python.rs::py_import_metric`), both of
-                // which omit __init__.py for this metric. See grounding M6.
+
                 let fname = parsed
                     .path
                     .file_name()
@@ -113,7 +99,6 @@ impl MetricStats {
             interface_types_per_file,
             concrete_types_per_file,
             imported_names_per_file,
-            inv_test_coverage,
             fan_in,
             fan_out,
             cycle_size,
@@ -134,8 +119,11 @@ impl MetricStats {
             }
         }
 
+        let metrics_by_module = crate::graph::all_module_metrics(graph);
         for name in graph.paths.keys() {
-            let m = graph.module_metrics(name);
+            let Some(m) = metrics_by_module.get(name) else {
+                continue;
+            };
             self.fan_in.push(m.fan_in);
             self.fan_out.push(m.fan_out);
             self.indirect_dependencies.push(m.indirect_dependencies);
@@ -149,32 +137,33 @@ impl MetricStats {
         self.dependency_depth.iter().copied().max().unwrap_or(0)
     }
 
-    /// Push one `[0, 100]` *coverage* percentage for every entry in `pcts`,
-    /// inverting each to `100 - pct` before storing.
-    ///
-    /// The inverted form is what the registry exposes as `inv_test_coverage`:
-    /// higher = worse, matching every other metric. Callers pass raw coverage
-    /// percentages; this method does the flip so individual call sites can't
-    /// silently drift on the convention.
-    ///
-    /// Caller is responsible for choosing what counts as a "file" (one entry
-    /// per parsed source file is the convention used by the summary command).
-    pub fn extend_inv_test_coverage(&mut self, pcts: impl IntoIterator<Item = usize>) {
-        self.inv_test_coverage
-            .extend(pcts.into_iter().map(|p| 100usize.saturating_sub(p)));
+    pub fn collect_rust(parsed_files: &[&ParsedRustFile]) -> Self {
+        Self::collect_rust_with_roles(parsed_files, None)
     }
 
-    pub fn collect_rust(parsed_files: &[&ParsedRustFile]) -> Self {
+    pub fn collect_rust_with_roles(
+        parsed_files: &[&ParsedRustFile],
+        roles: Option<&crate::code_roles::SourceRoleIndex>,
+    ) -> Self {
         let mut stats = Self::default();
         for parsed in parsed_files {
-            let fm = compute_rust_file_metrics(parsed);
+            let fm = compute_rust_file_metrics_with_roles(parsed, roles);
             stats.statements_per_file.push(fm.statements);
-            stats.lines_per_file.push(parsed.source.lines().count());
+            let lines = roles.map_or_else(
+                || parsed.source.lines().count(),
+                |roles| production_line_count(roles, &parsed.path, &parsed.source),
+            );
+            stats.lines_per_file.push(lines);
             stats.functions_per_file.push(fm.functions);
             stats.interface_types_per_file.push(fm.interface_types);
             stats.concrete_types_per_file.push(fm.concrete_types);
             stats.imported_names_per_file.push(fm.imports);
-            collect_rust_from_items(&parsed.ast.items, &mut stats);
+            collect_rust_from_items_with_roles(
+                &parsed.ast.items,
+                &mut stats,
+                Some(&parsed.path),
+                roles,
+            );
         }
         stats
     }

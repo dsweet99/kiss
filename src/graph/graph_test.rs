@@ -1,10 +1,9 @@
 use crate::graph::{
-    CycleInfo, DependencyGraph,
-    build_dependency_graph_from_import_lists, compute_cyclomatic_complexity, count_decision_points, extract_dynamic_import_module,
-    extract_imports_for_cache, extract_imports_recursive, extract_modules_from_import_from, get_module_path, is_decision_point,
-    is_crate_root_aggregator, is_entry_point,
-    is_orphan, push_dotted_segments,
-    qualified_module_name,
+    CycleInfo, DependencyGraph, build_dependency_graph_from_import_lists,
+    compute_cyclomatic_complexity, count_decision_points, extract_dynamic_import_module,
+    extract_imports_for_cache, extract_imports_recursive, extract_modules_from_import_from,
+    get_module_path, is_crate_root_aggregator, is_decision_point, is_entry_point, is_orphan,
+    push_dotted_segments, qualified_module_name,
 };
 use crate::parsing::create_parser;
 use std::io::Write;
@@ -16,22 +15,30 @@ pub(super) fn new_graph() -> DependencyGraph {
 
 #[test]
 fn test_touch_dynamic_import_helpers_for_static_coverage() {
-    // Touch private helpers so static test-ref coverage includes them.
     let mut parser = create_parser().unwrap();
     let code = "def f():\n    import importlib\n    importlib.import_module(\"pkg.target\")\n    __import__(\"pkg.other\")\n";
     let tree = parser.parse(code, None).unwrap();
     let root = tree.root_node();
 
-    // Ensure extract_imports_for_cache sees the dynamic imports.
     let imports = extract_imports_for_cache(root, code);
     assert!(imports.contains(&"pkg.target".into()));
     assert!(imports.contains(&"pkg.other".into()));
 
-    // Directly touch helper fns with a best-effort call node.
     let call_node = root
         .descendant_for_byte_range(code.find("importlib.import_module").unwrap(), code.len())
         .unwrap();
     let _ = extract_dynamic_import_module(call_node, code);
+}
+
+#[test]
+fn test_dynamic_import_literal_forms() {
+    let mut parser = create_parser().unwrap();
+    let code =
+        "import importlib\nimportlib.import_module(r'''pkg.raw''')\n__import__(f'pkg.{name}')\n";
+    let imports = extract_imports_for_cache(parser.parse(code, None).unwrap().root_node(), code);
+
+    assert!(imports.contains(&"pkg.raw".to_string()));
+    assert!(!imports.iter().any(|item| item.contains("{name}")));
 }
 
 #[test]
@@ -63,7 +70,7 @@ fn test_graph_imports_and_cycles() {
     assert!(!cycle_info.cycles.is_empty());
     assert_eq!(g.get_or_create_node("test"), g.get_or_create_node("test"));
     g.add_dependency("x", "x");
-    // Self-dependencies are rejected: neither node nor edge is created
+
     assert!(
         !g.nodes.contains_key("x"),
         "Self-dependency should not create node"
@@ -73,21 +80,16 @@ fn test_graph_imports_and_cycles() {
     assert!(g.is_cycle(&[idx_a, idx_b]) && !g.is_cycle(&[]) && !g.is_cycle(&[idx_a]));
     g.add_dependency("a", "c");
     g.add_dependency("c", "d");
-    let (reachable, depth) = g.compute_reachable_and_depth(*g.nodes.get("a").unwrap());
+    let metrics = g.module_metrics("a");
+    let (reachable, depth) = (
+        metrics.indirect_dependencies + metrics.fan_out,
+        metrics.dependency_depth,
+    );
     assert!(reachable >= 2 && depth >= 2);
 }
 
 #[test]
 fn test_from_import_does_not_create_edges_to_imported_names() {
-    // Hypothesis 1 repro: `from X import Y` currently adds both `X` and `Y` as dependencies.
-    // That can create huge, fake SCC cycles when `Y` happens to match some other module name.
-    //
-    // This fixture is *acyclic* under real Python import semantics:
-    // - a imports b (and name c from b)
-    // - b imports c (and name a from c)
-    // - c imports nothing
-    //
-    // There is no module-level cycle unless we incorrectly treat imported names as modules.
     let mut parser = create_parser().unwrap();
     let files: Vec<(PathBuf, Vec<String>)> = vec![
         (
@@ -120,8 +122,6 @@ fn test_from_import_does_not_create_edges_to_imported_names() {
 
 #[test]
 fn test_dotted_import_does_not_create_edges_to_middle_segments() {
-    // Hypothesis 2 repro: `import foo.bar` is currently split into segments `foo` and `bar`,
-    // which can spuriously create an edge to a local `bar.py` module.
     let mut parser = create_parser().unwrap();
     let files: Vec<(PathBuf, Vec<String>)> = vec![
         (
@@ -131,7 +131,6 @@ fn test_dotted_import_does_not_create_edges_to_middle_segments() {
                 "import foo.bar\n",
             ),
         ),
-        // Local module named `bar` should NOT be considered imported by `import foo.bar`.
         (PathBuf::from("bar.py"), Vec::new()),
     ];
 
@@ -149,8 +148,6 @@ fn test_dotted_import_does_not_create_edges_to_middle_segments() {
 
 #[test]
 fn test_qualified_module_name_includes_full_package_path() {
-    // Hypothesis 3 repro: qualified_module_name currently only includes the leaf parent dir,
-    // so deep paths can collide (e.g., pkg1/sub/utils.py and pkg2/sub/utils.py).
     use std::path::Path;
     let a = qualified_module_name(Path::new("pkg1/sub/utils.py"));
     let b = qualified_module_name(Path::new("pkg2/sub/utils.py"));
@@ -162,7 +159,7 @@ fn test_qualified_module_name_includes_full_package_path() {
 
 #[test]
 fn test_helpers_imports_and_complexity() {
-    assert!(is_entry_point("main") && is_entry_point("test_foo") && !is_entry_point("utils"));
+    assert!(is_entry_point("main") && !is_entry_point("test_foo") && !is_entry_point("utils"));
     assert!(
         is_entry_point("bin.lock_server"),
         "Rust src/bin/*.rs should be entry points"
@@ -174,11 +171,9 @@ fn test_helpers_imports_and_complexity() {
     );
     assert!(is_orphan(0, 0, "utils") && !is_orphan(1, 0, "utils"));
     let mut g = DependencyGraph::new();
-    g.paths
-        .insert("lib".into(), PathBuf::from("src/lib.rs"));
+    g.paths.insert("lib".into(), PathBuf::from("src/lib.rs"));
     assert!(is_crate_root_aggregator(&g, "lib"));
-    g.paths
-        .insert("entry".into(), PathBuf::from("entry.py"));
+    g.paths.insert("entry".into(), PathBuf::from("entry.py"));
     assert!(!is_crate_root_aggregator(&g, "entry"));
     g.path_to_module
         .insert(PathBuf::from("src/foo.py"), "foo".into());
@@ -267,9 +262,6 @@ fn test_type_checking_imports_included_in_graph() {
 
 #[test]
 fn test_from_dot_import_name_is_dependency_candidate() {
-    // Regression for orphan false-positives:
-    // `from . import target` has no explicit module name, so the imported name needs to be
-    // treated as a module candidate for dependency graph purposes.
     let mut parser = create_parser().unwrap();
     let code = "def f():\n    from . import target\n    return 0\n";
     let imports = extract_imports_for_cache(parser.parse(code, None).unwrap().root_node(), code);

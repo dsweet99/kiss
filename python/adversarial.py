@@ -1,4 +1,3 @@
-"""Adversarial foil: drive malvin to find coverage metric counterexamples."""
 
 from __future__ import annotations
 
@@ -66,7 +65,7 @@ def pick_language(lang: str | None, rng: random.Random | None = None) -> str:
 
 
 def build_foil_prompt(kiss_root: Path, repo_dir: Path, lang: str) -> str:
-    metrics_py = (kiss_root / "ops" / "coverage_metrics.py").resolve()
+    metrics_py = (kiss_root / "python" / "coverage_metrics_cli.py").resolve()
     lang_instruction = {
         "rust": "Rust only (include `Cargo.toml`, tests runnable via `cargo llvm-cov nextest`).",
         "python": "Python only (include tests runnable via `pytest` with slipcover).",
@@ -105,7 +104,7 @@ Print the final `coverage_metrics` output when done.
 
 
 def build_fix_prompt(kiss_root: Path, repos: Sequence[Path]) -> str:
-    metrics_py = (kiss_root / "ops" / "coverage_metrics.py").resolve()
+    metrics_py = (kiss_root / "python" / "coverage_metrics_cli.py").resolve()
     paths = normalize_repos(repos)
     repo_block = format_repo_paths(paths)
     one = len(paths) == 1
@@ -152,7 +151,7 @@ def run_malvin_code(kiss_root: Path, prompt_path: Path) -> int:
 
 
 def run_coverage_metrics(kiss_root: Path, repo: Path) -> str:
-    script = kiss_root / "ops" / "coverage_metrics.py"
+    script = kiss_root / "python" / "coverage_metrics_cli.py"
     cmd = [sys.executable, str(script), str(repo.resolve())]
     result = subprocess.run(
         cmd,

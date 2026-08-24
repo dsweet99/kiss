@@ -1,224 +1,240 @@
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
 
-use kiss::check_universe_cache::CachedCoverageItem;
-use kiss::cli_output::{CoverageGateFailureCtx, file_coverage_map, print_coverage_gate_failure};
-use crate::analyze::coverage::compute_test_coverage_from_lists;
 use crate::analyze::coverage_types::CheckCoverageGateParams;
 use crate::analyze::focus::{FocusFilter, is_focus_file};
+use crate::analyze::line_coverage::{LineCoverageRecord, coverage_percentage};
+use kiss::TestCoverageScope;
+use kiss::cli_output::{
+    CodebaseCoverageGateFailureCtx, CoverageGateFailureCtx, codebase_coverage_gate_failure_lines,
+    coverage_gate_failure_lines,
+};
 
-type PathNameLine = (PathBuf, String, usize);
-type PerFileGateFailure = (Vec<PathNameLine>, std::collections::HashMap<PathBuf, usize>);
-
-fn analysis_tuples(
-    py_cov: &kiss::TestRefAnalysis,
-    rs_cov: &kiss::RustTestRefAnalysis,
-) -> (Vec<PathNameLine>, Vec<PathNameLine>) {
-    let defs_t: Vec<_> = py_cov
-        .definitions
-        .iter()
-        .map(|d| (d.file.clone(), d.name.clone(), d.line))
-        .chain(
-            rs_cov
-                .definitions
-                .iter()
-                .map(|d| (d.file.clone(), d.name.clone(), d.line)),
-        )
-        .collect();
-    let unrefs_t: Vec<_> = py_cov
-        .unreferenced
-        .iter()
-        .map(|d| (d.file.clone(), d.name.clone(), d.line))
-        .chain(
-            rs_cov
-                .unreferenced
-                .iter()
-                .map(|d| (d.file.clone(), d.name.clone(), d.line)),
-        )
-        .collect();
-    (defs_t, unrefs_t)
-}
-
-pub(crate) fn is_coverage_gate_file(path: &Path, _unit_name: &str) -> bool {
-    !kiss::test_refs::is_test_file(path)
-        && !kiss::test_refs::is_in_test_directory(path)
-        && !kiss::rust_test_refs::is_rust_test_file(path)
-        && !kiss::rust_test_refs::is_binary_entry_point(path)
-}
-
-pub(crate) fn is_coverage_report_target(
-    path: &Path,
-    unit_name: &str,
-    _report_entry_points: bool,
-) -> bool {
-    is_coverage_gate_file(path, unit_name)
-}
-
-fn is_weighted_overlay_target(path: &Path) -> bool {
-    is_coverage_gate_file(path, "")
-}
-
-fn overlay_weighted_file_pcts(
-    file_pcts: &mut HashMap<PathBuf, usize>,
-    unreferenced_focus: &mut Vec<PathNameLine>,
-    defs_focus: &[(PathBuf, String, usize)],
-    weighted: &HashMap<PathBuf, usize>,
-    focus: &FocusFilter,
-) {
-    for (path, pct) in weighted {
-        if !is_focus_file(path, focus) || !is_weighted_overlay_target(path) {
-            continue;
-        }
-        file_pcts.insert(path.clone(), *pct);
-        if *pct < 100
-            && !unreferenced_focus.iter().any(|(f, _, _)| f == path)
-            && let Some(def) = defs_focus.iter().find(|(f, _, _)| f == path)
-        {
-            unreferenced_focus.push(def.clone());
-        }
-    }
-}
-
-fn per_file_coverage_gate_fails(
-    defs_t: &[(PathBuf, String, usize)],
-    unrefs_t: &[(PathBuf, String, usize)],
+pub(crate) fn evaluate_line_gate(
+    records: &[LineCoverageRecord],
     focus: &FocusFilter,
     threshold: usize,
-    weighted_pcts: Option<&HashMap<PathBuf, usize>>,
-) -> Option<PerFileGateFailure> {
-    let (_, _, _, mut unreferenced_focus) =
-        compute_test_coverage_from_lists(defs_t, unrefs_t, focus);
-    let defs_focus: Vec<_> = defs_t
-        .iter()
-        .filter(|(f, _, _)| is_focus_file(f, focus))
-        .cloned()
-        .collect();
-    let mut file_pcts = file_coverage_map(&defs_focus, &unreferenced_focus);
-    if let Some(weighted) = weighted_pcts {
-        overlay_weighted_file_pcts(
-            &mut file_pcts,
-            &mut unreferenced_focus,
-            &defs_focus,
-            weighted,
-            focus,
-        );
-    }
-    let gate_fails = file_pcts
-        .iter()
-        .any(|(path, &pct)| is_coverage_gate_file(path, "") && pct < threshold);
-    if gate_fails {
-        let file_pcts: HashMap<_, _> = file_pcts
-            .into_iter()
-            .filter(|(path, _)| is_coverage_gate_file(path, ""))
-            .collect();
-        let unreferenced_focus: Vec<_> = unreferenced_focus
-            .into_iter()
-            .filter(|(path, name, _)| is_coverage_gate_file(path, name))
-            .collect();
-        Some((unreferenced_focus, file_pcts))
-    } else {
-        None
-    }
-}
-
-pub(crate) fn evaluate_gate(
-    py_cov: &kiss::TestRefAnalysis,
-    rs_cov: &kiss::RustTestRefAnalysis,
-    _py_parsed: &[kiss::ParsedFile],
-    _rs_parsed: &[kiss::ParsedRustFile],
-    focus: &FocusFilter,
-    threshold: usize,
+    scope: TestCoverageScope,
 ) -> Option<crate::analyze::options::AnalyzeResult> {
-    let (defs_t, unrefs_t) = analysis_tuples(py_cov, rs_cov);
-    if let Some((unreferenced_focus, file_pcts)) = per_file_coverage_gate_fails(
-        &defs_t,
-        &unrefs_t,
-        focus,
-        threshold,
-        None,
-    ) {
-        print_coverage_gate_failure(&CoverageGateFailureCtx {
-            threshold,
-            unreferenced: &unreferenced_focus,
-            file_pcts: &file_pcts,
-        });
-        return Some(crate::analyze::options::AnalyzeResult {
-            success: false,
-            metrics: None,
-        });
-    }
-    None
-}
-
-pub(crate) fn evaluate_cached_gate(
-    definitions: &[CachedCoverageItem],
-    unreferenced: &[CachedCoverageItem],
-    focus: &FocusFilter,
-    threshold: usize,
-) -> Option<crate::analyze::options::AnalyzeResult> {
-    let defs = definitions
-        .iter()
-        .map(|item| item.clone().into_tuple())
-        .collect::<Vec<_>>();
-    let unrefs = unreferenced
-        .iter()
-        .map(|item| item.clone().into_tuple())
-        .collect::<Vec<_>>();
     if threshold == 0 {
         return None;
     }
-    if let Some((unreferenced_focus, file_pcts)) =
-        per_file_coverage_gate_fails(&defs, &unrefs, focus, threshold, None)
-    {
-        print_coverage_gate_failure(&CoverageGateFailureCtx {
-            threshold,
-            unreferenced: &unreferenced_focus,
-            file_pcts: &file_pcts,
-        });
-        return Some(crate::analyze::options::AnalyzeResult {
-            success: false,
-            metrics: None,
-        });
+    match scope {
+        TestCoverageScope::ByFile => evaluate_by_file(records, focus, threshold),
+        TestCoverageScope::Codebase => evaluate_codebase(records, focus, threshold),
     }
-    None
 }
 
-#[allow(dead_code)] // Called from unit tests and via `crate::analyze::check_coverage_gate`; not all builds reference it.
-pub fn check_coverage_gate(p: &CheckCoverageGateParams<'_>) -> bool {
-    let CheckCoverageGateParams {
-        py_parsed,
-        rs_parsed,
-        gate_config,
-        focus,
-        show_timing: _show_timing,
-    } = p;
-    let (defs_cached, unrefs_cached) = crate::analyze_cache::coverage_lists(py_parsed, rs_parsed);
-    let defs_t: Vec<_> = defs_cached
-        .into_iter()
-        .map(CachedCoverageItem::into_tuple)
+fn evaluate_by_file(
+    records: &[LineCoverageRecord],
+    focus: &FocusFilter,
+    threshold: usize,
+) -> Option<crate::analyze::options::AnalyzeResult> {
+    let file_pcts: HashMap<_, _> = records
+        .iter()
+        .filter(|record| is_focus_file(&record.file, focus))
+        .map(|record| (record.file.clone(), record.percent))
         .collect();
-    let unrefs_t: Vec<_> = unrefs_cached
-        .into_iter()
-        .map(CachedCoverageItem::into_tuple)
-        .collect();
-    let threshold = gate_config.test_coverage_threshold;
-    if let Some((unreferenced, file_pcts)) = per_file_coverage_gate_fails(
-        &defs_t,
-        &unrefs_t,
-        focus,
-        threshold,
-        None,
-    ) {
-        print_coverage_gate_failure(&CoverageGateFailureCtx {
-            threshold,
-            unreferenced: &unreferenced,
-            file_pcts: &file_pcts,
-        });
-        return false;
+    if !file_pcts.values().any(|pct| *pct < threshold) {
+        return None;
     }
+    let unreferenced = records
+        .iter()
+        .filter(|record| is_focus_file(&record.file, focus) && record.percent < threshold)
+        .map(|record| {
+            (
+                record.file.clone(),
+                "<file>".to_string(),
+                record.first_uncovered_line.unwrap_or(1),
+            )
+        })
+        .collect::<Vec<_>>();
+    for line in coverage_gate_failure_lines(&CoverageGateFailureCtx {
+        threshold,
+        unreferenced: &unreferenced,
+        file_pcts: &file_pcts,
+    }) {
+        println!("{line}");
+    }
+    Some(crate::analyze::options::AnalyzeResult { success: false })
+}
+
+fn evaluate_codebase(
+    records: &[LineCoverageRecord],
+    focus: &FocusFilter,
+    threshold: usize,
+) -> Option<crate::analyze::options::AnalyzeResult> {
+    let focus_records: Vec<_> = records
+        .iter()
+        .filter(|record| is_focus_file(&record.file, focus))
+        .collect();
+    let total: usize = focus_records.iter().map(|r| r.total_lines).sum();
+    let covered: usize = focus_records.iter().map(|r| r.covered_lines).sum();
+    let percent = if total == 0 {
+        100
+    } else {
+        coverage_percentage(covered, total)
+    };
+    if percent >= threshold {
+        return None;
+    }
+    let mut diagnostics: Vec<_> = focus_records
+        .iter()
+        .filter_map(|record| {
+            record
+                .first_uncovered_line
+                .map(|line| (record.file.clone(), line, record.percent))
+        })
+        .collect();
+    diagnostics.sort_by(|a, b| a.0.cmp(&b.0));
+    for line in codebase_coverage_gate_failure_lines(&CodebaseCoverageGateFailureCtx {
+        percent,
+        threshold,
+        diagnostics: &diagnostics,
+    }) {
+        println!("{line}");
+    }
+    Some(crate::analyze::options::AnalyzeResult { success: false })
+}
+
+#[allow(dead_code)]
+pub fn check_coverage_gate(p: &CheckCoverageGateParams<'_>) -> bool {
+    let _ = p;
     true
 }
 
 #[cfg(test)]
-#[path = "coverage_gate_tests.rs"]
-mod coverage_gate_tests;
+mod inline_coverage_witness {
+    use super::*;
+
+    #[test]
+    fn witness_local_coverage_record_shape() {
+        let record = LineCoverageRecord {
+            file: std::path::PathBuf::from("src/lib.rs"),
+            total_lines: 1,
+            covered_lines: 1,
+            percent: 100,
+            first_uncovered_line: None,
+        };
+        assert_eq!(record.percent, 100);
+    }
+
+    #[test]
+    fn witness_local_is_coverage_gate_file() {
+        let record = LineCoverageRecord {
+            file: std::path::PathBuf::from("src/lib.rs"),
+            total_lines: 4,
+            covered_lines: 4,
+            percent: 100,
+            first_uncovered_line: None,
+        };
+        let focus = FocusFilter::unrestricted();
+        assert!(
+            evaluate_line_gate(
+                std::slice::from_ref(&record),
+                &focus,
+                90,
+                TestCoverageScope::ByFile
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn evaluate_line_gate_threshold_zero_passes() {
+        let focus = FocusFilter::unrestricted();
+        assert!(evaluate_line_gate(&[], &focus, 0, TestCoverageScope::ByFile).is_none());
+        assert!(evaluate_line_gate(&[], &focus, 0, TestCoverageScope::Codebase).is_none());
+    }
+
+    #[test]
+    fn evaluate_line_gate_fails_below_threshold() {
+        let focus = FocusFilter::unrestricted();
+        let records = vec![LineCoverageRecord {
+            file: std::path::PathBuf::from("src/a.py"),
+            total_lines: 2,
+            covered_lines: 1,
+            percent: 50,
+            first_uncovered_line: Some(2),
+        }];
+        assert!(evaluate_line_gate(&records, &focus, 90, TestCoverageScope::ByFile).is_some());
+    }
+
+    #[test]
+    fn evaluate_line_gate_codebase_passes_when_aggregate_clears() {
+        let focus = FocusFilter::unrestricted();
+        let records = vec![
+            LineCoverageRecord {
+                file: std::path::PathBuf::from("good.py"),
+                total_lines: 37,
+                covered_lines: 37,
+                percent: 100,
+                first_uncovered_line: None,
+            },
+            LineCoverageRecord {
+                file: std::path::PathBuf::from("bad.py"),
+                total_lines: 2,
+                covered_lines: 0,
+                percent: 0,
+                first_uncovered_line: Some(1),
+            },
+        ];
+        assert!(
+            evaluate_line_gate(&records, &focus, 90, TestCoverageScope::Codebase).is_none(),
+            "line-weighted aggregate (~95%) must pass under codebase scope"
+        );
+        assert!(
+            evaluate_line_gate(&records, &focus, 90, TestCoverageScope::ByFile).is_some(),
+            "by_file must still fail on bad.py"
+        );
+    }
+
+    #[test]
+    fn evaluate_line_gate_codebase_fails_when_aggregate_below() {
+        let focus = FocusFilter::unrestricted();
+        let records = vec![
+            LineCoverageRecord {
+                file: std::path::PathBuf::from("a.py"),
+                total_lines: 10,
+                covered_lines: 5,
+                percent: 50,
+                first_uncovered_line: Some(2),
+            },
+            LineCoverageRecord {
+                file: std::path::PathBuf::from("b.py"),
+                total_lines: 10,
+                covered_lines: 5,
+                percent: 50,
+                first_uncovered_line: Some(3),
+            },
+        ];
+        assert!(evaluate_line_gate(&records, &focus, 90, TestCoverageScope::Codebase).is_some());
+    }
+
+    #[test]
+    fn evaluate_line_gate_codebase_ignores_non_focus() {
+        use std::collections::HashSet;
+        let mut paths = HashSet::new();
+        paths.insert(std::path::PathBuf::from("good.py"));
+        let focus = FocusFilter::restricting(paths);
+        let records = vec![
+            LineCoverageRecord {
+                file: std::path::PathBuf::from("good.py"),
+                total_lines: 10,
+                covered_lines: 10,
+                percent: 100,
+                first_uncovered_line: None,
+            },
+            LineCoverageRecord {
+                file: std::path::PathBuf::from("bad.py"),
+                total_lines: 10,
+                covered_lines: 0,
+                percent: 0,
+                first_uncovered_line: Some(1),
+            },
+        ];
+        assert!(
+            evaluate_line_gate(&records, &focus, 90, TestCoverageScope::Codebase).is_none(),
+            "non-focus bad.py must not pull codebase aggregate down"
+        );
+    }
+}

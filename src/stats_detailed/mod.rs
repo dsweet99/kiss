@@ -1,5 +1,3 @@
-//! Per-unit detailed metrics for `kiss stats --detailed`.
-
 mod python;
 mod rust;
 mod table;
@@ -8,7 +6,7 @@ pub mod types;
 use crate::graph::DependencyGraph;
 
 pub use python::collect_detailed_py;
-pub use rust::collect_detailed_rs;
+pub use rust::{collect_detailed_rs, collect_detailed_rs_with_roles};
 pub use table::format_detailed_table;
 pub use types::UnitMetrics;
 
@@ -25,11 +23,6 @@ fn module_id_for_path(path: &std::path::Path, graph: &DependencyGraph) -> String
         .unwrap_or_else(|| module_name_from_path(path))
 }
 
-/// Aggregate file-scope metrics that aren't graph-derived.
-///
-/// All other File-scope `UnitMetrics` fields are filled in here so the caller
-/// only has to forward what the language-specific file-metrics struct already
-/// computed.
 #[derive(Clone, Copy)]
 pub(crate) struct FileScopeMetrics {
     pub lines: usize,
@@ -92,9 +85,7 @@ mod tests {
     use crate::graph::DependencyGraph;
     use crate::parsing::{create_parser, parse_file};
     use crate::stats_detailed::python::collect_detailed_from_node_for_test;
-    use crate::stats_detailed::rust::{
-        collect_detailed_from_items, get_impl_name,
-    };
+    use crate::stats_detailed::rust::{collect_detailed_from_items, get_impl_name};
     use std::io::Write;
 
     #[test]
@@ -118,6 +109,25 @@ mod tests {
         let table = format_detailed_table(&[u]);
         assert!(table.contains("test.rs"));
         assert!(table.contains("foo"));
+    }
+
+    #[test]
+    fn test_format_detailed_table_renders_missing_metrics_as_dashes() {
+        let u = UnitMetrics::new(
+            "a/very/long/path/that/exceeds/the/forty/character/column/test.rs".to_string(),
+            "a_very_long_function_name".to_string(),
+            "function",
+            42,
+        );
+
+        let table = format_detailed_table(&[u]);
+
+        assert!(table.contains(&truncate(
+            "a/very/long/path/that/exceeds/the/forty/character/column/test.rs",
+            40
+        )));
+        assert!(table.contains(&truncate("a_very_long_function_name", 20)));
+        assert!(table.contains("     -"));
     }
 
     #[test]
@@ -218,5 +228,31 @@ mod tests {
                 .any(|u| u.name == "foo" && u.kind == "function")
         );
         assert!(units.iter().any(|u| u.name == "Bar" && u.kind == "impl"));
+    }
+}
+
+#[cfg(test)]
+mod coverage_witness {
+    use super::*;
+    use std::path::Path;
+
+    impl FileScopeMetrics {
+        fn witness() -> Self {
+            Self {
+                lines: 1,
+                imports: Some(0),
+                statements: 0,
+                functions: 0,
+                interface_types: 0,
+                concrete_types: 0,
+            }
+        }
+    }
+
+    #[test]
+    fn witness_file_scope_metrics() {
+        let fm = FileScopeMetrics::witness();
+        let unit = file_unit_metrics(Path::new("a.py"), fm, None);
+        assert_eq!(unit.lines, Some(1));
     }
 }

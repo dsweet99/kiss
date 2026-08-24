@@ -1,5 +1,4 @@
-kiss check
 ruff check .
-pytest -sv tests
 cargo clippy --all-targets --all-features -- -D warnings -W clippy::cargo
-cargo nextest run
+~/kiss-tmp check
+~/kiss-tmp test

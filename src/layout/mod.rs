@@ -1,13 +1,3 @@
-//! Main analysis pipeline for layout structure reporting (unit tests; not a CLI subcommand).
-//!
-//! Coordinates cycle detection, layering, and output generation to
-//! recommend codebase structure improvements.
-//!
-//! TODO: Add clustering for cohesion analysis (Leiden/Louvain algorithm)
-//! once the core layering functionality is stable.
-
-// `kiss layout` CLI was removed; this module remains for unit tests and programmatic reuse.
-
 use kiss::{DependencyGraph, Language, LayerInfo};
 use kiss::{LayoutAnalysis, LayoutMetrics, WhatIfAnalysis};
 use kiss::{analyze_cycles, compute_layers, format_markdown};
@@ -15,7 +5,6 @@ use petgraph::visit::EdgeRef;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-/// Options for the layout analysis.
 pub struct LayoutOptions<'a> {
     pub paths: &'a [String],
     pub lang_filter: Option<Language>,
@@ -23,7 +12,6 @@ pub struct LayoutOptions<'a> {
     pub project_name: Option<String>,
 }
 
-/// Run the layout analysis and write output to the specified path or stdout.
 pub fn run_layout(opts: &LayoutOptions<'_>, out_path: Option<&Path>) -> std::io::Result<()> {
     let (py_files, rs_files) =
         kiss::discovery::gather_files_by_lang(opts.paths, opts.lang_filter, opts.ignore_prefixes);
@@ -62,7 +50,7 @@ fn analyze_layout(
     }
 
     if !rs_files.is_empty() {
-        let rs_graph = crate::analyze::build_rs_graph_from_files(rs_files);
+        let rs_graph = crate::analyze::build_rs_graph_from_files(rs_files)?;
         merge_graph(&mut combined_graph, &rs_graph, "rs");
     }
 

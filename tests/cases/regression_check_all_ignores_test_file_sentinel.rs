@@ -1,6 +1,4 @@
-//! `kiss check --all` must not emit coverage violations for test modules.
-//! Test files are witness sources, not production gate targets.
-
+use crate::common::seed_python_runtime_coverage;
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
@@ -20,10 +18,14 @@ fn write_corpus(dir: &std::path::Path) {
     .unwrap();
     fs::write(
         dir.join(".kissconfig"),
-        "[gate]\n\
-         test_coverage_threshold = 90\n\
+        "[global]\n\
          duplication_enabled = false\n\
          orphan_module_enabled = false\n\
+         \n\
+[test]\n\
+         test_coverage_threshold = 90\n\
+         [python]\n\
+         [rust]\n\
          \n\
          [thresholds]\n\
          statements_per_function = 100\n\
@@ -57,22 +59,26 @@ fn write_corpus(dir: &std::path::Path) {
 fn kiss_check_all_passes_without_test_module_violations() {
     let corpus = TempDir::new().unwrap();
     write_corpus(corpus.path());
+    seed_python_runtime_coverage(
+        corpus.path(),
+        &[("tests/test_lib.py::test_add", vec![("lib.py", vec![1, 2])])],
+    );
 
     let home = TempDir::new().unwrap();
 
     let out = Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .arg("check")
+        .arg("__coverage")
         .arg("--all")
         .arg(corpus.path())
         .env("HOME", home.path())
         .output()
-        .expect("kiss check --all should run");
+        .expect("kiss __coverage --all should run");
 
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         out.status.success(),
-        "kiss check --all failed (exit {:?})\nstdout:\n{stdout}\nstderr:\n{stderr}",
+        "kiss __coverage --all failed (exit {:?})\nstdout:\n{stdout}\nstderr:\n{stderr}",
         out.status.code(),
     );
     assert!(

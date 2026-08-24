@@ -1,7 +1,5 @@
 use crate::bin_cli::config_session::config_provenance;
-use kiss::check_universe_cache::CachedCoverageItem;
 use kiss::{Config, GateConfig, Language};
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 pub struct StatsTopArgs<'a> {
@@ -12,222 +10,98 @@ pub struct StatsTopArgs<'a> {
     pub py_config: &'a Config,
     pub rs_config: &'a Config,
     pub gate_config: &'a GateConfig,
+    pub language_tables: kiss::LanguageTablesPresent,
+    pub config: Option<&'a std::path::Path>,
 }
 
-type FreshCoverageItems = (Vec<CachedCoverageItem>, Vec<CachedCoverageItem>);
+#[cfg(test)]
+pub(super) fn finalize_stats_top_status(status: i32) {
+    if status == 0 {
+        return;
+    }
+    std::process::exit(status);
+}
 
-pub fn run_stats_top(args: StatsTopArgs<'_>) {
+pub(super) fn run_stats_top_status(args: StatsTopArgs<'_>) -> i32 {
+    let _ = (args.py_config, args.rs_config, args.gate_config);
     let (py_files, rs_files) =
         kiss::discovery::gather_files_by_lang(args.paths, args.lang_filter, args.ignore);
     if py_files.is_empty() && rs_files.is_empty() {
-        eprintln!("No source files found.");
-        std::process::exit(1);
+        return no_source_files_status();
+    }
+    if let Err(code) = crate::bin_cli::util::reject_unconfigured_languages(
+        &py_files,
+        &rs_files,
+        args.language_tables,
+    ) {
+        return code;
     }
     println!(
         "kiss stats --all {n} - Top Outliers\nAnalyzed from: {paths}\n{prov}\n",
         n = args.n,
         paths = args.paths.join(", "),
-        prov = config_provenance()
+        prov = config_provenance(args.config)
     );
-    let cached_coverage = crate::analyze_cache::try_run_cached_stats_top(
-        &py_files,
-        &rs_files,
-        args.py_config,
-        args.rs_config,
-        args.gate_config,
-    )
-    .map(coverage_map_to_string_keys);
-    let (py_units, py_fresh) = collect_py_units(&py_files, cached_coverage.as_ref());
-    let (rs_units, rs_fresh) = collect_rs_units(&rs_files, cached_coverage.as_ref());
-    if cached_coverage.is_none()
-        && let Some((definitions, unreferenced)) = merge_fresh_items(py_fresh, rs_fresh)
-    {
-        crate::analyze_cache::maybe_store_stats_top_cache(
-            &py_files,
-            &rs_files,
-            args.py_config,
-            args.rs_config,
-            args.gate_config,
-            definitions,
-            unreferenced,
-        );
-    }
-    let mut all_units = py_units;
-    all_units.extend(rs_units);
+    let all_units = match collect_py_units(&py_files).and_then(|py| {
+        collect_rs_units(&rs_files).map(|rs| {
+            let mut units = py;
+            units.extend(rs);
+            units
+        })
+    }) {
+        Ok(units) => units,
+        Err(err) => {
+            eprintln!("{err}");
+            return 1;
+        }
+    };
     print_all_top_metrics(&all_units, args.n);
+    0
 }
 
-fn coverage_map_to_string_keys(map: HashMap<PathBuf, usize>) -> HashMap<String, usize> {
-    map.into_iter()
-        .map(|(p, v)| (p.display().to_string(), v))
-        .collect()
-}
-
-fn merge_fresh_items(
-    py: Option<FreshCoverageItems>,
-    rs: Option<FreshCoverageItems>,
-) -> Option<FreshCoverageItems> {
-    if py.is_none() && rs.is_none() {
-        return None;
-    }
-    let mut defs = Vec::new();
-    let mut unrefs = Vec::new();
-    for (d, u) in py.into_iter().chain(rs) {
-        defs.extend(d);
-        unrefs.extend(u);
-    }
-    Some((defs, unrefs))
+fn no_source_files_status() -> i32 {
+    eprintln!("No source files found.");
+    1
 }
 
 #[cfg(test)]
-pub fn collect_all_units(
-    py_files: &[PathBuf],
-    rs_files: &[PathBuf],
-    cached_coverage: Option<&HashMap<String, usize>>,
-) -> Vec<kiss::UnitMetrics> {
-    let (py_units, _) = collect_py_units(py_files, cached_coverage);
-    let (rs_units, _) = collect_rs_units(rs_files, cached_coverage);
-    let mut units = py_units;
-    units.extend(rs_units);
+pub(super) fn merge_fresh_items(_py: Option<()>, _rs: Option<()>) -> Option<()> {
+    None
+}
+
+#[cfg(test)]
+pub fn collect_all_units(py_files: &[PathBuf], rs_files: &[PathBuf]) -> Vec<kiss::UnitMetrics> {
+    let mut units = collect_py_units(py_files).expect("python stats units");
+    units.extend(collect_rs_units(rs_files).expect("rust stats units"));
     units
 }
 
-fn collect_py_units(
-    py_files: &[PathBuf],
-    cached_coverage: Option<&HashMap<String, usize>>,
-) -> (Vec<kiss::UnitMetrics>, Option<FreshCoverageItems>) {
-    use kiss::parsing::parse_files;
-    use kiss::{analyze_test_refs, build_dependency_graph, collect_detailed_py};
+fn collect_py_units(py_files: &[PathBuf]) -> Result<Vec<kiss::UnitMetrics>, kiss::RoleBuildError> {
+    use kiss::{build_python_context_graph, collect_detailed_py};
 
-    collect_lang_units(LangCollect {
-        files: py_files,
-        cached_coverage,
-        parse: |files| match parse_files(files) {
-            Ok(r) => r.into_iter().filter_map(Result::ok).collect(),
-            Err(e) => {
-                eprintln!("error: failed to parse Python files: {e}");
-                Vec::new()
-            }
-        },
-        build_graph: build_dependency_graph,
-        analyze: |refs, graph| {
-            let cov = analyze_test_refs(refs, Some(graph));
-            (cov.definitions, cov.unreferenced)
-        },
-        collect_detailed: collect_detailed_py,
-        file_of: |d: &kiss::CodeDefinition| &d.file,
-        item_of: |d: &kiss::CodeDefinition| CachedCoverageItem {
-            file: d.file.to_string_lossy().to_string(),
-            name: d.name.clone(),
-            line: d.line,
-        },
-    })
-}
-
-fn collect_rs_units(
-    rs_files: &[PathBuf],
-    cached_coverage: Option<&HashMap<String, usize>>,
-) -> (Vec<kiss::UnitMetrics>, Option<FreshCoverageItems>) {
-    use kiss::rust_graph::build_rust_dependency_graph;
-    use kiss::rust_parsing::parse_rust_files;
-    use kiss::{analyze_rust_test_refs, collect_detailed_rs};
-
-    collect_lang_units(LangCollect {
-        files: rs_files,
-        cached_coverage,
-        parse: |files| {
-            parse_rust_files(files)
-                .into_iter()
-                .filter_map(Result::ok)
-                .collect()
-        },
-        build_graph: build_rust_dependency_graph,
-        analyze: |refs, graph| {
-            let cov = analyze_rust_test_refs(refs, Some(graph));
-            (cov.definitions, cov.unreferenced)
-        },
-        collect_detailed: collect_detailed_rs,
-        file_of: |d: &kiss::RustCodeDefinition| &d.file,
-        item_of: |d: &kiss::RustCodeDefinition| CachedCoverageItem {
-            file: d.file.to_string_lossy().to_string(),
-            name: d.name.clone(),
-            line: d.line,
-        },
-    })
-}
-
-struct LangCollect<'a, P, D, FParse, FBuild, FAnalyze, FCollect, FFile, FItem>
-where
-    FParse: FnOnce(&[PathBuf]) -> Vec<P>,
-    FBuild: FnOnce(&[&P]) -> kiss::DependencyGraph,
-    FAnalyze: FnOnce(&[&P], &kiss::DependencyGraph) -> (Vec<D>, Vec<D>),
-    FCollect: FnOnce(&[&P], Option<&kiss::DependencyGraph>) -> Vec<kiss::UnitMetrics>,
-    FFile: Fn(&D) -> &PathBuf,
-    FItem: Fn(&D) -> CachedCoverageItem,
-{
-    files: &'a [PathBuf],
-    cached_coverage: Option<&'a HashMap<String, usize>>,
-    parse: FParse,
-    build_graph: FBuild,
-    analyze: FAnalyze,
-    collect_detailed: FCollect,
-    file_of: FFile,
-    item_of: FItem,
-}
-
-fn collect_lang_units<P, D, FParse, FBuild, FAnalyze, FCollect, FFile, FItem>(
-    args: LangCollect<'_, P, D, FParse, FBuild, FAnalyze, FCollect, FFile, FItem>,
-) -> (Vec<kiss::UnitMetrics>, Option<FreshCoverageItems>)
-where
-    FParse: FnOnce(&[PathBuf]) -> Vec<P>,
-    FBuild: FnOnce(&[&P]) -> kiss::DependencyGraph,
-    FAnalyze: FnOnce(&[&P], &kiss::DependencyGraph) -> (Vec<D>, Vec<D>),
-    FCollect: FnOnce(&[&P], Option<&kiss::DependencyGraph>) -> Vec<kiss::UnitMetrics>,
-    FFile: Fn(&D) -> &PathBuf,
-    FItem: Fn(&D) -> CachedCoverageItem,
-{
-    if args.files.is_empty() {
-        return (Vec::new(), None);
-    }
-    let parsed = (args.parse)(args.files);
-    let parsed_refs: Vec<&P> = parsed.iter().collect();
-    let graph = (args.build_graph)(&parsed_refs);
-    let (coverage_map, fresh) = if let Some(m) = args.cached_coverage {
-        (m.clone(), None)
-    } else {
-        let (defs, unrefs) = (args.analyze)(&parsed_refs, &graph);
-        let map = coverage_pct_map(&defs, &unrefs, &args.file_of);
-        let cached_defs: Vec<CachedCoverageItem> = defs.iter().map(&args.item_of).collect();
-        let cached_unrefs: Vec<CachedCoverageItem> = unrefs.iter().map(&args.item_of).collect();
-        (map, Some((cached_defs, cached_unrefs)))
-    };
-    let mut units = (args.collect_detailed)(&parsed_refs, Some(&graph));
-    decorate_file_units_with_coverage(&mut units, &coverage_map);
+    let (parsed, roles) = super::load::load_production_python(py_files)?;
+    let refs: Vec<_> = parsed.iter().collect();
+    let graph = build_python_context_graph(&refs, &roles).production_view();
+    let mut units = collect_detailed_py(&refs, Some(&graph));
     append_cycle_units(&mut units, &graph);
-    (units, fresh)
+    Ok(units)
 }
 
-pub(super) fn coverage_pct_map<D, F>(defs: &[D], unrefs: &[D], file_of: F) -> HashMap<String, usize>
-where
-    F: Fn(&D) -> &PathBuf,
-{
-    coverage_map_to_string_keys(kiss::cli_output::file_coverage_map_from_paths(
-        defs.iter().map(&file_of),
-        unrefs.iter().map(&file_of),
-    ))
+fn collect_rs_units(rs_files: &[PathBuf]) -> Result<Vec<kiss::UnitMetrics>, kiss::RoleBuildError> {
+    use kiss::{build_rust_dependency_graph_with_roles, collect_detailed_rs_with_roles};
+
+    let (parsed, roles) = super::load::load_production_rust(rs_files)?;
+    let refs: Vec<_> = parsed.iter().collect();
+    let graph = build_rust_dependency_graph_with_roles(&refs, Some(&roles));
+    let mut units = collect_detailed_rs_with_roles(&refs, Some(&graph), Some(&roles));
+    append_cycle_units(&mut units, &graph);
+    Ok(units)
 }
 
-pub(super) fn decorate_file_units_with_coverage(
-    units: &mut [kiss::UnitMetrics],
-    coverage_map: &HashMap<String, usize>,
+pub(super) fn append_cycle_units(
+    units: &mut Vec<kiss::UnitMetrics>,
+    graph: &kiss::DependencyGraph,
 ) {
-    for u in units.iter_mut().filter(|u| u.kind == "file") {
-        let coverage_pct = coverage_map.get(&u.file).copied().unwrap_or(100);
-        u.inv_test_coverage = Some(100usize.saturating_sub(coverage_pct));
-    }
-}
-
-pub(super) fn append_cycle_units(units: &mut Vec<kiss::UnitMetrics>, graph: &kiss::DependencyGraph) {
     for cycle in graph.find_cycles().cycles {
         let Some(representative) = cycle.iter().min().cloned() else {
             continue;
@@ -242,70 +116,12 @@ pub(super) fn append_cycle_units(units: &mut Vec<kiss::UnitMetrics>, graph: &kis
     }
 }
 
-type UnitMetricExtractor = fn(&kiss::UnitMetrics) -> Option<usize>;
-
 #[cfg(test)]
 pub(super) const AGGREGATE_ONLY_METRICS: &[&str] = &[];
 
-fn extractor_for_fn_core(metric_id: &str) -> Option<UnitMetricExtractor> {
-    match metric_id {
-        "statements_per_function" => Some(|u| u.statements),
-        "positional_args" => Some(|u| u.args_positional),
-        "keyword_only_args" => Some(|u| u.args_keyword_only),
-        "max_indentation_depth" => Some(|u| u.indentation),
-        "nested_function_depth" => Some(|u| u.nested_depth),
-        "returns_per_function" => Some(|u| u.returns),
-        "return_values_per_function" => Some(|u| u.return_values),
-        _ => None,
-    }
-}
-
-fn extractor_for_fn_extra(metric_id: &str) -> Option<UnitMetricExtractor> {
-    match metric_id {
-        "branches_per_function" => Some(|u| u.branches),
-        "local_variables_per_function" => Some(|u| u.locals),
-        "statements_per_try_block" => Some(|u| u.try_block_statements),
-        "boolean_parameters" => Some(|u| u.boolean_parameters),
-        "annotations_per_function" => Some(|u| u.annotations),
-        "calls_per_function" => Some(|u| u.calls),
-        "methods_per_class" => Some(|u| u.methods),
-        _ => None,
-    }
-}
-
-fn extractor_for_fn(metric_id: &str) -> Option<UnitMetricExtractor> {
-    extractor_for_fn_core(metric_id).or_else(|| extractor_for_fn_extra(metric_id))
-}
-
-fn extractor_for_file(metric_id: &str) -> Option<UnitMetricExtractor> {
-    match metric_id {
-        "statements_per_file" => Some(|u| u.file_statements),
-        "lines_per_file" => Some(|u| u.lines),
-        "functions_per_file" => Some(|u| u.file_functions),
-        "interface_types_per_file" => Some(|u| u.interface_types),
-        "concrete_types_per_file" => Some(|u| u.concrete_types),
-        "imported_names_per_file" => Some(|u| u.imports),
-        "inv_test_coverage" => Some(|u| u.inv_test_coverage),
-        _ => None,
-    }
-}
-
-fn extractor_for_graph(metric_id: &str) -> Option<UnitMetricExtractor> {
-    match metric_id {
-        "fan_in" => Some(|u| u.fan_in),
-        "fan_out" => Some(|u| u.fan_out),
-        "indirect_dependencies" => Some(|u| u.indirect_deps),
-        "dependency_depth" => Some(|u| u.dependency_depth),
-        "cycle_size" => Some(|u| u.cycle_size),
-        _ => None,
-    }
-}
-
-pub(super) fn extractor_for(metric_id: &str) -> Option<UnitMetricExtractor> {
-    extractor_for_fn(metric_id)
-        .or_else(|| extractor_for_file(metric_id))
-        .or_else(|| extractor_for_graph(metric_id))
-}
+#[path = "top_extractors.rs"]
+mod top_extractors;
+pub(crate) use top_extractors::*;
 
 pub fn print_all_top_metrics(units: &[kiss::UnitMetrics], n: usize) {
     for def in kiss::METRICS {
@@ -336,4 +152,3 @@ where
         );
     }
 }
-

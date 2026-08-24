@@ -1,3 +1,4 @@
+use super::tests_1::{classified_file_metrics, mod_is_test_only};
 use super::*;
 
 #[test]
@@ -68,8 +69,8 @@ mod compound_test {{
     )
     .unwrap();
     let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
-    let m = compute_rust_file_metrics(&parsed);
-    // Both test modules should be skipped - only production_fn should be counted
+    let m = classified_file_metrics(&parsed);
+
     assert_eq!(
         m.functions, 1,
         "should only count production_fn, not test fns (simple or compound cfg)"
@@ -82,8 +83,6 @@ mod compound_test {{
 
 #[test]
 fn test_cfg_not_test_mod_included_in_metrics() {
-    // BUG TEST: #[cfg(not(test))] means "production code", NOT test code.
-    // It should be INCLUDED in file metrics, not skipped.
     use std::io::Write;
     let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
     writeln!(
@@ -104,9 +103,8 @@ mod tests {{
     )
     .unwrap();
     let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
-    let m = compute_rust_file_metrics(&parsed);
-    // Should count always_fn + prod_fn = 2 functions, not just always_fn = 1
-    // The tests module should be skipped, but not(test) module should be included
+    let m = classified_file_metrics(&parsed);
+
     assert_eq!(
         m.functions, 2,
         "cfg(not(test)) is production code and should be counted (got {})",
@@ -121,9 +119,6 @@ mod tests {{
 
 #[test]
 fn test_is_cfg_test_mod_semantics() {
-    use syn::{Item, parse_str};
-
-    // Test that is_cfg_test_mod correctly identifies test vs production modules
     let cases = [
         (r"#[cfg(test)] mod m {}", "cfg(test)", true),
         (
@@ -133,8 +128,8 @@ fn test_is_cfg_test_mod_semantics() {
         ),
         (
             r"#[cfg(any(test, windows))] mod m {}",
-            "cfg(any(test,...))",
-            true,
+            "cfg(any(test,...)) is production-capable",
+            false,
         ),
         (
             r"#[cfg(not(test))] mod m {}",
@@ -150,19 +145,12 @@ fn test_is_cfg_test_mod_semantics() {
     ];
 
     for (code, label, expected) in cases {
-        let item: Item = parse_str(code).unwrap();
-        if let Item::Mod(m) = item {
-            let result = is_cfg_test_mod(&m);
-            println!("{label}: is_cfg_test_mod = {result}, expected = {expected}");
-            assert_eq!(result, expected, "mismatch for {label}");
-        }
+        assert_eq!(mod_is_test_only(code), expected, "mismatch for {label}");
     }
 }
 
 #[test]
 fn test_double_negation_not_not_test_is_test_code() {
-    // BUG: not(not(test)) is logically equivalent to test, so it IS test-only code.
-    // It should be SKIPPED in file metrics, not included.
     use std::io::Write;
     let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
     writeln!(
@@ -183,8 +171,8 @@ mod tests {{
     )
     .unwrap();
     let parsed = crate::rust_parsing::parse_rust_file(tmp.path()).unwrap();
-    let m = compute_rust_file_metrics(&parsed);
-    // not(not(test)) == test, so should only count production_fn (1 function, 1 statement)
+    let m = classified_file_metrics(&parsed);
+
     assert_eq!(
         m.functions, 1,
         "not(not(test)) is test code and should be skipped (got {} functions)",

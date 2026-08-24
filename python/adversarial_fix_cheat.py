@@ -1,4 +1,3 @@
-"""Fix kiss against cheat repos: runtime coverage estimation, not static-reference tricks."""
 
 from __future__ import annotations
 
@@ -7,16 +6,16 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import NamedTuple
 
-from python.adversarial_multi_repo import format_repo_paths, normalize_repos
 from python.adversarial_cheat import (
     TRUE_COVERAGE_CEILING,
     CheatMetrics,
-    _is_test_module_path,
+    _is_harness_test_module_path,
     _load_coverage_maps,
     cheat_gaps,
     format_cheat_report,
     run_kiss_check,
 )
+from python.adversarial_multi_repo import format_repo_paths, normalize_repos
 
 
 class FixCheatMetrics(NamedTuple):
@@ -26,7 +25,7 @@ class FixCheatMetrics(NamedTuple):
 
 
 def cheat_test_paths_flagged(kiss_partial: dict[str, float]) -> list[str]:
-    return sorted(p for p in kiss_partial if _is_test_module_path(p))
+    return sorted(p for p in kiss_partial if _is_harness_test_module_path(p))
 
 
 def fix_cheat_satisfied(metrics: FixCheatMetrics) -> bool:
@@ -46,7 +45,7 @@ def format_fix_cheat_report(metrics: FixCheatMetrics) -> str:
 
 
 def build_fix_cheat_prompt(kiss_root: Path, repos: Sequence[Path]) -> str:
-    adversarial_py = (kiss_root / "ops" / "adversarial.py").resolve()
+    adversarial_py = (kiss_root / "python" / "adversarial_cli.py").resolve()
     paths = normalize_repos(repos)
     repo_block = format_repo_paths(paths)
     one = len(paths) == 1

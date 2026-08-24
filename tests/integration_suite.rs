@@ -1,4 +1,3 @@
-//! Single integration-test crate: links once against `kiss` instead of one binary per `tests/*.rs` file.
 #[path = "common/mod.rs"]
 mod common;
 #[path = "support/mod.rs"]
@@ -6,18 +5,36 @@ mod support;
 
 #[path = "cases/c2_break_orphans.rs"]
 mod break_c2_orphans;
-#[path = "cases/c2_break_test_coverage.rs"]
-mod break_c2_test_coverage;
+#[path = "cases/bug_indirect_dependencies_check.rs"]
+mod bug_indirect_dependencies_check;
+#[path = "cases/bug_nested_non_member_coverage_universe.rs"]
+mod bug_nested_non_member_coverage_universe;
+#[path = "cases/bug_test_coverage_aggregate_gate_masking.rs"]
+mod bug_test_coverage_aggregate_gate_masking;
+#[path = "cases/bug_test_coverage_violation_message.rs"]
+mod bug_test_coverage_violation_message;
 #[path = "cases/cache_integration.rs"]
 mod cache_integration;
-#[path = "cases/cli_integration.rs"]
-mod cli_integration;
+#[path = "cases/clamp_graph_keys.rs"]
+mod clamp_graph_keys;
+#[path = "cases/clamp_then_check.rs"]
+mod clamp_then_check;
 #[path = "cases/cli_check_hint.rs"]
 mod cli_check_hint;
+#[path = "cases/cli_integration.rs"]
+mod cli_integration;
 #[path = "cases/cli_integration_2.rs"]
 mod cli_integration_2;
+#[path = "cases/cli_kiss_test_smoke.rs"]
+mod cli_kiss_test_smoke;
+#[path = "cases/comment_removal_check.rs"]
+mod comment_removal_check;
 #[path = "cases/config_tests.rs"]
 mod config_tests;
+#[path = "cases/coverage_corpus.rs"]
+mod coverage_corpus;
+#[path = "cases/docs_allowed_check.rs"]
+mod docs_allowed_check;
 #[path = "cases/fix_h1_error_nodes.rs"]
 mod fix_h1_error_nodes;
 #[path = "cases/fix_h5_phantom_orphans.rs"]
@@ -28,12 +45,10 @@ mod journal_hypotheses;
 mod kpop_definitions;
 #[path = "cases/kpop_definitions_2.rs"]
 mod kpop_definitions_2;
+#[path = "cases/kpop_include_rollup_regressions.rs"]
+mod kpop_include_rollup_regressions;
 #[path = "cases/kpop_python_function_metrics.rs"]
 mod kpop_python_function_metrics;
-#[path = "cases/bug_indirect_dependencies_check.rs"]
-mod bug_indirect_dependencies_check;
-#[path = "cases/bug_test_coverage_aggregate_gate_masking.rs"]
-mod bug_test_coverage_aggregate_gate_masking;
 #[path = "cases/kpop_python_graph_metrics.rs"]
 mod kpop_python_graph_metrics;
 #[path = "cases/kpop_python_none.rs"]
@@ -48,16 +63,10 @@ mod kpop_rust_file_metrics_plan;
 mod kpop_rust_function_metrics;
 #[path = "cases/kpop_rust_graph_metrics.rs"]
 mod kpop_rust_graph_metrics;
-#[path = "cases/kpop_include_rollup_regressions.rs"]
-mod kpop_include_rollup_regressions;
 #[path = "cases/kpop_rust_none.rs"]
 mod kpop_rust_none;
 #[path = "cases/kpop_rust_none_graph_and_gates.rs"]
 mod kpop_rust_none_graph_and_gates;
-#[path = "cases/kpop_rust_syntactic_witness_coverage.rs"]
-mod kpop_rust_syntactic_witness_coverage;
-#[path = "cases/cli_kiss_test_smoke.rs"]
-mod cli_kiss_test_smoke;
 #[path = "cases/lib_integration.rs"]
 mod lib_integration;
 #[path = "cases/main_integration.rs"]
@@ -66,10 +75,10 @@ mod main_integration;
 mod py_metrics_tests;
 #[path = "cases/python_counts_violations.rs"]
 mod python_counts_violations;
-#[path = "cases/regression_check_cache_uncached_default.rs"]
-mod regression_check_cache_uncached_default;
 #[path = "cases/regression_check_all_ignores_test_file_sentinel.rs"]
 mod regression_check_all_ignores_test_file_sentinel;
+#[path = "cases/regression_check_cache_uncached_default.rs"]
+mod regression_check_cache_uncached_default;
 #[path = "cases/regression_check_default_warm_gate.rs"]
 mod regression_check_default_warm_gate;
 #[path = "cases/regression_check_default_writes_cache.rs"]
@@ -78,16 +87,26 @@ mod regression_check_default_writes_cache;
 mod regression_check_focus_empty_dir;
 #[path = "cases/regression_check_ignore_filename.rs"]
 mod regression_check_ignore_filename;
+#[path = "cases/regression_check_mixed_runtime_line_coverage.rs"]
+mod regression_check_mixed_runtime_line_coverage;
 #[path = "cases/regression_check_perf.rs"]
 mod regression_check_perf;
+#[path = "cases/regression_check_rust_incremental_runtime_coverage.rs"]
+mod regression_check_rust_incremental_runtime_coverage;
 #[path = "cases/regression_check_stats_share_relative.rs"]
 mod regression_check_stats_share_relative;
+#[path = "cases/regression_check_synthetic_python_coverage_paths.rs"]
+mod regression_check_synthetic_python_coverage_paths;
 #[path = "cases/regression_init_py_imports_sync.rs"]
 mod regression_init_py_imports_sync;
 #[path = "cases/regression_stats_all_metric_registry.rs"]
 mod regression_stats_all_metric_registry;
+#[path = "cases/regression_stats_check_same_ignore.rs"]
+mod regression_stats_check_same_ignore;
 #[path = "cases/regression_stats_cold_eq_warm.rs"]
 mod regression_stats_cold_eq_warm;
+#[path = "cases/regression_stats_grouped_unit_test_runtime.rs"]
+mod regression_stats_grouped_unit_test_runtime;
 #[path = "cases/regression_stats_summary_headers_and_coverage.rs"]
 mod regression_stats_summary_headers_and_coverage;
 #[path = "cases/regression_stats_summary_uses_cache.rs"]
@@ -154,4 +173,11 @@ mod symbol_mv_regressions_8;
 mod symbol_mv_regressions_9;
 #[path = "cases/sync_stats_check.rs"]
 mod sync_stats_check;
-
+#[path = "cases/watch_client.rs"]
+mod watch_client;
+#[path = "cases/watch_client_violations.rs"]
+mod watch_client_violations;
+#[path = "cases/watch_sigint.rs"]
+mod watch_sigint;
+#[path = "cases/watch_startup_order.rs"]
+mod watch_startup_order;

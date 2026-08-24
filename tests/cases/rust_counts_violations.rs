@@ -128,13 +128,8 @@ fn test_positional_args_violation() {
         ..Default::default()
     };
     let violations = analyze_rust_file(&parsed, &config);
-    let has_violation = violations
-        .iter()
-        .any(|v| v.metric == "positional_args");
-    assert!(
-        has_violation,
-        "should trigger positional_args violation"
-    );
+    let has_violation = violations.iter().any(|v| v.metric == "positional_args");
+    assert!(has_violation, "should trigger positional_args violation");
 }
 
 #[test]

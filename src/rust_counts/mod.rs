@@ -1,10 +1,10 @@
+use std::collections::HashMap;
 use std::path::Path;
-use syn::{Block, ImplItem, Item};
+use syn::{ImplItem, Item};
 
+use crate::code_roles::{SourceRoleIndex, production_line_count, skip_syn};
 use crate::config::Config;
-use crate::rust_fn_metrics::{
-    compute_rust_file_metrics, compute_rust_function_metrics, count_non_doc_attrs, is_cfg_test_mod,
-};
+use crate::rust_fn_metrics::{compute_rust_file_metrics_with_roles, count_non_doc_attrs};
 use crate::rust_parsing::ParsedRustFile;
 use crate::violation::{Violation, ViolationBuilder};
 
@@ -19,38 +19,57 @@ mod tests;
 
 #[must_use]
 pub fn analyze_rust_file(parsed: &ParsedRustFile, config: &Config) -> Vec<Violation> {
+    analyze_rust_file_with_roles(parsed, config, None)
+}
+
+#[must_use]
+pub fn analyze_rust_file_with_roles(
+    parsed: &ParsedRustFile,
+    config: &Config,
+    roles: Option<&SourceRoleIndex>,
+) -> Vec<Violation> {
     let mut violations = Vec::new();
-    let mut analyzer = RustAnalyzer::new(&parsed.path, config, &mut violations);
+    let mut analyzer = RustAnalyzer::new(&parsed.path, config, &mut violations, roles);
     analyzer.check_parsed_file_metrics(parsed);
     for item in &parsed.ast.items {
         analyzer.analyze_item(item);
     }
+    analyzer.flush_inherent_method_counts();
     violations
 }
 
-/// File-level metrics rolled up from `include!` fragments onto the includer path.
 #[must_use]
 pub fn analyze_rust_file_include_rollup(
     parent: &ParsedRustFile,
     included: &[&ParsedRustFile],
     config: &Config,
 ) -> Vec<Violation> {
+    analyze_rust_file_include_rollup_with_roles(parent, included, config, None)
+}
+
+#[must_use]
+pub fn analyze_rust_file_include_rollup_with_roles(
+    parent: &ParsedRustFile,
+    included: &[&ParsedRustFile],
+    config: &Config,
+    roles: Option<&SourceRoleIndex>,
+) -> Vec<Violation> {
     if included.is_empty() {
         return Vec::new();
     }
     let mut violations = Vec::new();
-    let mut analyzer = RustAnalyzer::new(&parent.path, config, &mut violations);
-    let mut merged = compute_rust_file_metrics(parent);
-    let mut lines = parent.source.lines().count();
+    let mut analyzer = RustAnalyzer::new(&parent.path, config, &mut violations, roles);
+    let mut merged = compute_rust_file_metrics_with_roles(parent, roles);
+    let mut lines = counted_source_lines(parent, roles);
     let mut contributor_paths = Vec::new();
     for frag in included {
-        let fm = compute_rust_file_metrics(frag);
+        let fm = compute_rust_file_metrics_with_roles(frag, roles);
         merged.statements += fm.statements;
         merged.interface_types += fm.interface_types;
         merged.concrete_types += fm.concrete_types;
         merged.imports += fm.imports;
         merged.functions += fm.functions;
-        lines += frag.source.lines().count();
+        lines += counted_source_lines(frag, roles);
         contributor_paths.push(frag.path.display().to_string());
     }
     let contrib = contributor_paths.join(", ");
@@ -64,18 +83,34 @@ pub fn analyze_rust_file_include_rollup(
     violations
 }
 
+fn counted_source_lines(parsed: &ParsedRustFile, roles: Option<&SourceRoleIndex>) -> usize {
+    roles.map_or_else(
+        || parsed.source.lines().count(),
+        |roles| production_line_count(roles, &parsed.path, &parsed.source),
+    )
+}
+
 struct RustAnalyzer<'a> {
     file: &'a Path,
     config: &'a Config,
     violations: &'a mut Vec<Violation>,
+    inherent_method_counts: HashMap<String, (usize, usize)>,
+    roles: Option<&'a SourceRoleIndex>,
 }
 
 impl<'a> RustAnalyzer<'a> {
-    const fn new(file: &'a Path, config: &'a Config, violations: &'a mut Vec<Violation>) -> Self {
+    fn new(
+        file: &'a Path,
+        config: &'a Config,
+        violations: &'a mut Vec<Violation>,
+        roles: Option<&'a SourceRoleIndex>,
+    ) -> Self {
         Self {
             file,
             config,
             violations,
+            inherent_method_counts: HashMap::new(),
+            roles,
         }
     }
 
@@ -100,14 +135,14 @@ impl<'a> RustAnalyzer<'a> {
     }
 
     fn check_parsed_file_metrics(&mut self, parsed: &ParsedRustFile) {
-        let m = compute_rust_file_metrics(parsed);
+        let m = compute_rust_file_metrics_with_roles(parsed, self.roles);
         let fname = self
             .file
             .file_name()
             .unwrap_or_default()
             .to_string_lossy()
             .into_owned();
-        let lines = parsed.source.lines().count();
+        let lines = counted_source_lines(parsed, self.roles);
         self.check_rolled_file_metrics(&fname, &m, lines, "");
     }
 
@@ -206,6 +241,9 @@ impl<'a> RustAnalyzer<'a> {
     }
 
     fn analyze_item(&mut self, item: &Item) {
+        if skip_syn(self.roles, self.file, item) {
+            return;
+        }
         match item {
             Item::Fn(func) => {
                 let name = func.sig.ident.to_string();
@@ -221,9 +259,7 @@ impl<'a> RustAnalyzer<'a> {
             }
             Item::Impl(impl_block) => self.analyze_impl_block(impl_block),
             Item::Mod(m) => {
-                if !is_cfg_test_mod(m)
-                    && let Some((_, items)) = &m.content
-                {
+                if let Some((_, items)) = &m.content {
                     for item in items {
                         self.analyze_item(item);
                     }
@@ -238,11 +274,21 @@ impl<'a> RustAnalyzer<'a> {
         let type_name = get_impl_type_name(impl_block);
         let line = impl_block.impl_token.span.start().line;
         let name = type_name.as_deref().unwrap_or("<impl>");
-
-        self.check_methods_per_class(line, name, method_count);
+        if impl_block.trait_.is_none() {
+            let entry = self
+                .inherent_method_counts
+                .entry(name.to_string())
+                .or_insert((line, 0));
+            entry.1 += method_count;
+        } else {
+            self.check_methods_per_class(line, name, method_count);
+        }
 
         for impl_item in &impl_block.items {
             if let ImplItem::Fn(method) = impl_item {
+                if skip_syn(self.roles, self.file, method) {
+                    continue;
+                }
                 let mname = method.sig.ident.to_string();
                 let mline = method.sig.ident.span().start().line;
                 self.analyze_function(
@@ -278,109 +324,15 @@ impl<'a> RustAnalyzer<'a> {
         }
     }
 
-    fn analyze_function(
-        &mut self,
-        name: &str,
-        line: usize,
-        inputs: &syn::punctuated::Punctuated<syn::FnArg, syn::token::Comma>,
-        block: &Block,
-        attr_count: usize,
-        ut: &str,
-    ) {
-        let m = compute_rust_function_metrics(inputs, block, attr_count);
-        let c = self.config;
-
-        macro_rules! chk {
-            ($mf:ident, $cf:ident, $metric:literal, $label:literal, $sug:literal) => {
-                if m.$mf > c.$cf {
-                    self.violations.push(
-                        self.build_violation(line, name)
-                            .metric($metric)
-                            .value(m.$mf)
-                            .threshold(c.$cf)
-                            .message(format!(
-                                "{} '{}' has {} {} (threshold: {})",
-                                ut, name, m.$mf, $label, c.$cf
-                            ))
-                            .suggestion($sug)
-                            .build(),
-                    );
-                }
-            };
+    fn flush_inherent_method_counts(&mut self) {
+        let counts = std::mem::take(&mut self.inherent_method_counts);
+        for (name, (line, count)) in counts {
+            self.check_methods_per_class(line, &name, count);
         }
-
-        chk!(
-            statements,
-            statements_per_function,
-            "statements_per_function",
-            "statements",
-            "Break into smaller, focused functions."
-        );
-        chk!(
-            arguments,
-            arguments_positional,
-            "positional_args",
-            "arguments",
-            "Group related arguments into a struct."
-        );
-        chk!(
-            max_indentation,
-            max_indentation_depth,
-            "max_indentation_depth",
-            "indentation depth",
-            "Use early returns, guard clauses, or extract helper functions."
-        );
-        chk!(
-            returns,
-            returns_per_function,
-            "returns_per_function",
-            "return statements",
-            "Use early guard returns at the top, then a single main return path."
-        );
-        chk!(
-            branches,
-            branches_per_function,
-            "branches_per_function",
-            "branches",
-            "Consider using match guards, early returns, or extracting logic."
-        );
-        chk!(
-            local_variables,
-            local_variables_per_function,
-            "local_variables_per_function",
-            "local variables",
-            "Extract logic into helper functions with fewer variables each."
-        );
-        chk!(
-            nested_function_depth,
-            nested_function_depth,
-            "nested_function_depth",
-            "nested closure depth",
-            "Extract nested closures into separate functions."
-        );
-        chk!(
-            bool_parameters,
-            boolean_parameters,
-            "boolean_parameters",
-            "bool parameters",
-            "Use an enum or a struct with named fields instead of multiple bools."
-        );
-        chk!(
-            attributes,
-            annotations_per_function,
-            "annotations_per_function",
-            "attributes",
-            "Consider consolidating attributes or simplifying the function's responsibilities. (TOML key: attributes_per_function)"
-        );
-        chk!(
-            calls,
-            calls_per_function,
-            "calls_per_function",
-            "calls",
-            "Extract some calls into helper functions to reduce coordination complexity."
-        );
     }
 }
+
+mod fn_limits;
 
 pub(crate) fn count_impl_methods(impl_block: &syn::ItemImpl) -> usize {
     impl_block

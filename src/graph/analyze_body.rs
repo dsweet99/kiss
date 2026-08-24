@@ -14,8 +14,6 @@ pub(crate) fn is_init_module(graph: &DependencyGraph, module_name: &str) -> bool
         .is_some_and(|s| s == "__init__")
 }
 
-/// Build a map from path → list of module names that share that path.
-/// Used to suppress phantom orphans when the same file has multiple module names.
 pub(crate) fn path_dedup_set(graph: &DependencyGraph) -> HashMap<PathBuf, Vec<String>> {
     let mut map: HashMap<PathBuf, Vec<String>> = HashMap::new();
     for (name, path) in &graph.paths {
@@ -24,7 +22,6 @@ pub(crate) fn path_dedup_set(graph: &DependencyGraph) -> HashMap<PathBuf, Vec<St
     map
 }
 
-/// Returns true if another module name sharing the same path has edges (non-orphan).
 pub(crate) fn is_path_covered_by_another(
     graph: &DependencyGraph,
     module_name: &str,
@@ -53,8 +50,10 @@ pub(crate) fn orphan_violation(graph: &DependencyGraph, module_name: &str) -> Vi
         metric: "orphan_module".to_string(),
         value: 0,
         threshold: 0,
-        message: format!("Module '{module_name}' has no dependencies and nothing depends on it"),
-        suggestion: "This may be dead code. Remove it, or integrate it into the codebase."
+        message: format!(
+            "Module '{module_name}' is an isolated production module (no production or test-only import edges)"
+        ),
+        suggestion: "This is not a recognized entry. Import it from production or test code, declare it as an entry (script/bin/__main__/fn main), or add its directory to orphan_allowed."
             .to_string(),
     }
 }
@@ -76,8 +75,9 @@ pub(crate) fn indirect_deps_violation(
             "Module '{}' has {} indirect dependencies (threshold: {})",
             module_name, metrics.indirect_dependencies, threshold
         ),
-        suggestion: "Reduce coupling by introducing abstraction layers or splitting responsibilities."
-            .to_string(),
+        suggestion:
+            "Reduce coupling by introducing abstraction layers or splitting responsibilities."
+                .to_string(),
     }
 }
 
@@ -136,14 +136,16 @@ pub(crate) fn collect_module_violations(
     seen_paths: &HashMap<PathBuf, Vec<String>>,
 ) -> Vec<Violation> {
     let mut violations = Vec::new();
+    let metrics_by_module = crate::graph::all_module_metrics(graph);
     for module_name in graph.nodes.keys() {
         if !graph.paths.contains_key(module_name) {
             continue;
         }
-        let metrics = graph.module_metrics(module_name);
+        let Some(metrics) = metrics_by_module.get(module_name) else {
+            continue;
+        };
 
         if orphan_module_enabled
-            && !is_test_module(graph, module_name)
             && !is_init_module(graph, module_name)
             && is_orphan(metrics.fan_in, metrics.fan_out, module_name)
             && !is_path_covered_by_another(graph, module_name, seen_paths)
@@ -156,7 +158,7 @@ pub(crate) fn collect_module_violations(
             violations.push(indirect_deps_violation(
                 graph,
                 module_name,
-                &metrics,
+                metrics,
                 config.indirect_dependencies,
             ));
         }
@@ -164,7 +166,7 @@ pub(crate) fn collect_module_violations(
             violations.push(dependency_depth_violation(
                 graph,
                 module_name,
-                &metrics,
+                metrics,
                 config.dependency_depth,
             ));
         }
@@ -200,6 +202,44 @@ pub(crate) fn count_decision_points(node: Node) -> usize {
         .sum()
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct GraphKeyMaxima {
+    pub indirect_dependencies: usize,
+    pub dependency_depth: usize,
+    pub cycle_size: usize,
+}
+
+#[must_use]
+pub fn graph_key_maxima(graph: &DependencyGraph) -> GraphKeyMaxima {
+    let mut indirect_dependencies = 0;
+    let mut dependency_depth = 0;
+    let metrics_by_module = crate::graph::all_module_metrics(graph);
+    for module_name in graph.nodes.keys() {
+        if !graph.paths.contains_key(module_name) {
+            continue;
+        }
+        let Some(metrics) = metrics_by_module.get(module_name) else {
+            continue;
+        };
+        if !is_crate_root_aggregator(graph, module_name) {
+            indirect_dependencies = indirect_dependencies.max(metrics.indirect_dependencies);
+        }
+        dependency_depth = dependency_depth.max(metrics.dependency_depth);
+    }
+    let cycle_size = graph
+        .find_cycles()
+        .cycles
+        .iter()
+        .map(Vec::len)
+        .max()
+        .unwrap_or(0);
+    GraphKeyMaxima {
+        indirect_dependencies,
+        dependency_depth,
+        cycle_size,
+    }
+}
+
 #[must_use]
 pub fn analyze_graph(
     graph: &DependencyGraph,
@@ -207,7 +247,8 @@ pub fn analyze_graph(
     orphan_module_enabled: bool,
 ) -> Vec<Violation> {
     let seen_paths = path_dedup_set(graph);
-    let mut violations = collect_module_violations(graph, config, orphan_module_enabled, &seen_paths);
+    let mut violations =
+        collect_module_violations(graph, config, orphan_module_enabled, &seen_paths);
     for cycle in graph.find_cycles().cycles {
         if cycle.len() > config.cycle_size {
             violations.push(cycle_size_violation(graph, &cycle, config.cycle_size));

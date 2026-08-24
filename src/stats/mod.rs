@@ -1,5 +1,3 @@
-//! Aggregate distributions for `kiss stats` and mimic-style config generation.
-
 mod collect_py;
 mod collect_rust;
 mod definitions;
@@ -12,7 +10,7 @@ mod summaries;
 mod tests;
 
 pub use definitions::{METRICS, MetricDef, MetricScope, get_metric_def};
-pub use format::{format_stats_table, generate_config_toml};
+pub use format::format_stats_table;
 pub use metric_stats::MetricStats;
 pub use percentile::PercentileSummary;
 pub use summaries::compute_summaries;

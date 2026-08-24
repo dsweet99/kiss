@@ -1,17 +1,20 @@
 use std::path::Path;
 
+pub use kiss::reject_unconfigured_languages;
+
+#[doc = "kiss-coverage-off"]
 #[cfg(unix)]
 pub fn set_sigpipe_default() {
-    // When `kiss` output is piped (e.g. `kiss stats --all . | head`), downstream may close the pipe early.
-    // Rust's default SIGPIPE behavior is "ignore", which turns this into an EPIPE write error and can panic.
-    // Restoring SIGPIPE's default behavior makes the process terminate quietly instead of panicking.
     unsafe {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
     }
 }
 
+#[doc = "kiss-coverage-off"]
 #[cfg(not(unix))]
 pub fn set_sigpipe_default() {}
+
+pub use kiss::merge_check_ignore_prefixes;
 
 pub fn validate_paths(paths: &[String]) {
     for p in paths {
@@ -34,7 +37,7 @@ pub fn validate_min_similarity(value: f64) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{set_sigpipe_default, validate_min_similarity};
+    use super::{merge_check_ignore_prefixes, set_sigpipe_default, validate_min_similarity};
 
     #[test]
     fn set_sigpipe_default_is_callable() {
@@ -52,5 +55,16 @@ mod tests {
     fn validate_min_similarity_rejects_out_of_range() {
         assert!(validate_min_similarity(-0.1).is_err());
         assert!(validate_min_similarity(1.5).is_err());
+    }
+
+    #[test]
+    fn merge_check_ignore_prefixes_preserves_user_prefixes() {
+        let merged = merge_check_ignore_prefixes(&["custom/".to_string()]);
+        assert_eq!(merged, vec!["fake_", "fixtures", "custom"]);
+    }
+
+    #[test]
+    fn validate_paths_accepts_existing_dot() {
+        super::validate_paths(&[".".to_string()]);
     }
 }

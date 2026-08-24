@@ -1,4 +1,4 @@
-use crate::common::list_full_check_cache_files;
+use crate::common::{list_full_check_cache_files, seed_python_runtime_coverage};
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
@@ -16,8 +16,17 @@ fn regression_check_default_writes_cache_and_replays() {
 
     fs::write(&src, "def covered_function(x):\n    return x * 2\n").unwrap();
     fs::write(&test, "from default import covered_function\n\ndef test_covered_function():\n    assert covered_function(2) == 4\n").unwrap();
+    seed_python_runtime_coverage(
+        repo.path(),
+        &[(
+            "test_default.py::test_covered_function",
+            vec![("default.py", vec![1, 2])],
+        )],
+    );
+    let config = crate::common::write_builtin_language_config(home.path());
     let cold = kiss_binary()
-        .arg("--defaults")
+        .arg("--config")
+        .arg(&config)
         .arg("check")
         .arg("--lang")
         .arg("python")
@@ -26,14 +35,15 @@ fn regression_check_default_writes_cache_and_replays() {
         .output()
         .unwrap();
     let cold_stdout = String::from_utf8_lossy(&cold.stdout).to_string();
-    let cache_files = list_full_check_cache_files(home.path());
+    let cache_files = list_full_check_cache_files(repo.path());
     assert!(
         !cache_files.is_empty(),
-        "expected full-check cache file under HOME. stdout:\n{cold_stdout}"
+        "expected full-check cache file under repo/.kiss. stdout:\n{cold_stdout}"
     );
 
     let warm = kiss_binary()
-        .arg("--defaults")
+        .arg("--config")
+        .arg(&config)
         .arg("check")
         .arg("--lang")
         .arg("python")

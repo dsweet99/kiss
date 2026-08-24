@@ -1,4 +1,3 @@
-"""Tests for adversarial subprocess integration."""
 
 from __future__ import annotations
 
@@ -7,7 +6,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 import python.adversarial as adv
 import python.adversarial_loop as adv_loop
 

@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -16,14 +17,6 @@ pub enum TestChangeMode {
     Main,
 }
 
-pub fn assert_git_repo(repo: &Path) -> Result<(), String> {
-    let out = git_output(repo, &["rev-parse", "--is-inside-work-tree"])?;
-    if out.trim() != "true" {
-        return Err("not a git repository".into());
-    }
-    Ok(())
-}
-
 pub fn git_repo_root(repo: &Path) -> Result<PathBuf, String> {
     let s = git_output(repo, &["rev-parse", "--show-toplevel"])?;
     let p = PathBuf::from(s.trim());
@@ -31,21 +24,16 @@ pub fn git_repo_root(repo: &Path) -> Result<PathBuf, String> {
         .map_err(|e| format!("failed to canonicalize repo root: {e}"))
 }
 
-// Build a `git` Command rooted at `repo` with all parent-process
-// `GIT_*` overrides removed. Otherwise an outer wrapper (notably
-// pre-commit, which exports `GIT_INDEX_FILE` to isolate staged
-// content from hooks) silently redirects every git call to the
-// wrapper's repo instead of `repo`, which would corrupt the user's
-// real index when `kiss test` runs from inside such a wrapper.
+pub fn require_git_repo_root(repo: &Path) -> Result<PathBuf, String> {
+    let out = git_output(repo, &["rev-parse", "--is-inside-work-tree"])?;
+    if out.trim() != "true" {
+        return Err("not a git repository".into());
+    }
+    git_repo_root(repo)
+}
+
 pub(crate) fn git_command(repo: &Path) -> Command {
-    let mut c = Command::new("git");
-    c.current_dir(repo)
-        .env_remove("GIT_INDEX_FILE")
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_OBJECT_DIRECTORY")
-        .env_remove("GIT_COMMON_DIR");
-    c
+    kiss::scrubbed_git_command(repo)
 }
 
 fn git_output(repo: &Path, args: &[&str]) -> Result<String, String> {
@@ -105,10 +93,8 @@ pub fn commit_timestamp(repo: &Path, sha: &str) -> Result<i64, String> {
 }
 
 pub fn current_branch_short(repo: &Path) -> String {
-    git_output(repo, &["rev-parse", "--abbrev-ref", "HEAD"]).map_or_else(
-        |_| "HEAD".into(),
-        |s| s.trim().to_string(),
-    )
+    git_output(repo, &["rev-parse", "--abbrev-ref", "HEAD"])
+        .map_or_else(|_| "HEAD".into(), |s| s.trim().to_string())
 }
 
 pub fn list_other_refs(repo: &Path, current: &str) -> Result<Vec<String>, String> {
@@ -158,48 +144,121 @@ pub fn auto_detect_fork_commit(repo: &Path) -> Result<String, String> {
 }
 
 pub fn changed_paths_commit(repo: &Path) -> Result<Vec<String>, String> {
-    let mut names = Vec::new();
-    let d = git_output(
-        repo,
-        &["diff", "--name-only", "--diff-filter=AM", "HEAD"],
-    )?;
-    names.extend(d.lines().map(str::trim).filter(|s| !s.is_empty()).map(String::from));
+    let mut names = BTreeSet::new();
+    names.extend(changed_paths_from_diff(repo, &["diff"], Some("HEAD"))?);
     let u = git_output(repo, &["ls-files", "--others", "--exclude-standard"])?;
-    names.extend(u.lines().map(str::trim).filter(|s| !s.is_empty()).map(String::from));
-    names.sort();
-    names.dedup();
-    Ok(names)
+    names.extend(
+        u.lines()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from),
+    );
+    Ok(names.into_iter().collect())
 }
 
 pub fn changed_paths_since(repo: &Path, rev: &str) -> Result<Vec<String>, String> {
-    let d = git_output(
-        repo,
-        &["diff", "--name-only", "--diff-filter=AM", rev],
-    )?;
-    Ok(d
-        .lines()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(String::from)
-        .collect())
+    changed_paths_from_diff(repo, &["diff"], Some(rev))
+}
+
+fn changed_paths_from_diff(
+    repo: &Path,
+    diff_prefix: &[&str],
+    rev: Option<&str>,
+) -> Result<Vec<String>, String> {
+    let mut names = BTreeSet::new();
+    for filter in ["AM", "D"] {
+        let mut args: Vec<&str> = diff_prefix.to_vec();
+        args.extend(["--name-only", "--diff-filter", filter]);
+        if let Some(rev) = rev {
+            args.push(rev);
+        }
+        let out = git_output(repo, &args)?;
+        names.extend(
+            out.lines()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(String::from),
+        );
+    }
+    Ok(names.into_iter().collect())
+}
+
+pub fn changed_lines_commit(repo: &Path) -> Result<BTreeMap<String, BTreeSet<u32>>, String> {
+    changed_lines_for_diff(repo, &["diff", "--unified=0", "--diff-filter=AM", "HEAD"])
+}
+
+pub fn changed_lines_since(
+    repo: &Path,
+    rev: &str,
+) -> Result<BTreeMap<String, BTreeSet<u32>>, String> {
+    changed_lines_for_diff(repo, &["diff", "--unified=0", "--diff-filter=AM", rev])
+}
+
+fn changed_lines_for_diff(
+    repo: &Path,
+    args: &[&str],
+) -> Result<BTreeMap<String, BTreeSet<u32>>, String> {
+    let diff = git_output(repo, args)?;
+    Ok(parse_changed_lines_from_unified_diff(&diff))
+}
+
+pub(crate) fn parse_changed_lines_from_unified_diff(diff: &str) -> BTreeMap<String, BTreeSet<u32>> {
+    let mut out = BTreeMap::new();
+    let mut current_file: Option<String> = None;
+    for line in diff.lines() {
+        if let Some(path) = line.strip_prefix("+++ ") {
+            current_file = path
+                .strip_prefix("b/")
+                .filter(|path| *path != "/dev/null")
+                .map(str::to_string);
+            continue;
+        }
+        if !line.starts_with("@@") {
+            continue;
+        }
+        let Some(file) = current_file.as_ref() else {
+            continue;
+        };
+        let Some(range) = line.split_whitespace().nth(2) else {
+            continue;
+        };
+        let Some((start, len)) = parse_unified_new_range(range) else {
+            continue;
+        };
+        if len == 0 {
+            continue;
+        }
+        let lines = out.entry(file.clone()).or_insert_with(BTreeSet::new);
+        for line_no in start..start.saturating_add(len) {
+            lines.insert(line_no);
+        }
+    }
+    out
+}
+
+fn parse_unified_new_range(range: &str) -> Option<(u32, u32)> {
+    let range = range.strip_prefix('+')?;
+    let (start, len) = range
+        .split_once(',')
+        .map_or((range, "1"), |(start, len)| (start, len));
+    Some((start.parse().ok()?, len.parse().ok()?))
 }
 
 fn rel_path_ignored(rel: &str, ignore: &[String]) -> bool {
-    ignore.iter().any(|p| {
-        let p = p.as_str();
-        rel == p || rel.starts_with(&format!("{p}/"))
-    })
+    kiss::path_ignored_by_prefixes(rel, ignore)
 }
 
 fn lang_ok(path: &Path, lang_filter: Option<TestLangFilter>) -> bool {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
     match lang_filter {
-        None => {
-            ext.eq_ignore_ascii_case("py") || kiss::Language::is_rust_path(path)
-        }
+        None => ext.eq_ignore_ascii_case("py") || is_rust_planning_path(path),
         Some(TestLangFilter::Python) => ext.eq_ignore_ascii_case("py"),
-        Some(TestLangFilter::Rust) => kiss::Language::is_rust_path(path),
+        Some(TestLangFilter::Rust) => is_rust_planning_path(path),
     }
+}
+
+fn is_rust_planning_path(path: &Path) -> bool {
+    kiss::Language::is_rust_path(path) || rust_llvm_cov_runner::is_rust_cov_cache_input(path)
 }
 
 pub fn resolve_changed_source_paths(
@@ -214,21 +273,49 @@ pub fn resolve_changed_source_paths(
             continue;
         }
         let abs = repo_root.join(rel);
-        let Ok(meta) = abs.metadata() else {
-            continue;
-        };
-        if !meta.is_file() {
-            continue;
-        }
-        if !lang_ok(&abs, lang_filter) {
-            continue;
-        }
-        if let Ok(c) = abs.canonicalize() {
-            out.push(c);
+        let include_missing = lang_ok(&abs, lang_filter);
+        match abs.metadata() {
+            Ok(meta) if meta.is_file() => {
+                if !lang_ok(&abs, lang_filter) {
+                    continue;
+                }
+                if let Ok(c) = abs.canonicalize() {
+                    out.push(c);
+                }
+            }
+            _ if include_missing => {
+                out.push(abs);
+            }
+            _ => continue,
         }
     }
     out.sort();
     out.dedup();
+    out
+}
+
+pub fn resolve_changed_line_paths(
+    repo_root: &Path,
+    rel_lines: &BTreeMap<String, BTreeSet<u32>>,
+    ignore: &[String],
+    lang_filter: Option<TestLangFilter>,
+) -> BTreeMap<PathBuf, BTreeSet<u32>> {
+    let mut out = BTreeMap::new();
+    for (rel, lines) in rel_lines {
+        if lines.is_empty() || rel_path_ignored(rel, ignore) {
+            continue;
+        }
+        let abs = repo_root.join(rel);
+        let Ok(meta) = abs.metadata() else {
+            continue;
+        };
+        if !meta.is_file() || !lang_ok(&abs, lang_filter) {
+            continue;
+        }
+        if let Ok(c) = abs.canonicalize() {
+            out.insert(c, lines.clone());
+        }
+    }
     out
 }
 
@@ -255,3 +342,7 @@ pub fn resolve_diff_target(
 #[cfg(test)]
 #[path = "test_git/git_changes_test.rs"]
 mod git_changes_test;
+
+#[cfg(test)]
+#[path = "test_git/git_changes_b_test.rs"]
+mod git_changes_b_test;

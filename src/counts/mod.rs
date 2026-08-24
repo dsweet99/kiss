@@ -58,11 +58,6 @@ pub fn analyze_file(parsed: &ParsedFile, config: &Config) -> Vec<Violation> {
     analyze_file_with_statement_count(parsed, config).1
 }
 
-/// Analyze a parsed Python file and return both:
-/// - its statement count (for summary reporting), and
-/// - the violations emitted by the standard checks.
-///
-/// This exists to avoid recomputing file metrics in hot paths like `kiss check`.
 #[must_use]
 pub fn analyze_file_with_statement_count(
     parsed: &ParsedFile,
@@ -166,7 +161,7 @@ pub fn check_file_metrics(
             "Consider splitting types into separate modules by responsibility.",
         );
     }
-    // Skip __init__.py - it's a module definition file that naturally aggregates imports
+
     if m.imports > cfg.imported_names_per_file && fname != "__init__.py" {
         push_py_file_threshold(
             v,
