@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use rpytest_runner::TestStatus;
-use rust_llvm_cov_runner::RustLineCoverage;
+use kiss::rpytest_runner::TestStatus;
+use kiss::rust_llvm_cov_runner::RustLineCoverage;
 use tempfile::TempDir;
 
 use crate::test_runner::coverage_decision::SelectionBasis;

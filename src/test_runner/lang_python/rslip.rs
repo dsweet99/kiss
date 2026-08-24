@@ -3,8 +3,8 @@ use std::io::Write;
 use std::path::Path;
 use std::time::Duration;
 
-use rpytest_runner::PytestRunner;
-use rslip::{
+use kiss::rpytest_runner::PytestRunner;
+use kiss::rslip::{
     CacheStatus as PyCacheStatus, Rslip, RslipBatchProgress, RslipError, RslipOutcome, RslipRequest,
 };
 
@@ -123,7 +123,7 @@ struct PartitionInput<'a> {
 fn partition_rslip_requests(
     input: PartitionInput<'_>,
     summary: &mut SelectorExecutionSummary,
-    statuses: &mut Vec<(String, rpytest_runner::TestStatus)>,
+    statuses: &mut Vec<(String, kiss::rpytest_runner::TestStatus)>,
     stdout: &mut impl Write,
 ) -> (Vec<RslipRequest>, Vec<String>) {
     let mut reqs = Vec::new();
@@ -149,10 +149,10 @@ fn partition_rslip_requests(
 fn record_immediate_timeout(
     selector: &str,
     summary: &mut SelectorExecutionSummary,
-    statuses: &mut Vec<(String, rpytest_runner::TestStatus)>,
+    statuses: &mut Vec<(String, kiss::rpytest_runner::TestStatus)>,
     stdout: &mut impl Write,
 ) {
-    let status = rpytest_runner::TestStatus::TimedOut;
+    let status = kiss::rpytest_runner::TestStatus::TimedOut;
     let line = crate::test_runner::status_labels::format_status_line(status, selector, "", None);
     let _ = writeln!(stdout, "{line}");
     statuses.push((selector.to_string(), status));
@@ -171,7 +171,7 @@ fn record_rslip_selector_result(
     result: Result<RslipOutcome, RslipError>,
     gate: &kiss::GateConfig,
     summary: &mut SelectorExecutionSummary,
-    statuses: &mut Vec<(String, rpytest_runner::TestStatus)>,
+    statuses: &mut Vec<(String, kiss::rpytest_runner::TestStatus)>,
 ) {
     match result {
         Ok(outcome) => {
@@ -198,10 +198,10 @@ fn record_rslip_selector_result(
         }
 
         Err(_) => {
-            statuses.push((selector.to_string(), rpytest_runner::TestStatus::Failed));
+            statuses.push((selector.to_string(), kiss::rpytest_runner::TestStatus::Failed));
             summary.record(SelectorExecutionRecord {
                 selector: selector.to_string(),
-                status: rpytest_runner::TestStatus::Failed,
+                status: kiss::rpytest_runner::TestStatus::Failed,
                 raw_status: None,
                 cache_record: SelectorCacheRecord::MissUnstored,
                 exit_code: Some(1),
@@ -259,12 +259,12 @@ fn handle_rslip_batch_progress(
 
 #[cfg(target_os = "linux")]
 fn selected_rslip_pytest_runner() -> PytestRunner {
-    rpytest_runner::forkserver_pytest_runner()
+    kiss::rpytest_runner::forkserver_pytest_runner()
 }
 
 #[cfg(not(target_os = "linux"))]
 fn selected_rslip_pytest_runner() -> PytestRunner {
-    rpytest_runner::subprocess_pytest_runner()
+    kiss::rpytest_runner::subprocess_pytest_runner()
 }
 
 fn print_rslip_outcome(
@@ -292,7 +292,7 @@ fn print_rslip_outcome(
     let _ = writeln!(out, "{line}");
     if matches!(
         status,
-        rpytest_runner::TestStatus::Failed | rpytest_runner::TestStatus::TimedOut
+        kiss::rpytest_runner::TestStatus::Failed | kiss::rpytest_runner::TestStatus::TimedOut
     ) && outcome.cache_status != PyCacheStatus::Hit
         && let Some(stderr) = &outcome.stderr
         && !stderr.is_empty()

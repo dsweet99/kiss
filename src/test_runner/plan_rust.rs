@@ -31,7 +31,7 @@ pub(super) fn rust_population_current_for_all_selectors(
     let mut expected = selectors.to_vec();
     expected.sort();
     expected.dedup();
-    if rust_llvm_cov_runner::load_current_population_state(
+    if kiss::rust_llvm_cov_runner::load_current_population_state(
         &crate::test_runner::rust_coverage_index::rust_coverage_cache_root(repo_root),
         repo_root,
         &identity,
@@ -48,7 +48,7 @@ pub(super) fn rust_population_current_for_all_selectors(
 fn rust_witness_accepts_full_universe(
     repo_root: &std::path::Path,
     selectors: &[String],
-    identity: &rust_llvm_cov_runner::RustCoverageBatchIdentity,
+    identity: &kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity,
     gate: &GateConfig,
 ) -> bool {
     let Ok(mut witness) = try_load_rust_execution_witness(repo_root) else {
@@ -77,8 +77,8 @@ mod tests {
     use kiss::GateConfig;
     use std::collections::{BTreeMap, BTreeSet};
 
-    fn identity() -> rust_llvm_cov_runner::RustCoverageBatchIdentity {
-        rust_llvm_cov_runner::RustCoverageBatchIdentity {
+    fn identity() -> kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity {
+        kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity {
             input_digest: "i".into(),
             generation_fingerprint: "g".into(),
             selection_context_fingerprint: "s".into(),
@@ -177,7 +177,7 @@ mod tests {
             &selectors,
             &GateConfig::default()
         ));
-        let other = rust_llvm_cov_runner::RustCoverageBatchIdentity {
+        let other = kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity {
             input_digest: "other".into(),
             generation_fingerprint: "g".into(),
             selection_context_fingerprint: "s".into(),

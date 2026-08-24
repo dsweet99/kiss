@@ -109,7 +109,7 @@ pub(super) fn statuses_from_summary(
     summary: &crate::test_runner::runners::SelectorExecutionSummary,
     selectors: &[String],
 ) -> (Vec<WitnessStatus>, Vec<Option<u64>>) {
-    use rpytest_runner::TestStatus;
+    use kiss::rpytest_runner::TestStatus;
     let mut statuses = Vec::with_capacity(selectors.len());
     let mut durations = Vec::with_capacity(selectors.len());
     for sel in selectors {

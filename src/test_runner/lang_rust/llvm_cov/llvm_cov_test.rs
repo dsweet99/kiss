@@ -5,7 +5,7 @@ use std::path::Path;
 use std::rc::Rc;
 use std::time::Duration;
 
-use rust_llvm_cov_runner::{
+use kiss::rust_llvm_cov_runner::{
     RustCovCacheStatus, RustCoverageBatchCounters, RustLineCoverage, RustLlvmCovError,
     RustLlvmCovOutcome,
 };
@@ -33,10 +33,10 @@ pub(crate) fn write_rust_test_crate(root: &Path, test_fns: &[&str]) {
 pub(crate) fn passed_rust_llvm_cov_outcome(selector: String) -> RustLlvmCovOutcome {
     RustLlvmCovOutcome {
         selector,
-        status: rpytest_runner::TestStatus::Passed,
+        status: kiss::rpytest_runner::TestStatus::Passed,
         exit_code: Some(0),
         duration: std::time::Duration::from_millis(1),
-        coverage: rust_llvm_cov_runner::RustLineCoverage {
+        coverage: kiss::rust_llvm_cov_runner::RustLineCoverage {
             files: BTreeMap::new(),
         },
         test_binary_ids: vec!["test-bin".to_string()],
@@ -70,7 +70,7 @@ fn batch_result_records_completed_outcomes_before_returning_late_error() {
     let result = RustCoverageBatchResult {
         completed: vec![RustLlvmCovOutcome {
             selector: "tests::failing_case".to_string(),
-            status: rpytest_runner::TestStatus::Failed,
+            status: kiss::rpytest_runner::TestStatus::Failed,
             exit_code: Some(1),
             duration: Duration::from_millis(1),
             coverage: RustLineCoverage {
@@ -118,7 +118,7 @@ fn fresh_unstored_batch_outcome_is_counted_explicitly() {
     let result = RustCoverageBatchResult {
         completed: vec![RustLlvmCovOutcome {
             selector: "tests::passed_but_unstored".to_string(),
-            status: rpytest_runner::TestStatus::Passed,
+            status: kiss::rpytest_runner::TestStatus::Passed,
             exit_code: Some(0),
             duration: Duration::from_millis(1),
             coverage: RustLineCoverage {
@@ -167,7 +167,7 @@ fn rust_selector_path_submits_one_batch_request_to_executor() {
             force_rerun: true,
             jobs: 7,
             population_publication_selectors: None,
-            coverage_output_mode: rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
+            coverage_output_mode: kiss::rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
             gate: kiss::GateConfig::default(),
         },
         move |repo_root| {
@@ -230,7 +230,7 @@ fn rust_selector_path_rejects_duplicate_batch_selectors_before_execution() {
             force_rerun: true,
             jobs: 7,
             population_publication_selectors: None,
-            coverage_output_mode: rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
+            coverage_output_mode: kiss::rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
             gate: kiss::GateConfig::default(),
         },
         move |_repo_root| {
@@ -270,7 +270,7 @@ fn check_aggregate_population_request_carries_population_selectors() {
             force_rerun: true,
             jobs: 2,
             population_publication_selectors: Some(population_selectors),
-            coverage_output_mode: rust_llvm_cov_runner::CoverageOutputMode::CheckAggregate {
+            coverage_output_mode: kiss::rust_llvm_cov_runner::CoverageOutputMode::CheckAggregate {
                 publication_binary_ids: None,
                 repair_publication: None,
             },
@@ -291,7 +291,7 @@ fn check_aggregate_population_request_carries_population_selectors() {
             );
             assert!(matches!(
                 batch_req.coverage_output_mode,
-                rust_llvm_cov_runner::CoverageOutputMode::CheckAggregate { .. }
+                kiss::rust_llvm_cov_runner::CoverageOutputMode::CheckAggregate { .. }
             ));
             Ok(RustCoverageBatchResult {
                 completed: batch_req
@@ -316,7 +316,7 @@ fn check_aggregate_population_can_return_cached_summary() {
     let tmp = tempfile::tempdir().unwrap();
     write_rust_test_crate(tmp.path(), &["case", "other"]);
     let selectors = vec!["tests::case".to_string(), "tests::other".to_string()];
-    let population = rust_llvm_cov_runner::RustPopulationState {
+    let population = kiss::rust_llvm_cov_runner::RustPopulationState {
         input_fingerprint: "input".to_string(),
         generation_fingerprint: "generation".to_string(),
         selection_context_fingerprint: "selection".to_string(),
@@ -332,7 +332,7 @@ fn check_aggregate_population_can_return_cached_summary() {
         cache_root.join("population_durations.json"),
         format!(
             r#"{{"schema_version":"rust-population-durations-v1","cache_schema_version":"{}","generation_fingerprint":"generation","input_fingerprint":"input","entries_fingerprint":"check-aggregate:abc","durations":{{"tests::case":12000000,"tests::other":34000000}}}}"#,
-            rust_llvm_cov_runner::CACHE_SCHEMA_VERSION
+            kiss::rust_llvm_cov_runner::CACHE_SCHEMA_VERSION
         ),
     )
     .unwrap();

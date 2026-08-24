@@ -14,7 +14,7 @@ use crate::test_runner::python_coverage_index::manifest::{
 use crate::test_runner::python_coverage_index::storage::{
     load_current_python_coverage_index, python_coverage_cache_root,
 };
-use rpytest_runner::TestStatus;
+use kiss::rpytest_runner::TestStatus;
 
 pub(crate) fn try_migrate_complete_v1_generation(
     repo_root: &Path,

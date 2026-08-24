@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::time::Duration;
 
-use rpytest_runner::TestStatus;
+use kiss::rpytest_runner::TestStatus;
 use tempfile::tempdir;
 
 use super::evidence::{PopulationEvidence, SelectorEvidence};

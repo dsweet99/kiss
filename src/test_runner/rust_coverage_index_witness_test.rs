@@ -14,8 +14,8 @@ fn witness_build_test_rust_coverage_index() {
         tmp.path(),
         "a",
         "test_lib",
-        rpytest_runner::TestStatus::Passed,
-        rust_llvm_cov_runner::RustLineCoverage {
+        kiss::rpytest_runner::TestStatus::Passed,
+        kiss::rust_llvm_cov_runner::RustLineCoverage {
             files: BTreeMap::from([(lib.to_string_lossy().to_string(), BTreeSet::from([1]))]),
         },
     );
@@ -56,8 +56,8 @@ fn witness_changed_line_selection_ignores_retained_prior_generation_entries() {
         tmp.path(),
         "current",
         "tests::test_current_line",
-        rpytest_runner::TestStatus::Passed,
-        rust_llvm_cov_runner::RustLineCoverage {
+        kiss::rpytest_runner::TestStatus::Passed,
+        kiss::rust_llvm_cov_runner::RustLineCoverage {
             files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([2]))]),
         },
     );
@@ -77,7 +77,7 @@ fn witness_changed_line_selection_ignores_retained_prior_generation_entries() {
             "schema_version": CACHE_SCHEMA_VERSION,
             "generation_fingerprint": "prior-complete-generation",
             "selector": "tests::test_stale_line",
-            "status": rpytest_runner::TestStatus::Passed,
+            "status": kiss::rpytest_runner::TestStatus::Passed,
             "exit_code": 0,
             "duration": 1,
             "coverage": {

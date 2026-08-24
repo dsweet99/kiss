@@ -11,11 +11,11 @@ use super::{
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum ResolvedRustPopulation {
     Current {
-        state: rust_llvm_cov_runner::RustPopulationState,
+        state: kiss::rust_llvm_cov_runner::RustPopulationState,
     },
     ReusablePrior {
-        state: rust_llvm_cov_runner::RustPopulationState,
-        delta: rust_llvm_cov_runner::RustSnapshotDelta,
+        state: kiss::rust_llvm_cov_runner::RustPopulationState,
+        delta: kiss::rust_llvm_cov_runner::RustSnapshotDelta,
     },
     StructuralStale,
     ColdStale,
@@ -38,7 +38,7 @@ impl ResolvedRustPopulation {
         }
     }
 
-    pub(crate) fn state(&self) -> Option<&rust_llvm_cov_runner::RustPopulationState> {
+    pub(crate) fn state(&self) -> Option<&kiss::rust_llvm_cov_runner::RustPopulationState> {
         match self {
             Self::Current { state } | Self::ReusablePrior { state, .. } => Some(state),
             Self::StructuralStale | Self::ColdStale => None,
@@ -56,7 +56,7 @@ pub(crate) fn resolve_rust_population_state(
     let identity = current_rust_coverage_batch_identity(repo_root, test_args)?;
     let cache_root = rust_coverage_cache_root(repo_root);
 
-    let current = rust_llvm_cov_runner::load_current_population_state(
+    let current = kiss::rust_llvm_cov_runner::load_current_population_state(
         &cache_root,
         repo_root,
         &identity,
@@ -65,7 +65,7 @@ pub(crate) fn resolve_rust_population_state(
     if let Some(current) = current {
         return Ok(ResolvedRustPopulation::Current { state: current });
     }
-    let partial_current = rust_llvm_cov_runner::load_current_population_state(
+    let partial_current = kiss::rust_llvm_cov_runner::load_current_population_state(
         &cache_root,
         repo_root,
         &identity,
@@ -85,19 +85,19 @@ pub(crate) fn resolve_rust_population_state(
         });
     }
     let universe = super::super::runners::enumerate_workspace_rust_selectors(repo_root, ignore)?;
-    let reusable = rust_llvm_cov_runner::load_reusable_prior_population_state(
+    let reusable = kiss::rust_llvm_cov_runner::load_reusable_prior_population_state(
         &cache_root,
         repo_root,
         Some(&universe),
         &identity.selection_context_fingerprint,
     );
     if let Some(reusable) = reusable {
-        let delta = rust_llvm_cov_runner::reusable_snapshot_delta(
+        let delta = kiss::rust_llvm_cov_runner::reusable_snapshot_delta(
             repo_root,
             &reusable.ordinary_source_digests,
             &identity.ordinary_source_digests,
         );
-        if delta == rust_llvm_cov_runner::RustSnapshotDelta::StructuralChange {
+        if delta == kiss::rust_llvm_cov_runner::RustSnapshotDelta::StructuralChange {
             return Ok(ResolvedRustPopulation::StructuralStale);
         }
         return Ok(ResolvedRustPopulation::ReusablePrior {
@@ -113,7 +113,7 @@ fn current_partial_population_covers_selection(
     rust_source_paths: &[PathBuf],
     rust_changed_lines: &BTreeMap<PathBuf, BTreeSet<u32>>,
     test_args: &[String],
-    population: &rust_llvm_cov_runner::RustPopulationState,
+    population: &kiss::rust_llvm_cov_runner::RustPopulationState,
 ) -> bool {
     if rust_source_paths.is_empty() {
         return false;
@@ -151,7 +151,7 @@ pub(crate) fn select_rust_source_selectors_for_basis(
             resolved.basis(),
             resolved
                 .state()
-                .is_some_and(rust_llvm_cov_runner::is_check_aggregate_population),
+                .is_some_and(kiss::rust_llvm_cov_runner::is_check_aggregate_population),
             rust_changed_lines.len(),
             rust_source_paths.len()
         );
@@ -181,9 +181,9 @@ fn select_current_basis_rust_source_selectors(
     rust_source_paths: &[PathBuf],
     rust_changed_lines: &BTreeMap<PathBuf, BTreeSet<u32>>,
     _test_args: &[String],
-    population: &rust_llvm_cov_runner::RustPopulationState,
+    population: &kiss::rust_llvm_cov_runner::RustPopulationState,
 ) -> Option<BTreeSet<String>> {
-    if rust_llvm_cov_runner::is_check_aggregate_population(population) {
+    if kiss::rust_llvm_cov_runner::is_check_aggregate_population(population) {
         return select_check_aggregate_current_basis(
             repo_root,
             rust_source_paths,
@@ -222,7 +222,7 @@ fn select_check_aggregate_current_basis(
     repo_root: &Path,
     rust_source_paths: &[PathBuf],
     rust_changed_lines: &BTreeMap<PathBuf, BTreeSet<u32>>,
-    population: &rust_llvm_cov_runner::RustPopulationState,
+    population: &kiss::rust_llvm_cov_runner::RustPopulationState,
 ) -> Option<BTreeSet<String>> {
     const LINE_PRECISE_FILE_LIMIT: usize = 1;
     if !rust_changed_lines.is_empty() && rust_changed_lines.len() <= LINE_PRECISE_FILE_LIMIT {
@@ -275,7 +275,7 @@ fn planned_check_aggregate_line_selectors(
 fn select_check_aggregate_source_selectors(
     repo_root: &Path,
     rust_source_paths: &[PathBuf],
-    population: &rust_llvm_cov_runner::RustPopulationState,
+    population: &kiss::rust_llvm_cov_runner::RustPopulationState,
 ) -> Option<BTreeSet<String>> {
     let plan_trace = std::env::var_os("KISS_PLAN_TRACE").is_some();
     let mark = std::time::Instant::now();
@@ -308,9 +308,9 @@ fn select_reusable_prior_rust_source_selectors(
     repo_root: &Path,
     rust_source_paths: &[PathBuf],
     rust_changed_lines: &BTreeMap<PathBuf, BTreeSet<u32>>,
-    population: &rust_llvm_cov_runner::RustPopulationState,
+    population: &kiss::rust_llvm_cov_runner::RustPopulationState,
 ) -> Option<BTreeSet<String>> {
-    if rust_llvm_cov_runner::is_check_aggregate_population(population) {
+    if kiss::rust_llvm_cov_runner::is_check_aggregate_population(population) {
         for source_path in rust_source_paths {
             if !source_path
                 .extension()

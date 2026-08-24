@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::Duration;
 
-use rpytest_runner::TestStatus;
-use rslip::{CacheStatus, LineCoverage, RslipOutcome};
+use kiss::rpytest_runner::TestStatus;
+use kiss::rslip::{CacheStatus, LineCoverage, RslipOutcome};
 
 use super::types::{
     CoveredLinesMap, InternedLineIndex, LineIndexMap, SelectorCoverageMap, SelectorTimingRecord,

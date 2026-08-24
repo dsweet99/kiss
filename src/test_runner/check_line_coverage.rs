@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use rpytest_runner::TestStatus;
+use kiss::rpytest_runner::TestStatus;
 
 use crate::analyze::line_coverage::RuntimeCoverageSnapshot;
 use crate::analyze_cache::fnv1a64;
@@ -273,7 +273,7 @@ fn load_python_coverage_from_entries(
         })
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| coverage_error("Python", &format!("malformed request ({err})")))?;
-    let outcomes = rslip::load_cached_outcomes_many_trusting_population(&reqs);
+    let outcomes = kiss::rslip::load_cached_outcomes_many_trusting_population(&reqs);
     let covered_lines = aggregate_passed_outcomes(repo_root, selectors, outcomes)?;
     let _ = crate::test_runner::python_coverage_index::write_python_coverage_snapshot(
         repo_root,
@@ -289,7 +289,7 @@ fn load_python_coverage_from_entries(
 fn aggregate_passed_outcomes(
     repo_root: &Path,
     selectors: &[String],
-    outcomes: Vec<Result<Option<rslip::RslipOutcome>, rslip::RslipError>>,
+    outcomes: Vec<Result<Option<kiss::rslip::RslipOutcome>, kiss::rslip::RslipError>>,
 ) -> Result<BTreeMap<String, BTreeSet<u32>>, RuntimeCoverageLoadError> {
     let mut covered_lines = BTreeMap::<String, BTreeSet<u32>>::new();
     for (selector, outcome) in selectors.iter().zip(outcomes) {

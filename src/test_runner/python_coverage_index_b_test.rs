@@ -6,8 +6,8 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use rpytest_runner::TestStatus;
-use rslip::LineCoverage;
+use kiss::rpytest_runner::TestStatus;
+use kiss::rslip::LineCoverage;
 
 #[test]
 fn legacy_unscoped_python_cache_entries_are_ignored() {
@@ -22,7 +22,7 @@ fn legacy_unscoped_python_cache_entries_are_ignored() {
         .join("legacy.json");
     fs::create_dir_all(legacy_entry.parent().unwrap()).unwrap();
     let entry = serde_json::json!({
-        "schema_version": rslip::CACHE_SCHEMA_VERSION,
+        "schema_version": kiss::rslip::CACHE_SCHEMA_VERSION,
         "nodeid": "tests/test_app.py::test_value",
         "status": TestStatus::Passed,
         "exit_code": 0,
@@ -44,14 +44,14 @@ fn derived_state_publication_waits_for_derived_lock() {
     let cache_root = python_coverage_cache_root(tmp.path()).unwrap();
     fs::create_dir_all(&cache_root).unwrap();
     let (lock_held_tx, lock_held_rx) = mpsc::channel();
-    let guard = rslip::lock_rslip_derived_state(&cache_root).unwrap();
+    let guard = kiss::rslip::lock_rslip_derived_state(&cache_root).unwrap();
     lock_held_tx.send(()).unwrap();
     let cache_root_for_thread = cache_root.clone();
     let (tx, rx) = mpsc::channel();
     let waiter = thread::spawn(move || {
         lock_held_rx.recv_timeout(Duration::from_secs(1)).unwrap();
         let started = Instant::now();
-        let _second = rslip::lock_rslip_derived_state(&cache_root_for_thread).unwrap();
+        let _second = kiss::rslip::lock_rslip_derived_state(&cache_root_for_thread).unwrap();
         tx.send(started.elapsed()).unwrap();
     });
 

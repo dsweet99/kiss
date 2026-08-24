@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use rust_llvm_cov_runner::RustCoverageBatchCounters;
+use kiss::rust_llvm_cov_runner::RustCoverageBatchCounters;
 
 use super::merge_exit_codes;
 use super::rust_batch_counters;
@@ -17,7 +17,7 @@ pub(crate) struct SelectorExecutionSummary {
     pub(crate) failed_selectors: Vec<String>,
     pub(crate) timed_out_selectors: Vec<String>,
     pub(crate) selector_durations_ns: std::collections::BTreeMap<String, u64>,
-    pub(crate) raw_statuses: std::collections::BTreeMap<String, rpytest_runner::TestStatus>,
+    pub(crate) raw_statuses: std::collections::BTreeMap<String, kiss::rpytest_runner::TestStatus>,
     pub(crate) max_passing_run_duration: Duration,
     pub(crate) rust_build_invocations: usize,
     pub(crate) rust_test_instances: usize,
@@ -60,8 +60,8 @@ pub(crate) enum SelectorCacheRecord {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct SelectorExecutionRecord {
     pub(crate) selector: String,
-    pub(crate) status: rpytest_runner::TestStatus,
-    pub(crate) raw_status: Option<rpytest_runner::TestStatus>,
+    pub(crate) status: kiss::rpytest_runner::TestStatus,
+    pub(crate) raw_status: Option<kiss::rpytest_runner::TestStatus>,
     pub(crate) cache_record: SelectorCacheRecord,
     pub(crate) exit_code: Option<i32>,
     pub(crate) duration: Duration,
@@ -87,17 +87,17 @@ impl SelectorExecutionSummary {
             }
         }
         match record.status {
-            rpytest_runner::TestStatus::Failed => {
+            kiss::rpytest_runner::TestStatus::Failed => {
                 self.failed += 1;
                 self.failed_selectors.push(record.selector);
                 self.exit_code = merge_exit_codes(self.exit_code, record.exit_code.unwrap_or(1));
             }
-            rpytest_runner::TestStatus::TimedOut => {
+            kiss::rpytest_runner::TestStatus::TimedOut => {
                 self.failed += 1;
                 self.timed_out_selectors.push(record.selector);
                 self.exit_code = merge_exit_codes(self.exit_code, record.exit_code.unwrap_or(1));
             }
-            rpytest_runner::TestStatus::Passed => {
+            kiss::rpytest_runner::TestStatus::Passed => {
                 if record.cache_record != SelectorCacheRecord::Hit {
                     self.max_passing_run_duration =
                         self.max_passing_run_duration.max(record.duration);

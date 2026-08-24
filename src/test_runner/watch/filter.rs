@@ -210,7 +210,7 @@ fn is_support_input(rel: &Path) -> bool {
     if is_source_ext(rel) {
         return false;
     }
-    rslip::is_rslip_cache_input(rel) || rust_llvm_cov_runner::is_rust_cov_cache_input(rel)
+    kiss::rslip::is_rslip_cache_input(rel) || kiss::rust_llvm_cov_runner::is_rust_cov_cache_input(rel)
 }
 
 fn is_source_ext(rel: &Path) -> bool {

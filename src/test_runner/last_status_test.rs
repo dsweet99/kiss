@@ -15,7 +15,7 @@ fn failed_status_is_reported_as_prior_failure() {
     let tmp = tempfile::TempDir::new().unwrap();
     let statuses = vec![(
         "tests/test_app.py::test_failed".to_string(),
-        rpytest_runner::TestStatus::Failed,
+        kiss::rpytest_runner::TestStatus::Failed,
     )];
 
     record_statuses(tmp.path(), Language::Python, &identity(), &statuses).unwrap();
@@ -35,7 +35,7 @@ fn passing_status_clears_prior_failure() {
         tmp.path(),
         Language::Python,
         &identity(),
-        &[(selector.clone(), rpytest_runner::TestStatus::Failed)],
+        &[(selector.clone(), kiss::rpytest_runner::TestStatus::Failed)],
     )
     .unwrap();
 
@@ -43,7 +43,7 @@ fn passing_status_clears_prior_failure() {
         tmp.path(),
         Language::Python,
         &identity(),
-        &[(selector, rpytest_runner::TestStatus::Passed)],
+        &[(selector, kiss::rpytest_runner::TestStatus::Passed)],
     )
     .unwrap();
 
@@ -64,7 +64,7 @@ fn identity_mismatch_does_not_select_prior_failure() {
         &identity(),
         &[(
             "tests/test_app.py::test_failed".to_string(),
-            rpytest_runner::TestStatus::Failed,
+            kiss::rpytest_runner::TestStatus::Failed,
         )],
     )
     .unwrap();
@@ -94,8 +94,8 @@ fn rust_records_are_language_scoped_and_deduped() {
         Language::Rust,
         &rust_identity,
         &[
-            (selector.clone(), rpytest_runner::TestStatus::Failed),
-            (selector.clone(), rpytest_runner::TestStatus::Failed),
+            (selector.clone(), kiss::rpytest_runner::TestStatus::Failed),
+            (selector.clone(), kiss::rpytest_runner::TestStatus::Failed),
         ],
     )
     .unwrap();

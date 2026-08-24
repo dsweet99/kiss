@@ -100,7 +100,7 @@ pub fn seed_python_runtime_coverage(repo: &Path, entries: &[PythonRuntimeCoverag
     selectors.dedup();
     let manifest = serde_json::json!({
         "schema_version": "rslip-python-population-v1",
-        "cache_schema_version": rslip::CACHE_SCHEMA_VERSION,
+        "cache_schema_version": kiss::rslip::CACHE_SCHEMA_VERSION,
         "source_root": repo.to_string_lossy().to_string(),
         "selector_discovery_version": "python-selector-discovery-v2",
         "python_version": python_version,
@@ -127,7 +127,7 @@ fn write_seeded_rslip_entry(
     pytest_version: &str,
     env: &BTreeMap<String, String>,
 ) {
-    let req = rslip::RslipRequest {
+    let req = kiss::rslip::RslipRequest {
         nodeid: selector.to_string(),
         cwd: repo.to_path_buf(),
         source_root: repo.to_path_buf(),
@@ -141,7 +141,7 @@ fn write_seeded_rslip_entry(
         timeout: None,
         content_fingerprint: None,
     };
-    let fingerprint = rslip::cache_fingerprint_for_request(&req).unwrap();
+    let fingerprint = kiss::rslip::cache_fingerprint_for_request(&req).unwrap();
     let files = coverage_files
         .iter()
         .map(|(file, lines)| {
@@ -151,17 +151,17 @@ fn write_seeded_rslip_entry(
             )
         })
         .collect::<BTreeMap<_, _>>();
-    let coverage = rslip::LineCoverage {
+    let coverage = kiss::rslip::LineCoverage {
         files: files.clone(),
     };
     let covered_digests =
-        rslip::covered_file_digests_for(repo, selector, &coverage).unwrap_or_default();
+        kiss::rslip::covered_file_digests_for(repo, selector, &coverage).unwrap_or_default();
     let files_json = files
         .iter()
         .map(|(file, lines)| (file.clone(), serde_json::json!(lines)))
         .collect::<serde_json::Map<_, _>>();
     let payload = serde_json::json!({
-        "schema_version": rslip::CACHE_SCHEMA_VERSION,
+        "schema_version": kiss::rslip::CACHE_SCHEMA_VERSION,
         "nodeid": selector,
         "status": "Passed",
         "exit_code": 0,
@@ -183,10 +183,10 @@ pub fn seed_rust_runtime_coverage(repo: &Path, entries: &[RustRuntimeCoverageSee
     let selectors = sorted_unique_selectors(entries.iter().map(|(selector, _)| *selector));
     let req = rust_runtime_coverage_request(&repo, &selectors);
     let tools = rust_runtime_coverage_tool_identity(&repo);
-    let identity = rust_llvm_cov_runner::batch_identity(&req, &tools).unwrap();
+    let identity = kiss::rust_llvm_cov_runner::batch_identity(&req, &tools).unwrap();
     for (selector, coverage_files) in entries {
         let fingerprint =
-            rust_llvm_cov_runner::entry_fingerprint(&identity.input_digest, &req, &tools, selector);
+            kiss::rust_llvm_cov_runner::entry_fingerprint(&identity.input_digest, &req, &tools, selector);
         let files = coverage_files
             .iter()
             .map(|(file, lines)| {
@@ -196,35 +196,35 @@ pub fn seed_rust_runtime_coverage(repo: &Path, entries: &[RustRuntimeCoverageSee
                 )
             })
             .collect::<BTreeMap<_, _>>();
-        let outcome = rust_llvm_cov_runner::RustLlvmCovOutcome {
+        let outcome = kiss::rust_llvm_cov_runner::RustLlvmCovOutcome {
             selector: (*selector).to_string(),
-            status: rpytest_runner::TestStatus::Passed,
+            status: kiss::rpytest_runner::TestStatus::Passed,
             exit_code: Some(0),
             duration: std::time::Duration::from_millis(1),
-            coverage: rust_llvm_cov_runner::RustLineCoverage { files },
+            coverage: kiss::rust_llvm_cov_runner::RustLineCoverage { files },
             test_binary_ids: vec!["test-bin".to_string()],
-            cache_status: rust_llvm_cov_runner::RustCovCacheStatus::MissStored,
+            cache_status: kiss::rust_llvm_cov_runner::RustCovCacheStatus::MissStored,
             stdout: None,
             stderr: None,
         };
-        let entry = rust_llvm_cov_runner::RustCovCacheEntry::from_outcome(
+        let entry = kiss::rust_llvm_cov_runner::RustCovCacheEntry::from_outcome(
             &outcome,
             &identity.generation_fingerprint,
         );
-        rust_llvm_cov_runner::store_rust_cov_cache_entry(&req.cache_root, &fingerprint, &entry)
+        kiss::rust_llvm_cov_runner::store_rust_cov_cache_entry(&req.cache_root, &fingerprint, &entry)
             .unwrap();
     }
-    rust_llvm_cov_runner::publish_derived_state(&req, &tools, &identity, &selectors, false)
+    kiss::rust_llvm_cov_runner::publish_derived_state(&req, &tools, &identity, &selectors, false)
         .unwrap();
 }
 
 fn rust_runtime_coverage_request(
     repo: &Path,
     selectors: &[String],
-) -> rust_llvm_cov_runner::RustCoverageBatchRequest {
+) -> kiss::rust_llvm_cov_runner::RustCoverageBatchRequest {
     let (delegated_runners, runner_map_fingerprint, host_platform) =
-        rust_llvm_cov_runner::placeholder_delegated_runner_fields();
-    rust_llvm_cov_runner::RustCoverageBatchRequest {
+        kiss::rust_llvm_cov_runner::placeholder_delegated_runner_fields();
+    kiss::rust_llvm_cov_runner::RustCoverageBatchRequest {
         cwd: repo.to_path_buf(),
         source_root: repo.to_path_buf(),
         cargo: PathBuf::from("cargo"),
@@ -245,15 +245,15 @@ fn rust_runtime_coverage_request(
         delegated_runners,
         runner_map_fingerprint,
         host_platform,
-        coverage_output_mode: rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
+        coverage_output_mode: kiss::rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
         selector_timeout_millis: std::collections::BTreeMap::new(),
     }
 }
 
 fn rust_runtime_coverage_tool_identity(
     repo: &Path,
-) -> rust_llvm_cov_runner::RustCoverageToolIdentity {
-    rust_llvm_cov_runner::RustCoverageToolIdentity {
+) -> kiss::rust_llvm_cov_runner::RustCoverageToolIdentity {
+    kiss::rust_llvm_cov_runner::RustCoverageToolIdentity {
         cargo_version: command_output(repo, "cargo", &["--version"]),
         llvm_cov_version: command_output(repo, "cargo", &["llvm-cov", "--version"]),
         rustc_version: command_output(repo, "rustc", &["-Vv"]),

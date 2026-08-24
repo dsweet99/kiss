@@ -1,5 +1,5 @@
 use super::LocalRubricMetrics;
-use rust_llvm_cov_runner::snapshot_reverse_query_counters;
+use kiss::rust_llvm_cov_runner::snapshot_reverse_query_counters;
 
 pub(super) fn print_rust_batch_metrics(metrics: &LocalRubricMetrics) {
     println!("rust_build_invocations={}", rust_build_invocations(metrics));

@@ -12,7 +12,7 @@ fn write_python_entry(
         .join(format!("{name}.json"));
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     let entry = serde_json::json!({
-        "schema_version": rslip::CACHE_SCHEMA_VERSION,
+        "schema_version": kiss::rslip::CACHE_SCHEMA_VERSION,
         "nodeid": selector,
         "status": TestStatus::Passed,
         "exit_code": 0,
@@ -26,7 +26,7 @@ fn write_rust_entry(
     repo_root: &std::path::Path,
     name: &str,
     selector: &str,
-    coverage: rust_llvm_cov_runner::RustLineCoverage,
+    coverage: kiss::rust_llvm_cov_runner::RustLineCoverage,
 ) {
     crate::test_runner::rust_coverage_index::write_test_entry(
         repo_root,
@@ -62,7 +62,7 @@ fn select_fresh_python_source_selectors_and_select_fresh_rust_source_selectors_c
         tmp.path(),
         "rs",
         "tests::test_value",
-        rust_llvm_cov_runner::RustLineCoverage {
+        kiss::rust_llvm_cov_runner::RustLineCoverage {
             files: BTreeMap::from([(lib.to_string_lossy().to_string(), BTreeSet::from([1]))]),
         },
     );

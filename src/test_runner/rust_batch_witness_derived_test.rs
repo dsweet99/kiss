@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::time::Duration;
 
-use rpytest_runner::TestStatus;
-use rust_llvm_cov_runner::{
+use kiss::rpytest_runner::TestStatus;
+use kiss::rust_llvm_cov_runner::{
     DerivedPublishCounters, RustCovCacheEntry, RustCovCacheStatus, RustCoverageBatchRequest,
     RustCoverageToolIdentity, RustLineCoverage, RustLlvmCovOutcome, RustPopulationState,
     batch_identity, entry_fingerprint, generation_entries_fingerprint,
@@ -76,7 +76,7 @@ pub(super) fn witness_batch_derived(
 fn witness_population_state_loaders(
     root: &Path,
     req: &RustCoverageBatchRequest,
-    identity: &rust_llvm_cov_runner::RustCoverageBatchIdentity,
+    identity: &kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity,
 ) {
     let state: RustPopulationState = load_current_population_state(
         &req.cache_root,

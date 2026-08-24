@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rust_llvm_cov_runner::{
+use kiss::rust_llvm_cov_runner::{
     CheckAggregateRepairPublication, CoverageOutputMode, RustCoverageBatchRequest,
     RustCoverageBatchResult, RustCoverageToolIdentity, RustTestExecutableIndex,
     build_rust_coverage_batch_plan, build_rust_test_executable_index, execute_rust_coverage_batch,
@@ -148,7 +148,7 @@ pub(crate) fn cached_rust_check_aggregate_selectors(
     let identity = crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(
         repo_root, extra,
     )?;
-    let Some(population) = rust_llvm_cov_runner::load_current_population_state(
+    let Some(population) = kiss::rust_llvm_cov_runner::load_current_population_state(
         &cache_root,
         repo_root,
         &identity,
@@ -318,7 +318,7 @@ pub(crate) fn rust_coverage_batch_request_from_parts(
 pub(crate) struct RustExecutableIndexBuild {
     pub(crate) request: RustCoverageBatchRequest,
     pub(crate) tools: RustCoverageToolIdentity,
-    pub(crate) identity: rust_llvm_cov_runner::RustCoverageBatchIdentity,
+    pub(crate) identity: kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity,
     pub(crate) index: RustTestExecutableIndex,
 }
 
@@ -343,7 +343,7 @@ pub(crate) fn build_current_rust_test_executable_index(
     let plan = build_rust_coverage_batch_plan(&request)?;
     let versions = detect_rust_coverage_tool_versions(repo_root)?;
     let tools = rust_coverage_tool_identity_from_versions(&versions);
-    let identity = rust_llvm_cov_runner::batch_identity(&request, &tools)
+    let identity = kiss::rust_llvm_cov_runner::batch_identity(&request, &tools)
         .map_err(|err| format!("batch identity: {err}"))?;
     let index = build_rust_test_executable_index(&request, &tools, &identity, &plan)
         .map_err(map_rust_llvm_cov_error)?;

@@ -94,10 +94,10 @@ fn load_python_timings(repo_root: &Path, pytest_args: &[String]) -> Option<Vec<U
 
 fn load_rust_timings(repo_root: &Path) -> Option<Vec<UnitTestTiming>> {
     let (req, tools) = resolved_rust_batch_request_parts(repo_root, &[]).ok()?;
-    let identity = rust_llvm_cov_runner::batch_identity(&req, &tools).ok()?;
+    let identity = kiss::rust_llvm_cov_runner::batch_identity(&req, &tools).ok()?;
     let cache_root = rust_coverage_cache_root(repo_root);
 
-    if let Some(pairs) = rust_llvm_cov_runner::load_current_population_durations(
+    if let Some(pairs) = kiss::rust_llvm_cov_runner::load_current_population_durations(
         &cache_root,
         repo_root,
         &identity,
@@ -122,7 +122,7 @@ fn load_rust_timings(repo_root: &Path) -> Option<Vec<UnitTestTiming>> {
 
 fn load_rust_timings_from_witness(
     repo_root: &Path,
-    identity: &rust_llvm_cov_runner::RustCoverageBatchIdentity,
+    identity: &kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity,
 ) -> Option<Vec<UnitTestTiming>> {
     use crate::test_runner::execution_witness::{
         try_load_rust_execution_witness, try_warm_rust_cached_summary,

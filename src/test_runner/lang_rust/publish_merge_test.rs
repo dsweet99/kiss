@@ -8,7 +8,7 @@ use crate::test_runner::lang_iface::{
 use crate::test_runner::runners::{
     SelectorCacheRecord, SelectorExecutionRecord, SelectorExecutionSummary,
 };
-use rpytest_runner::TestStatus;
+use kiss::rpytest_runner::TestStatus;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Duration;

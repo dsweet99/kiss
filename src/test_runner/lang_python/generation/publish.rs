@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use kiss_publication_barrier::publish_atomically;
+use kiss::kiss_publication_barrier::publish_atomically;
 
 use super::evidence::PopulationEvidence;
 use super::paths::{
@@ -33,7 +33,7 @@ pub(crate) fn publish_python_population_generation_reusing(
     reuse_generation_id: Option<&str>,
 ) -> Result<String, String> {
     let cache_root = python_coverage_cache_root(repo_root)?;
-    let _guard = rslip::lock_rslip_derived_state(&cache_root).map_err(|e| e.to_string())?;
+    let _guard = kiss::rslip::lock_rslip_derived_state(&cache_root).map_err(|e| e.to_string())?;
     let id = publish_locked(&cache_root, plan, evidence, reason, reuse_generation_id)?;
     super::memo::clear_python_generation_warm_memo();
     Ok(id)

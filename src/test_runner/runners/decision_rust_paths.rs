@@ -94,7 +94,7 @@ fn check_aggregate_covers_changed_rust_sources(
     let Some(ResolvedRustPopulation::Current { state }) = resolved else {
         return false;
     };
-    if !rust_llvm_cov_runner::is_check_aggregate_population(state) {
+    if !kiss::rust_llvm_cov_runner::is_check_aggregate_population(state) {
         return false;
     }
     for source_path in rust_source_paths {
@@ -181,16 +181,16 @@ fn effective_paths_for_resolution(
             false,
         )),
         ResolvedRustPopulation::ReusablePrior { delta, .. } => match delta {
-            rust_llvm_cov_runner::RustSnapshotDelta::Modified(paths) => {
+            kiss::rust_llvm_cov_runner::RustSnapshotDelta::Modified(paths) => {
                 let roles = roles_for_modified_paths(repo_root, ignore, paths)?;
                 let (source_paths, test_paths) =
                     crate::test_runner::runners::partition_changed_paths_with_roles(paths, &roles);
                 Ok((source_paths, test_paths, paths.len(), false))
             }
-            rust_llvm_cov_runner::RustSnapshotDelta::StructuralChange => {
+            kiss::rust_llvm_cov_runner::RustSnapshotDelta::StructuralChange => {
                 Ok((Vec::new(), Vec::new(), 0, true))
             }
-            rust_llvm_cov_runner::RustSnapshotDelta::Unchanged => {
+            kiss::rust_llvm_cov_runner::RustSnapshotDelta::Unchanged => {
                 Ok((Vec::new(), Vec::new(), 0, false))
             }
         },
@@ -236,8 +236,8 @@ fn effective_rust_changed_lines(
 mod tests {
     use super::*;
 
-    fn empty_population_state() -> rust_llvm_cov_runner::RustPopulationState {
-        rust_llvm_cov_runner::RustPopulationState {
+    fn empty_population_state() -> kiss::rust_llvm_cov_runner::RustPopulationState {
+        kiss::rust_llvm_cov_runner::RustPopulationState {
             input_fingerprint: String::new(),
             generation_fingerprint: String::new(),
             selection_context_fingerprint: String::new(),
@@ -255,7 +255,7 @@ mod tests {
         }
     }
 
-    fn resolved_reusable(delta: rust_llvm_cov_runner::RustSnapshotDelta) -> ResolvedRustPopulation {
+    fn resolved_reusable(delta: kiss::rust_llvm_cov_runner::RustSnapshotDelta) -> ResolvedRustPopulation {
         ResolvedRustPopulation::ReusablePrior {
             state: empty_population_state(),
             delta,
@@ -311,7 +311,7 @@ mod tests {
         let modified = PathBuf::from("src/changed.rs");
         assert_eq!(
             effective_paths_for_resolution(
-                &resolved_reusable(rust_llvm_cov_runner::RustSnapshotDelta::Modified(vec![
+                &resolved_reusable(kiss::rust_llvm_cov_runner::RustSnapshotDelta::Modified(vec![
                     modified.clone()
                 ])),
                 &[],
@@ -325,7 +325,7 @@ mod tests {
 
         assert_eq!(
             effective_paths_for_resolution(
-                &resolved_reusable(rust_llvm_cov_runner::RustSnapshotDelta::Unchanged),
+                &resolved_reusable(kiss::rust_llvm_cov_runner::RustSnapshotDelta::Unchanged),
                 &[],
                 &[],
                 Path::new("."),
@@ -380,7 +380,7 @@ mod tests {
                 &changed,
                 std::slice::from_ref(&path),
                 Some(&resolved_reusable(
-                    rust_llvm_cov_runner::RustSnapshotDelta::Modified(vec![path.clone()]),
+                    kiss::rust_llvm_cov_runner::RustSnapshotDelta::Modified(vec![path.clone()]),
                 )),
             ),
             changed
@@ -390,7 +390,7 @@ mod tests {
                 &changed,
                 &[],
                 Some(&resolved_reusable(
-                    rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
+                    kiss::rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
                 )),
             )
             .is_empty()

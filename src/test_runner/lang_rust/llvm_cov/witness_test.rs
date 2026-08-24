@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use rust_llvm_cov_runner::{
+use kiss::rust_llvm_cov_runner::{
     CoverageOutputMode, RustCoverageBatchIdentity, RustCoverageBatchRequest,
 };
 

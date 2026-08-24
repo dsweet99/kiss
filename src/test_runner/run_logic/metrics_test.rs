@@ -6,7 +6,7 @@ use super::super::metrics_rust::{
     rust_process_residual_count, rust_test_instances, rust_unmatched_selectors,
 };
 use super::*;
-use rust_llvm_cov_runner::RustCoverageBatchCounters;
+use kiss::rust_llvm_cov_runner::RustCoverageBatchCounters;
 use std::path::PathBuf;
 
 #[test]
@@ -65,7 +65,7 @@ fn rust_batch_counters_record_reverse_metrics() {
     let mut summary = SelectorExecutionSummary::default();
     let counters = RustCoverageBatchCounters {
         reverse_query_hits: 2,
-        reverse_unavailable: rust_llvm_cov_runner::ReverseUnavailableCounts {
+        reverse_unavailable: kiss::rust_llvm_cov_runner::ReverseUnavailableCounts {
             schema: 1,
             digest: 3,
             ..Default::default()

@@ -1,5 +1,5 @@
 use kiss::GateConfig;
-use rpytest_runner::TestStatus;
+use kiss::rpytest_runner::TestStatus;
 use std::time::Duration;
 
 pub(crate) fn apply_unit_test_time_limit(

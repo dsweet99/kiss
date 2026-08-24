@@ -3,8 +3,8 @@ use std::fs;
 use std::path::Path;
 use std::time::Duration;
 
-use rpytest_runner::TestStatus;
-use rust_llvm_cov_runner::RustLineCoverage;
+use kiss::rpytest_runner::TestStatus;
+use kiss::rust_llvm_cov_runner::RustLineCoverage;
 
 use super::{CACHE_SCHEMA_VERSION, RustCoverageIndex, rust_coverage_cache_root};
 
@@ -13,7 +13,7 @@ pub(crate) fn test_entries_fingerprint(repo_root: &Path, test_args: &[String]) -
     let generation = super::current_rust_coverage_batch_identity(repo_root, test_args)
         .expect("test batch identity")
         .generation_fingerprint;
-    rust_llvm_cov_runner::generation_entries_fingerprint(&cache_root, &generation)
+    kiss::rust_llvm_cov_runner::generation_entries_fingerprint(&cache_root, &generation)
         .expect("test entries fingerprint")
 }
 
@@ -53,7 +53,7 @@ pub(crate) fn write_test_entry_with_args(
         "test_binary_ids": ["test-bin"],
     });
     fs::write(path, serde_json::to_vec(&entry).unwrap()).unwrap();
-    rust_llvm_cov_runner::invalidate_entry_state(&rust_coverage_cache_root(repo_root));
+    kiss::rust_llvm_cov_runner::invalidate_entry_state(&rust_coverage_cache_root(repo_root));
 }
 
 pub(crate) fn write_rust_population_manifest_for_args(
@@ -67,9 +67,9 @@ pub(crate) fn write_rust_population_manifest_for_args(
     selectors.dedup();
     req.logical_selectors = selectors.clone();
     req.population_publication_selectors = Some(selectors.clone());
-    let identity = rust_llvm_cov_runner::batch_identity(&req, &tools)
+    let identity = kiss::rust_llvm_cov_runner::batch_identity(&req, &tools)
         .map_err(|err| format!("batch identity: {err}"))?;
-    rust_llvm_cov_runner::publish_derived_state(&req, &tools, &identity, &selectors, true)
+    kiss::rust_llvm_cov_runner::publish_derived_state(&req, &tools, &identity, &selectors, true)
         .map_err(|err| format!("{err:?}"))?;
     Ok(())
 }
@@ -90,7 +90,7 @@ pub(crate) fn write_rust_coverage_index(
 
 pub(crate) fn rebuild_rust_coverage_index(repo_root: &Path) -> Result<RustCoverageIndex, String> {
     let index = super::build_rust_coverage_index_with_filter(repo_root, |path, repo_root| {
-        rust_llvm_cov_runner::repo_relative_coverage_file(repo_root, &path.to_string_lossy())
+        kiss::rust_llvm_cov_runner::repo_relative_coverage_file(repo_root, &path.to_string_lossy())
             .is_some()
     })?;
     write_rust_coverage_index(repo_root, &index)?;

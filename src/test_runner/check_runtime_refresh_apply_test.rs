@@ -151,18 +151,18 @@ pub(super) fn inject_synthetic_binary_into_index(
     build: &mut crate::test_runner::rust_llvm_cov::RustExecutableIndexBuild,
     selector: &str,
     binary_id: &str,
-) -> rust_llvm_cov_runner::RustLineCoverage {
+) -> kiss::rust_llvm_cov_runner::RustLineCoverage {
     let exe = build.request.source_root.join("target").join(binary_id);
     std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
     std::fs::write(&exe, b"synthetic-test-binary").unwrap();
-    build.index.test_binaries = vec![rust_llvm_cov_runner::RustTestBinaryIdentity {
+    build.index.test_binaries = vec![kiss::rust_llvm_cov_runner::RustTestBinaryIdentity {
         id: binary_id.to_string(),
         executable: exe.to_string_lossy().to_string(),
         digest: "synthetic-digest".to_string(),
     }];
     build.index.selector_binary_ids =
         std::collections::BTreeMap::from([(selector.to_string(), vec![binary_id.to_string()])]);
-    rust_llvm_cov_runner::RustLineCoverage {
+    kiss::rust_llvm_cov_runner::RustLineCoverage {
         files: std::collections::BTreeMap::from([(
             "src/lib.rs".to_string(),
             std::collections::BTreeSet::from([1]),
@@ -178,25 +178,25 @@ pub(super) fn seed_prior_selector_entries(
 ) {
     std::fs::create_dir_all(build.request.cache_root.join("entries")).unwrap();
     for (i, selector) in selectors.iter().enumerate() {
-        let outcome = rust_llvm_cov_runner::RustLlvmCovOutcome {
+        let outcome = kiss::rust_llvm_cov_runner::RustLlvmCovOutcome {
             selector: selector.clone(),
-            status: rpytest_runner::TestStatus::Passed,
+            status: kiss::rpytest_runner::TestStatus::Passed,
             exit_code: Some(0),
             duration: std::time::Duration::from_millis(3),
-            coverage: rust_llvm_cov_runner::RustLineCoverage {
+            coverage: kiss::rust_llvm_cov_runner::RustLineCoverage {
                 files: std::collections::BTreeMap::from([(
                     "src/lib.rs".to_string(),
                     std::collections::BTreeSet::from([1]),
                 )]),
             },
             test_binary_ids: vec![binary_id.to_string()],
-            cache_status: rust_llvm_cov_runner::RustCovCacheStatus::MissStored,
+            cache_status: kiss::rust_llvm_cov_runner::RustCovCacheStatus::MissStored,
             stdout: None,
             stderr: None,
         };
         let entry =
-            rust_llvm_cov_runner::RustCovCacheEntry::from_outcome(&outcome, prior_generation);
-        rust_llvm_cov_runner::store_rust_cov_cache_entry(
+            kiss::rust_llvm_cov_runner::RustCovCacheEntry::from_outcome(&outcome, prior_generation);
+        kiss::rust_llvm_cov_runner::store_rust_cov_cache_entry(
             &build.request.cache_root,
             &format!("prior-seed-{i:04}"),
             &entry,

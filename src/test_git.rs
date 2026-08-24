@@ -258,7 +258,7 @@ fn lang_ok(path: &Path, lang_filter: Option<TestLangFilter>) -> bool {
 }
 
 fn is_rust_planning_path(path: &Path) -> bool {
-    kiss::Language::is_rust_path(path) || rust_llvm_cov_runner::is_rust_cov_cache_input(path)
+    kiss::Language::is_rust_path(path) || kiss::rust_llvm_cov_runner::is_rust_cov_cache_input(path)
 }
 
 pub fn resolve_changed_source_paths(

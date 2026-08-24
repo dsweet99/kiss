@@ -22,7 +22,7 @@ pub(crate) fn try_load_pinned_python_generation(
     repo_root: &Path,
 ) -> Result<PinnedPythonGeneration, GenerationLoadError> {
     let cache_root = python_coverage_cache_root(repo_root).map_err(GenerationLoadError::Corrupt)?;
-    let _guard = rslip::lock_rslip_derived_state(&cache_root)
+    let _guard = kiss::rslip::lock_rslip_derived_state(&cache_root)
         .map_err(|e| GenerationLoadError::Corrupt(e.to_string()))?;
     load_pinned_locked(&cache_root)
 }
@@ -161,7 +161,7 @@ pub(crate) fn try_load_pinned_python_generation_without_line_index(
     repo_root: &Path,
 ) -> Result<PinnedPythonGeneration, GenerationLoadError> {
     let cache_root = python_coverage_cache_root(repo_root).map_err(GenerationLoadError::Corrupt)?;
-    let _guard = rslip::lock_rslip_derived_state(&cache_root)
+    let _guard = kiss::rslip::lock_rslip_derived_state(&cache_root)
         .map_err(|e| GenerationLoadError::Corrupt(e.to_string()))?;
     load_pinned_without_line_index_locked(&cache_root)
 }

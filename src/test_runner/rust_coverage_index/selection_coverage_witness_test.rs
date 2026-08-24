@@ -3,7 +3,7 @@ use super::{
     planned_check_aggregate_line_selectors, select_rust_source_selectors_for_basis,
 };
 use crate::test_runner::coverage_decision::{CoverageFreshness, SelectionBasis};
-use rust_llvm_cov_runner::RustPopulationState;
+use kiss::rust_llvm_cov_runner::RustPopulationState;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
@@ -19,7 +19,7 @@ fn witness_resolved_population_enum() {
             ordinary_source_digests: BTreeMap::new(),
             test_binaries: BTreeMap::new(),
         },
-        delta: rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
+        delta: kiss::rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
     };
     assert_eq!(resolved.basis(), SelectionBasis::ReusablePrior);
     assert_eq!(resolved.freshness(), CoverageFreshness::ReusablePrior);
@@ -149,7 +149,7 @@ fn check_aggregate_rejects_non_rust_paths_on_reusable_prior() {
     };
     let resolved = ResolvedRustPopulation::ReusablePrior {
         state: population,
-        delta: rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
+        delta: kiss::rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
     };
     assert!(
         select_rust_source_selectors_for_basis(

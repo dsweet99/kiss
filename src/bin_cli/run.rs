@@ -22,7 +22,7 @@ pub(crate) fn run_with_cli(cli: Cli) -> i32 {
         command,
     } = &cli.command
     {
-        return rust_llvm_cov_runner::run_target_runner_shim(
+        return kiss::rust_llvm_cov_runner::run_target_runner_shim(
             output_dir, runner_map, platform, command,
         );
     }

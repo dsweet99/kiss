@@ -1,7 +1,7 @@
 use super::*;
 
-use rpytest_runner::{PytestRunOutcome, TestStatus};
-use rslip::LineCoverage;
+use kiss::rpytest_runner::{PytestRunOutcome, TestStatus};
+use kiss::rslip::LineCoverage;
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::fs;
@@ -272,14 +272,14 @@ def test_global_starts_clean():\n    assert stateful.VALUE == 0\n",
 #[test]
 fn print_rslip_outcome_accepts_all_status_cache_shapes() {
     for (status, cache_status) in [
-        (rpytest_runner::TestStatus::Passed, PyCacheStatus::Hit),
+        (kiss::rpytest_runner::TestStatus::Passed, PyCacheStatus::Hit),
         (
-            rpytest_runner::TestStatus::Passed,
+            kiss::rpytest_runner::TestStatus::Passed,
             PyCacheStatus::MissStored,
         ),
-        (rpytest_runner::TestStatus::Failed, PyCacheStatus::Hit),
+        (kiss::rpytest_runner::TestStatus::Failed, PyCacheStatus::Hit),
         (
-            rpytest_runner::TestStatus::Failed,
+            kiss::rpytest_runner::TestStatus::Failed,
             PyCacheStatus::MissStored,
         ),
     ] {
@@ -288,7 +288,7 @@ fn print_rslip_outcome_accepts_all_status_cache_shapes() {
             &RslipOutcome {
                 nodeid: "tests/test_app.py::test_ok".to_string(),
                 status,
-                exit_code: Some(i32::from(status == rpytest_runner::TestStatus::Failed)),
+                exit_code: Some(i32::from(status == kiss::rpytest_runner::TestStatus::Failed)),
                 duration: Duration::from_millis(1),
                 coverage: LineCoverage {
                     files: BTreeMap::new(),

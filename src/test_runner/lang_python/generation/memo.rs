@@ -31,7 +31,7 @@ pub(crate) fn try_load_pinned_python_generation_warm_memoized(
         return entry.result.clone();
     }
     let loaded = {
-        let _guard = rslip::lock_rslip_derived_state(&cache_root)
+        let _guard = kiss::rslip::lock_rslip_derived_state(&cache_root)
             .map_err(|e| GenerationLoadError::Corrupt(e.to_string()))?;
         load_pinned_warm_locked(&cache_root)
     };

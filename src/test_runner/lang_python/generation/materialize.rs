@@ -1,7 +1,7 @@
 use std::path::Path;
 
-use rpytest_runner::TestStatus;
-use rslip::RslipOutcome;
+use kiss::rpytest_runner::TestStatus;
+use kiss::rslip::RslipOutcome;
 
 use super::evidence::{PopulationEvidence, SelectorEvidence, selector_evidence_from_outcome};
 use super::identity::population_plan_for_selectors;
@@ -47,7 +47,7 @@ pub(crate) fn selector_deltas_from_cached_outcomes(
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let outcomes = rslip::load_cached_outcomes_many_trusting_population(&reqs);
+    let outcomes = kiss::rslip::load_cached_outcomes_many_trusting_population(&reqs);
     let mut deltas = Vec::new();
     for (selector, outcome) in selectors.iter().zip(outcomes) {
         let Some(outcome) =

@@ -1,6 +1,6 @@
 use super::*;
 use crate::test_runner::PlannedSelectors;
-use rust_llvm_cov_runner::{
+use kiss::rust_llvm_cov_runner::{
     RustCovCacheStatus, RustCoverageBatchCounters, RustLineCoverage, RustLlvmCovOutcome,
 };
 use std::cell::Cell;
@@ -62,13 +62,13 @@ fn rust_prior_failure_does_not_set_batch_wide_force_rerun() {
         },
         move |batch_req, _versions| {
             force_seen_c.set(batch_req.force_rerun);
-            Ok(rust_llvm_cov_runner::RustCoverageBatchResult {
+            Ok(kiss::rust_llvm_cov_runner::RustCoverageBatchResult {
                 completed: batch_req
                     .logical_selectors
                     .iter()
                     .map(|selector| RustLlvmCovOutcome {
                         selector: selector.clone(),
-                        status: rpytest_runner::TestStatus::Passed,
+                        status: kiss::rpytest_runner::TestStatus::Passed,
                         exit_code: Some(0),
                         duration: Duration::from_millis(1),
                         coverage: RustLineCoverage {

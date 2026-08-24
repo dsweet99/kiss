@@ -18,7 +18,7 @@ fn allow_refresh_true_invokes_refresh_on_identity_mismatch() {
     use crate::test_runner::python_coverage_index::{
         GenerationReason, clear_python_generation_warm_memo,
     };
-    use rpytest_runner::TestStatus;
+    use kiss::rpytest_runner::TestStatus;
     use std::collections::BTreeMap;
     use std::fs;
     use std::time::Duration;

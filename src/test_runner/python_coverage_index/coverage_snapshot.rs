@@ -63,7 +63,7 @@ pub(crate) fn write_python_coverage_snapshot(
         .parent()
         .ok_or_else(|| "error: kiss: Python coverage snapshot path has no parent".to_string())?;
     let tmp_path = parent.join(format!(".coverage_snapshot.{}.tmp", python_unique_suffix()));
-    kiss_publication_barrier::publish_atomically(
+    kiss::kiss_publication_barrier::publish_atomically(
         "python_coverage_snapshot",
         &path,
         &tmp_path,

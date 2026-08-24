@@ -94,7 +94,7 @@ fn stale_entries_fingerprint_makes_python_index_fail_closed() {
     std::fs::write(
         entry,
         serde_json::json!({
-            "schema_version": rslip::CACHE_SCHEMA_VERSION,
+            "schema_version": kiss::rslip::CACHE_SCHEMA_VERSION,
             "nodeid": "tests/test_app.py::test_value",
             "status": "passed",
             "exit_code": 0,

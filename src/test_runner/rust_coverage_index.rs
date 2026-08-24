@@ -1,9 +1,9 @@
 use crate::test_runner::line_selection;
 #[cfg(test)]
-use rpytest_runner::TestStatus;
+use kiss::rpytest_runner::TestStatus;
 #[cfg(test)]
-use rust_llvm_cov_runner::RustLineCoverage;
-use rust_llvm_cov_runner::{
+use kiss::rust_llvm_cov_runner::RustLineCoverage;
+use kiss::rust_llvm_cov_runner::{
     CoverageOutputMode, RustCoverageBatchRequest, RustCoverageToolIdentity,
     placeholder_delegated_runner_fields, resolve_batch_request_runners,
 };
@@ -14,7 +14,7 @@ use std::fs::OpenOptions;
 use std::io;
 use std::path::{Path, PathBuf};
 
-pub(crate) const CACHE_SCHEMA_VERSION: &str = rust_llvm_cov_runner::CACHE_SCHEMA_VERSION;
+pub(crate) const CACHE_SCHEMA_VERSION: &str = kiss::rust_llvm_cov_runner::CACHE_SCHEMA_VERSION;
 #[cfg(test)]
 pub(crate) const LEGACY_INDEX_SCHEMA_VERSION: &str = "rust-llvm-cov-index-v1";
 
@@ -42,21 +42,21 @@ pub(crate) fn create_new_file(path: &Path) -> io::Result<std::fs::File> {
 }
 
 pub(crate) fn unique_suffix() -> String {
-    kiss_publication_barrier::unique_process_suffix()
+    kiss::kiss_publication_barrier::unique_process_suffix()
 }
 
 #[cfg(test)]
 pub(crate) use crate::test_runner::runners::command_stdout;
 #[cfg(test)]
-pub(crate) use rust_llvm_cov_runner::is_cargo_config_input_path;
-pub(crate) use rust_llvm_cov_runner::{repo_relative_coverage_file, repo_relative_path};
+pub(crate) use kiss::rust_llvm_cov_runner::is_cargo_config_input_path;
+pub(crate) use kiss::rust_llvm_cov_runner::{repo_relative_coverage_file, repo_relative_path};
 
 pub(crate) fn current_rust_coverage_batch_identity(
     repo_root: &Path,
     test_args: &[String],
-) -> Result<rust_llvm_cov_runner::RustCoverageBatchIdentity, String> {
+) -> Result<kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity, String> {
     let (req, tools) = resolved_rust_batch_request_parts(repo_root, test_args)?;
-    rust_llvm_cov_runner::batch_identity(&req, &tools)
+    kiss::rust_llvm_cov_runner::batch_identity(&req, &tools)
         .map_err(|err| format!("batch identity: {err}"))
 }
 
@@ -105,11 +105,11 @@ pub(crate) fn publish_rust_derived_state_with_filter(
     _is_indexable: impl Fn(&Path, &Path) -> bool,
 ) -> Result<(), String> {
     let (mut req, tools) = resolved_rust_batch_request_parts(repo_root, test_args)?;
-    let identity = rust_llvm_cov_runner::batch_identity(&req, &tools)
+    let identity = kiss::rust_llvm_cov_runner::batch_identity(&req, &tools)
         .map_err(|err| format!("batch identity: {err}"))?;
     let mut selectors = match population_selectors {
         Some(selectors) => selectors.to_vec(),
-        None => rust_llvm_cov_runner::load_current_population_state(
+        None => kiss::rust_llvm_cov_runner::load_current_population_state(
             &rust_coverage_cache_root(repo_root),
             repo_root,
             &identity,
@@ -122,9 +122,9 @@ pub(crate) fn publish_rust_derived_state_with_filter(
     selectors.dedup();
     req.logical_selectors = selectors.clone();
     req.population_publication_selectors = Some(selectors.clone());
-    let identity = rust_llvm_cov_runner::batch_identity(&req, &tools)
+    let identity = kiss::rust_llvm_cov_runner::batch_identity(&req, &tools)
         .map_err(|err| format!("batch identity: {err}"))?;
-    rust_llvm_cov_runner::publish_derived_state(&req, &tools, &identity, &selectors, true)
+    kiss::rust_llvm_cov_runner::publish_derived_state(&req, &tools, &identity, &selectors, true)
         .map_err(|err| format!("{err:?}"))?;
     Ok(())
 }
@@ -140,7 +140,7 @@ pub(crate) fn rust_population_manifest_is_current_for_args(
     let mut expected = selectors.to_vec();
     expected.sort();
     expected.dedup();
-    rust_llvm_cov_runner::load_current_population_state(
+    kiss::rust_llvm_cov_runner::load_current_population_state(
         &rust_coverage_cache_root(repo_root),
         repo_root,
         &identity,
@@ -154,9 +154,9 @@ pub(crate) fn load_current_rust_population_state(
     repo_root: &Path,
     selectors: Option<&[String]>,
     test_args: &[String],
-) -> Option<rust_llvm_cov_runner::RustPopulationState> {
+) -> Option<kiss::rust_llvm_cov_runner::RustPopulationState> {
     let identity = current_rust_coverage_batch_identity(repo_root, test_args).ok()?;
-    rust_llvm_cov_runner::load_current_population_state(
+    kiss::rust_llvm_cov_runner::load_current_population_state(
         &rust_coverage_cache_root(repo_root),
         repo_root,
         &identity,

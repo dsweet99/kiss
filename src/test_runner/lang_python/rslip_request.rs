@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use rslip::RslipRequest;
+use kiss::rslip::RslipRequest;
 
 use crate::test_runner::python_coverage_index::python_coverage_cache_root;
 use crate::test_runner::runners::command_stdout;

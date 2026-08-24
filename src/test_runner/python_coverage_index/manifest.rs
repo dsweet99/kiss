@@ -84,7 +84,7 @@ pub(crate) fn write_python_population_manifest_with_identity_and_entries_fingerp
         entries_fingerprint: entries_fingerprint.to_string(),
         selectors,
     };
-    kiss_publication_barrier::publish_atomically("python_population", &path, &tmp_path, |file| {
+    kiss::kiss_publication_barrier::publish_atomically("python_population", &path, &tmp_path, |file| {
         serde_json::to_writer_pretty(&mut *file, &payload).map_err(std::io::Error::other)?;
         use std::io::Write;
         file.write_all(b"\n")?;
@@ -297,7 +297,7 @@ fn current_python_population_manifest_identity_with_env_keys(
     let (python_version, pytest_version) =
         crate::test_runner::runners::detect_rslip_versions(repo_root)?;
     Ok(PythonPopulationManifestIdentity {
-        cache_schema_version: rslip::CACHE_SCHEMA_VERSION.to_string(),
+        cache_schema_version: kiss::rslip::CACHE_SCHEMA_VERSION.to_string(),
         selector_discovery_version: PYTHON_SELECTOR_DISCOVERY_VERSION.to_string(),
         python_version,
         pytest_version,

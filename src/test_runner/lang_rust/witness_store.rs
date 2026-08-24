@@ -4,7 +4,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use kiss::GateConfig;
-use rust_llvm_cov_runner::RustCoverageBatchIdentity;
+use kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity;
 use serde::{Deserialize, Serialize};
 
 use crate::test_runner::lang_iface::{

@@ -462,19 +462,16 @@ name = "kiss-ai"
 version = "0.4.10"
 dependencies = [
  "bincode",
+ "cargo-config2",
  "clap",
  "fa-leiden-cd",
  "fs2",
  "ignore",
- "kiss-publication-barrier",
  "libc",
  "notify",
  "petgraph",
  "proc-macro2",
  "rayon",
- "rpytest-runner",
- "rslip",
- "rust-llvm-cov-runner",
  "serde",
  "serde_json",
  "sha2",
@@ -484,10 +481,6 @@ dependencies = [
  "tree-sitter",
  "tree-sitter-python",
 ]
-
-[[package]]
-name = "kiss-publication-barrier"
-version = "0.1.0"
 
 [[package]]
 name = "kqueue"
@@ -658,43 +651,6 @@ name = "regex-syntax"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
-
-[[package]]
-name = "rpytest-runner"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
-name = "rslip"
-version = "0.1.0"
-dependencies = [
- "fs2",
- "kiss-publication-barrier",
- "rpytest-runner",
- "serde",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
-name = "rust-llvm-cov-runner"
-version = "0.1.0"
-dependencies = [
- "cargo-config2",
- "fs2",
- "kiss-publication-barrier",
- "libc",
- "rpytest-runner",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "toml",
-]
 
 [[package]]
 name = "rustix"

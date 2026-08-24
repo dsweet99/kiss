@@ -17,7 +17,7 @@ fn retained_maps_ignoring_digest_keeps_changed_binaries() {
 #[test]
 fn witness_warm_downgrade_leaves_non_rerun_decisions_unchanged() {
     let tmp = tempfile::tempdir().unwrap();
-    let identity = rust_llvm_cov_runner::RustCoverageBatchIdentity {
+    let identity = kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity {
         input_digest: "input".into(),
         generation_fingerprint: "gen".into(),
         selection_context_fingerprint: "sel".into(),
@@ -45,7 +45,7 @@ fn witness_warm_downgrade_leaves_non_rerun_decisions_unchanged() {
 #[test]
 fn witness_absent_keeps_rerun_decision() {
     let tmp = tempfile::tempdir().unwrap();
-    let identity = rust_llvm_cov_runner::RustCoverageBatchIdentity {
+    let identity = kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity {
         input_digest: "input".into(),
         generation_fingerprint: "gen".into(),
         selection_context_fingerprint: "sel".into(),
@@ -94,7 +94,7 @@ fn witness_warm_downgrades_rerun_to_identity_only() {
     )
     .unwrap();
     std::fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
-    let identity = rust_llvm_cov_runner::RustCoverageBatchIdentity {
+    let identity = kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity {
         input_digest: "input".into(),
         generation_fingerprint: "gen".into(),
         selection_context_fingerprint: "sel".into(),

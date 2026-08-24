@@ -254,7 +254,7 @@ fn cached_rust_check_aggregate_is_only_for_non_forced_selective_runs() {
 #[test]
 fn rust_population_phase_uses_selector_entries_not_check_aggregate() {
     use crate::test_runner::rust_llvm_cov::RustCoverageToolVersions;
-    use rust_llvm_cov_runner::{
+    use kiss::rust_llvm_cov_runner::{
         CoverageOutputMode, RustCovCacheStatus, RustCoverageBatchCounters, RustCoverageBatchResult,
         RustLineCoverage, RustLlvmCovOutcome,
     };
@@ -265,7 +265,7 @@ fn rust_population_phase_uses_selector_entries_not_check_aggregate() {
     fn passed_outcome(selector: String) -> RustLlvmCovOutcome {
         RustLlvmCovOutcome {
             selector,
-            status: rpytest_runner::TestStatus::Passed,
+            status: kiss::rpytest_runner::TestStatus::Passed,
             exit_code: Some(0),
             duration: Duration::from_millis(1),
             coverage: RustLineCoverage {

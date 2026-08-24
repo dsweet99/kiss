@@ -10,7 +10,7 @@ use crate::test_runner::python_coverage_index::{
 use crate::test_runner::runners::detect_rslip_versions;
 use crate::test_runner::runners::python_backer::PythonModule;
 use crate::test_runner::{PlannedSelectors, SelectorRunOptions};
-use rpytest_runner::TestStatus;
+use kiss::rpytest_runner::TestStatus;
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::Duration;

@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use rust_llvm_cov_runner::{RustCovCacheStatus, RustCoverageBatchResult, RustLlvmCovOutcome};
+use kiss::rust_llvm_cov_runner::{RustCovCacheStatus, RustCoverageBatchResult, RustLlvmCovOutcome};
 
 use crate::test_runner::lang_rust::llvm_cov::error::map_rust_llvm_cov_error;
 use crate::test_runner::last_status::{LastStatusIdentity, record_statuses};
@@ -13,7 +13,7 @@ use crate::test_runner::runners::{
 pub(crate) fn cached_summary_from_check_aggregate_population(
     repo_root: &Path,
     selectors: &[String],
-    population: &rust_llvm_cov_runner::RustPopulationState,
+    population: &kiss::rust_llvm_cov_runner::RustPopulationState,
 ) -> Option<SelectorExecutionSummary> {
     if !population
         .entries_fingerprint
@@ -22,7 +22,7 @@ pub(crate) fn cached_summary_from_check_aggregate_population(
         return None;
     }
     let cache_root = repo_root.join(".kiss").join("rust_llvm_cov_cache");
-    let pairs = rust_llvm_cov_runner::try_load_population_durations(&cache_root, population)?;
+    let pairs = kiss::rust_llvm_cov_runner::try_load_population_durations(&cache_root, population)?;
     let duration_by_selector: std::collections::BTreeMap<_, _> = pairs.into_iter().collect();
     let report_ids = rust_logical_to_kiss_test_ids(repo_root, &[]).ok()?;
     let mut summary = SelectorExecutionSummary::default();
@@ -33,7 +33,7 @@ pub(crate) fn cached_summary_from_check_aggregate_population(
         println!("PASS (cached): {report}");
         summary.record(SelectorExecutionRecord {
             selector: report,
-            status: rpytest_runner::TestStatus::Passed,
+            status: kiss::rpytest_runner::TestStatus::Passed,
             raw_status: None,
             cache_record: SelectorCacheRecord::Hit,
             exit_code: Some(0),
@@ -47,7 +47,7 @@ fn print_rust_llvm_cov_outcome(
     outcome: &RustLlvmCovOutcome,
     report_id: &str,
     gate: &kiss::GateConfig,
-) -> rpytest_runner::TestStatus {
+) -> kiss::rpytest_runner::TestStatus {
     let status = crate::test_runner::status_labels::apply_unit_test_time_limit(
         outcome.status,
         report_id,
@@ -68,7 +68,7 @@ fn print_rust_llvm_cov_outcome(
     );
     if matches!(
         status,
-        rpytest_runner::TestStatus::Failed | rpytest_runner::TestStatus::TimedOut
+        kiss::rpytest_runner::TestStatus::Failed | kiss::rpytest_runner::TestStatus::TimedOut
     ) && outcome.cache_status != RustCovCacheStatus::Hit
         && let Some(stderr) = &outcome.stderr
         && !stderr.is_empty()
@@ -93,7 +93,7 @@ pub(crate) fn finish_rust_coverage_batch_result(
     if !emit_each {
         for outcome in &result.completed {
             if matches!(outcome.cache_status, RustCovCacheStatus::Hit)
-                && outcome.status == rpytest_runner::TestStatus::Passed
+                && outcome.status == kiss::rpytest_runner::TestStatus::Passed
             {
                 cached_pass += 1;
             }
@@ -110,7 +110,7 @@ pub(crate) fn finish_rust_coverage_batch_result(
         let raw = outcome.status;
         let effective = if emit_each
             || !matches!(outcome.cache_status, RustCovCacheStatus::Hit)
-            || outcome.status != rpytest_runner::TestStatus::Passed
+            || outcome.status != kiss::rpytest_runner::TestStatus::Passed
         {
             print_rust_llvm_cov_outcome(outcome, &report_id, gate)
         } else {

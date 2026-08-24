@@ -18,7 +18,7 @@ fn reusable_prior_selection_fails_on_missing_index_row() {
     let missing = tmp.path().join("src").join("missing.rs");
     fs::write(&lib, "pub fn value() -> u32 { 1 }\n").unwrap();
     fs::write(&missing, "pub fn missing() -> u32 { 1 }\n").unwrap();
-    let population = rust_llvm_cov_runner::RustPopulationState {
+    let population = kiss::rust_llvm_cov_runner::RustPopulationState {
         input_fingerprint: String::new(),
         generation_fingerprint: String::new(),
         selection_context_fingerprint: String::new(),
@@ -33,7 +33,7 @@ fn reusable_prior_selection_fails_on_missing_index_row() {
     };
     let resolved = ResolvedRustPopulation::ReusablePrior {
         state: population,
-        delta: rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
+        delta: kiss::rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
     };
     assert!(
         select_rust_source_selectors_for_basis(
@@ -53,7 +53,7 @@ fn reusable_prior_selection_fails_on_empty_index_row() {
     fs::create_dir_all(tmp.path().join("src")).unwrap();
     let lib = tmp.path().join("src").join("lib.rs");
     fs::write(&lib, "pub fn value() -> u32 { 1 }\n").unwrap();
-    let population = rust_llvm_cov_runner::RustPopulationState {
+    let population = kiss::rust_llvm_cov_runner::RustPopulationState {
         input_fingerprint: String::new(),
         generation_fingerprint: String::new(),
         selection_context_fingerprint: String::new(),
@@ -65,7 +65,7 @@ fn reusable_prior_selection_fails_on_empty_index_row() {
     };
     let resolved = ResolvedRustPopulation::ReusablePrior {
         state: population,
-        delta: rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
+        delta: kiss::rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
     };
     assert!(
         select_rust_source_selectors_for_basis(
@@ -85,7 +85,7 @@ fn reusable_prior_selects_all_file_level_selectors_for_affected_file() {
     fs::create_dir_all(tmp.path().join("src")).unwrap();
     let lib = tmp.path().join("src").join("lib.rs");
     fs::write(&lib, "pub fn value() -> u32 { 1 }\n").unwrap();
-    let population = rust_llvm_cov_runner::RustPopulationState {
+    let population = kiss::rust_llvm_cov_runner::RustPopulationState {
         input_fingerprint: String::new(),
         generation_fingerprint: String::new(),
         selection_context_fingerprint: String::new(),
@@ -103,7 +103,7 @@ fn reusable_prior_selects_all_file_level_selectors_for_affected_file() {
     };
     let resolved = ResolvedRustPopulation::ReusablePrior {
         state: population,
-        delta: rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
+        delta: kiss::rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
     };
     let selected = select_rust_source_selectors_for_basis(
         tmp.path(),
@@ -130,7 +130,7 @@ fn reusable_prior_unions_selectors_from_multiple_affected_files() {
     let b = tmp.path().join("src").join("b.rs");
     fs::write(&a, "pub fn a() {}\n").unwrap();
     fs::write(&b, "pub fn b() {}\n").unwrap();
-    let population = rust_llvm_cov_runner::RustPopulationState {
+    let population = kiss::rust_llvm_cov_runner::RustPopulationState {
         input_fingerprint: String::new(),
         generation_fingerprint: String::new(),
         selection_context_fingerprint: String::new(),
@@ -151,7 +151,7 @@ fn reusable_prior_unions_selectors_from_multiple_affected_files() {
     };
     let resolved = ResolvedRustPopulation::ReusablePrior {
         state: population,
-        delta: rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
+        delta: kiss::rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
     };
     let selected = select_rust_source_selectors_for_basis(
         tmp.path(),
@@ -173,7 +173,7 @@ fn reusable_prior_uses_file_level_selectors_without_line_coordinate_matching() {
     fs::create_dir_all(tmp.path().join("src")).unwrap();
     let lib = tmp.path().join("src").join("lib.rs");
     fs::write(&lib, "pub fn value() -> u32 { 1 }\n").unwrap();
-    let population = rust_llvm_cov_runner::RustPopulationState {
+    let population = kiss::rust_llvm_cov_runner::RustPopulationState {
         input_fingerprint: String::new(),
         generation_fingerprint: String::new(),
         selection_context_fingerprint: String::new(),
@@ -188,7 +188,7 @@ fn reusable_prior_uses_file_level_selectors_without_line_coordinate_matching() {
     };
     let resolved = ResolvedRustPopulation::ReusablePrior {
         state: population,
-        delta: rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
+        delta: kiss::rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
     };
     let changed_lines = BTreeMap::from([(lib.clone(), BTreeSet::from([99u32]))]);
     let selected = select_rust_source_selectors_for_basis(
@@ -211,7 +211,7 @@ fn reusable_prior_selection_fails_on_non_rust_extension() {
     fs::create_dir_all(tmp.path().join("src")).unwrap();
     let txt = tmp.path().join("src").join("notes.txt");
     fs::write(&txt, "not rust\n").unwrap();
-    let population = rust_llvm_cov_runner::RustPopulationState {
+    let population = kiss::rust_llvm_cov_runner::RustPopulationState {
         input_fingerprint: String::new(),
         generation_fingerprint: String::new(),
         selection_context_fingerprint: String::new(),
@@ -223,7 +223,7 @@ fn reusable_prior_selection_fails_on_non_rust_extension() {
     };
     let resolved = ResolvedRustPopulation::ReusablePrior {
         state: population,
-        delta: rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
+        delta: kiss::rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
     };
     assert!(
         select_rust_source_selectors_for_basis(
@@ -260,7 +260,7 @@ fn reusable_prior_is_not_claimed_complete_behavioral_impact_analysis() {
     let y = tmp.path().join("src").join("y.rs");
     fs::write(&x, "pub fn x() {}\n").unwrap();
     fs::write(&y, "pub fn y() {}\n").unwrap();
-    let population = rust_llvm_cov_runner::RustPopulationState {
+    let population = kiss::rust_llvm_cov_runner::RustPopulationState {
         input_fingerprint: String::new(),
         generation_fingerprint: String::new(),
         selection_context_fingerprint: String::new(),
@@ -275,7 +275,7 @@ fn reusable_prior_is_not_claimed_complete_behavioral_impact_analysis() {
     };
     let resolved = ResolvedRustPopulation::ReusablePrior {
         state: population,
-        delta: rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
+        delta: kiss::rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
     };
     let selected = select_rust_source_selectors_for_basis(
         tmp.path(),
@@ -311,7 +311,7 @@ fn added_deleted_and_missing_rust_paths_require_population() {
     let deleted = tmp.path().join("src").join("removed.rs");
     fs::write(&lib, "pub fn value() -> u32 { 1 }\n").unwrap();
     fs::write(&added, "pub fn added() -> u32 { 1 }\n").unwrap();
-    let population = rust_llvm_cov_runner::RustPopulationState {
+    let population = kiss::rust_llvm_cov_runner::RustPopulationState {
         input_fingerprint: String::new(),
         generation_fingerprint: String::new(),
         selection_context_fingerprint: String::new(),
@@ -326,7 +326,7 @@ fn added_deleted_and_missing_rust_paths_require_population() {
     };
     let resolved = ResolvedRustPopulation::ReusablePrior {
         state: population,
-        delta: rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
+        delta: kiss::rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
     };
     assert!(
         select_rust_source_selectors_for_basis(

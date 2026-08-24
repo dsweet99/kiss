@@ -1,5 +1,5 @@
-use rpytest_runner::TestStatus;
-use rust_llvm_cov_runner::RustLineCoverage;
+use kiss::rpytest_runner::TestStatus;
+use kiss::rust_llvm_cov_runner::RustLineCoverage;
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -19,7 +19,7 @@ pub(crate) fn selectors_by_changed_file_line(
         return BTreeMap::new();
     }
     let cache_root = rust_coverage_cache_root(repo_root);
-    if let Some(from_reverse) = rust_llvm_cov_runner::query_reverse_line_index(
+    if let Some(from_reverse) = kiss::rust_llvm_cov_runner::query_reverse_line_index(
         &cache_root,
         generation_fingerprint,
         changed_rels,
@@ -27,7 +27,7 @@ pub(crate) fn selectors_by_changed_file_line(
         return from_reverse;
     }
     if let Some(from_aggregate) =
-        rust_llvm_cov_runner::selector_coverage_from_check_aggregate_generation(
+        kiss::rust_llvm_cov_runner::selector_coverage_from_check_aggregate_generation(
             &cache_root,
             generation_fingerprint,
         )

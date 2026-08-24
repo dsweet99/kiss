@@ -56,7 +56,7 @@ pub(crate) fn write_python_coverage_index_with_entries_fingerprint(
         entries_fingerprint: entries_fingerprint.to_string(),
         files: index,
     };
-    kiss_publication_barrier::publish_atomically("python_index", &path, &tmp_path, |file| {
+    kiss::kiss_publication_barrier::publish_atomically("python_index", &path, &tmp_path, |file| {
         serde_json::to_writer_pretty(&mut *file, &payload).map_err(io::Error::other)?;
         file.write_all(b"\n")?;
         Ok(())
@@ -97,7 +97,7 @@ pub(crate) fn python_coverage_entry_paths(cache_root: &Path) -> Vec<PathBuf> {
 
 pub(crate) fn python_entries_fingerprint(cache_root: &Path) -> io::Result<String> {
     let mut h = 0xcbf2_9ce4_8422_2325;
-    h = python_fnv1a64(h, rslip::CACHE_SCHEMA_VERSION.as_bytes());
+    h = python_fnv1a64(h, kiss::rslip::CACHE_SCHEMA_VERSION.as_bytes());
     for path in python_coverage_entry_paths(cache_root) {
         let meta = fs::metadata(&path)?;
         let name = path
@@ -123,7 +123,7 @@ pub(crate) fn python_source_input_fingerprint(repo_root: &Path) -> io::Result<St
         .canonicalize()
         .unwrap_or_else(|_| repo_root.to_path_buf());
     let mut h = 0xcbf2_9ce4_8422_2325;
-    h = python_fnv1a64(h, rslip::CACHE_SCHEMA_VERSION.as_bytes());
+    h = python_fnv1a64(h, kiss::rslip::CACHE_SCHEMA_VERSION.as_bytes());
     h = python_fnv1a64(h, b"python-workspace-inputs-v1");
     for path in python_source_input_paths(&root)? {
         let rel = path.strip_prefix(&root).unwrap_or(&path);
@@ -160,16 +160,16 @@ fn visit_python_source_inputs(dir: &Path, out: &mut Vec<PathBuf>) -> io::Result<
 }
 
 pub(crate) fn should_skip_python_source_input_dir(path: &Path) -> bool {
-    rslip::should_skip_rslip_dir(path)
+    kiss::rslip::should_skip_rslip_dir(path)
 }
 
 #[cfg(test)]
 pub(crate) fn is_kiss_rslip_cache_dir(path: &Path) -> bool {
-    rslip::is_kiss_rslip_cache_dir(path)
+    kiss::rslip::is_kiss_rslip_cache_dir(path)
 }
 
 pub(crate) fn is_python_source_input_path(path: &Path) -> bool {
-    rslip::is_rslip_cache_input(path)
+    kiss::rslip::is_rslip_cache_input(path)
 }
 
 pub(crate) fn python_repo_relative_coverage_file(repo_root: &Path, file: &str) -> Option<String> {
@@ -217,7 +217,7 @@ pub(crate) fn create_new_python_file(path: &Path) -> io::Result<File> {
 }
 
 pub(crate) fn python_unique_suffix() -> String {
-    kiss_publication_barrier::unique_process_suffix()
+    kiss::kiss_publication_barrier::unique_process_suffix()
 }
 
 pub(crate) fn python_fnv1a64(h: u64, bytes: &[u8]) -> u64 {

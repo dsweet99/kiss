@@ -7,7 +7,7 @@ pub(crate) use super::rust_llvm_cov::{
     cached_rust_check_aggregate_selectors, run_rust_llvm_cov_selectors,
 };
 use kiss::code_roles::{is_default_pytest_collect_candidate, is_test_only_file};
-use rust_llvm_cov_runner::{
+use kiss::rust_llvm_cov_runner::{
     CoverageOutputMode, RustCoverageBatchRequest, build_rust_coverage_batch_plan,
 };
 
@@ -135,7 +135,7 @@ fn roles_for_changed_paths(
 }
 
 pub(crate) fn is_rust_planning_source_path(path: &Path) -> bool {
-    kiss::Language::is_rust_path(path) || rust_llvm_cov_runner::is_rust_cov_cache_input(path)
+    kiss::Language::is_rust_path(path) || kiss::rust_llvm_cov_runner::is_rust_cov_cache_input(path)
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -309,7 +309,7 @@ pub(crate) fn build_rust_coverage_batch_dry_run_lines(
         return Ok(Vec::new());
     }
     let (delegated_runners, runner_map_fingerprint, host_platform) =
-        rust_llvm_cov_runner::placeholder_delegated_runner_fields();
+        kiss::rust_llvm_cov_runner::placeholder_delegated_runner_fields();
     let req = RustCoverageBatchRequest {
         cwd: PathBuf::from("."),
         source_root: PathBuf::from("."),

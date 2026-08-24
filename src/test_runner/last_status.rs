@@ -67,15 +67,15 @@ pub(crate) fn rust_last_status_identity(
             ),
             (
                 "cache-schema".to_string(),
-                rust_llvm_cov_runner::CACHE_SCHEMA_VERSION.to_string(),
+                kiss::rust_llvm_cov_runner::CACHE_SCHEMA_VERSION.to_string(),
             ),
             (
                 "execution-policy".to_string(),
-                rust_llvm_cov_runner::BATCH_EXECUTION_POLICY_VERSION.to_string(),
+                kiss::rust_llvm_cov_runner::BATCH_EXECUTION_POLICY_VERSION.to_string(),
             ),
             ("runner-map".to_string(), runner_map_fingerprint.to_string()),
         ]),
-        &rust_llvm_cov_runner::identity_relevant_test_args(test_args),
+        &kiss::rust_llvm_cov_runner::identity_relevant_test_args(test_args),
         BTreeMap::new(),
     )
 }
@@ -119,7 +119,7 @@ pub(crate) fn record_statuses(
     repo_root: &Path,
     language: Language,
     identity: &LastStatusIdentity,
-    statuses: &[(String, rpytest_runner::TestStatus)],
+    statuses: &[(String, kiss::rpytest_runner::TestStatus)],
 ) -> Result<(), String> {
     if statuses.is_empty() {
         return Ok(());
@@ -137,7 +137,7 @@ pub(crate) fn record_statuses(
         });
         if matches!(
             *status,
-            rpytest_runner::TestStatus::Failed | rpytest_runner::TestStatus::TimedOut
+            kiss::rpytest_runner::TestStatus::Failed | kiss::rpytest_runner::TestStatus::TimedOut
         ) {
             store.records.push(LastStatusRecord {
                 language: language.to_string(),

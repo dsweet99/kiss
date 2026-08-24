@@ -363,9 +363,9 @@ where
         &std::path::Path,
     ) -> Result<crate::test_runner::rust_llvm_cov::RustCoverageToolVersions, String>,
     E: FnOnce(
-        &rust_llvm_cov_runner::RustCoverageBatchRequest,
+        &kiss::rust_llvm_cov_runner::RustCoverageBatchRequest,
         &crate::test_runner::rust_llvm_cov::RustCoverageToolVersions,
-    ) -> Result<rust_llvm_cov_runner::RustCoverageBatchResult, String>,
+    ) -> Result<kiss::rust_llvm_cov_runner::RustCoverageBatchResult, String>,
 {
     let force_rerun = ctx.options.force_rerun;
     crate::test_runner::rust_llvm_cov::run_rust_llvm_cov_selectors_with_deps(
@@ -376,7 +376,7 @@ where
             force_rerun,
             jobs: ctx.options.jobs,
             population_publication_selectors: Some(population_publication_selectors),
-            coverage_output_mode: rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
+            coverage_output_mode: kiss::rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
             gate: kiss::GateConfig::default(),
         },
         detect_versions,

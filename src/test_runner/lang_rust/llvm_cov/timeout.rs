@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use rust_llvm_cov_runner::CoverageOutputMode;
+use kiss::rust_llvm_cov_runner::CoverageOutputMode;
 
 fn timeout_rules_need_report_ids(rules: &[(String, f64)]) -> bool {
     rules.iter().any(|(pattern, _)| pattern != "*")
