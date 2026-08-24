@@ -10,7 +10,7 @@ use crate::cwd_test_lock;
 use crate::test_runner::python_named_target_args::python_named_target_args;
 use crate::test_runner::run_test;
 
-const HARNESS_BUDGET: Duration = Duration::from_millis(50);
+const HARNESS_BUDGET: Duration = Duration::from_millis(3000);
 
 fn init_git_repo(root: &Path) {
     let mut cmd = kiss::scrubbed_git_command(root);

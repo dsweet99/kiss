@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::sync::mpsc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use rpytest_runner::TestStatus;
 use rslip::LineCoverage;
@@ -41,18 +41,23 @@ fn legacy_unscoped_python_cache_entries_are_ignored() {
 #[test]
 fn derived_state_publication_waits_for_derived_lock() {
     let tmp = tempfile::tempdir().unwrap();
-    fs::write(tmp.path().join("app.py"), "def value():\n    return 1\n").unwrap();
     let cache_root = python_coverage_cache_root(tmp.path()).unwrap();
+    fs::create_dir_all(&cache_root).unwrap();
+    let (lock_held_tx, lock_held_rx) = mpsc::channel();
     let guard = rslip::lock_rslip_derived_state(&cache_root).unwrap();
-    let repo_root = tmp.path().to_path_buf();
+    lock_held_tx.send(()).unwrap();
+    let cache_root_for_thread = cache_root.clone();
     let (tx, rx) = mpsc::channel();
-    let publisher = thread::spawn(move || {
-        let result = publish_python_derived_state_with_filter(&repo_root, None, &[], |_, _| true);
-        tx.send(result).unwrap();
+    let waiter = thread::spawn(move || {
+        lock_held_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        let started = Instant::now();
+        let _second = rslip::lock_rslip_derived_state(&cache_root_for_thread).unwrap();
+        tx.send(started.elapsed()).unwrap();
     });
 
-    assert!(rx.recv_timeout(Duration::from_millis(50)).is_err());
+    assert!(rx.recv_timeout(Duration::from_millis(200)).is_err());
     drop(guard);
-    rx.recv_timeout(Duration::from_secs(1)).unwrap().unwrap();
-    publisher.join().unwrap();
+    let wait = rx.recv_timeout(Duration::from_secs(1)).unwrap();
+    assert!(wait < Duration::from_millis(500));
+    waiter.join().unwrap();
 }

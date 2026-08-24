@@ -2,7 +2,8 @@ use kiss::GateConfig;
 
 use super::witness::{
     AcceptDecision, AcceptMode, ExecutionWitness, WitnessScope, WitnessStatus, accept_witness,
-    all_misses_warm_skippable, miss_selectors_for_repair, reclassify_statuses_with_gate,
+    all_misses_warm_skippable, miss_selectors_for_repair, prune_witness_to_known_selectors,
+    reclassify_statuses_with_gate,
 };
 
 fn witness(
@@ -372,4 +373,27 @@ fn force_selectors_invalidate_stale_passed_without_batch_force() {
         miss_selectors_for_repair(AcceptMode::Subset, &planned, "id", Some(&w), false).is_empty(),
         "batch force remains false: other selectors stay warm-eligible"
     );
+}
+
+#[test]
+fn prune_witness_to_known_selectors_drops_removed_tests() {
+    let mut w = witness(
+        WitnessScope::Full,
+        "id",
+        &["a", "removed", "b"],
+        &[
+            WitnessStatus::Passed,
+            WitnessStatus::Passed,
+            WitnessStatus::Failed,
+        ],
+        true,
+    );
+    let known = std::collections::BTreeSet::from(["a".into(), "b".into()]);
+    prune_witness_to_known_selectors(&mut w, &known);
+    assert_eq!(w.selectors, vec!["a".to_string(), "b".to_string()]);
+    assert_eq!(
+        w.statuses,
+        vec![WitnessStatus::Passed, WitnessStatus::Failed]
+    );
+    assert_eq!(w.durations_ns.len(), 2);
 }

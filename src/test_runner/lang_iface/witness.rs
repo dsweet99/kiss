@@ -217,6 +217,30 @@ fn selector_index(selectors: &[String]) -> BTreeMap<&str, usize> {
         .collect()
 }
 
+pub(crate) fn prune_witness_to_known_selectors(
+    witness: &mut ExecutionWitness,
+    known: &std::collections::BTreeSet<String>,
+) {
+    let mut selectors = Vec::with_capacity(witness.selectors.len());
+    let mut statuses = Vec::with_capacity(witness.statuses.len());
+    let mut durations_ns = Vec::with_capacity(witness.durations_ns.len());
+    for ((sel, st), dur) in witness
+        .selectors
+        .iter()
+        .zip(witness.statuses.iter())
+        .zip(witness.durations_ns.iter())
+    {
+        if known.contains(sel) {
+            selectors.push(sel.clone());
+            statuses.push(*st);
+            durations_ns.push(*dur);
+        }
+    }
+    witness.selectors = selectors;
+    witness.statuses = statuses;
+    witness.durations_ns = durations_ns;
+}
+
 pub(crate) fn reclassify_statuses_with_gate(
     selectors: &[String],
     raw_statuses: &[WitnessStatus],

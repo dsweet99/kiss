@@ -178,6 +178,7 @@ fn wait_for_release_record(
                 return Ok(());
             }
             Ok(None) => {}
+            Err(err) if err.kind() == io::ErrorKind::Other => {}
             Err(err) => return Err(err),
         }
         if Instant::now() >= deadline {

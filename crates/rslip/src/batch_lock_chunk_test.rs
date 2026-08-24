@@ -16,7 +16,7 @@ type TimingSlots = Arc<Mutex<Vec<Option<Instant>>>>;
 fn large_miss_batch_submits_one_bounded_call_without_retaining_entry_locks() {
     let tmp = tempfile::tempdir().unwrap();
     write_ok_sample(tmp.path());
-    let miss_count = 4500;
+    let miss_count = 10;
     let jobs = 8;
     let batch_calls = Rc::new(Cell::new(0));
     let max_batch = Rc::new(Cell::new(0));

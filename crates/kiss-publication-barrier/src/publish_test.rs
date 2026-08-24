@@ -102,14 +102,16 @@ fn publish_atomically_rename_failure_removes_tmp() {
 #[cfg(debug_assertions)]
 fn write_matching_release(dir: &Path, operation_id: &str, phase: &str) {
     let release = dir.join(format!("{operation_id}.release.json"));
+    let tmp = dir.join(format!(".{operation_id}.release.tmp"));
     fs::write(
-        release,
+        &tmp,
         format!(
             "{{\"schema_version\":1,\"operation_id\":\"{}\",\"artifact\":\"artifact\",\"phase\":\"{phase}\"}}\n",
             json_escape(operation_id)
         ),
     )
     .unwrap();
+    fs::rename(tmp, release).unwrap();
 }
 
 #[cfg(debug_assertions)]

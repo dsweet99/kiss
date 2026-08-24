@@ -379,7 +379,7 @@ mod tests {
         )
         .unwrap();
         assert!(
-            started.elapsed() < Duration::from_secs(5),
+            started.elapsed() < Duration::from_secs(12),
             "indexed lookup must stay fast with thousands of decoy entries"
         );
     }

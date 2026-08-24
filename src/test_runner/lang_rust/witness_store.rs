@@ -149,6 +149,31 @@ fn refuse_full_shrink(
     (!existing_set.is_subset(&new_set)).then_some(existing.generation_id)
 }
 
+fn stale_bare_rust_witness_selector(selector: &str) -> bool {
+    !selector.contains("::") && selector.len() > 30
+}
+
+pub(crate) fn prune_removed_rust_witness_selectors(
+    _repo_root: &Path,
+    witness: &mut ExecutionWitness,
+) -> Result<(), String> {
+    if !witness
+        .selectors
+        .iter()
+        .any(|selector| stale_bare_rust_witness_selector(selector))
+    {
+        return Ok(());
+    }
+    let known: std::collections::BTreeSet<String> = witness
+        .selectors
+        .iter()
+        .filter(|selector| !stale_bare_rust_witness_selector(selector))
+        .cloned()
+        .collect();
+    crate::test_runner::lang_iface::prune_witness_to_known_selectors(witness, &known);
+    Ok(())
+}
+
 pub(crate) fn try_load_rust_execution_witness(
     repo_root: &Path,
 ) -> Result<ExecutionWitness, String> {
@@ -192,7 +217,7 @@ pub(crate) fn try_load_rust_execution_witness(
             ));
         }
     };
-    Ok(ExecutionWitness {
+    let mut witness = ExecutionWitness {
         language: "rust".into(),
         scope,
         identity_digest: disk.identity_digest,
@@ -206,7 +231,9 @@ pub(crate) fn try_load_rust_execution_witness(
         covered_lines: disk.covered_lines,
         complete: disk.complete,
         generation_id: disk.generation_id,
-    })
+    };
+    prune_removed_rust_witness_selectors(repo_root, &mut witness)?;
+    Ok(witness)
 }
 
 pub(crate) fn rust_miss_selectors(

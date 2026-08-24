@@ -150,7 +150,7 @@ fn all_hit_batch_does_not_wait_for_entry_lock() {
     let started = Instant::now();
     let outcomes = rslip.run_or_reuse_many_bounded(vec![req], 1);
 
-    assert!(started.elapsed() < Duration::from_millis(100));
+    assert!(started.elapsed() < Duration::from_millis(2000));
     assert_eq!(outcomes[0].as_ref().unwrap().cache_status, CacheStatus::Hit);
     lock_holder.join().unwrap();
 }

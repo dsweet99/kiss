@@ -17,7 +17,7 @@ pub(crate) const WATCH_SOCKET_TMP_DIR: &str = "/tmp/.kiss-watch";
 
 const SESSION_FILE_NAME: &str = "session.json";
 const MAX_FRAME_LEN: u32 = 256 * 1024;
-const CLIENT_SESSION_RETRY: Duration = Duration::from_millis(200);
+const CLIENT_SESSION_RETRY: Duration = Duration::from_millis(500);
 const CLIENT_SESSION_SLEEP: Duration = Duration::from_millis(10);
 const REPLY_IMMEDIATE_WAIT: Duration = Duration::from_millis(250);
 

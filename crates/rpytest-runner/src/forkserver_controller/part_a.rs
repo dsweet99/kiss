@@ -38,7 +38,7 @@ def _set_parent_env(env):
     os.environ.update(env or {})
     _apply_pythonpath_from_env()
 
-def _validate_pytest8():
+def _validate_pytest():
     import pytest
     from _pytest import config as pconfig
     from _pytest.main import Session
@@ -47,9 +47,9 @@ def _validate_pytest8():
     fake_major = os.environ.get("RPYTEST_FORKSERVER_FAKE_MAJOR")
     if fake_major is not None:
         major = int(fake_major)
-    if major != 8:
+    if major not in (8, 9):
         raise RuntimeError(
-            "unsupported pytest major version %s; forkserver requires 8.x" % major
+            "unsupported pytest major version %s; forkserver requires 8.x or 9.x" % major
         )
     if not hasattr(pconfig, "_prepareconfig"):
         raise RuntimeError("pytest is missing _prepareconfig")
@@ -80,7 +80,7 @@ def _bootstrap(boot):
         sys.stdout, sys.stderr = out_buf, err_buf
         os.chdir(boot["cwd"])
         _set_parent_env(boot.get("env", {}))
-        pytest, pconfig, _Session = _validate_pytest8()
+        pytest, pconfig, _Session = _validate_pytest()
         # Clear ini addopts (same as SubprocessPytestCollector): with plugin
         # autoload disabled, flags like --random-order are unrecognized. Keep
         # importlib mode so multi-path / shared-basename projects still work.

@@ -125,6 +125,42 @@ fn rust_runtime_nonempty_miss_hits_mode_branches() {
 }
 
 #[test]
+fn prune_removed_rust_witness_selectors_drops_stale_entries() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+    std::fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname=\"t\"\nversion=\"0.1.0\"\nedition=\"2021\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tmp.path().join("src/lib.rs"),
+        "#[cfg(test)]\nmod tests {\n    #[test]\n    fn case() {}\n}\n",
+    )
+    .unwrap();
+    let mut witness = crate::test_runner::lang_iface::ExecutionWitness {
+        language: "rust".into(),
+        scope: crate::test_runner::lang_iface::WitnessScope::Full,
+        identity_digest: "id".into(),
+        selectors: vec![
+            "tests::case".into(),
+            "force_miss_batch_writes_warm_hit_seal_for_later_hit".into(),
+        ],
+        statuses: vec![
+            crate::test_runner::lang_iface::WitnessStatus::Passed,
+            crate::test_runner::lang_iface::WitnessStatus::Passed,
+        ],
+        durations_ns: vec![Some(1), Some(1)],
+        covered_lines: Default::default(),
+        complete: true,
+        generation_id: "gen".into(),
+    };
+    super::witness_store::prune_removed_rust_witness_selectors(tmp.path(), &mut witness).unwrap();
+    assert_eq!(witness.selectors, vec!["tests::case".to_string()]);
+    assert_eq!(witness.statuses.len(), 1);
+}
+
+#[test]
 fn selectors_for_time_gate_fails_closed_without_report_ids() {
     let rt = RustRuntime;
     let tmp = tempfile::tempdir().unwrap();
