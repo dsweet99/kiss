@@ -2,10 +2,6 @@ target/
 **/__pycache__/
 **/*.py[cod]
 **/*.rs.bk
-.malvin/logs/
-.malvin_checks
-/log
-/log_2
 results/
 *.md~
 .kiss/
@@ -13,3 +9,5 @@ results/
 .cursor/
 .config/
 AGENTS.md
+.malvin
+.vscode
