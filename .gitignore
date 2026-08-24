@@ -9,3 +9,7 @@ target/
 results/
 *.md~
 .kiss/
+.kpop/
+.cursor/
+.config/
+AGENTS.md
