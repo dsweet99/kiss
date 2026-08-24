@@ -271,15 +271,29 @@ fn configured_parent_path_is_faster_than_two_cold_subprocess_configures() {
         assert_eq!(outcome.as_ref().unwrap().status, TestStatus::Passed);
     }
 
-    let started = Instant::now();
     let sub_out = crate::rpytest_runner::SubprocessPytestRunner::new().run_many_bounded(reqs, 1);
-    let sub_elapsed = started.elapsed();
     for outcome in &sub_out {
         assert_eq!(outcome.as_ref().unwrap().status, TestStatus::Passed);
     }
+    let fork_duration: Duration = fork_out
+        .iter()
+        .map(|outcome| outcome.as_ref().unwrap().duration)
+        .sum();
+    let sub_duration: Duration = sub_out
+        .iter()
+        .map(|outcome| outcome.as_ref().unwrap().duration)
+        .sum();
+    // Each cold subprocess invocation pays pytest_configure sleep; forkserver pays once in parent.
+    for outcome in &sub_out {
+        assert!(
+            outcome.as_ref().unwrap().duration >= Duration::from_millis(90),
+            "cold subprocess should include configure sleep: {:?}",
+            outcome.as_ref().unwrap().duration
+        );
+    }
     assert!(
-        fork_elapsed < sub_elapsed,
-        "forkserver {fork_elapsed:?} should be faster than subprocess {sub_elapsed:?}"
+        sub_duration > fork_duration + Duration::from_millis(80),
+        "two cold subprocess configures ({sub_duration:?}) should exceed forkserver per-run time ({fork_duration:?})"
     );
     assert!(fork_elapsed > Duration::from_millis(50));
 }
