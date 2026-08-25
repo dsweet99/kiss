@@ -1,6 +1,6 @@
 use super::tests::{passed_rust_llvm_cov_outcome, write_rust_test_crate};
 use super::*;
-use rust_llvm_cov_runner::RustCoverageBatchCounters;
+use kiss::rust_llvm_cov_runner::RustCoverageBatchCounters;
 
 fn default_tool_versions() -> RustCoverageToolVersions {
     RustCoverageToolVersions {
@@ -17,7 +17,7 @@ fn default_run_options<'a>() -> RustCoverageRunOptions<'a> {
         force_rerun: true,
         jobs: 1,
         population_publication_selectors: None,
-        coverage_output_mode: rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
+        coverage_output_mode: kiss::rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
         gate: kiss::GateConfig::default(),
     }
 }
@@ -124,7 +124,7 @@ fn rust_coverage_batch_request_fails_closed_without_report_ids() {
         false,
         1,
         None,
-        rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
+        kiss::rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
         &kiss::GateConfig::default(),
     )
     .unwrap_err();
@@ -149,7 +149,7 @@ fn rust_coverage_batch_request_applies_path_limits_with_report_ids() {
         false,
         1,
         None,
-        rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
+        kiss::rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
         &gate,
     )
     .unwrap();
@@ -176,7 +176,7 @@ fn rust_coverage_batch_request_check_aggregate_skips_report_ids_for_catch_all_ti
         false,
         1,
         None,
-        rust_llvm_cov_runner::CoverageOutputMode::CheckAggregate {
+        kiss::rust_llvm_cov_runner::CoverageOutputMode::CheckAggregate {
             publication_binary_ids: None,
             repair_publication: None,
         },

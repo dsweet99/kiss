@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use kiss::Language;
-use rpytest_runner::TestStatus;
+use kiss::rpytest_runner::TestStatus;
 
 use crate::test_runner::lang_iface::{
     EnsureRequest, ExecutionWitness, LanguageRuntime, OutcomeBatch, PublishBatch, WitnessStatus,

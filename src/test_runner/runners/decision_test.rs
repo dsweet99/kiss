@@ -6,8 +6,8 @@ use crate::test_runner::python_coverage_index::{
 use crate::test_runner::rust_coverage_index::{
     rebuild_rust_coverage_index, write_rust_population_manifest_for_args,
 };
-use rpytest_runner::TestStatus;
-use rslip::LineCoverage;
+use kiss::rpytest_runner::TestStatus;
+use kiss::rslip::LineCoverage;
 use std::time::Duration;
 
 #[path = "decision_line_coverage_test.rs"]
@@ -135,7 +135,7 @@ fn prior_failures_for_language_loads_rust_failures_with_live_identity() {
         &identity,
         &[(
             "demo::tests::failed".to_string(),
-            rpytest_runner::TestStatus::Failed,
+            kiss::rpytest_runner::TestStatus::Failed,
         )],
     )
     .unwrap();
@@ -180,7 +180,7 @@ fn prior_failures_for_language_loads_python_failures_with_live_identity() {
         &identity,
         &[(
             "tests/test_app.py::test_failed".to_string(),
-            rpytest_runner::TestStatus::Failed,
+            kiss::rpytest_runner::TestStatus::Failed,
         )],
     )
     .unwrap();

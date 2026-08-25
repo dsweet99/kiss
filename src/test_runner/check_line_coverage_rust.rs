@@ -22,7 +22,7 @@ pub(crate) fn load_rust_runtime_coverage(
         return Ok(cov);
     }
 
-    if let Some(snapshot) = rust_llvm_cov_runner::load_current_check_aggregate_snapshot(
+    if let Some(snapshot) = kiss::rust_llvm_cov_runner::load_current_check_aggregate_snapshot(
         &cache_root,
         repo_root,
         &identity,
@@ -33,7 +33,7 @@ pub(crate) fn load_rust_runtime_coverage(
             snapshot.covered_lines,
         ));
     }
-    if let Some(snapshot) = rust_llvm_cov_runner::load_current_generation_coverage_snapshot(
+    if let Some(snapshot) = kiss::rust_llvm_cov_runner::load_current_generation_coverage_snapshot(
         &cache_root,
         repo_root,
         &identity,
@@ -77,7 +77,7 @@ fn rust_selectors_for_coverage_load(
 
 pub(super) fn try_load_rust_coverage_from_witness(
     repo_root: &Path,
-    identity: &rust_llvm_cov_runner::RustCoverageBatchIdentity,
+    identity: &kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity,
     selectors: &[String],
     gate: &kiss::GateConfig,
 ) -> Option<BackendCoverage> {
@@ -100,7 +100,7 @@ pub(super) fn try_load_rust_coverage_from_witness(
 fn rust_witness_accepts_planned(
     _repo_root: &Path,
     witness: &mut crate::test_runner::lang_iface::ExecutionWitness,
-    identity: &rust_llvm_cov_runner::RustCoverageBatchIdentity,
+    identity: &kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity,
     selectors: &[String],
     gate: &kiss::GateConfig,
 ) -> bool {
@@ -132,7 +132,7 @@ fn rust_witness_accepts_planned(
 pub(super) fn try_load_rust_coverage_from_witness_prior(
     repo_root: &Path,
     cache_root: &Path,
-    identity: &rust_llvm_cov_runner::RustCoverageBatchIdentity,
+    identity: &kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity,
     selectors: &[String],
     gate: &kiss::GateConfig,
 ) -> Option<BackendCoverage> {
@@ -141,7 +141,7 @@ pub(super) fn try_load_rust_coverage_from_witness_prior(
         return None;
     }
 
-    let prior = rust_llvm_cov_runner::load_reusable_prior_check_aggregate(
+    let prior = kiss::rust_llvm_cov_runner::load_reusable_prior_check_aggregate(
         cache_root,
         repo_root,
         &witness.selectors,
@@ -218,7 +218,7 @@ mod tests {
     #[test]
     fn witness_coverage_helpers_fail_closed_on_empty_repo() {
         let tmp = tempfile::tempdir().unwrap();
-        let identity = rust_llvm_cov_runner::RustCoverageBatchIdentity {
+        let identity = kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity {
             input_digest: "i".into(),
             generation_fingerprint: "g".into(),
             selection_context_fingerprint: "s".into(),
@@ -259,7 +259,7 @@ mod tests {
         )
         .unwrap();
         std::fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
-        let identity = rust_llvm_cov_runner::RustCoverageBatchIdentity {
+        let identity = kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity {
             input_digest: "i".into(),
             generation_fingerprint: "g".into(),
             selection_context_fingerprint: "s".into(),

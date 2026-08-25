@@ -293,7 +293,7 @@ mod tests {
             cache_root.join("entries/alpha.json"),
             format!(
                 "{{\"schema_version\":\"{}\",\"nodeid\":\"tests/test_app.py::test_alpha\",\"status\":\"Passed\",\"coverage\":{{\"files\":{{\"{}\":[2]}}}}}}\n",
-                rslip::CACHE_SCHEMA_VERSION,
+                kiss::rslip::CACHE_SCHEMA_VERSION,
                 app.display()
             ),
         )
@@ -359,8 +359,8 @@ mod tests {
         let mut evidence = PopulationEvidence::from_ordered_selectors(&plan.selectors);
         evidence.absorb_selector(SelectorEvidence {
             selector: selector.clone(),
-            raw_status: rpytest_runner::TestStatus::Passed,
-            effective_status: rpytest_runner::TestStatus::Passed,
+            raw_status: kiss::rpytest_runner::TestStatus::Passed,
+            effective_status: kiss::rpytest_runner::TestStatus::Passed,
             duration: Some(Duration::from_millis(1)),
             cache_disposition: TimingCacheDisposition::MissStored,
             reason: None,

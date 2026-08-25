@@ -1,7 +1,7 @@
 #![allow(unused_imports)]
 use super::*;
 use crate::test_runner::runners::SelectorExecutionSummary;
-use rust_llvm_cov_runner::{
+use kiss::rust_llvm_cov_runner::{
     RustCovCacheStatus, RustCoverageBatchCounters, RustCoverageBatchResult, RustLineCoverage,
     RustLlvmCovError, RustLlvmCovOutcome,
 };
@@ -60,7 +60,7 @@ mod tests {
     let result = RustCoverageBatchResult {
         completed: vec![RustLlvmCovOutcome {
             selector: "tests::gets_value".to_string(),
-            status: rpytest_runner::TestStatus::TimedOut,
+            status: kiss::rpytest_runner::TestStatus::TimedOut,
             exit_code: Some(124),
             duration: Duration::from_secs(1),
             coverage: RustLineCoverage {
@@ -108,7 +108,7 @@ fn finish_rust_coverage_batch_result_prints_cached_and_failed_outcomes() {
         completed: vec![
             RustLlvmCovOutcome {
                 selector: "tests::cached_pass".to_string(),
-                status: rpytest_runner::TestStatus::Passed,
+                status: kiss::rpytest_runner::TestStatus::Passed,
                 exit_code: Some(0),
                 duration: Duration::from_millis(1),
                 coverage: RustLineCoverage {
@@ -121,7 +121,7 @@ fn finish_rust_coverage_batch_result_prints_cached_and_failed_outcomes() {
             },
             RustLlvmCovOutcome {
                 selector: "tests::fresh_pass".to_string(),
-                status: rpytest_runner::TestStatus::Passed,
+                status: kiss::rpytest_runner::TestStatus::Passed,
                 exit_code: Some(0),
                 duration: Duration::from_millis(1),
                 coverage: RustLineCoverage {
@@ -134,7 +134,7 @@ fn finish_rust_coverage_batch_result_prints_cached_and_failed_outcomes() {
             },
             RustLlvmCovOutcome {
                 selector: "tests::cached_fail".to_string(),
-                status: rpytest_runner::TestStatus::Failed,
+                status: kiss::rpytest_runner::TestStatus::Failed,
                 exit_code: Some(1),
                 duration: Duration::from_millis(1),
                 coverage: RustLineCoverage {
@@ -147,7 +147,7 @@ fn finish_rust_coverage_batch_result_prints_cached_and_failed_outcomes() {
             },
             RustLlvmCovOutcome {
                 selector: "tests::fresh_fail".to_string(),
-                status: rpytest_runner::TestStatus::Failed,
+                status: kiss::rpytest_runner::TestStatus::Failed,
                 exit_code: Some(1),
                 duration: Duration::from_millis(1),
                 coverage: RustLineCoverage {
@@ -202,7 +202,7 @@ fn finish_rust_coverage_batch_result_prints_fresh_unstored_outcomes() {
         completed: vec![
             RustLlvmCovOutcome {
                 selector: "tests::fresh_pass".to_string(),
-                status: rpytest_runner::TestStatus::Passed,
+                status: kiss::rpytest_runner::TestStatus::Passed,
                 exit_code: Some(0),
                 duration: Duration::from_millis(1),
                 coverage: RustLineCoverage {
@@ -215,7 +215,7 @@ fn finish_rust_coverage_batch_result_prints_fresh_unstored_outcomes() {
             },
             RustLlvmCovOutcome {
                 selector: "tests::fresh_fail".to_string(),
-                status: rpytest_runner::TestStatus::Failed,
+                status: kiss::rpytest_runner::TestStatus::Failed,
                 exit_code: Some(1),
                 duration: Duration::from_millis(1),
                 coverage: RustLineCoverage {
@@ -228,7 +228,7 @@ fn finish_rust_coverage_batch_result_prints_fresh_unstored_outcomes() {
             },
             RustLlvmCovOutcome {
                 selector: "tests::fresh_fail_empty_stderr".to_string(),
-                status: rpytest_runner::TestStatus::Failed,
+                status: kiss::rpytest_runner::TestStatus::Failed,
                 exit_code: Some(1),
                 duration: Duration::from_millis(1),
                 coverage: RustLineCoverage {

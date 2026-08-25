@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use kiss::GateConfig;
-use rpytest_runner::TestStatus;
+use kiss::rpytest_runner::TestStatus;
 
 use crate::test_runner::runners::{
     SelectorCacheRecord, SelectorExecutionRecord, SelectorExecutionSummary,

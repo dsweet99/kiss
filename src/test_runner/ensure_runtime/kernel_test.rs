@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use kiss::Language;
-use rpytest_runner::TestStatus;
+use kiss::rpytest_runner::TestStatus;
 
 use super::ensure_runtime_cache;
 use crate::test_runner::lang_iface::{

@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use rust_llvm_cov_runner::{
+use kiss::rust_llvm_cov_runner::{
     CoverageOutputMode, RustCoverageBatchIdentity, RustCoverageBatchRequest,
 };
 
@@ -182,7 +182,7 @@ fn population_equals(
     batch_identity: &RustCoverageBatchIdentity,
     selectors: &[String],
 ) -> bool {
-    rust_llvm_cov_runner::load_current_population_state(
+    kiss::rust_llvm_cov_runner::load_current_population_state(
         cache_root,
         repo_root,
         batch_identity,
@@ -280,7 +280,7 @@ fn capture_covered_lines(
     existing_full: Option<&ExecutionWitness>,
 ) -> std::collections::BTreeMap<String, std::collections::BTreeSet<u32>> {
     use std::collections::{BTreeMap, BTreeSet};
-    if let Some(snapshot) = rust_llvm_cov_runner::load_current_check_aggregate_snapshot(
+    if let Some(snapshot) = kiss::rust_llvm_cov_runner::load_current_check_aggregate_snapshot(
         &batch_req.cache_root,
         repo_root,
         batch_identity,
@@ -288,7 +288,7 @@ fn capture_covered_lines(
     ) {
         return snapshot.covered_lines;
     }
-    if let Some(snapshot) = rust_llvm_cov_runner::load_current_generation_coverage_snapshot(
+    if let Some(snapshot) = kiss::rust_llvm_cov_runner::load_current_generation_coverage_snapshot(
         &batch_req.cache_root,
         repo_root,
         batch_identity,

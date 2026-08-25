@@ -4,8 +4,8 @@ use crate::test_runner::rust_coverage_index::{
     rust_population_manifest_is_current_for_args, rust_population_manifest_path,
     write_rust_population_manifest_for_args, write_test_entry,
 };
-use rpytest_runner::TestStatus;
-use rust_llvm_cov_runner::RustLineCoverage;
+use kiss::rpytest_runner::TestStatus;
+use kiss::rust_llvm_cov_runner::RustLineCoverage;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 

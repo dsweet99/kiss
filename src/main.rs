@@ -14,7 +14,7 @@ mod viz;
 mod viz_coarsen;
 
 use crate::bin_cli::{run, set_sigpipe_default};
-use rust_llvm_cov_runner::{
+use kiss::rust_llvm_cov_runner::{
     KissProfrawProcessGuard, discover_repo_root, redirect_this_process, sweep_kiss_profraw_dir,
 };
 

@@ -44,7 +44,7 @@ fn kiss_discovery_matches_isolated_pytest_collection() {
     .unwrap();
     let kiss_selectors = enumerate_workspace_python_selectors(tmp.path(), &[], &[]).unwrap();
     let pytest_outcome =
-        rpytest_runner::collect_pytest_nodeids(rpytest_runner::PytestCollectRequest {
+        kiss::rpytest_runner::collect_pytest_nodeids(kiss::rpytest_runner::PytestCollectRequest {
             cwd: tmp.path().to_path_buf(),
             python: PathBuf::from(
                 std::env::var("PYTHON").unwrap_or_else(|_| "python3".to_string()),

@@ -200,7 +200,7 @@ fn collection_invalid_request_surfaces_planning_error() {
 #[test]
 fn format_collect_error_maps_all_collector_failures() {
     use super::collect::format_collect_error_for_test;
-    use rpytest_runner::PytestCollectError;
+    use kiss::rpytest_runner::PytestCollectError;
 
     assert!(
         format_collect_error_for_test(PytestCollectError::InvalidRequest("bad".into()))
@@ -250,9 +250,9 @@ fn pytest_collector_public_api_covers_path_subset_and_wrapper() {
     fs::create_dir_all(&tests).unwrap();
     let test_file = tests.join("test_subset.py");
     fs::write(&test_file, "def test_subset():\n    assert True\n").unwrap();
-    let collector = rpytest_runner::subprocess_pytest_collector();
+    let collector = kiss::rpytest_runner::subprocess_pytest_collector();
     let outcome = collector
-        .collect(rpytest_runner::PytestCollectRequest {
+        .collect(kiss::rpytest_runner::PytestCollectRequest {
             cwd: tmp.path().to_path_buf(),
             python: PathBuf::from(
                 std::env::var("PYTHON").unwrap_or_else(|_| "python3".to_string()),
@@ -296,7 +296,7 @@ fn collect_pytest_nodeids_public_wrapper_is_used() {
         "def test_wrap():\n    assert True\n",
     )
     .unwrap();
-    let outcome = rpytest_runner::collect_pytest_nodeids(rpytest_runner::PytestCollectRequest {
+    let outcome = kiss::rpytest_runner::collect_pytest_nodeids(kiss::rpytest_runner::PytestCollectRequest {
         cwd: tmp.path().to_path_buf(),
         python: PathBuf::from(std::env::var("PYTHON").unwrap_or_else(|_| "python3".to_string())),
         paths: Vec::new(),

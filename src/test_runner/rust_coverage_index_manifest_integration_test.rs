@@ -3,8 +3,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use rpytest_runner::TestStatus;
-use rust_llvm_cov_runner::{
+use kiss::rpytest_runner::TestStatus;
+use kiss::rust_llvm_cov_runner::{
     RustCovCacheEntry, RustCovCacheStatus, RustCoverageBatchIdentity, RustCoverageBatchRequest,
     RustCoverageToolIdentity, RustLineCoverage, RustLlvmCovOutcome, batch_identity,
     entry_fingerprint, load_current_population_state, placeholder_delegated_runner_fields,
@@ -130,7 +130,7 @@ fn selective_refresh_request(root: &Path) -> RustCoverageBatchRequest {
         delegated_runners,
         runner_map_fingerprint,
         host_platform,
-        coverage_output_mode: rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
+        coverage_output_mode: kiss::rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
         selector_timeout_millis: std::collections::BTreeMap::new(),
     }
 }

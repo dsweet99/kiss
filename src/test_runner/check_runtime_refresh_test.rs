@@ -158,7 +158,7 @@ fn aggregate_repair_ignores_unmapped_binary_digest_changes() {
 fn aggregate_prior(
     selectors: &[String],
     binaries: &[(&str, &str)],
-) -> rust_llvm_cov_runner::ValidatedCheckAggregate {
+) -> kiss::rust_llvm_cov_runner::ValidatedCheckAggregate {
     let selector_maps = selectors
         .iter()
         .map(|selector| {
@@ -173,7 +173,7 @@ fn aggregate_prior_with_maps(
     selectors: &[String],
     binaries: &[(&str, &str)],
     selector_maps: &[(&str, Vec<&str>)],
-) -> rust_llvm_cov_runner::ValidatedCheckAggregate {
+) -> kiss::rust_llvm_cov_runner::ValidatedCheckAggregate {
     let selector_binary_ids = selector_maps
         .iter()
         .map(|(selector, ids)| {
@@ -183,7 +183,7 @@ fn aggregate_prior_with_maps(
             )
         })
         .collect();
-    rust_llvm_cov_runner::ValidatedCheckAggregate {
+    kiss::rust_llvm_cov_runner::ValidatedCheckAggregate {
         input_fingerprint: "old-input".to_string(),
         generation_fingerprint: "old-generation".to_string(),
         selection_context_fingerprint: "selection".to_string(),
@@ -195,7 +195,7 @@ fn aggregate_prior_with_maps(
             .map(|(id, digest)| {
                 (
                     (*id).to_string(),
-                    rust_llvm_cov_runner::CheckAggregateBinaryRecord {
+                    kiss::rust_llvm_cov_runner::CheckAggregateBinaryRecord {
                         id: (*id).to_string(),
                         executable: format!("target/{id}"),
                         digest: (*digest).to_string(),
@@ -215,8 +215,8 @@ fn aggregate_prior_with_maps(
     }
 }
 
-fn test_binary(id: &str, digest: &str) -> rust_llvm_cov_runner::RustTestBinaryIdentity {
-    rust_llvm_cov_runner::RustTestBinaryIdentity {
+fn test_binary(id: &str, digest: &str) -> kiss::rust_llvm_cov_runner::RustTestBinaryIdentity {
+    kiss::rust_llvm_cov_runner::RustTestBinaryIdentity {
         id: id.to_string(),
         executable: format!("target/{id}"),
         digest: digest.to_string(),

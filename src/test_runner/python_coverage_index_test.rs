@@ -5,12 +5,12 @@ use std::fs;
 use std::path::Path;
 use std::time::Duration;
 
-use rpytest_runner::TestStatus;
-use rslip::LineCoverage;
+use kiss::rpytest_runner::TestStatus;
+use kiss::rslip::LineCoverage;
 
 fn identity() -> PythonPopulationManifestIdentity {
     PythonPopulationManifestIdentity {
-        cache_schema_version: rslip::CACHE_SCHEMA_VERSION.to_string(),
+        cache_schema_version: kiss::rslip::CACHE_SCHEMA_VERSION.to_string(),
         selector_discovery_version: PYTHON_SELECTOR_DISCOVERY_VERSION.to_string(),
         python_version: "3.12.0".to_string(),
         pytest_version: "8.0.0".to_string(),
@@ -32,7 +32,7 @@ fn write_entry(
         .join(format!("{name}.json"));
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     let entry = serde_json::json!({
-        "schema_version": rslip::CACHE_SCHEMA_VERSION,
+        "schema_version": kiss::rslip::CACHE_SCHEMA_VERSION,
         "nodeid": selector,
         "status": status,
         "exit_code": 0,

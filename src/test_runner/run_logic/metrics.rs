@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 use std::time::Duration;
 
-use rust_llvm_cov_runner::rust_cov_cache_tmp_parent;
+use kiss::rust_llvm_cov_runner::rust_cov_cache_tmp_parent;
 
 use super::metrics_rust::{print_rust_batch_metrics, rust_cache_unstored};
 use super::runners::SelectorExecutionSummary;

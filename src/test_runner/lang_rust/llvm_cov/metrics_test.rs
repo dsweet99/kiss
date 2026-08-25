@@ -1,5 +1,5 @@
 use super::*;
-use rust_llvm_cov_runner::{ReverseUnavailableCounts, RustCoverageBatchCounters};
+use kiss::rust_llvm_cov_runner::{ReverseUnavailableCounts, RustCoverageBatchCounters};
 
 #[test]
 fn batch_counters_are_preserved_for_rust_metrics() {

@@ -11,13 +11,13 @@ pub(crate) enum CheckAggregateRepairDecision {
     FullRefresh,
     IdentityOnly {
         prior_generation: String,
-        retained_binary_line_maps: BTreeMap<String, rust_llvm_cov_runner::RustLineCoverage>,
+        retained_binary_line_maps: BTreeMap<String, kiss::rust_llvm_cov_runner::RustLineCoverage>,
     },
     Rerun {
         prior_generation: String,
         rerun_selectors: Vec<String>,
         replacement_binary_ids: BTreeSet<String>,
-        retained_binary_line_maps: BTreeMap<String, rust_llvm_cov_runner::RustLineCoverage>,
+        retained_binary_line_maps: BTreeMap<String, kiss::rust_llvm_cov_runner::RustLineCoverage>,
     },
 }
 
@@ -35,7 +35,7 @@ pub(super) fn try_repair_rust_check_aggregate_labeled(
         )
         .map_err(|err| CoverageRefreshError::discovery("Rust", err))?;
     let cache_root = crate::test_runner::rust_coverage_index::rust_coverage_cache_root(repo_root);
-    let Some(prior) = rust_llvm_cov_runner::load_reusable_prior_check_aggregate(
+    let Some(prior) = kiss::rust_llvm_cov_runner::load_reusable_prior_check_aggregate(
         &cache_root,
         repo_root,
         selectors,
@@ -43,14 +43,14 @@ pub(super) fn try_repair_rust_check_aggregate_labeled(
     ) else {
         return Ok(None);
     };
-    match rust_llvm_cov_runner::reusable_check_aggregate_delta(
+    match kiss::rust_llvm_cov_runner::reusable_check_aggregate_delta(
         repo_root,
         &prior.ordinary_source_digests,
         &current_identity.ordinary_source_digests,
     ) {
-        rust_llvm_cov_runner::RustSnapshotDelta::StructuralChange => return Ok(None),
-        rust_llvm_cov_runner::RustSnapshotDelta::Unchanged
-        | rust_llvm_cov_runner::RustSnapshotDelta::Modified(_) => {}
+        kiss::rust_llvm_cov_runner::RustSnapshotDelta::StructuralChange => return Ok(None),
+        kiss::rust_llvm_cov_runner::RustSnapshotDelta::Unchanged
+        | kiss::rust_llvm_cov_runner::RustSnapshotDelta::Modified(_) => {}
     }
     let build = crate::test_runner::rust_llvm_cov::build_current_rust_test_executable_index(
         repo_root,
@@ -111,8 +111,8 @@ pub(super) fn try_repair_rust_check_aggregate_labeled(
 pub(crate) fn maybe_downgrade_rerun_when_witness_warm(
     repo_root: &Path,
     selectors: &[String],
-    current_identity: &rust_llvm_cov_runner::RustCoverageBatchIdentity,
-    prior: &rust_llvm_cov_runner::ValidatedCheckAggregate,
+    current_identity: &kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity,
+    prior: &kiss::rust_llvm_cov_runner::ValidatedCheckAggregate,
     current_selector_binary_ids: &BTreeMap<String, Vec<String>>,
     decision: CheckAggregateRepairDecision,
 ) -> CheckAggregateRepairDecision {
@@ -140,9 +140,9 @@ pub(crate) fn maybe_downgrade_rerun_when_witness_warm(
 }
 
 pub(crate) fn retained_maps_ignoring_digest_mismatch(
-    prior: &rust_llvm_cov_runner::ValidatedCheckAggregate,
+    prior: &kiss::rust_llvm_cov_runner::ValidatedCheckAggregate,
     current_mapped_binary_ids: &BTreeSet<String>,
-) -> BTreeMap<String, rust_llvm_cov_runner::RustLineCoverage> {
+) -> BTreeMap<String, kiss::rust_llvm_cov_runner::RustLineCoverage> {
     prior
         .binaries
         .iter()
@@ -150,7 +150,7 @@ pub(crate) fn retained_maps_ignoring_digest_mismatch(
         .map(|(binary_id, record)| {
             (
                 binary_id.clone(),
-                rust_llvm_cov_runner::RustLineCoverage {
+                kiss::rust_llvm_cov_runner::RustLineCoverage {
                     files: record.line_map.clone(),
                 },
             )
@@ -160,9 +160,9 @@ pub(crate) fn retained_maps_ignoring_digest_mismatch(
 
 pub(crate) fn classify_check_aggregate_repair(
     selectors: &[String],
-    prior: &rust_llvm_cov_runner::ValidatedCheckAggregate,
+    prior: &kiss::rust_llvm_cov_runner::ValidatedCheckAggregate,
     current_selector_binary_ids: &BTreeMap<String, Vec<String>>,
-    current_test_binaries: &[rust_llvm_cov_runner::RustTestBinaryIdentity],
+    current_test_binaries: &[kiss::rust_llvm_cov_runner::RustTestBinaryIdentity],
 ) -> CheckAggregateRepairDecision {
     let current_binary_digests = current_binary_digests(current_test_binaries);
     let current_mapped_binary_ids = current_mapped_binary_ids(current_selector_binary_ids);
@@ -205,7 +205,7 @@ pub(crate) fn classify_check_aggregate_repair(
 }
 
 fn current_binary_digests(
-    current_test_binaries: &[rust_llvm_cov_runner::RustTestBinaryIdentity],
+    current_test_binaries: &[kiss::rust_llvm_cov_runner::RustTestBinaryIdentity],
 ) -> BTreeMap<String, String> {
     current_test_binaries
         .iter()
@@ -224,7 +224,7 @@ fn current_mapped_binary_ids(
 }
 
 fn changed_or_new_binary_ids(
-    prior: &rust_llvm_cov_runner::ValidatedCheckAggregate,
+    prior: &kiss::rust_llvm_cov_runner::ValidatedCheckAggregate,
     current_binary_digests: &BTreeMap<String, String>,
     current_mapped_binary_ids: &BTreeSet<String>,
 ) -> BTreeSet<String> {
@@ -237,7 +237,7 @@ fn changed_or_new_binary_ids(
 }
 
 fn prior_binary_changed(
-    prior: &rust_llvm_cov_runner::ValidatedCheckAggregate,
+    prior: &kiss::rust_llvm_cov_runner::ValidatedCheckAggregate,
     binary_id: &str,
     digest: &str,
 ) -> bool {
@@ -249,7 +249,7 @@ fn prior_binary_changed(
 
 fn classify_changed_selector_mappings(
     selectors: &[String],
-    prior: &rust_llvm_cov_runner::ValidatedCheckAggregate,
+    prior: &kiss::rust_llvm_cov_runner::ValidatedCheckAggregate,
     current_selector_binary_ids: &BTreeMap<String, Vec<String>>,
     replacement_binary_ids: &mut BTreeSet<String>,
 ) -> bool {
@@ -271,11 +271,11 @@ fn classify_changed_selector_mappings(
 }
 
 fn retained_binary_line_maps(
-    prior: &rust_llvm_cov_runner::ValidatedCheckAggregate,
+    prior: &kiss::rust_llvm_cov_runner::ValidatedCheckAggregate,
     current_binary_digests: &BTreeMap<String, String>,
     current_mapped_binary_ids: &BTreeSet<String>,
     replacement_binary_ids: &BTreeSet<String>,
-) -> BTreeMap<String, rust_llvm_cov_runner::RustLineCoverage> {
+) -> BTreeMap<String, kiss::rust_llvm_cov_runner::RustLineCoverage> {
     prior
         .binaries
         .iter()
@@ -287,7 +287,7 @@ fn retained_binary_line_maps(
         .map(|(binary_id, record)| {
             (
                 binary_id.clone(),
-                rust_llvm_cov_runner::RustLineCoverage {
+                kiss::rust_llvm_cov_runner::RustLineCoverage {
                     files: record.line_map.clone(),
                 },
             )

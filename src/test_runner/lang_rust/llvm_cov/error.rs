@@ -1,4 +1,4 @@
-use rust_llvm_cov_runner::RustLlvmCovError;
+use kiss::rust_llvm_cov_runner::RustLlvmCovError;
 
 use crate::test_runner::rust_batch_interrupt::note_rust_batch_interrupted;
 

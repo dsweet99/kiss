@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::time::Duration;
 
-use rpytest_runner::TestStatus;
-use rslip::LineCoverage;
+use kiss::rpytest_runner::TestStatus;
+use kiss::rslip::LineCoverage;
 
 use crate::test_runner::python_coverage_index::{
     PYTHON_SELECTOR_DISCOVERY_VERSION, PythonPopulationManifestIdentity,
@@ -24,7 +24,7 @@ fn write_entry(repo_root: &Path, name: &str, selector: &str, coverage: LineCover
         .join(format!("{name}.json"));
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     let entry = serde_json::json!({
-        "schema_version": rslip::CACHE_SCHEMA_VERSION,
+        "schema_version": kiss::rslip::CACHE_SCHEMA_VERSION,
         "nodeid": selector,
         "status": TestStatus::Passed,
         "exit_code": 0,
@@ -40,7 +40,7 @@ fn python_coverage_index_witnesses_manifest_helpers() {
     std::fs::write(tmp.path().join("app.py"), "VALUE = 1\n").unwrap();
     let selector = "tests/test_app.py::test_value".to_string();
     let identity = PythonPopulationManifestIdentity {
-        cache_schema_version: rslip::CACHE_SCHEMA_VERSION.to_string(),
+        cache_schema_version: kiss::rslip::CACHE_SCHEMA_VERSION.to_string(),
         selector_discovery_version: PYTHON_SELECTOR_DISCOVERY_VERSION.to_string(),
         python_version: "3.12.0".to_string(),
         pytest_version: "8.0.0".to_string(),

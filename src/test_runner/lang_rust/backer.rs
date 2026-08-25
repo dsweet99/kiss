@@ -230,7 +230,7 @@ impl crate::test_runner::coverage_decision::SupportedLanguage for RustModule {
 mod tests {
     use super::*;
     use crate::test_runner::coverage_decision::CoverageFreshness;
-    use rust_llvm_cov_runner::RustPopulationState;
+    use kiss::rust_llvm_cov_runner::RustPopulationState;
 
     #[test]
     fn freshness_trusts_resolved_partial_current_population() {

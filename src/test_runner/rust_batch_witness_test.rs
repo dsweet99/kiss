@@ -3,7 +3,7 @@ use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use rust_llvm_cov_runner::{
+use kiss::rust_llvm_cov_runner::{
     AggregationCounters, BatchCompilerArtifact, ExportTools, InstanceResult,
     RustCoverageBatchRequest, RustCoverageToolIdentity, RustLineCoverage,
     aggregate_logical_selectors, aggregate_selectors_for_test, batch_identity, entry_fingerprint,
@@ -36,7 +36,7 @@ fn write_minimal_repo(root: &Path) {
 
 pub(super) fn sample_batch_request(root: &Path) -> RustCoverageBatchRequest {
     let (delegated_runners, runner_map_fingerprint, host_platform) =
-        rust_llvm_cov_runner::placeholder_delegated_runner_fields();
+        kiss::rust_llvm_cov_runner::placeholder_delegated_runner_fields();
     RustCoverageBatchRequest {
         cwd: root.to_path_buf(),
         source_root: root.to_path_buf(),
@@ -53,7 +53,7 @@ pub(super) fn sample_batch_request(root: &Path) -> RustCoverageBatchRequest {
         delegated_runners,
         runner_map_fingerprint,
         host_platform,
-        coverage_output_mode: rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
+        coverage_output_mode: kiss::rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
         selector_timeout_millis: std::collections::BTreeMap::new(),
     }
 }

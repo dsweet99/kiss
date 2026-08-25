@@ -221,7 +221,7 @@ fn incomplete_generation_reports_problem_selectors() {
         GenerationReason, PYTHON_SELECTOR_DISCOVERY_VERSION, clear_python_generation_warm_memo,
     };
     use crate::test_runner::runners::detect_rslip_versions;
-    use rpytest_runner::TestStatus;
+    use kiss::rpytest_runner::TestStatus;
     use std::collections::BTreeMap;
     use std::time::Duration;
 
@@ -286,7 +286,7 @@ fn validated_cov_inputs_captures_generation_id_when_present() {
         GenerationReason, PYTHON_SELECTOR_DISCOVERY_VERSION, clear_python_generation_warm_memo,
     };
     use crate::test_runner::runners::detect_rslip_versions;
-    use rpytest_runner::TestStatus;
+    use kiss::rpytest_runner::TestStatus;
     use std::collections::BTreeMap;
     use std::time::Duration;
 

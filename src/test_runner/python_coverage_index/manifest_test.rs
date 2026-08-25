@@ -9,7 +9,7 @@ fn identity() -> PythonPopulationManifestIdentity {
     let mut env = BTreeMap::new();
     env.insert("PYTHONPATH".to_string(), "src".to_string());
     PythonPopulationManifestIdentity {
-        cache_schema_version: rslip::CACHE_SCHEMA_VERSION.to_string(),
+        cache_schema_version: kiss::rslip::CACHE_SCHEMA_VERSION.to_string(),
         selector_discovery_version: PYTHON_SELECTOR_DISCOVERY_VERSION.to_string(),
         python_version: "3.12.0".to_string(),
         pytest_version: "8.0.0".to_string(),

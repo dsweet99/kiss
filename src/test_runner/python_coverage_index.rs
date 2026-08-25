@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use rpytest_runner::TestStatus;
-use rslip::LineCoverage;
+use kiss::rpytest_runner::TestStatus;
+use kiss::rslip::LineCoverage;
 use serde::Deserialize;
 
 use crate::test_runner::line_selection;
@@ -166,7 +166,7 @@ fn rebuild_selection_index_fallback(
     is_indexable: &dyn Fn(&Path, &Path) -> bool,
 ) -> Result<PythonCoverageIndex, String> {
     let cache_root = python_coverage_cache_root(repo_root)?;
-    let _guard = rslip::lock_rslip_derived_state(&cache_root).map_err(|err| err.to_string())?;
+    let _guard = kiss::rslip::lock_rslip_derived_state(&cache_root).map_err(|err| err.to_string())?;
     let (index, _covered_lines, entries_fingerprint) =
         build_stable_python_coverage_index(repo_root, &cache_root, is_indexable)?;
     storage::write_python_coverage_index_with_entries_fingerprint(
@@ -295,7 +295,7 @@ pub(crate) fn load_python_entry_for_index(
 
     let bytes = fs::read(path).ok()?;
     let entry: RslipCacheEntryForIndex = serde_json::from_slice(&bytes).ok()?;
-    (entry.schema_version == rslip::CACHE_SCHEMA_VERSION).then_some((
+    (entry.schema_version == kiss::rslip::CACHE_SCHEMA_VERSION).then_some((
         entry.nodeid,
         entry.status,
         entry.coverage,

@@ -7,9 +7,9 @@ use tempfile::TempDir;
 #[test]
 fn pytest_collector_spawn_and_invalid_request_errors_are_actionable() {
     let tmp = TempDir::new().unwrap();
-    let collector = rpytest_runner::subprocess_pytest_collector();
+    let collector = kiss::rpytest_runner::subprocess_pytest_collector();
     let invalid = collector
-        .collect(rpytest_runner::PytestCollectRequest {
+        .collect(kiss::rpytest_runner::PytestCollectRequest {
             cwd: PathBuf::new(),
             python: PathBuf::from("python"),
             paths: Vec::new(),
@@ -19,10 +19,10 @@ fn pytest_collector_spawn_and_invalid_request_errors_are_actionable() {
         .unwrap_err();
     assert!(matches!(
         invalid,
-        rpytest_runner::PytestCollectError::InvalidRequest(_)
+        kiss::rpytest_runner::PytestCollectError::InvalidRequest(_)
     ));
     let spawn = collector
-        .collect(rpytest_runner::PytestCollectRequest {
+        .collect(kiss::rpytest_runner::PytestCollectRequest {
             cwd: tmp.path().to_path_buf(),
             python: PathBuf::from("/nonexistent/kiss-python-collector"),
             paths: Vec::new(),
@@ -32,10 +32,10 @@ fn pytest_collector_spawn_and_invalid_request_errors_are_actionable() {
         .unwrap_err();
     assert!(matches!(
         spawn,
-        rpytest_runner::PytestCollectError::Spawn { .. }
+        kiss::rpytest_runner::PytestCollectError::Spawn { .. }
     ));
     let empty_python = collector
-        .collect(rpytest_runner::PytestCollectRequest {
+        .collect(kiss::rpytest_runner::PytestCollectRequest {
             cwd: tmp.path().to_path_buf(),
             python: PathBuf::new(),
             paths: Vec::new(),
@@ -45,7 +45,7 @@ fn pytest_collector_spawn_and_invalid_request_errors_are_actionable() {
         .unwrap_err();
     assert!(matches!(
         empty_python,
-        rpytest_runner::PytestCollectError::InvalidRequest(_)
+        kiss::rpytest_runner::PytestCollectError::InvalidRequest(_)
     ));
 }
 
@@ -55,8 +55,8 @@ fn pytest_collector_invalid_json_and_nodeid_errors_are_actionable() {
     let fake_python = tmp.path().join("fake_invalid_json");
     fs::write(&fake_python, "#!/usr/bin/env python3\nprint('no marker')\n").unwrap();
     make_executable(&fake_python);
-    let invalid_output = rpytest_runner::subprocess_pytest_collector()
-        .collect(rpytest_runner::PytestCollectRequest {
+    let invalid_output = kiss::rpytest_runner::subprocess_pytest_collector()
+        .collect(kiss::rpytest_runner::PytestCollectRequest {
             cwd: tmp.path().to_path_buf(),
             python: fake_python.clone(),
             paths: Vec::new(),
@@ -66,7 +66,7 @@ fn pytest_collector_invalid_json_and_nodeid_errors_are_actionable() {
         .unwrap_err();
     assert!(matches!(
         invalid_output,
-        rpytest_runner::PytestCollectError::InvalidOutput(_)
+        kiss::rpytest_runner::PytestCollectError::InvalidOutput(_)
     ));
 
     let bad_nodeid = tmp.path().join("fake_bad_nodeid");
@@ -76,8 +76,8 @@ fn pytest_collector_invalid_json_and_nodeid_errors_are_actionable() {
     )
     .unwrap();
     make_executable(&bad_nodeid);
-    let normalization = rpytest_runner::subprocess_pytest_collector()
-        .collect(rpytest_runner::PytestCollectRequest {
+    let normalization = kiss::rpytest_runner::subprocess_pytest_collector()
+        .collect(kiss::rpytest_runner::PytestCollectRequest {
             cwd: tmp.path().to_path_buf(),
             python: bad_nodeid,
             paths: Vec::new(),
@@ -87,7 +87,7 @@ fn pytest_collector_invalid_json_and_nodeid_errors_are_actionable() {
         .unwrap_err();
     assert!(matches!(
         normalization,
-        rpytest_runner::PytestCollectError::NodeidNormalization { .. }
+        kiss::rpytest_runner::PytestCollectError::NodeidNormalization { .. }
     ));
 }
 
@@ -101,8 +101,8 @@ fn pytest_collector_collection_failed_uses_stdout_when_stderr_empty() {
     )
     .unwrap();
     make_executable(&fake_python);
-    let err = rpytest_runner::subprocess_pytest_collector()
-        .collect(rpytest_runner::PytestCollectRequest {
+    let err = kiss::rpytest_runner::subprocess_pytest_collector()
+        .collect(kiss::rpytest_runner::PytestCollectRequest {
             cwd: tmp.path().to_path_buf(),
             python: fake_python,
             paths: Vec::new(),

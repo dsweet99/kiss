@@ -28,10 +28,10 @@ ignore = ["src/main.rs"]
 "src/test_runner/" = 60
 "src/bin_cli/" = 30
 "src/analyze/" = 30
-"crates/rust-llvm-cov-runner/src/publish_derived/" = 120
-"crates/rust-llvm-cov-runner/src/execute_or_reuse/" = 60
-"crates/rslip/" = 60
-"crates/kiss-publication-barrier/" = 60
+"src/rust_llvm_cov_runner/publish_derived/" = 120
+"src/rust_llvm_cov_runner/execute_or_reuse/" = 60
+"src/rslip/" = 60
+"src/kiss_publication_barrier/" = 60
 "*" = 15
 
 [python]

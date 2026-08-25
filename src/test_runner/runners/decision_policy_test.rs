@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
-use rpytest_runner::TestStatus;
-use rust_llvm_cov_runner::RustLineCoverage;
+use kiss::rpytest_runner::TestStatus;
+use kiss::rust_llvm_cov_runner::RustLineCoverage;
 
 use crate::test_runner::coverage_decision::{
     CoverageFreshness, LanguagePlanner, PopulationPlan, SelectionDecision, TestSelector,

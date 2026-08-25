@@ -7,7 +7,7 @@ use crate::test_runner::python_coverage_index::{
     GenerationReason, PYTHON_SELECTOR_DISCOVERY_VERSION, clear_python_generation_warm_memo,
 };
 use crate::test_runner::runners::detect_rslip_versions;
-use rpytest_runner::TestStatus;
+use kiss::rpytest_runner::TestStatus;
 use std::collections::BTreeMap;
 use std::time::Duration;
 

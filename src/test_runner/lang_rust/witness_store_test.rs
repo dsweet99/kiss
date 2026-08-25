@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use rust_llvm_cov_runner::RustCoverageBatchIdentity;
+use kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity;
 
 use super::{
     PublishRustWitness, RustWarmDecision, maybe_bootstrap_rust_witness,

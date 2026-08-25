@@ -1,5 +1,5 @@
 use super::SelectorExecutionSummary;
-use rust_llvm_cov_runner::RustCoverageBatchCounters;
+use kiss::rust_llvm_cov_runner::RustCoverageBatchCounters;
 
 pub(super) fn record_reverse_batch_counters(
     summary: &mut SelectorExecutionSummary,

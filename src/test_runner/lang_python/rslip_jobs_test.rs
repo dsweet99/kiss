@@ -1,6 +1,6 @@
 use super::*;
 
-use rpytest_runner::{PytestRunOutcome, TestStatus};
+use kiss::rpytest_runner::{PytestRunOutcome, TestStatus};
 use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::fs;

@@ -13,7 +13,7 @@ pub(super) fn python_rslip_cache_root_for_repo(repo: &Path) -> PathBuf {
 pub(super) fn python_entries_fingerprint(cache_root: &Path) -> String {
     let mut h = python_fnv1a64(
         0xcbf2_9ce4_8422_2325,
-        rslip::CACHE_SCHEMA_VERSION.as_bytes(),
+        kiss::rslip::CACHE_SCHEMA_VERSION.as_bytes(),
     );
     for path in kiss::json_entry_paths(cache_root) {
         let meta = fs::metadata(&path).unwrap();
@@ -36,7 +36,7 @@ pub(super) fn python_entries_fingerprint(cache_root: &Path) -> String {
 pub(super) fn python_source_input_fingerprint(root: &Path) -> String {
     let mut h = python_fnv1a64(
         0xcbf2_9ce4_8422_2325,
-        rslip::CACHE_SCHEMA_VERSION.as_bytes(),
+        kiss::rslip::CACHE_SCHEMA_VERSION.as_bytes(),
     );
     h = python_fnv1a64(h, b"python-workspace-inputs-v1");
     for path in python_source_input_paths(root) {
@@ -84,11 +84,11 @@ fn visit_python_source_inputs(dir: &Path, out: &mut Vec<PathBuf>) {
 }
 
 fn should_skip_python_source_input_dir(path: &Path) -> bool {
-    rslip::should_skip_rslip_dir(path)
+    kiss::rslip::should_skip_rslip_dir(path)
 }
 
 fn is_python_source_input_path(path: &Path) -> bool {
-    rslip::is_rslip_cache_input(path)
+    kiss::rslip::is_rslip_cache_input(path)
 }
 
 fn trim_outer_ascii_whitespace(bytes: &[u8]) -> &[u8] {

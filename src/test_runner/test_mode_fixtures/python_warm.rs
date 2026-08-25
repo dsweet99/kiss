@@ -3,8 +3,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use rpytest_runner::TestStatus;
-use rslip::LineCoverage;
+use kiss::rpytest_runner::TestStatus;
+use kiss::rslip::LineCoverage;
 use tempfile::TempDir;
 
 use crate::test_runner::python_coverage_index::{
@@ -23,7 +23,7 @@ fn write_python_entry(repo_root: &Path, name: &str, selector: &str, coverage: Li
         .join(format!("{name}.json"));
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     let entry = serde_json::json!({
-        "schema_version": rslip::CACHE_SCHEMA_VERSION,
+        "schema_version": kiss::rslip::CACHE_SCHEMA_VERSION,
         "nodeid": selector,
         "status": TestStatus::Passed,
         "exit_code": 0,

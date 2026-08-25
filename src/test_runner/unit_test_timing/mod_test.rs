@@ -245,7 +245,7 @@ fn evaluate_cov_time_gate_sole_star_from_python_generation() {
         GenerationReason, PYTHON_SELECTOR_DISCOVERY_VERSION, clear_python_generation_warm_memo,
     };
     use crate::test_runner::runners::detect_rslip_versions;
-    use rpytest_runner::TestStatus;
+    use kiss::rpytest_runner::TestStatus;
     use std::collections::BTreeMap;
 
     let tmp = tempfile::tempdir().unwrap();
@@ -316,7 +316,7 @@ fn evaluate_cov_time_gate_multi_prefix_and_incomplete() {
         GenerationReason, PYTHON_SELECTOR_DISCOVERY_VERSION, clear_python_generation_warm_memo,
     };
     use crate::test_runner::runners::detect_rslip_versions;
-    use rpytest_runner::TestStatus;
+    use kiss::rpytest_runner::TestStatus;
     use std::collections::BTreeMap;
 
     let empty = tempfile::tempdir().unwrap();

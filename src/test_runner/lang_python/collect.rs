@@ -4,7 +4,7 @@ use std::sync::Mutex;
 #[cfg(test)]
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use rpytest_runner::{PytestCollectRequest, collect_pytest_nodeids};
+use kiss::rpytest_runner::{PytestCollectRequest, collect_pytest_nodeids};
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 struct CollectMemoKey {
@@ -57,18 +57,18 @@ fn normalize_collect_paths(paths: &[PathBuf]) -> Vec<PathBuf> {
     out
 }
 
-fn format_collect_error(err: rpytest_runner::PytestCollectError) -> String {
+fn format_collect_error(err: kiss::rpytest_runner::PytestCollectError) -> String {
     match err {
-        rpytest_runner::PytestCollectError::InvalidRequest(message) => {
+        kiss::rpytest_runner::PytestCollectError::InvalidRequest(message) => {
             format!("error: kiss test: invalid pytest collection request: {message}")
         }
-        rpytest_runner::PytestCollectError::Spawn { program, message } => {
+        kiss::rpytest_runner::PytestCollectError::Spawn { program, message } => {
             format!(
                 "error: kiss test: failed to spawn {} for pytest collection: {message}",
                 program.display()
             )
         }
-        rpytest_runner::PytestCollectError::CollectionFailed {
+        kiss::rpytest_runner::PytestCollectError::CollectionFailed {
             exit_code,
             stderr,
             stdout,
@@ -83,17 +83,17 @@ fn format_collect_error(err: rpytest_runner::PytestCollectError) -> String {
                 exit_code
             )
         }
-        rpytest_runner::PytestCollectError::InvalidOutput(message) => {
+        kiss::rpytest_runner::PytestCollectError::InvalidOutput(message) => {
             format!("error: kiss test: invalid pytest collection output: {message}")
         }
-        rpytest_runner::PytestCollectError::NodeidNormalization { nodeid, message } => {
+        kiss::rpytest_runner::PytestCollectError::NodeidNormalization { nodeid, message } => {
             format!("error: kiss test: invalid pytest nodeid '{nodeid}': {message}")
         }
     }
 }
 
 #[cfg(test)]
-pub(crate) fn format_collect_error_for_test(err: rpytest_runner::PytestCollectError) -> String {
+pub(crate) fn format_collect_error_for_test(err: kiss::rpytest_runner::PytestCollectError) -> String {
     format_collect_error(err)
 }
 
@@ -123,7 +123,7 @@ pub(crate) fn reset_full_suite_subprocess_collects_for_tests() {
 #[cfg(test)]
 mod coverage_witness {
     use super::*;
-    use rpytest_runner::PytestCollectError;
+    use kiss::rpytest_runner::PytestCollectError;
 
     #[test]
     fn witness_python_collect_helpers() {

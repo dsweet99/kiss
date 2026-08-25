@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use rust_llvm_cov_runner::RustCoverageToolIdentity;
+use kiss::rust_llvm_cov_runner::RustCoverageToolIdentity;
 
 use crate::test_runner::runners::command_stdout;
 
@@ -161,7 +161,7 @@ fn write_cached_rust_tool_identity(
     })?;
     let tmp = parent.join(format!(
         ".rust_tool_versions.{}.tmp",
-        kiss_publication_barrier::unique_process_suffix()
+        kiss::kiss_publication_barrier::unique_process_suffix()
     ));
     let cached = RustToolVersionsCache {
         schema_version: TOOL_VERSIONS_SCHEMA.to_string(),
@@ -171,7 +171,7 @@ fn write_cached_rust_tool_identity(
         cargo_nextest: tools.cargo_nextest_version.clone(),
         key: key.to_persisted(),
     };
-    kiss_publication_barrier::publish_atomically("rust_tool_versions", &path, &tmp, |file| {
+    kiss::kiss_publication_barrier::publish_atomically("rust_tool_versions", &path, &tmp, |file| {
         serde_json::to_writer(&mut *file, &cached).map_err(std::io::Error::other)?;
         file.write_all(b"\n")?;
         Ok(())

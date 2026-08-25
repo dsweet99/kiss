@@ -3,6 +3,11 @@
 #![allow(clippy::missing_errors_doc)]
 #![allow(clippy::missing_panics_doc)]
 
+pub mod kiss_publication_barrier;
+pub mod rpytest_runner;
+pub mod rslip;
+pub mod rust_llvm_cov_runner;
+
 pub mod cli_output;
 pub mod config;
 pub mod config_gen;

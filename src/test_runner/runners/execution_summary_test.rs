@@ -1,5 +1,5 @@
 use super::*;
-use rpytest_runner::TestStatus;
+use kiss::rpytest_runner::TestStatus;
 use std::time::Duration;
 
 fn passed_miss(selector: &str, duration: Duration) -> SelectorExecutionRecord {

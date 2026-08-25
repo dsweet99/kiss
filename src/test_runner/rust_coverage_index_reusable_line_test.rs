@@ -11,8 +11,8 @@ fn write_line_entry(repo_root: &Path, lib: &Path, name: &str, line: u32) {
         repo_root,
         name,
         &format!("tests::{name}"),
-        rpytest_runner::TestStatus::Passed,
-        rust_llvm_cov_runner::RustLineCoverage {
+        kiss::rpytest_runner::TestStatus::Passed,
+        kiss::rust_llvm_cov_runner::RustLineCoverage {
             files: BTreeMap::from([(lib.to_string_lossy().to_string(), BTreeSet::from([line]))]),
         },
     );
@@ -22,7 +22,7 @@ fn reusable_prior_state(repo_root: &Path) -> ResolvedRustPopulation {
     let identity = current_rust_coverage_batch_identity(repo_root, &[]).unwrap();
     let selector_names = ["tests::alpha".to_string(), "tests::beta".to_string()];
     ResolvedRustPopulation::ReusablePrior {
-        state: rust_llvm_cov_runner::RustPopulationState {
+        state: kiss::rust_llvm_cov_runner::RustPopulationState {
             input_fingerprint: String::new(),
             generation_fingerprint: identity.generation_fingerprint,
             selection_context_fingerprint: String::new(),
@@ -35,7 +35,7 @@ fn reusable_prior_state(repo_root: &Path) -> ResolvedRustPopulation {
             ordinary_source_digests: BTreeMap::new(),
             test_binaries: BTreeMap::new(),
         },
-        delta: rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
+        delta: kiss::rust_llvm_cov_runner::RustSnapshotDelta::Unchanged,
     }
 }
 

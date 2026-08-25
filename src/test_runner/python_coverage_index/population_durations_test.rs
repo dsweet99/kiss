@@ -31,7 +31,7 @@ fn population_durations_prefer_generation_timings() {
         GenerationReason, PYTHON_SELECTOR_DISCOVERY_VERSION, clear_python_generation_warm_memo,
     };
     use crate::test_runner::runners::detect_rslip_versions;
-    use rpytest_runner::TestStatus;
+    use kiss::rpytest_runner::TestStatus;
     use std::collections::BTreeMap;
 
     let tmp = tempfile::tempdir().unwrap();
@@ -167,7 +167,7 @@ fn load_durations_allow_non_passed_keeps_failed_entries() {
         &kiss::GateConfig::default(),
     )
     .unwrap();
-    let fingerprint = rslip::cache_fingerprint_for_request(&req).unwrap();
+    let fingerprint = kiss::rslip::cache_fingerprint_for_request(&req).unwrap();
     let entry_dir = req.cache_root.join("entries");
     std::fs::create_dir_all(&entry_dir).unwrap();
     let entry = serde_json::json!({
@@ -201,7 +201,7 @@ fn try_load_generation_durations_from_published_generation() {
     use crate::test_runner::python_coverage_index::{
         GenerationReason, PYTHON_SELECTOR_DISCOVERY_VERSION, clear_python_generation_warm_memo,
     };
-    use rpytest_runner::TestStatus;
+    use kiss::rpytest_runner::TestStatus;
     use std::collections::BTreeMap;
 
     let tmp = tempfile::tempdir().unwrap();
@@ -253,7 +253,7 @@ fn population_durations_identity_mismatch_returns_none() {
     use crate::test_runner::python_coverage_index::{
         GenerationReason, PYTHON_SELECTOR_DISCOVERY_VERSION, clear_python_generation_warm_memo,
     };
-    use rpytest_runner::TestStatus;
+    use kiss::rpytest_runner::TestStatus;
     use std::collections::BTreeMap;
 
     let tmp = tempfile::tempdir().unwrap();

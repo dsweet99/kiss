@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use rpytest_runner::TestStatus;
+use kiss::rpytest_runner::TestStatus;
 use serde::{Deserialize, Serialize};
 
 use super::POPULATION_SCHEMA_VERSION;
@@ -239,7 +239,7 @@ pub(crate) fn write_population_durations(
         ".population_durations.{}.tmp",
         python_unique_suffix()
     ));
-    kiss_publication_barrier::publish_atomically(
+    kiss::kiss_publication_barrier::publish_atomically(
         "python_population_durations",
         &path,
         &tmp_path,
@@ -295,7 +295,7 @@ fn load_durations_from_entry_probes_inner(
             &kiss::GateConfig::load_for_repo(repo_root),
         )
         .ok()?;
-        let fingerprint = rslip::cache_fingerprint_for_request(&req).ok()?;
+        let fingerprint = kiss::rslip::cache_fingerprint_for_request(&req).ok()?;
         let path = req
             .cache_root
             .join("entries")

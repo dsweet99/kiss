@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::time::Duration;
 
-use rpytest_runner::TestStatus;
+use kiss::rpytest_runner::TestStatus;
 
 use crate::test_runner::lang_python::try_warm_python_cached_summary;
 use crate::test_runner::python_coverage_index::generation::{
