@@ -6,6 +6,9 @@ use std::path::Path;
 mod extract_imports;
 mod include_graph;
 mod resolve;
+mod use_binds;
+
+pub(crate) use use_binds::collect_file_use_binds;
 
 #[cfg(test)]
 pub(crate) use resolve::{qualify_child_module, resolve_import};

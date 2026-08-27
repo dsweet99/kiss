@@ -99,9 +99,28 @@ struct RecordsEvalCtx<'a> {
     ignore: &'a [String],
 }
 
+fn orphan_gate_failed(
+    ctx: &RecordsEvalCtx<'_>,
+    snapshot: Option<&analyze::line_coverage::RuntimeCoverageSnapshot>,
+) -> bool {
+    let Some(snapshot) = snapshot else {
+        return false;
+    };
+    let repo_root = repository_root_for_universe(ctx.universe_root);
+    analyze::evaluate_orphan_unit_gate(
+        &repo_root,
+        &ctx.files.py_files,
+        &ctx.files.rs_files,
+        snapshot,
+        ctx.args.gate_config,
+        ctx.args.bypass_gate,
+    )
+}
+
 fn evaluate_records_with_time(
     records: &[analyze::line_coverage::LineCoverageRecord],
     ctx: &RecordsEvalCtx<'_>,
+    snapshot: Option<&analyze::line_coverage::RuntimeCoverageSnapshot>,
 ) -> i32 {
     let coverage_failed = evaluate_coverage_gate(
         records,
@@ -114,10 +133,12 @@ fn evaluate_records_with_time(
     let time_failed = apply_time_gate_eval(&time_eval);
     let max_num_tests_failed =
         evaluate_max_num_tests_gate(ctx.args, ctx.universe_root, ctx.files, ctx.ignore);
+    let orphan_failed = orphan_gate_failed(ctx, snapshot);
     finish_sibling_gates(SiblingGateResult {
         coverage_failed,
         time_failed,
         max_num_tests_failed,
+        orphan_failed,
     })
 }
 
@@ -125,6 +146,9 @@ fn try_evaluate_records_with_time(
     records: &[analyze::line_coverage::LineCoverageRecord],
     ctx: &RecordsEvalCtx<'_>,
 ) -> Option<i32> {
+    if ctx.args.gate_config.orphan_unit_enabled && !ctx.args.bypass_gate {
+        return None;
+    }
     let time_eval = evaluate_time_gate_for_cov(ctx.args, ctx.universe_root, ctx.files, ctx.ignore);
     if matches!(time_eval, RuntimeGateEval::Incomplete) {
         if !ctx.args.allow_refresh {
@@ -150,6 +174,7 @@ fn try_evaluate_records_with_time(
         coverage_failed,
         time_failed,
         max_num_tests_failed,
+        orphan_failed: false,
     }))
 }
 
@@ -264,7 +289,7 @@ pub fn run_cov_command(args: &CovCommandArgs<'_>) -> i32 {
             rust: !files.rs_files.is_empty(),
         };
 
-        let _ = load_or_refresh_snapshot(
+        let validated = load_or_refresh_snapshot(
             &repo_root,
             required,
             &ignore,
@@ -273,6 +298,17 @@ pub fn run_cov_command(args: &CovCommandArgs<'_>) -> i32 {
             args.gate_config,
             args.pytest_args,
         );
+        let orphan_failed = match validated {
+            Ok(inputs) => analyze::evaluate_orphan_unit_gate(
+                &repo_root,
+                &files.py_files,
+                &files.rs_files,
+                &inputs.snapshot,
+                args.gate_config,
+                args.bypass_gate,
+            ),
+            Err(_) => args.gate_config.orphan_unit_enabled && !args.bypass_gate,
+        };
         let time_eval = evaluate_time_gate_for_cov(args, universe_root, &files, &ignore);
         let time_failed = apply_time_gate_eval(&time_eval);
         let max_num_tests_failed =
@@ -281,6 +317,7 @@ pub fn run_cov_command(args: &CovCommandArgs<'_>) -> i32 {
             coverage_failed: false,
             time_failed,
             max_num_tests_failed,
+            orphan_failed,
         });
     }
     evaluate_gathered_cov(EvaluateGatheredCov {
@@ -374,7 +411,7 @@ fn evaluate_gathered_cov(p: EvaluateGatheredCov<'_>) -> i32 {
             return 1;
         }
     };
-    evaluate_records_with_time(&records, &eval_ctx)
+    evaluate_records_with_time(&records, &eval_ctx, Some(&validated.snapshot))
 }
 
 #[cfg(test)]

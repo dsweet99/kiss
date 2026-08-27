@@ -20,6 +20,7 @@ fn default_gate_config_scope_is_codebase() {
         TestCoverageScope::Codebase
     );
     assert!(!GateConfig::default().comment_removal_enabled);
+    assert!(!GateConfig::default().orphan_unit_enabled);
     assert!(GateConfig::default().docs_allowed.is_empty());
     assert!(GateConfig::default().orphan_allowed.is_empty());
 }
@@ -170,6 +171,7 @@ fn try_load_from_content_accepts_all_gate_fields() {
 min_similarity = 0.75
 duplication_enabled = false
 orphan_module_enabled = false
+orphan_unit_enabled = false
 comment_removal_enabled = true
 docs_allowed = [\"docs\", \"src/api\"]
 orphan_allowed = [\"src/plugins\"]
@@ -190,6 +192,7 @@ max_num_tests = 12
     assert!((gate.min_similarity - 0.75).abs() < f64::EPSILON);
     assert!(!gate.duplication_enabled);
     assert!(!gate.orphan_module_enabled);
+    assert!(!gate.orphan_unit_enabled);
     assert!(gate.comment_removal_enabled);
     assert_eq!(
         gate.docs_allowed,

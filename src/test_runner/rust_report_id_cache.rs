@@ -64,6 +64,10 @@ fn try_load_cached(repo_root: &Path, ignore: &[String]) -> Option<BTreeMap<Strin
     {
         return None;
     }
+    let files_fingerprint = workspace_files_fingerprint_for_cache(repo_root, ignore).ok()?;
+    if cache.files_fingerprint != files_fingerprint {
+        return None;
+    }
     Some(cache.report_ids)
 }
 

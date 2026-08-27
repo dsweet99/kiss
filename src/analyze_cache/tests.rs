@@ -260,6 +260,21 @@ fn fingerprint_includes_gate_docs_allowed() {
 }
 
 #[test]
+fn fingerprint_includes_gate_orphan_unit_enabled() {
+    let py = Config::python_defaults();
+    let rs = Config::rust_defaults();
+    let g0 = GateConfig::default();
+    let g1 = GateConfig {
+        orphan_unit_enabled: true,
+        ..g0.clone()
+    };
+    assert_ne!(
+        fingerprint_for_check(&[], &[], &py, &rs, &g0),
+        fingerprint_for_check(&[], &[], &py, &rs, &g1),
+    );
+}
+
+#[test]
 fn fingerprint_includes_gate_orphan_allowed() {
     let py = Config::python_defaults();
     let rs = Config::rust_defaults();

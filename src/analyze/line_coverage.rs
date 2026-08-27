@@ -37,7 +37,7 @@ impl CoverageSourceFacts {
         Ok(Self::from_index(roles, &rs, py_files, rs_files))
     }
 
-    fn from_index(
+    pub(crate) fn from_index(
         roles: SourceRoleIndex,
         rs: &[kiss::ParsedRustFile],
         py_files: &[PathBuf],
@@ -74,6 +74,10 @@ impl CoverageSourceFacts {
             roles,
             coverable_lines,
         }
+    }
+
+    pub(crate) fn coverable_map(&self) -> &BTreeMap<PathBuf, BTreeSet<usize>> {
+        &self.coverable_lines
     }
 }
 
@@ -368,7 +372,7 @@ impl<'ast> Visit<'ast> for RustCoverableLineVisitor<'_> {
     }
 }
 
-fn repo_relative_key(repo_root: &Path, file: &Path) -> Option<String> {
+pub(crate) fn repo_relative_key(repo_root: &Path, file: &Path) -> Option<String> {
     let root = repo_root
         .canonicalize()
         .unwrap_or_else(|_| repo_root.to_path_buf());

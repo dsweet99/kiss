@@ -12,6 +12,7 @@ mod graph_analyze;
 mod graph_build;
 mod graph_python;
 mod orphan;
+mod orphan_unit;
 
 pub use context::{
     ContextDependencyGraph, EdgeOrigin, RoleDependencyGraphs, module_name_for_path,
@@ -30,6 +31,8 @@ pub(crate) use graph_python::{
     is_importlib_import_module,
 };
 pub use orphan::{collect_orphan_entry_paths, orphan_violations};
+pub use orphan_unit::{OrphanCoverage, OrphanUnitInput, orphan_unit_violations};
+pub(crate) use graph_build::resolve_import;
 
 #[cfg(test)]
 pub(crate) use dependency_graph::{bare_module_name, is_crate_root_aggregator, is_orphan};
@@ -40,7 +43,7 @@ pub(crate) use graph_analyze::{
 #[cfg(test)]
 pub(crate) use graph_build::{
     ImportListPass, build_dependency_graph_from_import_lists, parent_prefix_match, resolve_bare,
-    resolve_dotted, resolve_import,
+    resolve_dotted,
 };
 #[cfg(test)]
 pub(crate) use graph_python::{

@@ -23,6 +23,7 @@ fn verify_gate_defaults(gate: &GateConfig) {
     assert!((gate.min_similarity - 0.9).abs() < f64::EPSILON);
     assert!(gate.duplication_enabled);
     assert!(gate.orphan_module_enabled);
+    assert!(!gate.orphan_unit_enabled);
     assert!(!gate.comment_removal_enabled);
     assert!(gate.docs_allowed.is_empty());
 }

@@ -39,6 +39,7 @@ pub mod units;
 pub mod code_roles;
 pub mod lang_analysis;
 pub mod rust_counts;
+pub mod rust_coverage_off;
 pub mod rust_fn_metrics;
 pub mod rust_graph;
 pub mod rust_include;
@@ -91,7 +92,8 @@ pub use graph::{
     ContextDependencyGraph, CycleInfo, DependencyGraph, EdgeOrigin, GraphKeyMaxima,
     ModuleGraphMetrics, RoleDependencyGraphs, analyze_graph, build_dependency_graph,
     build_python_context_graph, collect_orphan_entry_paths, compute_cyclomatic_complexity,
-    graph_key_maxima, module_name_for_path, orphan_violations, path_for_module_name,
+    graph_key_maxima, module_name_for_path, orphan_unit_violations, orphan_violations,
+    path_for_module_name, OrphanCoverage, OrphanUnitInput,
 };
 pub use layout_cycles::{CycleBreakSuggestion, LayoutCycleAnalysis, analyze_cycles};
 pub use layout_layers::{LayerInfo, compute_layers};
@@ -125,6 +127,7 @@ pub use rust_counts::{
     analyze_rust_file, analyze_rust_file_include_rollup,
     analyze_rust_file_include_rollup_with_roles, analyze_rust_file_with_roles,
 };
+pub use rust_coverage_off::coverage_off_attrs;
 pub use rust_fn_metrics::{
     RustFileMetrics, RustFunctionMetrics, RustTypeMetrics, compute_rust_file_metrics,
     compute_rust_file_metrics_with_roles, compute_rust_function_metrics, count_non_doc_attrs,

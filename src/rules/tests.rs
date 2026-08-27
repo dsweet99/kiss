@@ -27,7 +27,7 @@ fn global_and_test_rule_specs_use_shared_metrics() {
     let global_metrics: Vec<_> = global::GLOBAL_RULE_SPECS.iter().map(|s| s.metric).collect();
     assert_eq!(
         global_metrics,
-        ["min_similarity", "comment", "doc", "orphan_module"]
+        ["min_similarity", "comment", "doc", "orphan_module", "orphan"]
     );
     let test_metrics: Vec<_> = test_rules::TEST_RULE_SPECS
         .iter()

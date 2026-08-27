@@ -31,3 +31,36 @@ fn report_id_cache_round_trip_hits_without_rebuild() {
         Some("src/lib.rs::t")
     );
 }
+
+#[test]
+fn report_id_cache_misses_when_rust_source_mtime_changes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    fs::create_dir_all(root.join("src")).unwrap();
+    let lib = root.join("src/lib.rs");
+    fs::write(
+        &lib,
+        "#[cfg(test)]\nmod tests {\n    #[test]\n    fn t() {}\n}\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname=\"t\"\nversion=\"0.1.0\"\nedition=\"2021\"\n",
+    )
+    .unwrap();
+
+    let mut map = BTreeMap::new();
+    map.insert("tests::t".into(), "src/lib.rs::t".into());
+    store_cached(root, &[], &map).unwrap();
+    assert!(try_load_cached(root, &[]).is_some());
+
+    fs::write(
+        &lib,
+        "#[cfg(test)]\nmod tests {\n    #[test]\n    fn t() {}\n    #[test]\n    fn u() {}\n}\n",
+    )
+    .unwrap();
+    assert!(
+        try_load_cached(root, &[]).is_none(),
+        "source edit must invalidate rust report-id cache"
+    );
+}

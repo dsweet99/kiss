@@ -12,11 +12,16 @@ pub(crate) struct SiblingGateResult {
     pub(crate) coverage_failed: bool,
     pub(crate) time_failed: bool,
     pub(crate) max_num_tests_failed: bool,
+    pub(crate) orphan_failed: bool,
 }
 
 pub(crate) fn finish_sibling_gates(result: SiblingGateResult) -> i32 {
-    print_final_status(result.coverage_failed || result.time_failed || result.max_num_tests_failed);
-    i32::from(result.coverage_failed || result.time_failed || result.max_num_tests_failed)
+    let failed = result.coverage_failed
+        || result.time_failed
+        || result.max_num_tests_failed
+        || result.orphan_failed;
+    print_final_status(failed);
+    i32::from(failed)
 }
 
 pub(crate) fn evaluate_time_gate_for_cov(

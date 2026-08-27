@@ -14,6 +14,7 @@ fn finish_sibling_gates_exits_nonzero_when_either_fails() {
             coverage_failed: true,
             time_failed: false,
             max_num_tests_failed: false,
+            orphan_failed: false,
         }),
         1
     );
@@ -22,6 +23,7 @@ fn finish_sibling_gates_exits_nonzero_when_either_fails() {
             coverage_failed: false,
             time_failed: true,
             max_num_tests_failed: false,
+            orphan_failed: false,
         }),
         1
     );
@@ -30,6 +32,7 @@ fn finish_sibling_gates_exits_nonzero_when_either_fails() {
             coverage_failed: false,
             time_failed: false,
             max_num_tests_failed: true,
+            orphan_failed: false,
         }),
         1
     );
@@ -38,8 +41,18 @@ fn finish_sibling_gates_exits_nonzero_when_either_fails() {
             coverage_failed: false,
             time_failed: false,
             max_num_tests_failed: false,
+            orphan_failed: false,
         }),
         0
+    );
+    assert_eq!(
+        finish_sibling_gates(SiblingGateResult {
+            coverage_failed: false,
+            time_failed: false,
+            max_num_tests_failed: false,
+            orphan_failed: true,
+        }),
+        1
     );
 }
 

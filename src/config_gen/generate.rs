@@ -26,6 +26,7 @@ pub fn auto_created_gate_config() -> GateConfig {
     GateConfig {
         duplication_enabled: false,
         orphan_module_enabled: false,
+        orphan_unit_enabled: false,
         comment_removal_enabled: false,
         docs_allowed: vec!["./".to_string()],
         test_coverage_threshold: 0,
@@ -45,6 +46,11 @@ pub fn generate_config_toml_by_language(p: &GenerateConfigParams<'_>) -> String 
         out,
         "orphan_module_enabled = {}",
         p.gate.orphan_module_enabled
+    );
+    let _ = writeln!(
+        out,
+        "orphan_unit_enabled = {}",
+        p.gate.orphan_unit_enabled
     );
     let _ = writeln!(
         out,
@@ -162,6 +168,7 @@ mod coverage_witness {
         let gate = auto_created_gate_config();
         assert!(!gate.duplication_enabled);
         assert!(!gate.orphan_module_enabled);
+        assert!(!gate.orphan_unit_enabled);
         assert!(!gate.comment_removal_enabled);
         assert_eq!(gate.docs_allowed, vec!["./".to_string()]);
         assert_eq!(gate.test_coverage_threshold, 0);
@@ -183,6 +190,10 @@ mod coverage_witness {
         );
         assert!(
             toml.contains("orphan_module_enabled = false"),
+            "auto-created global flags:\n{toml}"
+        );
+        assert!(
+            toml.contains("orphan_unit_enabled = false"),
             "auto-created global flags:\n{toml}"
         );
         assert!(

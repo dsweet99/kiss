@@ -56,6 +56,7 @@ fn evaluate_records_with_time_rejects_when_coverage_gate_fails() {
             files: &files,
             ignore: &[],
         },
+        None,
     );
     assert_eq!(code, 1);
 }
@@ -73,6 +74,7 @@ fn both_gates_disabled_short_circuits() {
     let gate = GateConfig {
         test_coverage_threshold: 0,
         max_unit_test_seconds: Vec::new(),
+        orphan_unit_enabled: false,
         ..GateConfig::default()
     };
     let tmp = tempfile::tempdir().unwrap();
@@ -240,6 +242,7 @@ fn time_only_gate_path_runs_when_coverage_threshold_zero() {
     let gate = GateConfig {
         test_coverage_threshold: 0,
         max_unit_test_seconds: vec![("*".to_string(), 2.0)],
+        orphan_unit_enabled: false,
         ..GateConfig::default()
     };
     let tmp = tempfile::tempdir().unwrap();

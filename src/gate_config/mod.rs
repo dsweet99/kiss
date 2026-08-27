@@ -46,6 +46,7 @@ const GLOBAL_KEYS: &[&str] = &[
     "min_similarity",
     "duplication_enabled",
     "orphan_module_enabled",
+    "orphan_unit_enabled",
     "comment_removal_enabled",
     "docs_allowed",
     "orphan_allowed",
@@ -53,7 +54,7 @@ const GLOBAL_KEYS: &[&str] = &[
 
 const GATE_RENAMED_MSG: &str = "\
 [gate] was renamed: put min_similarity/duplication_enabled/orphan_module_enabled/\
-comment_removal_enabled/docs_allowed/orphan_allowed under [global], and test_coverage_threshold/\
+orphan_unit_enabled/comment_removal_enabled/docs_allowed/orphan_allowed under [global], and test_coverage_threshold/\
 test_coverage_scope/max_unit_test_seconds/max_num_tests under [test]";
 
 #[derive(Debug, Clone)]
@@ -65,6 +66,7 @@ pub struct GateConfig {
     pub min_similarity: f64,
     pub duplication_enabled: bool,
     pub orphan_module_enabled: bool,
+    pub orphan_unit_enabled: bool,
     pub comment_removal_enabled: bool,
     pub docs_allowed: Vec<String>,
     pub orphan_allowed: Vec<String>,
@@ -80,6 +82,7 @@ impl Default for GateConfig {
             min_similarity: defaults::duplication::MIN_SIMILARITY,
             duplication_enabled: true,
             orphan_module_enabled: true,
+            orphan_unit_enabled: false,
             comment_removal_enabled: false,
             docs_allowed: Vec::new(),
             orphan_allowed: Vec::new(),
