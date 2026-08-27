@@ -25,7 +25,7 @@ pub(crate) fn decode_token_hex(value: &str) -> Option<[u8; TOKEN_LEN]> {
         return None;
     }
     let mut token = [0u8; TOKEN_LEN];
-    for (index, chunk) in value.as_bytes().chunks_exact(2).enumerate() {
+    for (index, chunk) in value.as_bytes().as_chunks::<2>().0.iter().enumerate() {
         let hex = std::str::from_utf8(chunk).ok()?;
         token[index] = u8::from_str_radix(hex, 16).ok()?;
     }

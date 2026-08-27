@@ -1,6 +1,8 @@
+use std::fs;
 use std::io;
+use std::path::PathBuf;
 
-use crate::rpytest_runner::{PytestRunError, PytestRunOutcome};
+use crate::rpytest_runner::{PytestRunError, PytestRunOutcome, PytestRunRequest};
 
 use crate::rslip::cache::{RslipCacheEntry, load_reusable_rslip_cache_entry, store_rslip_cache_entry};
 use crate::rslip::{
@@ -20,10 +22,35 @@ pub(super) fn handle_rslip_miss_result(
         .collect()
 }
 
+struct RemoveArtifactsOnDrop {
+    paths: Vec<PathBuf>,
+}
+
+impl Drop for RemoveArtifactsOnDrop {
+    fn drop(&mut self) {
+        for path in &self.paths {
+            let _ = fs::remove_file(path);
+        }
+    }
+}
+
+fn artifact_cleanup(req: &PytestRunRequest) -> RemoveArtifactsOnDrop {
+    let mut paths: Vec<PathBuf> = req
+        .artifacts
+        .iter()
+        .map(|artifact| artifact.path.clone())
+        .collect();
+    if let Some(testmon) = req.env.get("TESTMON_DATAFILE") {
+        paths.push(PathBuf::from(testmon));
+    }
+    RemoveArtifactsOnDrop { paths }
+}
+
 fn handle_rslip_miss_result_once(
     miss: &RslipMiss,
     result: Result<PytestRunOutcome, PytestRunError>,
 ) -> Result<RslipOutcome, RslipError> {
+    let _cleanup = artifact_cleanup(&miss.runner_req);
     let outcome = match result {
         Ok(outcome) => outcome,
 

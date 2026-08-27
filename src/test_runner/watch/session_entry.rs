@@ -21,7 +21,7 @@ pub(crate) fn run_test_watch(
     rs_config: kiss::Config,
     run_cov: impl FnMut(&RunTestCmdArgs<'_>, &WatchLiveConfig) -> WatchCoverageResult,
 ) -> i32 {
-    match prepare_watch_session(&args) {
+    match prepare_watch_session(&args, &seed.config_path) {
         Ok(prepared) => {
             let config_path =
                 super::reload::resolve_config_path(&prepared.repo_root, &seed.config_path);
@@ -84,7 +84,10 @@ struct PreparedWatch {
 }
 
 #[doc = "kiss-coverage-off"]
-fn prepare_watch_session(args: &RunTestCmdArgs<'_>) -> Result<PreparedWatch, i32> {
+fn prepare_watch_session(
+    args: &RunTestCmdArgs<'_>,
+    config_path: &Path,
+) -> Result<PreparedWatch, i32> {
     let cwd = std::env::current_dir().map_err(|e| {
         eprintln!("error: kiss test: {e}");
         1
@@ -107,7 +110,13 @@ fn prepare_watch_session(args: &RunTestCmdArgs<'_>) -> Result<PreparedWatch, i32
     #[cfg(not(unix))]
     let owner = ();
 
-    let source = NativeWatchEventSource::register(&registrations).map_err(|e| {
+    let source = NativeWatchEventSource::register(
+        &registrations,
+        &repo_root,
+        &args.invocation,
+        config_path,
+    )
+    .map_err(|e| {
         eprintln!("error: kiss test --watch: {e}");
         1
     })?;
@@ -126,6 +135,7 @@ mod tests {
     use crate::test_runner::test_mode_fixtures::{git_in, init_git};
     use crate::test_runner::watch::event_source::FakeWatchEventSource;
     use std::env;
+    use std::path::Path;
     use std::time::Duration;
 
     fn py_args() -> RunTestCmdArgs<'static> {
@@ -153,7 +163,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let orig = env::current_dir().unwrap();
         env::set_current_dir(tmp.path()).unwrap();
-        let err = prepare_watch_session(&py_args());
+        let err = prepare_watch_session(&py_args(), Path::new(".kissconfig"));
         env::set_current_dir(orig).unwrap();
         assert!(matches!(err, Err(1)));
     }
@@ -180,7 +190,7 @@ mod tests {
         );
         let orig = env::current_dir().unwrap();
         env::set_current_dir(tmp.path()).unwrap();
-        let prepared = prepare_watch_session(&py_args()).expect("prepare");
+        let prepared = prepare_watch_session(&py_args(), Path::new(".kissconfig")).expect("prepare");
         assert_eq!(
             prepared.repo_root.canonicalize().unwrap(),
             tmp.path().canonicalize().unwrap()

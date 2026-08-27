@@ -79,7 +79,7 @@ fn apply_edits_to_one_file(
     edits: &mut Vec<&PlannedEdit>,
 ) -> Result<(), String> {
     let mut updated = source.content.clone();
-    edits.sort_by(|a, b| b.start_byte.cmp(&a.start_byte));
+    edits.sort_by_key(|a| std::cmp::Reverse(a.start_byte));
     for edit in edits.iter() {
         if edit.end_byte > updated.len() || edit.start_byte > edit.end_byte {
             rollback(originals)?;
@@ -108,7 +108,7 @@ fn check_for_overlaps(plan: &MvPlan) -> Result<(), String> {
             .push((edit.start_byte, edit.end_byte));
     }
     for (path, mut ranges) in by_file {
-        ranges.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+        ranges.sort_unstable_by_key(|a| a.0);
         for pair in ranges.windows(2) {
             if pair[0].1 > pair[1].0 {
                 return Err(format!(

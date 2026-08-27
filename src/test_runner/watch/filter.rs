@@ -73,13 +73,7 @@ impl WatchPathFilter {
     }
 
     pub(crate) fn is_ignore_file(&self, rel: &Path) -> bool {
-        rel == Path::new(".gitignore")
-            || rel == Path::new(".kissignore")
-            || rel == Path::new(".git/info/exclude")
-            || matches!(
-                rel.file_name().and_then(|n| n.to_str()),
-                Some(".gitignore" | ".kissignore")
-            )
+        is_watch_ignore_file(rel)
     }
 
     #[cfg(test)]
@@ -163,7 +157,7 @@ fn build_gitignore(repo_root: &Path) -> Gitignore {
     builder.build().unwrap_or_else(|_| Gitignore::empty())
 }
 
-fn is_hard_excluded(rel: &Path) -> bool {
+pub(crate) fn is_hard_excluded(rel: &Path) -> bool {
     rel.components().any(|c| {
         c.as_os_str()
             .to_str()
@@ -171,7 +165,7 @@ fn is_hard_excluded(rel: &Path) -> bool {
     })
 }
 
-fn is_git_support_path(rel: &Path, invocation: &TestInvocation) -> bool {
+pub(crate) fn is_git_support_path(rel: &Path, invocation: &TestInvocation) -> bool {
     if rel == Path::new(".git/info/exclude") {
         return true;
     }
@@ -188,7 +182,31 @@ fn is_git_support_path(rel: &Path, invocation: &TestInvocation) -> bool {
         && (rel.starts_with(".git/refs/heads") || rel == Path::new(".git/packed-refs"))
 }
 
-fn config_rel_for_watch(repo_root: &Path, config_path: &Path) -> PathBuf {
+pub(crate) fn is_watch_ignore_file(rel: &Path) -> bool {
+    rel == Path::new(".gitignore")
+        || rel == Path::new(".kissignore")
+        || rel == Path::new(".git/info/exclude")
+        || matches!(
+            rel.file_name().and_then(|n| n.to_str()),
+            Some(".gitignore" | ".kissignore")
+        )
+}
+
+pub(crate) fn path_should_enter_watch_queue(
+    rel: &Path,
+    invocation: &TestInvocation,
+    watched_config: &Path,
+) -> bool {
+    if is_git_support_path(rel, invocation) || rel == watched_config {
+        return true;
+    }
+    if is_hard_excluded(rel) {
+        return false;
+    }
+    is_watch_ignore_file(rel) || is_support_input(rel) || matches_lang_filter(rel, None)
+}
+
+pub(crate) fn config_rel_for_watch(repo_root: &Path, config_path: &Path) -> PathBuf {
     if config_path.as_os_str().is_empty() {
         return PathBuf::from(".kissconfig");
     }

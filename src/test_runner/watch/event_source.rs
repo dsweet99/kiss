@@ -4,6 +4,11 @@ use std::time::Duration;
 
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 
+use crate::bin_cli::args::TestInvocation;
+
+use super::filter::{
+    config_rel_for_watch, path_should_enter_watch_queue,
+};
 use super::roots::{WatchRegistration, WatchRootKind};
 
 #[cfg(test)]
@@ -36,11 +41,21 @@ pub(crate) struct NativeWatchEventSource {
 }
 
 impl NativeWatchEventSource {
-    pub(crate) fn register(registrations: &[WatchRegistration]) -> Result<Self, String> {
+    pub(crate) fn register(
+        registrations: &[WatchRegistration],
+        repo_root: &Path,
+        invocation: &TestInvocation,
+        config_path: &Path,
+    ) -> Result<Self, String> {
         let (tx, rx) = mpsc::channel();
+        let repo_root = repo_root.to_path_buf();
+        let invocation = invocation.clone();
+        let watched_config = config_rel_for_watch(&repo_root, config_path);
         let mut watcher = RecommendedWatcher::new(
             move |res| {
-                let _ = tx.send(res);
+                if event_should_enter_watch_queue(&res, &repo_root, &invocation, &watched_config) {
+                    let _ = tx.send(res);
+                }
             },
             notify::Config::default(),
         )
@@ -87,6 +102,51 @@ impl WatchEventSource for NativeWatchEventSource {
         }
         Ok(out)
     }
+}
+
+pub(crate) fn event_should_enter_watch_queue(
+    res: &Result<notify::Event, notify::Error>,
+    repo_root: &Path,
+    invocation: &TestInvocation,
+    watched_config: &Path,
+) -> bool {
+    match res {
+        Err(_) => true,
+        Ok(event) => {
+            notify_event_should_enter_watch_queue(event, repo_root, invocation, watched_config)
+        }
+    }
+}
+
+fn notify_event_should_enter_watch_queue(
+    event: &notify::Event,
+    repo_root: &Path,
+    invocation: &TestInvocation,
+    watched_config: &Path,
+) -> bool {
+    if event.need_rescan() {
+        return true;
+    }
+    if matches!(event.kind, EventKind::Access(_)) {
+        return false;
+    }
+    if event.paths.is_empty() {
+        return true;
+    }
+    event
+        .paths
+        .iter()
+        .any(|path| queueable_watch_path(path, repo_root, invocation, watched_config))
+}
+
+fn queueable_watch_path(
+    path: &Path,
+    repo_root: &Path,
+    invocation: &TestInvocation,
+    watched_config: &Path,
+) -> bool {
+    let rel = path.strip_prefix(repo_root).unwrap_or(path);
+    path_should_enter_watch_queue(rel, invocation, watched_config)
 }
 
 pub(crate) fn normalize_notify_result(
@@ -152,6 +212,7 @@ impl WatchEventSource for FakeWatchEventSource {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bin_cli::args::TestInvocation;
     use notify::Event;
 
     #[test]
@@ -179,6 +240,84 @@ mod tests {
         assert!(msg.contains("max_user_watches") || msg.contains("failed to watch"));
     }
 
+    #[test]
+    fn access_events_do_not_enter_the_watch_queue() {
+        let event = Event::new(notify::EventKind::Access(notify::event::AccessKind::Any))
+            .add_path(PathBuf::from("/repo/app.py"));
+        assert!(!event_should_enter_watch_queue(
+            &Ok(event),
+            Path::new("/repo"),
+            &TestInvocation::All,
+            Path::new(".kissconfig"),
+        ));
+    }
+
+    #[test]
+    fn kiss_cache_writes_do_not_enter_the_watch_queue() {
+        let event = Event::new(notify::EventKind::Create(notify::event::CreateKind::File))
+            .add_path(PathBuf::from("/repo/.kiss/junk/a.txt"));
+        assert!(!event_should_enter_watch_queue(
+            &Ok(event),
+            Path::new("/repo"),
+            &TestInvocation::All,
+            Path::new(".kissconfig"),
+        ));
+    }
+
+    #[test]
+    fn source_modifies_do_enter_the_watch_queue() {
+        let event = Event::new(notify::EventKind::Modify(notify::event::ModifyKind::Data(
+            notify::event::DataChange::Any,
+        )))
+        .add_path(PathBuf::from("/repo/app.py"));
+        assert!(event_should_enter_watch_queue(
+            &Ok(event),
+            Path::new("/repo"),
+            &TestInvocation::All,
+            Path::new(".kissconfig"),
+        ));
+    }
+
+    #[test]
+    fn git_exclude_support_path_still_enters_the_watch_queue() {
+        let event = Event::new(notify::EventKind::Modify(notify::event::ModifyKind::Data(
+            notify::event::DataChange::Any,
+        )))
+        .add_path(PathBuf::from("/repo/.git/info/exclude"));
+        assert!(event_should_enter_watch_queue(
+            &Ok(event),
+            Path::new("/repo"),
+            &TestInvocation::All,
+            Path::new(".kissconfig"),
+        ));
+    }
+
+    #[test]
+    fn in_tree_non_source_files_do_not_enter_the_watch_queue() {
+        let event = Event::new(notify::EventKind::Create(notify::event::CreateKind::File))
+            .add_path(PathBuf::from("/repo/noise.txt"));
+        assert!(!event_should_enter_watch_queue(
+            &Ok(event),
+            Path::new("/repo"),
+            &TestInvocation::All,
+            Path::new(".kissconfig"),
+        ));
+    }
+
+    #[test]
+    fn watched_config_override_enters_the_watch_queue() {
+        let event = Event::new(notify::EventKind::Modify(notify::event::ModifyKind::Data(
+            notify::event::DataChange::Any,
+        )))
+        .add_path(PathBuf::from("/repo/custom.toml"));
+        assert!(event_should_enter_watch_queue(
+            &Ok(event),
+            Path::new("/repo"),
+            &TestInvocation::All,
+            Path::new("custom.toml"),
+        ));
+    }
+
     #[cfg(target_os = "linux")]
     #[test]
     fn native_register_on_tempdir() {
@@ -187,8 +326,91 @@ mod tests {
             path: tmp.path().to_path_buf(),
             kind: super::super::roots::WatchRootKind::NonRecursive,
         }];
-        let mut src = NativeWatchEventSource::register(&regs).unwrap();
+        let mut src =
+            NativeWatchEventSource::register(
+                &regs,
+                tmp.path(),
+                &TestInvocation::All,
+                Path::new(".kissconfig"),
+            )
+            .unwrap();
         std::fs::write(tmp.path().join("x.py"), "1\n").unwrap();
         let _ = src.recv_timeout(Duration::from_secs(2));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn native_watch_does_not_queue_hard_excluded_cache_writes() {
+        use super::super::roots::{WatchRegistration, WatchRootKind};
+        let tmp = tempfile::tempdir().unwrap();
+        let junk = tmp.path().join(".kiss").join("junk");
+        std::fs::create_dir_all(&junk).unwrap();
+        std::fs::write(tmp.path().join("app.py"), "x=1\n").unwrap();
+        let regs = vec![WatchRegistration {
+            path: tmp.path().to_path_buf(),
+            kind: WatchRootKind::Recursive,
+        }];
+        let mut src =
+            NativeWatchEventSource::register(
+                &regs,
+                tmp.path(),
+                &TestInvocation::All,
+                Path::new(".kissconfig"),
+            )
+            .unwrap();
+        let _ = src.recv_timeout(Duration::from_millis(150));
+
+        for i in 0..40 {
+            std::fs::write(junk.join(format!("f{i}.txt")), b"x").unwrap();
+        }
+        for i in 0..40 {
+            std::fs::write(tmp.path().join(format!("noise{i}.txt")), b"x").unwrap();
+        }
+        std::fs::write(tmp.path().join("app.py"), "x=2\n").unwrap();
+
+        let mut kiss_hits = 0usize;
+        let mut txt_hits = 0usize;
+        let mut py_hits = 0usize;
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while std::time::Instant::now() < deadline {
+            match src.recv_timeout(Duration::from_millis(200)) {
+                Ok(events) => {
+                    for event in events {
+                        if let NormalizedWatchEvent::Paths(paths) = event {
+                            for path in paths {
+                                if path.components().any(|c| c.as_os_str() == ".kiss") {
+                                    kiss_hits += 1;
+                                }
+                                if path.extension().is_some_and(|ext| ext == "txt")
+                                    && !path.components().any(|c| c.as_os_str() == ".kiss")
+                                {
+                                    txt_hits += 1;
+                                }
+                                if path.extension().is_some_and(|ext| ext == "py") {
+                                    py_hits += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(_) => {
+                    if py_hits > 0 {
+                        break;
+                    }
+                }
+            }
+        }
+        assert_eq!(
+            kiss_hits, 0,
+            "hard-excluded .kiss writes must not enter the watch queue; queued={kiss_hits}"
+        );
+        assert_eq!(
+            txt_hits, 0,
+            "in-tree non-source writes must not enter the watch queue; queued={txt_hits}"
+        );
+        assert!(
+            py_hits > 0,
+            "source file changes must still enter the watch queue"
+        );
     }
 }

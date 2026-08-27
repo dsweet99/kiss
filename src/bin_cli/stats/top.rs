@@ -142,7 +142,7 @@ where
     if with_values.is_empty() {
         return;
     }
-    with_values.sort_by(|a, b| b.0.cmp(&a.0));
+    with_values.sort_by_key(|a| std::cmp::Reverse(a.0));
     for (val, u) in with_values.into_iter().take(n) {
         println!(
             "STAT:{metric_id}:{val}:{file}:{line}:{name}",

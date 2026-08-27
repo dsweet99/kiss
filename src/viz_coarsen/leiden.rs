@@ -128,7 +128,7 @@ pub(super) fn merge_communities_to_target(
             (small_i, merge_into)
         };
 
-        let moved: Vec<usize> = communities[src].drain(..).collect();
+        let moved = std::mem::take(&mut communities[src]);
         communities[dst].extend(moved);
         communities[dst].sort_unstable();
         communities.remove(src);
