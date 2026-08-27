@@ -1,17 +1,25 @@
-use super::format_unreferenced_unit_coverage_message;
+use super::{
+    coverage_unit_name, extra_coverable_lines_to_reach, format_unreferenced_unit_coverage_message,
+};
 use std::collections::HashMap;
 use std::path::PathBuf;
+
+pub struct CoverageFileStat {
+    pub percent: usize,
+    pub covered_lines: usize,
+    pub total_lines: usize,
+}
 
 pub struct CoverageGateFailureCtx<'a> {
     pub threshold: usize,
     pub unreferenced: &'a [(PathBuf, String, usize)],
-    pub file_pcts: &'a HashMap<PathBuf, usize>,
+    pub file_stats: &'a HashMap<PathBuf, CoverageFileStat>,
 }
 
 pub struct CodebaseCoverageGateFailureCtx<'a> {
     pub percent: usize,
     pub threshold: usize,
-    pub diagnostics: &'a [(PathBuf, usize, usize)],
+    pub diagnostics: &'a [(PathBuf, usize, CoverageFileStat)],
 }
 
 #[allow(clippy::implicit_hasher)]
@@ -36,12 +44,18 @@ pub fn codebase_coverage_gate_failure_lines(
         "VIOLATION:test_coverage: codebase coverage {}% below {}% threshold",
         ctx.percent, ctx.threshold
     )];
-    for (file, line, pct) in ctx.diagnostics {
-        let message = format_unreferenced_unit_coverage_message(*pct);
+    for (file, line, stat) in ctx.diagnostics {
+        let message = format_unreferenced_unit_coverage_message(
+            stat.percent,
+            stat.covered_lines,
+            stat.total_lines,
+            ctx.threshold,
+        );
         lines.push(format!(
-            "VIOLATION:test_coverage:{}:{}:<file>: {message}",
+            "VIOLATION:test_coverage:{}:{}:{}: {message}",
             file.display(),
-            line
+            line,
+            coverage_unit_name(file)
         ));
     }
     lines
@@ -51,26 +65,37 @@ pub fn codebase_coverage_gate_failure_lines(
 pub fn coverage_gate_failure_lines(ctx: &CoverageGateFailureCtx<'_>) -> Vec<String> {
     let threshold = ctx.threshold;
     let mut failing: Vec<_> = ctx
-        .file_pcts
+        .file_stats
         .iter()
-        .filter(|(_, pct)| **pct < threshold)
-        .map(|(f, p)| (f.clone(), *p))
+        .filter(|(_, stat)| stat.percent < threshold)
+        .map(|(f, s)| (f.clone(), s))
         .collect();
     failing.sort_by(|a, b| a.0.cmp(&b.0));
     let mut lines = vec![format!(
         "VIOLATION:test_coverage: {n} file(s) below {threshold}% threshold (per-file enforcement)",
         n = failing.len()
     )];
-    for (file, pct) in &failing {
+    for (file, stat) in &failing {
+        let need = extra_coverable_lines_to_reach(stat.covered_lines, stat.total_lines, threshold);
         lines.push(format!(
-            "  {}: {pct}% ({threshold}% required)",
-            file.display()
+            "  {}: {}% ({}/{}; need {need} more to reach {threshold}%)",
+            file.display(),
+            stat.percent,
+            stat.covered_lines,
+            stat.total_lines
         ));
     }
     for (file, name, line) in ctx.unreferenced {
-        let pct = ctx.file_pcts.get(file).copied().unwrap_or(0);
-        if pct < threshold {
-            let message = format_unreferenced_unit_coverage_message(pct);
+        let Some(stat) = ctx.file_stats.get(file) else {
+            continue;
+        };
+        if stat.percent < threshold {
+            let message = format_unreferenced_unit_coverage_message(
+                stat.percent,
+                stat.covered_lines,
+                stat.total_lines,
+                threshold,
+            );
             lines.push(format!(
                 "VIOLATION:test_coverage:{}:{}:{}: {message}",
                 file.display(),
@@ -89,11 +114,19 @@ mod tests {
 
     #[test]
     fn test_print_coverage_gate_failure_emits_hint() {
-        let file_pcts: HashMap<PathBuf, usize> = [(PathBuf::from("foo.py"), 50)].into();
+        let file_stats: HashMap<PathBuf, CoverageFileStat> = [(
+            PathBuf::from("foo.py"),
+            CoverageFileStat {
+                percent: 50,
+                covered_lines: 1,
+                total_lines: 2,
+            },
+        )]
+        .into();
         let lines = coverage_gate_failure_lines(&CoverageGateFailureCtx {
             threshold: 80,
-            unreferenced: &[(PathBuf::from("foo.py"), "bar".to_string(), 10)],
-            file_pcts: &file_pcts,
+            unreferenced: &[(PathBuf::from("foo.py"), "foo".to_string(), 10)],
+            file_stats: &file_stats,
         });
         let stdout = lines.join("\n");
         assert!(
@@ -108,6 +141,10 @@ mod tests {
             stdout.contains("per-file enforcement"),
             "expected per-file enforcement in stdout: {stdout}"
         );
+        assert!(
+            stdout.contains("1/2"),
+            "covered/total must cross the printer: {stdout}"
+        );
         assert_eq!(
             super::super::final_status_message(true),
             VIOLATIONS_FIX_HINT
@@ -120,8 +157,24 @@ mod tests {
             percent: 80,
             threshold: 90,
             diagnostics: &[
-                (PathBuf::from("good.py"), 4, 95),
-                (PathBuf::from("bad.py"), 1, 0),
+                (
+                    PathBuf::from("good.py"),
+                    4,
+                    CoverageFileStat {
+                        percent: 95,
+                        covered_lines: 19,
+                        total_lines: 20,
+                    },
+                ),
+                (
+                    PathBuf::from("bad.py"),
+                    1,
+                    CoverageFileStat {
+                        percent: 0,
+                        covered_lines: 0,
+                        total_lines: 2,
+                    },
+                ),
             ],
         });
         let stdout = lines.join("\n");
@@ -134,7 +187,7 @@ mod tests {
             "codebase failure must not use per-file enforcement wording.\nstdout:\n{stdout}"
         );
         assert!(
-            stdout.contains("VIOLATION:test_coverage:good.py:4:<file>:"),
+            stdout.contains("VIOLATION:test_coverage:good.py:4:good:"),
             "≥-threshold file with uncovered lines must still appear.\nstdout:\n{stdout}"
         );
         assert!(

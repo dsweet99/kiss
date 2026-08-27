@@ -72,8 +72,12 @@ pub fn generate_config_toml_by_language(p: &GenerateConfigParams<'_>) -> String 
         p.gate.test_coverage_scope
     );
     let _ = writeln!(out, "max_num_tests = {}", p.gate.max_num_tests);
-    let _ = writeln!(out, "num_jobs = 4");
-    let _ = writeln!(out, "watch_settle_seconds = 1.0");
+    let _ = writeln!(out, "num_jobs = {}", crate::defaults::gate::NUM_JOBS);
+    let _ = writeln!(
+        out,
+        "watch_settle_seconds = {:.1}",
+        crate::defaults::gate::WATCH_SETTLE_SECONDS
+    );
     let _ = writeln!(out, "pytest_plugins = []");
     let _ = writeln!(out, "ignore = []");
     let _ = write!(

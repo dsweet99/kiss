@@ -13,6 +13,7 @@ mod graph_build;
 mod graph_python;
 mod orphan;
 mod orphan_unit;
+mod unused;
 
 pub use context::{
     ContextDependencyGraph, EdgeOrigin, RoleDependencyGraphs, module_name_for_path,
@@ -32,6 +33,7 @@ pub(crate) use graph_python::{
 };
 pub use orphan::{collect_orphan_entry_paths, orphan_violations};
 pub use orphan_unit::{OrphanCoverage, OrphanUnitInput, orphan_unit_violations};
+pub(crate) use unused::GraphIsolation;
 pub(crate) use graph_build::resolve_import;
 
 #[cfg(test)]

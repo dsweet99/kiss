@@ -26,7 +26,10 @@ impl Drop for CwdGuard {
 
 #[test]
 fn test_section_config_defaults_num_jobs_to_four() {
-    assert_eq!(TestSectionConfig::default().num_jobs, 4);
+    assert_eq!(
+        TestSectionConfig::default().num_jobs,
+        crate::defaults::gate::NUM_JOBS
+    );
 }
 
 #[test]

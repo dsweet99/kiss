@@ -156,11 +156,7 @@ pub(crate) fn cached_rust_check_aggregate_selectors(
     ) else {
         return Ok(None);
     };
-    Ok(cached_summary_from_check_aggregate_population(
-        repo_root,
-        selectors,
-        &population,
-    ))
+    cached_summary_from_check_aggregate_population(repo_root, selectors, &population)
 }
 
 #[allow(clippy::too_many_arguments)]

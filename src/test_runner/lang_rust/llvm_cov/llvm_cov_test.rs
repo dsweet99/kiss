@@ -339,7 +339,8 @@ fn check_aggregate_population_can_return_cached_summary() {
 
     let summary =
         cached_summary_from_check_aggregate_population(tmp.path(), &selectors, &population)
-            .unwrap();
+            .unwrap()
+            .expect("check-aggregate population must reconstruct a cached summary");
 
     assert_eq!(summary.total, 2);
     assert_eq!(summary.cache_hits, 2);
@@ -353,6 +354,7 @@ fn check_aggregate_population_can_return_cached_summary() {
     entry_backed.entries_fingerprint = "entry-fingerprint".to_string();
     assert!(
         cached_summary_from_check_aggregate_population(tmp.path(), &selectors, &entry_backed)
+            .unwrap()
             .is_none()
     );
 }

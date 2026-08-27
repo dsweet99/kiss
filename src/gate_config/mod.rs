@@ -4,6 +4,7 @@ pub use unit_test_seconds::{
     MatchedUnitTestSecondsRule, catch_all_limit, default_max_unit_test_seconds, exceeds_limit,
     format_nested_toml_table, limit_for_selector, matched_rule_for_selector, validate_rules,
 };
+pub(crate) use unit_test_seconds::parse_max_unit_test_seconds;
 
 use crate::config::{ConfigError, check_unknown_keys};
 use crate::defaults;
@@ -25,7 +26,7 @@ impl TestCoverageScope {
         }
     }
 
-    fn parse(raw: &str) -> Result<Self, String> {
+    pub(crate) fn parse(raw: &str) -> Result<Self, String> {
         match raw {
             "by_file" => Ok(Self::ByFile),
             "codebase" => Ok(Self::Codebase),
@@ -156,7 +157,7 @@ impl GateConfig {
             merge_global_lenient(self, global);
         }
         if let Some(test) = value.get("test").and_then(|v| v.as_table()) {
-            merge_test_gates_lenient(self, test);
+            crate::test_toml::merge_test_table_lenient(test, Some(self), None);
         }
     }
 
@@ -177,7 +178,7 @@ impl GateConfig {
             merge_global_strict(self, global)?;
         }
         if let Some(test) = value.get("test").and_then(|v| v.as_table()) {
-            merge_test_gates_strict(self, test)?;
+            crate::test_toml::merge_test_table_strict(test, Some(self), None)?;
         }
         Ok(())
     }

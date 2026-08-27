@@ -214,12 +214,6 @@ fn python_nodeids_from_stored_universe(
     Some(out)
 }
 
-pub(crate) fn kiss_test_report_id(map: &BTreeMap<String, String>, logical: &str) -> String {
-    map.get(logical)
-        .cloned()
-        .unwrap_or_else(|| logical.to_string())
-}
-
 pub(crate) fn require_kiss_test_report_id(
     map: &BTreeMap<String, String>,
     logical: &str,

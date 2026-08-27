@@ -34,11 +34,13 @@ fn graph_witness(unit: &UnitRef, ctx: &ContextDependencyGraph, binds: &[NamedBin
 }
 
 fn module_graph_witness(ctx: &ContextDependencyGraph, module: &str) -> bool {
-    let prod = ctx.production_view();
-    if prod.module_metrics(module).fan_in > 0 {
-        return true;
-    }
-    !ctx.test_importers_of(module).is_empty()
+    let fan_in = ctx.production_view().module_metrics(module).fan_in;
+    let has_test_importer = !ctx.test_importers_of(module).is_empty();
+    !crate::graph::GraphIsolation::UnreferencedModule.module_is_isolated(
+        fan_in,
+        0,
+        has_test_importer,
+    )
 }
 
 pub(super) fn coverage_witnesses(units: &[UnitRef], coverage: &OrphanCoverage) -> Vec<bool> {

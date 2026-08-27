@@ -1,5 +1,5 @@
 use kiss::cli_output::{
-    CoverageGateFailureCtx, count_py_unreferenced, count_rs_unreferenced,
+    CoverageFileStat, CoverageGateFailureCtx, count_py_unreferenced, count_rs_unreferenced,
     print_coverage_gate_failure, print_duplicates, print_final_status, print_no_files_message,
     print_violations,
 };
@@ -71,12 +71,19 @@ fn test_print_functions_no_panic() {
 fn test_print_helpers_no_panic() {
     let tmp = TempDir::new().unwrap();
     print_no_files_message(None, tmp.path());
-    let mut file_pcts = std::collections::HashMap::new();
-    file_pcts.insert(std::path::PathBuf::from("sample.py"), 40);
+    let mut file_stats = std::collections::HashMap::new();
+    file_stats.insert(
+        std::path::PathBuf::from("sample.py"),
+        CoverageFileStat {
+            percent: 40,
+            covered_lines: 2,
+            total_lines: 5,
+        },
+    );
     print_coverage_gate_failure(&CoverageGateFailureCtx {
         threshold: 50,
         unreferenced: &[],
-        file_pcts: &file_pcts,
+        file_stats: &file_stats,
     });
 }
 

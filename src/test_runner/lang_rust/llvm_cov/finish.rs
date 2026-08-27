@@ -14,22 +14,28 @@ pub(crate) fn cached_summary_from_check_aggregate_population(
     repo_root: &Path,
     selectors: &[String],
     population: &kiss::rust_llvm_cov_runner::RustPopulationState,
-) -> Option<SelectorExecutionSummary> {
+) -> Result<Option<SelectorExecutionSummary>, String> {
     if !population
         .entries_fingerprint
         .starts_with("check-aggregate:")
     {
-        return None;
+        return Ok(None);
     }
     let cache_root = repo_root.join(".kiss").join("rust_llvm_cov_cache");
-    let pairs = kiss::rust_llvm_cov_runner::try_load_population_durations(&cache_root, population)?;
+    let Some(pairs) =
+        kiss::rust_llvm_cov_runner::try_load_population_durations(&cache_root, population)
+    else {
+        return Ok(None);
+    };
     let duration_by_selector: std::collections::BTreeMap<_, _> = pairs.into_iter().collect();
-    let report_ids = rust_logical_to_kiss_test_ids(repo_root, &[]).ok()?;
+    let report_ids = rust_logical_to_kiss_test_ids(repo_root, &[])?;
     let mut summary = SelectorExecutionSummary::default();
     for selector in selectors {
         let report =
-            crate::test_runner::runners::require_kiss_test_report_id(&report_ids, selector).ok()?;
-        let duration = duration_by_selector.get(selector).copied()?;
+            crate::test_runner::runners::require_kiss_test_report_id(&report_ids, selector)?;
+        let Some(duration) = duration_by_selector.get(selector).copied() else {
+            return Ok(None);
+        };
         println!("PASS (cached): {report}");
         summary.record(SelectorExecutionRecord {
             selector: report,
@@ -40,7 +46,7 @@ pub(crate) fn cached_summary_from_check_aggregate_population(
             duration,
         });
     }
-    Some(summary)
+    Ok(Some(summary))
 }
 
 fn print_rust_llvm_cov_outcome(

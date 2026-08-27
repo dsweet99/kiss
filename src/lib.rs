@@ -34,6 +34,7 @@ pub mod stats_detailed;
 pub mod symbol_mv;
 pub mod test_refs;
 pub mod test_section_config;
+pub(crate) mod test_toml;
 pub mod units;
 
 pub mod code_roles;

@@ -12,8 +12,9 @@ use crate::test_runner::lang_iface::{
     reclassify_statuses_with_gate, summary_from_accepted_witness,
 };
 use crate::test_runner::runners::{
-    SelectorExecutionSummary, kiss_test_report_id, rust_logical_to_kiss_test_ids,
+    SelectorExecutionSummary, rust_logical_to_kiss_test_ids,
 };
+use crate::test_runner::selector_ids::report_string_for_logical_string;
 use crate::test_runner::rust_coverage_index::{
     create_new_file, rust_coverage_cache_root, unique_suffix,
 };
@@ -301,7 +302,7 @@ pub(crate) fn try_warm_rust_cached_summary(
     Some(summary_from_accepted_witness(
         &planned,
         &witness,
-        |selector| kiss_test_report_id(&report_ids, selector),
+        |selector| report_string_for_logical_string(&report_ids, selector),
     ))
 }
 

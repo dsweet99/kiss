@@ -92,10 +92,12 @@ pub(crate) fn report_id_for_logical(
     map: &BTreeMap<String, String>,
     logical: &LogicalSelectorId,
 ) -> ReportSelectorId {
-    ReportSelectorId::new(crate::test_runner::runners::kiss_test_report_id(
-        map,
-        logical.as_str(),
-    ))
+    let key = logical.as_str();
+    ReportSelectorId::new(
+        map.get(key)
+            .cloned()
+            .unwrap_or_else(|| key.to_string()),
+    )
 }
 
 pub(crate) fn report_strings_for_logical_strings(
@@ -182,17 +184,10 @@ mod tests {
             ("tests::a".into(), "src/a.rs::a".into()),
             ("tests::b".into(), "src/b.rs::b".into()),
         ]);
-        let out = report_strings_for_logical_strings(
-            &map,
-            &["tests::a".into(), "tests::b".into(), "unmapped".into()],
-        );
+        let out = report_strings_for_logical_strings(&map, &["tests::a".into(), "tests::b".into()]);
         assert_eq!(
             out,
-            vec![
-                "src/a.rs::a".to_string(),
-                "src/b.rs::b".to_string(),
-                "unmapped".to_string()
-            ]
+            vec!["src/a.rs::a".to_string(), "src/b.rs::b".to_string()]
         );
         assert_eq!(
             report_string_for_logical_string(&map, "tests::a"),

@@ -8,19 +8,59 @@ use std::path::{Path, PathBuf};
 
 mod cov_gate;
 pub use cov_gate::{
-    CodebaseCoverageGateFailureCtx, CoverageGateFailureCtx, codebase_coverage_gate_failure_lines,
-    coverage_gate_failure_lines, print_codebase_coverage_gate_failure, print_coverage_gate_failure,
+    CodebaseCoverageGateFailureCtx, CoverageFileStat, CoverageGateFailureCtx,
+    codebase_coverage_gate_failure_lines, coverage_gate_failure_lines,
+    print_codebase_coverage_gate_failure, print_coverage_gate_failure,
 };
 
 pub const VIOLATIONS_FIX_HINT: &str =
     "Run 'kiss rules' for more information about fixing violations.";
 
-pub fn format_unreferenced_unit_coverage_message(file_pct: usize) -> String {
-    if file_pct >= 100 {
-        "This code unit has no covered lines. Add test coverage.".to_string()
-    } else {
-        format!("{file_pct}% covered. Add test coverage for this code unit.")
+pub fn extra_coverable_lines_to_reach(covered: usize, total: usize, threshold: usize) -> usize {
+    if total == 0 {
+        return 0;
     }
+    let mut extra = 0;
+    loop {
+        #[allow(
+            clippy::cast_precision_loss,
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss
+        )]
+        let pct = ((covered + extra) as f64 / total as f64 * 100.0).round() as usize;
+        if pct >= threshold || covered + extra >= total {
+            return extra;
+        }
+        extra += 1;
+    }
+}
+
+pub fn format_unreferenced_unit_coverage_message(
+    file_pct: usize,
+    covered: usize,
+    total: usize,
+    threshold: usize,
+) -> String {
+    if total == 0 {
+        return "This code unit has no covered lines. Add test coverage.".to_string();
+    }
+    let need = extra_coverable_lines_to_reach(covered, total, threshold);
+    if need == 0 {
+        format!("{file_pct}% covered ({covered}/{total}). Add test coverage for this code unit.")
+    } else if need == 1 {
+        format!("{file_pct}% covered ({covered}/{total}). Need 1 more line to reach {threshold}%.")
+    } else {
+        format!(
+            "{file_pct}% covered ({covered}/{total}). Need {need} more lines to reach {threshold}%."
+        )
+    }
+}
+
+pub fn coverage_unit_name(file: &Path) -> String {
+    file.file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("<file>")
+        .to_string()
 }
 
 pub fn format_candidate_list(candidates: &[String], max: usize) -> String {
@@ -214,13 +254,20 @@ mod tests {
     #[test]
     fn test_format_unreferenced_unit_coverage_message_rounding_cliff() {
         assert_eq!(
-            format_unreferenced_unit_coverage_message(100),
+            format_unreferenced_unit_coverage_message(100, 0, 0, 75),
             "This code unit has no covered lines. Add test coverage."
         );
         assert_eq!(
-            format_unreferenced_unit_coverage_message(50),
-            "50% covered. Add test coverage for this code unit."
+            format_unreferenced_unit_coverage_message(50, 1, 2, 75),
+            "50% covered (1/2). Need 1 more line to reach 75%."
         );
+    }
+
+    #[test]
+    fn extra_coverable_lines_matches_rounding_gap() {
+        assert_eq!(extra_coverable_lines_to_reach(4, 6, 75), 1);
+        assert_eq!(extra_coverable_lines_to_reach(12, 18, 75), 2);
+        assert_eq!(coverage_unit_name(Path::new("src/lib.py")), "lib");
     }
 
     #[test]
@@ -283,12 +330,12 @@ mod tests {
         fn witness(
             threshold: usize,
             unreferenced: &'a [(PathBuf, String, usize)],
-            file_pcts: &'a HashMap<PathBuf, usize>,
+            file_stats: &'a HashMap<PathBuf, CoverageFileStat>,
         ) -> Self {
             Self {
                 threshold,
                 unreferenced,
-                file_pcts,
+                file_stats,
             }
         }
     }
@@ -297,9 +344,9 @@ mod tests {
     fn witness_coverage_gate_helpers() {
         let defs = vec![(PathBuf::from("src/a.py"), "f".into(), 1)];
         let unref: Vec<(PathBuf, String, usize)> = vec![];
-        let file_pcts = HashMap::new();
+        let file_stats = HashMap::new();
         assert_eq!(min_per_file_coverage(&defs, &unref), 100);
         assert_eq!(min_gate_eligible_per_file_coverage(&defs, &unref), 100);
-        let _ = CoverageGateFailureCtx::witness(90, &unref, &file_pcts);
+        let _ = CoverageGateFailureCtx::witness(90, &unref, &file_stats);
     }
 }

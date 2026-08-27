@@ -1,5 +1,6 @@
 use crate::analyze::focus::{FocusFilter, is_focus_file};
 use crate::analyze::line_coverage::LineCoverageRecord;
+use kiss::cli_output::{coverage_unit_name, format_unreferenced_unit_coverage_message};
 use kiss::Violation;
 
 pub(crate) fn collect_line_coverage_viols(
@@ -16,13 +17,15 @@ pub(crate) fn collect_line_coverage_viols(
         .map(|record| Violation {
             file: record.file.clone(),
             line: record.first_uncovered_line.unwrap_or(1),
-            unit_name: "<file>".to_string(),
+            unit_name: coverage_unit_name(&record.file),
             metric: "test_coverage".to_string(),
             value: record.percent,
             threshold: 100,
-            message: format!(
-                "{}% covered. Add test coverage for this file.",
-                record.percent
+            message: format_unreferenced_unit_coverage_message(
+                record.percent,
+                record.covered_lines,
+                record.total_lines,
+                100,
             ),
             suggestion: String::new(),
         })

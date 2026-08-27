@@ -245,7 +245,8 @@ pub fn all_module_metrics(graph: &DependencyGraph) -> HashMap<String, ModuleGrap
 }
 
 pub(crate) fn is_orphan(fan_in: usize, fan_out: usize, module_name: &str) -> bool {
-    fan_in == 0 && fan_out == 0 && !is_entry_point(module_name)
+    crate::graph::GraphIsolation::IsolatedModule.module_is_isolated(fan_in, fan_out, false)
+        && !is_entry_point(module_name)
 }
 
 pub(crate) fn is_crate_root_aggregator(graph: &DependencyGraph, module_name: &str) -> bool {
