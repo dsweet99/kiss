@@ -2,7 +2,7 @@ use crate::test_runner::execution_witness::{
     rust_identity_digest_from_batch, try_load_rust_execution_witness,
 };
 use crate::test_runner::lang_iface::{
-    AcceptDecision, AcceptMode, accept_witness, reclassify_statuses_with_gate,
+    accept_witness, reclassify_statuses_with_gate, AcceptDecision, AcceptMode,
 };
 use kiss::GateConfig;
 
@@ -71,8 +71,8 @@ fn rust_witness_accepts_full_universe(
 mod tests {
     use super::{rust_population_current_for_all_selectors, rust_witness_accepts_full_universe};
     use crate::test_runner::execution_witness::{
-        PublishRustWitness, WitnessScope, WitnessStatus, publish_rust_execution_witness,
-        rust_identity_digest_from_batch,
+        publish_rust_execution_witness, rust_identity_digest_from_batch, PublishRustWitness,
+        WitnessScope, WitnessStatus,
     };
     use kiss::GateConfig;
     use std::collections::{BTreeMap, BTreeSet};

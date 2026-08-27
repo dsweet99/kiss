@@ -1,8 +1,9 @@
 use kiss::Language;
 
 use super::{
-    PlannedSelectors, runners, rust_llvm_cov,
-    targets::{ExpandedTargetPlan, expand_target_operands},
+    runners, rust_llvm_cov,
+    targets::{expand_target_operands, ExpandedTargetPlan},
+    PlannedSelectors,
 };
 
 #[path = "plan_rust.rs"]
@@ -15,7 +16,7 @@ use plan_explicit::plan_explicit_target_selectors;
 
 #[path = "plan_vcs.rs"]
 mod plan_vcs;
-pub(crate) use plan_vcs::{PlanSelectorsRequest, plan_selectors};
+pub(crate) use plan_vcs::{plan_selectors, PlanSelectorsRequest};
 
 pub(crate) enum TargetPlanKind<'a> {
     All,
@@ -132,7 +133,15 @@ fn timed_rust_selectors(
     ignore: &[String],
 ) -> (Result<Vec<String>, String>, std::time::Duration) {
     let started = std::time::Instant::now();
+    if let Some(cached) =
+        super::workspace_selector_cache::load_cached_rust_workspace_selectors(repo_root, ignore)
+    {
+        return (Ok(cached), started.elapsed());
+    }
     let out = runners::enumerate_workspace_rust_selectors(repo_root, ignore);
+    if let Ok(ids) = out.as_ref() {
+        super::workspace_selector_cache::store_rust_workspace_selectors(repo_root, ignore, ids);
+    }
     (out, started.elapsed())
 }
 

@@ -3,12 +3,12 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use crate::test_runner::coverage_decision::{
-    ChangedDiff, CoverageFreshness, LanguagePlanner, PopulationPlan, SelectionBasis,
-    SelectionDecision, TestSelector, full_population_plan,
+    full_population_plan, ChangedDiff, CoverageFreshness, LanguagePlanner, PopulationPlan,
+    SelectionBasis, SelectionDecision, TestSelector,
 };
 use crate::test_runner::rust_coverage_index::{
-    RUST_COVERAGE_ENV_KEYS, ResolvedRustPopulation, resolve_rust_population_state,
-    select_rust_source_selectors_for_basis,
+    resolve_rust_population_state, select_rust_source_selectors_for_basis, ResolvedRustPopulation,
+    RUST_COVERAGE_ENV_KEYS,
 };
 
 use crate::test_runner::runners::enumerate_workspace_rust_selectors;
@@ -118,8 +118,8 @@ impl LanguagePlanner for RustModule {
     }
 
     fn discover_universe(&self) -> Result<Vec<TestSelector>, String> {
-        if let Some((_py, cached_rs, _fp)) =
-            crate::test_runner::workspace_selector_cache::load_cached_workspace_selectors(
+        if let Some(cached_rs) =
+            crate::test_runner::workspace_selector_cache::load_cached_rust_workspace_selectors(
                 &self.repo_root,
                 &self.ignore,
             )
@@ -129,12 +129,16 @@ impl LanguagePlanner for RustModule {
                 .map(|id| TestSelector::new(kiss::Language::Rust, id))
                 .collect());
         }
-        Ok(
-            enumerate_workspace_rust_selectors(&self.repo_root, &self.ignore)?
-                .into_iter()
-                .map(|id| TestSelector::new(kiss::Language::Rust, id))
-                .collect(),
-        )
+        let ids = enumerate_workspace_rust_selectors(&self.repo_root, &self.ignore)?;
+        crate::test_runner::workspace_selector_cache::store_rust_workspace_selectors(
+            &self.repo_root,
+            &self.ignore,
+            &ids,
+        );
+        Ok(ids
+            .into_iter()
+            .map(|id| TestSelector::new(kiss::Language::Rust, id))
+            .collect())
     }
 
     fn changed_tests(&self, _diff: &ChangedDiff) -> Vec<TestSelector> {

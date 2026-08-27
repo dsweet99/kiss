@@ -1,4 +1,7 @@
-use super::{load_cached_workspace_selectors, store_workspace_selectors};
+use super::{
+    load_cached_rust_workspace_selectors, load_cached_workspace_selectors,
+    store_workspace_selectors,
+};
 use std::fs;
 use tempfile::tempdir;
 
@@ -43,7 +46,20 @@ fn workspace_selector_cache_round_trips_then_misses_on_touch() {
     assert_eq!(hit.1, vec!["t".to_string()]);
 
     fs::write(&py, "def test_a():\n    assert True\n# touch\n").unwrap();
+    super::clear_rust_selector_memo_for_tests();
     assert!(load_cached_workspace_selectors(root, &[]).is_none());
+    assert_eq!(
+        load_cached_rust_workspace_selectors(root, &[]).as_deref(),
+        Some(["t".to_string()].as_slice()),
+        "python mtime must not drop rust selectors"
+    );
+
+    fs::write(&rs, "#[test]\nfn t() {}\n# touch\n").unwrap();
+    super::clear_rust_selector_memo_for_tests();
+    assert!(
+        load_cached_rust_workspace_selectors(root, &[]).is_none(),
+        "rust mtime must miss rust selectors"
+    );
 }
 
 #[test]

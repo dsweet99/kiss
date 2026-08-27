@@ -404,3 +404,6 @@ fn changed_lines_for_sources(
 #[cfg(test)]
 #[path = "decision_test.rs"]
 mod tests;
+#[cfg(test)]
+#[path = "covering_select_rss_test.rs"]
+mod covering_select_rss_test;

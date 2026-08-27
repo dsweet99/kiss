@@ -5,7 +5,7 @@ use kiss::Language;
 
 use super::super::runners;
 use super::super::targets::resolve_target_operands;
-use super::{PlannedSelectors, planned_from_selector_plan};
+use super::{planned_from_selector_plan, PlannedSelectors};
 
 pub(super) fn plan_explicit_target_selectors(
     repo_root: &std::path::Path,

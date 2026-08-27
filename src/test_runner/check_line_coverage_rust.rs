@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use super::{BackendCoverage, RuntimeCoverageLoadError, coverage_error};
+use super::{coverage_error, BackendCoverage, RuntimeCoverageLoadError};
 use crate::test_runner::execution_witness::try_load_rust_execution_witness;
 use crate::test_runner::rust_coverage_index::{
     current_rust_coverage_batch_identity,
@@ -64,15 +64,19 @@ fn rust_selectors_for_coverage_load(
     repo_root: &Path,
     ignore: &[String],
 ) -> Result<Vec<String>, RuntimeCoverageLoadError> {
-    if let Some((_, rust_selectors, _)) =
-        crate::test_runner::workspace_selector_cache::load_cached_workspace_selectors(
+    if let Some(rust_selectors) =
+        crate::test_runner::workspace_selector_cache::load_cached_rust_workspace_selectors(
             repo_root, ignore,
         )
     {
         return Ok(rust_selectors);
     }
-    crate::test_runner::runners::enumerate_workspace_rust_selectors(repo_root, ignore)
-        .map_err(|err| coverage_error("Rust", &format!("selector discovery failed ({err})")))
+    let ids = crate::test_runner::runners::enumerate_workspace_rust_selectors(repo_root, ignore)
+        .map_err(|err| coverage_error("Rust", &format!("selector discovery failed ({err})")))?;
+    crate::test_runner::workspace_selector_cache::store_rust_workspace_selectors(
+        repo_root, ignore, &ids,
+    );
+    Ok(ids)
 }
 
 pub(super) fn try_load_rust_coverage_from_witness(
@@ -106,7 +110,7 @@ fn rust_witness_accepts_planned(
 ) -> bool {
     use crate::test_runner::execution_witness::rust_identity_digest_from_batch;
     use crate::test_runner::lang_iface::{
-        AcceptDecision, AcceptMode, accept_witness, reclassify_statuses_with_gate,
+        accept_witness, reclassify_statuses_with_gate, AcceptDecision, AcceptMode,
     };
     let current = rust_identity_digest_from_batch(identity);
     if witness.identity_digest != current {
@@ -225,31 +229,27 @@ mod tests {
             ordinary_source_digests: Default::default(),
         };
         let selectors = vec!["a".into()];
-        assert!(
-            try_load_rust_coverage_from_witness(
-                tmp.path(),
-                &identity,
-                &selectors,
-                &kiss::GateConfig::default()
-            )
-            .is_none()
-        );
-        assert!(
-            try_load_rust_coverage_from_witness_prior(
-                tmp.path(),
-                &tmp.path().join(".kiss/rust_llvm_cov_cache"),
-                &identity,
-                &selectors,
-                &kiss::GateConfig::default(),
-            )
-            .is_none()
-        );
+        assert!(try_load_rust_coverage_from_witness(
+            tmp.path(),
+            &identity,
+            &selectors,
+            &kiss::GateConfig::default()
+        )
+        .is_none());
+        assert!(try_load_rust_coverage_from_witness_prior(
+            tmp.path(),
+            &tmp.path().join(".kiss/rust_llvm_cov_cache"),
+            &identity,
+            &selectors,
+            &kiss::GateConfig::default(),
+        )
+        .is_none());
     }
 
     #[test]
     fn witness_coverage_uses_embedded_covered_lines_when_accepted() {
         use crate::test_runner::execution_witness::{
-            PublishRustWitness, WitnessScope, WitnessStatus, publish_rust_execution_witness,
+            publish_rust_execution_witness, PublishRustWitness, WitnessScope, WitnessStatus,
         };
         let tmp = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(tmp.path().join("src")).unwrap();
@@ -299,14 +299,12 @@ mod tests {
             complete: true,
         })
         .unwrap();
-        assert!(
-            try_load_rust_coverage_from_witness(
-                tmp.path(),
-                &identity,
-                &selectors,
-                &kiss::GateConfig::default()
-            )
-            .is_none()
-        );
+        assert!(try_load_rust_coverage_from_witness(
+            tmp.path(),
+            &identity,
+            &selectors,
+            &kiss::GateConfig::default()
+        )
+        .is_none());
     }
 }
