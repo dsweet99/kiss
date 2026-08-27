@@ -20,7 +20,7 @@ fn default_gate_config_scope_is_codebase() {
         TestCoverageScope::Codebase
     );
     assert!(!GateConfig::default().comment_removal_enabled);
-    assert!(!GateConfig::default().orphan_unit_enabled);
+    assert!(!GateConfig::default().orphan_detection);
     assert!(GateConfig::default().docs_allowed.is_empty());
     assert!(GateConfig::default().orphan_allowed.is_empty());
 }
@@ -171,7 +171,6 @@ fn try_load_from_content_accepts_all_gate_fields() {
 min_similarity = 0.75
 duplication_enabled = false
 orphan_module_enabled = false
-orphan_unit_enabled = false
 comment_removal_enabled = true
 docs_allowed = [\"docs\", \"src/api\"]
 orphan_allowed = [\"src/plugins\"]
@@ -179,6 +178,7 @@ orphan_allowed = [\"src/plugins\"]
 [test]
 test_coverage_threshold = 91
 test_coverage_scope = \"codebase\"
+orphan_detection = true
 max_unit_test_seconds = 1.5
 max_num_tests = 12
 ",
@@ -192,7 +192,7 @@ max_num_tests = 12
     assert!((gate.min_similarity - 0.75).abs() < f64::EPSILON);
     assert!(!gate.duplication_enabled);
     assert!(!gate.orphan_module_enabled);
-    assert!(!gate.orphan_unit_enabled);
+    assert!(gate.orphan_detection);
     assert!(gate.comment_removal_enabled);
     assert_eq!(
         gate.docs_allowed,
@@ -211,6 +211,14 @@ max_num_tests = 12
         "err={err:?}"
     );
     assert_eq!(GateConfig::default().max_num_tests, 999_999);
+    let err =
+        GateConfig::try_load_from_content("[global]\norphan_unit_enabled = true").unwrap_err();
+    assert!(
+        matches!(err, ConfigError::UnknownKey { .. }),
+        "orphan_unit_enabled is not a [global] key: {err:?}"
+    );
+    let off = GateConfig::try_load_from_content("[test]\norphan_detection = false").unwrap();
+    assert!(!off.orphan_detection);
     let err = GateConfig::try_load_from_content("[global]\ndocs_allowed = \"docs\"").unwrap_err();
     assert!(
         matches!(

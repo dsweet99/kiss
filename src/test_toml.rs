@@ -12,6 +12,7 @@ const TEST_SECTION_KEYS: &[&str] = &[
     "ignore",
     "test_coverage_threshold",
     "test_coverage_scope",
+    "orphan_detection",
     "max_unit_test_seconds",
     "max_num_tests",
 ];
@@ -59,6 +60,7 @@ fn merge_test_gates_lenient(config: &mut GateConfig, test: &toml::Table) {
     if let Err(msg) = merge_scope_lenient(test, &mut config.test_coverage_scope) {
         eprintln!("Error: {msg}");
     }
+    merge_orphan_detection_lenient(config, test);
     if let Some(value) = test.get("max_unit_test_seconds") {
         match parse_max_unit_test_seconds(value) {
             Ok(rules) => config.max_unit_test_seconds = rules,
@@ -72,10 +74,7 @@ fn merge_test_gates_lenient(config: &mut GateConfig, test: &toml::Table) {
     }
 }
 
-fn merge_test_gates_strict(
-    config: &mut GateConfig,
-    test: &toml::Table,
-) -> Result<(), ConfigError> {
+fn merge_test_gates_strict(config: &mut GateConfig, test: &toml::Table) -> Result<(), ConfigError> {
     if let Some(t) = get_usize(test, "test_coverage_threshold") {
         if t > 100 {
             return Err(ConfigError::InvalidValue {
@@ -88,6 +87,9 @@ fn merge_test_gates_strict(
     if let Some(scope) = try_get_scope(test)? {
         config.test_coverage_scope = scope;
     }
+    if let Some(enabled) = try_get_orphan_detection(test)? {
+        config.orphan_detection = enabled;
+    }
     if let Some(value) = test.get("max_unit_test_seconds") {
         config.max_unit_test_seconds = parse_max_unit_test_seconds(value)?;
     }
@@ -95,6 +97,29 @@ fn merge_test_gates_strict(
         config.max_num_tests = n;
     }
     Ok(())
+}
+
+fn merge_orphan_detection_lenient(config: &mut GateConfig, test: &toml::Table) {
+    if let Some(value) = test.get("orphan_detection") {
+        if let Some(b) = value.as_bool() {
+            config.orphan_detection = b;
+        } else {
+            eprintln!("Warning: Config key 'orphan_detection' expected bool");
+        }
+    }
+}
+
+fn try_get_orphan_detection(table: &toml::Table) -> Result<Option<bool>, ConfigError> {
+    let Some(value) = table.get("orphan_detection") else {
+        return Ok(None);
+    };
+    value
+        .as_bool()
+        .map(Some)
+        .ok_or_else(|| ConfigError::InvalidValue {
+            key: "orphan_detection".into(),
+            message: "expected bool".into(),
+        })
 }
 
 fn try_get_max_num_tests(table: &toml::Table) -> Result<Option<usize>, ConfigError> {
@@ -115,10 +140,7 @@ fn try_get_max_num_tests(table: &toml::Table) -> Result<Option<usize>, ConfigErr
         })
 }
 
-fn merge_scope_lenient(
-    table: &toml::Table,
-    current: &mut TestCoverageScope,
-) -> Result<(), String> {
+fn merge_scope_lenient(table: &toml::Table, current: &mut TestCoverageScope) -> Result<(), String> {
     let Some(value) = table.get("test_coverage_scope") else {
         return Ok(());
     };
@@ -259,6 +281,7 @@ mod tests {
     #[test]
     fn test_section_keys_cover_gate_and_runtime() {
         assert!(TEST_SECTION_KEYS.contains(&"test_coverage_threshold"));
+        assert!(TEST_SECTION_KEYS.contains(&"orphan_detection"));
         assert!(TEST_SECTION_KEYS.contains(&"num_jobs"));
         assert!(TEST_SECTION_KEYS.contains(&"max_unit_test_seconds"));
     }

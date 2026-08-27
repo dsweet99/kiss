@@ -2,7 +2,6 @@
 
 [global]
 orphan_module_enabled = true
-orphan_unit_enabled = false
 duplication_enabled = true
 comment_removal_enabled = true
 min_similarity = 0.9
@@ -16,6 +15,7 @@ docs_allowed = [
 ]
 
 [test]
+orphan_detection = false
 test_coverage_scope = "by_file"
 test_coverage_threshold = 75
 max_num_tests = 3050

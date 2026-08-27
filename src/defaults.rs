@@ -73,7 +73,6 @@ pub fn default_config_toml() -> String {
 min_similarity = {min_sim}
 duplication_enabled = true
 orphan_module_enabled = true
-orphan_unit_enabled = false
 comment_removal_enabled = false
 docs_allowed = []
 orphan_allowed = []
@@ -81,6 +80,7 @@ orphan_allowed = []
 [test]
 test_coverage_threshold = {gate_coverage}
 test_coverage_scope = {gate_scope}
+orphan_detection = false
 max_num_tests = {max_num_tests}
 num_jobs = {num_jobs}
 watch_settle_seconds = {watch_settle:.1}
@@ -216,8 +216,8 @@ mod tests {
             "init default must emit [global]:\n{toml}"
         );
         assert!(
-            toml.contains("orphan_unit_enabled = false"),
-            "init default must emit orphan_unit_enabled=false:\n{toml}"
+            toml.contains("orphan_detection = false"),
+            "init default must emit orphan_detection=false:\n{toml}"
         );
         assert!(
             toml.contains("comment_removal_enabled = false"),

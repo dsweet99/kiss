@@ -15,9 +15,6 @@ pub(super) fn merge_global_lenient(config: &mut GateConfig, global: &toml::Table
     if let Some(v) = get_bool(global, "orphan_module_enabled") {
         config.orphan_module_enabled = v;
     }
-    if let Some(v) = get_bool(global, "orphan_unit_enabled") {
-        config.orphan_unit_enabled = v;
-    }
     if let Some(v) = get_bool(global, "comment_removal_enabled") {
         config.comment_removal_enabled = v;
     }
@@ -48,11 +45,6 @@ pub(super) fn merge_global_strict(
         global,
         "orphan_module_enabled",
         config.orphan_module_enabled,
-    )?;
-    config.orphan_unit_enabled = try_get_bool(
-        global,
-        "orphan_unit_enabled",
-        config.orphan_unit_enabled,
     )?;
     config.comment_removal_enabled = try_get_bool(
         global,

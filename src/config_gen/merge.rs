@@ -93,6 +93,7 @@ pub(super) fn merge_lang_sections(
 const TEST_GATE_MERGE_KEYS: &[&str] = &[
     "test_coverage_threshold",
     "test_coverage_scope",
+    "orphan_detection",
     "max_unit_test_seconds",
     "max_num_tests",
 ];

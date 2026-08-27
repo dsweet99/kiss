@@ -19,7 +19,7 @@ pub(crate) fn evaluate_orphan_unit_gate(
     gate: &kiss::GateConfig,
     bypass: bool,
 ) -> bool {
-    if bypass || !gate.orphan_unit_enabled {
+    if bypass || !gate.orphan_detection {
         return false;
     }
     let Ok((py_parsed, rs_parsed, roles)) = parse_classified(py_files, rs_files) else {
@@ -98,7 +98,7 @@ mod orphan_unit_gate_test {
 
     fn enabled_gate() -> kiss::GateConfig {
         kiss::GateConfig {
-            orphan_unit_enabled: true,
+            orphan_detection: true,
             ..kiss::GateConfig::default()
         }
     }
@@ -149,10 +149,7 @@ mod orphan_unit_gate_test {
             tmp.path(),
             &[utils],
             &[],
-            &snap(BTreeMap::from([(
-                "utils.py".into(),
-                BTreeSet::from([1]),
-            )])),
+            &snap(BTreeMap::from([("utils.py".into(), BTreeSet::from([1]))])),
             &enabled_gate(),
             false,
         );

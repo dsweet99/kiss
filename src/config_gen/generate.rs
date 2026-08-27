@@ -26,7 +26,7 @@ pub fn auto_created_gate_config() -> GateConfig {
     GateConfig {
         duplication_enabled: false,
         orphan_module_enabled: false,
-        orphan_unit_enabled: false,
+        orphan_detection: false,
         comment_removal_enabled: false,
         docs_allowed: vec!["./".to_string()],
         test_coverage_threshold: 0,
@@ -49,11 +49,6 @@ pub fn generate_config_toml_by_language(p: &GenerateConfigParams<'_>) -> String 
     );
     let _ = writeln!(
         out,
-        "orphan_unit_enabled = {}",
-        p.gate.orphan_unit_enabled
-    );
-    let _ = writeln!(
-        out,
         "comment_removal_enabled = {}",
         p.gate.comment_removal_enabled
     );
@@ -71,6 +66,7 @@ pub fn generate_config_toml_by_language(p: &GenerateConfigParams<'_>) -> String 
         "test_coverage_scope = \"{}\"",
         p.gate.test_coverage_scope
     );
+    let _ = writeln!(out, "orphan_detection = {}", p.gate.orphan_detection);
     let _ = writeln!(out, "max_num_tests = {}", p.gate.max_num_tests);
     let _ = writeln!(out, "num_jobs = {}", crate::defaults::gate::NUM_JOBS);
     let _ = writeln!(
@@ -172,7 +168,7 @@ mod coverage_witness {
         let gate = auto_created_gate_config();
         assert!(!gate.duplication_enabled);
         assert!(!gate.orphan_module_enabled);
-        assert!(!gate.orphan_unit_enabled);
+        assert!(!gate.orphan_detection);
         assert!(!gate.comment_removal_enabled);
         assert_eq!(gate.docs_allowed, vec!["./".to_string()]);
         assert_eq!(gate.test_coverage_threshold, 0);
@@ -197,8 +193,8 @@ mod coverage_witness {
             "auto-created global flags:\n{toml}"
         );
         assert!(
-            toml.contains("orphan_unit_enabled = false"),
-            "auto-created global flags:\n{toml}"
+            toml.contains("orphan_detection = false"),
+            "auto-created test flags:\n{toml}"
         );
         assert!(
             toml.contains("comment_removal_enabled = false"),
@@ -253,7 +249,7 @@ mod coverage_witness {
         );
         assert!(
             toml.contains(
-                "test_coverage_threshold = 90\ntest_coverage_scope = \"codebase\"\nmax_num_tests = 999999\n"
+                "test_coverage_threshold = 90\ntest_coverage_scope = \"codebase\"\norphan_detection = false\nmax_num_tests = 999999\n"
             ),
             "test gate emission:\n{toml}"
         );

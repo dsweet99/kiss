@@ -27,7 +27,7 @@ fn global_and_test_rule_specs_use_shared_metrics() {
     let global_metrics: Vec<_> = global::GLOBAL_RULE_SPECS.iter().map(|s| s.metric).collect();
     assert_eq!(
         global_metrics,
-        ["min_similarity", "comment", "doc", "orphan_module", "orphan"]
+        ["min_similarity", "comment", "doc", "orphan_module"]
     );
     let test_metrics: Vec<_> = test_rules::TEST_RULE_SPECS
         .iter()
@@ -38,7 +38,8 @@ fn global_and_test_rule_specs_use_shared_metrics() {
         [
             "test_coverage_threshold",
             "max_unit_test_seconds",
-            "max_num_tests"
+            "max_num_tests",
+            "orphan"
         ]
     );
     let py_metrics: Vec<_> = python::PY_RULE_SPECS.iter().map(|s| s.metric).collect();

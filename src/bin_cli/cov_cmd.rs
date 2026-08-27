@@ -146,7 +146,7 @@ fn try_evaluate_records_with_time(
     records: &[analyze::line_coverage::LineCoverageRecord],
     ctx: &RecordsEvalCtx<'_>,
 ) -> Option<i32> {
-    if ctx.args.gate_config.orphan_unit_enabled && !ctx.args.bypass_gate {
+    if ctx.args.gate_config.orphan_detection && !ctx.args.bypass_gate {
         return None;
     }
     let time_eval = evaluate_time_gate_for_cov(ctx.args, ctx.universe_root, ctx.files, ctx.ignore);
@@ -307,7 +307,7 @@ pub fn run_cov_command(args: &CovCommandArgs<'_>) -> i32 {
                 args.gate_config,
                 args.bypass_gate,
             ),
-            Err(_) => args.gate_config.orphan_unit_enabled && !args.bypass_gate,
+            Err(_) => args.gate_config.orphan_detection && !args.bypass_gate,
         };
         let time_eval = evaluate_time_gate_for_cov(args, universe_root, &files, &ignore);
         let time_failed = apply_time_gate_eval(&time_eval);

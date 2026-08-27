@@ -25,10 +25,4 @@ pub(super) const GLOBAL_RULE_SPECS: &[RuleSpec] = &[
         threshold: ThresholdValue::Usize(|_, _| 0),
         description: "orphan_module flags an isolated production module (GraphIsolation::IsolatedModule: production fan-in and fan-out both 0) with no static test-only import edges, that is not a recognized entry (name, AST, or manifest/Cargo), and whose path is not under orphan_allowed. Enforced only when orphan_module_enabled=true.",
     },
-    RuleSpec {
-        metric: "orphan",
-        op: ThresholdOp::Equal,
-        threshold: ThresholdValue::Usize(|_, _| 0),
-        description: "orphan flags a production code unit (module, function, method, or class) that nothing in this repository uses: GraphIsolation::UnreferencedModule (no named import/use) and no runtime coverable line ran. Requires a coverage snapshot; a missing snapshot is not evaluated. Enforced by kiss test when orphan_unit_enabled=true (default false). Entries, tests, orphan_allowed paths, and empty __init__.py module units are not candidates.",
-    },
 ];

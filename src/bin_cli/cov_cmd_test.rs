@@ -74,7 +74,7 @@ fn both_gates_disabled_short_circuits() {
     let gate = GateConfig {
         test_coverage_threshold: 0,
         max_unit_test_seconds: Vec::new(),
-        orphan_unit_enabled: false,
+        orphan_detection: false,
         ..GateConfig::default()
     };
     let tmp = tempfile::tempdir().unwrap();
@@ -242,7 +242,7 @@ fn time_only_gate_path_runs_when_coverage_threshold_zero() {
     let gate = GateConfig {
         test_coverage_threshold: 0,
         max_unit_test_seconds: vec![("*".to_string(), 2.0)],
-        orphan_unit_enabled: false,
+        orphan_detection: false,
         ..GateConfig::default()
     };
     let tmp = tempfile::tempdir().unwrap();

@@ -1,10 +1,10 @@
 mod unit_test_seconds;
 
+pub(crate) use unit_test_seconds::parse_max_unit_test_seconds;
 pub use unit_test_seconds::{
     MatchedUnitTestSecondsRule, catch_all_limit, default_max_unit_test_seconds, exceeds_limit,
     format_nested_toml_table, limit_for_selector, matched_rule_for_selector, validate_rules,
 };
-pub(crate) use unit_test_seconds::parse_max_unit_test_seconds;
 
 use crate::config::{ConfigError, check_unknown_keys};
 use crate::defaults;
@@ -47,7 +47,6 @@ const GLOBAL_KEYS: &[&str] = &[
     "min_similarity",
     "duplication_enabled",
     "orphan_module_enabled",
-    "orphan_unit_enabled",
     "comment_removal_enabled",
     "docs_allowed",
     "orphan_allowed",
@@ -55,8 +54,8 @@ const GLOBAL_KEYS: &[&str] = &[
 
 const GATE_RENAMED_MSG: &str = "\
 [gate] was renamed: put min_similarity/duplication_enabled/orphan_module_enabled/\
-orphan_unit_enabled/comment_removal_enabled/docs_allowed/orphan_allowed under [global], and test_coverage_threshold/\
-test_coverage_scope/max_unit_test_seconds/max_num_tests under [test]";
+comment_removal_enabled/docs_allowed/orphan_allowed under [global], and test_coverage_threshold/\
+test_coverage_scope/orphan_detection/max_unit_test_seconds/max_num_tests under [test]";
 
 #[derive(Debug, Clone)]
 pub struct GateConfig {
@@ -67,7 +66,7 @@ pub struct GateConfig {
     pub min_similarity: f64,
     pub duplication_enabled: bool,
     pub orphan_module_enabled: bool,
-    pub orphan_unit_enabled: bool,
+    pub orphan_detection: bool,
     pub comment_removal_enabled: bool,
     pub docs_allowed: Vec<String>,
     pub orphan_allowed: Vec<String>,
@@ -83,7 +82,7 @@ impl Default for GateConfig {
             min_similarity: defaults::duplication::MIN_SIMILARITY,
             duplication_enabled: true,
             orphan_module_enabled: true,
-            orphan_unit_enabled: false,
+            orphan_detection: false,
             comment_removal_enabled: false,
             docs_allowed: Vec::new(),
             orphan_allowed: Vec::new(),
