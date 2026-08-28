@@ -91,7 +91,6 @@ pub(crate) fn run_test_command_with(
     }
 }
 
-#[doc = "kiss-coverage-off"]
 fn run_watch_tests(args: &TestCommandArgs<'_>, run_args: RunTestCmdArgs<'_>) -> i32 {
     if let Err(code) = reject_test_universe_languages(args) {
         return code;
@@ -205,9 +204,6 @@ fn try_wait_out_live_watcher() -> Result<(), String> {
     Ok(())
 }
 
-/// Coverage after a green test run. One-shot and watch both call this.
-/// `allow_refresh` is the only policy difference: watch may rebuild a missing
-/// snapshot; one-shot fails closed.
 struct AfterTestCoverage<'a> {
     invocation: &'a TestInvocation,
     lang_filter: Option<kiss::Language>,

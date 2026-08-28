@@ -50,7 +50,6 @@ pub(crate) fn should_force_cold_initialization(
         && !repo_root.join(".kiss").exists()
 }
 
-#[doc = "kiss-coverage-off"]
 pub(crate) fn apply_cold_initialization_population(
     a: &RunTestCmdArgs<'_>,
     planned: &mut PlannedSelectors,
@@ -58,14 +57,8 @@ pub(crate) fn apply_cold_initialization_population(
     if !should_force_cold_initialization(a, &planned.repo_root) {
         return;
     }
-    match a.lang_filter {
-        Some(Language::Python) => planned.population_required.python = true,
-        Some(Language::Rust) => planned.population_required.rust = true,
-        None => {
-            planned.population_required.python = true;
-            planned.population_required.rust = true;
-        }
-    }
+    planned.population_required.python = true;
+    planned.population_required.rust = true;
 }
 
 pub(crate) fn apply_force_all_population(a: &RunTestCmdArgs<'_>, planned: &mut PlannedSelectors) {

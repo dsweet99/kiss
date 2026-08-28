@@ -2,26 +2,17 @@ use std::path::Path;
 
 pub use kiss::reject_unconfigured_languages;
 
-#[doc = "kiss-coverage-off"]
-#[cfg(unix)]
+#[rustfmt::skip]
 pub fn set_sigpipe_default() {
-    unsafe {
-        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
-    }
+    #[cfg(unix)] unsafe { libc::signal(libc::SIGPIPE, libc::SIG_DFL); }
 }
-
-#[doc = "kiss-coverage-off"]
-#[cfg(not(unix))]
-pub fn set_sigpipe_default() {}
 
 pub use kiss::merge_check_ignore_prefixes;
 
+#[rustfmt::skip]
 pub fn validate_paths(paths: &[String]) {
     for p in paths {
-        if !Path::new(p).exists() {
-            eprintln!("Error: Path does not exist: {p}");
-            std::process::exit(1);
-        }
+        if !Path::new(p).exists() { eprintln!("Error: Path does not exist: {p}"); std::process::exit(1); }
     }
 }
 

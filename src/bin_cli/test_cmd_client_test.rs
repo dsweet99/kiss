@@ -298,3 +298,17 @@ fn watch_flag_takes_watch_dispatch_path() {
     let code = run_test_command_with(args, |_a| 0);
     assert_eq!(code, 1);
 }
+
+#[test]
+fn watch_flag_runs_watch_setup_when_languages_configured() {
+    let _repo = isolated_python_repo();
+    let test_cfg = TestSectionConfig::default();
+    let py = kiss::Config::python_defaults();
+    let rs = kiss::Config::rust_defaults();
+    let gate = kiss::GateConfig::default();
+    let mut args = python_oneshot_args(&test_cfg, &py, &rs, &gate);
+    args.watch = true;
+    args.language_tables = kiss::LanguageTablesPresent::both();
+    let code = run_test_command_with(args, |_a| 0);
+    assert_eq!(code, 1);
+}

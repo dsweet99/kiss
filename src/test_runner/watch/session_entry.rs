@@ -33,32 +33,16 @@ pub(crate) fn run_test_watch(
     }
 }
 
-#[doc = "kiss-coverage-off"]
+#[rustfmt::skip]
 fn run_native_watch(
     prepared: PreparedWatch,
     live: WatchLiveConfig,
     mut run_cov: impl FnMut(&RunTestCmdArgs<'_>, &WatchLiveConfig) -> WatchCoverageResult,
 ) -> i32 {
-    let PreparedWatch {
-        repo_root,
-        mut source,
-        owner,
-    } = prepared;
-    #[cfg(unix)]
-    {
-        run_prepared_loop(
-            &repo_root,
-            &mut source,
-            Some(&owner.control.nudge_rx),
-            live,
-            &mut run_cov,
-        )
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = owner;
-        run_prepared_loop(&repo_root, &mut source, None, live, &mut run_cov)
-    }
+    let PreparedWatch { repo_root, mut source, owner } = prepared;
+    #[cfg(unix)] let nudge = Some(&owner.control.nudge_rx);
+    #[cfg(not(unix))] let nudge: Option<&Receiver<NudgeRequest>> = { let _ = owner; None };
+    run_prepared_loop(&repo_root, &mut source, nudge, live, &mut run_cov)
 }
 
 fn run_prepared_loop<C>(
@@ -83,48 +67,27 @@ struct PreparedWatch {
     owner: (),
 }
 
-#[doc = "kiss-coverage-off"]
+#[rustfmt::skip]
 fn prepare_watch_session(
     args: &RunTestCmdArgs<'_>,
     config_path: &Path,
 ) -> Result<PreparedWatch, i32> {
-    let cwd = std::env::current_dir().map_err(|e| {
-        eprintln!("error: kiss test: {e}");
-        1
-    })?;
-    let repo_root = crate::test_git::require_git_repo_root(&cwd).map_err(|e| {
-        eprintln!("error: kiss test requires a git repository ({e})");
-        1
-    })?;
+    let cwd = std::env::current_dir().map_err(|e| { eprintln!("error: kiss test: {e}"); 1 })?;
+    let repo_root = crate::test_git::require_git_repo_root(&cwd)
+        .map_err(|e| { eprintln!("error: kiss test requires a git repository ({e})"); 1 })?;
     let registrations = resolve_watch_registrations(&repo_root, &args.invocation, args.ignore)
-        .map_err(|e| {
-            eprintln!("error: kiss test --watch: {e}");
-            1
-        })?;
-
-    #[cfg(unix)]
-    let owner = WatchSessionOwner::acquire(&repo_root).map_err(|e| {
-        eprintln!("error: kiss test --watch: {e}");
-        1
-    })?;
-    #[cfg(not(unix))]
-    let owner = ();
-
+        .map_err(|e| { eprintln!("error: kiss test --watch: {e}"); 1 })?;
+    #[cfg(unix)] let owner = WatchSessionOwner::acquire(&repo_root)
+        .map_err(|e| { eprintln!("error: kiss test --watch: {e}"); 1 })?;
+    #[cfg(not(unix))] let owner = ();
     let source = NativeWatchEventSource::register(
         &registrations,
         &repo_root,
         &args.invocation,
         config_path,
     )
-    .map_err(|e| {
-        eprintln!("error: kiss test --watch: {e}");
-        1
-    })?;
-    Ok(PreparedWatch {
-        repo_root,
-        source,
-        owner,
-    })
+    .map_err(|e| { eprintln!("error: kiss test --watch: {e}"); 1 })?;
+    Ok(PreparedWatch { repo_root, source, owner })
 }
 
 #[cfg(test)]

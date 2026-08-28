@@ -18,12 +18,10 @@ use kiss::rust_llvm_cov_runner::{
     KissProfrawProcessGuard, discover_repo_root, redirect_this_process, sweep_kiss_profraw_dir,
 };
 
-#[doc = "kiss-coverage-off"]
 fn main() {
     std::process::exit(run_kiss_main());
 }
 
-#[doc = "kiss-coverage-off"]
 #[inline(never)]
 fn run_kiss_main() -> i32 {
     let t0 = std::time::Instant::now();
