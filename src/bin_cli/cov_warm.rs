@@ -2,11 +2,12 @@ use std::path::Path;
 
 use kiss::{GateConfig, Language};
 
+use crate::analyze::cov_coverable_cache::{CovCoverableKey, load_or_build_coverable_denoms};
 use crate::analyze::cov_records_cache::{
     CovRecordsCacheKey, store_cov_records, try_load_cov_records,
 };
 use crate::analyze::gather_files;
-use crate::analyze::line_coverage::{CoverageSourceFacts, compute_line_coverage_records};
+use crate::analyze::line_coverage::records_from_denoms;
 use crate::bin_cli::util::merge_check_ignore_prefixes;
 use crate::test_runner::check_line_coverage::{
     RequiredCoverageLanguages, load_check_runtime_coverage, repository_root_for_universe,
@@ -82,8 +83,15 @@ fn warm_cov_caches_after_tests_inner(
     else {
         return;
     };
-    let records = match CoverageSourceFacts::from_files(&py_files, &rs_files) {
-        Ok(facts) => compute_line_coverage_records(&repo_root, &facts, &snapshot),
+    let facts_key = CovCoverableKey {
+        repo_root: &repo_root,
+        py_files: &py_files,
+        rs_files: &rs_files,
+        ignore: &ignore,
+        lang_filter: cache_key.lang_filter,
+    };
+    let records = match load_or_build_coverable_denoms(&facts_key) {
+        Ok(denoms) => records_from_denoms(&repo_root, &denoms, &snapshot),
         Err(err) => {
             eprintln!("{err}");
             return;

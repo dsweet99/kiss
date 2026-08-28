@@ -1,9 +1,11 @@
 use crate::graph::orphan_unit::extract::NamedBind;
-use crate::graph::{module_name_for_path, qualified_module_name, resolve_import, ContextDependencyGraph};
+use crate::graph::{
+    ContextDependencyGraph, module_name_for_path, qualified_module_name, resolve_import,
+};
 use crate::parsing::ParsedFile;
 use crate::rust_parsing::ParsedRustFile;
-use syn::visit::Visit;
 use syn::ItemImpl;
+use syn::visit::Visit;
 
 pub(super) fn collect_name_binds(
     py: &[ParsedFile],
@@ -19,8 +21,7 @@ pub(super) fn collect_name_binds(
 
 fn python_name_binds(py: &[ParsedFile], ctx: &ContextDependencyGraph) -> Vec<NamedBind> {
     let prod = ctx.production_view();
-    let mut bare: std::collections::HashMap<String, Vec<String>> =
-        std::collections::HashMap::new();
+    let mut bare: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
     for name in prod.nodes.keys() {
         let bare_name = name.rsplit('.').next().unwrap_or(name).to_string();
         bare.entry(bare_name).or_default().push(name.clone());
@@ -57,6 +58,7 @@ fn python_name_binds(py: &[ParsedFile], ctx: &ContextDependencyGraph) -> Vec<Nam
 
 fn rust_name_binds(rs: &[ParsedRustFile], ctx: &ContextDependencyGraph) -> Vec<NamedBind> {
     let prod = ctx.production_view();
+    let last_idx = crate::graph::orphan_unit::extract::rust_last_index(&prod);
     let mut out = Vec::new();
     for parsed in rs {
         let module = module_name_for_path(ctx, &parsed.path);
@@ -72,6 +74,7 @@ fn rust_name_binds(rs: &[ParsedRustFile], ctx: &ContextDependencyGraph) -> Vec<N
                 &prefix,
                 module.as_deref(),
                 &prod,
+                &last_idx,
             ) {
                 out.push(NamedBind {
                     target_module: resolved,

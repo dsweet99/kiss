@@ -1,9 +1,10 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use kiss::check_universe_cache::CachedLineCoverageRecord;
 use kiss::code_roles::{SourceRoleIndex, skip_syn};
+use kiss::{ParsedFile, ParsedRustFile};
 use syn::spanned::Spanned;
 use syn::visit::Visit;
 
@@ -33,40 +34,30 @@ impl CoverageSourceFacts {
         py_files: &[PathBuf],
         rs_files: &[PathBuf],
     ) -> Result<Self, kiss::code_roles::RoleBuildError> {
-        let (_py, rs, roles) = crate::analyze_parse::parse_classified(py_files, rs_files)?;
-        Ok(Self::from_index(roles, &rs, py_files, rs_files))
+        let (py, rs, roles) = crate::analyze_parse::parse_classified(py_files, rs_files)?;
+        Ok(Self::from_index(roles, &py, &rs, py_files, rs_files))
     }
 
     pub(crate) fn from_index(
         roles: SourceRoleIndex,
-        rs: &[kiss::ParsedRustFile],
+        py: &[ParsedFile],
+        rs: &[ParsedRustFile],
         py_files: &[PathBuf],
         rs_files: &[PathBuf],
     ) -> Self {
-        let coverable_lines = py_files
+        let rs_by = parsed_by_path(rs, |parsed| parsed.path.as_path());
+        let py_by = parsed_by_path(py, |parsed| parsed.path.as_path());
+        let paths: Vec<&PathBuf> = py_files
             .iter()
             .chain(rs_files)
             .filter(|path| {
                 roles.file_composition(path) != kiss::code_roles::FileComposition::TestOnly
             })
+            .collect();
+        let coverable_lines: BTreeMap<_, _> = paths
+            .into_iter()
             .filter_map(|path| {
-                let lines = rs
-                    .iter()
-                    .find(|parsed| {
-                        kiss::rust_include::canonical_path(&parsed.path)
-                            == kiss::rust_include::canonical_path(path)
-                    })
-                    .map_or_else(
-                        || coverage_denominator_lines(path, &roles),
-                        |parsed| {
-                            rust_coverable_lines(
-                                &parsed.path,
-                                &parsed.source,
-                                &roles,
-                                Some(&parsed.ast),
-                            )
-                        },
-                    )?;
+                let lines = coverable_lines_for_path(path, &roles, &rs_by, &py_by)?;
                 Some((path.clone(), lines))
             })
             .collect();
@@ -79,19 +70,76 @@ impl CoverageSourceFacts {
     pub(crate) fn coverable_map(&self) -> &BTreeMap<PathBuf, BTreeSet<usize>> {
         &self.coverable_lines
     }
+
+    pub(crate) fn production_denoms(&self) -> Vec<CoverableDenom> {
+        self.coverable_lines
+            .iter()
+            .map(|(path, denom)| {
+                let candidates: Vec<usize> = denom.iter().copied().collect();
+                let mut lines = self.roles.production_lines(path, &candidates);
+                lines.sort_unstable();
+                lines.dedup();
+                CoverableDenom {
+                    file: path.clone(),
+                    lines,
+                    mixed: self.roles.file_composition(path)
+                        == kiss::code_roles::FileComposition::Mixed,
+                }
+            })
+            .collect()
+    }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct CoverableDenom {
+    pub file: PathBuf,
+    pub lines: Vec<usize>,
+    pub mixed: bool,
+}
+
+fn parsed_by_path<T>(items: &[T], path_of: impl Fn(&T) -> &Path) -> HashMap<PathBuf, &T> {
+    let mut map = HashMap::new();
+    for item in items {
+        let path = path_of(item);
+        map.insert(path.to_path_buf(), item);
+        map.insert(kiss::rust_include::canonical_path(path), item);
+    }
+    map
+}
+
+fn coverable_lines_for_path(
+    path: &Path,
+    roles: &SourceRoleIndex,
+    rs_by: &HashMap<PathBuf, &ParsedRustFile>,
+    py_by: &HashMap<PathBuf, &ParsedFile>,
+) -> Option<BTreeSet<usize>> {
+    let canon = kiss::rust_include::canonical_path(path);
+    if let Some(parsed) = rs_by.get(path).or_else(|| rs_by.get(&canon)) {
+        return rust_coverable_lines(&parsed.path, &parsed.source, roles, Some(&parsed.ast));
+    }
+    if let Some(parsed) = py_by.get(path).or_else(|| py_by.get(&canon)) {
+        return Some(python_coverable_from_tree(&parsed.tree));
+    }
+    coverage_denominator_lines(path, roles)
+}
+
+#[cfg(test)]
 pub(crate) fn compute_line_coverage_records(
     repo_root: &Path,
     facts: &CoverageSourceFacts,
     snapshot: &RuntimeCoverageSnapshot,
 ) -> Vec<LineCoverageRecord> {
-    let mut records: Vec<_> = facts
-        .coverable_lines
+    records_from_denoms(repo_root, &facts.production_denoms(), snapshot)
+}
+
+pub(crate) fn records_from_denoms(
+    repo_root: &Path,
+    denoms: &[CoverableDenom],
+    snapshot: &RuntimeCoverageSnapshot,
+) -> Vec<LineCoverageRecord> {
+    let mut records: Vec<_> = denoms
         .iter()
-        .map(|(path, denom)| {
-            record_from_denominator(repo_root, path, denom, snapshot, &facts.roles)
-        })
+        .map(|denom| record_from_prefiltered(repo_root, denom, snapshot))
         .collect();
     records.sort_by(|a, b| a.file.cmp(&b.file));
     records
@@ -134,6 +182,7 @@ fn compute_file_line_coverage_with_roles(
     record_from_denominator(repo_root, file, &denominator_lines, snapshot, roles)
 }
 
+#[cfg(test)]
 fn record_from_denominator(
     repo_root: &Path,
     file: &Path,
@@ -142,22 +191,37 @@ fn record_from_denominator(
     roles: &SourceRoleIndex,
 ) -> LineCoverageRecord {
     let candidates: Vec<usize> = denominator_lines.iter().copied().collect();
-    let denominator_lines: BTreeSet<usize> = roles
-        .production_lines(file, &candidates)
-        .into_iter()
-        .collect();
-    let total_lines = denominator_lines.len();
-    if total_lines == 0 && roles.file_composition(file) == kiss::code_roles::FileComposition::Mixed
-    {
-        return LineCoverageRecord {
+    let mut lines = roles.production_lines(file, &candidates);
+    lines.sort_unstable();
+    lines.dedup();
+    record_from_prefiltered(
+        repo_root,
+        &CoverableDenom {
             file: file.to_path_buf(),
+            lines,
+            mixed: roles.file_composition(file) == kiss::code_roles::FileComposition::Mixed,
+        },
+        snapshot,
+    )
+}
+
+fn record_from_prefiltered(
+    repo_root: &Path,
+    denom: &CoverableDenom,
+    snapshot: &RuntimeCoverageSnapshot,
+) -> LineCoverageRecord {
+    let denominator_lines: BTreeSet<usize> = denom.lines.iter().copied().collect();
+    let total_lines = denominator_lines.len();
+    if total_lines == 0 && denom.mixed {
+        return LineCoverageRecord {
+            file: denom.file.clone(),
             total_lines: 0,
             covered_lines: 0,
             percent: 100,
             first_uncovered_line: None,
         };
     }
-    let rel = repo_relative_key(repo_root, file);
+    let rel = repo_relative_key(repo_root, &denom.file);
     let covered = rel
         .as_ref()
         .and_then(|key| snapshot.covered_lines.get(key))
@@ -182,7 +246,7 @@ fn record_from_denominator(
         coverage_percentage(covered, total_lines)
     };
     LineCoverageRecord {
-        file: file.to_path_buf(),
+        file: denom.file.clone(),
         total_lines,
         covered_lines: covered,
         percent,
@@ -237,9 +301,13 @@ fn python_coverable_lines(source: &str) -> Option<BTreeSet<usize>> {
         .set_language(&tree_sitter_python::LANGUAGE.into())
         .ok()?;
     let tree = parser.parse(source, None)?;
+    Some(python_coverable_from_tree(&tree))
+}
+
+fn python_coverable_from_tree(tree: &tree_sitter::Tree) -> BTreeSet<usize> {
     let mut lines = BTreeSet::new();
     collect_python_coverable_lines(tree.root_node(), &mut lines);
-    Some(lines)
+    lines
 }
 
 fn collect_python_coverable_lines(node: tree_sitter::Node<'_>, lines: &mut BTreeSet<usize>) {

@@ -84,21 +84,42 @@ fn parse_sources(
     rs_files: &[PathBuf],
     show_timing: bool,
 ) -> Result<ParseSourcesOut, RoleBuildError> {
-    let t0 = std::time::Instant::now();
-    let py_parsed = parse_py_files(py_files)?;
-    let t1 = std::time::Instant::now();
-    let rs_parsed = parse_rs_files(rs_files)?;
-    let t2 = std::time::Instant::now();
+    let (py_parsed, rs_parsed, py_secs, rs_secs) = parse_py_and_rs(py_files, rs_files)?;
     let timing = if show_timing {
-        format!(
-            "py: parse={:.2}s, rs: parse={:.2}s",
-            t1.duration_since(t0).as_secs_f64(),
-            t2.duration_since(t1).as_secs_f64()
-        )
+        format!("py: parse={py_secs:.2}s, rs: parse={rs_secs:.2}s")
     } else {
         String::new()
     };
     Ok(((py_parsed, timing), rs_parsed))
+}
+
+fn parse_py_and_rs(
+    py_files: &[PathBuf],
+    rs_files: &[PathBuf],
+) -> Result<(Vec<ParsedFile>, Vec<ParsedRustFile>, f64, f64), RoleBuildError> {
+    if py_files.is_empty() {
+        let t = std::time::Instant::now();
+        let rs_parsed = parse_rs_files(rs_files)?;
+        return Ok((Vec::new(), rs_parsed, 0.0, t.elapsed().as_secs_f64()));
+    }
+    if rs_files.is_empty() {
+        let t = std::time::Instant::now();
+        let py_parsed = parse_py_files(py_files)?;
+        return Ok((py_parsed, Vec::new(), t.elapsed().as_secs_f64(), 0.0));
+    }
+    let (py_out, rs_out) = std::thread::scope(|scope| {
+        let py_handle = scope.spawn(|| {
+            let t = std::time::Instant::now();
+            let parsed = parse_py_files(py_files);
+            (parsed, t.elapsed().as_secs_f64())
+        });
+        let t = std::time::Instant::now();
+        let rs_parsed = parse_rs_files(rs_files);
+        let rs_secs = t.elapsed().as_secs_f64();
+        let (py_parsed, py_secs) = py_handle.join().expect("python parse");
+        ((py_parsed, py_secs), (rs_parsed, rs_secs))
+    });
+    Ok((py_out.0?, rs_out.0?, py_out.1, rs_out.1))
 }
 
 pub(crate) fn parse_py_files(files: &[PathBuf]) -> Result<Vec<ParsedFile>, RoleBuildError> {
@@ -162,8 +183,7 @@ pub(crate) fn parse_classified(
     py_files: &[PathBuf],
     rs_files: &[PathBuf],
 ) -> Result<(Vec<ParsedFile>, Vec<ParsedRustFile>, SourceRoleIndex), RoleBuildError> {
-    let py_parsed = parse_py_files(py_files)?;
-    let rs_parsed = parse_rs_files(rs_files)?;
+    let (py_parsed, rs_parsed, _, _) = parse_py_and_rs(py_files, rs_files)?;
     let roles = build_source_role_index(&py_parsed, &rs_parsed, py_files, rs_files)?;
     Ok((py_parsed, rs_parsed, roles))
 }

@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::test_runner::lang_iface::{
     AcceptDecision, AcceptMode, ExecutionWitness, WitnessScope, WitnessStatus, accept_witness,
-    reclassify_statuses_with_gate, summary_from_accepted_witness,
+    identity_covers, reclassify_statuses_with_gate, summary_from_accepted_witness,
 };
 use crate::test_runner::runners::{
     SelectorExecutionSummary, rust_logical_to_kiss_test_ids,
@@ -102,6 +102,18 @@ pub(crate) fn publish_rust_execution_witness(
     };
     body.content_sha256 = content_digest(&body)?;
     write_witness_atomic(repo_root, &body)?;
+    let witness = ExecutionWitness {
+        language: "rust".into(),
+        scope: WitnessScope::Full,
+        identity_digest: body.identity_digest,
+        selectors: body.selectors,
+        statuses,
+        durations_ns: body.durations_ns,
+        covered_lines: body.covered_lines,
+        complete: body.complete,
+        generation_id: body.generation_id,
+    };
+    super::witness_memo::stash_published_witness(repo_root, &witness_path(repo_root), witness);
     Ok(generation_id)
 }
 
@@ -155,7 +167,7 @@ fn stale_bare_rust_witness_selector(selector: &str) -> bool {
 }
 
 pub(crate) fn prune_removed_rust_witness_selectors(
-    _repo_root: &Path,
+    repo_root: &Path,
     witness: &mut ExecutionWitness,
 ) -> Result<(), String> {
     if !witness
@@ -165,19 +177,39 @@ pub(crate) fn prune_removed_rust_witness_selectors(
     {
         return Ok(());
     }
-    let known: std::collections::BTreeSet<String> = witness
+    let Some(known) = crate::test_runner::workspace_selector_cache::cached_rust_selectors_if_rust_fingerprint_current(
+        repo_root,
+    ) else {
+        return Ok(());
+    };
+    if known.is_empty() {
+        return Ok(());
+    }
+    let known: BTreeSet<String> = known.into_iter().collect();
+    let keep: BTreeSet<String> = witness
         .selectors
         .iter()
-        .filter(|selector| !stale_bare_rust_witness_selector(selector))
+        .filter(|selector| {
+            known.contains(*selector) || !stale_bare_rust_witness_selector(selector)
+        })
         .cloned()
         .collect();
-    crate::test_runner::lang_iface::prune_witness_to_known_selectors(witness, &known);
+    if keep.is_empty() {
+        return Ok(());
+    }
+    crate::test_runner::lang_iface::prune_witness_to_known_selectors(witness, &keep);
     Ok(())
 }
 
 pub(crate) fn try_load_rust_execution_witness(
     repo_root: &Path,
 ) -> Result<ExecutionWitness, String> {
+    if let Some(mut witness) =
+        super::witness_memo::memo_witness(repo_root, &witness_path(repo_root))
+    {
+        prune_removed_rust_witness_selectors(repo_root, &mut witness)?;
+        return Ok(witness);
+    }
     let path = witness_path(repo_root);
     let bytes = fs::read(&path).map_err(|e| {
         format!(
@@ -246,7 +278,10 @@ pub(crate) fn rust_miss_selectors(
     let Ok(mut witness) = try_load_rust_execution_witness(repo_root) else {
         return None;
     };
-    if witness.identity_digest != rust_identity_digest_from_batch(identity) {
+    if !identity_covers(
+        &witness.identity_digest,
+        &rust_identity_digest_from_batch(identity),
+    ) {
         return None;
     }
     witness.statuses = reclassify_statuses_with_gate(
@@ -298,47 +333,13 @@ pub(crate) fn try_warm_rust_cached_summary(
     if accept_witness(mode, &planned, &current, &witness) != AcceptDecision::Accept {
         return None;
     }
+    super::witness_memo::stash_published_witness(repo_root, &witness_path(repo_root), witness.clone());
     let report_ids = rust_logical_to_kiss_test_ids(repo_root, &[]).ok()?;
     Some(summary_from_accepted_witness(
         &planned,
         &witness,
         |selector| report_string_for_logical_string(&report_ids, selector),
     ))
-}
-
-pub(crate) fn rust_warm_or_miss_selectors(
-    repo_root: &Path,
-    planned_selectors: &[String],
-    identity: &RustCoverageBatchIdentity,
-    gate: &GateConfig,
-) -> RustWarmDecision {
-    if let Some(summary) =
-        try_warm_rust_cached_summary(repo_root, planned_selectors, identity, gate)
-    {
-        return RustWarmDecision::Warm(Box::new(summary));
-    }
-    match rust_miss_selectors(repo_root, planned_selectors, identity, gate) {
-        Some(misses) if misses.is_empty() => {
-            if let Some(summary) =
-                try_warm_rust_cached_summary(repo_root, planned_selectors, identity, gate)
-            {
-                RustWarmDecision::Warm(Box::new(summary))
-            } else {
-                RustWarmDecision::Miss
-            }
-        }
-        Some(misses) if misses.len() < planned_selectors.len() => {
-            RustWarmDecision::RunMisses(misses)
-        }
-        _ => RustWarmDecision::Miss,
-    }
-}
-
-#[derive(Debug)]
-pub(crate) enum RustWarmDecision {
-    Warm(Box<SelectorExecutionSummary>),
-    RunMisses(Vec<String>),
-    Miss,
 }
 
 pub(crate) fn maybe_bootstrap_rust_witness(

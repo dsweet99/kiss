@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use kiss::GateConfig;
@@ -125,9 +125,8 @@ pub(crate) fn miss_selectors_for_repair(
     match accept_witness(mode, &planned, current_identity_digest, witness) {
         AcceptDecision::Accept => Vec::new(),
         AcceptDecision::Miss(reason) => match reason {
-            "incomplete" | "non_passed" | "missing_selector" | "missing_duration" => {
-                repair_planned(&planned, witness)
-            }
+            "incomplete" | "non_passed" | "missing_selector" | "missing_duration"
+            | "selector_universe" => repair_planned(&planned, witness),
             _ => planned,
         },
     }
@@ -168,10 +167,28 @@ fn shape_or_identity_miss(
     {
         return Some(AcceptDecision::Miss("witness_shape"));
     }
-    if witness.identity_digest != current_identity_digest {
+    if !identity_covers(&witness.identity_digest, current_identity_digest) {
         return Some(AcceptDecision::Miss("identity"));
     }
     None
+}
+
+pub(crate) fn identity_covers(witness_digest: &str, current: &str) -> bool {
+    if witness_digest == current {
+        return true;
+    }
+    match (rust_input_digest(witness_digest), rust_input_digest(current)) {
+        (Some(witness_input), Some(current_input)) => witness_input == current_input,
+        _ => false,
+    }
+}
+
+fn rust_input_digest(digest: &str) -> Option<&str> {
+    let mut parts = digest.split(':');
+    if parts.next() != Some("rs") {
+        return None;
+    }
+    parts.next().filter(|part| !part.is_empty())
 }
 
 fn accept_all(planned: &[String], witness: &ExecutionWitness) -> AcceptDecision {
@@ -181,7 +198,9 @@ fn accept_all(planned: &[String], witness: &ExecutionWitness) -> AcceptDecision 
     if !witness.complete {
         return AcceptDecision::Miss("incomplete");
     }
-    if planned != witness.selectors.as_slice() {
+    let planned_set: BTreeSet<&str> = planned.iter().map(String::as_str).collect();
+    let witness_set: BTreeSet<&str> = witness.selectors.iter().map(String::as_str).collect();
+    if planned_set != witness_set {
         return AcceptDecision::Miss("selector_universe");
     }
     if witness.statuses.iter().any(|s| *s != WitnessStatus::Passed) {

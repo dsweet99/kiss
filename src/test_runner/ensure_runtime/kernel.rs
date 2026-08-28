@@ -52,9 +52,19 @@ fn ensure_one_language(
             );
         }
     }
-    let loaded = module.load_full_witness(&request.repo_root).ok();
+    let loaded = match module.load_full_witness(&request.repo_root) {
+        Ok(witness) => Some(witness),
+        Err(err) => {
+            if module.language() == Language::Rust {
+                eprintln!("kiss test: rust witness load: {err}");
+            }
+            None
+        }
+    };
     let mut witness = loaded.clone();
-    if let Some(ref mut w) = witness {
+    if module.language() != Language::Rust
+        && let Some(ref mut w) = witness
+    {
         let gate_selectors = module.selectors_for_time_gate(request, &w.selectors)?;
         w.statuses =
             reclassify_statuses_with_gate(&gate_selectors, &w.statuses, &w.durations_ns, gate);

@@ -1,6 +1,6 @@
 use super::{
     load_cached_rust_workspace_selectors, load_cached_workspace_selectors,
-    store_workspace_selectors,
+    store_rust_workspace_selectors, store_workspace_selectors,
 };
 use std::fs;
 use tempfile::tempdir;
@@ -75,6 +75,30 @@ fn load_workspace_selectors_for_count_requires_matching_ignore() {
     store_workspace_selectors(root, &[], &["tests/test_a.py::test_a".into()], &[]);
     assert!(super::load_workspace_selectors_for_count(root, &["tests/slow".into()]).is_none());
     assert!(super::load_workspace_selectors_for_count(root, &[]).is_some());
+}
+
+#[test]
+fn store_rust_selectors_does_not_clobber_different_ignore_cache() {
+    let tmp = tempdir().unwrap();
+    let root = tmp.path();
+    fs::create_dir_all(root.join("tests")).unwrap();
+    fs::write(
+        root.join("tests").join("test_a.py"),
+        "def test_a():\n    assert True\n",
+    )
+    .unwrap();
+    fs::write(root.join("lib.rs"), "#[test]\nfn t() {}\n").unwrap();
+    store_workspace_selectors(
+        root,
+        &["src/main.rs".into()],
+        &["tests/test_a.py::test_a".into()],
+        &["t".into()],
+    );
+    store_rust_workspace_selectors(root, &[], &["other".into()]);
+    super::clear_rust_selector_memo_for_tests();
+    let hit = load_cached_workspace_selectors(root, &["src/main.rs".into()]).unwrap();
+    assert_eq!(hit.0, vec!["tests/test_a.py::test_a".to_string()]);
+    assert_eq!(hit.1, vec!["t".to_string()]);
 }
 
 #[test]

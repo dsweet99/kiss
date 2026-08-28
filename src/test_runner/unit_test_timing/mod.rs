@@ -104,7 +104,8 @@ fn load_rust_timings(repo_root: &Path) -> Option<Vec<UnitTestTiming>> {
         &req,
         &tools,
         None,
-    ) {
+    ) && !pairs.is_empty()
+    {
         let report_ids = rust_logical_to_kiss_test_ids_cached(repo_root, &[]).ok()?;
         return Some(
             pairs
@@ -125,16 +126,20 @@ fn load_rust_timings_from_witness(
     identity: &kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity,
 ) -> Option<Vec<UnitTestTiming>> {
     use crate::test_runner::execution_witness::{
-        try_load_rust_execution_witness, try_warm_rust_cached_summary,
+        rust_identity_digest_from_batch, try_load_rust_execution_witness,
     };
+    use crate::test_runner::lang_iface::identity_covers;
     let witness = try_load_rust_execution_witness(repo_root).ok()?;
-    let _ = try_warm_rust_cached_summary(
-        repo_root,
-        &witness.selectors,
-        identity,
-        &kiss::GateConfig::load_for_repo(repo_root),
-    )?;
-    if witness.durations_ns.len() != witness.selectors.len() {
+    if !identity_covers(
+        &witness.identity_digest,
+        &rust_identity_digest_from_batch(identity),
+    ) {
+        return None;
+    }
+    if !witness.complete
+        || witness.selectors.is_empty()
+        || witness.durations_ns.len() != witness.selectors.len()
+    {
         return None;
     }
     let report_ids = rust_logical_to_kiss_test_ids_cached(repo_root, &[]).ok()?;

@@ -175,9 +175,10 @@ fn run_rust_llvm_cov_check_aggregate_selectors_with_publication(
         selectors,
         RustCoverageRunOptions {
             extra,
-            force_rerun: true,
+            force_rerun: false,
             jobs,
-            population_publication_selectors,
+            population_publication_selectors: population_publication_selectors
+                .or_else(|| Some(selectors.to_vec())),
             coverage_output_mode: CoverageOutputMode::CheckAggregate {
                 publication_binary_ids,
                 repair_publication,

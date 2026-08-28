@@ -136,7 +136,7 @@ fn finish_with_coverage_returns_test_exit_when_threshold_zero() {
 
 #[test]
 fn evaluate_watch_coverage_threshold_zero_returns_ok() {
-    let _cwd = crate::cwd_test_lock::lock();
+    let _repo = isolated_python_repo();
     let py = kiss::Config::python_defaults();
     let rs = kiss::Config::rust_defaults();
     let gate = kiss::GateConfig {

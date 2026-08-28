@@ -10,7 +10,7 @@ use crate::analyze::line_coverage::{
 use crate::analyze_cache::{fnv1a64, mix_sorted_paths_len_mtime};
 use crate::test_runner::check_line_coverage::RequiredCoverageLanguages;
 
-const SCHEMA_VERSION: &str = "kiss-cov-records-v5";
+const SCHEMA_VERSION: &str = "kiss-cov-records-v6";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct CovRecordsCache {
@@ -86,12 +86,11 @@ fn cov_records_fingerprint(key: &CovRecordsCacheKey<'_>) -> Option<String> {
     }
     h = mix_sorted_paths_len_mtime(h, key.py_files);
     h = mix_sorted_paths_len_mtime(h, key.rs_files);
-    h = fnv1a64(
-        h,
-        kiss::code_roles::role_input_fingerprint(key.py_files, key.rs_files)
-            .ok()?
-            .as_bytes(),
-    );
+    let cargo = key.repo_root.join("Cargo.toml");
+    h = fnv1a64(h, cargo.to_string_lossy().as_bytes());
+    if let Ok(bytes) = fs::read(&cargo) {
+        h = fnv1a64(h, &bytes);
+    }
     if key.required.python {
         h = fnv1a64(h, python_backend_identity(key.repo_root)?.as_bytes());
     }
@@ -99,10 +98,6 @@ fn cov_records_fingerprint(key: &CovRecordsCacheKey<'_>) -> Option<String> {
         h = fnv1a64(h, rust_backend_identity(key.repo_root)?.as_bytes());
     }
     Some(format!("{h:016x}"))
-}
-
-pub(crate) fn python_backend_identity_for_file_list(repo_root: &Path) -> Option<String> {
-    python_backend_identity(repo_root)
 }
 
 fn python_backend_identity(repo_root: &Path) -> Option<String> {
@@ -136,26 +131,30 @@ fn python_coverage_cache_root_population(repo_root: &Path) -> Option<PathBuf> {
     candidate.is_file().then_some(candidate)
 }
 
-pub(crate) fn rust_backend_identity_for_file_list(repo_root: &Path) -> Option<String> {
-    rust_backend_identity(repo_root)
-}
-
 fn rust_backend_identity(repo_root: &Path) -> Option<String> {
     let cache = repo_root.join(".kiss").join("rust_llvm_cov_cache");
-    if let Ok(witness) =
-        crate::test_runner::execution_witness::try_load_rust_execution_witness(repo_root)
-    {
-        return Some(format!(
-            "rs-wit:{}:{}:{}",
-            witness.generation_id,
-            witness.identity_digest,
-            witness.selectors.len()
-        ));
+    let witness = cache.join("execution_witness.json");
+    if let Some(stamp) = file_len_mtime_stamp(&witness) {
+        return Some(format!("rs-wit-file:{stamp}"));
     }
     if let Some(identity) = rust_check_aggregate_backend_identity(&cache) {
         return Some(identity);
     }
     rust_population_backend_identity(&cache)
+}
+
+fn file_len_mtime_stamp(path: &Path) -> Option<String> {
+    let meta = fs::metadata(path).ok()?;
+    if !meta.is_file() {
+        return None;
+    }
+    let mtime = meta
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_nanos();
+    Some(format!("{}:{mtime}", meta.len()))
 }
 
 fn rust_check_aggregate_backend_identity(cache: &Path) -> Option<String> {

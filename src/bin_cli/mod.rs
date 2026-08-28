@@ -2,6 +2,7 @@ pub mod args;
 mod check_cmd;
 mod config_session;
 mod cov_cmd;
+mod cov_cmd_cache;
 mod cov_sibling_gates;
 mod cov_warm;
 mod cov_workspace_files;

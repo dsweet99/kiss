@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use crate::graph::orphan_unit::UnitRef;
@@ -9,8 +9,8 @@ use crate::graph::{
 use crate::parsing::ParsedFile;
 use crate::rust_graph::collect_file_use_binds;
 use crate::rust_parsing::ParsedRustFile;
-use crate::units::{CodeUnitKind, extract_code_units};
 use crate::rust_units::extract_rust_code_units;
+use crate::units::{CodeUnitKind, extract_code_units};
 use syn::visit::Visit;
 
 pub(super) fn collect_units(py: &[ParsedFile], rs: &[ParsedRustFile]) -> Vec<UnitRef> {
@@ -88,8 +88,7 @@ pub(super) fn collect_binds(
 
 fn python_binds(py: &[ParsedFile], ctx: &ContextDependencyGraph) -> Vec<NamedBind> {
     let prod = ctx.production_view();
-    let mut bare: std::collections::HashMap<String, Vec<String>> =
-        std::collections::HashMap::new();
+    let mut bare: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
     for name in prod.nodes.keys() {
         let bare_name = name.rsplit('.').next().unwrap_or(name).to_string();
         bare.entry(bare_name).or_default().push(name.clone());
@@ -123,11 +122,14 @@ fn python_binds(py: &[ParsedFile], ctx: &ContextDependencyGraph) -> Vec<NamedBin
 
 fn rust_binds(rs: &[ParsedRustFile], ctx: &ContextDependencyGraph) -> Vec<NamedBind> {
     let prod = ctx.production_view();
+    let last_idx = rust_last_index(&prod);
     let mut out = Vec::new();
     for parsed in rs {
         let current = module_name_for_path(ctx, &parsed.path);
         for (prefix, last) in collect_file_use_binds(&parsed.ast) {
-            if let Some(module) = resolve_rust_prefix_from(&prefix, current.as_deref(), &prod) {
+            if let Some(module) =
+                resolve_rust_prefix_from(&prefix, current.as_deref(), &prod, &last_idx)
+            {
                 out.push(NamedBind {
                     target_module: module,
                     last,
@@ -138,10 +140,26 @@ fn rust_binds(rs: &[ParsedRustFile], ctx: &ContextDependencyGraph) -> Vec<NamedB
     out
 }
 
+pub(super) fn rust_last_index(
+    prod: &crate::graph::DependencyGraph,
+) -> HashMap<String, Vec<String>> {
+    let mut idx: HashMap<String, Vec<String>> = HashMap::new();
+    for name in prod.nodes.keys() {
+        let last = name.rsplit('.').next().unwrap_or(name);
+        idx.entry(last.to_string()).or_default().push(name.clone());
+    }
+    for names in idx.values_mut() {
+        names.sort();
+        names.dedup();
+    }
+    idx
+}
+
 pub(super) fn resolve_rust_prefix_from(
     prefix: &str,
     current: Option<&str>,
     prod: &crate::graph::DependencyGraph,
+    last_idx: &HashMap<String, Vec<String>>,
 ) -> Option<String> {
     if let Some(cur) = current {
         let rel = format!("{cur}.{prefix}");
@@ -149,29 +167,25 @@ pub(super) fn resolve_rust_prefix_from(
             return Some(rel);
         }
     }
-    resolve_rust_prefix(prefix, prod)
+    resolve_rust_prefix_indexed(prefix, prod, last_idx)
 }
 
-pub(super) fn resolve_rust_prefix(prefix: &str, prod: &crate::graph::DependencyGraph) -> Option<String> {
+fn resolve_rust_prefix_indexed(
+    prefix: &str,
+    prod: &crate::graph::DependencyGraph,
+    last_idx: &HashMap<String, Vec<String>>,
+) -> Option<String> {
     if prod.nodes.contains_key(prefix) {
         return Some(prefix.to_string());
     }
     let last = prefix.rsplit('.').next().unwrap_or(prefix);
-    let mut hits: Vec<String> = prod
-        .nodes
-        .keys()
-        .filter(|name| *name == last || name.ends_with(&format!(".{last}")))
-        .cloned()
-        .collect();
-    hits.sort();
-    hits.dedup();
-    (hits.len() == 1).then(|| hits.remove(0))
+    let hits = last_idx.get(last)?;
+    (hits.len() == 1).then(|| hits[0].clone())
 }
 
 fn split_nested(spec: &str) -> Option<(String, String)> {
-    spec.rsplit_once('.').map(|(prefix, last)| {
-        (prefix.to_string(), last.to_string())
-    })
+    spec.rsplit_once('.')
+        .map(|(prefix, last)| (prefix.to_string(), last.to_string()))
 }
 
 pub(super) fn rust_coverage_off(rs: &[ParsedRustFile]) -> HashSet<(PathBuf, String, usize)> {
@@ -223,9 +237,14 @@ pub(super) fn file_key<'a>(
     map: &'a std::collections::BTreeMap<PathBuf, BTreeSet<usize>>,
     path: &Path,
 ) -> Option<&'a BTreeSet<usize>> {
-    map.get(path).or_else(|| {
-        map.iter()
-            .find(|(p, _)| crate::rust_include::canonical_path(p) == crate::rust_include::canonical_path(path))
-            .map(|(_, set)| set)
-    })
+    if let Some(set) = map.get(path) {
+        return Some(set);
+    }
+    let canon = crate::rust_include::canonical_path(path);
+    if let Some(set) = map.get(&canon) {
+        return Some(set);
+    }
+    map.iter()
+        .find(|(p, _)| crate::rust_include::canonical_path(p) == canon)
+        .map(|(_, set)| set)
 }

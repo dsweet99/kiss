@@ -4,12 +4,13 @@ use std::path::{Path, PathBuf};
 use kiss::Language;
 use serde::{Deserialize, Serialize};
 
-use crate::analyze::cov_records_cache::{
-    python_backend_identity_for_file_list, rust_backend_identity_for_file_list,
-};
 use crate::analyze_cache::fnv1a64;
 
-const SCHEMA_VERSION: &str = "kiss-cov-file-list-v4";
+const SCHEMA_VERSION: &str = "kiss-cov-file-list-v6";
+
+fn is_prior_file_list_schema(schema: &str) -> bool {
+    schema == "kiss-cov-file-list-v4" || schema == "kiss-cov-file-list-v5"
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct CovFileListCache {
@@ -31,11 +32,19 @@ pub(crate) fn try_load_cov_file_list(
     let fingerprint = file_list_fingerprint(key)?;
     let raw = fs::read(cache_path(key.repo_root)).ok()?;
     let cache: CovFileListCache = serde_json::from_slice(&raw).ok()?;
-    if cache.schema_version != SCHEMA_VERSION || cache.fingerprint != fingerprint {
+    let current = cache.schema_version == SCHEMA_VERSION;
+    let prior = is_prior_file_list_schema(&cache.schema_version);
+    if !current && !prior {
+        return None;
+    }
+    if current && cache.fingerprint != fingerprint {
         return None;
     }
     if cache.py_files.is_empty() && cache.rs_files.is_empty() {
         return None;
+    }
+    if prior {
+        store_cov_file_list(key, &cache.py_files, &cache.rs_files);
     }
     Some((cache.py_files, cache.rs_files))
 }
@@ -90,24 +99,6 @@ fn file_list_fingerprint(key: &CovFileListKey<'_>) -> Option<String> {
     h = fnv1a64(h, cargo.to_string_lossy().as_bytes());
     if let Ok(bytes) = fs::read(&cargo) {
         h = fnv1a64(h, &bytes);
-    }
-    let want_py = matches!(key.lang_filter, None | Some(Language::Python));
-    let want_rs = matches!(key.lang_filter, None | Some(Language::Rust));
-    if want_rs {
-        let extra = kiss::code_roles::workspace_preflight_fingerprint(key.repo_root).ok()?;
-        h = fnv1a64(h, extra.as_bytes());
-    }
-    if want_py {
-        h = fnv1a64(
-            h,
-            python_backend_identity_for_file_list(key.repo_root)?.as_bytes(),
-        );
-    }
-    if want_rs {
-        h = fnv1a64(
-            h,
-            rust_backend_identity_for_file_list(key.repo_root)?.as_bytes(),
-        );
     }
     Some(format!("{h:016x}"))
 }

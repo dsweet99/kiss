@@ -1,6 +1,7 @@
 mod cache;
 #[cfg(test)]
 pub(crate) mod cov_cache_test_support;
+pub(crate) mod cov_coverable_cache;
 pub(crate) mod cov_file_list_cache;
 pub(crate) mod cov_records_cache;
 mod coverage;
@@ -15,8 +16,8 @@ mod focus;
 mod graph_api;
 mod lang_sides;
 pub(crate) mod line_coverage;
-mod orphan_unit_gate;
 mod options;
+mod orphan_unit_gate;
 mod parallel;
 mod params;
 mod pipeline;
@@ -28,7 +29,6 @@ pub(crate) use coverage::collect_line_coverage_viols;
 #[allow(unused_imports)]
 pub use coverage_gate::check_coverage_gate;
 pub(crate) use coverage_gate::evaluate_line_gate;
-pub(crate) use orphan_unit_gate::evaluate_orphan_unit_gate;
 #[allow(unused_imports)]
 pub use coverage_types::CheckCoverageGateParams;
 pub use dry::{DryRunParams, run_dry};
@@ -48,6 +48,7 @@ pub use graph_api::{
 };
 #[allow(unused_imports)]
 pub use options::{AnalyzeOptions, AnalyzeResult};
+pub(crate) use orphan_unit_gate::evaluate_orphan_unit_gate;
 #[cfg(test)]
 pub(crate) use pipeline::empty_full_pipeline_result_for_tests;
 #[allow(unused_imports)]

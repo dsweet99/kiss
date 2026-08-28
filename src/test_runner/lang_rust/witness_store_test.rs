@@ -203,3 +203,48 @@ fn warm_helpers_use_caller_gate_not_cwd_defaults() {
         Some(vec!["a".into()])
     );
 }
+
+#[test]
+fn rust_warm_or_miss_is_miss_without_witness() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_minimal_repo(tmp.path());
+    match rust_warm_or_miss_selectors(
+        tmp.path(),
+        &["a".into()],
+        &sample_identity(),
+        &kiss::GateConfig::default(),
+    ) {
+        RustWarmDecision::Miss => {}
+        other => panic!("expected Miss, got {other:?}"),
+    }
+}
+
+#[test]
+fn warm_accepts_when_generation_drifts_with_same_input() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_minimal_repo(tmp.path());
+    let identity = sample_identity();
+    let selectors = vec!["a".into()];
+    let empty_cov = Default::default();
+    publish_rust_execution_witness(PublishRustWitness {
+        repo_root: tmp.path(),
+        identity: &identity,
+        scope: WitnessScope::Full,
+        selectors: &selectors,
+        statuses: &[WitnessStatus::Passed],
+        durations_ns: &[Some(10)],
+        covered_lines: &empty_cov,
+        complete: true,
+    })
+    .unwrap();
+    let mut drifted = identity.clone();
+    drifted.generation_fingerprint = "other-gen".into();
+    drifted.selection_context_fingerprint = "other-sel".into();
+    assert!(try_warm_rust_cached_summary(
+        tmp.path(),
+        &selectors,
+        &drifted,
+        &kiss::GateConfig::default()
+    )
+    .is_some());
+}

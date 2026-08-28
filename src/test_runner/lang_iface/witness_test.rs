@@ -72,6 +72,26 @@ fn all_mode_rejects_identity_mismatch() {
 }
 
 #[test]
+fn all_mode_accepts_input_digest_and_unsorted_selectors() {
+    let w = witness(
+        WitnessScope::Full,
+        "rs:abc123:oldgen:oldctx",
+        &["b", "a"],
+        &[WitnessStatus::Passed, WitnessStatus::Passed],
+        true,
+    );
+    assert_eq!(
+        accept_witness(
+            AcceptMode::All,
+            &["a".into(), "b".into()],
+            "rs:abc123:newgen:newctx",
+            &w
+        ),
+        AcceptDecision::Accept
+    );
+}
+
+#[test]
 fn all_mode_rejects_selector_lag() {
     let w = witness(
         WitnessScope::Full,
@@ -88,6 +108,10 @@ fn all_mode_rejects_selector_lag() {
             &w
         ),
         AcceptDecision::Miss("selector_universe")
+    );
+    assert_eq!(
+        miss_selectors_for_repair(AcceptMode::All, &["a".into(), "b".into(), "c".into()], "id", Some(&w), false),
+        vec!["c".to_string()]
     );
 }
 

@@ -428,3 +428,55 @@ fn run_cov_command_hits_records_fast_path_after_seed() {
     };
     let _ = run_cov_command(&args_bypass);
 }
+
+#[test]
+fn run_cov_command_orphan_uses_cached_records() {
+    use crate::bin_cli::cov_warm::warm_cov_caches_after_tests;
+    use crate::test_runner::python_coverage_index::{
+        write_python_coverage_snapshot, write_python_population_manifest_for_args,
+    };
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::fs;
+
+    let _cwd = crate::cwd_test_lock::lock();
+    let orig_dir = std::env::current_dir().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    std::env::set_current_dir(repo).unwrap();
+    let _restore_cwd = RestoreCwd(orig_dir);
+    fs::create_dir_all(repo.join(".git")).unwrap();
+    fs::write(repo.join("a.py"), "x = 1\n").unwrap();
+    fs::write(
+        repo.join(".kissconfig"),
+        "[test]\ntest_coverage_threshold = 50\nmax_unit_test_seconds = [[\"*\", 0.0]]\norphan_detection = true\n[python]\n[rust]\n",
+    )
+    .unwrap();
+    let selector = "tests/test_a.py::test_x".to_string();
+    write_python_population_manifest_for_args(repo, std::slice::from_ref(&selector), &[]).unwrap();
+    let mut covered = BTreeMap::new();
+    covered.insert("a.py".to_string(), BTreeSet::from([1u32]));
+    write_python_coverage_snapshot(repo, &covered).unwrap();
+
+    let py = Config::python_defaults();
+    let rs = Config::rust_defaults();
+    let gate = GateConfig::load();
+    assert!(gate.orphan_detection);
+    warm_cov_caches_after_tests(repo, Some(Language::Python), &[], &gate, &[]);
+    let path = ".".to_string();
+    let args = CovCommandArgs {
+        paths: std::slice::from_ref(&path),
+        lang_filter: Some(Language::Python),
+        py_config: &py,
+        rs_config: &rs,
+        gate_config: &gate,
+        bypass_gate: false,
+        ignore: &[],
+        timing: false,
+        jobs: 1,
+        allow_refresh: false,
+        pytest_args: &[],
+        language_tables: Default::default(),
+    };
+    let code = run_cov_command(&args);
+    assert!(code == 0 || code == 1, "code={code}");
+}

@@ -163,3 +163,94 @@ fn cov_records_cache_hits_with_rust_population_when_aggregate_missing() {
     let loaded = try_load_cov_records(&key).expect("population-backed warm hit");
     assert_eq!(loaded, records);
 }
+
+#[test]
+fn cov_records_cache_misses_when_rust_witness_file_changes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    write_python_population(repo);
+    let cache = repo.join(".kiss/rust_llvm_cov_cache");
+    fs::create_dir_all(&cache).unwrap();
+    let witness = cache.join("execution_witness.json");
+    fs::write(&witness, "{\"v\":1}\n").unwrap();
+    let py = touch_source(&repo.join("a.py"), "pass\n");
+    let rs = touch_source(&repo.join("lib.rs"), "fn g() {}\n");
+    let key = CovRecordsCacheKey {
+        repo_root: repo,
+        py_files: std::slice::from_ref(&py),
+        rs_files: std::slice::from_ref(&rs),
+        required: RequiredCoverageLanguages {
+            python: true,
+            rust: true,
+        },
+        threshold: 80,
+        bypass_gate: false,
+        ignore: &[],
+        lang_filter: None,
+    };
+    store_cov_records(
+        &key,
+        &[LineCoverageRecord {
+            file: rs.clone(),
+            total_lines: 1,
+            covered_lines: 1,
+            percent: 100,
+            first_uncovered_line: None,
+        }],
+    );
+    assert!(try_load_cov_records(&key).is_some());
+    std::thread::sleep(Duration::from_millis(5));
+    fs::write(&witness, "{\"v\":2}\n").unwrap();
+    let _ = fs::File::options()
+        .write(true)
+        .open(&witness)
+        .unwrap()
+        .set_modified(SystemTime::now())
+        .ok();
+    assert!(try_load_cov_records(&key).is_none());
+}
+
+#[test]
+fn cov_records_cache_misses_when_cargo_toml_changes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    write_python_population(repo);
+    write_rust_aggregate(repo);
+    fs::write(
+        repo.join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    let py = touch_source(&repo.join("a.py"), "pass\n");
+    let rs = touch_source(&repo.join("lib.rs"), "fn g() {}\n");
+    let key = CovRecordsCacheKey {
+        repo_root: repo,
+        py_files: std::slice::from_ref(&py),
+        rs_files: std::slice::from_ref(&rs),
+        required: RequiredCoverageLanguages {
+            python: true,
+            rust: true,
+        },
+        threshold: 80,
+        bypass_gate: false,
+        ignore: &[],
+        lang_filter: None,
+    };
+    store_cov_records(
+        &key,
+        &[LineCoverageRecord {
+            file: rs.clone(),
+            total_lines: 1,
+            covered_lines: 1,
+            percent: 100,
+            first_uncovered_line: None,
+        }],
+    );
+    assert!(try_load_cov_records(&key).is_some());
+    fs::write(
+        repo.join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n[[bin]]\nname = \"tool\"\npath = \"lib.rs\"\n",
+    )
+    .unwrap();
+    assert!(try_load_cov_records(&key).is_none());
+}

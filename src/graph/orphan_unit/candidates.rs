@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::code_roles::{CodeRole, SourceRoleIndex};
 use crate::comments::{normalize_allowed_dirs, path_in_allowed_dirs};
+use crate::graph::orphan_unit::extract::file_key;
 use crate::graph::orphan_unit::{OrphanCoverage, UnitRef};
 use crate::rust_include::canonical_path;
 use crate::units::CodeUnitKind;
@@ -23,9 +24,9 @@ pub(super) fn is_candidate(in_: CandidateIn<'_>) -> bool {
         return false;
     }
     let prod_coverable = production_coverable(in_.unit, in_.roles, in_.coverage);
-    let off = in_
-        .coverage_off
-        .contains(&(path.clone(), in_.unit.name.clone(), in_.unit.start_line));
+    let off =
+        in_.coverage_off
+            .contains(&(path.clone(), in_.unit.name.clone(), in_.unit.start_line));
     !(prod_coverable.is_empty() && off)
 }
 
@@ -66,13 +67,7 @@ fn production_coverable(
     roles: &SourceRoleIndex,
     coverage: &OrphanCoverage,
 ) -> Vec<usize> {
-    let Some(lines) = coverage.coverable.get(&unit.file).or_else(|| {
-        coverage
-            .coverable
-            .iter()
-            .find(|(path, _)| canonical_path(path) == canonical_path(&unit.file))
-            .map(|(_, set)| set)
-    }) else {
+    let Some(lines) = file_key(&coverage.coverable, &unit.file) else {
         return Vec::new();
     };
     let in_range: Vec<usize> = lines

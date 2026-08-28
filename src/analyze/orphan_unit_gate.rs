@@ -26,7 +26,8 @@ pub(crate) fn evaluate_orphan_unit_gate(
         eprintln!("error: kiss test: failed to parse sources for orphan units");
         return true;
     };
-    let facts = CoverageSourceFacts::from_index(roles.clone(), &rs_parsed, py_files, rs_files);
+    let facts =
+        CoverageSourceFacts::from_index(roles.clone(), &py_parsed, &rs_parsed, py_files, rs_files);
     let coverage = snapshot_to_orphan_coverage(repo_root, &facts, snapshot);
     let py_refs: Vec<&kiss::ParsedFile> = py_parsed.iter().collect();
     let rs_refs: Vec<&kiss::ParsedRustFile> = rs_parsed.iter().collect();

@@ -341,7 +341,10 @@ pub(crate) fn store_workspace_selectors(
 mod rust_memo;
 #[cfg(test)]
 pub(crate) use rust_memo::clear_rust_selector_memo_for_tests;
-pub(crate) use rust_memo::{load_cached_rust_workspace_selectors, store_rust_workspace_selectors};
+pub(crate) use rust_memo::{
+    cached_rust_selectors_if_rust_fingerprint_current, load_cached_rust_workspace_selectors,
+    store_rust_workspace_selectors,
+};
 
 #[cfg(test)]
 #[path = "workspace_selector_cache_test.rs"]

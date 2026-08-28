@@ -8,7 +8,7 @@ use super::{
 
 #[path = "plan_rust.rs"]
 mod plan_rust;
-use plan_rust::rust_population_current_for_all_selectors;
+use plan_rust::rust_plan_selectors;
 
 #[path = "plan_explicit.rs"]
 mod plan_explicit;
@@ -203,11 +203,7 @@ fn planned_all(
         );
         !current
     };
-    let rust_population_required = if rs_sel.is_empty() {
-        false
-    } else {
-        !rust_population_current_for_all_selectors(repo_root, &rs_sel, gate)
-    };
+    let (rs_sel, rust_population_required) = rust_plan_selectors(repo_root, rs_sel, gate);
     PlannedSelectors {
         repo_root: repo_root.to_path_buf(),
         sel: crate::test_runner::language_keyed::LanguageKeyed {

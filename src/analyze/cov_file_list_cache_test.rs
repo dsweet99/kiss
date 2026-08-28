@@ -3,7 +3,7 @@ use crate::analyze::cov_cache_test_support::write_python_population_for_cache_te
 use std::path::PathBuf;
 
 #[test]
-fn cov_file_list_cache_round_trip_and_population_invalidation() {
+fn cov_file_list_cache_survives_population_change() {
     let tmp = tempfile::tempdir().unwrap();
     let repo = tmp.path();
     write_python_population_for_cache_tests(repo, "abc");
@@ -16,11 +16,45 @@ fn cov_file_list_cache_round_trip_and_population_invalidation() {
     assert!(try_load_cov_file_list(&key).is_none());
     store_cov_file_list(&key, std::slice::from_ref(&py), &[]);
     let (loaded_py, loaded_rs) = try_load_cov_file_list(&key).expect("warm hit");
-    assert_eq!(loaded_py, vec![py]);
+    assert_eq!(loaded_py, vec![py.clone()]);
     assert!(loaded_rs.is_empty());
 
     write_python_population_for_cache_tests(repo, "changed");
-    assert!(try_load_cov_file_list(&key).is_none());
+    let (loaded_py, _) =
+        try_load_cov_file_list(&key).expect("source file list is independent of coverage population");
+    assert_eq!(loaded_py, vec![py]);
+}
+
+#[test]
+fn cov_file_list_cache_accepts_prior_schemas_without_regather() {
+    for schema in ["kiss-cov-file-list-v4", "kiss-cov-file-list-v5"] {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path();
+        write_python_population_for_cache_tests(repo, "abc");
+        std::fs::create_dir_all(repo.join(".kiss")).unwrap();
+        let py = PathBuf::from("pkg/a.py");
+        let key = CovFileListKey {
+            repo_root: repo,
+            lang_filter: Some(kiss::Language::Python),
+            ignore: &[],
+        };
+        std::fs::write(
+            repo.join(".kiss/cov_file_list_cache.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "schema_version": schema,
+                "fingerprint": "stale-identity",
+                "py_files": ["pkg/a.py"],
+                "rs_files": [],
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let (loaded_py, loaded_rs) = try_load_cov_file_list(&key).expect("prior lists must load");
+        assert_eq!(loaded_py, vec![py.clone()], "{schema}");
+        assert!(loaded_rs.is_empty(), "{schema}");
+        let (again_py, _) = try_load_cov_file_list(&key).expect("restamp still hits");
+        assert_eq!(again_py, vec![py], "{schema}");
+    }
 }
 
 #[test]

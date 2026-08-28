@@ -49,6 +49,17 @@ fn read_any_cache(repo_root: &Path) -> Option<super::WorkspaceSelectorCache> {
         .or_else(|| super::read_cache_at(&super::durable_cache_path(repo_root)))
 }
 
+pub(crate) fn cached_rust_selectors_if_rust_fingerprint_current(
+    repo_root: &Path,
+) -> Option<Vec<String>> {
+    let cache = read_any_cache(repo_root)?;
+    if cache.source_root != super::normalized_root(repo_root) {
+        return None;
+    }
+    let fps = super::workspace_lang_fingerprints(repo_root, &cache.ignore).ok()?;
+    (cache.rust_files_fingerprint == fps.rust).then_some(cache.rust_selectors)
+}
+
 pub(crate) fn load_cached_rust_workspace_selectors(
     repo_root: &Path,
     ignore: &[String],
@@ -75,8 +86,13 @@ pub(crate) fn store_rust_workspace_selectors(
         return false;
     };
     let root = super::normalized_root(repo_root);
-    let existing = read_any_cache(repo_root)
-        .filter(|cache| super::cache_identity_matches(cache, repo_root, ignore));
+    let existing = read_any_cache(repo_root);
+    if let Some(cache) = existing.as_ref()
+        && !super::cache_identity_matches(cache, repo_root, ignore)
+    {
+        remember_rust_selectors(&root, ignore, &fps.rust, rust_selectors);
+        return true;
+    }
     let (python_files_fingerprint, python_selectors) = match existing {
         Some(cache) => (cache.python_files_fingerprint, cache.python_selectors),
         None => ("unpopulated".to_string(), Vec::new()),

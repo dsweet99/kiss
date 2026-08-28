@@ -165,6 +165,34 @@ impl Counter {{
         let results = parse_rust_files(&paths);
         assert_eq!(results.len(), 2);
         assert!(results.iter().all(std::result::Result::is_ok));
+        let names: Vec<String> = results
+            .iter()
+            .map(|parsed| {
+                parsed
+                    .as_ref()
+                    .unwrap()
+                    .path
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        assert_eq!(
+            names,
+            vec![
+                f1.path()
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned(),
+                f2.path()
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned(),
+            ]
+        );
     }
 
     #[test]

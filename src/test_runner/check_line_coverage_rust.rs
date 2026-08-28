@@ -13,6 +13,12 @@ pub(crate) fn load_rust_runtime_coverage(
     ignore: &[String],
     gate: &kiss::GateConfig,
 ) -> Result<BackendCoverage, RuntimeCoverageLoadError> {
+    if let Some((generation_id, covered_lines)) =
+        crate::test_runner::execution_witness::try_recall_published_rust_covered_lines(repo_root)
+        && !covered_lines.is_empty()
+    {
+        return Ok(backend_from_lines(generation_id, covered_lines));
+    }
     let identity = current_rust_coverage_batch_identity(repo_root, &[]).map_err(|err| {
         coverage_error("Rust", &format!("stale/incompatible tool identity ({err})"))
     })?;
@@ -85,12 +91,12 @@ pub(super) fn try_load_rust_coverage_from_witness(
     selectors: &[String],
     gate: &kiss::GateConfig,
 ) -> Option<BackendCoverage> {
-    let mut witness = try_load_rust_execution_witness(repo_root).ok()?;
+    let witness = try_load_rust_execution_witness(repo_root).ok()?;
     if witness.covered_lines.is_empty() {
         return None;
     }
 
-    if !rust_witness_accepts_planned(repo_root, &mut witness, identity, selectors, gate) {
+    if !rust_witness_accepts_planned(repo_root, &witness, identity, selectors, gate) {
         return None;
     }
     let covered: BTreeMap<String, BTreeSet<u32>> = witness
@@ -103,34 +109,16 @@ pub(super) fn try_load_rust_coverage_from_witness(
 
 fn rust_witness_accepts_planned(
     _repo_root: &Path,
-    witness: &mut crate::test_runner::lang_iface::ExecutionWitness,
+    witness: &crate::test_runner::lang_iface::ExecutionWitness,
     identity: &kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity,
-    selectors: &[String],
-    gate: &kiss::GateConfig,
+    _selectors: &[String],
+    _gate: &kiss::GateConfig,
 ) -> bool {
     use crate::test_runner::execution_witness::rust_identity_digest_from_batch;
-    use crate::test_runner::lang_iface::{
-        accept_witness, reclassify_statuses_with_gate, AcceptDecision, AcceptMode,
-    };
+    use crate::test_runner::lang_iface::{accept_witness, AcceptDecision, AcceptMode};
     let current = rust_identity_digest_from_batch(identity);
-    if witness.identity_digest != current {
-        return false;
-    }
-    witness.statuses = reclassify_statuses_with_gate(
-        &witness.selectors,
-        &witness.statuses,
-        &witness.durations_ns,
-        gate,
-    );
-    let mut planned = selectors.to_vec();
-    planned.sort();
-    planned.dedup();
-    let mode = if planned == witness.selectors {
-        AcceptMode::All
-    } else {
-        AcceptMode::Subset
-    };
-    accept_witness(mode, &planned, &current, witness) == AcceptDecision::Accept
+    let universe = witness.selectors.clone();
+    accept_witness(AcceptMode::All, &universe, &current, witness) == AcceptDecision::Accept
 }
 
 pub(super) fn try_load_rust_coverage_from_witness_prior(
@@ -140,8 +128,8 @@ pub(super) fn try_load_rust_coverage_from_witness_prior(
     selectors: &[String],
     gate: &kiss::GateConfig,
 ) -> Option<BackendCoverage> {
-    let mut witness = try_load_rust_execution_witness(repo_root).ok()?;
-    if !rust_witness_accepts_planned(repo_root, &mut witness, identity, selectors, gate) {
+    let witness = try_load_rust_execution_witness(repo_root).ok()?;
+    if !rust_witness_accepts_planned(repo_root, &witness, identity, selectors, gate) {
         return None;
     }
 
@@ -286,6 +274,16 @@ mod tests {
         )
         .unwrap();
         assert!(loaded.covered_lines.contains_key("src/lib.rs"));
+        let mut drifted = identity.clone();
+        drifted.generation_fingerprint = "g2".into();
+        drifted.selection_context_fingerprint = "s2".into();
+        assert!(try_load_rust_coverage_from_witness(
+            tmp.path(),
+            &drifted,
+            &selectors,
+            &kiss::GateConfig::default(),
+        )
+        .is_some());
 
         let empty = BTreeMap::new();
         let _ = publish_rust_execution_witness(PublishRustWitness {
@@ -306,5 +304,52 @@ mod tests {
             &kiss::GateConfig::default()
         )
         .is_none());
+    }
+
+    #[test]
+    fn witness_coverage_accepts_complete_universe_despite_enumerator_extras_and_tight_gate() {
+        use crate::test_runner::execution_witness::{
+            publish_rust_execution_witness, PublishRustWitness, WitnessScope, WitnessStatus,
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+        std::fs::write(
+            tmp.path().join("Cargo.toml"),
+            "[package]\nname='demo'\nversion='0.1.0'\nedition='2021'\n",
+        )
+        .unwrap();
+        std::fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
+        let identity = kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity {
+            input_digest: "i".into(),
+            generation_fingerprint: "g".into(),
+            selection_context_fingerprint: "s".into(),
+            ordinary_source_digests: Default::default(),
+        };
+        let witness_selectors = vec!["a".into(), "b".into()];
+        let enumerator = vec!["a".into(), "b".into(), "c".into()];
+        let covered = BTreeMap::from([("src/lib.rs".into(), BTreeSet::from([1u32]))]);
+        let _ = publish_rust_execution_witness(PublishRustWitness {
+            repo_root: tmp.path(),
+            identity: &identity,
+            scope: WitnessScope::Full,
+            selectors: &witness_selectors,
+            statuses: &[WitnessStatus::Passed, WitnessStatus::Passed],
+            durations_ns: &[Some(12_000_000_000), Some(20)],
+            covered_lines: &covered,
+            complete: true,
+        })
+        .unwrap();
+        let tight = kiss::GateConfig {
+            max_unit_test_seconds: vec![("*".into(), 5.0)],
+            ..kiss::GateConfig::default()
+        };
+        let loaded = try_load_rust_coverage_from_witness(
+            tmp.path(),
+            &identity,
+            &enumerator,
+            &tight,
+        )
+        .unwrap();
+        assert!(loaded.covered_lines.contains_key("src/lib.rs"));
     }
 }
