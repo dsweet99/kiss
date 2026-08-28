@@ -213,7 +213,7 @@ pub fn cargo_entry_src_paths(files: &[PathBuf]) -> HashSet<PathBuf> {
         .filter(|root| {
             root.kinds
                 .iter()
-                .any(|kind| matches!(kind.as_str(), "bin" | "example" | "custom-build"))
+                .any(|kind| matches!(kind.as_str(), "bin" | "lib" | "example" | "custom-build"))
         })
         .map(|root| root.src_path)
         .collect()

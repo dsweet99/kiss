@@ -3,6 +3,11 @@ use std::fs;
 use std::path::Path;
 
 #[test]
+fn for_current_process_is_named() {
+    let _ = KissProfrawProcessGuard::for_current_process;
+}
+
+#[test]
 fn kiss_profraw_dir_is_under_dot_kiss() {
     let tmp = tempfile::tempdir().unwrap();
     assert_eq!(

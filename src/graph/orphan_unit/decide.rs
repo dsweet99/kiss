@@ -26,11 +26,14 @@ fn graph_witness(unit: &UnitRef, ctx: &ContextDependencyGraph, binds: &[NamedBin
         return false;
     };
     if unit.kind == CodeUnitKind::Module {
-        return module_graph_witness(ctx, &module);
+        return module_graph_witness(ctx, &module)
+            || binds.iter().any(|bind| {
+                bind.target_module == module || bind.last == module
+            });
     }
-    binds
-        .iter()
-        .any(|bind| bind.target_module == module && bind.last == unit.name)
+    binds.iter().any(|bind| {
+        bind.last == unit.name && (bind.target_module.is_empty() || bind.target_module == module)
+    })
 }
 
 fn module_graph_witness(ctx: &ContextDependencyGraph, module: &str) -> bool {

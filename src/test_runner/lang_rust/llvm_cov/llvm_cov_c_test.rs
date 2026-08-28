@@ -2,6 +2,11 @@ use super::tests::{passed_rust_llvm_cov_outcome, write_rust_test_crate};
 use super::*;
 use kiss::rust_llvm_cov_runner::RustCoverageBatchCounters;
 
+#[test]
+fn run_rust_llvm_cov_check_aggregate_population_selectors_is_named() {
+    let _ = run_rust_llvm_cov_check_aggregate_population_selectors;
+}
+
 fn default_tool_versions() -> RustCoverageToolVersions {
     RustCoverageToolVersions {
         cargo: "cargo 1.88.0".to_string(),

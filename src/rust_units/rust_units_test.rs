@@ -53,6 +53,20 @@ impl Counter {
     assert_eq!(methods.len(), 2);
     assert!(methods.iter().any(|m| m.name == "new"));
     assert!(methods.iter().any(|m| m.name == "get"));
+    assert!(methods.iter().all(|m| !m.trait_impl));
+}
+
+#[test]
+fn marks_trait_impl_methods() {
+    let units = parse_and_extract(
+        "pub struct S;\nimpl Default for S { fn default() -> Self { S } }\n",
+    );
+    let methods: Vec<_> = units
+        .iter()
+        .filter(|u| u.kind == CodeUnitKind::Method)
+        .collect();
+    assert_eq!(methods.len(), 1);
+    assert!(methods[0].trait_impl);
 }
 
 #[test]

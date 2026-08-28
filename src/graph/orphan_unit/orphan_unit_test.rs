@@ -309,3 +309,187 @@ fn main_guard_module_is_not_candidate() {
         "covered nested unit must not be orphan: {names:?}"
     );
 }
+
+fn rust_names(files: &[PathBuf], coverage: OrphanCoverage, root: &Path) -> Vec<String> {
+    let parsed: Vec<ParsedRustFile> = files.iter().map(|p| parse_rs(p)).collect();
+    let refs: Vec<&ParsedRustFile> = parsed.iter().collect();
+    let roles = build_source_role_index(&[], &parsed, &[], files).unwrap();
+    let ctx = build_rust_context_graph(&refs, &roles);
+    let prod = ctx.production_view();
+    let entries = collect_orphan_entry_paths(&[], &parsed, None, Some(&prod));
+    let empty_py = [];
+    let empty_py_ctx = crate::graph::ContextDependencyGraph::empty();
+    orphan_unit_violations(&OrphanUnitInput {
+        py: &empty_py,
+        rs: &parsed,
+        py_ctx: &empty_py_ctx,
+        rs_ctx: &ctx,
+        entries: &entries,
+        orphan_allowed: &[],
+        repo_root: root,
+        roles: &roles,
+        coverage: Some(&coverage),
+    })
+    .into_iter()
+    .map(|v| v.unit_name)
+    .collect()
+}
+
+#[test]
+fn rust_path_expr_names_helper_type() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+    write(&src.join("lib.rs"), "mod m;\nfn f() { let _ = crate::m::Helper; }\n");
+    write(&src.join("m.rs"), "pub struct Helper;\npub fn unused() { let _x = 1; }\n");
+    let files = vec![src.join("lib.rs"), src.join("m.rs")];
+    let m = src.join("m.rs");
+    let names = rust_names(
+        &files,
+        OrphanCoverage {
+            coverable: BTreeMap::from([(m.clone(), BTreeSet::from([2]))]),
+            hit: BTreeMap::from([(m, BTreeSet::new())]),
+        },
+        tmp.path(),
+    );
+    assert!(
+        names.iter().any(|n| n == "unused"),
+        "unused rust fn must be orphan: {names:?}"
+    );
+    assert!(
+        !names.iter().any(|n| n == "Helper"),
+        "path-named Helper must not be orphan: {names:?}"
+    );
+}
+
+#[test]
+fn rust_same_module_type_name_witnesses_struct() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+    write(&src.join("lib.rs"), "pub struct Helper;\nfn f() { let _ = Helper; }\n");
+    let lib = src.join("lib.rs");
+    let names = rust_names(
+        std::slice::from_ref(&lib),
+        OrphanCoverage {
+            coverable: BTreeMap::from([(lib.clone(), BTreeSet::from([2]))]),
+            hit: BTreeMap::from([(lib.clone(), BTreeSet::new())]),
+        },
+        tmp.path(),
+    );
+    assert!(
+        !names.iter().any(|n| n == "Helper"),
+        "same-module Helper must not be orphan: {names:?}"
+    );
+}
+
+#[test]
+fn rust_trait_impl_method_is_not_candidate() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+    write(
+        &src.join("lib.rs"),
+        "pub struct Helper;\nimpl Default for Helper { fn default() -> Self { Helper } }\n",
+    );
+    let lib = src.join("lib.rs");
+    let names = rust_names(
+        std::slice::from_ref(&lib),
+        OrphanCoverage {
+            coverable: BTreeMap::from([(lib.clone(), BTreeSet::from([2]))]),
+            hit: BTreeMap::from([(lib.clone(), BTreeSet::new())]),
+        },
+        tmp.path(),
+    );
+    assert!(
+        !names.iter().any(|n| n == "default"),
+        "trait impl method must not be a candidate: {names:?}"
+    );
+}
+
+#[test]
+fn rust_enum_variant_path_witnesses_type() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+    write(
+        &src.join("lib.rs"),
+        "pub enum Helper { A }\nfn f() { let _ = Helper::A; }\n",
+    );
+    let lib = src.join("lib.rs");
+    let names = rust_names(
+        std::slice::from_ref(&lib),
+        OrphanCoverage {
+            coverable: BTreeMap::from([(lib.clone(), BTreeSet::from([2]))]),
+            hit: BTreeMap::from([(lib.clone(), BTreeSet::from([2]))]),
+        },
+        tmp.path(),
+    );
+    assert!(
+        !names.iter().any(|n| n == "Helper"),
+        "Helper::A must witness Helper: {names:?}"
+    );
+}
+
+#[test]
+fn rust_mod_rs_module_unit_is_not_candidate() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    write(
+        &tmp.path().join("Cargo.toml"),
+        "[package]\nname = \"d\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    );
+    let src = tmp.path().join("src");
+    write(&src.join("lib.rs"), "mod m;\nfn f() { crate::m::used(); }\n");
+    write(
+        &src.join("m/mod.rs"),
+        "pub fn used() { let _x = 1; }\npub fn unused() { let _x = 2; }\n",
+    );
+    let files = vec![src.join("lib.rs"), src.join("m/mod.rs")];
+    let lib = src.join("lib.rs");
+    let m = src.join("m/mod.rs");
+    let names = rust_names(
+        &files,
+        OrphanCoverage {
+            coverable: BTreeMap::from([
+                (lib.clone(), BTreeSet::from([2])),
+                (m.clone(), BTreeSet::from([1, 2])),
+            ]),
+            hit: BTreeMap::from([(lib, BTreeSet::from([2])), (m, BTreeSet::from([1]))]),
+        },
+        tmp.path(),
+    );
+    assert!(
+        !names.iter().any(|n| n == "mod" || n == "mod.rs"),
+        "mod.rs module unit must not be a candidate: {names:?}"
+    );
+    assert!(
+        names.iter().any(|n| n == "unused"),
+        "nested unit in mod.rs remains a candidate: {names:?}"
+    );
+}
+
+#[test]
+fn rust_cargo_lib_module_is_not_candidate() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    write(
+        &tmp.path().join("Cargo.toml"),
+        "[package]\nname = \"d\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    );
+    write(
+        &tmp.path().join("src/lib.rs"),
+        "pub struct Unused;\npub struct Used;\nfn f() { let _ = Used; }\n",
+    );
+    let lib = tmp.path().join("src/lib.rs");
+    let names = rust_names(
+        std::slice::from_ref(&lib),
+        OrphanCoverage {
+            coverable: BTreeMap::from([(lib.clone(), BTreeSet::from([3]))]),
+            hit: BTreeMap::from([(lib.clone(), BTreeSet::from([3]))]),
+        },
+        tmp.path(),
+    );
+    assert!(
+        !names.iter().any(|n| n == "lib" || n == "lib.rs"),
+        "cargo lib module must not be a candidate: {names:?}"
+    );
+    assert!(
+        names.iter().any(|n| n == "Unused"),
+        "unused struct in lib remains a candidate: {names:?}"
+    );
+}

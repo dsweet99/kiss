@@ -11,6 +11,7 @@ use crate::violation::Violation;
 mod candidates;
 mod decide;
 mod extract;
+mod name_refs;
 mod report;
 
 pub struct OrphanCoverage {
@@ -39,6 +40,7 @@ pub(crate) struct UnitRef {
     pub end_line: usize,
     pub parent_type: Option<String>,
     pub is_rust: bool,
+    pub trait_impl: bool,
 }
 
 #[must_use]

@@ -163,5 +163,6 @@ mod span_test {
         assert!(!a.overlaps(b));
         let c = SourceSpan::new(SourcePosition::new(1, 3), SourcePosition::new(1, 5));
         assert!(a.overlaps(c));
+        assert!(a.contains_pos(SourcePosition::new(1, 3)));
     }
 }

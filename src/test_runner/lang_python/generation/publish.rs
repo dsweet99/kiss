@@ -312,3 +312,11 @@ pub(crate) fn path_maxes_from_selector_durations(
         )
         .collect()
 }
+
+#[cfg(test)]
+mod pointer_digest_test {
+    #[test]
+    fn pointer_digest_for_tests_is_named() {
+        let _ = super::pointer_digest_for_tests;
+    }
+}

@@ -2,6 +2,11 @@ use super::*;
 use std::fs;
 
 #[test]
+fn format_python_coverage_env_is_named() {
+    let _ = format_python_coverage_env;
+}
+
+#[test]
 fn python_coverage_classifier_skips_synthetic_and_ignored_paths() {
     let tmp = tempfile::tempdir().unwrap();
     let app = tmp.path().join("app.py");

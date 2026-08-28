@@ -15,7 +15,7 @@ docs_allowed = [
 ]
 
 [test]
-orphan_detection = false
+orphan_detection = true
 test_coverage_scope = "by_file"
 test_coverage_threshold = 75
 max_num_tests = 3050

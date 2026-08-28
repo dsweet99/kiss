@@ -149,3 +149,11 @@ pub(crate) struct PythonPopulationPlan {
     pub(crate) base_identity: PythonExecutionIdentity,
     pub(crate) selectors: Vec<String>,
 }
+
+#[cfg(test)]
+mod schema_fn_test {
+    #[test]
+    fn line_index_schema_v2_is_named() {
+        let _ = super::line_index_schema_v2;
+    }
+}

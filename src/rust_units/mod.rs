@@ -10,6 +10,7 @@ pub struct RustCodeUnit {
     pub start_line: usize,
     pub end_line: usize,
     pub parent_type: Option<String>,
+    pub trait_impl: bool,
 }
 
 struct CodeUnitVisitor {
@@ -52,6 +53,7 @@ impl<'ast> CodeUnitVisitor {
             start_line,
             end_line,
             parent_type: None,
+            trait_impl: false,
         });
         syn::visit::visit_item_fn(self, func);
     }
@@ -64,6 +66,7 @@ impl<'ast> CodeUnitVisitor {
             start_line,
             end_line: start_line,
             parent_type: None,
+            trait_impl: false,
         });
     }
 
@@ -75,6 +78,7 @@ impl<'ast> CodeUnitVisitor {
             start_line,
             end_line: start_line,
             parent_type: None,
+            trait_impl: false,
         });
     }
 
@@ -86,6 +90,7 @@ impl<'ast> CodeUnitVisitor {
         };
 
         self.current_impl_type = type_name;
+        let trait_impl = impl_block.trait_.is_some();
         for impl_item in &impl_block.items {
             if let ImplItem::Fn(method) = impl_item {
                 let start_line = method.sig.ident.span().start().line;
@@ -97,6 +102,7 @@ impl<'ast> CodeUnitVisitor {
                     start_line,
                     end_line,
                     parent_type: self.current_impl_type.clone(),
+                    trait_impl,
                 });
             }
         }
@@ -113,6 +119,7 @@ impl<'ast> CodeUnitVisitor {
                 start_line,
                 end_line: start_line,
                 parent_type: None,
+                trait_impl: false,
             });
         }
         syn::visit::visit_item_mod(self, m);
@@ -144,6 +151,7 @@ pub fn extract_rust_code_units(parsed: &ParsedRustFile) -> Vec<RustCodeUnit> {
         start_line: 1,
         end_line: visitor.source_lines,
         parent_type: None,
+        trait_impl: false,
     });
     for item in &parsed.ast.items {
         visitor.visit_item(item);

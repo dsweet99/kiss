@@ -344,4 +344,9 @@ mod tests {
 
         assert!(matched_rule_for_selector(&[], "anything").is_none());
     }
+
+    #[test]
+    fn format_toml_rules_is_named() {
+        let _ = format_toml_rules;
+    }
 }

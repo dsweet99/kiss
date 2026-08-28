@@ -27,6 +27,7 @@ pub(super) fn collect_units(py: &[ParsedFile], rs: &[ParsedRustFile]) -> Vec<Uni
                 end_line: unit.end_line,
                 parent_type,
                 is_rust: false,
+                trait_impl: false,
             });
         }
     }
@@ -40,6 +41,7 @@ pub(super) fn collect_units(py: &[ParsedFile], rs: &[ParsedRustFile]) -> Vec<Uni
                 end_line: unit.end_line,
                 parent_type: unit.parent_type,
                 is_rust: true,
+                trait_impl: unit.trait_impl,
             });
         }
     }
@@ -78,6 +80,9 @@ pub(super) fn collect_binds(
     let mut out = Vec::new();
     out.extend(python_binds(py, py_ctx));
     out.extend(rust_binds(rs, rs_ctx));
+    out.extend(crate::graph::orphan_unit::name_refs::collect_name_binds(
+        py, rs, py_ctx, rs_ctx,
+    ));
     out
 }
 
@@ -120,8 +125,9 @@ fn rust_binds(rs: &[ParsedRustFile], ctx: &ContextDependencyGraph) -> Vec<NamedB
     let prod = ctx.production_view();
     let mut out = Vec::new();
     for parsed in rs {
+        let current = module_name_for_path(ctx, &parsed.path);
         for (prefix, last) in collect_file_use_binds(&parsed.ast) {
-            if let Some(module) = resolve_rust_prefix(&prefix, &prod) {
+            if let Some(module) = resolve_rust_prefix_from(&prefix, current.as_deref(), &prod) {
                 out.push(NamedBind {
                     target_module: module,
                     last,
@@ -132,7 +138,21 @@ fn rust_binds(rs: &[ParsedRustFile], ctx: &ContextDependencyGraph) -> Vec<NamedB
     out
 }
 
-fn resolve_rust_prefix(prefix: &str, prod: &crate::graph::DependencyGraph) -> Option<String> {
+pub(super) fn resolve_rust_prefix_from(
+    prefix: &str,
+    current: Option<&str>,
+    prod: &crate::graph::DependencyGraph,
+) -> Option<String> {
+    if let Some(cur) = current {
+        let rel = format!("{cur}.{prefix}");
+        if prod.nodes.contains_key(&rel) {
+            return Some(rel);
+        }
+    }
+    resolve_rust_prefix(prefix, prod)
+}
+
+pub(super) fn resolve_rust_prefix(prefix: &str, prod: &crate::graph::DependencyGraph) -> Option<String> {
     if prod.nodes.contains_key(prefix) {
         return Some(prefix.to_string());
     }

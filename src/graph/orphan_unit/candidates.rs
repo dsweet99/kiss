@@ -41,7 +41,7 @@ fn role_or_path_excluded(in_: &CandidateIn<'_>, path: &Path) -> bool {
 }
 
 fn unit_kind_excluded(unit: &UnitRef, entries: &HashSet<PathBuf>) -> bool {
-    is_init_module_unit(unit) || is_entry_unit(unit, entries)
+    unit.trait_impl || is_init_module_unit(unit) || is_entry_unit(unit, entries)
 }
 
 fn is_init_module_unit(unit: &UnitRef) -> bool {
@@ -49,7 +49,7 @@ fn is_init_module_unit(unit: &UnitRef) -> bool {
         && unit
             .file
             .file_stem()
-            .is_some_and(|stem| stem == "__init__")
+            .is_some_and(|stem| stem == "__init__" || stem == "mod")
 }
 
 fn is_entry_unit(unit: &UnitRef, entries: &HashSet<PathBuf>) -> bool {

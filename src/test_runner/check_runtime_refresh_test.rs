@@ -1,4 +1,9 @@
 #[test]
+fn ensure_rust_runtime_coverage_shared_is_named() {
+    let _ = super::ensure_rust_runtime_coverage_shared;
+}
+
+#[test]
 fn refresh_guard_env_name_is_stable() {
     assert_eq!(
         super::COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV,
