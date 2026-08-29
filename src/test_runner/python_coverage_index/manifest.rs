@@ -84,12 +84,17 @@ pub(crate) fn write_python_population_manifest_with_identity_and_entries_fingerp
         entries_fingerprint: entries_fingerprint.to_string(),
         selectors,
     };
-    kiss::kiss_publication_barrier::publish_atomically("python_population", &path, &tmp_path, |file| {
-        serde_json::to_writer_pretty(&mut *file, &payload).map_err(std::io::Error::other)?;
-        use std::io::Write;
-        file.write_all(b"\n")?;
-        Ok(())
-    })
+    kiss::kiss_publication_barrier::publish_atomically(
+        "python_population",
+        &path,
+        &tmp_path,
+        |file| {
+            serde_json::to_writer_pretty(&mut *file, &payload).map_err(std::io::Error::other)?;
+            use std::io::Write;
+            file.write_all(b"\n")?;
+            Ok(())
+        },
+    )
     .map_err(|e| e.to_string())
 }
 

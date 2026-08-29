@@ -34,7 +34,9 @@ pub(crate) fn publish_python_population_generation_reusing(
 ) -> Result<String, String> {
     let cache_root = python_coverage_cache_root(repo_root)?;
     let _guard = kiss::rslip::lock_rslip_derived_state(&cache_root).map_err(|e| e.to_string())?;
-    let id = publish_locked(&cache_root, plan, evidence, reason, reuse_generation_id)?;
+    let mut evidence = evidence.clone();
+    super::evidence::fill_test_definition_digests(repo_root, &mut evidence);
+    let id = publish_locked(&cache_root, plan, &evidence, reason, reuse_generation_id)?;
     super::memo::clear_python_generation_warm_memo();
     Ok(id)
 }
@@ -157,10 +159,17 @@ fn write_pointer(
 ) -> Result<(), String> {
     let path = pointer_path(cache_root);
     let tmp = path.with_file_name(format!(".population.{}.tmp", python_unique_suffix()));
+    let parent_generation_id = fs::read(&path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<PopulationPointer>(&bytes).ok())
+        .map(|pointer| pointer.generation_id)
+        .filter(|parent| parent != generation_id)
+        .unwrap_or_default();
     let pointer = PopulationPointer {
         schema_version: POINTER_SCHEMA_VERSION.to_string(),
         generation_id: generation_id.to_string(),
         manifest_sha256: manifest_sha256.to_string(),
+        parent_generation_id,
     };
     publish_atomically("python_population_pointer", &path, &tmp, |file| {
         use std::io::Write;
@@ -182,12 +191,17 @@ fn prune_old_generations(cache_root: &Path, keep_id: &str) -> Result<(), String>
         Ok(entries) => entries,
         Err(_) => return Ok(()),
     };
+    let parent_id = fs::read(pointer_path(cache_root))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<PopulationPointer>(&bytes).ok())
+        .map(|pointer| pointer.parent_generation_id)
+        .unwrap_or_default();
     for entry in entries.flatten() {
         let name = entry.file_name();
         let Some(name) = name.to_str() else {
             continue;
         };
-        if name.starts_with('.') || name == keep_id {
+        if name.starts_with('.') || name == keep_id || name == parent_id {
             continue;
         }
         let path = entry.path();

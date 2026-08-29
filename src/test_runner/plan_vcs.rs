@@ -2,7 +2,7 @@ use kiss::Language;
 
 use super::runners;
 use super::rust_llvm_cov;
-use super::{planned_from_selector_plan, PlannedSelectors};
+use super::{PlannedSelectors, planned_from_selector_plan};
 use crate::test_git::TestChangeMode;
 
 pub(crate) struct PlanSelectorsRequest<'a> {

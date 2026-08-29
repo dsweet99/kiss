@@ -18,17 +18,12 @@ fn witness_memo() -> &'static Mutex<Option<WitnessMemo>> {
 }
 
 pub(super) fn file_stamp(path: &Path) -> Option<String> {
-    let meta = fs::metadata(path).ok()?;
-    if !meta.is_file() {
+    let bytes = fs::read(path).ok()?;
+    if bytes.is_empty() {
         return None;
     }
-    let mtime = meta
-        .modified()
-        .ok()?
-        .duration_since(std::time::UNIX_EPOCH)
-        .ok()?
-        .as_nanos();
-    Some(format!("{}:{mtime}", meta.len()))
+    let digest = crate::analyze_cache::fnv1a64(0xcbf2_9ce4_8422_2325, &bytes);
+    Some(format!("{digest:016x}"))
 }
 
 pub(super) fn stash_published_witness(
@@ -36,9 +31,8 @@ pub(super) fn stash_published_witness(
     witness_path: &Path,
     witness: ExecutionWitness,
 ) {
-    let Some(stamp) = file_stamp(witness_path) else {
-        return;
-    };
+    let stamp = file_stamp(witness_path)
+        .unwrap_or_else(|| format!("gen:{}", witness.generation_id));
     let key = kiss::rust_include::canonical_path(repo_root);
     if let Ok(mut guard) = witness_memo().lock() {
         *guard = Some(WitnessMemo {
@@ -50,23 +44,33 @@ pub(super) fn stash_published_witness(
 }
 
 pub(super) fn memo_witness(repo_root: &Path, witness_path: &Path) -> Option<ExecutionWitness> {
-    let stamp = file_stamp(witness_path)?;
     let key = kiss::rust_include::canonical_path(repo_root);
     let guard = witness_memo().lock().ok()?;
     let memo = guard.as_ref()?;
-    (memo.repo == key && memo.stamp == stamp).then(|| (*memo.witness).clone())
+    if memo.repo != key {
+        return None;
+    }
+    match file_stamp(witness_path) {
+        Some(stamp) if memo.stamp == stamp => Some((*memo.witness).clone()),
+        None if memo.stamp.starts_with("gen:") => Some((*memo.witness).clone()),
+        _ => None,
+    }
 }
 
 pub(crate) fn try_recall_published_rust_covered_lines(
     repo_root: &Path,
 ) -> Option<(String, BTreeMap<String, BTreeSet<u32>>)> {
     let witness_path = rust_coverage_cache_root(repo_root).join("execution_witness.json");
-    let stamp = file_stamp(&witness_path)?;
     let key = kiss::rust_include::canonical_path(repo_root);
     let guard = witness_memo().lock().ok()?;
     let memo = guard.as_ref()?;
-    if memo.repo != key || memo.stamp != stamp || !memo.witness.complete {
+    if memo.repo != key || !memo.witness.complete {
         return None;
+    }
+    match file_stamp(&witness_path) {
+        Some(stamp) if memo.stamp != stamp => return None,
+        None if !memo.stamp.starts_with("gen:") => return None,
+        _ => {}
     }
     let covered = memo
         .witness

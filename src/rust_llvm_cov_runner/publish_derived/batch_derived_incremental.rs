@@ -2,7 +2,9 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use crate::rust_llvm_cov_runner::plan::batch_fingerprint::{RustCoverageBatchIdentity, RustCoverageToolIdentity};
+use crate::rust_llvm_cov_runner::plan::batch_fingerprint::{
+    RustCoverageBatchIdentity, RustCoverageToolIdentity,
+};
 use crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest;
 use crate::rust_llvm_cov_runner::publish_derived::batch_derived::{
     DerivedPublishCounters, publish_derived_state_with_binaries,
@@ -155,7 +157,9 @@ mod tests {
     use crate::rpytest_runner::TestStatus;
 
     use crate::rust_llvm_cov_runner::plan::batch_fingerprint::{batch_identity, entry_fingerprint};
-    use crate::rust_llvm_cov_runner::rust_cov_cache::{RustCovCacheEntry, store_rust_cov_cache_entry};
+    use crate::rust_llvm_cov_runner::rust_cov_cache::{
+        RustCovCacheEntry, store_rust_cov_cache_entry,
+    };
     use crate::rust_llvm_cov_runner::test_support::{derived_fixture_request, witness_batch_tools};
     use crate::rust_llvm_cov_runner::{RustCovCacheStatus, RustLineCoverage, RustLlvmCovOutcome};
 

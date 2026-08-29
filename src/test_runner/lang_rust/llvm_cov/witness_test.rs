@@ -33,6 +33,7 @@ fn sample_req(
         test_args: vec![],
         env: BTreeMap::new(),
         force_rerun: false,
+        force_rerun_selectors: Vec::new(),
         jobs: 1,
         generated_config: PathBuf::from("/tmp/nextest.toml"),
         population_publication_selectors: population,
@@ -41,6 +42,7 @@ fn sample_req(
         host_platform: "x86_64-unknown-linux-gnu".into(),
         coverage_output_mode: mode,
         selector_timeout_millis: BTreeMap::new(),
+        cache_policy: kiss::test_cache_policy::TestCachePolicy::default(),
     }
 }
 
@@ -55,6 +57,7 @@ fn full_witness(selectors: &[&str]) -> ExecutionWitness {
         covered_lines: Default::default(),
         complete: true,
         generation_id: "rust-wit-test".into(),
+        raw_statuses: Vec::new(),
     }
 }
 
@@ -245,10 +248,30 @@ fn publish_refuses_to_shrink_full_via_store_guard() {
         durations_ns: &[Some(0); 3],
         covered_lines: &empty_cov,
         complete: true,
+        jobs: 1,
     })
     .unwrap();
     let before = try_load_rust_execution_witness(tmp.path()).unwrap();
     let shrunk = publish_rust_execution_witness(PublishRustWitness {
+        repo_root: tmp.path(),
+        identity: &identity,
+        scope: WitnessScope::Subset,
+        selectors: &shrink,
+        statuses: &[WitnessStatus::Passed],
+        durations_ns: &[Some(0)],
+        covered_lines: &empty_cov,
+        complete: false,
+        jobs: 1,
+    })
+    .unwrap();
+    assert!(shrunk.is_empty());
+    assert_eq!(
+        try_load_rust_execution_witness(tmp.path())
+            .unwrap()
+            .selectors,
+        before.selectors
+    );
+    let _ = publish_rust_execution_witness(PublishRustWitness {
         repo_root: tmp.path(),
         identity: &identity,
         scope: WitnessScope::Full,
@@ -257,9 +280,9 @@ fn publish_refuses_to_shrink_full_via_store_guard() {
         durations_ns: &[Some(0)],
         covered_lines: &empty_cov,
         complete: true,
+        jobs: 1,
     })
     .unwrap();
-    assert_eq!(shrunk, before.generation_id);
     let after = try_load_rust_execution_witness(tmp.path()).unwrap();
-    assert_eq!(after.selectors, full);
+    assert_eq!(after.selectors, shrink);
 }

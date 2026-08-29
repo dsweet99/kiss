@@ -1,11 +1,11 @@
 use super::store_completed_outcomes_with;
+use crate::rpytest_runner::TestStatus;
 use crate::rust_llvm_cov_runner::test_support::{
     batch_executor_fixture_repo, batch_executor_request, witness_batch_tools,
 };
 use crate::rust_llvm_cov_runner::{
     RustCovCacheStatus, RustLineCoverage, RustLlvmCovOutcome, batch_fingerprint::batch_identity,
 };
-use crate::rpytest_runner::TestStatus;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 use std::sync::{
@@ -157,7 +157,9 @@ fn store_completed_outcomes_reports_lowest_active_failure_and_stops_dispatch() {
     })
     .unwrap_err();
 
-    assert!(matches!(err, crate::rust_llvm_cov_runner::RustLlvmCovError::Io(ref err) if err.to_string() == "fail-s1"));
+    assert!(
+        matches!(err, crate::rust_llvm_cov_runner::RustLlvmCovError::Io(ref err) if err.to_string() == "fail-s1")
+    );
     assert_eq!(
         completed
             .iter()

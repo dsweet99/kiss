@@ -2,7 +2,9 @@ use std::path::{Path, PathBuf};
 
 use crate::rust_llvm_cov_runner::RustLlvmCovError;
 use crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest;
-use crate::rust_llvm_cov_runner::plan::cargo_workspace_metadata::{WorkspacePackage, load_cargo_metadata};
+use crate::rust_llvm_cov_runner::plan::cargo_workspace_metadata::{
+    WorkspacePackage, load_cargo_metadata,
+};
 
 pub(crate) fn resolve_ignore_filename_regex(
     req: &RustCoverageBatchRequest,

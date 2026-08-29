@@ -1,14 +1,18 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::rust_llvm_cov_runner::RustPopulationState;
-use crate::rust_llvm_cov_runner::publish_derived::batch_derived::{INDEX_SCHEMA_VERSION, POPULATION_SCHEMA_VERSION};
+use crate::rust_llvm_cov_runner::publish_derived::batch_derived::{
+    INDEX_SCHEMA_VERSION, POPULATION_SCHEMA_VERSION,
+};
 use crate::rust_llvm_cov_runner::publish_derived::batch_derived_index::{
     OnDiskIndex, OnDiskIndexWithFiles, PopulationManifestOnDisk, RustSnapshotDelta,
     load_current_generation_coverage_snapshot, load_current_generation_line_index,
     load_current_population_state, read_coverage_index, read_population_generation,
     read_population_manifest, reusable_snapshot_delta,
 };
-use crate::rust_llvm_cov_runner::test_support::{published_alpha_derived_fixture, tamper_json_file};
+use crate::rust_llvm_cov_runner::test_support::{
+    published_alpha_derived_fixture, tamper_json_file,
+};
 
 fn read_on_disk_index_with_files(cache_root: &std::path::Path) -> Option<OnDiskIndexWithFiles> {
     let bytes = std::fs::read(cache_root.join("index.json")).ok()?;

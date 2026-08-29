@@ -61,12 +61,16 @@ pub(crate) fn unmatched_selectors_batch_error(
     unmatched_selectors: usize,
     counters: crate::rust_llvm_cov_runner::batch_result::RustCoverageBatchCounters,
 ) -> Option<crate::rust_llvm_cov_runner::batch_result::RustCoverageBatchResult> {
-    (unmatched_selectors > 0).then(|| crate::rust_llvm_cov_runner::batch_result::RustCoverageBatchResult {
-        completed: Vec::new(),
-        batch_error: Some(crate::rust_llvm_cov_runner::RustLlvmCovError::InvalidRequest(format!(
-            "{kind} batch did not execute {unmatched_selectors} requested Rust selector(s)"
-        ))),
-        counters,
-        test_binaries: Vec::new(),
+    (unmatched_selectors > 0).then(|| {
+        crate::rust_llvm_cov_runner::batch_result::RustCoverageBatchResult {
+            completed: Vec::new(),
+            batch_error: Some(
+                crate::rust_llvm_cov_runner::RustLlvmCovError::InvalidRequest(format!(
+                    "{kind} batch did not execute {unmatched_selectors} requested Rust selector(s)"
+                )),
+            ),
+            counters,
+            test_binaries: Vec::new(),
+        }
     })
 }

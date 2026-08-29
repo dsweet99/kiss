@@ -7,18 +7,28 @@ use serde::{Deserialize, Serialize};
 
 use crate::analyze_cache::fnv1a64;
 
-const SCHEMA_VERSION: &str = "workspace-test-selectors-v4";
-const CACHE_FILE_NAME: &str = "workspace_test_selectors.json";
+const SCHEMA_VERSION: &str = "workspace-test-selectors-v9";
+const PYTHON_CACHE_FILE: &str = "python_test_selectors.json";
+const RUST_CACHE_FILE: &str = "rust_test_selectors.json";
+
+#[path = "workspace_selector_cache_digest.rs"]
+mod digest;
+#[path = "workspace_selector_cache_python.rs"]
+mod python_inventory;
+use digest::{flush_persisted_digests, hash_file_contents};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-struct WorkspaceSelectorCache {
+pub(super) struct LanguageSelectorCache {
     schema_version: String,
+    language: String,
     source_root: String,
     ignore: Vec<String>,
-    python_files_fingerprint: String,
-    rust_files_fingerprint: String,
-    python_selectors: Vec<String>,
-    rust_selectors: Vec<String>,
+    #[serde(default)]
+    collection_args: Vec<String>,
+    #[serde(default)]
+    plugin_identities: Vec<String>,
+    files_fingerprint: String,
+    selectors: Vec<String>,
 }
 
 struct LangFingerprints {
@@ -26,15 +36,12 @@ struct LangFingerprints {
     rust: String,
 }
 
-fn cache_path(repo_root: &Path) -> PathBuf {
-    repo_root.join(".kiss").join(CACHE_FILE_NAME)
+fn cache_path(repo_root: &Path, name: &str) -> PathBuf {
+    repo_root.join(".kiss").join(name)
 }
 
-fn durable_cache_path(repo_root: &Path) -> PathBuf {
-    repo_root
-        .join("target")
-        .join("kiss-plan")
-        .join(CACHE_FILE_NAME)
+fn durable_cache_path(repo_root: &Path, name: &str) -> PathBuf {
+    repo_root.join("target").join("kiss-plan").join(name)
 }
 
 fn should_skip_dir(name: &str) -> bool {
@@ -56,25 +63,15 @@ fn ignored(rel: &str, ignore: &[String]) -> bool {
     kiss::path_ignored_by_prefixes(rel, ignore)
 }
 
-fn hash_file_meta(h: u64, rel: &str, meta: &fs::Metadata) -> u64 {
-    let mtime = match meta.modified() {
-        Ok(t) => t
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_nanos() as u64)
-            .unwrap_or(0),
-        Err(_) => 0,
-    };
-    let mut acc = fnv1a64(h, rel.as_bytes());
-    acc = fnv1a64(acc, &meta.len().to_le_bytes());
-    fnv1a64(acc, &mtime.to_le_bytes())
-}
-
 fn workspace_lang_fingerprints(
     repo_root: &Path,
     ignore: &[String],
 ) -> io::Result<LangFingerprints> {
-    workspace_lang_fingerprints_git(repo_root, ignore)
-        .or_else(|_| workspace_lang_fingerprints_walk(repo_root, ignore))
+    let mut fps = workspace_lang_fingerprints_git(repo_root, ignore)
+        .or_else(|_| workspace_lang_fingerprints_walk(repo_root, ignore))?;
+    fps.python = python_inventory::mix_collection_inventory(repo_root, ignore, &fps.python)?;
+    flush_persisted_digests(repo_root);
+    Ok(fps)
 }
 
 fn combined_files_fingerprint(fp: &LangFingerprints) -> String {
@@ -97,8 +94,7 @@ pub(crate) fn workspace_files_fingerprint_for_cache(
 fn hash_rel_list(seed: &[u8], repo_root: &Path, rels: &[String]) -> io::Result<String> {
     let mut h = fnv1a64(0xcbf2_9ce4_8422_2325, seed);
     for rel in rels {
-        let meta = fs::metadata(repo_root.join(rel))?;
-        h = hash_file_meta(h, rel, &meta);
+        h = hash_file_contents(h, rel, repo_root, &repo_root.join(rel))?;
     }
     Ok(format!("{h:016x}"))
 }
@@ -144,8 +140,8 @@ fn workspace_lang_fingerprints_git(
     rs_rels.sort();
     rs_rels.dedup();
     Ok(LangFingerprints {
-        python: hash_rel_list(b"workspace-selectors-fp-v5-git-py", repo_root, &py_rels)?,
-        rust: hash_rel_list(b"workspace-selectors-fp-v5-git-rs", repo_root, &rs_rels)?,
+        python: hash_rel_list(b"workspace-selectors-fp-v6-git-py", repo_root, &py_rels)?,
+        rust: hash_rel_list(b"workspace-selectors-fp-v6-git-rs", repo_root, &rs_rels)?,
     })
 }
 
@@ -153,8 +149,8 @@ fn workspace_lang_fingerprints_walk(
     repo_root: &Path,
     ignore: &[String],
 ) -> io::Result<LangFingerprints> {
-    let mut py_h = fnv1a64(0xcbf2_9ce4_8422_2325, b"workspace-selectors-fp-v5-walk-py");
-    let mut rs_h = fnv1a64(0xcbf2_9ce4_8422_2325, b"workspace-selectors-fp-v5-walk-rs");
+    let mut py_h = fnv1a64(0xcbf2_9ce4_8422_2325, b"workspace-selectors-fp-v6-walk-py");
+    let mut rs_h = fnv1a64(0xcbf2_9ce4_8422_2325, b"workspace-selectors-fp-v6-walk-rs");
     let mut stack = vec![repo_root.to_path_buf()];
     while let Some(dir) = stack.pop() {
         let entries = fs::read_dir(&dir)?;
@@ -188,11 +184,12 @@ fn workspace_lang_fingerprints_walk(
             if !is_py && !is_rs {
                 continue;
             }
-            let meta = fs::metadata(&path)?;
+            let hashed =
+                hash_file_contents(if is_py { py_h } else { rs_h }, &rel, repo_root, &path)?;
             if is_py {
-                py_h = hash_file_meta(py_h, &rel, &meta);
+                py_h = hashed;
             } else {
-                rs_h = hash_file_meta(rs_h, &rel, &meta);
+                rs_h = hashed;
             }
         }
     }
@@ -210,13 +207,13 @@ pub(crate) fn normalized_root(repo_root: &Path) -> String {
         .to_string()
 }
 
-fn read_cache_at(path: &Path) -> Option<WorkspaceSelectorCache> {
+fn read_cache_at(path: &Path) -> Option<LanguageSelectorCache> {
     let bytes = fs::read(path).ok()?;
-    let cache: WorkspaceSelectorCache = serde_json::from_slice(&bytes).ok()?;
+    let cache: LanguageSelectorCache = serde_json::from_slice(&bytes).ok()?;
     (cache.schema_version == SCHEMA_VERSION).then_some(cache)
 }
 
-fn write_cache_at(path: &Path, cache: &WorkspaceSelectorCache) -> io::Result<()> {
+fn write_cache_at(path: &Path, cache: &LanguageSelectorCache) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -237,76 +234,112 @@ fn write_cache_at(path: &Path, cache: &WorkspaceSelectorCache) -> io::Result<()>
 }
 
 fn cache_identity_matches(
-    cache: &WorkspaceSelectorCache,
+    cache: &LanguageSelectorCache,
     repo_root: &Path,
     ignore: &[String],
+    collection_args: &[String],
+    plugin_identities: &[String],
 ) -> bool {
-    cache.source_root == normalized_root(repo_root) && cache.ignore == ignore
+    cache.source_root == normalized_root(repo_root)
+        && cache.ignore == ignore
+        && cache.collection_args == collection_args
+        && cache.plugin_identities == plugin_identities
 }
 
-fn combined_cache_matches(
-    cache: &WorkspaceSelectorCache,
+fn language_cache_matches(
+    cache: &LanguageSelectorCache,
     repo_root: &Path,
     ignore: &[String],
-    fps: &LangFingerprints,
+    collection_args: &[String],
+    plugin_identities: &[String],
+    fingerprint: &str,
 ) -> bool {
-    cache_identity_matches(cache, repo_root, ignore)
-        && cache.python_files_fingerprint == fps.python
-        && cache.rust_files_fingerprint == fps.rust
+    cache_identity_matches(cache, repo_root, ignore, collection_args, plugin_identities)
+        && cache.files_fingerprint == fingerprint
+}
+
+fn read_language_cache(repo_root: &Path, name: &str) -> Option<LanguageSelectorCache> {
+    read_cache_at(&cache_path(repo_root, name))
+        .or_else(|| read_cache_at(&durable_cache_path(repo_root, name)))
 }
 
 pub(crate) fn load_cached_workspace_selectors(
     repo_root: &Path,
     ignore: &[String],
+    python_extra: &[String],
 ) -> Option<(Vec<String>, Vec<String>, String)> {
     let fps = workspace_lang_fingerprints(repo_root, ignore).ok()?;
-    let fp = combined_files_fingerprint(&fps);
-    if let Some(cache) = read_cache_at(&cache_path(repo_root))
-        .filter(|cache| combined_cache_matches(cache, repo_root, ignore, &fps))
+    let python = read_language_cache(repo_root, PYTHON_CACHE_FILE)?;
+    let rust = read_language_cache(repo_root, RUST_CACHE_FILE)?;
+    let plugins = kiss::TestSectionConfig::load().pytest_plugins;
+    if !language_cache_matches(
+        &python,
+        repo_root,
+        ignore,
+        python_extra,
+        &plugins,
+        &fps.python,
+    ) || !language_cache_matches(&rust, repo_root, ignore, &[], &[], &fps.rust)
     {
-        rust_memo::remember_rust_selectors(
-            &cache.source_root,
-            ignore,
-            &cache.rust_files_fingerprint,
-            &cache.rust_selectors,
-        );
-        return Some((cache.python_selectors, cache.rust_selectors, fp));
-    }
-    let durable = read_cache_at(&durable_cache_path(repo_root))?;
-    if !combined_cache_matches(&durable, repo_root, ignore, &fps) {
         return None;
     }
-
-    let _ = write_cache_at(&cache_path(repo_root), &durable);
     rust_memo::remember_rust_selectors(
-        &durable.source_root,
+        &rust.source_root,
         ignore,
-        &durable.rust_files_fingerprint,
-        &durable.rust_selectors,
+        &rust.files_fingerprint,
+        &rust.selectors,
     );
-    Some((durable.python_selectors, durable.rust_selectors, fp))
+    Some((
+        python.selectors,
+        rust.selectors,
+        combined_files_fingerprint(&fps),
+    ))
 }
 
 pub(crate) fn load_workspace_selectors_for_count(
     repo_root: &Path,
     ignore: &[String],
+    python_extra: &[String],
 ) -> Option<(Vec<String>, Vec<String>)> {
-    let root = normalized_root(repo_root);
-    let cache = read_cache_at(&cache_path(repo_root))
-        .or_else(|| read_cache_at(&durable_cache_path(repo_root)))?;
-    if cache.source_root != root {
+    let python = read_language_cache(repo_root, PYTHON_CACHE_FILE)?;
+    let rust = read_language_cache(repo_root, RUST_CACHE_FILE)?;
+    let plugins = kiss::TestSectionConfig::load().pytest_plugins;
+    if !cache_identity_matches(&python, repo_root, ignore, python_extra, &plugins)
+        || !cache_identity_matches(&rust, repo_root, ignore, &[], &[])
+    {
         return None;
     }
-    if cache.ignore != ignore {
-        return None;
-    }
-    Some((cache.python_selectors, cache.rust_selectors))
+    Some((python.selectors, rust.selectors))
 }
 
-fn persist_selector_cache(repo_root: &Path, cache: &WorkspaceSelectorCache) -> bool {
-    let primary_ok = write_cache_at(&cache_path(repo_root), cache).is_ok();
-    let durable_ok = write_cache_at(&durable_cache_path(repo_root), cache).is_ok();
+fn persist_selector_cache(repo_root: &Path, name: &str, cache: &LanguageSelectorCache) -> bool {
+    let primary_ok = write_cache_at(&cache_path(repo_root, name), cache).is_ok();
+    let durable_ok = write_cache_at(&durable_cache_path(repo_root, name), cache).is_ok();
     primary_ok || durable_ok
+}
+
+fn language_cache(
+    root: String,
+    ignore: &[String],
+    language: &str,
+    fingerprint: String,
+    selectors: &[String],
+    collection_args: &[String],
+) -> LanguageSelectorCache {
+    LanguageSelectorCache {
+        schema_version: SCHEMA_VERSION.to_string(),
+        language: language.to_string(),
+        source_root: root,
+        ignore: ignore.to_vec(),
+        collection_args: collection_args.to_vec(),
+        plugin_identities: if language == "python" {
+            kiss::TestSectionConfig::load().pytest_plugins
+        } else {
+            Vec::new()
+        },
+        files_fingerprint: fingerprint,
+        selectors: selectors.to_vec(),
+    }
 }
 
 pub(crate) fn store_workspace_selectors(
@@ -314,22 +347,31 @@ pub(crate) fn store_workspace_selectors(
     ignore: &[String],
     python_selectors: &[String],
     rust_selectors: &[String],
+    python_extra: &[String],
 ) -> Option<String> {
     let Ok(fps) = workspace_lang_fingerprints(repo_root, ignore) else {
         return None;
     };
     let root = normalized_root(repo_root);
-    let cache = WorkspaceSelectorCache {
-        schema_version: SCHEMA_VERSION.to_string(),
-        source_root: root.clone(),
-        ignore: ignore.to_vec(),
-        python_files_fingerprint: fps.python.clone(),
-        rust_files_fingerprint: fps.rust.clone(),
-        python_selectors: python_selectors.to_vec(),
-        rust_selectors: rust_selectors.to_vec(),
-    };
-
-    if persist_selector_cache(repo_root, &cache) {
+    let python = language_cache(
+        root.clone(),
+        ignore,
+        "python",
+        fps.python.clone(),
+        python_selectors,
+        python_extra,
+    );
+    let rust = language_cache(
+        root.clone(),
+        ignore,
+        "rust",
+        fps.rust.clone(),
+        rust_selectors,
+        &[],
+    );
+    let python_ok = persist_selector_cache(repo_root, PYTHON_CACHE_FILE, &python);
+    let rust_ok = persist_selector_cache(repo_root, RUST_CACHE_FILE, &rust);
+    if python_ok && rust_ok {
         rust_memo::remember_rust_selectors(&root, ignore, &fps.rust, rust_selectors);
         Some(combined_files_fingerprint(&fps))
     } else {

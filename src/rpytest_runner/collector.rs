@@ -14,9 +14,44 @@ import sys
 os.environ.pop("PYTEST_ADDOPTS", None)
 os.environ["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
 
+_obs=set(); _ext=False
+_root=os.path.realpath(os.getcwd())
+def _prefixes():
+    out={sys.prefix, getattr(sys,'base_prefix',sys.prefix), getattr(sys,'exec_prefix',sys.prefix)}
+    try:
+        import site
+        out.update(site.getsitepackages())
+        out.add(site.getusersitepackages())
+    except Exception:
+        pass
+    return tuple(os.path.realpath(p) for p in out if p)
+_pref=_prefixes()
+def _hook(event, args):
+    global _ext
+    if event!='open' or not isinstance(args[0], str):
+        return
+    try:
+        real=os.path.realpath(args[0])
+    except Exception:
+        return
+    if real.startswith(_root+os.sep) or real==_root:
+        if os.path.isfile(real):
+            _obs.add(os.path.relpath(real, _root).replace('\\\\','/'))
+        return
+    if any(real==p or real.startswith(p+os.sep) for p in _pref):
+        return
+    if real.startswith(('/dev','/proc','/sys','/tmp','/var/tmp')):
+        return
+    _ext=True
+sys.addaudithook(_hook)
+
 class _KissCollectReporter:
     def pytest_collection_finish(self, session):
-        payload = {"nodeids": [item.nodeid for item in session.items]}
+        payload = {
+            "nodeids": [item.nodeid for item in session.items],
+            "observed_workspace": sorted(_obs),
+            "unsupported_external": _ext,
+        }
         sys.stdout.write("KISS_COLLECT_JSON:" + json.dumps(payload) + "\n")
 
 def main():
@@ -52,6 +87,8 @@ pub struct PytestCollectRequest {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PytestCollectOutcome {
     pub nodeids: Vec<String>,
+    pub observed_workspace: Vec<String>,
+    pub unsupported_external: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -138,7 +175,10 @@ fn collect_subprocess(
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
     let parsed = parse_collect_payload(&stdout)?;
-    if !output.status.success() && !is_empty_collection_success(output.status.code(), &parsed) {
+    if !output.status.success()
+        && parsed.nodeids.is_empty()
+        && !is_empty_collection_success(output.status.code(), &parsed)
+    {
         return Err(PytestCollectError::CollectionFailed {
             exit_code: output.status.code(),
             stderr,
@@ -146,7 +186,11 @@ fn collect_subprocess(
         });
     }
     let nodeids = normalize_nodeids(&parsed.nodeids, &req.cwd)?;
-    Ok(PytestCollectOutcome { nodeids })
+    Ok(PytestCollectOutcome {
+        nodeids,
+        observed_workspace: parsed.observed_workspace,
+        unsupported_external: parsed.unsupported_external,
+    })
 }
 
 fn is_empty_collection_success(exit_code: Option<i32>, parsed: &CollectPayload) -> bool {
@@ -201,6 +245,10 @@ impl CollectConfigPayload {
 #[derive(Deserialize)]
 struct CollectPayload {
     nodeids: Vec<String>,
+    #[serde(default)]
+    observed_workspace: Vec<String>,
+    #[serde(default)]
+    unsupported_external: bool,
 }
 
 impl CollectPayload {
@@ -208,6 +256,8 @@ impl CollectPayload {
     fn witness() -> Self {
         Self {
             nodeids: vec!["tests/a.py::t".to_string()],
+            observed_workspace: Vec::new(),
+            unsupported_external: false,
         }
     }
 }

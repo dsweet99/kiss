@@ -66,28 +66,20 @@ fn plan_python_language(
     planner: &dyn LanguagePlanner,
     changed_tests: Vec<TestSelector>,
 ) -> Result<(BTreeSet<TestSelector>, BTreeSet<TestSelector>, bool), String> {
-    if planner.prior_failures().is_empty() {
-        let freshness = planner.freshness(&[])?;
-        if !freshness.requires_population() {
-            let decision = planner.select()?;
-            if decision.complete {
-                let mut selected = BTreeSet::new();
-                selected.extend(decision.selectors);
-                selected.extend(changed_tests);
-                return Ok((selected, BTreeSet::new(), false));
-            }
-        }
-    }
-    plan_with_universe(planner, changed_tests)
+    plan_selective_or_population(planner, changed_tests)
 }
 
 fn plan_rust_language(
     planner: &dyn LanguagePlanner,
     changed_tests: Vec<TestSelector>,
 ) -> Result<(BTreeSet<TestSelector>, BTreeSet<TestSelector>, bool), String> {
-    if !planner.prior_failures().is_empty() {
-        return plan_with_universe(planner, changed_tests);
-    }
+    plan_selective_or_population(planner, changed_tests)
+}
+
+fn plan_selective_or_population(
+    planner: &dyn LanguagePlanner,
+    changed_tests: Vec<TestSelector>,
+) -> Result<(BTreeSet<TestSelector>, BTreeSet<TestSelector>, bool), String> {
     let plan_trace = std::env::var_os("KISS_PLAN_TRACE").is_some();
     let mut mark = std::time::Instant::now();
     let freshness = planner.freshness(&[])?;
@@ -136,38 +128,6 @@ fn plan_rust_language(
         );
     }
     Ok((selected, BTreeSet::new(), false))
-}
-
-fn plan_with_universe(
-    planner: &dyn LanguagePlanner,
-    changed_tests: Vec<TestSelector>,
-) -> Result<(BTreeSet<TestSelector>, BTreeSet<TestSelector>, bool), String> {
-    let universe = planner.discover_universe()?;
-    let universe_ids = universe
-        .iter()
-        .map(|selector| selector.id.clone())
-        .collect::<BTreeSet<_>>();
-    let prior_failures = filter_selectors_to_universe(planner.prior_failures(), &universe_ids);
-    let freshness = planner.freshness(&universe)?;
-    if freshness.requires_population() {
-        let mut population = planner.population_plan(&universe).selectors;
-        population.extend(changed_tests);
-        population.extend(prior_failures);
-        return Ok((BTreeSet::new(), population.into_iter().collect(), true));
-    }
-    let decision = planner.select()?;
-    if decision.complete {
-        let mut selected = BTreeSet::new();
-        selected.extend(decision.selectors);
-        selected.extend(changed_tests);
-        selected.extend(prior_failures);
-        Ok((selected, BTreeSet::new(), false))
-    } else {
-        let mut population = planner.population_plan(&universe).selectors;
-        population.extend(changed_tests);
-        population.extend(prior_failures);
-        Ok((BTreeSet::new(), population.into_iter().collect(), true))
-    }
 }
 
 fn plan_population(

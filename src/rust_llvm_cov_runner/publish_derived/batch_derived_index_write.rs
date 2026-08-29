@@ -40,10 +40,15 @@ pub(crate) fn write_coverage_index(
         entries_fingerprint,
         files: index,
     };
-    crate::kiss_publication_barrier::publish_atomically("rust_derived_index", &path, &tmp_path, |file| {
-        serde_json::to_writer(&mut *file, &payload).map_err(io::Error::other)?;
-        file.write_all(b"\n")?;
-        Ok(())
-    })
+    crate::kiss_publication_barrier::publish_atomically(
+        "rust_derived_index",
+        &path,
+        &tmp_path,
+        |file| {
+            serde_json::to_writer(&mut *file, &payload).map_err(io::Error::other)?;
+            file.write_all(b"\n")?;
+            Ok(())
+        },
+    )
     .map_err(RustLlvmCovError::Io)
 }

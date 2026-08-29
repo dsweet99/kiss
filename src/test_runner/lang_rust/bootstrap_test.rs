@@ -49,6 +49,7 @@ fn bootstrap_repo_rust_witness_when_env_set() {
         durations_ns: &durations,
         covered_lines: &empty_cov,
         complete: true,
+        jobs: 1,
     })
     .expect("publish");
     eprintln!("published {id} n={}", planned.len());

@@ -10,7 +10,7 @@ use crate::test_runner::coverage_decision::{CoverageFreshness, LanguagePlanner, 
 use crate::test_runner::runners::rust_backer::RustModule;
 use crate::test_runner::runners::{combined_selectors, enumerate_workspace_rust_selectors};
 use crate::test_runner::rust_coverage_index::{
-    current_rust_coverage_batch_identity, rebuild_rust_coverage_index,
+    ResolveRustPopulationArgs, current_rust_coverage_batch_identity, rebuild_rust_coverage_index,
     resolve_rust_population_state, write_rust_population_manifest_for_args, write_test_entry,
 };
 
@@ -39,9 +39,12 @@ fn reusable_prior_real_cache_fixture() {
     .expect("combined selectors");
     let universe = enumerate_workspace_rust_selectors(repo, &[]).unwrap();
     assert_eq!(
-        resolve_rust_population_state(repo, &[], std::slice::from_ref(&cli), &[])
-            .expect("resolved")
-            .freshness(),
+        resolve_rust_population_state(ResolveRustPopulationArgs::for_paths(
+            repo,
+            std::slice::from_ref(&cli),
+        ))
+        .expect("resolved")
+        .freshness(),
         CoverageFreshness::ReusablePrior
     );
     assert!(!plan.population_required.rust);

@@ -93,11 +93,7 @@ pub(crate) fn report_id_for_logical(
     logical: &LogicalSelectorId,
 ) -> ReportSelectorId {
     let key = logical.as_str();
-    ReportSelectorId::new(
-        map.get(key)
-            .cloned()
-            .unwrap_or_else(|| key.to_string()),
-    )
+    ReportSelectorId::new(map.get(key).cloned().unwrap_or_else(|| key.to_string()))
 }
 
 pub(crate) fn report_strings_for_logical_strings(

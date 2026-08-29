@@ -5,7 +5,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
 
 use crate::rust_llvm_cov_runner::RustLlvmCovError;
-use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export_tools::{ExportTools, read_profdata_binary_ids};
+use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export_tools::{
+    ExportTools, read_profdata_binary_ids,
+};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct BinaryIdObjectMap {
@@ -269,7 +271,11 @@ pub(crate) fn read_object_binary_id(
     if !output.status.success() {
         return Ok(None);
     }
-    Ok(crate::rust_llvm_cov_runner::execute_or_reuse::batch_export_tools::parse_readobj_build_id(&output.stdout))
+    Ok(
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_export_tools::parse_readobj_build_id(
+            &output.stdout,
+        ),
+    )
 }
 
 #[cfg(test)]

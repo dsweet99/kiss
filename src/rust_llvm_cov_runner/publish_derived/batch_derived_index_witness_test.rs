@@ -10,6 +10,7 @@ fn witness_population_load_mode_and_index_types() {
         input_fingerprint: "input".to_string(),
         generation_fingerprint: "generation".to_string(),
         selection_context_fingerprint: "context".to_string(),
+        ordinary_source_digests: BTreeMap::new(),
     };
     let reusable = PopulationLoadMode::ReusablePrior {
         selection_context_fingerprint: "context".to_string(),

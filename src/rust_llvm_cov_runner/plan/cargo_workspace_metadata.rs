@@ -295,7 +295,8 @@ impl WorkspaceMetadata {
         if known {
             return None;
         }
-        let rel = crate::rust_llvm_cov_runner::rust_cov_cache::repo_relative_path(source_root, &nearest)?;
+        let rel =
+            crate::rust_llvm_cov_runner::rust_cov_cache::repo_relative_path(source_root, &nearest)?;
         (!rel.is_empty()).then_some(rel)
     }
 

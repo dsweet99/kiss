@@ -3,6 +3,7 @@ use super::{
     FreshCheckAggregateExport, build_instance_export_requests, build_instance_results,
     finish_fresh_batch_after_export, finish_fresh_check_aggregate_after_export,
 };
+use crate::rpytest_runner::TestStatus;
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_events::{
     BatchCompilerArtifact, BatchTestStarted, BatchTestTerminal,
 };
@@ -17,7 +18,6 @@ use crate::rust_llvm_cov_runner::test_support::{
     batch_executor_fixture_repo, batch_executor_request, witness_batch_tools,
 };
 use crate::rust_llvm_cov_runner::{RustCovCacheStatus, RustLineCoverage};
-use crate::rpytest_runner::TestStatus;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
@@ -83,19 +83,21 @@ fn finish_fresh_batch_after_export_stores_completed_outcomes() {
     req.logical_selectors = vec!["alpha".to_string()];
     let tools = witness_batch_tools();
     let identity = batch_identity(&req, &tools).unwrap();
-    let instances = vec![crate::rust_llvm_cov_runner::execute_or_reuse::batch_aggregate::InstanceResult {
-        full_name: "pkg::bin$alpha".to_string(),
-        test_binary_id: "/tmp/bin".to_string(),
-        passed: true,
-        timed_out: false,
-        exit_code: Some(0),
-        duration: Duration::from_millis(1),
-        stdout: None,
-        stderr: None,
-        coverage: RustLineCoverage {
-            files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
+    let instances = vec![
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_aggregate::InstanceResult {
+            full_name: "pkg::bin$alpha".to_string(),
+            test_binary_id: "/tmp/bin".to_string(),
+            passed: true,
+            timed_out: false,
+            exit_code: Some(0),
+            duration: Duration::from_millis(1),
+            stdout: None,
+            stderr: None,
+            coverage: RustLineCoverage {
+                files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
+            },
         },
-    }];
+    ];
     let exported = vec![("pkg::bin$alpha".to_string(), instances[0].coverage.clone())];
     let result = finish_fresh_batch_after_export(
         &req,
@@ -125,19 +127,21 @@ fn population_finish_rejects_unmatched_selectors_before_storing() {
     req.population_publication_selectors = Some(req.logical_selectors.clone());
     let tools = witness_batch_tools();
     let identity = batch_identity(&req, &tools).unwrap();
-    let instances = vec![crate::rust_llvm_cov_runner::execute_or_reuse::batch_aggregate::InstanceResult {
-        full_name: "pkg::bin$alpha".to_string(),
-        test_binary_id: "/tmp/bin".to_string(),
-        passed: true,
-        timed_out: false,
-        exit_code: Some(0),
-        duration: Duration::from_millis(1),
-        stdout: None,
-        stderr: None,
-        coverage: RustLineCoverage {
-            files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
+    let instances = vec![
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_aggregate::InstanceResult {
+            full_name: "pkg::bin$alpha".to_string(),
+            test_binary_id: "/tmp/bin".to_string(),
+            passed: true,
+            timed_out: false,
+            exit_code: Some(0),
+            duration: Duration::from_millis(1),
+            stdout: None,
+            stderr: None,
+            coverage: RustLineCoverage {
+                files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
+            },
         },
-    }];
+    ];
     let result = finish_fresh_batch_after_export(
         &req,
         &tools,
@@ -228,19 +232,21 @@ fn finish_fresh_check_aggregate_returns_failed_outcomes_without_publishing() {
     };
     let tools = witness_batch_tools();
     let identity = batch_identity(&req, &tools).unwrap();
-    let instances = vec![crate::rust_llvm_cov_runner::execute_or_reuse::batch_aggregate::InstanceResult {
-        full_name: "pkg::bin$alpha".to_string(),
-        test_binary_id: "/tmp/bin".to_string(),
-        passed: false,
-        timed_out: false,
-        exit_code: Some(1),
-        duration: Duration::from_millis(1),
-        stdout: None,
-        stderr: None,
-        coverage: RustLineCoverage {
-            files: BTreeMap::new(),
+    let instances = vec![
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_aggregate::InstanceResult {
+            full_name: "pkg::bin$alpha".to_string(),
+            test_binary_id: "/tmp/bin".to_string(),
+            passed: false,
+            timed_out: false,
+            exit_code: Some(1),
+            duration: Duration::from_millis(1),
+            stdout: None,
+            stderr: None,
+            coverage: RustLineCoverage {
+                files: BTreeMap::new(),
+            },
         },
-    }];
+    ];
     let result = finish_fresh_check_aggregate_after_export(
         &req,
         &tools,
@@ -275,17 +281,19 @@ fn finish_fresh_check_aggregate_store_failure_prevents_final_publication() {
     let coverage = RustLineCoverage {
         files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
     };
-    let instances = vec![crate::rust_llvm_cov_runner::execute_or_reuse::batch_aggregate::InstanceResult {
-        full_name: "pkg::bin$alpha".to_string(),
-        test_binary_id: "/tmp/bin".to_string(),
-        passed: true,
-        timed_out: false,
-        exit_code: Some(0),
-        duration: Duration::from_millis(1),
-        stdout: None,
-        stderr: None,
-        coverage: coverage.clone(),
-    }];
+    let instances = vec![
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_aggregate::InstanceResult {
+            full_name: "pkg::bin$alpha".to_string(),
+            test_binary_id: "/tmp/bin".to_string(),
+            passed: true,
+            timed_out: false,
+            exit_code: Some(0),
+            duration: Duration::from_millis(1),
+            stdout: None,
+            stderr: None,
+            coverage: coverage.clone(),
+        },
+    ];
     let result = finish_fresh_check_aggregate_after_export(
         &req,
         &tools,
@@ -334,17 +342,19 @@ fn finish_fresh_check_aggregate_success_publishes_final_state_after_entries() {
     let coverage = RustLineCoverage {
         files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
     };
-    let instances = vec![crate::rust_llvm_cov_runner::execute_or_reuse::batch_aggregate::InstanceResult {
-        full_name: "pkg::bin$alpha".to_string(),
-        test_binary_id: "bin-a".to_string(),
-        passed: true,
-        timed_out: false,
-        exit_code: Some(0),
-        duration: Duration::from_millis(1),
-        stdout: None,
-        stderr: None,
-        coverage: coverage.clone(),
-    }];
+    let instances = vec![
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_aggregate::InstanceResult {
+            full_name: "pkg::bin$alpha".to_string(),
+            test_binary_id: "bin-a".to_string(),
+            passed: true,
+            timed_out: false,
+            exit_code: Some(0),
+            duration: Duration::from_millis(1),
+            stdout: None,
+            stderr: None,
+            coverage: coverage.clone(),
+        },
+    ];
     let finish = super::FreshBatchFinishContext {
         export_started: std::time::Instant::now(),
         build_target_baseline_bytes: 42,

@@ -15,7 +15,8 @@ fn rust_input_snapshot_tracks_ordinary_sources_without_selection_context_churn()
     )
     .unwrap();
     fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
-    let mut req = crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
+    let mut req =
+        crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
     req.cwd = tmp.path().to_path_buf();
     req.source_root = tmp.path().to_path_buf();
     req.cargo_args.clear();
@@ -24,7 +25,7 @@ fn rust_input_snapshot_tracks_ordinary_sources_without_selection_context_churn()
     fs::write(tmp.path().join("src").join("lib.rs"), "pub fn y() {}\n").unwrap();
     let after = rust_input_snapshot(tmp.path(), &req).unwrap();
 
-    assert_ne!(before.input_digest, after.input_digest);
+    assert_eq!(before.input_digest, after.input_digest);
     assert_eq!(
         before.selection_context_source_digest,
         after.selection_context_source_digest
@@ -37,6 +38,30 @@ fn rust_input_snapshot_tracks_ordinary_sources_without_selection_context_churn()
         before.ordinary_source_digests.get("src/lib.rs"),
         after.ordinary_source_digests.get("src/lib.rs")
     );
+}
+
+#[test]
+fn rust_input_snapshot_inventory_change_updates_input_digest() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::create_dir_all(tmp.path().join("src")).unwrap();
+    fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
+    )
+    .unwrap();
+    fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
+    let mut req =
+        crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
+    req.cwd = tmp.path().to_path_buf();
+    req.source_root = tmp.path().to_path_buf();
+    req.cargo_args.clear();
+
+    let before = rust_input_snapshot(tmp.path(), &req).unwrap();
+    fs::write(tmp.path().join("src").join("extra.rs"), "pub fn z() {}\n").unwrap();
+    let after = rust_input_snapshot(tmp.path(), &req).unwrap();
+
+    assert_ne!(before.input_digest, after.input_digest);
+    assert!(after.ordinary_source_digests.contains_key("src/extra.rs"));
 }
 
 #[test]
@@ -55,7 +80,8 @@ fn rust_input_snapshot_tracks_inc_sources_without_selection_context_churn() {
     )
     .unwrap();
     fs::write(tmp.path().join("src").join("part.inc"), "pub fn x() {}\n").unwrap();
-    let mut req = crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
+    let mut req =
+        crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
     req.cwd = tmp.path().to_path_buf();
     req.source_root = tmp.path().to_path_buf();
     req.cargo_args.clear();
@@ -64,7 +90,7 @@ fn rust_input_snapshot_tracks_inc_sources_without_selection_context_churn() {
     fs::write(tmp.path().join("src").join("part.inc"), "pub fn y() {}\n").unwrap();
     let after = rust_input_snapshot(tmp.path(), &req).unwrap();
 
-    assert_ne!(before.input_digest, after.input_digest);
+    assert_eq!(before.input_digest, after.input_digest);
     assert_eq!(
         before.selection_context_source_digest,
         after.selection_context_source_digest
@@ -87,7 +113,8 @@ fn rust_input_snapshot_keeps_compile_time_rs_out_of_ordinary_map() {
     .unwrap();
     fs::write(tmp.path().join("build.rs"), "fn main() {}\n").unwrap();
     fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
-    let mut req = crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
+    let mut req =
+        crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
     req.cwd = tmp.path().to_path_buf();
     req.source_root = tmp.path().to_path_buf();
     req.cargo_args.clear();
@@ -102,7 +129,8 @@ fn rust_input_snapshot_keeps_compile_time_rs_out_of_ordinary_map() {
 #[test]
 fn rust_input_snapshot_excludes_nested_non_member_crate_sources() {
     let tmp = write_nested_non_member_fixture();
-    let mut req = crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
+    let mut req =
+        crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
     req.cwd = tmp.path().to_path_buf();
     req.source_root = tmp.path().to_path_buf();
     req.cargo_args.clear();

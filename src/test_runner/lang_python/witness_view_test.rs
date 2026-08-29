@@ -39,6 +39,7 @@ fn sample_pinned(complete: bool) -> PinnedPythonGeneration {
             duration_ns: Some(12),
             cache_disposition: TimingCacheDisposition::Hit,
             reason: None,
+            test_definition_digest: String::new(),
         }],
         line_index: Default::default(),
         selector_coverage: Default::default(),

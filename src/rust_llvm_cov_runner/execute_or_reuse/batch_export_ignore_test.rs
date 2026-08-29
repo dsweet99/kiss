@@ -104,6 +104,7 @@ fn resolve_ignore_filename_regex_fails_for_missing_manifest() {
         test_args: Vec::new(),
         env: Default::default(),
         force_rerun: true,
+        force_rerun_selectors: Vec::new(),
         jobs: 1,
         generated_config: PathBuf::from("/tmp/kiss-ignore-regex-missing/nextest.toml"),
         population_publication_selectors: None,
@@ -112,6 +113,7 @@ fn resolve_ignore_filename_regex_fails_for_missing_manifest() {
         host_platform: String::new(),
         coverage_output_mode: crate::rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
         selector_timeout_millis: std::collections::BTreeMap::new(),
+        cache_policy: crate::test_cache_policy::TestCachePolicy::default(),
     };
     assert!(resolve_ignore_filename_regex(&req, &req.cache_root.join("build/target")).is_err());
 }
@@ -128,6 +130,7 @@ fn resolve_ignore_filename_regex_for_kiss_repo_root() {
         test_args: Vec::new(),
         env: Default::default(),
         force_rerun: true,
+        force_rerun_selectors: Vec::new(),
         jobs: 2,
         generated_config: PathBuf::from("/tmp/kiss-ignore-regex-kiss/nextest.toml"),
         population_publication_selectors: None,
@@ -136,6 +139,7 @@ fn resolve_ignore_filename_regex_for_kiss_repo_root() {
         host_platform: String::new(),
         coverage_output_mode: crate::rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
         selector_timeout_millis: std::collections::BTreeMap::new(),
+        cache_policy: crate::test_cache_policy::TestCachePolicy::default(),
     };
     let regex = resolve_ignore_filename_regex(&req, &req.cache_root.join("build/target"))
         .expect("kiss ignore regex")
@@ -185,7 +189,10 @@ fn resolve_included_packages_errors_when_current_package_id_unknown() {
         &[],
     )
     .expect_err("unknown current package");
-    assert!(matches!(err, crate::rust_llvm_cov_runner::RustLlvmCovError::InvalidRequest(_)));
+    assert!(matches!(
+        err,
+        crate::rust_llvm_cov_runner::RustLlvmCovError::InvalidRequest(_)
+    ));
 }
 
 #[test]
@@ -371,6 +378,7 @@ fn resolve_ignore_filename_regex_for_fixture_package_filter() {
         test_args: Vec::new(),
         env: Default::default(),
         force_rerun: true,
+        force_rerun_selectors: Vec::new(),
         jobs: 2,
         generated_config: PathBuf::from("/tmp/kiss-ignore-regex/nextest.toml"),
         population_publication_selectors: None,
@@ -379,6 +387,7 @@ fn resolve_ignore_filename_regex_for_fixture_package_filter() {
         host_platform: String::new(),
         coverage_output_mode: crate::rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
         selector_timeout_millis: std::collections::BTreeMap::new(),
+        cache_policy: crate::test_cache_policy::TestCachePolicy::default(),
     };
     let regex = super::resolve_ignore_filename_regex(&req, &req.cache_root.join("build/target"))
         .expect("ignore regex");

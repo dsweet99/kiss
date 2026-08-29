@@ -1,7 +1,7 @@
 use super::*;
+use crate::rpytest_runner::TestStatus;
 use crate::rust_llvm_cov_runner::rust_cov_cache::store_rust_cov_cache_entry;
 use crate::rust_llvm_cov_runner::{RustCovCacheStatus, RustLlvmCovOutcome};
-use crate::rpytest_runner::TestStatus;
 use std::time::Duration;
 
 #[test]

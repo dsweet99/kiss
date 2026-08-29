@@ -21,14 +21,17 @@ pub struct RustCoverageBatchRequest {
     pub test_args: Vec<String>,
     pub env: BTreeMap<String, String>,
     pub force_rerun: bool,
+    pub force_rerun_selectors: Vec<String>,
     pub jobs: usize,
     pub generated_config: PathBuf,
     pub population_publication_selectors: Option<Vec<String>>,
-    pub delegated_runners: crate::rust_llvm_cov_runner::plan::batch_runner_resolve::DelegatedRunnerMap,
+    pub delegated_runners:
+        crate::rust_llvm_cov_runner::plan::batch_runner_resolve::DelegatedRunnerMap,
     pub runner_map_fingerprint: String,
     pub host_platform: String,
     pub coverage_output_mode: CoverageOutputMode,
     pub selector_timeout_millis: BTreeMap<String, u64>,
+    pub cache_policy: crate::test_cache_policy::TestCachePolicy,
 }
 
 #[cfg(test)]
@@ -44,6 +47,7 @@ impl RustCoverageBatchRequest {
             test_args: vec!["--exact".to_string()],
             env: BTreeMap::from([("KEEP_ME".to_string(), "1".to_string())]),
             force_rerun: true,
+            force_rerun_selectors: Vec::new(),
             jobs: 4,
             generated_config: PathBuf::from(
                 "/repo/.kiss/rust_llvm_cov_cache/runs/run-witness/nextest.toml",
@@ -57,6 +61,7 @@ impl RustCoverageBatchRequest {
             host_platform: "x86_64-unknown-linux-gnu".to_string(),
             coverage_output_mode: CoverageOutputMode::SelectorEntries,
             selector_timeout_millis: BTreeMap::new(),
+            cache_policy: crate::test_cache_policy::TestCachePolicy::default(),
         }
     }
 }

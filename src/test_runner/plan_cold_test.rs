@@ -5,7 +5,7 @@ use tempfile::TempDir;
 
 use kiss::Language;
 
-use super::{plan_target_selectors, TargetPlanKind};
+use super::{TargetPlanKind, plan_target_selectors};
 use crate::cwd_test_lock;
 use crate::test_runner::PlannedSelectors;
 

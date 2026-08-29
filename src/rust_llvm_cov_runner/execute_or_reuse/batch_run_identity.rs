@@ -4,7 +4,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::rust_llvm_cov_runner::plan::batch_fingerprint::RustCoverageToolIdentity;
-use crate::rust_llvm_cov_runner::plan::batch_plan::{RustCoverageBatchPlan, RustCoverageBatchRequest};
+use crate::rust_llvm_cov_runner::plan::batch_plan::{
+    RustCoverageBatchPlan, RustCoverageBatchRequest,
+};
 use crate::rust_llvm_cov_runner::{BATCH_EXECUTION_POLICY_VERSION, CACHE_SCHEMA_VERSION};
 use serde::{Deserialize, Serialize};
 

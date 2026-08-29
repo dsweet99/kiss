@@ -15,12 +15,14 @@ const TEST_SECTION_KEYS: &[&str] = &[
     "orphan_detection",
     "max_unit_test_seconds",
     "max_num_tests",
+    "cache",
 ];
 
 pub(crate) fn merge_test_table_lenient(
     table: &toml::Table,
     gate: Option<&mut GateConfig>,
     runtime: Option<&mut TestSectionConfig>,
+    repo_root: Option<&std::path::Path>,
 ) {
     if let Err(e) = check_unknown_keys(table, TEST_SECTION_KEYS, "test") {
         eprintln!("Error: {e}");
@@ -30,7 +32,7 @@ pub(crate) fn merge_test_table_lenient(
         merge_test_gates_lenient(gate, table);
     }
     if let Some(runtime) = runtime {
-        apply_lenient_runtime(runtime, table);
+        apply_lenient_runtime(runtime, table, repo_root);
     }
 }
 
@@ -38,13 +40,14 @@ pub(crate) fn merge_test_table_strict(
     table: &toml::Table,
     gate: Option<&mut GateConfig>,
     runtime: Option<&mut TestSectionConfig>,
+    repo_root: Option<&std::path::Path>,
 ) -> Result<(), ConfigError> {
     check_unknown_keys(table, TEST_SECTION_KEYS, "test")?;
     if let Some(gate) = gate {
         merge_test_gates_strict(gate, table)?;
     }
     if let Some(runtime) = runtime {
-        apply_strict_runtime(runtime, table)?;
+        apply_strict_runtime(runtime, table, repo_root)?;
     }
     Ok(())
 }
@@ -183,6 +186,7 @@ fn try_get_scope(table: &toml::Table) -> Result<Option<TestCoverageScope>, Confi
 fn apply_strict_runtime(
     config: &mut TestSectionConfig,
     table: &toml::Table,
+    repo_root: Option<&std::path::Path>,
 ) -> Result<(), ConfigError> {
     if let Some(v) = table.get("main_branch") {
         config.main_branch = Some(
@@ -205,6 +209,10 @@ fn apply_strict_runtime(
     }
     if let Some(v) = table.get("ignore") {
         config.ignore = parse_string_list_key(v, "ignore", "ignore patterns")?;
+    }
+    if let Some(v) = table.get("cache").and_then(|v| v.as_table()) {
+        config.cache_policy =
+            crate::test_cache_policy::TestCachePolicy::parse_table(v, repo_root)?;
     }
     Ok(())
 }
@@ -244,7 +252,11 @@ fn parse_positive_f64(value: &toml::Value, key: &str) -> Result<f64, ConfigError
     }
 }
 
-fn apply_lenient_runtime(config: &mut TestSectionConfig, table: &toml::Table) {
+fn apply_lenient_runtime(
+    config: &mut TestSectionConfig,
+    table: &toml::Table,
+    repo_root: Option<&std::path::Path>,
+) {
     if let Some(v) = table.get("main_branch") {
         if let Some(s) = v.as_str() {
             config.main_branch = Some(s.to_string());
@@ -272,6 +284,20 @@ fn apply_lenient_runtime(config: &mut TestSectionConfig, table: &toml::Table) {
     apply_lenient_string_list(table, "ignore", "ignore patterns", |v| {
         config.ignore = v;
     });
+    apply_lenient_cache(config, table, repo_root);
+}
+
+fn apply_lenient_cache(
+    config: &mut TestSectionConfig,
+    table: &toml::Table,
+    repo_root: Option<&std::path::Path>,
+) {
+    if let Some(v) = table.get("cache").and_then(|v| v.as_table()) {
+        match crate::test_cache_policy::TestCachePolicy::parse_table(v, repo_root) {
+            Ok(policy) => config.cache_policy = policy,
+            Err(err) => eprintln!("Error: {err}"),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -284,5 +310,6 @@ mod tests {
         assert!(TEST_SECTION_KEYS.contains(&"orphan_detection"));
         assert!(TEST_SECTION_KEYS.contains(&"num_jobs"));
         assert!(TEST_SECTION_KEYS.contains(&"max_unit_test_seconds"));
+        assert!(TEST_SECTION_KEYS.contains(&"cache"));
     }
 }

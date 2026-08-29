@@ -1,4 +1,5 @@
 use crate::config::ConfigError;
+use crate::test_cache_policy::TestCachePolicy;
 use std::path::Path;
 
 #[derive(Debug, Clone)]
@@ -8,6 +9,7 @@ pub struct TestSectionConfig {
     pub watch_settle_seconds: f64,
     pub pytest_plugins: Vec<String>,
     pub ignore: Vec<String>,
+    pub cache_policy: TestCachePolicy,
 }
 
 impl Default for TestSectionConfig {
@@ -18,6 +20,7 @@ impl Default for TestSectionConfig {
             watch_settle_seconds: crate::defaults::gate::WATCH_SETTLE_SECONDS,
             pytest_plugins: Vec::new(),
             ignore: Vec::new(),
+            cache_policy: TestCachePolicy::default(),
         }
     }
 }
@@ -55,16 +58,24 @@ impl TestSectionConfig {
 
     pub fn load() -> Self {
         let mut c = Self::default();
-        if let Ok(s) = std::fs::read_to_string(crate::config::active_kissconfig_path()) {
-            c.merge_from_toml(&s);
+        let path = crate::config::active_kissconfig_path();
+        if let Ok(s) = std::fs::read_to_string(&path) {
+            c.merge_from_toml(&s, path.parent());
+        }
+        if let Some(root) = path.parent() {
+            crate::test_cache_policy::merge_language_adapters(root, &mut c.cache_policy);
         }
         c
     }
 
     pub fn try_load() -> Result<Self, ConfigError> {
         let mut c = Self::default();
-        if let Ok(s) = std::fs::read_to_string(crate::config::active_kissconfig_path()) {
-            c.try_merge_from_toml(&s)?;
+        let path = crate::config::active_kissconfig_path();
+        if let Ok(s) = std::fs::read_to_string(&path) {
+            c.try_merge_from_toml(&s, path.parent())?;
+        }
+        if let Some(root) = path.parent() {
+            crate::test_cache_policy::merge_language_adapters(root, &mut c.cache_policy);
         }
         Ok(c)
     }
@@ -72,7 +83,7 @@ impl TestSectionConfig {
     pub fn load_from(path: &Path) -> Self {
         let mut c = Self::load();
         if let Ok(s) = std::fs::read_to_string(path) {
-            c.merge_from_toml(&s);
+            c.merge_from_toml(&s, path.parent());
         }
         c
     }
@@ -83,7 +94,7 @@ impl TestSectionConfig {
             path: path.display().to_string(),
             message: e.to_string(),
         })?;
-        c.try_merge_from_toml(&s)?;
+        c.try_merge_from_toml(&s, path.parent())?;
         Ok(c)
     }
 
@@ -96,21 +107,25 @@ impl TestSectionConfig {
             path: path.display().to_string(),
             message: e.to_string(),
         })?;
-        c.try_merge_from_toml(&s)?;
+        c.try_merge_from_toml(&s, path.parent())?;
         Ok(c)
     }
 
-    fn merge_from_toml(&mut self, toml_str: &str) {
+    fn merge_from_toml(&mut self, toml_str: &str, repo_root: Option<&Path>) {
         let Ok(value) = toml_str.parse::<toml::Table>() else {
             return;
         };
         let Some(t) = value.get("test").and_then(|v| v.as_table()) else {
             return;
         };
-        crate::test_toml::merge_test_table_lenient(t, None, Some(self));
+        crate::test_toml::merge_test_table_lenient(t, None, Some(self), repo_root);
     }
 
-    fn try_merge_from_toml(&mut self, toml_str: &str) -> Result<(), ConfigError> {
+    fn try_merge_from_toml(
+        &mut self,
+        toml_str: &str,
+        repo_root: Option<&Path>,
+    ) -> Result<(), ConfigError> {
         let value = toml_str
             .parse::<toml::Table>()
             .map_err(|e| ConfigError::ParseError {
@@ -119,7 +134,7 @@ impl TestSectionConfig {
         let Some(t) = value.get("test").and_then(|v| v.as_table()) else {
             return Ok(());
         };
-        crate::test_toml::merge_test_table_strict(t, None, Some(self))
+        crate::test_toml::merge_test_table_strict(t, None, Some(self), repo_root)
     }
 }
 

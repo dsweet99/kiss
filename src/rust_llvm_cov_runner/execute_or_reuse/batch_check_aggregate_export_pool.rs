@@ -4,8 +4,12 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use crate::rust_llvm_cov_runner::RustLlvmCovError;
-use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export_resolve::{BinaryIdObjectMap, read_object_binary_id};
-use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export_tools::{ExportTools, read_profdata_binary_ids};
+use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export_resolve::{
+    BinaryIdObjectMap, read_object_binary_id,
+};
+use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export_tools::{
+    ExportTools, read_profdata_binary_ids,
+};
 
 pub(super) fn seed_binary_ids_for_objects(
     tools: &ExportTools,
@@ -64,7 +68,10 @@ pub(super) fn filter_pool_inputs_for_seed_ids(
 }
 
 pub(super) fn stable_name(value: &str) -> String {
-    let h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(0xcbf2_9ce4_8422_2325, value.as_bytes());
+    let h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(
+        0xcbf2_9ce4_8422_2325,
+        value.as_bytes(),
+    );
     format!("{h:016x}")
 }
 

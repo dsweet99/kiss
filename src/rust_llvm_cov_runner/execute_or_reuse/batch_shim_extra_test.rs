@@ -9,7 +9,9 @@ use crate::rust_llvm_cov_runner::execute_or_reuse::batch_output_channel::{
     OutputChannelServer, apply_output_channel_env, create_output_channel_config,
 };
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim::batch_shim_child::build_delegated_command;
-use crate::rust_llvm_cov_runner::test_support::{make_executable, shim_metadata, shim_only_metadata, shim_test_env_lock};
+use crate::rust_llvm_cov_runner::test_support::{
+    make_executable, shim_metadata, shim_only_metadata, shim_test_env_lock,
+};
 
 #[test]
 fn target_runner_shim_routes_child_output_through_side_channel_only() {
@@ -71,7 +73,10 @@ fn target_runner_shim_routes_child_output_through_side_channel_only() {
 fn shim_start_and_delegated_start_metadata_round_trip() {
     let tmp = tempfile::tempdir().unwrap();
     let identity =
-        crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::ProcessGroupIdentity { pid: 99, pgid: 99 };
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::ProcessGroupIdentity {
+            pid: 99,
+            pgid: 99,
+        };
     let start = BatchShimStartMetadata {
         schema_version: "kiss-rust-llvm-cov-shim-start-v1".to_string(),
         id: "alpha".to_string(),
@@ -108,7 +113,11 @@ fn load_live_shim_process_identities_reads_delegated_start_for_current_process()
     let tmp = tempfile::tempdir().unwrap();
     let pid = std::process::id();
     let pgid = unsafe { libc::getpgid(0) } as u32;
-    let identity = crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::ProcessGroupIdentity { pid, pgid };
+    let identity =
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::ProcessGroupIdentity {
+            pid,
+            pgid,
+        };
     let delegated = BatchShimDelegatedStartMetadata {
         schema_version: "kiss-rust-llvm-cov-shim-delegated-start-v1".to_string(),
         id: "alpha".to_string(),
@@ -137,10 +146,11 @@ fn shim_forward_signal_noops_when_delegated_identity_cleared() {
 #[test]
 fn shim_forward_signal_forwards_with_delegated_identity_set() {
     super::install_shim_signal_forwarder().expect("install shim forwarder");
-    let identity = crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::ProcessGroupIdentity {
-        pid: 9_999_999,
-        pgid: 9_999_999,
-    };
+    let identity =
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::ProcessGroupIdentity {
+            pid: 9_999_999,
+            pgid: 9_999_999,
+        };
     super::ShimSignalForwarder::set_delegated_identity(&identity);
     super::trigger_shim_forward_signal_for_test(libc::SIGTERM);
     super::ShimSignalForwarder::clear_delegated_identity();

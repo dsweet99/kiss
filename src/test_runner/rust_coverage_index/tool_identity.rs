@@ -8,7 +8,7 @@ use kiss::rust_llvm_cov_runner::RustCoverageToolIdentity;
 
 use crate::test_runner::runners::command_stdout;
 
-const TOOL_VERSIONS_SCHEMA: &str = "rust-tool-versions-v2";
+const TOOL_VERSIONS_SCHEMA: &str = "rust-tool-versions-v3";
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 struct RustToolVersionsCache {
@@ -178,6 +178,31 @@ fn write_cached_rust_tool_identity(
     })
 }
 
+fn version_with_content_tag(version: String, program: &Path) -> String {
+    let resolved = if program.is_absolute() {
+        program.to_path_buf()
+    } else {
+        resolve_on_path(program).unwrap_or_else(|| program.to_path_buf())
+    };
+    let Ok(bytes) = fs::read(&resolved) else {
+        return version;
+    };
+    let digest = crate::analyze_cache::fnv1a64(0xcbf2_9ce4_8422_2325, &bytes);
+    format!("{version}#{digest:016x}")
+}
+
+fn resolve_on_path(program: &Path) -> Option<PathBuf> {
+    std::env::var_os("PATH").and_then(|paths| {
+        for dir in std::env::split_paths(&paths) {
+            let candidate = dir.join(program);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+        None
+    })
+}
+
 fn file_meta(path: &Path) -> Option<(u64, Option<SystemTime>)> {
     let meta = fs::metadata(path).ok()?;
     Some((meta.len(), meta.modified().ok()))
@@ -247,10 +272,22 @@ fn detect_live_rust_coverage_tool_identity(
     let cargo = PathBuf::from("cargo");
     let rustc = PathBuf::from("rustc");
     Ok(RustCoverageToolIdentity {
-        cargo_version: command_stdout(&cargo, &["--version"], repo_root)?,
-        llvm_cov_version: command_stdout(&cargo, &["llvm-cov", "--version"], repo_root)?,
-        rustc_version: command_stdout(&rustc, &["-Vv"], repo_root)?,
-        cargo_nextest_version: command_stdout(&cargo, &["nextest", "--version"], repo_root)?,
+        cargo_version: version_with_content_tag(
+            command_stdout(&cargo, &["--version"], repo_root)?,
+            &cargo,
+        ),
+        llvm_cov_version: version_with_content_tag(
+            command_stdout(&cargo, &["llvm-cov", "--version"], repo_root)?,
+            Path::new("cargo-llvm-cov"),
+        ),
+        rustc_version: version_with_content_tag(
+            command_stdout(&rustc, &["-Vv"], repo_root)?,
+            &rustc,
+        ),
+        cargo_nextest_version: version_with_content_tag(
+            command_stdout(&cargo, &["nextest", "--version"], repo_root)?,
+            Path::new("cargo-nextest"),
+        ),
     })
 }
 

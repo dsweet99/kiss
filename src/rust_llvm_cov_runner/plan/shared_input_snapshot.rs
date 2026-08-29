@@ -83,18 +83,23 @@ pub(crate) fn digest_input_file_snapshot(
     mut read_file: impl FnMut(&Path) -> io::Result<Vec<u8>>,
     mut classify: impl FnMut(&Path) -> Result<bool, RustLlvmCovError>,
 ) -> Result<RustInputSnapshot, RustLlvmCovError> {
-    let mut input_hash =
-        crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(0xcbf2_9ce4_8422_2325, b"shared-input-v1");
-    let mut selection_hash =
-        crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(0xcbf2_9ce4_8422_2325, b"shared-input-v1");
+    let mut input_hash = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(
+        0xcbf2_9ce4_8422_2325,
+        b"shared-input-v1",
+    );
+    let mut selection_hash = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(
+        0xcbf2_9ce4_8422_2325,
+        b"shared-input-v1",
+    );
     let mut ordinary_source_digests = BTreeMap::new();
     for file in files {
         let bytes = read_file(file).map_err(RustLlvmCovError::Io)?;
-        input_hash = hash_input_file(input_hash, file, &bytes);
         if !classify(file)? {
+            input_hash = hash_input_file(input_hash, file, &bytes);
             selection_hash = hash_input_file(selection_hash, file, &bytes);
         } else {
-            let rel = crate::rust_llvm_cov_runner::rust_cov_cache::repo_relative_path(root, file).ok_or_else(|| {
+            let rel = crate::rust_llvm_cov_runner::rust_cov_cache::repo_relative_path(root, file)
+                .ok_or_else(|| {
                 RustLlvmCovError::InvalidRequest(format!(
                     "ordinary Rust source path is not repository-relative: {}",
                     file.display()
@@ -115,6 +120,7 @@ pub(crate) fn digest_input_file_snapshot(
             }
         }
     }
+    let input_hash = hash_ordinary_source_inventory(input_hash, ordinary_source_digests.keys());
     Ok(RustInputSnapshot {
         input_digest: format!("{input_hash:016x}"),
         selection_context_source_digest: format!("{selection_hash:016x}"),
@@ -122,19 +128,38 @@ pub(crate) fn digest_input_file_snapshot(
     })
 }
 
+fn hash_ordinary_source_inventory<'a>(mut h: u64, paths: impl Iterator<Item = &'a String>) -> u64 {
+    h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(
+        h,
+        b"ordinary-source-inventory-v1",
+    );
+    h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(h, &[0]);
+    for path in paths {
+        h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(h, path.as_bytes());
+        h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(h, &[0]);
+    }
+    h
+}
+
 fn hash_input_file(mut h: u64, file: &Path, bytes: &[u8]) -> u64 {
-    h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(h, file.to_string_lossy().as_bytes());
+    h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(
+        h,
+        file.to_string_lossy().as_bytes(),
+    );
     h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(h, &[0]);
     h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(h, bytes);
     crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(h, &[0])
 }
 
-fn ordinary_source_content_digest(bytes: &[u8]) -> String {
+pub(crate) fn ordinary_source_content_digest(bytes: &[u8]) -> String {
     let h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(
         0xcbf2_9ce4_8422_2325,
         b"ordinary-source-content-v1",
     );
-    format!("{:016x}", crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(h, bytes))
+    format!(
+        "{:016x}",
+        crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(h, bytes)
+    )
 }
 
 fn is_ordinary_source_rel_path(path: &str) -> bool {

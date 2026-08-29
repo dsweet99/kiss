@@ -30,17 +30,19 @@ fn finish_fresh_check_aggregate_publishes_successful_outcomes() {
     let coverage = RustLineCoverage {
         files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
     };
-    let instances = vec![crate::rust_llvm_cov_runner::execute_or_reuse::batch_aggregate::InstanceResult {
-        full_name: "pkg::bin$alpha".to_string(),
-        test_binary_id: "/tmp/bin".to_string(),
-        passed: true,
-        timed_out: false,
-        exit_code: Some(0),
-        duration: Duration::from_millis(1),
-        stdout: None,
-        stderr: None,
-        coverage: coverage.clone(),
-    }];
+    let instances = vec![
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_aggregate::InstanceResult {
+            full_name: "pkg::bin$alpha".to_string(),
+            test_binary_id: "/tmp/bin".to_string(),
+            passed: true,
+            timed_out: false,
+            exit_code: Some(0),
+            duration: Duration::from_millis(1),
+            stdout: None,
+            stderr: None,
+            coverage: coverage.clone(),
+        },
+    ];
     let exported = BTreeMap::from([("/tmp/bin".to_string(), coverage)]);
     let result = finish_fresh_check_aggregate_after_export(
         &req,
@@ -97,28 +99,32 @@ fn finish_fresh_check_aggregate_merges_repair_publication_line_maps() {
     let exported_cov = RustLineCoverage {
         files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
     };
-    let instances = vec![crate::rust_llvm_cov_runner::execute_or_reuse::batch_aggregate::InstanceResult {
-        full_name: "pkg::bin$alpha".to_string(),
-        test_binary_id: "/tmp/bin".to_string(),
-        passed: true,
-        timed_out: false,
-        exit_code: Some(0),
-        duration: Duration::from_millis(1),
-        stdout: None,
-        stderr: None,
-        coverage: exported_cov.clone(),
-    }];
+    let instances = vec![
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_aggregate::InstanceResult {
+            full_name: "pkg::bin$alpha".to_string(),
+            test_binary_id: "/tmp/bin".to_string(),
+            passed: true,
+            timed_out: false,
+            exit_code: Some(0),
+            duration: Duration::from_millis(1),
+            stdout: None,
+            stderr: None,
+            coverage: exported_cov.clone(),
+        },
+    ];
     let exported = BTreeMap::from([("/tmp/bin-new".to_string(), exported_cov)]);
     let mut finish = finish_context();
-    finish.repair_publication = Some(crate::rust_llvm_cov_runner::plan::batch_plan::CheckAggregateRepairPublication {
-        prior_generation: "prior-generation".to_string(),
-        selector_binary_ids: BTreeMap::from([(
-            "alpha".to_string(),
-            vec!["/tmp/bin-new".to_string()],
-        )]),
-        test_binaries: vec![test_binary()],
-        retained_binary_line_maps: BTreeMap::from([("/tmp/bin-old".to_string(), retained)]),
-    });
+    finish.repair_publication = Some(
+        crate::rust_llvm_cov_runner::plan::batch_plan::CheckAggregateRepairPublication {
+            prior_generation: "prior-generation".to_string(),
+            selector_binary_ids: BTreeMap::from([(
+                "alpha".to_string(),
+                vec!["/tmp/bin-new".to_string()],
+            )]),
+            test_binaries: vec![test_binary()],
+            retained_binary_line_maps: BTreeMap::from([("/tmp/bin-old".to_string(), retained)]),
+        },
+    );
     let result = finish_fresh_check_aggregate_after_export(
         &req,
         &tools,
@@ -186,19 +192,21 @@ fn build_instance_results_skips_terminals_outside_logical_selectors() {
 
 #[test]
 fn build_instance_export_requests_errors_when_argv_missing() {
-    let instances = vec![crate::rust_llvm_cov_runner::execute_or_reuse::batch_aggregate::InstanceResult {
-        full_name: "pkg::bin$alpha".to_string(),
-        test_binary_id: "/tmp/bin".to_string(),
-        passed: true,
-        timed_out: false,
-        exit_code: Some(0),
-        duration: Duration::from_millis(1),
-        stdout: None,
-        stderr: None,
-        coverage: RustLineCoverage {
-            files: BTreeMap::new(),
+    let instances = vec![
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_aggregate::InstanceResult {
+            full_name: "pkg::bin$alpha".to_string(),
+            test_binary_id: "/tmp/bin".to_string(),
+            passed: true,
+            timed_out: false,
+            exit_code: Some(0),
+            duration: Duration::from_millis(1),
+            stdout: None,
+            stderr: None,
+            coverage: RustLineCoverage {
+                files: BTreeMap::new(),
+            },
         },
-    }];
+    ];
     let shim = BatchShimMetadata {
         schema_version: "kiss-rust-llvm-cov-shim-v1".to_string(),
         id: "alpha".to_string(),
@@ -220,19 +228,21 @@ fn build_instance_export_requests_errors_when_argv_missing() {
 
 #[test]
 fn build_instance_export_requests_errors_when_objects_missing() {
-    let instances = vec![crate::rust_llvm_cov_runner::execute_or_reuse::batch_aggregate::InstanceResult {
-        full_name: "pkg::bin$alpha".to_string(),
-        test_binary_id: "/tmp/bin".to_string(),
-        passed: true,
-        timed_out: false,
-        exit_code: Some(0),
-        duration: Duration::from_millis(1),
-        stdout: None,
-        stderr: None,
-        coverage: RustLineCoverage {
-            files: BTreeMap::new(),
+    let instances = vec![
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_aggregate::InstanceResult {
+            full_name: "pkg::bin$alpha".to_string(),
+            test_binary_id: "/tmp/bin".to_string(),
+            passed: true,
+            timed_out: false,
+            exit_code: Some(0),
+            duration: Duration::from_millis(1),
+            stdout: None,
+            stderr: None,
+            coverage: RustLineCoverage {
+                files: BTreeMap::new(),
+            },
         },
-    }];
+    ];
     let shim = BatchShimMetadata {
         schema_version: "kiss-rust-llvm-cov-shim-v1".to_string(),
         id: "alpha".to_string(),
@@ -260,19 +270,21 @@ fn selective_finish_rejects_unmatched_selectors_before_storing() {
     req.population_publication_selectors = None;
     let tools = witness_batch_tools();
     let identity = batch_identity(&req, &tools).unwrap();
-    let instances = vec![crate::rust_llvm_cov_runner::execute_or_reuse::batch_aggregate::InstanceResult {
-        full_name: "pkg::bin$alpha".to_string(),
-        test_binary_id: "/tmp/bin".to_string(),
-        passed: true,
-        timed_out: false,
-        exit_code: Some(0),
-        duration: Duration::from_millis(1),
-        stdout: None,
-        stderr: None,
-        coverage: RustLineCoverage {
-            files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
+    let instances = vec![
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_aggregate::InstanceResult {
+            full_name: "pkg::bin$alpha".to_string(),
+            test_binary_id: "/tmp/bin".to_string(),
+            passed: true,
+            timed_out: false,
+            exit_code: Some(0),
+            duration: Duration::from_millis(1),
+            stdout: None,
+            stderr: None,
+            coverage: RustLineCoverage {
+                files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
+            },
         },
-    }];
+    ];
     let result = finish_fresh_batch_after_export(
         &req,
         &tools,

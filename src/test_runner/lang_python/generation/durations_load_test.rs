@@ -24,6 +24,7 @@ fn write_generation_fixture(repo: &Path, with_path_maxes: bool) -> PathBuf {
         schema_version: POINTER_SCHEMA_VERSION.to_string(),
         generation_id: gen_id.clone(),
         manifest_sha256: "abc".into(),
+        parent_generation_id: String::new(),
     };
     fs::write(
         pointer_path(&cache_root),
@@ -148,6 +149,7 @@ fn unresolved_durations_are_not_collapsed_to_zero_in_sidecars() {
             duration_ns: Some(4_000_000),
             cache_disposition: TimingCacheDisposition::MissStored,
             reason: None,
+            test_definition_digest: String::new(),
         },
         SelectorTimingRecord {
             selector: "tests/a.py::unresolved".into(),
@@ -156,6 +158,7 @@ fn unresolved_durations_are_not_collapsed_to_zero_in_sidecars() {
             duration_ns: None,
             cache_disposition: TimingCacheDisposition::Unknown,
             reason: Some("missing outcome".into()),
+            test_definition_digest: String::new(),
         },
         SelectorTimingRecord {
             selector: "tests/b.py::only_unresolved".into(),
@@ -164,6 +167,7 @@ fn unresolved_durations_are_not_collapsed_to_zero_in_sidecars() {
             duration_ns: None,
             cache_disposition: TimingCacheDisposition::Unknown,
             reason: Some("missing outcome".into()),
+            test_definition_digest: String::new(),
         },
     ];
     let file = super::super::publish::generation_durations_file(&timings);

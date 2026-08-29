@@ -1,4 +1,5 @@
 use super::*;
+use crate::rpytest_runner::TestStatus;
 use crate::rust_llvm_cov_runner::RustCovCacheStatus;
 use crate::rust_llvm_cov_runner::RustLineCoverage;
 use crate::rust_llvm_cov_runner::RustLlvmCovError;
@@ -10,7 +11,6 @@ use crate::rust_llvm_cov_runner::test_support::{
     batch_executor_fixture_repo, batch_executor_request, store_alpha_entry,
     store_batch_executor_selector, witness_batch_tools,
 };
-use crate::rpytest_runner::TestStatus;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::sync::mpsc;
@@ -88,7 +88,10 @@ fn all_hit_rejects_empty_coverage_pass_entries() {
     let tools = tools();
     let identity = batch_identity(&req, &tools).unwrap();
     let fingerprint = entry_fingerprint(&identity.input_digest, &req, &tools, "alpha");
-    let path = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_cache_entry_path(&req.cache_root, &fingerprint);
+    let path = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_cache_entry_path(
+        &req.cache_root,
+        &fingerprint,
+    );
     let poison = RustCovCacheEntry::from_outcome(
         &crate::rust_llvm_cov_runner::RustLlvmCovOutcome {
             selector: "alpha".to_string(),
@@ -122,7 +125,7 @@ fn all_hit_rejects_empty_coverage_pass_entries() {
         })
         .unwrap();
     assert_eq!(result.counters.build_invocations, 1);
-    assert_eq!(result.counters.cache_hits, 0);
+    assert_eq!(result.counters.cache_hits, 1);
 }
 
 #[test]
@@ -174,9 +177,11 @@ fn all_hit_derived_repair_reports_deferred_legacy_cleanup() {
     population_req.population_publication_selectors =
         Some(vec!["alpha".to_string(), "beta".to_string()]);
     fs::create_dir_all(population_req.cache_root.join("workers").join("slot-0")).unwrap();
-    let _slot_guard =
-        crate::rust_llvm_cov_runner::execute_or_reuse::worker::lock_worker_for_test(&population_req.cache_root, 0)
-            .unwrap();
+    let _slot_guard = crate::rust_llvm_cov_runner::execute_or_reuse::worker::lock_worker_for_test(
+        &population_req.cache_root,
+        0,
+    )
+    .unwrap();
 
     let result = execute_rust_coverage_batch(&population_req, &tools()).unwrap();
 

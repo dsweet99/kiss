@@ -15,7 +15,6 @@ use check_runtime_refresh_repair::try_repair_rust_check_aggregate_labeled;
 #[cfg(test)]
 pub(crate) use check_runtime_refresh_repair::{
     CheckAggregateRepairDecision, classify_check_aggregate_repair,
-    maybe_downgrade_rerun_when_witness_warm, retained_maps_ignoring_digest_mismatch,
 };
 
 #[path = "check_runtime_refresh_apply.rs"]
@@ -40,6 +39,10 @@ use check_runtime_refresh_types::{PythonRuntimeRefresh, RustRuntimeRefresh};
 mod python_refresh_tests;
 
 pub(crate) const COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV: &str = "KISS_COVERAGE_RUNTIME_REFRESH_ACTIVE";
+
+pub(crate) fn test_runner_stdout_enabled() -> bool {
+    std::env::var_os(COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV).is_none()
+}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct LanguageRefreshStats {

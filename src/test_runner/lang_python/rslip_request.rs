@@ -8,6 +8,15 @@ use crate::test_runner::runners::command_stdout;
 
 pub(crate) const DEFAULT_PYTEST_TIMEOUT: Duration = Duration::from_secs(180);
 
+fn python_collection_args_digest(extra: &[String]) -> String {
+    let mut h = crate::analyze_cache::fnv1a64(0xcbf2_9ce4_8422_2325, b"rslip-collection-args-v1");
+    for arg in extra {
+        h = crate::analyze_cache::fnv1a64(h, arg.as_bytes());
+        h = crate::analyze_cache::fnv1a64(h, &[0]);
+    }
+    format!("{h:016x}")
+}
+
 pub(crate) fn rslip_request_from_parts(
     repo_root: &Path,
     selector: &str,
@@ -40,7 +49,7 @@ pub(crate) fn rslip_request_from_parts(
         cache_root: python_coverage_cache_root(&repo_root)?,
         force_rerun,
         timeout: Some(timeout_for_selector_with_gate(gate, selector)),
-        content_fingerprint: None,
+        content_fingerprint: Some(python_collection_args_digest(extra)),
     })
 }
 

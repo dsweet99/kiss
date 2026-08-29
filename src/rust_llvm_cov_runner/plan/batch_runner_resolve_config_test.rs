@@ -157,6 +157,7 @@ fn write_runner_map_round_trips() {
         vec!["/bin/true".to_string()],
     )]);
     write_runner_map(&path, &map).unwrap();
-    let loaded = crate::rust_llvm_cov_runner::plan::batch_runner_resolve::read_runner_map(&path).unwrap();
+    let loaded =
+        crate::rust_llvm_cov_runner::plan::batch_runner_resolve::read_runner_map(&path).unwrap();
     assert_eq!(loaded, map);
 }

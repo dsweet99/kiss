@@ -194,7 +194,9 @@ pub fn store_rust_cov_cache_entry(
             format!("store_rust_cov_cache_entry {}: {err}", path.display()),
         )
     })?;
-    crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::invalidate_entry_state(cache_root);
+    crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::invalidate_entry_state(
+        cache_root,
+    );
     crate::rust_llvm_cov_runner::publish_derived::batch_population_durations::invalidate_population_durations(cache_root);
     Ok(())
 }
@@ -362,11 +364,12 @@ mod tests {
         )
         .unwrap();
 
-        let names: BTreeSet<_> = crate::rust_llvm_cov_runner::plan::shared_input::rust_cov_input_files(tmp.path())
-            .unwrap()
-            .into_iter()
-            .map(|path| path.strip_prefix(tmp.path()).unwrap().to_path_buf())
-            .collect();
+        let names: BTreeSet<_> =
+            crate::rust_llvm_cov_runner::plan::shared_input::rust_cov_input_files(tmp.path())
+                .unwrap()
+                .into_iter()
+                .map(|path| path.strip_prefix(tmp.path()).unwrap().to_path_buf())
+                .collect();
 
         assert!(names.contains(Path::new("Cargo.toml")));
         assert!(names.contains(Path::new("Cargo.lock")));
@@ -375,12 +378,16 @@ mod tests {
         assert!(names.contains(Path::new("src/lib.rs")));
         assert!(!names.contains(Path::new("target/ignored.rs")));
         assert!(!names.contains(Path::new(".kiss/rust_llvm_cov_cache/ignored.rs")));
-        assert!(crate::rust_llvm_cov_runner::plan::shared_input::should_skip_rust_cov_dir(
-            &tmp.path().join("target")
-        ));
-        assert!(crate::rust_llvm_cov_runner::plan::shared_input::is_kiss_rust_cov_cache_dir(
-            &tmp.path().join(".kiss").join("rust_llvm_cov_cache")
-        ));
+        assert!(
+            crate::rust_llvm_cov_runner::plan::shared_input::should_skip_rust_cov_dir(
+                &tmp.path().join("target")
+            )
+        );
+        assert!(
+            crate::rust_llvm_cov_runner::plan::shared_input::is_kiss_rust_cov_cache_dir(
+                &tmp.path().join(".kiss").join("rust_llvm_cov_cache")
+            )
+        );
     }
 
     #[test]

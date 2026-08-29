@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
-use rayon::prelude::*;
 use kiss::rust_llvm_cov_runner::repo_relative_path;
+use rayon::prelude::*;
 
 use crate::test_runner::lang_rust::workspace::{
     cargo_workspace_member_manifest_dirs, is_workspace_rust_selector_file_cached,

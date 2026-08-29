@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use super::{coverage_error, BackendCoverage, RuntimeCoverageLoadError};
+use super::{BackendCoverage, RuntimeCoverageLoadError, coverage_error};
 use crate::test_runner::execution_witness::try_load_rust_execution_witness;
 use crate::test_runner::rust_coverage_index::{
     current_rust_coverage_batch_identity,
@@ -108,17 +108,27 @@ pub(super) fn try_load_rust_coverage_from_witness(
 }
 
 fn rust_witness_accepts_planned(
-    _repo_root: &Path,
+    repo_root: &Path,
     witness: &crate::test_runner::lang_iface::ExecutionWitness,
     identity: &kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity,
     _selectors: &[String],
     _gate: &kiss::GateConfig,
 ) -> bool {
     use crate::test_runner::execution_witness::rust_identity_digest_from_batch;
-    use crate::test_runner::lang_iface::{accept_witness, AcceptDecision, AcceptMode};
+    use crate::test_runner::lang_iface::{AcceptDecision, AcceptMode, accept_witness};
     let current = rust_identity_digest_from_batch(identity);
     let universe = witness.selectors.clone();
-    accept_witness(AcceptMode::All, &universe, &current, witness) == AcceptDecision::Accept
+    if accept_witness(AcceptMode::All, &universe, &current, witness) != AcceptDecision::Accept {
+        return false;
+    }
+    matches!(
+        kiss::rust_llvm_cov_runner::classify_ordinary_source_delta(
+            &rust_coverage_cache_root(repo_root),
+            repo_root,
+            identity,
+        ),
+        kiss::rust_llvm_cov_runner::OrdinarySourceInvalidation::None
+    )
 }
 
 pub(super) fn try_load_rust_coverage_from_witness_prior(
@@ -159,11 +169,20 @@ pub(super) fn remap_rust_covered_lines(
     repo_root: &Path,
     covered: BTreeMap<String, BTreeSet<u32>>,
 ) -> Result<BTreeMap<String, BTreeSet<u32>>, RuntimeCoverageLoadError> {
+    let hashes = kiss::rust_llvm_cov_runner::load_ordinary_source_line_hashes(
+        &rust_coverage_cache_root(repo_root),
+    );
     let mut covered_lines = BTreeMap::<String, BTreeSet<u32>>::new();
     for (file, lines) in covered {
         let rel = rust_repo_relative_coverage_file(repo_root, &file)
             .ok_or_else(|| coverage_error("Rust", "malformed out-of-repository path"))?;
-        covered_lines.entry(rel).or_default().extend(lines);
+        let mapped = match hashes.as_ref().and_then(|stored| stored.get(&rel)) {
+            Some(stored) => {
+                kiss::rust_llvm_cov_runner::remap_covered_file_lines(repo_root, &rel, stored, &lines)
+            }
+            None => lines,
+        };
+        covered_lines.entry(rel).or_default().extend(mapped);
     }
     Ok(covered_lines)
 }
@@ -217,27 +236,31 @@ mod tests {
             ordinary_source_digests: Default::default(),
         };
         let selectors = vec!["a".into()];
-        assert!(try_load_rust_coverage_from_witness(
-            tmp.path(),
-            &identity,
-            &selectors,
-            &kiss::GateConfig::default()
-        )
-        .is_none());
-        assert!(try_load_rust_coverage_from_witness_prior(
-            tmp.path(),
-            &tmp.path().join(".kiss/rust_llvm_cov_cache"),
-            &identity,
-            &selectors,
-            &kiss::GateConfig::default(),
-        )
-        .is_none());
+        assert!(
+            try_load_rust_coverage_from_witness(
+                tmp.path(),
+                &identity,
+                &selectors,
+                &kiss::GateConfig::default()
+            )
+            .is_none()
+        );
+        assert!(
+            try_load_rust_coverage_from_witness_prior(
+                tmp.path(),
+                &tmp.path().join(".kiss/rust_llvm_cov_cache"),
+                &identity,
+                &selectors,
+                &kiss::GateConfig::default(),
+            )
+            .is_none()
+        );
     }
 
     #[test]
     fn witness_coverage_uses_embedded_covered_lines_when_accepted() {
         use crate::test_runner::execution_witness::{
-            publish_rust_execution_witness, PublishRustWitness, WitnessScope, WitnessStatus,
+            PublishRustWitness, WitnessScope, WitnessStatus, publish_rust_execution_witness,
         };
         let tmp = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(tmp.path().join("src")).unwrap();
@@ -264,6 +287,7 @@ mod tests {
             durations_ns: &[Some(10), Some(20)],
             covered_lines: &covered,
             complete: true,
+            jobs: 1,
         })
         .unwrap();
         let loaded = try_load_rust_coverage_from_witness(
@@ -277,13 +301,15 @@ mod tests {
         let mut drifted = identity.clone();
         drifted.generation_fingerprint = "g2".into();
         drifted.selection_context_fingerprint = "s2".into();
-        assert!(try_load_rust_coverage_from_witness(
-            tmp.path(),
-            &drifted,
-            &selectors,
-            &kiss::GateConfig::default(),
-        )
-        .is_some());
+        assert!(
+            try_load_rust_coverage_from_witness(
+                tmp.path(),
+                &drifted,
+                &selectors,
+                &kiss::GateConfig::default(),
+            )
+            .is_none()
+        );
 
         let empty = BTreeMap::new();
         let _ = publish_rust_execution_witness(PublishRustWitness {
@@ -295,21 +321,24 @@ mod tests {
             durations_ns: &[Some(10), Some(20)],
             covered_lines: &empty,
             complete: true,
+            jobs: 1,
         })
         .unwrap();
-        assert!(try_load_rust_coverage_from_witness(
-            tmp.path(),
-            &identity,
-            &selectors,
-            &kiss::GateConfig::default()
-        )
-        .is_none());
+        assert!(
+            try_load_rust_coverage_from_witness(
+                tmp.path(),
+                &identity,
+                &selectors,
+                &kiss::GateConfig::default()
+            )
+            .is_none()
+        );
     }
 
     #[test]
     fn witness_coverage_accepts_complete_universe_despite_enumerator_extras_and_tight_gate() {
         use crate::test_runner::execution_witness::{
-            publish_rust_execution_witness, PublishRustWitness, WitnessScope, WitnessStatus,
+            PublishRustWitness, WitnessScope, WitnessStatus, publish_rust_execution_witness,
         };
         let tmp = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(tmp.path().join("src")).unwrap();
@@ -337,19 +366,16 @@ mod tests {
             durations_ns: &[Some(12_000_000_000), Some(20)],
             covered_lines: &covered,
             complete: true,
+            jobs: 1,
         })
         .unwrap();
         let tight = kiss::GateConfig {
             max_unit_test_seconds: vec![("*".into(), 5.0)],
             ..kiss::GateConfig::default()
         };
-        let loaded = try_load_rust_coverage_from_witness(
-            tmp.path(),
-            &identity,
-            &enumerator,
-            &tight,
-        )
-        .unwrap();
+        let loaded =
+            try_load_rust_coverage_from_witness(tmp.path(), &identity, &enumerator, &tight)
+                .unwrap();
         assert!(loaded.covered_lines.contains_key("src/lib.rs"));
     }
 }

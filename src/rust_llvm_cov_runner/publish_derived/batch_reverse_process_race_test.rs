@@ -46,7 +46,8 @@ fn two_os_process_publishers_single_manifest_activation() {
         assert_child_ok(label, &child.wait_with_output().unwrap());
     }
     let tools = witness_batch_tools();
-    let identity = crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    let identity =
+        crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
     assert_single_activation(&req.cache_root, &work, &identity.generation_fingerprint);
 }
 
@@ -83,7 +84,11 @@ fn os_process_readers_during_pre_manifest_pause_never_see_partial() {
     assert_active_snapshot_readable(&req.cache_root);
 }
 
-fn primed_shared_work_dir() -> (tempfile::TempDir, crate::rust_llvm_cov_runner::RustCoverageBatchRequest, PathBuf) {
+fn primed_shared_work_dir() -> (
+    tempfile::TempDir,
+    crate::rust_llvm_cov_runner::RustCoverageBatchRequest,
+    PathBuf,
+) {
     let repo = batch_executor_fixture_repo();
     let req = batch_executor_request(repo.path());
     let work = repo.path().join("process-race-work");
@@ -220,7 +225,8 @@ fn run_barrier_publisher_child() {
     let (child_id, work, req) = child_context();
     fs::write(work.join("ready").join(&child_id), b"ready").unwrap();
     let tools = witness_batch_tools();
-    let identity = crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    let identity =
+        crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
     let _guard = lock_batch(&req.cache_root).unwrap();
     publish_derived_state(
         &req,
@@ -238,14 +244,19 @@ fn run_reader_child() {
     wait_for_path(&work.join("go_readers"), Duration::from_secs(10));
     let prior = fs::read_to_string(work.join("prior_snapshot.txt")).unwrap();
     let tools = witness_batch_tools();
-    let identity = crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    let identity =
+        crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
     for _ in 0..20 {
         assert_reader_observation_safe(&req, &identity.generation_fingerprint, prior.trim());
         thread::sleep(Duration::from_millis(10));
     }
 }
 
-fn child_context() -> (String, PathBuf, crate::rust_llvm_cov_runner::RustCoverageBatchRequest) {
+fn child_context() -> (
+    String,
+    PathBuf,
+    crate::rust_llvm_cov_runner::RustCoverageBatchRequest,
+) {
     let child_id = env::var(CHILD_ENV).unwrap();
     let work = PathBuf::from(env::var_os(ROOT_ENV).unwrap());
     let repo = PathBuf::from(fs::read_to_string(work.join("repo_path.txt")).unwrap());
@@ -258,7 +269,8 @@ fn publish_under_lock_and_record_snapshot(
     child_id: &str,
 ) {
     let tools = witness_batch_tools();
-    let identity = crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(req, &tools).unwrap();
+    let identity =
+        crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(req, &tools).unwrap();
     let _guard = lock_batch(&req.cache_root).unwrap();
     publish_derived_state(
         req,

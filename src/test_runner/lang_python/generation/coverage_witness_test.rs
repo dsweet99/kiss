@@ -187,6 +187,7 @@ fn incomplete_timings_list_problem_selectors() {
             duration_ns: Some(1),
             cache_disposition: TimingCacheDisposition::Hit,
             reason: None,
+            test_definition_digest: String::new(),
         },
         SelectorTimingRecord {
             selector: "b".into(),
@@ -195,6 +196,7 @@ fn incomplete_timings_list_problem_selectors() {
             duration_ns: None,
             cache_disposition: TimingCacheDisposition::MissStored,
             reason: Some("assert".into()),
+            test_definition_digest: String::new(),
         },
         SelectorTimingRecord {
             selector: "c".into(),
@@ -203,6 +205,7 @@ fn incomplete_timings_list_problem_selectors() {
             duration_ns: None,
             cache_disposition: TimingCacheDisposition::Unknown,
             reason: Some("missing".into()),
+            test_definition_digest: String::new(),
         },
     ];
     assert_eq!(

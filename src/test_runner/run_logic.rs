@@ -3,6 +3,8 @@ use crate::test_runner::coverage_decision::{LanguageExecutor, LanguageTestModule
 use crate::test_runner::final_summary::{FinalTestSummary, print_final_test_summary};
 use std::time::{Duration, Instant};
 
+#[path = "run_logic/cache_decision_metrics.rs"]
+mod cache_decision_metrics;
 #[path = "run_logic/language_executor.rs"]
 mod language_executor;
 #[path = "run_logic/language_modules.rs"]

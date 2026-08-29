@@ -185,8 +185,12 @@ pub fn seed_rust_runtime_coverage(repo: &Path, entries: &[RustRuntimeCoverageSee
     let tools = rust_runtime_coverage_tool_identity(&repo);
     let identity = kiss::rust_llvm_cov_runner::batch_identity(&req, &tools).unwrap();
     for (selector, coverage_files) in entries {
-        let fingerprint =
-            kiss::rust_llvm_cov_runner::entry_fingerprint(&identity.input_digest, &req, &tools, selector);
+        let fingerprint = kiss::rust_llvm_cov_runner::entry_fingerprint(
+            &identity.input_digest,
+            &req,
+            &tools,
+            selector,
+        );
         let files = coverage_files
             .iter()
             .map(|(file, lines)| {
@@ -211,8 +215,12 @@ pub fn seed_rust_runtime_coverage(repo: &Path, entries: &[RustRuntimeCoverageSee
             &outcome,
             &identity.generation_fingerprint,
         );
-        kiss::rust_llvm_cov_runner::store_rust_cov_cache_entry(&req.cache_root, &fingerprint, &entry)
-            .unwrap();
+        kiss::rust_llvm_cov_runner::store_rust_cov_cache_entry(
+            &req.cache_root,
+            &fingerprint,
+            &entry,
+        )
+        .unwrap();
     }
     kiss::rust_llvm_cov_runner::publish_derived_state(&req, &tools, &identity, &selectors, false)
         .unwrap();
@@ -234,6 +242,7 @@ fn rust_runtime_coverage_request(
         test_args: Vec::new(),
         env: relevant_rust_env(),
         force_rerun: false,
+        force_rerun_selectors: Vec::new(),
         jobs: 1,
         generated_config: repo
             .join(".kiss")
@@ -247,6 +256,7 @@ fn rust_runtime_coverage_request(
         host_platform,
         coverage_output_mode: kiss::rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
         selector_timeout_millis: std::collections::BTreeMap::new(),
+        cache_policy: kiss::test_cache_policy::TestCachePolicy::default(),
     }
 }
 

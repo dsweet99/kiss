@@ -207,11 +207,13 @@ fn parse_oracle_stdout_coverage(stdout: &[u8], source_root: &Path) -> RustLineCo
         };
     }
     let payload = extract_json_payload(stdout);
-    crate::rust_llvm_cov_runner::execute_or_reuse::llvm_cov_json::parse_llvm_cov_json(&payload, source_root).unwrap_or(
-        RustLineCoverage {
-            files: BTreeMap::new(),
-        },
+    crate::rust_llvm_cov_runner::execute_or_reuse::llvm_cov_json::parse_llvm_cov_json(
+        &payload,
+        source_root,
     )
+    .unwrap_or(RustLineCoverage {
+        files: BTreeMap::new(),
+    })
 }
 
 #[cfg(test)]
@@ -250,6 +252,7 @@ pub(crate) fn batch_request_with_args(
             helper_bin.to_string_lossy().to_string(),
         )]),
         force_rerun: true,
+        force_rerun_selectors: Vec::new(),
         jobs,
         generated_config: tmp.join("batch-cache/runs/parity/nextest.toml"),
         population_publication_selectors: None,
@@ -258,6 +261,7 @@ pub(crate) fn batch_request_with_args(
         host_platform: String::new(),
         coverage_output_mode: crate::rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
         selector_timeout_millis: std::collections::BTreeMap::new(),
+        cache_policy: crate::test_cache_policy::TestCachePolicy::default(),
     };
     resolve_batch_request_runners(&mut req).expect("resolve delegated runners");
     req
@@ -302,16 +306,17 @@ pub(crate) fn batch_profile_debug(req: &RustCoverageBatchRequest) -> String {
     let Some(run_root) = req.generated_config.parent() else {
         return "batch debug: generated config has no parent".to_string();
     };
-    let plan_env = crate::rust_llvm_cov_runner::plan::batch_plan::build_rust_coverage_batch_plan(req)
-        .ok()
-        .map(|plan| {
-            plan.argv
-                .windows(2)
-                .filter(|args| args[0] == "--config")
-                .map(|args| format!("--config {}", args[1]))
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+    let plan_env =
+        crate::rust_llvm_cov_runner::plan::batch_plan::build_rust_coverage_batch_plan(req)
+            .ok()
+            .map(|plan| {
+                plan.argv
+                    .windows(2)
+                    .filter(|args| args[0] == "--config")
+                    .map(|args| format!("--config {}", args[1]))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
     let output_dir = run_root.join("instances");
     let Ok(metadata) = load_target_runner_shim_metadata(&output_dir) else {
         return format!(

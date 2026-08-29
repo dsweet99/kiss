@@ -82,6 +82,7 @@ impl BatchSubprocessRunner {
         cwd: &Path,
         plan: &RustCoverageBatchPlan,
     ) -> Result<BatchSubprocessRunOutcome, BatchSubprocessRunError> {
+        crate::rust_llvm_cov_runner::record_cargo_nextest_invocation();
         (self.run)(cwd, plan)
     }
 }

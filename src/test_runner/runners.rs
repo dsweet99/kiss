@@ -314,6 +314,7 @@ pub(crate) fn build_rust_coverage_batch_dry_run_lines(
         test_args: extra.to_vec(),
         env: BTreeMap::new(),
         force_rerun: false,
+        force_rerun_selectors: Vec::new(),
         jobs,
         generated_config: PathBuf::from("<generated-filter>"),
         population_publication_selectors: None,
@@ -322,6 +323,7 @@ pub(crate) fn build_rust_coverage_batch_dry_run_lines(
         host_platform,
         coverage_output_mode: CoverageOutputMode::SelectorEntries,
         selector_timeout_millis: std::collections::BTreeMap::new(),
+        cache_policy: kiss::test_cache_policy::TestCachePolicy::default(),
     };
     let plan = build_rust_coverage_batch_plan(&req)?;
     let mut lines = vec![

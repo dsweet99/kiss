@@ -13,6 +13,12 @@ pub fn env_map_from_allowlist(keys: &[&str]) -> BTreeMap<String, String> {
         .collect()
 }
 
+pub fn cargo_target_linker_env() -> BTreeMap<String, String> {
+    std::env::vars()
+        .filter(|(key, _)| key.starts_with("CARGO_TARGET_") && key.ends_with("_LINKER"))
+        .collect()
+}
+
 pub fn pythonpath_for_coverage_identity(repo_root: &Path) -> String {
     let root = repo_root
         .canonicalize()

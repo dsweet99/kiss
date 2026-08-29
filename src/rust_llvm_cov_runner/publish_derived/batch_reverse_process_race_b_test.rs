@@ -3,7 +3,9 @@ use crate::rust_llvm_cov_runner::publish_derived::batch_reverse_process_race_sup
     SpawnExact, assert_ok, child_work_and_repo, release_barrier, spawn_exact, wait_barrier_ready,
     wait_path, wait_ready,
 };
-use crate::rust_llvm_cov_runner::publish_derived::batch_reverse_publish::{prune_unreferenced_snapshots, snapshot_path};
+use crate::rust_llvm_cov_runner::publish_derived::batch_reverse_publish::{
+    prune_unreferenced_snapshots, snapshot_path,
+};
 use crate::rust_llvm_cov_runner::publish_derived::batch_reverse_test_support::seed_alpha_beta_reverse;
 use crate::rust_llvm_cov_runner::publish_derived_state;
 use crate::rust_llvm_cov_runner::query_reverse_line_index;
@@ -141,10 +143,12 @@ fn store_selector_with_lib_coverage(
     selector: &str,
     lines: BTreeSet<u32>,
 ) {
-    use crate::rust_llvm_cov_runner::plan::batch_fingerprint::{batch_identity, entry_fingerprint};
-    use crate::rust_llvm_cov_runner::rust_cov_cache::{RustCovCacheEntry, store_rust_cov_cache_entry};
-    use crate::rust_llvm_cov_runner::{RustCovCacheStatus, RustLineCoverage, RustLlvmCovOutcome};
     use crate::rpytest_runner::TestStatus;
+    use crate::rust_llvm_cov_runner::plan::batch_fingerprint::{batch_identity, entry_fingerprint};
+    use crate::rust_llvm_cov_runner::rust_cov_cache::{
+        RustCovCacheEntry, store_rust_cov_cache_entry,
+    };
+    use crate::rust_llvm_cov_runner::{RustCovCacheStatus, RustLineCoverage, RustLlvmCovOutcome};
     use std::time::Duration;
 
     let tools = witness_batch_tools();
@@ -202,7 +206,11 @@ fn os_process_prune_never_deletes_manifest_active_snapshot() {
     assert_active_readable(&req.cache_root);
 }
 
-fn primed() -> (tempfile::TempDir, crate::rust_llvm_cov_runner::RustCoverageBatchRequest, PathBuf) {
+fn primed() -> (
+    tempfile::TempDir,
+    crate::rust_llvm_cov_runner::RustCoverageBatchRequest,
+    PathBuf,
+) {
     let repo = batch_executor_fixture_repo();
     let req = batch_executor_request(repo.path());
     let work = repo.path().join("process-race-b-work");
@@ -234,7 +242,8 @@ fn run_readers_then_release(exe: &Path, work: &Path, barrier: &Path, publisher_a
 
 fn repair_under_lock(req: &crate::rust_llvm_cov_runner::RustCoverageBatchRequest) {
     let tools = witness_batch_tools();
-    let identity = crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(req, &tools).unwrap();
+    let identity =
+        crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(req, &tools).unwrap();
     let _guard = lock_batch(&req.cache_root).unwrap();
     publish_derived_state(
         req,
@@ -299,14 +308,19 @@ fn run_reader() {
     wait_path(&work.join("go_readers"), Duration::from_secs(15));
     let prior = fs::read_to_string(work.join("prior_snapshot.txt")).unwrap();
     let tools = witness_batch_tools();
-    let identity = crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    let identity =
+        crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
     for _ in 0..30 {
         assert_reader_safe(&req, &identity.generation_fingerprint, prior.trim());
         thread::sleep(Duration::from_millis(5));
     }
 }
 
-fn assert_reader_safe(req: &crate::rust_llvm_cov_runner::RustCoverageBatchRequest, generation: &str, prior: &str) {
+fn assert_reader_safe(
+    req: &crate::rust_llvm_cov_runner::RustCoverageBatchRequest,
+    generation: &str,
+    prior: &str,
+) {
     match query_reverse_line_index(
         &req.cache_root,
         generation,
@@ -335,7 +349,8 @@ fn assert_reader_safe(req: &crate::rust_llvm_cov_runner::RustCoverageBatchReques
 
 fn publish_under_lock(req: &crate::rust_llvm_cov_runner::RustCoverageBatchRequest) -> String {
     let tools = witness_batch_tools();
-    let identity = crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(req, &tools).unwrap();
+    let identity =
+        crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(req, &tools).unwrap();
     let _guard = lock_batch(&req.cache_root).unwrap();
     publish_derived_state(
         req,
@@ -354,7 +369,11 @@ fn publish_under_lock(req: &crate::rust_llvm_cov_runner::RustCoverageBatchReques
         .to_string()
 }
 
-fn child_ctx() -> (String, PathBuf, crate::rust_llvm_cov_runner::RustCoverageBatchRequest) {
+fn child_ctx() -> (
+    String,
+    PathBuf,
+    crate::rust_llvm_cov_runner::RustCoverageBatchRequest,
+) {
     let (id, work, repo) = child_work_and_repo(CHILD_ENV, ROOT_ENV);
     (id, work, batch_executor_request(&repo))
 }

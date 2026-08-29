@@ -25,8 +25,32 @@ pub(crate) const RUST_COVERAGE_ENV_KEYS: &[&str] = &[
     "LLVM_PROFILE_FILE",
     "KISS_RUST_LLVM_COV_HOLD_BEFORE_GO_MS",
 ];
+const RUST_CHILD_ENV_KEYS: &[&str] = &[
+    "PATH",
+    "HOME",
+    "USER",
+    "LOGNAME",
+    "SHELL",
+    "TMPDIR",
+    "TMP",
+    "TEMP",
+    "CARGO_HOME",
+    "RUSTUP_HOME",
+    "RUSTUP_TOOLCHAIN",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "LD_LIBRARY_PATH",
+    "CC",
+    "CXX",
+];
 pub(crate) fn relevant_rust_batch_env() -> BTreeMap<String, String> {
-    kiss::env_map_from_allowlist(RUST_COVERAGE_ENV_KEYS)
+    let mut env = kiss::env_map_from_allowlist(RUST_CHILD_ENV_KEYS);
+    env.extend(kiss::env_map_from_allowlist(RUST_COVERAGE_ENV_KEYS));
+    env.extend(kiss::cargo_target_linker_env());
+    env
 }
 
 pub(crate) fn rust_coverage_cache_root(repo_root: &Path) -> PathBuf {
@@ -84,6 +108,7 @@ pub(crate) fn resolved_rust_batch_request_parts(
         test_args: test_args.to_vec(),
         env: relevant_rust_batch_env(),
         force_rerun: false,
+        force_rerun_selectors: Vec::new(),
         jobs: 1,
         generated_config: repo_root.join(".kiss/rust_llvm_cov_cache/runs/plan/nextest.toml"),
         population_publication_selectors: None,
@@ -92,6 +117,7 @@ pub(crate) fn resolved_rust_batch_request_parts(
         host_platform,
         coverage_output_mode: CoverageOutputMode::SelectorEntries,
         selector_timeout_millis: BTreeMap::new(),
+        cache_policy: kiss::test_cache_policy::TestCachePolicy::default(),
     };
     resolve_batch_request_runners(&mut req).map_err(|err| format!("{err:?}"))?;
     let tools = tool_identity::cached_rust_coverage_tool_identity(repo_root)?;
@@ -171,7 +197,8 @@ pub(crate) use tool_identity::rust_coverage_tool_versions_from_cache_or_detect;
 #[path = "rust_coverage_index/selection.rs"]
 mod selection;
 pub(crate) use selection::{
-    ResolvedRustPopulation, resolve_rust_population_state, select_rust_source_selectors_for_basis,
+    ResolveRustPopulationArgs, ResolvedRustPopulation, resolve_rust_population_state,
+    select_rust_source_selectors_for_basis,
 };
 
 #[path = "rust_coverage_index/line_select.rs"]

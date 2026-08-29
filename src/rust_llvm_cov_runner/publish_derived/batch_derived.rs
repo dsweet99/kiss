@@ -1,4 +1,6 @@
-use crate::rust_llvm_cov_runner::plan::batch_fingerprint::{RustCoverageBatchIdentity, RustCoverageToolIdentity};
+use crate::rust_llvm_cov_runner::plan::batch_fingerprint::{
+    RustCoverageBatchIdentity, RustCoverageToolIdentity,
+};
 use crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest;
 use crate::rust_llvm_cov_runner::publish_derived::batch_derived_generations::{
     build_generation_index, count_generations,
@@ -6,7 +8,9 @@ use crate::rust_llvm_cov_runner::publish_derived::batch_derived_generations::{
 pub(crate) use crate::rust_llvm_cov_runner::publish_derived::batch_derived_prune::maybe_prune_obsolete_selective_after_batch;
 use crate::rust_llvm_cov_runner::publish_derived::batch_derived_prune::prune_non_current_generations;
 pub use crate::rust_llvm_cov_runner::publish_derived::batch_derived_prune::prune_obsolete_selective_generations;
-use crate::rust_llvm_cov_runner::rust_cov_cache::{generation_entries_fingerprint, load_rust_cov_cache_entry};
+use crate::rust_llvm_cov_runner::rust_cov_cache::{
+    generation_entries_fingerprint, load_rust_cov_cache_entry,
+};
 use crate::rust_llvm_cov_runner::{
     RustLlvmCovError, RustTestBinaryIdentity, batch_check_aggregate::ValidatedCheckAggregate,
 };
@@ -16,11 +20,11 @@ use std::io;
 use std::path::Path;
 
 #[cfg(test)]
+use crate::rpytest_runner::TestStatus;
+#[cfg(test)]
 use crate::rust_llvm_cov_runner::RustLineCoverage;
 #[cfg(test)]
 use crate::rust_llvm_cov_runner::rust_cov_cache::RustCovCacheEntry;
-#[cfg(test)]
-use crate::rpytest_runner::TestStatus;
 pub const INDEX_SCHEMA_VERSION: &str = "rust-llvm-cov-index-v3";
 pub const POPULATION_SCHEMA_VERSION: &str = "rust-llvm-cov-population-v6";
 
@@ -84,7 +88,11 @@ fn republish_if_entry_state_missing(
     identity: &RustCoverageBatchIdentity,
     test_binaries: &[RustTestBinaryIdentity],
 ) -> Result<Option<DerivedPublishCounters>, RustLlvmCovError> {
-    if crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::read_entry_state(&req.cache_root).is_some() {
+    if crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::read_entry_state(
+        &req.cache_root,
+    )
+    .is_some()
+    {
         return Ok(None);
     }
     let Ok(bytes) = fs::read(req.cache_root.join("population.json")) else {
@@ -216,12 +224,13 @@ pub fn publish_derived_state_with_binaries(
             .map_err(|err| io_context("generation_entries_fingerprint", err))?;
     let prior_snapshot =
         crate::rust_llvm_cov_runner::publish_derived::batch_reverse_line_index::read_prior_snapshot_id(&req.cache_root);
-    let revision = crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::publish_next_entry_state(
-        &req.cache_root,
-        &identity.generation_fingerprint,
-        &entries_fingerprint,
-    )
-    .map_err(|err| annotate_io("publish_next_entry_state", err))?;
+    let revision =
+        crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::publish_next_entry_state(
+            &req.cache_root,
+            &identity.generation_fingerprint,
+            &entries_fingerprint,
+        )
+        .map_err(|err| annotate_io("publish_next_entry_state", err))?;
     let reverse = crate::rust_llvm_cov_runner::publish_derived::batch_reverse_line_index::publish_reverse_line_index(
         &req.cache_root,
         &req.source_root,

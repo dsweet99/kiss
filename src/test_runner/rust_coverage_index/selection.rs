@@ -46,66 +46,113 @@ impl ResolvedRustPopulation {
     }
 }
 
-pub(crate) fn resolve_rust_population_state(
-    repo_root: &Path,
-    ignore: &[String],
-    rust_source_paths: &[PathBuf],
-    test_args: &[String],
-) -> Result<ResolvedRustPopulation, String> {
-    let _ = rust_source_paths;
-    let identity = current_rust_coverage_batch_identity(repo_root, test_args)?;
-    let cache_root = rust_coverage_cache_root(repo_root);
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ResolveRustPopulationArgs<'a> {
+    pub repo_root: &'a Path,
+    pub ignore: &'a [String],
+    pub rust_source_paths: &'a [PathBuf],
+    pub rust_changed_lines: &'a BTreeMap<PathBuf, BTreeSet<u32>>,
+    pub expected_selectors: Option<&'a [String]>,
+    pub test_args: &'a [String],
+}
 
-    let current = kiss::rust_llvm_cov_runner::load_current_population_state(
-        &cache_root,
-        repo_root,
-        &identity,
-        None,
-    );
-    if let Some(current) = current {
-        return Ok(ResolvedRustPopulation::Current { state: current });
-    }
-    let partial_current = kiss::rust_llvm_cov_runner::load_current_population_state(
-        &cache_root,
-        repo_root,
-        &identity,
-        None,
-    );
-    if let Some(partial_current) = partial_current
-        && current_partial_population_covers_selection(
+#[cfg(test)]
+static EMPTY_CHANGED_LINES: BTreeMap<PathBuf, BTreeSet<u32>> = BTreeMap::new();
+
+impl<'a> ResolveRustPopulationArgs<'a> {
+    #[cfg(test)]
+    pub(crate) fn for_paths(repo_root: &'a Path, rust_source_paths: &'a [PathBuf]) -> Self {
+        Self {
             repo_root,
+            ignore: &[],
             rust_source_paths,
-            &BTreeMap::new(),
-            test_args,
-            &partial_current,
-        )
-    {
-        return Ok(ResolvedRustPopulation::Current {
-            state: partial_current,
-        });
+            rust_changed_lines: &EMPTY_CHANGED_LINES,
+            expected_selectors: None,
+            test_args: &[],
+        }
     }
-    let universe = super::super::runners::enumerate_workspace_rust_selectors(repo_root, ignore)?;
+}
+
+pub(crate) fn resolve_rust_population_state(
+    args: ResolveRustPopulationArgs<'_>,
+) -> Result<ResolvedRustPopulation, String> {
+    let identity = current_rust_coverage_batch_identity(args.repo_root, args.test_args)?;
+    let cache_root = rust_coverage_cache_root(args.repo_root);
+    if let Some(state) = load_exact_current_population(&cache_root, &identity, &args) {
+        return Ok(ResolvedRustPopulation::Current { state });
+    }
+    if let Some(state) = load_partial_current_population(&cache_root, &identity, &args) {
+        return Ok(ResolvedRustPopulation::Current { state });
+    }
+    load_reusable_or_stale(&cache_root, &identity, &args)
+}
+
+fn load_exact_current_population(
+    cache_root: &Path,
+    identity: &kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity,
+    args: &ResolveRustPopulationArgs<'_>,
+) -> Option<kiss::rust_llvm_cov_runner::RustPopulationState> {
+    let expected = args.expected_selectors?;
+    kiss::rust_llvm_cov_runner::load_current_population_state(
+        cache_root,
+        args.repo_root,
+        identity,
+        Some(expected),
+    )
+}
+
+fn load_partial_current_population(
+    cache_root: &Path,
+    identity: &kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity,
+    args: &ResolveRustPopulationArgs<'_>,
+) -> Option<kiss::rust_llvm_cov_runner::RustPopulationState> {
+    let state = kiss::rust_llvm_cov_runner::load_current_population_state(
+        cache_root,
+        args.repo_root,
+        identity,
+        None,
+    )?;
+    if args.expected_selectors.is_none() {
+        return Some(state);
+    }
+    let covers = current_partial_population_covers_selection(
+        args.repo_root,
+        args.rust_source_paths,
+        args.rust_changed_lines,
+        args.test_args,
+        &state,
+    );
+    covers.then_some(state)
+}
+
+fn load_reusable_or_stale(
+    cache_root: &Path,
+    identity: &kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity,
+    args: &ResolveRustPopulationArgs<'_>,
+) -> Result<ResolvedRustPopulation, String> {
+    let universe =
+        super::super::runners::enumerate_workspace_rust_selectors(args.repo_root, args.ignore)?;
     let reusable = kiss::rust_llvm_cov_runner::load_reusable_prior_population_state(
-        &cache_root,
-        repo_root,
+        cache_root,
+        args.repo_root,
         Some(&universe),
         &identity.selection_context_fingerprint,
     );
-    if let Some(reusable) = reusable {
-        let delta = kiss::rust_llvm_cov_runner::reusable_snapshot_delta(
-            repo_root,
-            &reusable.ordinary_source_digests,
-            &identity.ordinary_source_digests,
-        );
-        if delta == kiss::rust_llvm_cov_runner::RustSnapshotDelta::StructuralChange {
-            return Ok(ResolvedRustPopulation::StructuralStale);
-        }
-        return Ok(ResolvedRustPopulation::ReusablePrior {
-            state: reusable,
-            delta,
-        });
+    let Some(reusable) = reusable else {
+        return Ok(ResolvedRustPopulation::ColdStale);
+    };
+    let delta = kiss::rust_llvm_cov_runner::reusable_snapshot_delta(
+        args.repo_root,
+        &reusable.ordinary_source_digests,
+        &identity.ordinary_source_digests,
+    );
+    if delta == kiss::rust_llvm_cov_runner::RustSnapshotDelta::StructuralChange {
+        return Ok(ResolvedRustPopulation::StructuralStale);
     }
-    Ok(ResolvedRustPopulation::ColdStale)
+    Ok(ResolvedRustPopulation::ReusablePrior {
+        state: reusable,
+        delta,
+    })
 }
 
 fn current_partial_population_covers_selection(

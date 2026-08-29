@@ -156,7 +156,7 @@ impl GateConfig {
             merge_global_lenient(self, global);
         }
         if let Some(test) = value.get("test").and_then(|v| v.as_table()) {
-            crate::test_toml::merge_test_table_lenient(test, Some(self), None);
+            crate::test_toml::merge_test_table_lenient(test, Some(self), None, None);
         }
     }
 
@@ -177,7 +177,7 @@ impl GateConfig {
             merge_global_strict(self, global)?;
         }
         if let Some(test) = value.get("test").and_then(|v| v.as_table()) {
-            crate::test_toml::merge_test_table_strict(test, Some(self), None)?;
+            crate::test_toml::merge_test_table_strict(test, Some(self), None, None)?;
         }
         Ok(())
     }

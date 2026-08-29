@@ -146,16 +146,19 @@ where
                     &prepared.parsed.compiler_artifacts,
                 )?;
                 let (exported, export_counters) =
-                    crate::rust_llvm_cov_runner::execute_or_reuse::progress::log_named_step("llvm-cov", || {
-                        let object_catalog =
+                    crate::rust_llvm_cov_runner::execute_or_reuse::progress::log_named_step(
+                        "llvm-cov",
+                        || {
+                            let object_catalog =
                             crate::rust_llvm_cov_runner::execute_or_reuse::batch_export_catalog::build_object_catalog(
                                 &prepared.parsed.compiler_artifacts,
                                 &plan.build_target,
                                 &export_requests,
                                 &req.env,
                             );
-                        export_step(req, &req.source_root, &object_catalog, export_requests)
-                    })?;
+                            export_step(req, &req.source_root, &object_catalog, export_requests)
+                        },
+                    )?;
                 finish_fresh_batch_after_export(
                     req,
                     tools,
@@ -184,26 +187,29 @@ where
                     publication_binary_ids.as_ref(),
                 )?;
                 let (exported, export_counters) =
-                    crate::rust_llvm_cov_runner::execute_or_reuse::progress::log_named_step("llvm-cov", || {
-                        let mut object_catalog =
+                    crate::rust_llvm_cov_runner::execute_or_reuse::progress::log_named_step(
+                        "llvm-cov",
+                        || {
+                            let mut object_catalog =
                             crate::rust_llvm_cov_runner::execute_or_reuse::batch_export_catalog::build_object_catalog(
                                 &prepared.parsed.compiler_artifacts,
                                 &plan.build_target,
                                 &[],
                                 &req.env,
                             );
-                        for request in &aggregate_requests {
-                            object_catalog.extend(request.objects.iter().cloned());
-                        }
-                        object_catalog.sort();
-                        object_catalog.dedup();
-                        export_check_aggregates_bounded(
-                            req.jobs,
-                            &req.source_root,
-                            &object_catalog,
-                            aggregate_requests,
-                        )
-                    })?;
+                            for request in &aggregate_requests {
+                                object_catalog.extend(request.objects.iter().cloned());
+                            }
+                            object_catalog.sort();
+                            object_catalog.dedup();
+                            export_check_aggregates_bounded(
+                                req.jobs,
+                                &req.source_root,
+                                &object_catalog,
+                                aggregate_requests,
+                            )
+                        },
+                    )?;
                 finish_fresh_check_aggregate_after_export(
                     req,
                     tools,
@@ -234,7 +240,8 @@ where
 struct PreparedFreshBatchRun {
     parsed: BatchEventStream,
     exact: bool,
-    shim_metadata: Vec<crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim::BatchShimMetadata>,
+    shim_metadata:
+        Vec<crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim::BatchShimMetadata>,
     test_binaries: Vec<RustTestBinaryIdentity>,
     instances: Vec<InstanceResult>,
     build_target_baseline_bytes: u64,
@@ -252,11 +259,14 @@ fn prepare_fresh_batch_run(
         &plan.runner_map_path,
         &req.delegated_runners,
     )?;
-    crate::rust_llvm_cov_runner::plan::batch_plan_publish::publish_generated_nextest_config(plan, req)?;
+    crate::rust_llvm_cov_runner::plan::batch_plan_publish::publish_generated_nextest_config(
+        plan, req,
+    )?;
     let run = runner.run(&req.cwd, plan).map_err(RustLlvmCovError::from)?;
-    let parsed = crate::rust_llvm_cov_runner::execute_or_reuse::progress::log_named_step("event-parse", || {
-        parse_batch_event_stream(&run.stdout)
-    })?;
+    let parsed = crate::rust_llvm_cov_runner::execute_or_reuse::progress::log_named_step(
+        "event-parse",
+        || parse_batch_event_stream(&run.stdout),
+    )?;
     reject_failed_build_without_tests(&run, &parsed)?;
     reject_nonzero_without_terminal_events(&run, &parsed)?;
     if batch_run::batch_scope_interrupted() {
@@ -279,29 +289,35 @@ fn prepare_fresh_batch_run(
                 &plan.build_target,
                 run_root,
             );
-            crate::rust_llvm_cov_runner::execute_or_reuse::progress::log_named_step("shim-synth", || {
-                crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim_synthesize::synthesize_check_aggregate_shim_metadata(
+            crate::rust_llvm_cov_runner::execute_or_reuse::progress::log_named_step(
+                "shim-synth",
+                || {
+                    crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim_synthesize::synthesize_check_aggregate_shim_metadata(
                     &parsed,
                     &profile,
                     &req.cwd,
                 )
-            })?
+                },
+            )?
         }
         CoverageOutputMode::SelectorEntries => {
             load_target_runner_shim_metadata(&plan.target_runner_output_dir)?
         }
     };
     let test_binaries = test_binaries_from_shim_metadata(&shim_metadata)?;
-    let instances = crate::rust_llvm_cov_runner::execute_or_reuse::progress::log_named_step("instance-map", || {
-        build_instance_results(
-            &parsed.started_tests,
-            &parsed.ignored_tests,
-            &parsed.terminal_tests,
-            &shim_metadata,
-            exact,
-            req,
-        )
-    })?;
+    let instances = crate::rust_llvm_cov_runner::execute_or_reuse::progress::log_named_step(
+        "instance-map",
+        || {
+            build_instance_results(
+                &parsed.started_tests,
+                &parsed.ignored_tests,
+                &parsed.terminal_tests,
+                &shim_metadata,
+                exact,
+                req,
+            )
+        },
+    )?;
     Ok(PreparedFreshBatchRun {
         parsed,
         exact,

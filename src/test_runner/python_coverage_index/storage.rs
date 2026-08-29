@@ -152,7 +152,10 @@ fn visit_python_source_inputs(dir: &Path, out: &mut Vec<PathBuf>) -> io::Result<
                 continue;
             }
             visit_python_source_inputs(&path, out)?;
-        } else if file_type.is_file() && is_python_source_input_path(&path) {
+        } else if file_type.is_file()
+            && is_python_source_input_path(&path)
+            && !is_python_test_module_path(&path)
+        {
             out.push(path);
         }
     }
@@ -170,6 +173,19 @@ pub(crate) fn is_kiss_rslip_cache_dir(path: &Path) -> bool {
 
 pub(crate) fn is_python_source_input_path(path: &Path) -> bool {
     kiss::rslip::is_rslip_cache_input(path)
+}
+
+pub(crate) fn is_python_test_module_path(path: &Path) -> bool {
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    name.ends_with(".py") && (name.starts_with("test_") || name.ends_with("_test.py"))
+}
+
+pub(crate) fn python_selector_definition_digest(repo_root: &Path, selector: &str) -> String {
+    let file = selector.split_once("::").map(|(file, _)| file).unwrap_or(selector);
+    let bytes = fs::read(repo_root.join(file)).unwrap_or_default();
+    let mut h = 0xcbf2_9ce4_8422_2325;
+    h = python_fnv1a64(h, bytes.as_slice());
+    format!("{h:016x}")
 }
 
 pub(crate) fn python_repo_relative_coverage_file(repo_root: &Path, file: &str) -> Option<String> {

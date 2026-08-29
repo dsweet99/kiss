@@ -31,6 +31,8 @@ pub(crate) mod batch_nextest_id;
 
 pub(crate) mod cargo_workspace_metadata;
 
+pub(crate) mod execution_identity;
+
 pub(crate) mod shared_input;
 
 #[cfg(test)]

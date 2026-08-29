@@ -31,11 +31,13 @@ pub(crate) fn validate_rust_extra_args(extra: &[String]) -> Result<(), String> {
     validate_supported_rust_test_args(extra)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn run_rust_llvm_cov_selectors(
     repo_root: &Path,
     selectors: &[String],
     extra: &[String],
     force_rerun: bool,
+    force_rerun_selectors: &[String],
     jobs: usize,
     population_publication_selectors: Option<Vec<String>>,
     gate: &kiss::GateConfig,
@@ -46,6 +48,7 @@ pub(crate) fn run_rust_llvm_cov_selectors(
         RustCoverageRunOptions {
             extra,
             force_rerun,
+            force_rerun_selectors,
             jobs,
             population_publication_selectors,
             coverage_output_mode: CoverageOutputMode::SelectorEntries,
@@ -127,6 +130,7 @@ pub(crate) fn cached_rust_check_aggregate_selectors(
 
     if cache_root.join("execution_witness.json").is_file()
         || cache_root.join("index.json").is_file()
+        || cache_root.join("current_generation.json").is_file()
     {
         let identity =
             crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(
@@ -176,6 +180,7 @@ fn run_rust_llvm_cov_check_aggregate_selectors_with_publication(
         RustCoverageRunOptions {
             extra,
             force_rerun: false,
+            force_rerun_selectors: &[],
             jobs,
             population_publication_selectors: population_publication_selectors
                 .or_else(|| Some(selectors.to_vec())),
@@ -202,6 +207,7 @@ pub(crate) struct RustCoverageToolVersions {
 pub(crate) struct RustCoverageRunOptions<'a> {
     pub(crate) extra: &'a [String],
     pub(crate) force_rerun: bool,
+    pub(crate) force_rerun_selectors: &'a [String],
     pub(crate) jobs: usize,
     pub(crate) population_publication_selectors: Option<Vec<String>>,
     pub(crate) coverage_output_mode: CoverageOutputMode,
@@ -230,7 +236,7 @@ where
     let stage_started = std::time::Instant::now();
     println!("kiss test: Running batch-request");
     let request_started = std::time::Instant::now();
-    let batch_req = rust_coverage_batch_request_from_parts(
+    let mut batch_req = rust_coverage_batch_request_from_parts(
         repo_root,
         selectors,
         options.extra,
@@ -240,6 +246,7 @@ where
         options.coverage_output_mode,
         &options.gate,
     )?;
+    batch_req.force_rerun_selectors = options.force_rerun_selectors.to_vec();
     println!(
         "kiss test: Ran batch-request {:.1}ms",
         request_started.elapsed().as_secs_f64() * 1000.0
@@ -298,6 +305,7 @@ pub(crate) fn rust_coverage_batch_request_from_parts(
         test_args: extra.to_vec(),
         env: relevant_rust_batch_env(),
         force_rerun,
+        force_rerun_selectors: Vec::new(),
         jobs,
         generated_config: unique_rust_coverage_batch_config_path(repo_root),
         population_publication_selectors,
@@ -306,6 +314,11 @@ pub(crate) fn rust_coverage_batch_request_from_parts(
         host_platform: String::new(),
         coverage_output_mode,
         selector_timeout_millis,
+        cache_policy: kiss::TestSectionConfig::try_load_path_only(&kiss::kissconfig_path_for_repo(
+            repo_root,
+        ))
+        .map(|config| config.cache_policy)
+        .unwrap_or_default(),
     };
     resolve_batch_request_runners(&mut req).map_err(map_rust_llvm_cov_error)?;
     Ok(req)

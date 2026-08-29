@@ -198,7 +198,10 @@ fn record_rslip_selector_result(
         }
 
         Err(_) => {
-            statuses.push((selector.to_string(), kiss::rpytest_runner::TestStatus::Failed));
+            statuses.push((
+                selector.to_string(),
+                kiss::rpytest_runner::TestStatus::Failed,
+            ));
             summary.record(SelectorExecutionRecord {
                 selector: selector.to_string(),
                 status: kiss::rpytest_runner::TestStatus::Failed,
@@ -246,6 +249,9 @@ fn handle_rslip_batch_progress(
             let _ = stdout.flush();
         }
         RslipBatchProgress::CachedStatusDump { body } => {
+            if !crate::test_runner::check_runtime_refresh::test_runner_stdout_enabled() {
+                return;
+            }
             let _ = stdout.write_all(body.as_bytes());
             let _ = stdout.flush();
         }

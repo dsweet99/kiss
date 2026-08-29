@@ -1,17 +1,24 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::test_runner::lang_iface::{
-    AcceptMode, EnsureRequest, ExecutionWitness, PublishBatch, WitnessStatus,
+    AcceptMode, EnsureRequest, ExecutionWitness, PublishBatch, WitnessScope, WitnessStatus,
 };
 
 pub(super) fn publication_universe(
     batch: &PublishBatch,
     prior: Option<&ExecutionWitness>,
 ) -> Vec<String> {
+    if let Some(prior) = prior.filter(|witness| witness.scope == WitnessScope::Full) {
+        let mut universe: BTreeSet<String> = prior.selectors.iter().cloned().collect();
+        universe.extend(batch.selectors.iter().cloned());
+        if let Some(extra) = &batch.publication_universe {
+            universe.extend(extra.iter().cloned());
+        }
+        return universe.into_iter().collect();
+    }
     batch
         .publication_universe
         .clone()
-        .or_else(|| prior.map(|w| w.selectors.clone()))
         .unwrap_or_else(|| batch.selectors.clone())
 }
 
@@ -75,21 +82,21 @@ pub(super) fn covered_sets_for_publish(
     batch: &PublishBatch,
     prior: Option<&ExecutionWitness>,
 ) -> BTreeMap<String, BTreeSet<u32>> {
-    if batch.covered_lines.is_empty() {
-        return prior
-            .map(|w| {
-                w.covered_lines
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.iter().copied().collect()))
-                    .collect()
-            })
-            .unwrap_or_default();
+    let mut merged: BTreeMap<String, BTreeSet<u32>> = prior
+        .map(|w| {
+            w.covered_lines
+                .iter()
+                .map(|(k, v)| (k.clone(), v.iter().copied().collect()))
+                .collect()
+        })
+        .unwrap_or_default();
+    for (path, lines) in &batch.covered_lines {
+        merged
+            .entry(path.clone())
+            .or_default()
+            .extend(lines.iter().copied());
     }
-    batch
-        .covered_lines
-        .iter()
-        .map(|(k, v)| (k.clone(), v.iter().copied().collect()))
-        .collect()
+    merged
 }
 
 pub(super) fn publish_complete(

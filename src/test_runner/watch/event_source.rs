@@ -6,9 +6,7 @@ use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 
 use crate::bin_cli::args::TestInvocation;
 
-use super::filter::{
-    config_rel_for_watch, path_should_enter_watch_queue,
-};
+use super::filter::{config_rel_for_watch, path_should_enter_watch_queue};
 use super::roots::{WatchRegistration, WatchRootKind};
 
 #[cfg(test)]
@@ -326,14 +324,13 @@ mod tests {
             path: tmp.path().to_path_buf(),
             kind: super::super::roots::WatchRootKind::NonRecursive,
         }];
-        let mut src =
-            NativeWatchEventSource::register(
-                &regs,
-                tmp.path(),
-                &TestInvocation::All,
-                Path::new(".kissconfig"),
-            )
-            .unwrap();
+        let mut src = NativeWatchEventSource::register(
+            &regs,
+            tmp.path(),
+            &TestInvocation::All,
+            Path::new(".kissconfig"),
+        )
+        .unwrap();
         std::fs::write(tmp.path().join("x.py"), "1\n").unwrap();
         let _ = src.recv_timeout(Duration::from_secs(2));
     }
@@ -350,14 +347,13 @@ mod tests {
             path: tmp.path().to_path_buf(),
             kind: WatchRootKind::Recursive,
         }];
-        let mut src =
-            NativeWatchEventSource::register(
-                &regs,
-                tmp.path(),
-                &TestInvocation::All,
-                Path::new(".kissconfig"),
-            )
-            .unwrap();
+        let mut src = NativeWatchEventSource::register(
+            &regs,
+            tmp.path(),
+            &TestInvocation::All,
+            Path::new(".kissconfig"),
+        )
+        .unwrap();
         let _ = src.recv_timeout(Duration::from_millis(150));
 
         for i in 0..40 {

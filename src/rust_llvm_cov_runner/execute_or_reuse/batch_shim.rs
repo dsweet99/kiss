@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::{ProcessGroupIdentity, identity_still_valid};
+use crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::{
+    ProcessGroupIdentity, identity_still_valid,
+};
 
 #[path = "batch_shim_child.rs"]
 mod batch_shim_child;

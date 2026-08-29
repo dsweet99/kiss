@@ -2,7 +2,9 @@ use crate::rust_llvm_cov_runner::publish_derived::batch_derived::publish_conserv
 use crate::rust_llvm_cov_runner::publish_derived::batch_derived_index::{
     load_current_generation_line_index, load_current_population_state,
 };
-use crate::rust_llvm_cov_runner::test_support::{derived_fixture_request, tamper_json_file, witness_batch_tools};
+use crate::rust_llvm_cov_runner::test_support::{
+    derived_fixture_request, tamper_json_file, witness_batch_tools,
+};
 use crate::rust_llvm_cov_runner::{RustLineCoverage, RustTestBinaryIdentity};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -44,7 +46,9 @@ fn load_current_population_state_accepts_empty_check_aggregate_coverage() {
     assert_eq!(state.selectors, fixture.selectors);
     assert_eq!(state.test_binaries.len(), 2);
     assert!(state.entries_fingerprint.starts_with("check-aggregate:"));
-    assert!(crate::rust_llvm_cov_runner::is_check_aggregate_population(&state));
+    assert!(crate::rust_llvm_cov_runner::is_check_aggregate_population(
+        &state
+    ));
     assert_eq!(
         load_current_generation_line_index(&fixture.req.cache_root, fixture.repo.path()),
         Some(BTreeMap::new())
@@ -115,7 +119,9 @@ fn load_check_aggregate_population_accepts_large_index_with_object_prefix() {
         Some(&fixture.selectors),
     )
     .expect("large parseable-prefix index must not block check-aggregate load");
-    assert!(crate::rust_llvm_cov_runner::is_check_aggregate_population(&state));
+    assert!(crate::rust_llvm_cov_runner::is_check_aggregate_population(
+        &state
+    ));
 }
 
 #[test]
@@ -154,7 +160,9 @@ fn conservative_check_aggregate_publish_writes_valid_population_index() {
     assert!(state.line_index["src/a.rs"].is_empty());
     assert!(state.line_index["src/b.rs"].is_empty());
     assert_eq!(state.selectors, fixture.selectors);
-    assert!(crate::rust_llvm_cov_runner::is_check_aggregate_population(&state));
+    assert!(crate::rust_llvm_cov_runner::is_check_aggregate_population(
+        &state
+    ));
     let index: serde_json::Value =
         serde_json::from_slice(&std::fs::read(fixture.req.cache_root.join("index.json")).unwrap())
             .unwrap();
@@ -197,7 +205,8 @@ fn aggregate_backed_population_fixture_with(
     req.logical_selectors = aggregate_selectors();
     req.population_publication_selectors = Some(req.logical_selectors.clone());
     let tools = witness_batch_tools();
-    let identity = crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    let identity =
+        crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
     let selectors = aggregate_selectors();
     let aggregate = crate::rust_llvm_cov_runner::build_check_aggregate(
         &req,

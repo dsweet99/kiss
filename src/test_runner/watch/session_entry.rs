@@ -153,7 +153,8 @@ mod tests {
         );
         let orig = env::current_dir().unwrap();
         env::set_current_dir(tmp.path()).unwrap();
-        let prepared = prepare_watch_session(&py_args(), Path::new(".kissconfig")).expect("prepare");
+        let prepared =
+            prepare_watch_session(&py_args(), Path::new(".kissconfig")).expect("prepare");
         assert_eq!(
             prepared.repo_root.canonicalize().unwrap(),
             tmp.path().canonicalize().unwrap()

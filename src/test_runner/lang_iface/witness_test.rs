@@ -2,8 +2,7 @@ use kiss::GateConfig;
 
 use super::witness::{
     AcceptDecision, AcceptMode, ExecutionWitness, WitnessScope, WitnessStatus, accept_witness,
-    all_misses_warm_skippable, miss_selectors_for_repair, prune_witness_to_known_selectors,
-    reclassify_statuses_with_gate,
+    all_misses_warm_skippable, miss_selectors_for_repair, reclassify_statuses_with_gate,
 };
 
 fn witness(
@@ -23,6 +22,7 @@ fn witness(
         covered_lines: Default::default(),
         complete,
         generation_id: "gen-1".into(),
+        raw_statuses: Vec::new(),
     }
 }
 
@@ -72,10 +72,10 @@ fn all_mode_rejects_identity_mismatch() {
 }
 
 #[test]
-fn all_mode_accepts_input_digest_and_unsorted_selectors() {
+fn all_mode_accepts_unsorted_selectors_with_exact_identity() {
     let w = witness(
         WitnessScope::Full,
-        "rs:abc123:oldgen:oldctx",
+        "rs:abc123:gen:ctx",
         &["b", "a"],
         &[WitnessStatus::Passed, WitnessStatus::Passed],
         true,
@@ -84,10 +84,30 @@ fn all_mode_accepts_input_digest_and_unsorted_selectors() {
         accept_witness(
             AcceptMode::All,
             &["a".into(), "b".into()],
-            "rs:abc123:newgen:newctx",
+            "rs:abc123:gen:ctx",
             &w
         ),
         AcceptDecision::Accept
+    );
+}
+
+#[test]
+fn all_mode_rejects_generation_context_drift() {
+    let w = witness(
+        WitnessScope::Full,
+        "rs:abc123:oldgen:oldctx",
+        &["a"],
+        &[WitnessStatus::Passed],
+        true,
+    );
+    assert_eq!(
+        accept_witness(
+            AcceptMode::All,
+            &["a".into()],
+            "rs:abc123:newgen:newctx",
+            &w
+        ),
+        AcceptDecision::Miss("identity")
     );
 }
 
@@ -110,7 +130,13 @@ fn all_mode_rejects_selector_lag() {
         AcceptDecision::Miss("selector_universe")
     );
     assert_eq!(
-        miss_selectors_for_repair(AcceptMode::All, &["a".into(), "b".into(), "c".into()], "id", Some(&w), false),
+        miss_selectors_for_repair(
+            AcceptMode::All,
+            &["a".into(), "b".into(), "c".into()],
+            "id",
+            Some(&w),
+            false
+        ),
         vec!["c".to_string()]
     );
 }
@@ -208,9 +234,10 @@ fn time_limit_reclassify_forces_miss_on_affected_selector() {
     );
     let mut w = witness(WitnessScope::Full, "id", &["a", "b"], &effective, true);
     w.statuses = effective;
+    w.raw_statuses = vec![WitnessStatus::Passed, WitnessStatus::Passed];
     assert_eq!(
         accept_witness(AcceptMode::All, &["a".into(), "b".into()], "id", &w),
-        AcceptDecision::Miss("non_passed")
+        AcceptDecision::Accept
     );
 }
 
@@ -238,6 +265,17 @@ fn warm_accept_reclassify_applies_tighter_session_gate() {
         &tight,
     );
     assert_eq!(under_tight, vec![WitnessStatus::TimedOut]);
+    let recovered = reclassify_statuses_with_gate(
+        &["tests/a.py::t".into()],
+        &[WitnessStatus::Passed],
+        &[Some(2_000_000_000)],
+        &loose,
+    );
+    assert_eq!(
+        recovered,
+        vec![WitnessStatus::Passed],
+        "current gate must be applied to stored raw PASS, not a prior effective timeout"
+    );
 }
 
 #[test]
@@ -376,6 +414,31 @@ fn unresolved_without_duration_is_not_warm_skippable() {
 }
 
 #[test]
+fn raw_timeout_is_not_warm_skippable() {
+    let w = witness(
+        WitnessScope::Full,
+        "id",
+        &["a"],
+        &[WitnessStatus::TimedOut],
+        false,
+    );
+    assert!(!all_misses_warm_skippable(&w, &["a".into()]));
+}
+
+#[test]
+fn gate_derived_timeout_from_raw_pass_is_warm_skippable() {
+    let mut w = witness(
+        WitnessScope::Full,
+        "id",
+        &["a"],
+        &[WitnessStatus::TimedOut],
+        false,
+    );
+    w.raw_statuses = vec![WitnessStatus::Passed];
+    assert!(all_misses_warm_skippable(&w, &["a".into()]));
+}
+
+#[test]
 fn force_selectors_invalidate_stale_passed_without_batch_force() {
     let planned = vec!["a".into(), "b".into()];
     let w = witness(
@@ -397,27 +460,4 @@ fn force_selectors_invalidate_stale_passed_without_batch_force() {
         miss_selectors_for_repair(AcceptMode::Subset, &planned, "id", Some(&w), false).is_empty(),
         "batch force remains false: other selectors stay warm-eligible"
     );
-}
-
-#[test]
-fn prune_witness_to_known_selectors_drops_removed_tests() {
-    let mut w = witness(
-        WitnessScope::Full,
-        "id",
-        &["a", "removed", "b"],
-        &[
-            WitnessStatus::Passed,
-            WitnessStatus::Passed,
-            WitnessStatus::Failed,
-        ],
-        true,
-    );
-    let known = std::collections::BTreeSet::from(["a".into(), "b".into()]);
-    prune_witness_to_known_selectors(&mut w, &known);
-    assert_eq!(w.selectors, vec!["a".to_string(), "b".to_string()]);
-    assert_eq!(
-        w.statuses,
-        vec![WitnessStatus::Passed, WitnessStatus::Failed]
-    );
-    assert_eq!(w.durations_ns.len(), 2);
 }

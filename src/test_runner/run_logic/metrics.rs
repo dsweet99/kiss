@@ -14,6 +14,7 @@ pub(super) struct PhaseMetrics {
     pub(super) summary: SelectorExecutionSummary,
 }
 
+#[derive(Default)]
 pub(super) struct LocalRubricMetrics {
     pub(super) plan_duration: Duration,
     pub(super) total_duration: Duration,
@@ -48,6 +49,10 @@ pub(super) struct LocalRubricMetrics {
     pub(super) rust_external_tmp_metric_error: bool,
     pub(super) rust_concurrency_budget: usize,
     pub(super) exit_code: i32,
+    pub(super) prior_failures: usize,
+    pub(super) forced: usize,
+    pub(super) publication_generation_id: String,
+    pub(super) parent_generation_id: String,
 }
 
 impl LocalRubricMetrics {
@@ -94,6 +99,11 @@ impl LocalRubricMetrics {
             rust_external_tmp_metric_error: false,
             rust_concurrency_budget: options.jobs,
             exit_code: 0,
+            prior_failures: planned.prior_failure_selectors.python.len()
+                + planned.prior_failure_selectors.rust.len(),
+            forced: forced_selector_count(planned, options),
+            publication_generation_id: String::new(),
+            parent_generation_id: String::new(),
         }
     }
 
@@ -120,6 +130,9 @@ impl LocalRubricMetrics {
                 self.rust_transient_residual_count = usize::MAX;
             }
         }
+        let (publication, parent) = generation_pointer_ids(&rust_cache);
+        self.publication_generation_id = publication;
+        self.parent_generation_id = parent;
     }
 
     pub(super) fn print(&self) {
@@ -251,6 +264,7 @@ fn print_cache_metrics(metrics: &LocalRubricMetrics) {
     );
     print_rust_batch_metrics(metrics);
     println!("rust_cache_unstored={}", rust_cache_unstored(metrics));
+    super::cache_decision_metrics::CacheDecisionMetrics::from_rubric(metrics).print();
     println!("raw_artifact_count={}", metrics.raw_artifact_count);
     println!(
         "rust_external_tmp_residual_bytes={}",
@@ -347,6 +361,22 @@ fn count_json_files(path: &Path) -> usize {
 
 fn count_build_targets(path: &Path) -> usize {
     usize::from(path.join("target").is_dir())
+}
+
+fn forced_selector_count(planned: &PlannedSelectors, options: &SelectorRunOptions<'_>) -> usize {
+    if options.force_rerun {
+        planned.sel.python.len() + planned.sel.rust.len()
+    } else {
+        planned.prior_failure_selectors.python.len() + planned.prior_failure_selectors.rust.len()
+    }
+}
+
+fn generation_pointer_ids(rust_cache: &Path) -> (String, String) {
+    crate::test_runner::execution_generation::read_pointer(rust_cache)
+        .ok()
+        .flatten()
+        .map(|pointer| (pointer.generation_id, pointer.parent_generation_id))
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

@@ -78,6 +78,7 @@ impl LanguagePlanner for PythonModule {
             crate::test_runner::workspace_selector_cache::load_cached_workspace_selectors(
                 &self.repo_root,
                 &self.ignore,
+                &self.test_args,
             )
         {
             return Ok(cached_py
@@ -243,7 +244,7 @@ mod tests {
             "tests/test_app.py::test_value".to_string(),
             "tests/test_other.py::test_cached_only".to_string(),
         ];
-        store_workspace_selectors(tmp.path(), &[], &cached, &[]);
+        store_workspace_selectors(tmp.path(), &[], &cached, &[], &[]);
         let before = full_suite_subprocess_collects_for_tests();
         let module = PythonModule::for_execution(tmp.path(), &[]);
         let discovered: Vec<String> = LanguagePlanner::discover_universe(&module)

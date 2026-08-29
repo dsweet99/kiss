@@ -36,7 +36,9 @@ pub(crate) fn cached_summary_from_check_aggregate_population(
         let Some(duration) = duration_by_selector.get(selector).copied() else {
             return Ok(None);
         };
-        println!("PASS (cached): {report}");
+        if crate::test_runner::check_runtime_refresh::test_runner_stdout_enabled() {
+            println!("PASS (cached): {report}");
+        }
         summary.record(SelectorExecutionRecord {
             selector: report,
             status: kiss::rpytest_runner::TestStatus::Passed,
@@ -104,7 +106,9 @@ pub(crate) fn finish_rust_coverage_batch_result(
                 cached_pass += 1;
             }
         }
-        if cached_pass > 0 {
+        if cached_pass > 0
+            && crate::test_runner::check_runtime_refresh::test_runner_stdout_enabled()
+        {
             println!("PASS (cached): {cached_pass} selectors");
         }
     }

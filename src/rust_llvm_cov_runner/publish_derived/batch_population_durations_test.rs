@@ -289,10 +289,18 @@ fn load_durations_from_entries_rejects_selector_mismatch() {
         &tools,
         "beta",
     );
-    let entry =
-        crate::rust_llvm_cov_runner::rust_cov_cache::load_rust_cov_cache_entry(&req.cache_root, &alpha_fp).unwrap();
+    let entry = crate::rust_llvm_cov_runner::rust_cov_cache::load_rust_cov_cache_entry(
+        &req.cache_root,
+        &alpha_fp,
+    )
+    .unwrap();
 
-    crate::rust_llvm_cov_runner::rust_cov_cache::store_rust_cov_cache_entry(&req.cache_root, &beta_fp, &entry).unwrap();
+    crate::rust_llvm_cov_runner::rust_cov_cache::store_rust_cov_cache_entry(
+        &req.cache_root,
+        &beta_fp,
+        &entry,
+    )
+    .unwrap();
     let pop = RustPopulationState {
         input_fingerprint: identity.input_digest.clone(),
         generation_fingerprint: identity.generation_fingerprint.clone(),

@@ -26,6 +26,7 @@ fn request(cache_root: PathBuf, selectors: &[&str]) -> RustCoverageBatchRequest 
         test_args: Vec::new(),
         env: BTreeMap::new(),
         force_rerun: false,
+        force_rerun_selectors: Vec::new(),
         jobs: 1,
         generated_config: PathBuf::from("cfg"),
         population_publication_selectors: None,
@@ -34,6 +35,7 @@ fn request(cache_root: PathBuf, selectors: &[&str]) -> RustCoverageBatchRequest 
         host_platform: String::new(),
         coverage_output_mode: crate::rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
         selector_timeout_millis: BTreeMap::new(),
+        cache_policy: crate::test_cache_policy::TestCachePolicy::default(),
     }
 }
 

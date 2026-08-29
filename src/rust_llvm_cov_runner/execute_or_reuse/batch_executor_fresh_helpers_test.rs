@@ -1,12 +1,16 @@
 use crate::rust_llvm_cov_runner::RustLineCoverage;
 use crate::rust_llvm_cov_runner::RustLlvmCovError;
-use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export::{FakeInstanceExporter, write_fake_profile};
+use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export::{
+    FakeInstanceExporter, write_fake_profile,
+};
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_lock::lock_batch;
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_result::RustCoverageBatchResult;
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_run::BatchSubprocessRunner;
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim::BatchShimMetadata;
 use crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity;
-use crate::rust_llvm_cov_runner::plan::batch_plan::{RustCoverageBatchRequest, build_rust_coverage_batch_plan};
+use crate::rust_llvm_cov_runner::plan::batch_plan::{
+    RustCoverageBatchRequest, build_rust_coverage_batch_plan,
+};
 use crate::rust_llvm_cov_runner::test_support::witness_batch_tools;
 use std::collections::BTreeMap;
 use std::fs;

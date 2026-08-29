@@ -182,6 +182,7 @@ pub(crate) fn export_instances_bounded_with(
     if requests.is_empty() {
         return Ok((Vec::new(), ExportCounters::default()));
     }
+    crate::rust_llvm_cov_runner::record_llvm_export_invocations(requests.len());
     let export_fn = export_fn;
     let source_root = source_root.to_path_buf();
     let (tx, rx) = mpsc::channel();
@@ -334,7 +335,8 @@ fn drain_export_results(drain: &mut ExportDrainState<'_>) -> Result<(), RustLlvm
             Err(RecvTimeoutError::Disconnected) => break,
         }
     }
-    if crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::batch_scope_interrupted() {
+    if crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::batch_scope_interrupted()
+    {
         return Err(RustLlvmCovError::Interrupted);
     }
     Ok(())

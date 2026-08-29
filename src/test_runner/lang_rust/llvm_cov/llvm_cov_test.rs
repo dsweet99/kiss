@@ -165,6 +165,7 @@ fn rust_selector_path_submits_one_batch_request_to_executor() {
         RustCoverageRunOptions {
             extra: &["--exact".to_string()],
             force_rerun: true,
+            force_rerun_selectors: &[],
             jobs: 7,
             population_publication_selectors: None,
             coverage_output_mode: kiss::rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
@@ -228,6 +229,7 @@ fn rust_selector_path_rejects_duplicate_batch_selectors_before_execution() {
         RustCoverageRunOptions {
             extra: &["--exact".to_string()],
             force_rerun: true,
+            force_rerun_selectors: &[],
             jobs: 7,
             population_publication_selectors: None,
             coverage_output_mode: kiss::rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
@@ -268,6 +270,7 @@ fn check_aggregate_population_request_carries_population_selectors() {
         RustCoverageRunOptions {
             extra: &[],
             force_rerun: true,
+            force_rerun_selectors: &[],
             jobs: 2,
             population_publication_selectors: Some(population_selectors),
             coverage_output_mode: kiss::rust_llvm_cov_runner::CoverageOutputMode::CheckAggregate {
@@ -386,6 +389,7 @@ fn rust_selector_wrappers_return_empty_summary_without_tool_detection() {
         &[],
         &[],
         false,
+        &[],
         1,
         None,
         &kiss::GateConfig::default(),
@@ -408,6 +412,7 @@ fn run_rust_llvm_cov_selectors_rejects_zero_jobs_before_spawning() {
         &[],
         &[],
         false,
+        &[],
         0,
         None,
         &kiss::GateConfig::default(),

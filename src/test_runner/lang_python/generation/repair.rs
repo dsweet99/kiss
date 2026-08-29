@@ -166,15 +166,10 @@ fn is_problem_status(status: &str) -> bool {
 fn restamp_is_safe(
     pinned: &PythonExecutionIdentity,
     current: &PythonExecutionIdentity,
-    selector_count: usize,
-    run_misses: Option<&[String]>,
+    _selector_count: usize,
+    _run_misses: Option<&[String]>,
 ) -> bool {
-    let mut comparable = current.clone();
-    comparable.kissconfig_test_digest = pinned.kissconfig_test_digest.clone();
-    if pinned == &comparable {
-        return true;
-    }
-    run_misses.is_some_and(|misses| misses.len() < selector_count)
+    pinned == current
 }
 
 fn problem_and_run_miss_selectors(

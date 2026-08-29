@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 #[cfg(test)]
@@ -11,6 +12,72 @@ struct CollectMemoKey {
     repo_root: PathBuf,
     paths: Vec<PathBuf>,
     pytest_args: Vec<String>,
+    inventory: String,
+}
+
+fn collection_input_stamp(repo_root: &Path) -> String {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for name in [
+        "pytest.ini",
+        "pyproject.toml",
+        "setup.cfg",
+        "tox.ini",
+        ".kissconfig",
+    ] {
+        h = h.wrapping_mul(0x0100_0000_01b3) ^ u64::from(name.len() as u8);
+        if let Ok(bytes) = fs::read(repo_root.join(name)) {
+            for byte in bytes {
+                h = h.wrapping_mul(0x0100_0000_01b3) ^ u64::from(byte);
+            }
+        }
+    }
+    h = mix_collection_audit(h, repo_root);
+    format!("{h:016x}")
+}
+
+fn mix_collection_audit(mut h: u64, repo_root: &Path) -> u64 {
+    let Ok(dir) = crate::test_runner::python_coverage_index::storage::python_coverage_cache_root(
+        repo_root,
+    ) else {
+        return h;
+    };
+    let path = dir.join("collection_audit.json");
+    let Ok(bytes) = fs::read(&path) else {
+        return h;
+    };
+    for byte in &bytes {
+        h = h.wrapping_mul(0x0100_0000_01b3) ^ u64::from(*byte);
+    }
+    if let Ok(listed) = serde_json::from_slice::<Vec<String>>(&bytes) {
+        for rel in listed {
+            if let Ok(contents) = fs::read(repo_root.join(&rel)) {
+                h = h.wrapping_mul(0x0100_0000_01b3) ^ u64::from(rel.len() as u8);
+                for byte in contents {
+                    h = h.wrapping_mul(0x0100_0000_01b3) ^ u64::from(byte);
+                }
+            }
+        }
+    }
+    h
+}
+
+fn persist_collection_audit(repo_root: &Path, observed: &[String]) {
+    let Ok(dir) = crate::test_runner::python_coverage_index::storage::python_coverage_cache_root(
+        repo_root,
+    ) else {
+        return;
+    };
+    let _ = fs::create_dir_all(&dir);
+    let mut listed: Vec<String> = observed
+        .iter()
+        .filter(|rel| rel.ends_with(".py") && !rel.contains("__pycache__"))
+        .cloned()
+        .collect();
+    listed.sort();
+    listed.dedup();
+    if let Ok(bytes) = serde_json::to_vec(&listed) {
+        let _ = fs::write(dir.join("collection_audit.json"), bytes);
+    }
 }
 
 static COLLECT_MEMO: Mutex<BTreeMap<CollectMemoKey, Vec<String>>> = Mutex::new(BTreeMap::new());
@@ -28,6 +95,7 @@ pub(crate) fn collect_python_nodeids(
         repo_root: repo_root.to_path_buf(),
         paths: normalized_paths.clone(),
         pytest_args: pytest_args.to_vec(),
+        inventory: collection_input_stamp(repo_root),
     };
     if let Some(cached) = COLLECT_MEMO.lock().unwrap().get(&key).cloned() {
         return Ok(cached);
@@ -44,10 +112,13 @@ pub(crate) fn collect_python_nodeids(
         env: BTreeMap::new(),
     };
     let outcome = collect_pytest_nodeids(req).map_err(format_collect_error)?;
-    COLLECT_MEMO
-        .lock()
-        .unwrap()
-        .insert(key, outcome.nodeids.clone());
+    persist_collection_audit(repo_root, &outcome.observed_workspace);
+    if !outcome.unsupported_external {
+        COLLECT_MEMO
+            .lock()
+            .unwrap()
+            .insert(key, outcome.nodeids.clone());
+    }
     Ok(outcome.nodeids)
 }
 
@@ -93,7 +164,9 @@ fn format_collect_error(err: kiss::rpytest_runner::PytestCollectError) -> String
 }
 
 #[cfg(test)]
-pub(crate) fn format_collect_error_for_test(err: kiss::rpytest_runner::PytestCollectError) -> String {
+pub(crate) fn format_collect_error_for_test(
+    err: kiss::rpytest_runner::PytestCollectError,
+) -> String {
     format_collect_error(err)
 }
 
@@ -131,6 +204,7 @@ mod coverage_witness {
             repo_root: PathBuf::from("."),
             paths: normalize_collect_paths(&[PathBuf::from("tests/t.py")]),
             pytest_args: vec!["-q".into()],
+            inventory: collection_input_stamp(Path::new(".")),
         };
         let _ = key;
         assert!(

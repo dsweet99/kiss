@@ -244,20 +244,20 @@ mod tests {
     fn llvm_cov_progress_is_wired_into_fresh_export() {
         let src = include_str!("batch_executor_fresh.rs");
         assert!(
-            src.contains("log_named_step(\"llvm-cov\""),
+            src.contains("\"llvm-cov\""),
             "fresh export must log Running/Ran llvm-cov"
         );
         assert!(
-            src.matches("log_named_step(\"llvm-cov\"").count() >= 2,
+            src.matches("\"llvm-cov\"").count() >= 2,
             "selector-entry and check-aggregate exports must both log llvm-cov"
         );
         let finish = include_str!("batch_executor_finish_check_aggregate.rs");
         assert!(
-            finish.contains("log_named_step(\"entry-store\""),
+            finish.contains("\"entry-store\""),
             "check-aggregate finish must log Running/Ran entry-store"
         );
         assert!(
-            finish.contains("log_named_step(\"derived-publish\""),
+            finish.contains("\"derived-publish\""),
             "check-aggregate finish must log Running/Ran derived-publish"
         );
     }

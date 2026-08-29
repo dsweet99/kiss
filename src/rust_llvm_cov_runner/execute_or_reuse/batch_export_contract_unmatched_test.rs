@@ -1,4 +1,7 @@
-pub(super) fn assert_unmatched_selector(batch: &crate::rust_llvm_cov_runner::RustCoverageBatchResult, debug: &str) {
+pub(super) fn assert_unmatched_selector(
+    batch: &crate::rust_llvm_cov_runner::RustCoverageBatchResult,
+    debug: &str,
+) {
     assert_eq!(batch.counters.unmatched_selectors, 1, "{debug}");
     assert!(
         batch.completed.is_empty(),
@@ -14,14 +17,17 @@ pub(super) fn assert_unmatched_selector(batch: &crate::rust_llvm_cov_runner::Rus
     );
 }
 
-pub(super) fn assert_mixed_matched_unmatched(batch: &crate::rust_llvm_cov_runner::RustCoverageBatchResult, debug: &str) {
+pub(super) fn assert_mixed_matched_unmatched(
+    batch: &crate::rust_llvm_cov_runner::RustCoverageBatchResult,
+    debug: &str,
+) {
     assert_eq!(batch.counters.unmatched_selectors, 1, "{debug}");
     assert!(
         batch.completed.is_empty()
-            || batch
-                .batch_error
-                .as_ref()
-                .is_some_and(|err| matches!(err, crate::rust_llvm_cov_runner::RustLlvmCovError::InvalidRequest(_))),
+            || batch.batch_error.as_ref().is_some_and(|err| matches!(
+                err,
+                crate::rust_llvm_cov_runner::RustLlvmCovError::InvalidRequest(_)
+            )),
         "mixed matched/unmatched must not cache unmatched as PASS\n{debug}"
     );
 }

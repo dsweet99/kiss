@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use kiss::GateConfig;
 use kiss::Language;
 
+use super::source_delta::SourceDeltaMisses;
 use super::witness::{AcceptMode, ExecutionWitness, WitnessStatus, summary_from_witness_statuses};
 use crate::test_runner::language_keyed::LanguageKeyed;
 use crate::test_runner::runners::SelectorExecutionSummary;
@@ -101,7 +102,7 @@ pub(crate) struct StatusTimingSnapshot {
 }
 
 #[allow(dead_code)]
-pub(crate) trait LanguageRuntime {
+pub(crate) trait LanguageRuntime: SourceDeltaMisses {
     fn language(&self) -> Language;
 
     fn discover_universe(&self, request: &EnsureRequest) -> Result<Vec<String>, String> {
@@ -170,5 +171,10 @@ pub(crate) trait LanguageRuntime {
         selectors: &[String],
     ) -> Result<Vec<String>, String> {
         Ok(selectors.to_vec())
+    }
+
+    fn bind_subprocess_observer(&self, request: &EnsureRequest) {
+        let _ = request;
+        kiss::rust_llvm_cov_runner::reset_subprocess_observer();
     }
 }

@@ -53,6 +53,7 @@ fn python_accepted_summary_counts_hits() {
         covered_lines: BTreeMap::new(),
         complete: true,
         generation_id: "g".into(),
+        raw_statuses: Vec::new(),
     };
     let summary = rt.accepted_summary(&req, &["a".into()], &witness);
     assert_eq!(summary.cache_hits, 1);

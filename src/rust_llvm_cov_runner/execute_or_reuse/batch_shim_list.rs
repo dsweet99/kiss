@@ -31,8 +31,11 @@ pub(crate) fn run_delegated_list_child(
         .spawn()?;
     let child_pid = child.id();
     let output = child.wait_with_output()?;
-    let cleanup_err =
-        crate::rust_llvm_cov_runner::kiss_profraw::cleanup_kiss_profraw_for_pid(&kiss_profraw, child_pid).err();
+    let cleanup_err = crate::rust_llvm_cov_runner::kiss_profraw::cleanup_kiss_profraw_for_pid(
+        &kiss_profraw,
+        child_pid,
+    )
+    .err();
     io::stdout().write_all(&output.stdout)?;
     io::stderr().write_all(&output.stderr)?;
     write_list_metadata(output_dir, command, &output.stdout)?;
@@ -63,9 +66,15 @@ fn write_list_metadata(output_dir: &Path, command: &[OsString], stdout: &[u8]) -
 }
 
 fn list_metadata_id(binary_id: &str, command: &[OsString]) -> String {
-    let mut hash = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(0xcbf2_9ce4_8422_2325, b"list-id-v1");
+    let mut hash = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(
+        0xcbf2_9ce4_8422_2325,
+        b"list-id-v1",
+    );
     for arg in command {
-        hash = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(hash, arg.to_string_lossy().as_bytes());
+        hash = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(
+            hash,
+            arg.to_string_lossy().as_bytes(),
+        );
         hash = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(hash, &[0]);
     }
     format!("{binary_id}${hash:016x}")

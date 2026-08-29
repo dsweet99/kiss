@@ -12,7 +12,9 @@ use crate::rust_llvm_cov_runner::publish_derived::batch_check_aggregate_identity
     validate_ordinary_source_digests,
 };
 use crate::rust_llvm_cov_runner::publish_derived::batch_derived_index::normalized_source_root;
-use crate::rust_llvm_cov_runner::rust_cov_cache::{repo_relative_coverage_file, repo_relative_path};
+use crate::rust_llvm_cov_runner::rust_cov_cache::{
+    repo_relative_coverage_file, repo_relative_path,
+};
 use crate::rust_llvm_cov_runner::{
     CACHE_SCHEMA_VERSION, RustLineCoverage, RustLlvmCovError, RustSnapshotDelta,
     RustTestBinaryIdentity,
@@ -20,9 +22,12 @@ use crate::rust_llvm_cov_runner::{
 
 #[path = "batch_check_aggregate_coverage.rs"]
 mod batch_check_aggregate_coverage;
+#[path = "batch_check_aggregate_load.rs"]
+mod batch_check_aggregate_load;
 pub use batch_check_aggregate_coverage::{
     selector_coverage_from_check_aggregate_generation, selector_coverage_from_validated,
 };
+use batch_check_aggregate_load::{CheckAggregateLoadMode, current_load_mode};
 
 pub const CHECK_AGGREGATE_SCHEMA_VERSION: &str = "rust-check-aggregate-v1";
 
@@ -80,11 +85,7 @@ pub fn load_current_check_aggregate_snapshot(
         cache_root,
         source_root,
         selectors,
-        CheckAggregateLoadMode::Current {
-            input_fingerprint: identity.input_digest.clone(),
-            generation_fingerprint: identity.generation_fingerprint.clone(),
-            selection_context_fingerprint: identity.selection_context_fingerprint.clone(),
-        },
+        current_load_mode(identity),
     )?;
     let snapshot_identity = stable_check_aggregate_identity(&aggregate);
     Some(CheckAggregateSnapshot {
@@ -108,17 +109,6 @@ pub fn load_reusable_prior_check_aggregate(
             selection_context_fingerprint: selection_context_fingerprint.to_string(),
         },
     )
-}
-
-enum CheckAggregateLoadMode {
-    Current {
-        input_fingerprint: String,
-        generation_fingerprint: String,
-        selection_context_fingerprint: String,
-    },
-    ReusablePrior {
-        selection_context_fingerprint: String,
-    },
 }
 
 fn load_validated_check_aggregate(
@@ -189,10 +179,12 @@ fn current_mode_identity_is_valid(
         CheckAggregateLoadMode::Current {
             input_fingerprint,
             generation_fingerprint,
+            ordinary_source_digests,
             ..
         } => {
             raw.input_fingerprint == *input_fingerprint
                 && raw.generation_fingerprint == *generation_fingerprint
+                && raw.ordinary_source_digests == *ordinary_source_digests
         }
         CheckAggregateLoadMode::ReusablePrior { .. } => true,
     }
@@ -315,11 +307,7 @@ pub fn build_check_aggregate(
         raw,
         &req.source_root,
         Some(&aggregate.selectors),
-        CheckAggregateLoadMode::Current {
-            input_fingerprint: identity.input_digest.clone(),
-            generation_fingerprint: identity.generation_fingerprint.clone(),
-            selection_context_fingerprint: identity.selection_context_fingerprint.clone(),
-        },
+        current_load_mode(identity),
     )
     .ok_or_else(|| RustLlvmCovError::InvalidRequest("built invalid check aggregate".into()))
 }
@@ -337,11 +325,16 @@ pub fn publish_check_aggregate(
         crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_unique_suffix()
     ));
     let raw = on_disk_from_validated(req, aggregate);
-    crate::kiss_publication_barrier::publish_atomically("rust_check_aggregate", &path, &tmp, |file| {
-        serde_json::to_writer(&mut *file, &raw).map_err(io::Error::other)?;
-        file.write_all(b"\n")?;
-        Ok(())
-    })
+    crate::kiss_publication_barrier::publish_atomically(
+        "rust_check_aggregate",
+        &path,
+        &tmp,
+        |file| {
+            serde_json::to_writer(&mut *file, &raw).map_err(io::Error::other)?;
+            file.write_all(b"\n")?;
+            Ok(())
+        },
+    )
     .map_err(RustLlvmCovError::Io)
 }
 

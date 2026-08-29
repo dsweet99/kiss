@@ -63,6 +63,7 @@ pub(super) fn publish_rust_witness_after_batch(
         durations_ns: &aligned.durations_ns,
         covered_lines: &covered_lines,
         complete: all_passed,
+        jobs: 1,
     })?;
     Ok(())
 }

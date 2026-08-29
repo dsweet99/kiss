@@ -68,11 +68,18 @@ impl CurrentRunLifecycleGuard {
         }
         self.cleaned.set(true);
         let run_err = self.cleanup.remove(&self.cache_root, &self.run_root).err();
-        let kiss_profraw = crate::rust_llvm_cov_runner::kiss_profraw::kiss_profraw_from_cache_root(&self.cache_root);
-        let profraw_err = crate::rust_llvm_cov_runner::kiss_profraw::cleanup_kiss_profraw(&kiss_profraw).err();
+        let kiss_profraw = crate::rust_llvm_cov_runner::kiss_profraw::kiss_profraw_from_cache_root(
+            &self.cache_root,
+        );
+        let profraw_err =
+            crate::rust_llvm_cov_runner::kiss_profraw::cleanup_kiss_profraw(&kiss_profraw).err();
 
-        let orphan_err = crate::rust_llvm_cov_runner::kiss_profraw::repo_root_from_cache_root(&self.cache_root)
-            .and_then(|root| crate::rust_llvm_cov_runner::kiss_profraw::sweep_orphan_default_profraw(&root).err());
+        let orphan_err =
+            crate::rust_llvm_cov_runner::kiss_profraw::repo_root_from_cache_root(&self.cache_root)
+                .and_then(|root| {
+                    crate::rust_llvm_cov_runner::kiss_profraw::sweep_orphan_default_profraw(&root)
+                        .err()
+                });
         fold_cleanup_errors([run_err, profraw_err, orphan_err])
     }
 }
@@ -132,9 +139,12 @@ impl FreshBatchRunScope {
         fs::create_dir_all(&run_root)?;
         let scope = Self::begin(cache_root, run_root, cleanup)?;
         fs::create_dir_all(&plan.target_runner_output_dir)?;
-        let kiss_profraw = crate::rust_llvm_cov_runner::kiss_profraw::kiss_profraw_from_cache_root(cache_root);
+        let kiss_profraw =
+            crate::rust_llvm_cov_runner::kiss_profraw::kiss_profraw_from_cache_root(cache_root);
         crate::rust_llvm_cov_runner::kiss_profraw::ensure_kiss_profraw(&kiss_profraw)?;
-        if let Some(repo_root) = crate::rust_llvm_cov_runner::kiss_profraw::repo_root_from_cache_root(cache_root) {
+        if let Some(repo_root) =
+            crate::rust_llvm_cov_runner::kiss_profraw::repo_root_from_cache_root(cache_root)
+        {
             crate::rust_llvm_cov_runner::kiss_profraw::sweep_orphan_default_profraw(&repo_root)?;
         }
         Ok(scope)

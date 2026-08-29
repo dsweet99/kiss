@@ -205,7 +205,8 @@ mod tests {
 
     #[test]
     fn target_runner_cargo_config_uses_list_runner_for_platform() {
-        let req = crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
+        let req =
+            crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
         let toml = build_target_runner_cargo_config_toml(&req, Path::new("/tmp/runner-map.json"));
         assert!(toml.contains("[target.\"x86_64-unknown-linux-gnu\"]"));
         assert!(toml.contains("runner = ["));
@@ -213,14 +214,18 @@ mod tests {
 
     #[test]
     fn check_aggregate_large_selector_set_uses_all_filter() {
-        let mut req = crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
-        req.coverage_output_mode = crate::rust_llvm_cov_runner::plan::batch_plan::CoverageOutputMode::CheckAggregate {
-            publication_binary_ids: None,
-            repair_publication: None,
-        };
+        let mut req =
+            crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
+        req.coverage_output_mode =
+            crate::rust_llvm_cov_runner::plan::batch_plan::CoverageOutputMode::CheckAggregate {
+                publication_binary_ids: None,
+                repair_publication: None,
+            };
         req.test_args.clear();
         req.logical_selectors = (0..100).map(|i| format!("test_{i}")).collect();
-        let plan = crate::rust_llvm_cov_runner::plan::batch_plan::build_rust_coverage_batch_plan(&req).unwrap();
+        let plan =
+            crate::rust_llvm_cov_runner::plan::batch_plan::build_rust_coverage_batch_plan(&req)
+                .unwrap();
         assert!(
             plan.generated_config_toml
                 .contains("default-filter = \"all()\""),
@@ -232,12 +237,16 @@ mod tests {
 
     #[test]
     fn check_aggregate_plan_omits_target_runner_and_sets_profile_pool() {
-        let mut req = crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
-        req.coverage_output_mode = crate::rust_llvm_cov_runner::plan::batch_plan::CoverageOutputMode::CheckAggregate {
-            publication_binary_ids: None,
-            repair_publication: None,
-        };
-        let plan = crate::rust_llvm_cov_runner::plan::batch_plan::build_rust_coverage_batch_plan(&req).unwrap();
+        let mut req =
+            crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
+        req.coverage_output_mode =
+            crate::rust_llvm_cov_runner::plan::batch_plan::CoverageOutputMode::CheckAggregate {
+                publication_binary_ids: None,
+                repair_publication: None,
+            };
+        let plan =
+            crate::rust_llvm_cov_runner::plan::batch_plan::build_rust_coverage_batch_plan(&req)
+                .unwrap();
         assert!(
             plan.target_runner_cargo_config_toml.is_empty(),
             "toml={}",
@@ -270,7 +279,8 @@ mod tests {
 
     #[test]
     fn refresh_guard_does_not_serialize_nextest_threads() {
-        let req = crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
+        let req =
+            crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
 
         unsafe {
             std::env::set_var("KISS_COVERAGE_RUNTIME_REFRESH_ACTIVE", "1");
@@ -284,7 +294,8 @@ mod tests {
 
     #[test]
     fn no_capture_serializes_nextest_threads() {
-        let mut req = crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
+        let mut req =
+            crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
         req.test_args = vec!["--nocapture".to_string()];
         assert_eq!(nextest_test_threads(&req), "1");
     }

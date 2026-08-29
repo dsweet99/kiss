@@ -99,6 +99,10 @@ fn path_subset_collection_returns_only_requested_file_nodeids() {
     let selectors =
         collect_python_nodeids(tmp.path(), Some(std::slice::from_ref(&test_a)), &[]).unwrap();
     assert_eq!(selectors, vec!["tests/test_a.py::test_a".to_string()]);
+    fs::write(tmp.path().join("pytest.ini"), "[pytest]\naddopts = -q\n").unwrap();
+    let after_config =
+        collect_python_nodeids(tmp.path(), Some(std::slice::from_ref(&test_a)), &[]).unwrap();
+    assert_eq!(after_config, vec!["tests/test_a.py::test_a".to_string()]);
 }
 
 #[test]
@@ -296,14 +300,17 @@ fn collect_pytest_nodeids_public_wrapper_is_used() {
         "def test_wrap():\n    assert True\n",
     )
     .unwrap();
-    let outcome = kiss::rpytest_runner::collect_pytest_nodeids(kiss::rpytest_runner::PytestCollectRequest {
-        cwd: tmp.path().to_path_buf(),
-        python: PathBuf::from(std::env::var("PYTHON").unwrap_or_else(|_| "python3".to_string())),
-        paths: Vec::new(),
-        pytest_args: Vec::new(),
-        env: BTreeMap::new(),
-    })
-    .unwrap();
+    let outcome =
+        kiss::rpytest_runner::collect_pytest_nodeids(kiss::rpytest_runner::PytestCollectRequest {
+            cwd: tmp.path().to_path_buf(),
+            python: PathBuf::from(
+                std::env::var("PYTHON").unwrap_or_else(|_| "python3".to_string()),
+            ),
+            paths: Vec::new(),
+            pytest_args: Vec::new(),
+            env: BTreeMap::new(),
+        })
+        .unwrap();
     assert!(
         outcome
             .nodeids

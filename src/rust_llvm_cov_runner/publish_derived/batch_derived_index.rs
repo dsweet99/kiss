@@ -1,5 +1,7 @@
 use crate::rust_llvm_cov_runner::plan::batch_fingerprint::RustCoverageBatchIdentity;
-use crate::rust_llvm_cov_runner::publish_derived::batch_derived::{INDEX_SCHEMA_VERSION, POPULATION_SCHEMA_VERSION};
+use crate::rust_llvm_cov_runner::publish_derived::batch_derived::{
+    INDEX_SCHEMA_VERSION, POPULATION_SCHEMA_VERSION,
+};
 use crate::rust_llvm_cov_runner::publish_derived::batch_derived_index_check_aggregate_support::{
     CHECK_AGGREGATE_ENTRIES_PREFIX, index_matches_check_aggregate,
     load_check_aggregate_population_state,
@@ -58,6 +60,7 @@ pub fn load_current_population_state(
             input_fingerprint: identity.input_digest.clone(),
             generation_fingerprint: identity.generation_fingerprint.clone(),
             selection_context_fingerprint: identity.selection_context_fingerprint.clone(),
+            ordinary_source_digests: identity.ordinary_source_digests.clone(),
         },
     )
 }
@@ -105,6 +108,7 @@ pub(crate) enum PopulationLoadMode {
         input_fingerprint: String,
         generation_fingerprint: String,
         selection_context_fingerprint: String,
+        ordinary_source_digests: BTreeMap<String, String>,
     },
     ReusablePrior {
         selection_context_fingerprint: String,
@@ -232,10 +236,12 @@ pub(crate) fn population_current_identity_matches(
         PopulationLoadMode::Current {
             input_fingerprint,
             generation_fingerprint,
+            ordinary_source_digests,
             ..
         } => {
             manifest.input_fingerprint == *input_fingerprint
                 && manifest.generation_fingerprint == *generation_fingerprint
+                && manifest.ordinary_source_digests == *ordinary_source_digests
         }
         PopulationLoadMode::ReusablePrior { .. } => true,
     }
@@ -252,7 +258,10 @@ fn manifest_generation_entries_complete(
         return true;
     }
     if let Some(reverse) = manifest.reverse_line_index.as_ref() {
-        let Some(state) = crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::read_entry_state(cache_root)
+        let Some(state) =
+            crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::read_entry_state(
+                cache_root,
+            )
         else {
             return false;
         };
@@ -286,7 +295,9 @@ fn manifest_generation_entries_scanned(
         let Ok(bytes) = fs::read(&path) else {
             continue;
         };
-        let Ok(parsed) = serde_json::from_slice::<crate::rust_llvm_cov_runner::RustCovCacheEntry>(&bytes) else {
+        let Ok(parsed) =
+            serde_json::from_slice::<crate::rust_llvm_cov_runner::RustCovCacheEntry>(&bytes)
+        else {
             continue;
         };
         if parsed.schema_version != crate::rust_llvm_cov_runner::CACHE_SCHEMA_VERSION

@@ -2,12 +2,20 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::process::{Command, Stdio};
 
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_events::selector_matches_test;
-use crate::rust_llvm_cov_runner::execute_or_reuse::batch_executor_finish::{digest_test_binary, test_binary_id_for_path};
+use crate::rust_llvm_cov_runner::execute_or_reuse::batch_executor_finish::{
+    digest_test_binary, test_binary_id_for_path,
+};
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_result::RustCoverageBatchCounters;
-use crate::rust_llvm_cov_runner::execute_or_reuse::batch_run::{self, CurrentRunCleanup, FreshBatchRunScope};
+use crate::rust_llvm_cov_runner::execute_or_reuse::batch_run::{
+    self, CurrentRunCleanup, FreshBatchRunScope,
+};
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim::load_target_runner_list_metadata;
-use crate::rust_llvm_cov_runner::plan::batch_fingerprint::{RustCoverageBatchIdentity, RustCoverageToolIdentity};
-use crate::rust_llvm_cov_runner::plan::batch_plan::{RustCoverageBatchPlan, RustCoverageBatchRequest};
+use crate::rust_llvm_cov_runner::plan::batch_fingerprint::{
+    RustCoverageBatchIdentity, RustCoverageToolIdentity,
+};
+use crate::rust_llvm_cov_runner::plan::batch_plan::{
+    RustCoverageBatchPlan, RustCoverageBatchRequest,
+};
 use crate::rust_llvm_cov_runner::{RustLlvmCovError, RustTestBinaryIdentity};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -33,7 +41,9 @@ pub fn build_rust_test_executable_index(
             &plan.runner_map_path,
             &req.delegated_runners,
         )?;
-        crate::rust_llvm_cov_runner::plan::batch_plan_publish::publish_generated_nextest_config(plan, req)?;
+        crate::rust_llvm_cov_runner::plan::batch_plan_publish::publish_generated_nextest_config(
+            plan, req,
+        )?;
         let mut list_plan = plan.clone();
         select_no_tests(&mut list_plan);
         let run = batch_run::default_batch_subprocess_runner()
@@ -90,7 +100,8 @@ fn executable_index_from_list_metadata(
             "no Rust test executable metadata produced by nextest list phase".into(),
         ));
     }
-    let kiss_profraw = crate::rust_llvm_cov_runner::kiss_profraw::kiss_profraw_dir(&req.source_root);
+    let kiss_profraw =
+        crate::rust_llvm_cov_runner::kiss_profraw::kiss_profraw_dir(&req.source_root);
     let mut binary_by_id = BTreeMap::new();
     let mut selector_binary_ids = BTreeMap::<String, BTreeSet<String>>::new();
     for item in list_metadata {
@@ -138,10 +149,13 @@ fn list_test_names_from_executable(
     binary_id: &str,
     kiss_profraw: &std::path::Path,
 ) -> Result<Vec<String>, RustLlvmCovError> {
-    crate::rust_llvm_cov_runner::kiss_profraw::ensure_kiss_profraw(kiss_profraw).map_err(RustLlvmCovError::Io)?;
+    crate::rust_llvm_cov_runner::kiss_profraw::ensure_kiss_profraw(kiss_profraw)
+        .map_err(RustLlvmCovError::Io)?;
     let mut command = Command::new(path);
     command.arg("--list");
-    crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim_delegated::scrub_coverage_build_env(&mut command);
+    crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim_delegated::scrub_coverage_build_env(
+        &mut command,
+    );
     command.env(
         "LLVM_PROFILE_FILE",
         crate::rust_llvm_cov_runner::kiss_profraw::discard_llvm_profile_path(kiss_profraw),
@@ -154,8 +168,11 @@ fn list_test_names_from_executable(
         .map_err(RustLlvmCovError::Io)?;
     let child_pid = child.id();
     let output = child.wait_with_output().map_err(RustLlvmCovError::Io)?;
-    let cleanup_err =
-        crate::rust_llvm_cov_runner::kiss_profraw::cleanup_kiss_profraw_for_pid(kiss_profraw, child_pid).err();
+    let cleanup_err = crate::rust_llvm_cov_runner::kiss_profraw::cleanup_kiss_profraw_for_pid(
+        kiss_profraw,
+        child_pid,
+    )
+    .err();
     if !output.status.success() {
         return Err(RustLlvmCovError::InvalidRequest(format!(
             "test binary list failed for {}: stdout:\n{}\nstderr:\n{}",
@@ -180,7 +197,9 @@ fn test_name_from_list_line(line: &str, binary_id: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim::{BatchShimListMetadata, SHIM_LIST_SCHEMA};
+    use crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim::{
+        BatchShimListMetadata, SHIM_LIST_SCHEMA,
+    };
 
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
@@ -341,18 +360,20 @@ mod tests {
         req.cwd = tmp.path().to_path_buf();
         req.source_root = tmp.path().to_path_buf();
         req.cache_root = tmp.path().join("cache");
-        let tools = crate::rust_llvm_cov_runner::plan::batch_fingerprint::RustCoverageToolIdentity {
-            cargo_version: "c".into(),
-            llvm_cov_version: "l".into(),
-            rustc_version: "r".into(),
-            cargo_nextest_version: "n".into(),
-        };
-        let identity = crate::rust_llvm_cov_runner::plan::batch_fingerprint::RustCoverageBatchIdentity {
-            input_digest: "i".into(),
-            generation_fingerprint: "g".into(),
-            selection_context_fingerprint: "s".into(),
-            ordinary_source_digests: Default::default(),
-        };
+        let tools =
+            crate::rust_llvm_cov_runner::plan::batch_fingerprint::RustCoverageToolIdentity {
+                cargo_version: "c".into(),
+                llvm_cov_version: "l".into(),
+                rustc_version: "r".into(),
+                cargo_nextest_version: "n".into(),
+            };
+        let identity =
+            crate::rust_llvm_cov_runner::plan::batch_fingerprint::RustCoverageBatchIdentity {
+                input_digest: "i".into(),
+                generation_fingerprint: "g".into(),
+                selection_context_fingerprint: "s".into(),
+                ordinary_source_digests: Default::default(),
+            };
         let mut plan = crate::rust_llvm_cov_runner::RustCoverageBatchPlan::witness();
         plan.build_target = tmp.path().join("build");
         plan.target_runner_output_dir = tmp.path().join("runner");

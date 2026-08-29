@@ -2,7 +2,9 @@ use crate::rust_llvm_cov_runner::publish_derived::batch_derived::POPULATION_SCHE
 use crate::rust_llvm_cov_runner::publish_derived::batch_derived_index::{
     load_current_population_state, load_reusable_prior_population_state,
 };
-use crate::rust_llvm_cov_runner::test_support::{published_alpha_derived_fixture, tamper_json_file};
+use crate::rust_llvm_cov_runner::test_support::{
+    published_alpha_derived_fixture, tamper_json_file,
+};
 
 #[test]
 fn strict_loader_rejects_source_digest_mismatch_while_reusable_accepts() {

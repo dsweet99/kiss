@@ -29,7 +29,8 @@ fn derived_state_stale_detects_manifest_mismatches() {
     std::fs::write(repo.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
     let req = derived_fixture_request(repo.path());
     let tools = witness_batch_tools();
-    let identity = crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    let identity =
+        crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
     publish_derived_state(&req, &tools, &identity, &["alpha".to_string()], false).unwrap();
 
     tamper_json_file(&req.cache_root, "population.json", |value| {
@@ -58,7 +59,8 @@ fn derived_state_stale_detects_index_mismatch_and_repairs() {
     std::fs::write(repo.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
     let req = derived_fixture_request(repo.path());
     let tools = witness_batch_tools();
-    let identity = crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    let identity =
+        crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
     publish_derived_state(&req, &tools, &identity, &["alpha".to_string()], false).unwrap();
 
     tamper_json_file(&req.cache_root, "index.json", |value| {
@@ -96,7 +98,8 @@ fn derived_publish_counters_and_manifest_loader_are_exercised() {
     std::fs::write(repo.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
     let req = derived_fixture_request(repo.path());
     let tools = witness_batch_tools();
-    let identity = crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    let identity =
+        crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
     let fingerprint = entry_fingerprint(&identity.input_digest, &req, &tools, "alpha");
     let entry = RustCovCacheEntry::from_outcome(
         &RustLlvmCovOutcome {
@@ -135,7 +138,10 @@ fn derived_publish_counters_and_manifest_loader_are_exercised() {
     assert_eq!(manifest.input_fingerprint, identity.input_digest);
     assert_eq!(manifest.selectors, ["alpha".to_string()]);
     assert!(!manifest.entries_fingerprint.is_empty());
-    let index = crate::rust_llvm_cov_runner::publish_derived::batch_derived_index::read_coverage_index(&req.cache_root)
+    let index =
+        crate::rust_llvm_cov_runner::publish_derived::batch_derived_index::read_coverage_index(
+            &req.cache_root,
+        )
         .expect("index");
     assert_eq!(index.schema_version, INDEX_SCHEMA_VERSION);
     assert_eq!(index.entries_fingerprint, manifest.entries_fingerprint);
@@ -152,15 +158,21 @@ fn read_population_and_index_loaders_reject_invalid_json() {
     assert!(
         crate::rust_llvm_cov_runner::publish_derived::batch_derived_index::read_population_manifest(tmp.path()).is_none()
     );
-    assert!(crate::rust_llvm_cov_runner::publish_derived::batch_derived_index::read_coverage_index(tmp.path()).is_none());
+    assert!(
+        crate::rust_llvm_cov_runner::publish_derived::batch_derived_index::read_coverage_index(
+            tmp.path()
+        )
+        .is_none()
+    );
     let counters = DerivedPublishCounters::default();
     assert_eq!(counters.cache_pruned_entries, 0);
 
-    let index = crate::rust_llvm_cov_runner::publish_derived::batch_derived_index_types::OnDiskIndex {
-        schema_version: INDEX_SCHEMA_VERSION.to_string(),
-        generation_fingerprint: "gen".to_string(),
-        entries_fingerprint: "entries".to_string(),
-    };
+    let index =
+        crate::rust_llvm_cov_runner::publish_derived::batch_derived_index_types::OnDiskIndex {
+            schema_version: INDEX_SCHEMA_VERSION.to_string(),
+            generation_fingerprint: "gen".to_string(),
+            entries_fingerprint: "entries".to_string(),
+        };
     let manifest = crate::rust_llvm_cov_runner::publish_derived::batch_derived_index_types::PopulationManifestOnDisk {
         schema_version: POPULATION_SCHEMA_VERSION.to_string(),
         generation_fingerprint: "gen".to_string(),
@@ -212,7 +224,9 @@ fn publish_under_batch_lock(
     identity: &crate::rust_llvm_cov_runner::plan::batch_fingerprint::RustCoverageBatchIdentity,
     selectors: &[String],
 ) -> Result<Option<DerivedPublishCounters>, RustLlvmCovError> {
-    let _guard = crate::rust_llvm_cov_runner::execute_or_reuse::batch_lock::lock_batch(&req.cache_root).unwrap();
+    let _guard =
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_lock::lock_batch(&req.cache_root)
+            .unwrap();
     try_publish_population_derived_state(req, tools, identity, selectors)
 }
 
@@ -222,7 +236,8 @@ fn concurrent_repairers_observe_single_repair() {
     write_minimal_derived_repo(repo.path());
     let req = derived_fixture_request(repo.path());
     let tools = witness_batch_tools();
-    let identity = crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    let identity =
+        crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
     let fingerprint = entry_fingerprint(&identity.input_digest, &req, &tools, "alpha");
     store_rust_cov_cache_entry(
         &req.cache_root,
@@ -275,7 +290,8 @@ fn publish_derived_state_fails_when_retention_pruning_cannot_remove_stale_entry(
     write_minimal_derived_repo(repo.path());
     let req = derived_fixture_request(repo.path());
     let tools = witness_batch_tools();
-    let identity = crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    let identity =
+        crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
     let fingerprint = entry_fingerprint(&identity.input_digest, &req, &tools, "alpha");
     store_rust_cov_cache_entry(
         &req.cache_root,
@@ -314,7 +330,8 @@ fn publish_derived_state_fails_when_population_manifest_parent_is_not_writable()
     write_minimal_derived_repo(repo.path());
     let req = derived_fixture_request(repo.path());
     let tools = witness_batch_tools();
-    let identity = crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    let identity =
+        crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
     let fingerprint = entry_fingerprint(&identity.input_digest, &req, &tools, "alpha");
     store_rust_cov_cache_entry(
         &req.cache_root,
@@ -337,7 +354,8 @@ fn publish_derived_state_fails_when_index_parent_is_not_writable() {
     write_minimal_derived_repo(repo.path());
     let req = derived_fixture_request(repo.path());
     let tools = witness_batch_tools();
-    let identity = crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    let identity =
+        crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
     let fingerprint = entry_fingerprint(&identity.input_digest, &req, &tools, "alpha");
     store_rust_cov_cache_entry(
         &req.cache_root,

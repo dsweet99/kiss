@@ -14,7 +14,9 @@ use crate::rust_llvm_cov_runner::execute_or_reuse::batch_run::{
 };
 use crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity;
 use crate::rust_llvm_cov_runner::plan::batch_plan::build_rust_coverage_batch_plan;
-use crate::rust_llvm_cov_runner::test_support::{batch_executor_fixture_repo, batch_executor_request};
+use crate::rust_llvm_cov_runner::test_support::{
+    batch_executor_fixture_repo, batch_executor_request,
+};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
@@ -78,15 +80,17 @@ fn reject_nonzero_without_terminal_events_direct_witness() {
             process_residual_count: 0,
         },
         &BatchEventStream {
-            terminal_tests: vec![crate::rust_llvm_cov_runner::execute_or_reuse::batch_events::BatchTestTerminal {
-                full_name: "pkg::bin$alpha".to_string(),
-                test_name: "alpha".to_string(),
-                passed: true,
-                timed_out: false,
-                exec_time_secs: 0.001,
-                stdout: None,
-                reason: None,
-            }],
+            terminal_tests: vec![
+                crate::rust_llvm_cov_runner::execute_or_reuse::batch_events::BatchTestTerminal {
+                    full_name: "pkg::bin$alpha".to_string(),
+                    test_name: "alpha".to_string(),
+                    passed: true,
+                    timed_out: false,
+                    exec_time_secs: 0.001,
+                    stdout: None,
+                    reason: None,
+                },
+            ],
             ..Default::default()
         },
     );

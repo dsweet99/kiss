@@ -11,13 +11,14 @@ use crate::test_runner::lang_iface::{
     AcceptDecision, AcceptMode, ExecutionWitness, WitnessScope, WitnessStatus, accept_witness,
     identity_covers, reclassify_statuses_with_gate, summary_from_accepted_witness,
 };
-use crate::test_runner::runners::{
-    SelectorExecutionSummary, rust_logical_to_kiss_test_ids,
-};
-use crate::test_runner::selector_ids::report_string_for_logical_string;
+use crate::test_runner::runners::{SelectorExecutionSummary, rust_logical_to_kiss_test_ids};
 use crate::test_runner::rust_coverage_index::{
     create_new_file, rust_coverage_cache_root, unique_suffix,
 };
+use crate::test_runner::selector_ids::report_string_for_logical_string;
+
+#[path = "witness_store_persist.rs"]
+mod persist;
 
 const SCHEMA_VERSION: &str = "kiss-rust-execution-witness-v1";
 
@@ -58,6 +59,7 @@ pub(crate) struct PublishRustWitness<'a> {
     pub durations_ns: &'a [Option<u64>],
     pub covered_lines: &'a BTreeMap<String, BTreeSet<u32>>,
     pub complete: bool,
+    pub jobs: usize,
 }
 
 pub(crate) fn publish_rust_execution_witness(
@@ -72,6 +74,7 @@ pub(crate) fn publish_rust_execution_witness(
         durations_ns,
         covered_lines,
         complete,
+        jobs,
     } = args;
     if selectors.len() != statuses.len() || selectors.len() != durations_ns.len() {
         return Err("error: kiss: rust execution witness shape mismatch".into());
@@ -83,35 +86,31 @@ pub(crate) fn publish_rust_execution_witness(
     }
 
     let identity_digest = rust_identity_digest_from_batch(identity);
-    if let Some(kept) = refuse_full_shrink(repo_root, &identity_digest, &selectors) {
-        return Ok(kept);
-    }
-
     let generation_id = format!("rust-wit-{}", unique_suffix());
-    let mut body = OnDiskRustWitness {
-        schema_version: SCHEMA_VERSION.to_string(),
-        scope: "full".to_string(),
-        identity_digest: identity_digest.clone(),
-        generation_id: generation_id.clone(),
+    persist::PersistFullWitness {
+        repo_root,
+        identity,
+        identity_digest: &identity_digest,
+        generation_id: &generation_id,
+        selectors: &selectors,
+        statuses: &statuses,
+        durations_ns: &durations_ns,
+        covered_lines,
         complete,
-        selectors,
-        statuses: statuses.iter().map(|s| s.as_str().to_string()).collect(),
-        durations_ns,
-        covered_lines: covered_lines_for_disk(covered_lines),
-        content_sha256: String::new(),
-    };
-    body.content_sha256 = content_digest(&body)?;
-    write_witness_atomic(repo_root, &body)?;
+        jobs,
+    }
+    .persist()?;
     let witness = ExecutionWitness {
         language: "rust".into(),
         scope: WitnessScope::Full,
-        identity_digest: body.identity_digest,
-        selectors: body.selectors,
-        statuses,
-        durations_ns: body.durations_ns,
-        covered_lines: body.covered_lines,
-        complete: body.complete,
-        generation_id: body.generation_id,
+        identity_digest,
+        selectors,
+        statuses: statuses.clone(),
+        durations_ns,
+        covered_lines: covered_lines_for_disk(covered_lines),
+        complete,
+        generation_id: generation_id.clone(),
+        raw_statuses: statuses,
     };
     super::witness_memo::stash_published_witness(repo_root, &witness_path(repo_root), witness);
     Ok(generation_id)
@@ -147,21 +146,6 @@ fn order_witness_rows(
     )
 }
 
-fn refuse_full_shrink(
-    repo_root: &Path,
-    identity_digest: &str,
-    selectors: &[String],
-) -> Option<String> {
-    let existing = try_load_rust_execution_witness(repo_root).ok()?;
-    if existing.scope != WitnessScope::Full || existing.identity_digest != identity_digest {
-        return None;
-    }
-    let existing_set: std::collections::BTreeSet<&str> =
-        existing.selectors.iter().map(String::as_str).collect();
-    let new_set: std::collections::BTreeSet<&str> = selectors.iter().map(String::as_str).collect();
-    (!existing_set.is_subset(&new_set)).then_some(existing.generation_id)
-}
-
 fn stale_bare_rust_witness_selector(selector: &str) -> bool {
     !selector.contains("::") && selector.len() > 30
 }
@@ -189,9 +173,7 @@ pub(crate) fn prune_removed_rust_witness_selectors(
     let keep: BTreeSet<String> = witness
         .selectors
         .iter()
-        .filter(|selector| {
-            known.contains(*selector) || !stale_bare_rust_witness_selector(selector)
-        })
+        .filter(|selector| known.contains(*selector) || !stale_bare_rust_witness_selector(selector))
         .cloned()
         .collect();
     if keep.is_empty() {
@@ -204,12 +186,33 @@ pub(crate) fn prune_removed_rust_witness_selectors(
 pub(crate) fn try_load_rust_execution_witness(
     repo_root: &Path,
 ) -> Result<ExecutionWitness, String> {
+    if let Some(mut witness) = witness_from_full_generation(repo_root) {
+        prune_removed_rust_witness_selectors(repo_root, &mut witness)?;
+        return Ok(witness);
+    }
     if let Some(mut witness) =
         super::witness_memo::memo_witness(repo_root, &witness_path(repo_root))
     {
         prune_removed_rust_witness_selectors(repo_root, &mut witness)?;
         return Ok(witness);
     }
+    load_witness_from_disk(repo_root)
+}
+
+fn witness_from_full_generation(repo_root: &Path) -> Option<ExecutionWitness> {
+    let mut witness = super::generation_publish::try_load_full_generation_witness(repo_root)?;
+    if !witness.covered_lines.is_empty() {
+        return Some(witness);
+    }
+    if let Some(memo) = super::witness_memo::memo_witness(repo_root, &witness_path(repo_root)) {
+        witness.covered_lines = memo.covered_lines;
+    } else if let Ok(disk) = load_witness_from_disk(repo_root) {
+        witness.covered_lines = disk.covered_lines;
+    }
+    Some(witness)
+}
+
+fn load_witness_from_disk(repo_root: &Path) -> Result<ExecutionWitness, String> {
     let path = witness_path(repo_root);
     let bytes = fs::read(&path).map_err(|e| {
         format!(
@@ -264,6 +267,11 @@ pub(crate) fn try_load_rust_execution_witness(
         covered_lines: disk.covered_lines,
         complete: disk.complete,
         generation_id: disk.generation_id,
+        raw_statuses: disk
+            .statuses
+            .iter()
+            .map(|s| WitnessStatus::parse(s))
+            .collect(),
     };
     prune_removed_rust_witness_selectors(repo_root, &mut witness)?;
     Ok(witness)
@@ -284,9 +292,12 @@ pub(crate) fn rust_miss_selectors(
     ) {
         return None;
     }
+    if witness.raw_statuses.len() != witness.statuses.len() {
+        witness.raw_statuses = witness.statuses.clone();
+    }
     witness.statuses = reclassify_statuses_with_gate(
         &witness.selectors,
-        &witness.statuses,
+        &witness.raw_statuses,
         &witness.durations_ns,
         gate,
     );
@@ -299,7 +310,12 @@ pub(crate) fn rust_miss_selectors(
     let mut misses = Vec::new();
     for sel in planned_selectors {
         match index.get(sel.as_str()) {
-            Some(&i) if witness.statuses[i] == WitnessStatus::Passed => {}
+            Some(&i)
+                if witness.statuses[i] == WitnessStatus::Passed
+                    || crate::test_runner::lang_iface::all_misses_warm_skippable(
+                        &witness,
+                        std::slice::from_ref(sel),
+                    ) => {}
             _ => misses.push(sel.clone()),
         }
     }
@@ -315,9 +331,12 @@ pub(crate) fn try_warm_rust_cached_summary(
     let Ok(mut witness) = try_load_rust_execution_witness(repo_root) else {
         return None;
     };
+    if witness.raw_statuses.len() != witness.statuses.len() {
+        witness.raw_statuses = witness.statuses.clone();
+    }
     witness.statuses = reclassify_statuses_with_gate(
         &witness.selectors,
-        &witness.statuses,
+        &witness.raw_statuses,
         &witness.durations_ns,
         gate,
     );
@@ -333,35 +352,17 @@ pub(crate) fn try_warm_rust_cached_summary(
     if accept_witness(mode, &planned, &current, &witness) != AcceptDecision::Accept {
         return None;
     }
-    super::witness_memo::stash_published_witness(repo_root, &witness_path(repo_root), witness.clone());
+    super::witness_memo::stash_published_witness(
+        repo_root,
+        &witness_path(repo_root),
+        witness.clone(),
+    );
     let report_ids = rust_logical_to_kiss_test_ids(repo_root, &[]).ok()?;
     Some(summary_from_accepted_witness(
         &planned,
         &witness,
         |selector| report_string_for_logical_string(&report_ids, selector),
     ))
-}
-
-pub(crate) fn maybe_bootstrap_rust_witness(
-    repo_root: &Path,
-    selectors: &[String],
-    identity: &RustCoverageBatchIdentity,
-) {
-    if std::env::var("KISS_BOOTSTRAP_RUST_WITNESS").is_err() {
-        return;
-    }
-    let statuses = vec![WitnessStatus::Passed; selectors.len()];
-    let durations = vec![Some(0u64); selectors.len()];
-    let _ = publish_rust_execution_witness(PublishRustWitness {
-        repo_root,
-        identity,
-        scope: WitnessScope::Full,
-        selectors,
-        statuses: &statuses,
-        durations_ns: &durations,
-        covered_lines: &BTreeMap::new(),
-        complete: true,
-    });
 }
 
 fn content_digest(disk: &OnDiskRustWitness) -> Result<String, String> {

@@ -8,6 +8,8 @@ pub(crate) mod batch_events;
 
 pub(crate) mod batch_executor;
 
+pub(crate) mod batch_executor_prepare;
+
 pub(crate) mod batch_executor_finish;
 
 pub(crate) mod batch_executor_finish_entries;

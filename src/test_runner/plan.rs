@@ -1,9 +1,8 @@
 use kiss::Language;
 
 use super::{
-    runners, rust_llvm_cov,
-    targets::{expand_target_operands, ExpandedTargetPlan},
-    PlannedSelectors,
+    PlannedSelectors, runners, rust_llvm_cov,
+    targets::{ExpandedTargetPlan, expand_target_operands},
 };
 
 #[path = "plan_rust.rs"]
@@ -16,7 +15,7 @@ use plan_explicit::plan_explicit_target_selectors;
 
 #[path = "plan_vcs.rs"]
 mod plan_vcs;
-pub(crate) use plan_vcs::{plan_selectors, PlanSelectorsRequest};
+pub(crate) use plan_vcs::{PlanSelectorsRequest, plan_selectors};
 
 pub(crate) enum TargetPlanKind<'a> {
     All,
@@ -75,7 +74,7 @@ fn plan_all_selectors(
     let (py_sel, rs_sel) = discover_all_selectors(repo_root, ignore, python_extra, lang_filter)?;
     let fp = if lang_filter.is_none() {
         super::workspace_selector_cache::store_workspace_selectors(
-            repo_root, ignore, &py_sel, &rs_sel,
+            repo_root, ignore, &py_sel, &rs_sel, python_extra,
         )
     } else {
         None
@@ -100,7 +99,9 @@ fn try_plan_all_from_cache(
 ) -> Option<PlannedSelectors> {
     let cache_started = std::time::Instant::now();
     let (cached_py, cached_rs, fp) =
-        super::workspace_selector_cache::load_cached_workspace_selectors(repo_root, ignore)?;
+        super::workspace_selector_cache::load_cached_workspace_selectors(
+            repo_root, ignore, python_extra,
+        )?;
     let (py_sel, rs_sel) = match lang_filter {
         None => (cached_py, cached_rs),
         Some(Language::Python) => (cached_py, Vec::new()),
@@ -203,16 +204,16 @@ fn planned_all(
         );
         !current
     };
-    let (rs_sel, rust_population_required) = rust_plan_selectors(repo_root, rs_sel, gate);
+    let rust_plan = rust_plan_selectors(repo_root, rs_sel, gate);
     PlannedSelectors {
         repo_root: repo_root.to_path_buf(),
         sel: crate::test_runner::language_keyed::LanguageKeyed {
             python: py_sel,
-            rust: rs_sel,
+            rust: rust_plan.planned,
         },
         population_required: crate::test_runner::language_keyed::LanguageKeyed {
             python: python_population_required,
-            rust: rust_population_required,
+            rust: rust_plan.population_required,
         },
         source_paths: crate::test_runner::language_keyed::LanguageKeyed {
             python: Vec::new(),

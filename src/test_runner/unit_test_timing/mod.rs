@@ -253,10 +253,14 @@ fn cheap_codebase_test_count(
     lang_filter: Option<Language>,
     include: TimingLangInclude,
     ignore: &[String],
+    pytest_args: &[String],
 ) -> Option<usize> {
     let repo_root = repository_root_for_universe(universe);
-    let (py, rs) =
-        super::workspace_selector_cache::load_workspace_selectors_for_count(&repo_root, ignore)?;
+    let (py, rs) = super::workspace_selector_cache::load_workspace_selectors_for_count(
+        &repo_root,
+        ignore,
+        pytest_args,
+    )?;
     let mut total = 0usize;
     if include.python && matches!(lang_filter, None | Some(Language::Python)) {
         total += py.len();
@@ -274,7 +278,7 @@ pub(crate) fn codebase_test_count_for_cov(
     ignore: &[String],
     pytest_args: &[String],
 ) -> Option<usize> {
-    if let Some(n) = cheap_codebase_test_count(universe, lang_filter, include, ignore) {
+    if let Some(n) = cheap_codebase_test_count(universe, lang_filter, include, ignore, pytest_args) {
         return Some(n);
     }
     match collect_current_unit_test_timings(TimingCollectOpts {
@@ -304,7 +308,8 @@ pub(crate) fn unit_test_runtime_sec_report_for_universe(
         ignore,
         pytest_args,
     });
-    let codebase_tests = cheap_codebase_test_count(universe, lang_filter, include, ignore);
+    let codebase_tests =
+        cheap_codebase_test_count(universe, lang_filter, include, ignore, pytest_args);
     let report = build_unit_test_runtime_grouped_report(&timings, rules, codebase_tests)?;
     Some(format_unit_test_runtime_grouped_report(&report))
 }

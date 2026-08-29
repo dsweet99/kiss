@@ -9,7 +9,10 @@ mod publish_derived;
 
 mod file_lock;
 mod kiss_profraw;
+mod ordinary_source_snapshot;
 mod rust_cov_cache;
+mod source_diff;
+mod subprocess_observer;
 
 #[cfg(test)]
 mod lib_test;
@@ -31,6 +34,7 @@ pub(crate) use execute_or_reuse::batch_executor_finish_entries;
 pub(crate) use execute_or_reuse::batch_executor_finish_export;
 pub(crate) use execute_or_reuse::batch_executor_finish_store;
 pub(crate) use execute_or_reuse::batch_executor_fresh;
+pub use execute_or_reuse::batch_executor_prepare::PreparedRustBatch;
 pub(crate) use execute_or_reuse::batch_export;
 pub(crate) use execute_or_reuse::batch_export_catalog;
 #[cfg(test)]
@@ -173,8 +177,9 @@ pub use batch_reverse_line_index::{
 #[cfg(test)]
 pub use batch_reverse_query::reset_reverse_query_counters_for_test;
 pub use batch_reverse_query::{
-    REVERSE_QUERY_HITS, ReverseQueryCounters, ReverseUnavailableCounts, query_reverse_line_index,
-    snapshot_reverse_query_counters, take_reverse_query_counters_since_last_copy,
+    REVERSE_QUERY_HITS, ReverseQueryCounters, ReverseUnavailableCounts,
+    query_reverse_covering_files, query_reverse_line_index, snapshot_reverse_query_counters,
+    take_reverse_query_counters_since_last_copy,
 };
 pub use batch_reverse_query_metrics::ReverseUnavailableReason;
 pub use batch_runner_resolve::{
@@ -186,7 +191,14 @@ pub use batch_shim::run_target_runner_shim;
 pub use kiss_profraw::{
     KissProfrawProcessGuard, discover_repo_root, redirect_this_process, sweep_kiss_profraw_dir,
 };
+pub use ordinary_source_snapshot::{
+    OrdinarySourceInvalidation, classify_ordinary_source_delta, load_ordinary_source_line_hashes,
+    load_ordinary_source_snapshot, remap_covered_file_lines, write_ordinary_source_snapshot,
+};
 pub use plan::batch_plan_shim_const::TARGET_RUNNER_SHIM_SUBCOMMAND;
+pub use plan::execution_identity::{
+    ExecutionContextIdentity, SourceSnapshot, TIMING_CONTEXT_SCHEMA_VERSION, TimingContextIdentity,
+};
 pub use rust_cov_cache::{
     RustCovCacheEntry, generation_entries_fingerprint, repo_relative_coverage_file,
     repo_relative_path, store_rust_cov_cache_entry,
@@ -196,10 +208,17 @@ pub use shared_input::{
     is_cargo_config_input_path, is_rust_cov_cache_input, rust_cov_input_files,
     selection_context_source_digest, workspace_input_digest,
 };
+pub use source_diff::{SourceFileDiff, diff_file_lines, remap_line_set};
+pub use subprocess_observer::{
+    SubprocessObserver, SubprocessObserverSnapshot, bind_subprocess_observer,
+    record_cargo_nextest_invocation, record_llvm_export_invocations, record_pytest_invocation,
+    reset_subprocess_observer, subprocess_observer_snapshot,
+};
 pub use worker::rust_cov_cache_tmp_parent;
 
-pub const CACHE_SCHEMA_VERSION: &str = "rust-llvm-cov-cache-v4";
-pub const BATCH_EXECUTION_POLICY_VERSION: &str = "rust-batch-execution-v2";
+pub const CACHE_SCHEMA_VERSION: &str = "rust-llvm-cov-cache-v5";
+pub const BATCH_EXECUTION_POLICY_VERSION: &str = "rust-batch-execution-v3";
+pub const CACHE_POLICY_SCHEMA_VERSION: &str = "kiss-test-cache-policy-v1";
 
 pub use llvm_cov_json::RustLineCoverage;
 

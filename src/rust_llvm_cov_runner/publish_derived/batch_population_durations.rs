@@ -4,7 +4,9 @@ use crate::rust_llvm_cov_runner::plan::batch_fingerprint::{
 };
 use crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest;
 use crate::rust_llvm_cov_runner::publish_derived::batch_derived_index::RustPopulationState;
-use crate::rust_llvm_cov_runner::rust_cov_cache::{load_rust_cov_cache_entry, rust_cov_unique_suffix};
+use crate::rust_llvm_cov_runner::rust_cov_cache::{
+    load_rust_cov_cache_entry, rust_cov_unique_suffix,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
@@ -149,11 +151,16 @@ pub(crate) fn write_population_durations(
         ".population_durations.{}.tmp",
         rust_cov_unique_suffix()
     ));
-    crate::kiss_publication_barrier::publish_atomically("rust_population_durations", &path, &tmp, |file| {
-        serde_json::to_writer(&mut *file, &payload).map_err(io::Error::other)?;
-        file.write_all(b"\n")?;
-        Ok(())
-    })
+    crate::kiss_publication_barrier::publish_atomically(
+        "rust_population_durations",
+        &path,
+        &tmp,
+        |file| {
+            serde_json::to_writer(&mut *file, &payload).map_err(io::Error::other)?;
+            file.write_all(b"\n")?;
+            Ok(())
+        },
+    )
 }
 
 pub(crate) fn try_publish_durations_after_population(

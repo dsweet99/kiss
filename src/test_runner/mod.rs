@@ -8,6 +8,7 @@ mod coverage_decision;
 pub(crate) mod coverage_index;
 pub(crate) mod duration;
 pub(crate) mod ensure_runtime;
+mod execution_generation;
 pub(crate) mod execution_witness;
 mod final_summary;
 pub(crate) mod lang_iface;
@@ -135,6 +136,9 @@ pub fn run_test(a: RunTestCmdArgs<'_>) -> i32 {
 }
 
 pub(crate) fn emit_test_progress(message: &str) {
+    if !crate::test_runner::check_runtime_refresh::test_runner_stdout_enabled() {
+        return;
+    }
     #[cfg(unix)]
     {
         let mut line = Vec::with_capacity(message.len() + 1);

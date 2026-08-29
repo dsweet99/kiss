@@ -1,6 +1,7 @@
 use super::{
-    ResolvedRustPopulation, current_partial_population_covers_selection,
-    planned_check_aggregate_line_selectors, select_rust_source_selectors_for_basis,
+    ResolveRustPopulationArgs, ResolvedRustPopulation, current_partial_population_covers_selection,
+    planned_check_aggregate_line_selectors, resolve_rust_population_state,
+    select_rust_source_selectors_for_basis,
 };
 use crate::test_runner::coverage_decision::{CoverageFreshness, SelectionBasis};
 use kiss::rust_llvm_cov_runner::RustPopulationState;
@@ -49,7 +50,7 @@ fn partial_current_population_must_exactly_cover_changed_source_selection() {
     assert!(current_partial_population_covers_selection(
         tmp.path(),
         std::slice::from_ref(&src),
-        &BTreeMap::new(),
+        &BTreeMap::from([(src.clone(), BTreeSet::from([1]))]),
         &[],
         &population
     ));
@@ -161,4 +162,83 @@ fn check_aggregate_rejects_non_rust_paths_on_reusable_prior() {
         )
         .is_none()
     );
+}
+
+#[test]
+fn resolve_exact_partial_and_reusable_loader_outcomes() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+    std::fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname='demo'\nversion='0.1.0'\nedition='2021'\n",
+    )
+    .unwrap();
+    let src = tmp.path().join("src").join("lib.rs");
+    std::fs::write(
+        &src,
+        "pub fn value() -> u32 { 1 }\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn gets_value() { assert_eq!(super::value(), 1); }\n}\n",
+    )
+    .unwrap();
+    crate::test_runner::rust_coverage_index::write_test_entry(
+        tmp.path(),
+        "value",
+        "tests::gets_value",
+        kiss::rpytest_runner::TestStatus::Passed,
+        kiss::rust_llvm_cov_runner::RustLineCoverage {
+            files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
+        },
+    );
+    crate::test_runner::rust_coverage_index::rebuild_rust_coverage_index(tmp.path()).unwrap();
+    crate::test_runner::rust_coverage_index::write_rust_population_manifest_for_args(
+        tmp.path(),
+        &["tests::gets_value".to_string()],
+        &[],
+    )
+    .unwrap();
+
+    let exact_expected = ["tests::gets_value".to_string()];
+    let exact = resolve_rust_population_state(ResolveRustPopulationArgs {
+        repo_root: tmp.path(),
+        ignore: &[],
+        rust_source_paths: std::slice::from_ref(&src),
+        rust_changed_lines: &BTreeMap::from([(src.clone(), BTreeSet::from([1]))]),
+        expected_selectors: Some(&exact_expected),
+        test_args: &[],
+    })
+    .expect("exact");
+    assert!(matches!(exact, ResolvedRustPopulation::Current { .. }));
+
+    let partial_expected = [
+        "tests::gets_value".to_string(),
+        "tests::new_selector".to_string(),
+    ];
+    let partial = resolve_rust_population_state(ResolveRustPopulationArgs {
+        repo_root: tmp.path(),
+        ignore: &[],
+        rust_source_paths: std::slice::from_ref(&src),
+        rust_changed_lines: &BTreeMap::from([(src.clone(), BTreeSet::from([1]))]),
+        expected_selectors: Some(&partial_expected),
+        test_args: &[],
+    })
+    .expect("partial");
+    assert!(matches!(partial, ResolvedRustPopulation::Current { .. }));
+
+    std::fs::write(
+        &src,
+        "pub fn value() -> u32 { 2 }\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn gets_value() { assert_eq!(super::value(), 2); }\n}\n",
+    )
+    .unwrap();
+    let reusable = resolve_rust_population_state(ResolveRustPopulationArgs {
+        repo_root: tmp.path(),
+        ignore: &[],
+        rust_source_paths: std::slice::from_ref(&src),
+        rust_changed_lines: &BTreeMap::from([(src.clone(), BTreeSet::from([1]))]),
+        expected_selectors: Some(&exact_expected),
+        test_args: &[],
+    })
+    .expect("reusable");
+    assert!(matches!(
+        reusable,
+        ResolvedRustPopulation::ReusablePrior { .. }
+    ));
 }

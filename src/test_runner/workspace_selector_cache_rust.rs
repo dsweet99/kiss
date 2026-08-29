@@ -5,13 +5,12 @@ type RustSelectorMemo = (String, Vec<String>, String, Vec<String>);
 static RUST_SELECTOR_MEMO: Mutex<Option<RustSelectorMemo>> = Mutex::new(None);
 
 fn rust_cache_matches(
-    cache: &super::WorkspaceSelectorCache,
+    cache: &super::LanguageSelectorCache,
     repo_root: &Path,
     ignore: &[String],
     rust_fp: &str,
 ) -> bool {
-    super::cache_identity_matches(cache, repo_root, ignore)
-        && cache.rust_files_fingerprint == rust_fp
+    super::language_cache_matches(cache, repo_root, ignore, &[], &[], rust_fp)
 }
 
 pub(super) fn remember_rust_selectors(
@@ -44,20 +43,19 @@ pub(crate) fn clear_rust_selector_memo_for_tests() {
     }
 }
 
-fn read_any_cache(repo_root: &Path) -> Option<super::WorkspaceSelectorCache> {
-    super::read_cache_at(&super::cache_path(repo_root))
-        .or_else(|| super::read_cache_at(&super::durable_cache_path(repo_root)))
+fn read_any_rust_cache(repo_root: &Path) -> Option<super::LanguageSelectorCache> {
+    super::read_language_cache(repo_root, super::RUST_CACHE_FILE)
 }
 
 pub(crate) fn cached_rust_selectors_if_rust_fingerprint_current(
     repo_root: &Path,
 ) -> Option<Vec<String>> {
-    let cache = read_any_cache(repo_root)?;
+    let cache = read_any_rust_cache(repo_root)?;
     if cache.source_root != super::normalized_root(repo_root) {
         return None;
     }
     let fps = super::workspace_lang_fingerprints(repo_root, &cache.ignore).ok()?;
-    (cache.rust_files_fingerprint == fps.rust).then_some(cache.rust_selectors)
+    (cache.files_fingerprint == fps.rust).then_some(cache.selectors)
 }
 
 pub(crate) fn load_cached_rust_workspace_selectors(
@@ -69,12 +67,12 @@ pub(crate) fn load_cached_rust_workspace_selectors(
     if let Some(selectors) = recall_rust_selectors(&root, ignore, &fps.rust) {
         return Some(selectors);
     }
-    let cache = read_any_cache(repo_root)?;
+    let cache = read_any_rust_cache(repo_root)?;
     if !rust_cache_matches(&cache, repo_root, ignore, &fps.rust) {
         return None;
     }
-    remember_rust_selectors(&root, ignore, &fps.rust, &cache.rust_selectors);
-    Some(cache.rust_selectors)
+    remember_rust_selectors(&root, ignore, &fps.rust, &cache.selectors);
+    Some(cache.selectors)
 }
 
 pub(crate) fn store_rust_workspace_selectors(
@@ -86,26 +84,21 @@ pub(crate) fn store_rust_workspace_selectors(
         return false;
     };
     let root = super::normalized_root(repo_root);
-    let existing = read_any_cache(repo_root);
+    let existing = read_any_rust_cache(repo_root);
     if let Some(cache) = existing.as_ref()
-        && !super::cache_identity_matches(cache, repo_root, ignore)
+        && !super::cache_identity_matches(cache, repo_root, ignore, &[], &[])
     {
         remember_rust_selectors(&root, ignore, &fps.rust, rust_selectors);
         return true;
     }
-    let (python_files_fingerprint, python_selectors) = match existing {
-        Some(cache) => (cache.python_files_fingerprint, cache.python_selectors),
-        None => ("unpopulated".to_string(), Vec::new()),
-    };
-    let cache = super::WorkspaceSelectorCache {
-        schema_version: super::SCHEMA_VERSION.to_string(),
-        source_root: root.clone(),
-        ignore: ignore.to_vec(),
-        python_files_fingerprint,
-        rust_files_fingerprint: fps.rust.clone(),
-        python_selectors,
-        rust_selectors: rust_selectors.to_vec(),
-    };
+    let cache = super::language_cache(
+        root.clone(),
+        ignore,
+        "rust",
+        fps.rust.clone(),
+        rust_selectors,
+        &[],
+    );
     remember_rust_selectors(&root, ignore, &fps.rust, rust_selectors);
-    super::persist_selector_cache(repo_root, &cache)
+    super::persist_selector_cache(repo_root, super::RUST_CACHE_FILE, &cache)
 }

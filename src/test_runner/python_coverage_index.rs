@@ -166,7 +166,8 @@ fn rebuild_selection_index_fallback(
     is_indexable: &dyn Fn(&Path, &Path) -> bool,
 ) -> Result<PythonCoverageIndex, String> {
     let cache_root = python_coverage_cache_root(repo_root)?;
-    let _guard = kiss::rslip::lock_rslip_derived_state(&cache_root).map_err(|err| err.to_string())?;
+    let _guard =
+        kiss::rslip::lock_rslip_derived_state(&cache_root).map_err(|err| err.to_string())?;
     let (index, _covered_lines, entries_fingerprint) =
         build_stable_python_coverage_index(repo_root, &cache_root, is_indexable)?;
     storage::write_python_coverage_index_with_entries_fingerprint(

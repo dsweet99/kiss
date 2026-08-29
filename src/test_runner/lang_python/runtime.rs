@@ -5,8 +5,8 @@ use kiss::Language;
 use kiss::rpytest_runner::TestStatus;
 
 use crate::test_runner::lang_iface::{
-    EnsureRequest, ExecutionWitness, LanguageRuntime, OutcomeBatch, PublishBatch, WitnessStatus,
-    summary_from_accepted_witness,
+    EnsureRequest, ExecutionWitness, LanguageRuntime, OutcomeBatch, PublishBatch, SourceDeltaMisses,
+    WitnessStatus, summary_from_accepted_witness,
 };
 use crate::test_runner::python_coverage_index::generation::{
     current_python_execution_identity, identity_matches_current,
@@ -21,6 +21,36 @@ use crate::test_runner::runners::SelectorExecutionSummary;
 use super::witness_view::{python_identity_digest, python_witness_from_pinned};
 
 pub(crate) struct PythonRuntime;
+
+impl SourceDeltaMisses for PythonRuntime {
+    fn extra_source_delta_misses(
+        &self,
+        request: &EnsureRequest,
+        planned: &[String],
+    ) -> Result<Vec<String>, String> {
+        let Ok(pinned) = try_load_pinned_python_generation_warm(&request.repo_root) else {
+            return Ok(Vec::new());
+        };
+        let mut misses = Vec::new();
+        for selector in planned {
+            let current =
+                crate::test_runner::python_coverage_index::storage::python_selector_definition_digest(
+                    &request.repo_root,
+                    selector,
+                );
+            let stored = pinned
+                .timings
+                .iter()
+                .find(|row| row.selector == *selector)
+                .map(|row| row.test_definition_digest.as_str())
+                .unwrap_or("");
+            if stored != current {
+                misses.push(selector.clone());
+            }
+        }
+        Ok(misses)
+    }
+}
 
 impl LanguageRuntime for PythonRuntime {
     fn language(&self) -> Language {
@@ -60,9 +90,13 @@ impl LanguageRuntime for PythonRuntime {
             miss_set,
             &request.extras.python,
             request.force,
-            &[],
+            &request.force_selectors,
             request.jobs,
-            None,
+            crate::test_runner::workspace_selector_cache::workspace_files_fingerprint_for_cache(
+                &request.repo_root,
+                &request.ignore,
+            )
+            .ok(),
             &request.gate,
         )?;
         let (statuses, durations_ns) = statuses_from_summary(&summary, miss_set);

@@ -31,8 +31,8 @@ pub(crate) fn attach_binary_line_maps_to_completed_outcomes(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rust_llvm_cov_runner::RustCovCacheStatus;
     use crate::rpytest_runner::TestStatus;
+    use crate::rust_llvm_cov_runner::RustCovCacheStatus;
     use std::time::Duration;
 
     fn outcome(selector: &str) -> RustLlvmCovOutcome {

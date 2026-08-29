@@ -20,6 +20,7 @@ fn default_run_options<'a>() -> RustCoverageRunOptions<'a> {
     RustCoverageRunOptions {
         extra: &[],
         force_rerun: true,
+        force_rerun_selectors: &[],
         jobs: 1,
         population_publication_selectors: None,
         coverage_output_mode: kiss::rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,

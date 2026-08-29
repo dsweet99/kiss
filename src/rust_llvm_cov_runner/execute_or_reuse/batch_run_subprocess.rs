@@ -13,7 +13,9 @@ use crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::{
     BatchProcessTreeGuard, record_child_process_group,
 };
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim::load_live_shim_process_identities;
-use crate::rust_llvm_cov_runner::execute_or_reuse::progress::{CargoNextestProgress, FinishCargoNextestProgress};
+use crate::rust_llvm_cov_runner::execute_or_reuse::progress::{
+    CargoNextestProgress, FinishCargoNextestProgress,
+};
 use crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchPlan;
 
 use super::{BatchSubprocessRunError, BatchSubprocessRunOutcome};
@@ -31,7 +33,8 @@ impl OutputChannelShutdown {
 
     fn stop_with_errors(
         mut self,
-    ) -> crate::rust_llvm_cov_runner::execute_or_reuse::batch_output_channel::OutputChannelStop {
+    ) -> crate::rust_llvm_cov_runner::execute_or_reuse::batch_output_channel::OutputChannelStop
+    {
         self.server
             .take()
             .expect("output channel server present")
@@ -327,8 +330,55 @@ fn ensure_batch_env_dirs(plan: &RustCoverageBatchPlan) -> Result<(), BatchSubpro
 }
 
 pub(crate) fn apply_batch_subprocess_env(command: &mut Command, env: &BTreeMap<String, String>) {
-    crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim_delegated::scrub_coverage_build_env(command);
-    command.envs(env);
+    let defined = defined_child_env(env);
+    strip_unrecorded_inherited_env(command, &defined);
+    crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim_delegated::scrub_coverage_build_env(
+        command,
+    );
+    command.envs(&defined);
+}
+
+fn strip_unrecorded_inherited_env(command: &mut Command, defined: &BTreeMap<String, String>) {
+    for (key, _) in std::env::vars() {
+        if !defined.contains_key(&key) {
+            command.env_remove(key);
+        }
+    }
+}
+
+fn defined_child_env(env: &BTreeMap<String, String>) -> BTreeMap<String, String> {
+    let mut defined = env.clone();
+    for key in [
+        "PATH",
+        "HOME",
+        "USER",
+        "LOGNAME",
+        "SHELL",
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "RUSTUP_TOOLCHAIN",
+        "LD_LIBRARY_PATH",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "LANG",
+        "LC_ALL",
+        "LC_CTYPE",
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR",
+        "CC",
+        "CXX",
+    ] {
+        if !defined.contains_key(key)
+            && let Ok(value) = std::env::var(key)
+        {
+            defined.insert(key.to_string(), value);
+        }
+    }
+    for (key, value) in crate::cargo_target_linker_env() {
+        defined.entry(key).or_insert(value);
+    }
+    defined
 }
 
 #[cfg(test)]

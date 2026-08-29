@@ -49,7 +49,9 @@ pub(crate) fn batch_executor_fixture_repo() -> tempfile::TempDir {
 }
 
 #[cfg(test)]
-pub(crate) fn batch_executor_request(repo: &Path) -> crate::rust_llvm_cov_runner::RustCoverageBatchRequest {
+pub(crate) fn batch_executor_request(
+    repo: &Path,
+) -> crate::rust_llvm_cov_runner::RustCoverageBatchRequest {
     use std::collections::BTreeMap;
     use std::path::PathBuf;
 
@@ -67,6 +69,7 @@ pub(crate) fn batch_executor_request(repo: &Path) -> crate::rust_llvm_cov_runner
         test_args: Vec::new(),
         env: BTreeMap::new(),
         force_rerun: false,
+        force_rerun_selectors: Vec::new(),
         jobs: 2,
         generated_config: repo
             .join(".kiss")
@@ -80,6 +83,7 @@ pub(crate) fn batch_executor_request(repo: &Path) -> crate::rust_llvm_cov_runner
         host_platform,
         coverage_output_mode: crate::rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
         selector_timeout_millis: std::collections::BTreeMap::new(),
+        cache_policy: crate::test_cache_policy::TestCachePolicy::default(),
     }
 }
 
@@ -95,7 +99,9 @@ pub(crate) fn store_batch_executor_selector(
     use crate::rpytest_runner::TestStatus;
 
     use crate::rust_llvm_cov_runner::plan::batch_fingerprint::{batch_identity, entry_fingerprint};
-    use crate::rust_llvm_cov_runner::rust_cov_cache::{RustCovCacheEntry, store_rust_cov_cache_entry};
+    use crate::rust_llvm_cov_runner::rust_cov_cache::{
+        RustCovCacheEntry, store_rust_cov_cache_entry,
+    };
     use crate::rust_llvm_cov_runner::{RustCovCacheStatus, RustLineCoverage, RustLlvmCovOutcome};
 
     let tools = witness_batch_tools();
@@ -121,6 +127,12 @@ pub(crate) fn store_batch_executor_selector(
         &identity.generation_fingerprint,
     );
     store_rust_cov_cache_entry(&req.cache_root, &fingerprint, &entry).unwrap();
+    crate::rust_llvm_cov_runner::write_ordinary_source_snapshot(
+        &req.cache_root,
+        &req.source_root,
+        &identity,
+    )
+    .unwrap();
 }
 
 #[cfg(test)]
@@ -150,7 +162,9 @@ pub(crate) fn published_alpha_derived_fixture() -> PublishedAlphaFixture {
     use crate::rpytest_runner::TestStatus;
 
     use crate::rust_llvm_cov_runner::plan::batch_fingerprint::{batch_identity, entry_fingerprint};
-    use crate::rust_llvm_cov_runner::rust_cov_cache::{RustCovCacheEntry, store_rust_cov_cache_entry};
+    use crate::rust_llvm_cov_runner::rust_cov_cache::{
+        RustCovCacheEntry, store_rust_cov_cache_entry,
+    };
     use crate::rust_llvm_cov_runner::{RustCovCacheStatus, RustLineCoverage, RustLlvmCovOutcome};
 
     let repo = tempfile::tempdir().unwrap();
@@ -182,7 +196,14 @@ pub(crate) fn published_alpha_derived_fixture() -> PublishedAlphaFixture {
         &identity.generation_fingerprint,
     );
     store_rust_cov_cache_entry(&req.cache_root, &fingerprint, &entry).unwrap();
-    crate::rust_llvm_cov_runner::publish_derived_state(&req, &tools, &identity, &["alpha".to_string()], false).unwrap();
+    crate::rust_llvm_cov_runner::publish_derived_state(
+        &req,
+        &tools,
+        &identity,
+        &["alpha".to_string()],
+        false,
+    )
+    .unwrap();
     PublishedAlphaFixture {
         repo,
         req,
@@ -205,7 +226,9 @@ pub(crate) fn store_alpha_entry(
 
     use crate::rust_llvm_cov_runner::plan::batch_fingerprint::entry_fingerprint;
     use crate::rust_llvm_cov_runner::rust_cov_cache::store_rust_cov_cache_entry;
-    use crate::rust_llvm_cov_runner::{RustCovCacheEntry, RustCovCacheStatus, RustLineCoverage, RustLlvmCovOutcome};
+    use crate::rust_llvm_cov_runner::{
+        RustCovCacheEntry, RustCovCacheStatus, RustLineCoverage, RustLlvmCovOutcome,
+    };
 
     let fingerprint = entry_fingerprint(&identity.input_digest, req, tools, "alpha");
     let entry = RustCovCacheEntry::from_outcome(
@@ -250,7 +273,9 @@ pub(crate) fn make_executable(path: &Path) {
 }
 
 #[cfg(test)]
-pub(crate) fn derived_fixture_request(repo: &Path) -> crate::rust_llvm_cov_runner::RustCoverageBatchRequest {
+pub(crate) fn derived_fixture_request(
+    repo: &Path,
+) -> crate::rust_llvm_cov_runner::RustCoverageBatchRequest {
     use std::path::PathBuf;
 
     use crate::rust_llvm_cov_runner::plan::batch_runner_resolve::placeholder_delegated_runner_fields;
@@ -267,6 +292,7 @@ pub(crate) fn derived_fixture_request(repo: &Path) -> crate::rust_llvm_cov_runne
         test_args: Vec::new(),
         env: std::collections::BTreeMap::new(),
         force_rerun: false,
+        force_rerun_selectors: Vec::new(),
         jobs: 1,
         generated_config: repo.join(".kiss/rust_llvm_cov_cache/runs/run-test/nextest.toml"),
         population_publication_selectors: Some(vec!["alpha".to_string()]),
@@ -275,6 +301,7 @@ pub(crate) fn derived_fixture_request(repo: &Path) -> crate::rust_llvm_cov_runne
         host_platform,
         coverage_output_mode: crate::rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
         selector_timeout_millis: std::collections::BTreeMap::new(),
+        cache_policy: crate::test_cache_policy::TestCachePolicy::default(),
     }
 }
 
@@ -309,7 +336,9 @@ pub(crate) fn wait_child(child: &mut Child) {
 }
 
 #[cfg(test)]
-pub(crate) fn runner_resolve_base_request(repo: &Path) -> crate::rust_llvm_cov_runner::RustCoverageBatchRequest {
+pub(crate) fn runner_resolve_base_request(
+    repo: &Path,
+) -> crate::rust_llvm_cov_runner::RustCoverageBatchRequest {
     use std::collections::BTreeMap;
     use std::path::PathBuf;
 
@@ -327,6 +356,7 @@ pub(crate) fn runner_resolve_base_request(repo: &Path) -> crate::rust_llvm_cov_r
         test_args: Vec::new(),
         env: BTreeMap::new(),
         force_rerun: false,
+        force_rerun_selectors: Vec::new(),
         jobs: 1,
         generated_config: repo.join(".kiss/rust_llvm_cov_cache/runs/run-test/nextest.toml"),
         population_publication_selectors: None,
@@ -335,6 +365,7 @@ pub(crate) fn runner_resolve_base_request(repo: &Path) -> crate::rust_llvm_cov_r
         host_platform,
         coverage_output_mode: crate::rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
         selector_timeout_millis: std::collections::BTreeMap::new(),
+        cache_policy: crate::test_cache_policy::TestCachePolicy::default(),
     }
 }
 
@@ -371,7 +402,9 @@ pub(crate) fn shim_only_metadata(
 }
 
 #[cfg(test)]
-pub(crate) fn shim_metadata(id: &str) -> crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim::BatchShimMetadata {
+pub(crate) fn shim_metadata(
+    id: &str,
+) -> crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim::BatchShimMetadata {
     use std::path::PathBuf;
 
     crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim::BatchShimMetadata {

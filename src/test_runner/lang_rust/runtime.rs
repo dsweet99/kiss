@@ -5,7 +5,7 @@ use kiss::Language;
 
 use crate::test_runner::lang_iface::{
     AcceptMode, EnsureRequest, ExecutionWitness, LanguageRuntime, OutcomeBatch, PublishBatch,
-    WitnessScope, summary_from_accepted_witness,
+    SourceDeltaMisses, WitnessScope, summary_from_accepted_witness,
 };
 use crate::test_runner::runners::SelectorExecutionSummary;
 use crate::test_runner::rust_coverage_index::{
@@ -22,6 +22,16 @@ use super::witness_store::{
 mod population_repair;
 
 pub(crate) struct RustRuntime;
+
+impl SourceDeltaMisses for RustRuntime {
+    fn extra_source_delta_misses(
+        &self,
+        request: &EnsureRequest,
+        planned: &[String],
+    ) -> Result<Vec<String>, String> {
+        super::rust_source_delta_misses(&request.repo_root, planned, &request.extras.rust)
+    }
+}
 
 impl LanguageRuntime for RustRuntime {
     fn language(&self) -> Language {
@@ -70,6 +80,7 @@ impl LanguageRuntime for RustRuntime {
                     miss_set,
                     &request.extras.rust,
                     request.force,
+                    &request.force_selectors,
                     request.jobs,
                     publication.clone(),
                     &request.gate,
@@ -111,6 +122,7 @@ impl LanguageRuntime for RustRuntime {
             durations_ns: &durations,
             covered_lines: &covered,
             complete,
+            jobs: request.jobs,
         })?;
         Ok(())
     }

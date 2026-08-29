@@ -151,6 +151,18 @@ fn rslip_request_and_version_contracts_are_explicit() {
     assert!(req.force_rerun);
 
     assert_eq!(req.timeout, Some(Duration::from_secs(2)));
+    assert!(req.content_fingerprint.is_some());
+    let unscoped = rslip_request_from_parts(
+        tmp.path(),
+        "tests/test_app.py::test_ok",
+        &[],
+        "3.12.1",
+        "8.3.0",
+        true,
+        &kiss::GateConfig::default(),
+    )
+    .unwrap();
+    assert_ne!(req.content_fingerprint, unscoped.content_fingerprint);
     assert!(python_version_supports_rslip("3.12.0"));
     assert!(python_version_supports_rslip("4.0.0"));
     assert!(!python_version_supports_rslip("3.11.9"));
@@ -272,23 +284,17 @@ def test_global_starts_clean():\n    assert stateful.VALUE == 0\n",
 #[test]
 fn print_rslip_outcome_accepts_all_status_cache_shapes() {
     for (status, cache_status) in [
-        (kiss::rpytest_runner::TestStatus::Passed, PyCacheStatus::Hit),
-        (
-            kiss::rpytest_runner::TestStatus::Passed,
-            PyCacheStatus::MissStored,
-        ),
-        (kiss::rpytest_runner::TestStatus::Failed, PyCacheStatus::Hit),
-        (
-            kiss::rpytest_runner::TestStatus::Failed,
-            PyCacheStatus::MissStored,
-        ),
+        (TestStatus::Passed, PyCacheStatus::Hit),
+        (TestStatus::Passed, PyCacheStatus::MissStored),
+        (TestStatus::Failed, PyCacheStatus::Hit),
+        (TestStatus::Failed, PyCacheStatus::MissStored),
     ] {
         let mut sink = Vec::new();
         print_rslip_outcome(
             &RslipOutcome {
                 nodeid: "tests/test_app.py::test_ok".to_string(),
                 status,
-                exit_code: Some(i32::from(status == kiss::rpytest_runner::TestStatus::Failed)),
+                exit_code: Some(i32::from(status == TestStatus::Failed)),
                 duration: Duration::from_millis(1),
                 coverage: LineCoverage {
                     files: BTreeMap::new(),
@@ -362,27 +368,15 @@ def test_b():\n    assert True\n",
         assert_eq!(summary.cache_misses, 2);
     });
     assert!(
-        miss_out.contains("kiss test: rslip prepared hits=0 misses=2"),
-        "missing prepared line: {miss_out}"
+        miss_out.contains("kiss test: rslip prepared hits=0 misses=2")
+            && miss_out.contains("PASS: test_sample.py::test_a")
+            && miss_out.contains("PASS: test_sample.py::test_b")
+            && miss_out.contains("kiss test: tests_remaining="),
+        "missing stream output: {miss_out}"
     );
-    assert!(
-        miss_out.contains("PASS: test_sample.py::test_a"),
-        "missing miss print: {miss_out}"
-    );
-    assert!(
-        miss_out.contains("PASS: test_sample.py::test_b"),
-        "missing miss print: {miss_out}"
-    );
-    assert!(
-        miss_out.contains("kiss test: tests_remaining="),
-        "missing tests_remaining heartbeat: {miss_out}"
-    );
-    assert_eq!(
-        miss_out.matches("PASS: test_sample.py::test_a").count(),
-        1,
-        "duplicate miss lines: {miss_out}"
-    );
+    assert_eq!(miss_out.matches("PASS: test_sample.py::test_a").count(), 1);
 
+    kiss::rust_llvm_cov_runner::reset_subprocess_observer();
     let cached_runner = PytestRunner::from_fn(|_| {
         panic!("cache hits must not invoke the pytest runner");
     });
@@ -404,18 +398,15 @@ def test_b():\n    assert True\n",
         assert_eq!(summary.cache_hits, 2);
         assert_eq!(summary.max_passing_run_duration, Duration::ZERO);
         assert!(summary.failed_selectors.is_empty());
+        assert_eq!(
+            kiss::rust_llvm_cov_runner::subprocess_observer_snapshot().pytest_invocations,
+            0
+        );
     });
     assert!(
-        hit_out.contains("PASS (cached): test_sample.py::test_a"),
+        hit_out.contains("PASS (cached): test_sample.py::test_a")
+            && hit_out.contains("PASS (cached): test_sample.py::test_b"),
         "cache hits must print via prepare-time SelectorFinalized: {hit_out}"
     );
-    assert!(
-        hit_out.contains("PASS (cached): test_sample.py::test_b"),
-        "cache hits must print via prepare-time SelectorFinalized: {hit_out}"
-    );
-    assert_eq!(
-        hit_out.matches("PASS (cached):").count(),
-        2,
-        "duplicate cached lines: {hit_out}"
-    );
+    assert_eq!(hit_out.matches("PASS (cached):").count(), 2);
 }

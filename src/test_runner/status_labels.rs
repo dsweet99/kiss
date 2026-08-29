@@ -31,6 +31,11 @@ pub(crate) fn print_classified_status_line(
     cache_tag: Option<&str>,
     show_duration: bool,
 ) {
+    if cache_tag == Some("cached")
+        && !crate::test_runner::check_runtime_refresh::test_runner_stdout_enabled()
+    {
+        return;
+    }
     let duration_s = crate::test_runner::duration::format_test_duration(duration);
     let line = format_status_line(
         status,

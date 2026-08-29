@@ -35,6 +35,7 @@ pub mod symbol_mv;
 pub mod test_refs;
 pub mod test_section_config;
 pub(crate) mod test_toml;
+pub mod test_cache_policy;
 pub mod units;
 
 pub mod code_roles;
@@ -105,7 +106,7 @@ pub use py_metrics::{
     compute_function_metrics,
 };
 pub use shared_helpers::{
-    env_map_from_allowlist, json_entry_paths, python_coverage_env_map,
+    cargo_target_linker_env, env_map_from_allowlist, json_entry_paths, python_coverage_env_map,
     pythonpath_for_coverage_identity, scrubbed_git_command,
 };
 pub use stats::{

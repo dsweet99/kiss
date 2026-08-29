@@ -13,6 +13,15 @@ use super::types::{GenerationReason, TimingCacheDisposition};
 use crate::test_runner::python_coverage_index::PYTHON_SELECTOR_DISCOVERY_VERSION;
 use crate::test_runner::runners::detect_rslip_versions;
 
+fn assert_pointer_records_parent(repo: &Path, expected_parent: &str) {
+    let cache =
+        crate::test_runner::python_coverage_index::storage::python_coverage_cache_root(repo)
+            .unwrap();
+    let bytes = std::fs::read(super::paths::pointer_path(&cache)).unwrap();
+    let pointer: super::types::PopulationPointer = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(pointer.parent_generation_id, expected_parent);
+}
+
 fn assert_published_interned_line_index(repo: &Path) {
     let full = super::load::try_load_pinned_python_generation(repo).unwrap();
     assert_eq!(
@@ -124,10 +133,10 @@ fn assert_restamp_rewrites_stale_kissconfig_and_refuses_fingerprint(repo: &Path)
     )
     .unwrap();
     assert!(
-        restamped,
-        "bounded rslip misses may restamp fingerprint drift"
+        !restamped,
+        "fingerprint drift must not restamp from a source-only selector match"
     );
-    assert_ne!(
+    assert_eq!(
         try_load_pinned_python_generation_warm(repo)
             .unwrap()
             .plan
@@ -177,14 +186,73 @@ fn publish_then_warm_load_reads_coverage_and_timings() {
     let id =
         publish_python_population_generation(repo, &plan, &evidence, GenerationReason::Complete)
             .unwrap();
+    assert_pointer_records_parent(repo, "");
+    let second =
+        publish_python_population_generation(repo, &plan, &evidence, GenerationReason::Complete)
+            .unwrap();
+    assert_pointer_records_parent(repo, &id);
+    assert_ne!(second, id);
     let pinned = try_load_pinned_python_generation_warm(repo).unwrap();
-    assert_eq!(pinned.generation_id, id);
+    assert_eq!(pinned.generation_id, second);
     assert!(pinned.complete);
     assert_eq!(pinned.coverage.get("app.py"), Some(&BTreeSet::from([1u32])));
     assert_eq!(pinned.timings.len(), 1);
     assert_published_interned_line_index(repo);
     assert_legacy_line_index_interns_without_name_blowup();
+    cover_exact_identity_restamp_and_closed_misses(repo, &plan.selectors);
     assert_restamp_rewrites_stale_kissconfig_and_refuses_fingerprint(repo);
+}
+
+fn cover_exact_identity_restamp_and_closed_misses(repo: &Path, selectors: &[String]) {
+    let matched = super::repair::try_restamp_matching_pinned_universe(
+        repo,
+        selectors,
+        &[],
+        &|_, _| true,
+        Some(&[]),
+    )
+    .unwrap();
+    assert!(matched, "exact identity may restamp an unchanged universe");
+    assert!(
+        !super::repair::try_restamp_matching_pinned_universe(
+            repo,
+            &["other.py::test_z".into()],
+            &[],
+            &|_, _| true,
+            None,
+        )
+        .unwrap()
+    );
+    let empty = tempdir().unwrap();
+    assert!(
+        !super::repair::try_restamp_matching_pinned_universe(
+            empty.path(),
+            selectors,
+            &[],
+            &|_, _| true,
+            None,
+        )
+        .unwrap()
+    );
+    assert!(
+        super::repair::repair_python_population_generation(
+            repo,
+            &[passed_evidence("missing.py::test_z", "app.py", &[1])],
+            GenerationReason::SelectiveRepair,
+        )
+        .is_err()
+    );
+    let problems =
+        super::repair::problem_selectors_from_timings(&[super::types::SelectorTimingRecord {
+            selector: "failed.py::t".into(),
+            raw_status: "failed".into(),
+            effective_status: "failed".into(),
+            duration_ns: Some(1),
+            cache_disposition: TimingCacheDisposition::MissStored,
+            reason: None,
+            test_definition_digest: String::new(),
+        }]);
+    assert_eq!(problems, vec!["failed.py::t".to_string()]);
 }
 
 #[test]

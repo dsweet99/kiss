@@ -1,4 +1,6 @@
-use crate::rust_llvm_cov_runner::publish_derived::batch_derived_index::{RustPopulationState, RustSnapshotDelta};
+use crate::rust_llvm_cov_runner::publish_derived::batch_derived_index::{
+    RustPopulationState, RustSnapshotDelta,
+};
 use crate::rust_llvm_cov_runner::rust_cov_cache::RustCovCacheEntry;
 use crate::rust_llvm_cov_runner::{CACHE_SCHEMA_VERSION, RustLineCoverage};
 use std::collections::{BTreeMap, BTreeSet};

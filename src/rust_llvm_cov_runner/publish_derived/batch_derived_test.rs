@@ -1,7 +1,9 @@
 use super::*;
 use crate::rust_llvm_cov_runner::plan::batch_fingerprint::entry_fingerprint;
 use crate::rust_llvm_cov_runner::rust_cov_cache::store_rust_cov_cache_entry;
-use crate::rust_llvm_cov_runner::test_support::{derived_fixture_request, store_alpha_entry, witness_batch_tools};
+use crate::rust_llvm_cov_runner::test_support::{
+    derived_fixture_request, store_alpha_entry, witness_batch_tools,
+};
 use crate::rust_llvm_cov_runner::{RustCovCacheStatus, RustLlvmCovOutcome};
 use std::path::Path;
 use std::time::Duration;
@@ -15,7 +17,8 @@ fn derived_repair_rebuilds_index_from_current_generation_only() {
 
     let req = derived_fixture_request(repo.path());
     let tools = witness_batch_tools();
-    let identity = crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    let identity =
+        crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
     let fingerprint = entry_fingerprint(&identity.input_digest, &req, &tools, "alpha");
     let mut coverage = BTreeMap::new();
     coverage.insert("src/lib.rs".to_string(), BTreeSet::from([2]));
@@ -60,7 +63,8 @@ fn population_derived_state_stale_when_manifest_missing() {
     std::fs::write(repo.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
     let req = derived_fixture_request(repo.path());
     let tools = witness_batch_tools();
-    let identity = crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    let identity =
+        crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
     assert!(population_derived_state_stale(&req, &tools, &identity).unwrap());
 }
 
@@ -72,7 +76,8 @@ fn try_publish_skips_when_derived_state_current() {
     std::fs::write(repo.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
     let req = derived_fixture_request(repo.path());
     let tools = witness_batch_tools();
-    let identity = crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    let identity =
+        crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
     let fingerprint = entry_fingerprint(&identity.input_digest, &req, &tools, "alpha");
     let entry = RustCovCacheEntry::from_outcome(
         &RustLlvmCovOutcome {
@@ -107,7 +112,8 @@ fn publish_derived_state_retains_one_previous_complete_generation() {
     std::fs::write(repo.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
     let req = derived_fixture_request(repo.path());
     let tools = witness_batch_tools();
-    let identity = crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    let identity =
+        crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
     let previous = RustCovCacheEntry::from_outcome(
         &RustLlvmCovOutcome {
             selector: "legacy".to_string(),
@@ -163,7 +169,8 @@ fn publish_derived_state_prunes_stale_generation_entries() {
     std::fs::write(repo.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
     let req = derived_fixture_request(repo.path());
     let tools = witness_batch_tools();
-    let identity = crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    let identity =
+        crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
     let stale = RustCovCacheEntry::from_outcome(
         &RustLlvmCovOutcome {
             selector: "stale".to_string(),
@@ -190,7 +197,6 @@ fn write_generation_transition_repo(repo: &Path) {
     std::fs::create_dir_all(repo.join("src")).unwrap();
     std::fs::write(repo.join("Cargo.toml"), "[package]\n").unwrap();
     std::fs::write(repo.join("src").join("a.rs"), "pub fn a() {}\n").unwrap();
-    std::fs::write(repo.join("src").join("b.rs"), "pub fn b() {}\n").unwrap();
 }
 
 #[test]
@@ -199,7 +205,8 @@ fn generation_transition_index_excludes_prior_generation_files() {
     write_generation_transition_repo(repo.path());
     let req = derived_fixture_request(repo.path());
     let tools = witness_batch_tools();
-    let gen_a = crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    let gen_a =
+        crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
     store_alpha_entry(
         &req.cache_root,
         &req,
@@ -216,7 +223,9 @@ fn generation_transition_index_excludes_prior_generation_files() {
         "pub fn b() {}\npub fn c() {}\n",
     )
     .unwrap();
-    let gen_b = crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req_b, &tools).unwrap();
+    let gen_b =
+        crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req_b, &tools)
+            .unwrap();
     assert_ne!(gen_a.generation_fingerprint, gen_b.generation_fingerprint);
     store_alpha_entry(
         &req.cache_root,
@@ -252,7 +261,8 @@ fn try_publish_all_hit_repair_when_manifest_stale() {
     std::fs::write(repo.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
     let req = derived_fixture_request(repo.path());
     let tools = witness_batch_tools();
-    let identity = crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    let identity =
+        crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
     let fingerprint = entry_fingerprint(&identity.input_digest, &req, &tools, "alpha");
     let entry = RustCovCacheEntry::from_outcome(
         &RustLlvmCovOutcome {
@@ -287,7 +297,8 @@ fn prune_obsolete_selective_generations_retains_population_and_current() {
     std::fs::write(repo.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
     let req = derived_fixture_request(repo.path());
     let tools = witness_batch_tools();
-    let population_identity = crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    let population_identity =
+        crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
     publish_derived_state(
         &req,
         &tools,
@@ -315,7 +326,8 @@ fn prune_obsolete_selective_generations_retains_population_and_current() {
     );
     store_rust_cov_cache_entry(&req.cache_root, "deadbeefdeadbeef", &stale).unwrap();
     std::fs::write(repo.path().join("src").join("lib.rs"), "pub fn y() {}\n").unwrap();
-    let selective_identity = crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    let selective_identity =
+        crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
     let pruned = prune_obsolete_selective_generations(
         &req.cache_root,
         &selective_identity.generation_fingerprint,
@@ -342,7 +354,8 @@ fn count_generations_skips_entry_missing_after_readdir() {
     std::fs::write(repo.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
     let req = derived_fixture_request(repo.path());
     let tools = witness_batch_tools();
-    let identity = crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    let identity =
+        crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
     let fingerprint = entry_fingerprint(&identity.input_digest, &req, &tools, "alpha");
     let mut coverage = BTreeMap::new();
     coverage.insert("src/lib.rs".to_string(), BTreeSet::from([2]));

@@ -12,6 +12,7 @@ fn python_state(status: WitnessStatus, duration: Option<u64>) -> Rc<RefCell<Fake
             covered_lines: BTreeMap::new(),
             complete: status == WitnessStatus::Passed,
             generation_id: "g".into(),
+            raw_statuses: Vec::new(),
         }),
         run_exit_code: 0,
         ..Default::default()
@@ -57,6 +58,7 @@ fn identity_drift_with_unchanged_outcomes_still_publishes() {
             covered_lines: BTreeMap::new(),
             complete: true,
             generation_id: "g".into(),
+            raw_statuses: Vec::new(),
         }),
         run_exit_code: 0,
         identity: Some("new-id".into()),
@@ -91,6 +93,7 @@ fn rust_warm_accept_still_emits_rust_identity_without_run() {
             covered_lines: BTreeMap::new(),
             complete: true,
             generation_id: "g".into(),
+            raw_statuses: Vec::new(),
         }),
         ..Default::default()
     }));

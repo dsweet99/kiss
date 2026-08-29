@@ -99,6 +99,7 @@ impl PopulationEvidence {
             duration_ns: item.duration.map(|d| d.as_nanos() as u64),
             cache_disposition: item.cache_disposition,
             reason: item.reason,
+            test_definition_digest: String::new(),
         };
         replace_selector_coverage(self, &item.selector, item.coverage);
         self.recompute_complete();
@@ -153,6 +154,19 @@ fn unresolved_timing(selector: &str) -> SelectorTimingRecord {
         duration_ns: None,
         cache_disposition: TimingCacheDisposition::Unknown,
         reason: Some("missing outcome".to_string()),
+        test_definition_digest: String::new(),
+    }
+}
+
+pub(crate) fn fill_test_definition_digests(repo_root: &Path, evidence: &mut PopulationEvidence) {
+    for row in &mut evidence.timings {
+        if row.test_definition_digest.is_empty() {
+            row.test_definition_digest =
+                crate::test_runner::python_coverage_index::storage::python_selector_definition_digest(
+                    repo_root,
+                    &row.selector,
+                );
+        }
     }
 }
 

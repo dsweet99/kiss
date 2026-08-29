@@ -2,7 +2,9 @@ use std::ffi::OsString;
 use std::fs;
 
 use super::{run_target_runner_shim, write_shim_start_metadata};
-use crate::rust_llvm_cov_runner::test_support::{make_executable, shim_only_metadata, shim_test_env_lock};
+use crate::rust_llvm_cov_runner::test_support::{
+    make_executable, shim_only_metadata, shim_test_env_lock,
+};
 
 #[test]
 fn target_runner_shim_writes_start_metadata_before_completion() {
@@ -52,7 +54,10 @@ fn target_runner_shim_writes_start_metadata_before_completion() {
 fn load_live_shim_process_identities_reads_start_records() {
     let tmp = tempfile::tempdir().unwrap();
     let identity =
-        crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::ProcessGroupIdentity { pid: 42, pgid: 42 };
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::ProcessGroupIdentity {
+            pid: 42,
+            pgid: 42,
+        };
     write_shim_start_metadata(tmp.path(), "alpha", &identity).unwrap();
     let loaded = super::load_live_shim_process_identities(tmp.path()).unwrap();
     assert!(loaded.is_empty() || loaded.iter().any(|item| item.pid == 42));
@@ -185,9 +190,13 @@ fn target_runner_shim_list_phase_delegates_with_list_metadata_without_profile() 
     )
     .unwrap();
     make_executable(&script);
-    let old_kiss_profraw = std::env::var_os(crate::rust_llvm_cov_runner::kiss_profraw::KISS_PROFRAW_DIR_ENV);
+    let old_kiss_profraw =
+        std::env::var_os(crate::rust_llvm_cov_runner::kiss_profraw::KISS_PROFRAW_DIR_ENV);
     unsafe {
-        std::env::set_var(crate::rust_llvm_cov_runner::kiss_profraw::KISS_PROFRAW_DIR_ENV, &kiss_profraw);
+        std::env::set_var(
+            crate::rust_llvm_cov_runner::kiss_profraw::KISS_PROFRAW_DIR_ENV,
+            &kiss_profraw,
+        );
         std::env::set_var("NEXTEST_TEST_PHASE", "list");
     }
     let code = run_target_runner_shim(
@@ -199,8 +208,13 @@ fn target_runner_shim_list_phase_delegates_with_list_metadata_without_profile() 
     unsafe {
         std::env::remove_var("NEXTEST_TEST_PHASE");
         match old_kiss_profraw {
-            Some(value) => std::env::set_var(crate::rust_llvm_cov_runner::kiss_profraw::KISS_PROFRAW_DIR_ENV, value),
-            None => std::env::remove_var(crate::rust_llvm_cov_runner::kiss_profraw::KISS_PROFRAW_DIR_ENV),
+            Some(value) => std::env::set_var(
+                crate::rust_llvm_cov_runner::kiss_profraw::KISS_PROFRAW_DIR_ENV,
+                value,
+            ),
+            None => std::env::remove_var(
+                crate::rust_llvm_cov_runner::kiss_profraw::KISS_PROFRAW_DIR_ENV,
+            ),
         }
     }
 

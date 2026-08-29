@@ -3,7 +3,9 @@ use std::time::Duration;
 
 use super::*;
 use crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest;
-use crate::rust_llvm_cov_runner::{BATCH_EXECUTION_POLICY_VERSION, CACHE_SCHEMA_VERSION, RustLlvmCovError};
+use crate::rust_llvm_cov_runner::{
+    BATCH_EXECUTION_POLICY_VERSION, CACHE_SCHEMA_VERSION, RustLlvmCovError,
+};
 
 #[test]
 fn remove_stale_run_directories_failure_is_recoverable_on_next_run() {

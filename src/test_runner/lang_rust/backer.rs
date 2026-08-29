@@ -3,12 +3,12 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use crate::test_runner::coverage_decision::{
-    full_population_plan, ChangedDiff, CoverageFreshness, LanguagePlanner, PopulationPlan,
-    SelectionBasis, SelectionDecision, TestSelector,
+    ChangedDiff, CoverageFreshness, LanguagePlanner, PopulationPlan, SelectionBasis,
+    SelectionDecision, TestSelector, full_population_plan,
 };
 use crate::test_runner::rust_coverage_index::{
-    resolve_rust_population_state, select_rust_source_selectors_for_basis, ResolvedRustPopulation,
-    RUST_COVERAGE_ENV_KEYS,
+    RUST_COVERAGE_ENV_KEYS, ResolveRustPopulationArgs, ResolvedRustPopulation,
+    resolve_rust_population_state, select_rust_source_selectors_for_basis,
 };
 
 use crate::test_runner::runners::enumerate_workspace_rust_selectors;
@@ -100,12 +100,14 @@ impl RustModule {
     fn resolved_state(&self) -> Result<&ResolvedRustPopulation, String> {
         self.resolved
             .get_or_init(|| {
-                resolve_rust_population_state(
-                    &self.repo_root,
-                    &self.ignore,
-                    &self.rust_source_paths,
-                    &self.rust_test_args,
-                )
+                resolve_rust_population_state(ResolveRustPopulationArgs {
+                    repo_root: &self.repo_root,
+                    ignore: &self.ignore,
+                    rust_source_paths: &self.rust_source_paths,
+                    rust_changed_lines: &self.rust_changed_lines,
+                    expected_selectors: None,
+                    test_args: &self.rust_test_args,
+                })
             })
             .as_ref()
             .map_err(|err| err.clone())
@@ -213,8 +215,15 @@ pub(crate) fn select_fresh_rust_source_selectors(
     rust_changed_lines: &BTreeMap<PathBuf, BTreeSet<u32>>,
     rust_test_args: &[String],
 ) -> Option<BTreeSet<String>> {
-    let resolved =
-        resolve_rust_population_state(repo_root, &[], rust_source_paths, rust_test_args).ok()?;
+    let resolved = resolve_rust_population_state(ResolveRustPopulationArgs {
+        repo_root,
+        ignore: &[],
+        rust_source_paths,
+        rust_changed_lines,
+        expected_selectors: None,
+        test_args: rust_test_args,
+    })
+    .ok()?;
     select_rust_source_selectors_for_basis(
         repo_root,
         rust_source_paths,

@@ -1,5 +1,6 @@
 use super::fresh_test_helpers::{execute_rust_coverage_batch_fresh_with_fake, fake_runner, tools};
 use super::*;
+use crate::rpytest_runner::TestStatus;
 use crate::rust_llvm_cov_runner::RustCovCacheStatus;
 use crate::rust_llvm_cov_runner::RustLlvmCovError;
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_result::RustCoverageBatchResult;
@@ -12,7 +13,6 @@ use crate::rust_llvm_cov_runner::plan::batch_plan::build_rust_coverage_batch_pla
 use crate::rust_llvm_cov_runner::test_support::{
     batch_executor_fixture_repo, batch_executor_request, store_batch_executor_selector,
 };
-use crate::rpytest_runner::TestStatus;
 use std::fs;
 use std::sync::Arc;
 use std::time::Duration;
@@ -69,7 +69,10 @@ fn fresh_build_identity_helpers_track_build_compatible_inputs() {
     };
 
     assert_eq!(base, build_identity_input(&same_build, &tools));
-    assert_eq!(marker.input.cache_schema, crate::rust_llvm_cov_runner::CACHE_SCHEMA_VERSION);
+    assert_eq!(
+        marker.input.cache_schema,
+        crate::rust_llvm_cov_runner::CACHE_SCHEMA_VERSION
+    );
     assert_eq!(
         marker.input.execution_policy,
         crate::rust_llvm_cov_runner::BATCH_EXECUTION_POLICY_VERSION
@@ -229,10 +232,11 @@ fn subprocess_exporter_wrapper_handles_failed_test_without_export_jobs() {
 fn check_aggregate_branch_reports_missing_shim_metadata_before_export() {
     let repo = batch_executor_fixture_repo();
     let mut req = batch_executor_request(repo.path());
-    req.coverage_output_mode = crate::rust_llvm_cov_runner::plan::batch_plan::CoverageOutputMode::CheckAggregate {
-        publication_binary_ids: None,
-        repair_publication: None,
-    };
+    req.coverage_output_mode =
+        crate::rust_llvm_cov_runner::plan::batch_plan::CoverageOutputMode::CheckAggregate {
+            publication_binary_ids: None,
+            repair_publication: None,
+        };
     let runner = BatchSubprocessRunner::from_fn(|_, plan| {
         fs::create_dir_all(&plan.build_target).unwrap();
         let bin = plan.build_target.join("bin");
@@ -276,10 +280,11 @@ fn check_aggregate_branch_reports_missing_shim_metadata_before_export() {
 fn check_aggregate_branch_builds_export_requests_with_shim_metadata() {
     let repo = batch_executor_fixture_repo();
     let mut req = batch_executor_request(repo.path());
-    req.coverage_output_mode = crate::rust_llvm_cov_runner::plan::batch_plan::CoverageOutputMode::CheckAggregate {
-        publication_binary_ids: None,
-        repair_publication: None,
-    };
+    req.coverage_output_mode =
+        crate::rust_llvm_cov_runner::plan::batch_plan::CoverageOutputMode::CheckAggregate {
+            publication_binary_ids: None,
+            repair_publication: None,
+        };
     let runner = BatchSubprocessRunner::from_fn(|_, plan| {
         fs::create_dir_all(&plan.build_target).unwrap();
         let bin = plan.build_target.join("bin");

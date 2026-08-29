@@ -36,10 +36,11 @@ pub(crate) fn build_instance_results(
     req: &RustCoverageBatchRequest,
 ) -> Result<Vec<InstanceResult>, RustLlvmCovError> {
     reject_missing_terminal_events(started_tests, ignored_tests, terminal_tests, exact, req)?;
-    let selector_index = crate::rust_llvm_cov_runner::execute_or_reuse::batch_events::SelectorMatchIndex::new(
-        &req.logical_selectors,
-        exact,
-    );
+    let selector_index =
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_events::SelectorMatchIndex::new(
+            &req.logical_selectors,
+            exact,
+        );
     let metadata_by_id: BTreeMap<_, _> = shim_metadata
         .iter()
         .map(|item| (item.full_name.clone(), item))
@@ -241,10 +242,11 @@ fn reject_missing_terminal_events(
                 .map(|test| test.full_name.as_str())
                 .collect()
         };
-    let selector_index = crate::rust_llvm_cov_runner::execute_or_reuse::batch_events::SelectorMatchIndex::new(
-        &req.logical_selectors,
-        exact,
-    );
+    let selector_index =
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_events::SelectorMatchIndex::new(
+            &req.logical_selectors,
+            exact,
+        );
     let missing = started_tests
         .iter()
         .filter(|test| {
@@ -297,7 +299,10 @@ pub(crate) fn digest_test_binary(path: &Path) -> Result<String, RustLlvmCovError
             format!("digest_test_binary {}: {err}", path.display()),
         ))
     })?;
-    let h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(0xcbf2_9ce4_8422_2325, &bytes);
+    let h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(
+        0xcbf2_9ce4_8422_2325,
+        &bytes,
+    );
     Ok(format!("{h:016x}"))
 }
 

@@ -65,14 +65,6 @@ pub(super) fn try_repair_rust_check_aggregate_labeled(
         &build.index.selector_binary_ids,
         &build.index.test_binaries,
     );
-    let decision = maybe_downgrade_rerun_when_witness_warm(
-        repo_root,
-        selectors,
-        &current_identity,
-        &prior,
-        &build.index.selector_binary_ids,
-        decision,
-    );
     match decision {
         CheckAggregateRepairDecision::FullRefresh => Ok(None),
         CheckAggregateRepairDecision::IdentityOnly {
@@ -106,56 +98,6 @@ pub(super) fn try_repair_rust_check_aggregate_labeled(
             },
         )?)),
     }
-}
-
-pub(crate) fn maybe_downgrade_rerun_when_witness_warm(
-    repo_root: &Path,
-    selectors: &[String],
-    current_identity: &kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity,
-    prior: &kiss::rust_llvm_cov_runner::ValidatedCheckAggregate,
-    current_selector_binary_ids: &BTreeMap<String, Vec<String>>,
-    decision: CheckAggregateRepairDecision,
-) -> CheckAggregateRepairDecision {
-    let CheckAggregateRepairDecision::Rerun {
-        prior_generation, ..
-    } = &decision
-    else {
-        return decision;
-    };
-    if crate::test_runner::execution_witness::try_warm_rust_cached_summary(
-        repo_root,
-        selectors,
-        current_identity,
-        &kiss::GateConfig::load_for_repo(repo_root),
-    )
-    .is_none()
-    {
-        return decision;
-    }
-    let current_mapped = current_mapped_binary_ids(current_selector_binary_ids);
-    CheckAggregateRepairDecision::IdentityOnly {
-        prior_generation: prior_generation.clone(),
-        retained_binary_line_maps: retained_maps_ignoring_digest_mismatch(prior, &current_mapped),
-    }
-}
-
-pub(crate) fn retained_maps_ignoring_digest_mismatch(
-    prior: &kiss::rust_llvm_cov_runner::ValidatedCheckAggregate,
-    current_mapped_binary_ids: &BTreeSet<String>,
-) -> BTreeMap<String, kiss::rust_llvm_cov_runner::RustLineCoverage> {
-    prior
-        .binaries
-        .iter()
-        .filter(|(binary_id, _)| current_mapped_binary_ids.contains(*binary_id))
-        .map(|(binary_id, record)| {
-            (
-                binary_id.clone(),
-                kiss::rust_llvm_cov_runner::RustLineCoverage {
-                    files: record.line_map.clone(),
-                },
-            )
-        })
-        .collect()
 }
 
 pub(crate) fn classify_check_aggregate_repair(
