@@ -1,8 +1,9 @@
 use kiss::GateConfig;
 
 use super::witness::{
-    AcceptDecision, AcceptMode, ExecutionWitness, WitnessScope, WitnessStatus, accept_witness,
-    all_misses_warm_skippable, miss_selectors_for_repair, reclassify_statuses_with_gate,
+    accept_witness, all_misses_warm_skippable, identity_covers, miss_selectors_for_repair,
+    reclassify_statuses_with_gate, AcceptDecision, AcceptMode, ExecutionWitness, WitnessScope,
+    WitnessStatus,
 };
 
 fn witness(
@@ -436,6 +437,30 @@ fn gate_derived_timeout_from_raw_pass_is_warm_skippable() {
     );
     w.raw_statuses = vec![WitnessStatus::Passed];
     assert!(all_misses_warm_skippable(&w, &["a".into()]));
+}
+
+#[test]
+fn identity_covers_rejects_shared_input_when_full_digest_differs() {
+    assert!(identity_covers("rs:input:gen:sel", "rs:input:gen:sel"));
+    assert!(
+        !identity_covers("rs:input:gen-a:sel-a", "rs:input:gen-b:sel-b"),
+        "generation/toolchain drift must miss even when the workspace input segment matches"
+    );
+    assert!(
+        !identity_covers("rs:input", "rs:input:gen:sel"),
+        "a shared digest prefix is not identity coverage"
+    );
+    let w = witness(
+        WitnessScope::Full,
+        "rs:input:gen-a:sel-a",
+        &["a"],
+        &[WitnessStatus::Passed],
+        true,
+    );
+    assert_eq!(
+        accept_witness(AcceptMode::All, &["a".into()], "rs:input:gen-b:sel-b", &w),
+        AcceptDecision::Miss("identity")
+    );
 }
 
 #[test]

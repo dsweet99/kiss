@@ -112,4 +112,59 @@ mod tests {
         let timing = identity.timing_context(&req);
         assert_eq!(timing.host_platform, req.host_platform);
     }
+
+    #[test]
+    fn execution_context_drifts_on_global_fields_not_source_or_jobs() {
+        let req = RustCoverageBatchRequest::witness();
+        let tools = witness_batch_tools();
+        let identity = RustCoverageBatchIdentity {
+            input_digest: "global".into(),
+            generation_fingerprint: "gen".into(),
+            selection_context_fingerprint: "sel".into(),
+            ordinary_source_digests: BTreeMap::from([("src/lib.rs".into(), "abc".into())]),
+        };
+        let base = identity.execution_context(&req, &tools);
+
+        let mut source_only = identity.clone();
+        source_only
+            .ordinary_source_digests
+            .insert("src/lib.rs".into(), "zzz".into());
+        assert_eq!(
+            base,
+            source_only.execution_context(&req, &tools),
+            "ordinary source is selector-local, not global context"
+        );
+
+        let mut jobs_only = req.clone();
+        jobs_only.jobs = req.jobs + 3;
+        assert_eq!(
+            base,
+            identity.execution_context(&jobs_only, &tools),
+            "unit-test jobs belong to timing context, not execution identity"
+        );
+        assert_ne!(
+            identity.timing_context(&req),
+            identity.timing_context(&jobs_only)
+        );
+
+        let mut rustc = tools.clone();
+        rustc.rustc_version = "rustc-other".into();
+        assert_ne!(base, identity.execution_context(&req, &rustc));
+
+        let mut env = req.clone();
+        env.env.insert("KISS_CHILD".into(), "1".into());
+        assert_ne!(base, identity.execution_context(&env, &tools));
+
+        let mut runner = req.clone();
+        runner.runner_map_fingerprint = "runner-other".into();
+        assert_ne!(base, identity.execution_context(&runner, &tools));
+
+        let mut args = req.clone();
+        args.test_args.push("--ignored".into());
+        assert_ne!(base, identity.execution_context(&args, &tools));
+
+        let mut compile = identity.clone();
+        compile.selection_context_fingerprint = "sel-other".into();
+        assert_ne!(base, compile.execution_context(&req, &tools));
+    }
 }
