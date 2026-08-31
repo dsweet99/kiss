@@ -41,7 +41,7 @@ pub(crate) fn entry_is_reusable_with_memo(
     expected == entry.covered_digests
 }
 
-fn covered_file_digests_with_memo(
+pub(crate) fn covered_file_digests_with_memo(
     source_root: &Path,
     nodeid: &str,
     coverage: &LineCoverage,

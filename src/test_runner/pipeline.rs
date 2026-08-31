@@ -2,23 +2,23 @@
 mod pipeline_jobs;
 #[cfg(test)]
 pub(crate) use pipeline_jobs::{
-    COVERING_HOOKS, CoveringHooks, EXECUTE_HOOKS, ExecuteHooks, STUB_LANGUAGE_EXECUTE,
-    set_blocked_covering_language, set_fail_covering, unpark_blocked_covering,
+    set_blocked_covering_language, set_fail_covering, unpark_blocked_covering, CoveringHooks,
+    ExecuteHooks, COVERING_HOOKS, EXECUTE_HOOKS, STUB_LANGUAGE_EXECUTE,
 };
 
 use std::time::Instant;
 
 use kiss::Language;
 
-use super::RunTestCmdArgs;
 use super::plan::{
-    AllWorkspaceCache, PlanSelectorsRequest, TargetPlanKind, VcsWorkspace, cover_all_language,
-    plan_selectors_from_workspace, plan_target_selectors, plan_vcs_workspace,
+    cover_all_language, plan_selectors_from_workspace, plan_target_selectors, plan_vcs_workspace,
+    AllWorkspaceCache, PlanSelectorsRequest, TargetPlanKind, VcsWorkspace,
 };
 use super::planned_selectors::{
-    PlannedSelectors, SelectorRunOptions, should_force_cold_initialization,
+    should_force_cold_initialization, PlannedSelectors, SelectorRunOptions,
 };
 use super::run_logic::{finish_joined_run, merge_language_planned, print_joined_dry_run};
+use super::RunTestCmdArgs;
 use crate::bin_cli::args::TestInvocation;
 use crate::test_git::TestChangeMode;
 
@@ -282,62 +282,54 @@ fn change_request<'a>(a: &'a RunTestCmdArgs<'a>) -> PlanSelectorsRequest<'a> {
 }
 
 pub(crate) fn split_jobs(jobs: usize, both: bool) -> (usize, usize) {
+    let full = jobs.max(1);
     if both {
-        let each = (jobs / 2).max(1);
-        (each, each)
+        (full, (jobs / 2).max(1))
     } else {
-        (jobs.max(1), jobs.max(1))
+        (full, full)
     }
 }
 
 #[cfg(test)]
 mod pipeline_tests {
-    use super::{LanguageMayWork, VcsWorkspace, language_paths_may_work, split_jobs};
+    use super::{language_paths_may_work, split_jobs, LanguageMayWork, VcsWorkspace};
     use kiss::Language;
     use std::collections::BTreeMap;
     use std::path::PathBuf;
 
     #[test]
     fn jobs_split_both_languages_and_lang_filter() {
-        assert_eq!(split_jobs(4, true), (2, 2));
+        assert_eq!(split_jobs(4, true), (4, 2));
         assert_eq!(split_jobs(4, false), (4, 4));
         assert_eq!(split_jobs(1, true), (1, 1));
     }
 
     #[test]
     fn vcs_spawn_uses_paths_priors_and_cold_init() {
-        assert!(
-            !LanguageMayWork {
-                paths: false,
-                priors: false,
-                cold_init: false
-            }
-            .yes()
-        );
-        assert!(
-            LanguageMayWork {
-                paths: true,
-                priors: false,
-                cold_init: false
-            }
-            .yes()
-        );
-        assert!(
-            LanguageMayWork {
-                paths: false,
-                priors: true,
-                cold_init: false
-            }
-            .yes()
-        );
-        assert!(
-            LanguageMayWork {
-                paths: false,
-                priors: false,
-                cold_init: true
-            }
-            .yes()
-        );
+        assert!(!LanguageMayWork {
+            paths: false,
+            priors: false,
+            cold_init: false
+        }
+        .yes());
+        assert!(LanguageMayWork {
+            paths: true,
+            priors: false,
+            cold_init: false
+        }
+        .yes());
+        assert!(LanguageMayWork {
+            paths: false,
+            priors: true,
+            cold_init: false
+        }
+        .yes());
+        assert!(LanguageMayWork {
+            paths: false,
+            priors: false,
+            cold_init: true
+        }
+        .yes());
         let ws = VcsWorkspace {
             repo_root: PathBuf::from("."),
             ignore_norm: Vec::new(),

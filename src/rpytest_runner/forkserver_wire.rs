@@ -37,6 +37,22 @@ pub(crate) struct WireRequest {
     pub(crate) timeout_ms: Option<u64>,
 }
 
+#[derive(Serialize)]
+pub(crate) struct WireModuleRequest {
+    pub(crate) op: &'static str,
+    pub(crate) cwd: String,
+    pub(crate) pytest_args: Vec<String>,
+    pub(crate) child_preload_modules: Vec<String>,
+    pub(crate) tests: Vec<WireRequest>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct WireModuleResponse {
+    #[serde(default)]
+    pub(crate) results: Vec<WireResponse>,
+    pub(crate) error: Option<String>,
+}
+
 impl WireRequest {
     pub(crate) fn from_request(id: u64, req: &PytestRunRequest) -> Self {
         Self {

@@ -27,7 +27,17 @@ pub(crate) struct RslipCacheEntry {
 }
 
 impl RslipCacheEntry {
+    #[cfg(test)]
     pub(crate) fn from_outcome(outcome: &RslipOutcome, source_root: &Path) -> Self {
+        let mut memo = DigestMemo::new();
+        Self::from_outcome_with_memo(outcome, source_root, &mut memo)
+    }
+
+    pub(crate) fn from_outcome_with_memo(
+        outcome: &RslipOutcome,
+        source_root: &Path,
+        memo: &mut DigestMemo,
+    ) -> Self {
         Self {
             schema_version: CACHE_SCHEMA_VERSION.to_string(),
             nodeid: outcome.nodeid.clone(),
@@ -35,8 +45,13 @@ impl RslipCacheEntry {
             exit_code: outcome.exit_code,
             duration: outcome.duration,
             coverage: outcome.coverage.clone(),
-            covered_digests: covered_file_digests(source_root, &outcome.nodeid, &outcome.coverage)
-                .unwrap_or_default(),
+            covered_digests: memo::covered_file_digests_with_memo(
+                source_root,
+                &outcome.nodeid,
+                &outcome.coverage,
+                memo,
+            )
+            .unwrap_or_default(),
         }
     }
 }
@@ -83,7 +98,7 @@ pub(crate) fn store_rslip_cache_entry(
         .parent()
         .ok_or_else(|| io::Error::other("cache path has no parent"))?;
     let tmp_path = parent.join(format!(".{}.{}.tmp", fingerprint, rslip_unique_suffix()));
-    crate::kiss_publication_barrier::publish_atomically(
+    crate::kiss_publication_barrier::publish_atomically_without_parent_sync(
         "rslip_selector_entry",
         &path,
         &tmp_path,

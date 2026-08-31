@@ -79,3 +79,45 @@ fn forkserver_timeout_metamorphic_vs_untimed_sleep() {
     );
     assert_eq!(untimed[0].as_ref().unwrap().status, TestStatus::Passed);
 }
+
+#[test]
+fn forkserver_same_module_timeout_does_not_contaminate_later_tests() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::write(
+        tmp.path().join("test_sample.py"),
+        "import time\n\n\
+VALUE = 0\n\n\
+def test_sleep():\n    global VALUE\n    VALUE = 1\n    time.sleep(10)\n\n\
+def test_ok():\n    assert VALUE == 0\n",
+    )
+    .unwrap();
+    let req = |nodeid: &str, timeout| {
+        PytestRunRequest::from_parts(
+            nodeid.to_string(),
+            tmp.path().to_path_buf(),
+            python!(),
+            vec!["-q".to_string()],
+            BTreeMap::new(),
+            Vec::new(),
+            Vec::new(),
+            timeout,
+        )
+    };
+    let outcomes = ForkserverPytestRunner::new().run_many_bounded(
+        vec![
+            req(
+                "test_sample.py::test_sleep",
+                Some(Duration::from_millis(50)),
+            ),
+            req("test_sample.py::test_ok", None),
+        ],
+        1,
+    );
+    assert_eq!(
+        outcomes[0],
+        Err(PytestRunError::Timeout(Duration::from_millis(50)))
+    );
+    let second = outcomes[1].as_ref().unwrap();
+    assert_eq!(second.nodeid, "test_sample.py::test_ok");
+    assert_eq!(second.status, TestStatus::Passed);
+}

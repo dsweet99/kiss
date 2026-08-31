@@ -1,12 +1,13 @@
 use std::collections::BTreeSet;
 
+use crate::rslip::cache::DigestMemo;
 use crate::rslip::{Rslip, RslipError, RslipOutcome};
 
 use super::finalize::{clone_rslip_result, handle_rslip_miss_result};
 use super::lock_chunk::{brief_lock_filter_rslip_miss_groups, coalesce_rslip_miss_candidates};
 use super::pycache::purge_pycache_under;
 use super::{
-    PreparedRslipMisses, RslipBatchProgress, RslipCacheCandidate, RslipMiss, prepare_rslip_misses,
+    prepare_rslip_misses, PreparedRslipMisses, RslipBatchProgress, RslipCacheCandidate, RslipMiss,
 };
 
 fn emit_miss_progress(
@@ -42,18 +43,21 @@ pub(super) fn run_rslip_misses(
         return;
     }
 
-    let source_roots: BTreeSet<_> = runner_misses
-        .iter()
-        .map(|miss| miss.req.source_root.clone())
-        .collect();
-    for root in source_roots {
-        purge_pycache_under(&root);
+    if runner_misses.iter().any(|miss| miss.req.force_rerun) {
+        let source_roots: BTreeSet<_> = runner_misses
+            .iter()
+            .map(|miss| miss.req.source_root.clone())
+            .collect();
+        for root in source_roots {
+            purge_pycache_under(&root);
+        }
     }
     let runner_reqs: Vec<_> = runner_misses
         .iter()
         .map(|miss| miss.runner_req.clone())
         .collect();
     let mut pending: Vec<Option<RslipMiss>> = runner_misses.into_iter().map(Some).collect();
+    let mut digest_memo = DigestMemo::new();
     rslip
         .runner
         .run_many_bounded_with_on_complete(runner_reqs, jobs, &mut |index, result| {
@@ -62,7 +66,9 @@ pub(super) fn run_rslip_misses(
                 .expect("each runner request completes at most once");
             let resolved = miss.indices.len();
             let mut outcomes = Vec::with_capacity(resolved);
-            for (slot_index, slot_result) in handle_rslip_miss_result(miss, result) {
+            for (slot_index, slot_result) in
+                handle_rslip_miss_result(miss, result, &mut digest_memo)
+            {
                 out[slot_index] = Some(clone_rslip_result(&slot_result));
                 seen[slot_index] = true;
                 outcomes.push((slot_index, slot_result));

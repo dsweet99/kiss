@@ -21,7 +21,7 @@ fn print_classified_status_line_uses_emit_test_progress() {
 
 #[test]
 fn jobs_split_matches_process_cap_rule() {
-    assert_eq!(split_jobs(4, true), (2, 2));
+    assert_eq!(split_jobs(4, true), (4, 2));
     assert_eq!(split_jobs(4, false), (4, 4));
     assert_eq!(split_jobs(1, true), (1, 1));
 }

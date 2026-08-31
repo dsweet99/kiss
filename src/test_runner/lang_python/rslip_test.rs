@@ -253,15 +253,20 @@ fn linux_run_rslip_selectors_uses_isolated_forkserver_children() {
     let tmp = tempfile::tempdir().unwrap();
     fs::write(tmp.path().join("stateful.py"), "VALUE = 0\n").unwrap();
     fs::write(
-        tmp.path().join("test_sample.py"),
+        tmp.path().join("test_mutate.py"),
         "import stateful\n\n\
-def test_mutate_global():\n    stateful.VALUE = 1\n    assert stateful.VALUE == 1\n\n\
+def test_mutate_global():\n    stateful.VALUE = 1\n    assert stateful.VALUE == 1\n",
+    )
+    .unwrap();
+    fs::write(
+        tmp.path().join("test_clean.py"),
+        "import stateful\n\n\
 def test_global_starts_clean():\n    assert stateful.VALUE == 0\n",
     )
     .unwrap();
     let selectors = vec![
-        "test_sample.py::test_mutate_global".to_string(),
-        "test_sample.py::test_global_starts_clean".to_string(),
+        "test_mutate.py::test_mutate_global".to_string(),
+        "test_clean.py::test_global_starts_clean".to_string(),
     ];
 
     let summary = run_rslip_selectors(

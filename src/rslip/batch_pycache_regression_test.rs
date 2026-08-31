@@ -77,6 +77,46 @@ fn snapshot_test_pycs(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {
         .collect()
 }
 
+#[test]
+fn ordinary_miss_run_keeps_existing_pycache() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    fs::write(root.join("lib.py"), "def value():\n    return 1\n").unwrap();
+    fs::write(
+        root.join("test_lib.py"),
+        "from lib import value\n\ndef test_value():\n    assert value() == 1\n",
+    )
+    .unwrap();
+    let planted = root.join("__pycache__").join("planted.pyc");
+    fs::create_dir_all(planted.parent().unwrap()).unwrap();
+    fs::write(&planted, b"keep-me").unwrap();
+
+    let python = python();
+    let req = RslipRequest {
+        nodeid: "test_lib.py::test_value".to_string(),
+        cwd: root.to_path_buf(),
+        source_root: root.to_path_buf(),
+        python_version: python_version(&python),
+        python,
+        pytest_version: "8.0.0".to_string(),
+        pytest_args: vec!["-q".to_string()],
+        env: BTreeMap::new(),
+        cache_root: root.join(".rslip_cache"),
+        force_rerun: false,
+        timeout: None,
+        content_fingerprint: None,
+    };
+    let outcome = Rslip::new(forkserver_pytest_runner())
+        .run_or_reuse(req)
+        .unwrap();
+    assert_eq!(outcome.status, TestStatus::Passed);
+    assert_eq!(
+        fs::read(&planted).unwrap(),
+        b"keep-me",
+        "ordinary misses must not wipe existing bytecode"
+    );
+}
+
 fn restore_test_pycs(root: &Path, snapshot: &[(PathBuf, Vec<u8>)]) {
     let pycache = root.join("__pycache__");
     fs::create_dir_all(&pycache).unwrap();

@@ -2,10 +2,10 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
-use crate::rpytest_runner::{PytestRunError, PytestRunOutcome, PytestRunRequest};
+use crate::rpytest_runner::{PytestRunError, PytestRunOutcome, PytestRunRequest, TestStatus};
 
 use crate::rslip::cache::{
-    RslipCacheEntry, load_reusable_rslip_cache_entry, store_rslip_cache_entry,
+    DigestMemo, RslipCacheEntry, load_reusable_rslip_cache_entry, store_rslip_cache_entry,
 };
 use crate::rslip::{
     CacheStatus, RslipError, RslipOutcome, rslip_coverage_from_outcome, rslip_outcome_from_cache,
@@ -16,8 +16,9 @@ use super::RslipMiss;
 pub(super) fn handle_rslip_miss_result(
     miss: RslipMiss,
     result: Result<PytestRunOutcome, PytestRunError>,
+    memo: &mut DigestMemo,
 ) -> Vec<(usize, Result<RslipOutcome, RslipError>)> {
-    let result = handle_rslip_miss_result_once(&miss, result);
+    let result = handle_rslip_miss_result_once(&miss, result, memo);
     miss.indices
         .into_iter()
         .map(|index| (index, clone_rslip_result(&result)))
@@ -51,6 +52,7 @@ fn artifact_cleanup(req: &PytestRunRequest) -> RemoveArtifactsOnDrop {
 fn handle_rslip_miss_result_once(
     miss: &RslipMiss,
     result: Result<PytestRunOutcome, PytestRunError>,
+    memo: &mut DigestMemo,
 ) -> Result<RslipOutcome, RslipError> {
     let _cleanup = artifact_cleanup(&miss.runner_req);
     let outcome = match result {
@@ -84,7 +86,7 @@ fn handle_rslip_miss_result_once(
         stdout: Some(outcome.stdout),
         stderr: Some(outcome.stderr),
     };
-    finalize_cacheable_miss_outcome(miss, rslip_outcome)
+    finalize_cacheable_miss_outcome(miss, rslip_outcome, memo)
 }
 
 fn missing_artifact_stderr(child_stderr: &[u8], name: &str) -> String {
@@ -102,13 +104,7 @@ fn finalize_failed_miss_outcome(
     exit_code: i32,
     stderr: String,
 ) -> Result<RslipOutcome, RslipError> {
-    finalize_status_miss_outcome(
-        miss,
-        crate::rpytest_runner::TestStatus::Failed,
-        duration,
-        exit_code,
-        stderr,
-    )
+    finalize_status_miss_outcome(miss, TestStatus::Failed, duration, exit_code, stderr)
 }
 
 fn finalize_timed_out_miss_outcome(
@@ -117,23 +113,17 @@ fn finalize_timed_out_miss_outcome(
     exit_code: i32,
     stderr: String,
 ) -> Result<RslipOutcome, RslipError> {
-    finalize_status_miss_outcome(
-        miss,
-        crate::rpytest_runner::TestStatus::TimedOut,
-        duration,
-        exit_code,
-        stderr,
-    )
+    finalize_status_miss_outcome(miss, TestStatus::TimedOut, duration, exit_code, stderr)
 }
 
 fn finalize_status_miss_outcome(
     miss: &RslipMiss,
-    status: crate::rpytest_runner::TestStatus,
+    status: TestStatus,
     duration: std::time::Duration,
     exit_code: i32,
     stderr: String,
 ) -> Result<RslipOutcome, RslipError> {
-    let rslip_outcome = RslipOutcome {
+    Ok(RslipOutcome {
         nodeid: miss.req.nodeid.clone(),
         status,
         exit_code: Some(exit_code),
@@ -144,14 +134,17 @@ fn finalize_status_miss_outcome(
         cache_status: CacheStatus::MissStored,
         stdout: None,
         stderr: Some(stderr.into_bytes()),
-    };
-    finalize_cacheable_miss_outcome(miss, rslip_outcome)
+    })
 }
 
 fn finalize_cacheable_miss_outcome(
     miss: &RslipMiss,
     outcome: RslipOutcome,
+    memo: &mut DigestMemo,
 ) -> Result<RslipOutcome, RslipError> {
+    if outcome.status != TestStatus::Passed || outcome.coverage.files.is_empty() {
+        return Ok(outcome);
+    }
     let _guard = crate::rslip::lock_rslip_cache_entry(&miss.req.cache_root, &miss.fingerprint)?;
     if !miss.req.force_rerun
         && let Some(entry) = load_reusable_rslip_cache_entry(
@@ -165,7 +158,7 @@ fn finalize_cacheable_miss_outcome(
     store_rslip_cache_entry(
         &miss.req.cache_root,
         &miss.fingerprint,
-        &RslipCacheEntry::from_outcome(&outcome, &miss.req.source_root),
+        &RslipCacheEntry::from_outcome_with_memo(&outcome, &miss.req.source_root, memo),
     )?;
     Ok(outcome)
 }
@@ -185,21 +178,8 @@ pub(super) fn clone_rslip_error(err: &RslipError) -> RslipError {
         RslipError::Json(err) => {
             RslipError::Json(serde_json::Error::io(io::Error::other(err.to_string())))
         }
-        RslipError::Runner(err) => RslipError::Runner(clone_pytest_error(err)),
+        RslipError::Runner(err) => RslipError::Runner(err.cloned()),
         RslipError::MissingArtifact(name) => RslipError::MissingArtifact(name.clone()),
         RslipError::InvalidRequest(message) => RslipError::InvalidRequest(message.clone()),
-    }
-}
-
-fn clone_pytest_error(err: &PytestRunError) -> PytestRunError {
-    match err {
-        PytestRunError::InvalidRequest(message) => PytestRunError::InvalidRequest(message.clone()),
-        PytestRunError::Protocol(message) => PytestRunError::Protocol(message.clone()),
-        PytestRunError::Spawn { program, message } => PytestRunError::Spawn {
-            program: program.clone(),
-            message: message.clone(),
-        },
-        PytestRunError::Timeout(timeout) => PytestRunError::Timeout(*timeout),
-        PytestRunError::WorkerPanic => PytestRunError::WorkerPanic,
     }
 }

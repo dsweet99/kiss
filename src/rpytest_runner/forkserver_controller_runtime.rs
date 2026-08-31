@@ -8,7 +8,8 @@ use serde::de::DeserializeOwned;
 
 use crate::rpytest_runner::forkserver_controller::FORKSERVER_CONTROLLER;
 use crate::rpytest_runner::forkserver_wire::{
-    WireBootstrap, WireBootstrapResult, WireRequest, WireResponse, WireShutdown,
+    WireBootstrap, WireBootstrapResult, WireModuleRequest, WireModuleResponse, WireRequest,
+    WireResponse, WireShutdown,
 };
 use crate::rpytest_runner::runner::validate_request;
 use crate::rpytest_runner::{PytestBootstrap, PytestRunError, PytestRunOutcome, PytestRunRequest};
@@ -96,6 +97,61 @@ impl ForkserverController {
         self.write_json(&WireRequest::from_request(request_id, &req))?;
         let response: WireResponse = self.read_json()?;
         outcome_from_response(response, request_id, timeout, started)
+    }
+
+    pub(crate) fn run_module(
+        &mut self,
+        reqs: Vec<PytestRunRequest>,
+    ) -> Vec<Result<PytestRunOutcome, PytestRunError>> {
+        if reqs.len() == 1 {
+            return vec![self.run(reqs.into_iter().next().expect("one request"))];
+        }
+        match self.run_module_once(&reqs) {
+            Ok(outcomes) => outcomes,
+            Err(err) => reqs.iter().map(|_| Err(err.cloned())).collect(),
+        }
+    }
+
+    fn run_module_once(
+        &mut self,
+        reqs: &[PytestRunRequest],
+    ) -> Result<Vec<Result<PytestRunOutcome, PytestRunError>>, PytestRunError> {
+        for req in reqs {
+            validate_request(req)?;
+        }
+        let started = Instant::now();
+        let mut tests = Vec::with_capacity(reqs.len());
+        let mut ids = Vec::with_capacity(reqs.len());
+        for req in reqs {
+            let request_id = self.next_id;
+            self.next_id += 1;
+            ids.push((request_id, req.timeout));
+            tests.push(WireRequest::from_request(request_id, req));
+        }
+        let first = reqs.first().expect("module batch is non-empty");
+        self.write_json(&WireModuleRequest {
+            op: "run_module",
+            cwd: first.cwd.to_string_lossy().to_string(),
+            pytest_args: first.pytest_args.clone(),
+            child_preload_modules: first.child_preload_modules.clone(),
+            tests,
+        })?;
+        let response: WireModuleResponse = self.read_json()?;
+        if let Some(error) = response.error {
+            return Err(PytestRunError::Protocol(error));
+        }
+        if response.results.len() != reqs.len() {
+            return Err(PytestRunError::Protocol(format!(
+                "module batch returned {} results for {} requests",
+                response.results.len(),
+                reqs.len()
+            )));
+        }
+        let mut outcomes = Vec::with_capacity(reqs.len());
+        for (response, (request_id, timeout)) in response.results.into_iter().zip(ids) {
+            outcomes.push(outcome_from_response(response, request_id, timeout, started));
+        }
+        Ok(outcomes)
     }
 
     pub(crate) fn shutdown(&mut self) {
@@ -234,3 +290,4 @@ fn outcome_from_response(
             .collect(),
     })
 }
+

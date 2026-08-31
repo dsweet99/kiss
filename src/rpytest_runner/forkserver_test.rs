@@ -105,23 +105,56 @@ fn forkserver_run_many_bounded_isolates_child_module_globals() {
     let tmp = tempfile::tempdir().unwrap();
     fs::write(tmp.path().join("stateful.py"), "VALUE = 0\n").unwrap();
     fs::write(
-        tmp.path().join("test_sample.py"),
+        tmp.path().join("test_mutate.py"),
         "import stateful\n\n\
-def test_mutate_global():\n    stateful.VALUE = 1\n    assert stateful.VALUE == 1\n\n\
+def test_mutate_global():\n    stateful.VALUE = 1\n    assert stateful.VALUE == 1\n",
+    )
+    .unwrap();
+    fs::write(
+        tmp.path().join("test_clean.py"),
+        "import stateful\n\n\
 def test_global_starts_clean():\n    assert stateful.VALUE == 0\n",
     )
     .unwrap();
 
     let outcomes = ForkserverPytestRunner::new().run_many_bounded(
         vec![
-            passing_req(tmp.path(), "test_sample.py::test_mutate_global"),
-            passing_req(tmp.path(), "test_sample.py::test_global_starts_clean"),
+            passing_req(tmp.path(), "test_mutate.py::test_mutate_global"),
+            passing_req(tmp.path(), "test_clean.py::test_global_starts_clean"),
         ],
         1,
     );
 
     assert_eq!(outcomes[0].as_ref().unwrap().status, TestStatus::Passed);
     assert_eq!(outcomes[1].as_ref().unwrap().status, TestStatus::Passed);
+}
+
+#[test]
+fn forkserver_run_many_same_module_batch_preserves_order() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::write(
+        tmp.path().join("test_sample.py"),
+        "def test_a():\n    assert True\n\n\
+def test_b():\n    assert True\n\n\
+def test_c():\n    assert True\n",
+    )
+    .unwrap();
+
+    let outcomes = ForkserverPytestRunner::new().run_many_bounded(
+        vec![
+            passing_req(tmp.path(), "test_sample.py::test_a"),
+            passing_req(tmp.path(), "test_sample.py::test_b"),
+            passing_req(tmp.path(), "test_sample.py::test_c"),
+        ],
+        1,
+    );
+
+    assert_eq!(outcomes.len(), 3);
+    assert_eq!(outcomes[0].as_ref().unwrap().status, TestStatus::Passed);
+    assert_eq!(outcomes[1].as_ref().unwrap().status, TestStatus::Passed);
+    assert_eq!(outcomes[2].as_ref().unwrap().status, TestStatus::Passed);
+    assert_eq!(outcomes[0].as_ref().unwrap().nodeid, "test_sample.py::test_a");
+    assert_eq!(outcomes[1].as_ref().unwrap().nodeid, "test_sample.py::test_b");
 }
 
 #[test]

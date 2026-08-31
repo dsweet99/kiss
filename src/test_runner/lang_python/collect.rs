@@ -1,11 +1,11 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 #[cfg(test)]
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 
-use kiss::rpytest_runner::{PytestCollectRequest, collect_pytest_nodeids};
+use kiss::rpytest_runner::{collect_pytest_nodeids, PytestCollectRequest};
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 struct CollectMemoKey {
@@ -104,14 +104,8 @@ pub(crate) fn collect_python_nodeids(
         #[cfg(test)]
         FULL_SUITE_SUBPROCESS_COLLECTS.fetch_add(1, Ordering::SeqCst);
     }
-    let req = PytestCollectRequest {
-        cwd: repo_root.to_path_buf(),
-        python: PathBuf::from("python"),
-        paths: normalized_paths,
-        pytest_args: pytest_args.to_vec(),
-        env: BTreeMap::new(),
-    };
-    let outcome = collect_pytest_nodeids(req).map_err(format_collect_error)?;
+    let outcome = collect_pytest_nodeids_maybe_sharded(repo_root, &normalized_paths, pytest_args)
+        .map_err(format_collect_error)?;
     persist_collection_audit(repo_root, &outcome.observed_workspace);
     if !outcome.unsupported_external {
         COLLECT_MEMO
@@ -120,6 +114,144 @@ pub(crate) fn collect_python_nodeids(
             .insert(key, outcome.nodeids.clone());
     }
     Ok(outcome.nodeids)
+}
+
+const COLLECT_SHARD_PATH_THRESHOLD: usize = 64;
+
+fn collect_shard_count(path_count: usize) -> usize {
+    if path_count < COLLECT_SHARD_PATH_THRESHOLD {
+        return 1;
+    }
+    let cpus = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4)
+        .clamp(2, 16);
+    cpus.min(path_count / 16).max(2)
+}
+
+fn shard_collect_paths(paths: &[PathBuf], shard_count: usize) -> Vec<Vec<PathBuf>> {
+    if shard_count <= 1 || paths.len() <= 1 {
+        return vec![paths.to_vec()];
+    }
+    let mut groups: BTreeMap<PathBuf, Vec<PathBuf>> = BTreeMap::new();
+    for path in paths {
+        let key = path.parent().unwrap_or(path).to_path_buf();
+        groups.entry(key).or_default().push(path.clone());
+    }
+    let mut shards = vec![Vec::new(); shard_count];
+    let mut sizes = vec![0usize; shard_count];
+    let mut grouped: Vec<Vec<PathBuf>> = groups.into_values().collect();
+    grouped.sort_by_key(|g| std::cmp::Reverse(g.len()));
+    for group in grouped {
+        let (idx, _) = sizes
+            .iter()
+            .enumerate()
+            .min_by_key(|(_, n)| **n)
+            .expect("shard bins");
+        sizes[idx] += group.len();
+        shards[idx].extend(group);
+    }
+    shards.retain(|shard| !shard.is_empty());
+    shards
+}
+
+fn collect_one_path_set(
+    repo_root: &Path,
+    paths: Vec<PathBuf>,
+    pytest_args: &[String],
+) -> Result<kiss::rpytest_runner::PytestCollectOutcome, kiss::rpytest_runner::PytestCollectError> {
+    collect_pytest_nodeids(PytestCollectRequest {
+        cwd: repo_root.to_path_buf(),
+        python: PathBuf::from("python"),
+        paths,
+        pytest_args: pytest_args.to_vec(),
+        env: BTreeMap::new(),
+    })
+}
+
+fn merge_collect_outcomes(
+    outcomes: Vec<kiss::rpytest_runner::PytestCollectOutcome>,
+) -> kiss::rpytest_runner::PytestCollectOutcome {
+    let mut nodeids = Vec::new();
+    let mut observed_workspace = Vec::new();
+    let mut unsupported_external = false;
+    for outcome in outcomes {
+        nodeids.extend(outcome.nodeids);
+        observed_workspace.extend(outcome.observed_workspace);
+        unsupported_external |= outcome.unsupported_external;
+    }
+    nodeids.sort();
+    nodeids.dedup();
+    observed_workspace.sort();
+    observed_workspace.dedup();
+    kiss::rpytest_runner::PytestCollectOutcome {
+        nodeids,
+        observed_workspace,
+        unsupported_external,
+    }
+}
+
+fn collect_pytest_nodeids_maybe_sharded(
+    repo_root: &Path,
+    normalized_paths: &[PathBuf],
+    pytest_args: &[String],
+) -> Result<kiss::rpytest_runner::PytestCollectOutcome, kiss::rpytest_runner::PytestCollectError> {
+    let shard_count = collect_shard_count(normalized_paths.len());
+    if shard_count <= 1 {
+        return collect_one_path_set(repo_root, normalized_paths.to_vec(), pytest_args);
+    }
+    let shards = shard_collect_paths(normalized_paths, shard_count);
+    let outcomes = collect_shards_in_parallel(repo_root, shards, pytest_args)?;
+    Ok(merge_collect_outcomes(outcomes))
+}
+
+fn collect_shards_in_parallel(
+    repo_root: &Path,
+    shards: Vec<Vec<PathBuf>>,
+    pytest_args: &[String],
+) -> Result<Vec<kiss::rpytest_runner::PytestCollectOutcome>, kiss::rpytest_runner::PytestCollectError>
+{
+    std::thread::scope(|scope| {
+        join_collect_shards(spawn_collect_shards(scope, repo_root, shards, pytest_args))
+    })
+}
+
+fn spawn_collect_shards<'scope>(
+    scope: &'scope std::thread::Scope<'scope, '_>,
+    repo_root: &'scope Path,
+    shards: Vec<Vec<PathBuf>>,
+    pytest_args: &'scope [String],
+) -> Vec<
+    std::thread::ScopedJoinHandle<
+        'scope,
+        Result<
+            kiss::rpytest_runner::PytestCollectOutcome,
+            kiss::rpytest_runner::PytestCollectError,
+        >,
+    >,
+> {
+    shards
+        .into_iter()
+        .map(|shard| scope.spawn(move || collect_one_path_set(repo_root, shard, pytest_args)))
+        .collect()
+}
+
+fn join_collect_shards(
+    handles: Vec<
+        std::thread::ScopedJoinHandle<
+            '_,
+            Result<
+                kiss::rpytest_runner::PytestCollectOutcome,
+                kiss::rpytest_runner::PytestCollectError,
+            >,
+        >,
+    >,
+) -> Result<Vec<kiss::rpytest_runner::PytestCollectOutcome>, kiss::rpytest_runner::PytestCollectError>
+{
+    handles
+        .into_iter()
+        .map(|handle| handle.join().expect("pytest collect shard"))
+        .collect()
 }
 
 fn normalize_collect_paths(paths: &[PathBuf]) -> Vec<PathBuf> {
@@ -191,6 +323,64 @@ pub(crate) fn full_suite_subprocess_collects_for_tests() -> usize {
 #[allow(dead_code)]
 pub(crate) fn reset_full_suite_subprocess_collects_for_tests() {
     FULL_SUITE_SUBPROCESS_COLLECTS.store(0, Ordering::SeqCst);
+}
+
+#[cfg(test)]
+mod shard_tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn collect_shard_count_stays_one_below_threshold() {
+        assert_eq!(collect_shard_count(COLLECT_SHARD_PATH_THRESHOLD - 1), 1);
+        assert!(collect_shard_count(COLLECT_SHARD_PATH_THRESHOLD) >= 2);
+    }
+
+    #[test]
+    fn shard_collect_paths_keeps_sibling_files_together() {
+        let mut paths = Vec::new();
+        for dir in ["a", "b"] {
+            for i in 0..4 {
+                paths.push(PathBuf::from(format!("{dir}/t{i}.py")));
+            }
+        }
+        let shards = shard_collect_paths(&paths, 2);
+        assert_eq!(shards.len(), 2);
+        for shard in &shards {
+            let parents: BTreeSet<_> = shard
+                .iter()
+                .map(|path| path.parent().unwrap().to_path_buf())
+                .collect();
+            assert_eq!(parents.len(), 1, "siblings stay in one shard: {shard:?}");
+        }
+        let total: usize = shards.iter().map(Vec::len).sum();
+        assert_eq!(total, paths.len());
+    }
+
+    #[test]
+    fn merge_collect_outcomes_dedups_and_unions_flags() {
+        let merged = merge_collect_outcomes(vec![
+            kiss::rpytest_runner::PytestCollectOutcome {
+                nodeids: vec!["t.py::a".into(), "t.py::b".into()],
+                observed_workspace: vec!["t.py".into()],
+                unsupported_external: false,
+            },
+            kiss::rpytest_runner::PytestCollectOutcome {
+                nodeids: vec!["t.py::b".into(), "u.py::c".into()],
+                observed_workspace: vec!["u.py".into()],
+                unsupported_external: true,
+            },
+        ]);
+        assert_eq!(
+            merged.nodeids,
+            vec!["t.py::a".to_string(), "t.py::b".into(), "u.py::c".into()]
+        );
+        assert_eq!(
+            merged.observed_workspace,
+            vec!["t.py".to_string(), "u.py".into()]
+        );
+        assert!(merged.unsupported_external);
+    }
 }
 
 #[cfg(test)]
