@@ -1,43 +1,49 @@
-use syn::visit::Visit;
 use syn::UseTree;
+use syn::visit::Visit;
 
-pub(crate) fn collect_file_use_binds(ast: &syn::File) -> Vec<(String, String)> {
+pub(crate) fn collect_file_use_binds(ast: &syn::File) -> Vec<(String, String, usize)> {
     let mut visitor = UseBindVisitor { out: Vec::new() };
     visitor.visit_file(ast);
     visitor.out
 }
 
 struct UseBindVisitor {
-    out: Vec<(String, String)>,
+    out: Vec<(String, String, usize)>,
 }
 
 impl<'ast> Visit<'ast> for UseBindVisitor {
     fn visit_item_use(&mut self, node: &'ast syn::ItemUse) {
         let mut prefix = Vec::new();
-        collect_use_binds(&node.tree, &mut prefix, &mut self.out);
+        let line = syn::spanned::Spanned::span(&node.tree).start().line;
+        collect_use_binds(&node.tree, &mut prefix, line, &mut self.out);
         syn::visit::visit_item_use(self, node);
     }
 }
 
-fn collect_use_binds(tree: &UseTree, prefix: &mut Vec<String>, out: &mut Vec<(String, String)>) {
+fn collect_use_binds(
+    tree: &UseTree,
+    prefix: &mut Vec<String>,
+    line: usize,
+    out: &mut Vec<(String, String, usize)>,
+) {
     match tree {
         UseTree::Path(path) => {
             prefix.push(path.ident.to_string());
-            collect_use_binds(&path.tree, prefix, out);
+            collect_use_binds(&path.tree, prefix, line, out);
             prefix.pop();
         }
-        UseTree::Name(name) => push_bind(prefix, name.ident.to_string(), out),
-        UseTree::Rename(rename) => push_bind(prefix, rename.ident.to_string(), out),
+        UseTree::Name(name) => push_bind(prefix, name.ident.to_string(), line, out),
+        UseTree::Rename(rename) => push_bind(prefix, rename.ident.to_string(), line, out),
         UseTree::Glob(_) => {}
         UseTree::Group(group) => {
             for item in &group.items {
-                collect_use_binds(item, prefix, out);
+                collect_use_binds(item, prefix, line, out);
             }
         }
     }
 }
 
-fn push_bind(prefix: &[String], last: String, out: &mut Vec<(String, String)>) {
+fn push_bind(prefix: &[String], last: String, line: usize, out: &mut Vec<(String, String, usize)>) {
     let module_prefix = prefix
         .iter()
         .filter(|seg| !matches!(seg.as_str(), "self" | "super" | "crate"))
@@ -47,7 +53,7 @@ fn push_bind(prefix: &[String], last: String, out: &mut Vec<(String, String)>) {
     if module_prefix.is_empty() {
         return;
     }
-    out.push((module_prefix, last));
+    out.push((module_prefix, last, line));
 }
 
 #[cfg(test)]
@@ -56,6 +62,9 @@ mod use_binds_test {
 
     fn binds(src: &str) -> Vec<(String, String)> {
         collect_file_use_binds(&syn::parse_file(src).unwrap())
+            .into_iter()
+            .map(|(prefix, last, _line)| (prefix, last))
+            .collect()
     }
 
     #[test]

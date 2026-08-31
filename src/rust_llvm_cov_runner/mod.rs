@@ -58,6 +58,10 @@ pub(crate) use execute_or_reuse::batch_shim_lookup;
 pub(crate) use execute_or_reuse::batch_shim_synthesize;
 pub(crate) use execute_or_reuse::batch_warm_hit_seal;
 pub(crate) use execute_or_reuse::llvm_cov_json;
+pub use execute_or_reuse::progress::{
+    clear_live_rust_test_hook, emit_progress, install_live_rust_test_hook, live_rust_was_printed,
+    mark_live_rust_printed, set_live_rust_error, take_live_rust_error,
+};
 pub(crate) use execute_or_reuse::worker;
 #[cfg(test)]
 pub(crate) use execute_or_reuse::worker_cleanup_test;
@@ -146,7 +150,14 @@ pub use batch_events::{
     parse_batch_event_stream, selector_matches_test,
 };
 pub use batch_executable_index::{RustTestExecutableIndex, build_rust_test_executable_index};
-pub use batch_executor::execute_rust_coverage_batch;
+pub use batch_executor::{
+    execute_rust_coverage_batch, lock_and_hold_batch, try_lock_and_hold_batch,
+};
+pub(crate) use batch_executor::{
+    execute_rust_coverage_batch_with_held_lock, install_held_batch_lock,
+};
+#[cfg(test)]
+pub(crate) use batch_executor::{lock_batch_call_count, reset_lock_batch_call_count};
 #[cfg(test)]
 pub use batch_export::FakeInstanceExporter;
 pub use batch_export::{
@@ -157,8 +168,11 @@ pub use batch_export_resolve::BinaryIdObjectMap;
 pub use batch_export_tools::{
     ExportTools, resolve_export_tools_from_env, resolve_export_tools_from_rustc,
 };
+#[cfg(test)]
+pub use batch_fingerprint::identity_memo_hash_count;
 pub use batch_fingerprint::{
-    RustCoverageBatchIdentity, RustCoverageToolIdentity, batch_identity, entry_fingerprint,
+    RustCoverageBatchIdentity, RustCoverageToolIdentity, batch_identity, begin_identity_memo,
+    entry_fingerprint,
 };
 pub use batch_plan::{
     CheckAggregateRepairPublication, CoverageOutputMode, RustCoverageBatchPlan,

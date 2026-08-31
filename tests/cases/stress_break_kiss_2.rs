@@ -22,7 +22,7 @@ fn h4_fully_connected_graph_100_nodes() {
     }
 
     let config = Config::python_defaults();
-    let viols = analyze_graph(&g, &config, true);
+    let viols = analyze_graph(&g, &config);
 
     let metrics = g.module_metrics("mod_0");
     assert_eq!(
@@ -95,7 +95,7 @@ fn h5_same_file_two_paths_in_graph() {
     g.add_dependency("main", "utils");
 
     let config = Config::python_defaults();
-    let viols = analyze_graph(&g, &config, true);
+    let viols = analyze_graph(&g, &config);
 
     let orphan_viols: Vec<_> = viols
         .iter()

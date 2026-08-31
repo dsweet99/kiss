@@ -36,9 +36,7 @@ pub(crate) fn cached_summary_from_check_aggregate_population(
         let Some(duration) = duration_by_selector.get(selector).copied() else {
             return Ok(None);
         };
-        if crate::test_runner::check_runtime_refresh::test_runner_stdout_enabled() {
-            println!("PASS (cached): {report}");
-        }
+        crate::test_runner::emit_test_progress(&format!("PASS (cached): {report}"));
         summary.record(SelectorExecutionRecord {
             selector: report,
             status: kiss::rpytest_runner::TestStatus::Passed,
@@ -106,10 +104,10 @@ pub(crate) fn finish_rust_coverage_batch_result(
                 cached_pass += 1;
             }
         }
-        if cached_pass > 0
-            && crate::test_runner::check_runtime_refresh::test_runner_stdout_enabled()
-        {
-            println!("PASS (cached): {cached_pass} selectors");
+        if cached_pass > 0 {
+            crate::test_runner::emit_test_progress(&format!(
+                "PASS (cached): {cached_pass} selectors"
+            ));
         }
     }
     for outcome in &result.completed {
@@ -118,7 +116,14 @@ pub(crate) fn finish_rust_coverage_batch_result(
             &outcome.selector,
         )?;
         let raw = outcome.status;
-        let effective = if emit_each
+        let effective = if kiss::rust_llvm_cov_runner::live_rust_was_printed(&report_id) {
+            crate::test_runner::status_labels::apply_unit_test_time_limit(
+                outcome.status,
+                &report_id,
+                outcome.duration,
+                gate,
+            )
+        } else if emit_each
             || !matches!(outcome.cache_status, RustCovCacheStatus::Hit)
             || outcome.status != kiss::rpytest_runner::TestStatus::Passed
         {

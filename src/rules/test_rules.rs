@@ -23,6 +23,6 @@ pub(super) const TEST_RULE_SPECS: &[RuleSpec] = &[
         metric: "orphan",
         op: ThresholdOp::Equal,
         threshold: ThresholdValue::Usize(|_, _| 0),
-        description: "orphan flags a production code unit (module, function, method, or class) that nothing in this repository uses: no named import/use and no runtime coverable line ran. Requires a coverage snapshot; a missing snapshot is not evaluated. Enforced by kiss test after tests pass and coverage is complete, when orphan_detection=true (default false). Entries, tests, orphan_allowed paths, and empty __init__.py module units are not candidates.",
+        description: "orphan flags a production code unit (module, function, method, or class) that flood-fill never reaches from tests, mains, or coverage-reached units. Enforced by kiss test after tests pass and coverage is complete, when orphan_detection=true (default false). kiss check does not run orphan detection. Entries, tests, trait-impl methods, orphan_allowed paths, and __init__.py / mod.rs module units are not candidates.",
     },
 ];

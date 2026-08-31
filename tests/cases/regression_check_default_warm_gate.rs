@@ -171,7 +171,7 @@ fn kiss_check_ignores_seeded_below_threshold_runtime_coverage() {
 
     fs::write(
         repo.path().join(".kissconfig"),
-        "[global]\nduplication_enabled = false\norphan_module_enabled = false\n[test]\ntest_coverage_threshold = 100\n[python]\n[rust]\n",
+        "[global]\nduplication_enabled = false\n[test]\ntest_coverage_threshold = 100\n[python]\n[rust]\n",
     )
     .unwrap();
     fs::write(

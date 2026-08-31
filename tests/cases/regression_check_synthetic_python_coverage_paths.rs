@@ -12,7 +12,6 @@ fn synthetic_python_runtime_coverage_paths_do_not_make_check_malformed() {
         repo.path().join(".kissconfig"),
         "[global]\n\
          duplication_enabled = false\n\
-         orphan_module_enabled = false\n\
 \n\
 [test]\n\
          test_coverage_threshold = 100\n\
@@ -65,7 +64,6 @@ fn seeded_python_runtime_coverage_becomes_stale_after_source_change() {
         repo.path().join(".kissconfig"),
         "[global]\n\
          duplication_enabled = false\n\
-         orphan_module_enabled = false\n\
 \n\
 [test]\n\
          test_coverage_threshold = 100\n\
@@ -133,7 +131,6 @@ fn cold_python_check_refreshes_runtime_coverage_and_warm_check_reuses_cache() {
         repo.path().join(".kissconfig"),
         "[global]\n\
          duplication_enabled = false\n\
-         orphan_module_enabled = false\n\
 \n\
 [test]\n\
          test_coverage_threshold = 100\n\
@@ -277,7 +274,6 @@ fn write_refreshable_python_repo(repo: &TempDir, assertion: &str) {
         repo.path().join(".kissconfig"),
         "[global]\n\
          duplication_enabled = false\n\
-         orphan_module_enabled = false\n\
 \n\
 [test]\n\
          test_coverage_threshold = 100\n\

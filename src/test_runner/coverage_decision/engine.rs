@@ -134,7 +134,11 @@ fn plan_population(
     planner: &dyn LanguagePlanner,
     changed_tests: Vec<TestSelector>,
 ) -> Result<(BTreeSet<TestSelector>, BTreeSet<TestSelector>, bool), String> {
-    let universe = planner.discover_universe()?;
+    let universe = if planner.language() == kiss::Language::Rust {
+        crate::test_runner::rust_list_build::overlap_with_discover(|| planner.discover_universe())?
+    } else {
+        planner.discover_universe()?
+    };
     let universe_ids = universe
         .iter()
         .map(|selector| selector.id.clone())

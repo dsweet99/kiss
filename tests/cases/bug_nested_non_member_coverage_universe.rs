@@ -40,7 +40,6 @@ fn write_nested_workspace_repo(root: &std::path::Path) {
         root.join(".kissconfig"),
         "[global]\n\
          duplication_enabled = false\n\
-         orphan_module_enabled = false\n\
 \n\
 [test]\n\
          test_coverage_threshold = 75\n\

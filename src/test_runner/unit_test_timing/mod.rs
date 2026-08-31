@@ -278,7 +278,8 @@ pub(crate) fn codebase_test_count_for_cov(
     ignore: &[String],
     pytest_args: &[String],
 ) -> Option<usize> {
-    if let Some(n) = cheap_codebase_test_count(universe, lang_filter, include, ignore, pytest_args) {
+    if let Some(n) = cheap_codebase_test_count(universe, lang_filter, include, ignore, pytest_args)
+    {
         return Some(n);
     }
     match collect_current_unit_test_timings(TimingCollectOpts {

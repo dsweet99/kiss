@@ -41,7 +41,6 @@ fn write_mixed_runtime_repo(repo: &TempDir) {
         repo.path().join(".kissconfig"),
         "[global]\n\
          duplication_enabled = false\n\
-         orphan_module_enabled = false\n\
 \n\
 [test]\n\
          test_coverage_threshold = 100\n\

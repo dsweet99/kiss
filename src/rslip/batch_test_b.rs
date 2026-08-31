@@ -1,7 +1,9 @@
 use super::*;
-use crate::rslip::batch::{PreparedRslipMisses, RslipCacheCandidate, RslipCacheCandidateGroup, RslipMiss};
 use crate::rpytest_runner::{
     PytestRunOutcome, PytestRunRequest, PytestRunner, RequestedArtifact, forkserver_pytest_runner,
+};
+use crate::rslip::batch::{
+    PreparedRslipMisses, RslipCacheCandidate, RslipCacheCandidateGroup, RslipMiss,
 };
 use std::cell::Cell;
 use std::collections::BTreeMap;

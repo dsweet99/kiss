@@ -65,6 +65,22 @@ fn expand_honors_lang_and_ignore() {
 }
 
 #[test]
+fn expand_lang_filter_on_other_language_dir_is_empty_not_zero_files() {
+    let tmp = tempdir().unwrap();
+    init_git_repo(tmp.path());
+    let dir = tmp.path().join("nested");
+    fs::create_dir_all(dir.join("src")).unwrap();
+    fs::write(dir.join("src").join("lib.rs"), "pub fn n() {}\n").unwrap();
+    let expanded =
+        expand_target_operands(tmp.path(), &["nested".into()], &[], Some(Language::Python))
+            .unwrap();
+    match expanded {
+        ExpandedTargetPlan::Files(files) => assert!(files.is_empty(), "{files:?}"),
+        ExpandedTargetPlan::All => panic!("expected empty files, not all"),
+    }
+}
+
+#[test]
 fn expand_empty_and_missing_fail_fast() {
     let tmp = tempdir().unwrap();
     init_git_repo(tmp.path());

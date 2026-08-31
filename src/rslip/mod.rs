@@ -40,12 +40,12 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use cache::rslip_unique_suffix;
-pub use cache::{is_kiss_rslip_cache_dir, is_rslip_cache_input, should_skip_rslip_dir};
-pub use lock::{LocalRslipLockGuard, lock_rslip_cache_entry, lock_rslip_derived_state};
 use crate::rpytest_runner::{
     PytestRunError, PytestRunOutcome, PytestRunRequest, PytestRunner, RequestedArtifact, TestStatus,
 };
+use cache::rslip_unique_suffix;
+pub use cache::{is_kiss_rslip_cache_dir, is_rslip_cache_input, should_skip_rslip_dir};
+pub use lock::{LocalRslipLockGuard, lock_rslip_cache_entry, lock_rslip_derived_state};
 use serde::{Deserialize, Serialize};
 
 pub const CACHE_SCHEMA_VERSION: &str = "rslip-cache-v3";

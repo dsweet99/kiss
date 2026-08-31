@@ -21,10 +21,58 @@ pub struct RustCoverageBatchIdentity {
     pub ordinary_source_digests: BTreeMap<String, String>,
 }
 
+thread_local! {
+    static IDENTITY_MEMO: std::cell::RefCell<IdentityMemo> =
+        const { std::cell::RefCell::new(IdentityMemo::new()) };
+}
+
+struct IdentityMemo {
+    enabled: bool,
+    value: Option<RustCoverageBatchIdentity>,
+    hash_count: usize,
+}
+
+impl IdentityMemo {
+    const fn new() -> Self {
+        Self {
+            enabled: false,
+            value: None,
+            hash_count: 0,
+        }
+    }
+}
+
+pub fn begin_identity_memo() {
+    IDENTITY_MEMO.with(|memo| {
+        let mut memo = memo.borrow_mut();
+        *memo = IdentityMemo {
+            enabled: true,
+            value: None,
+            hash_count: 0,
+        };
+    });
+}
+
+#[cfg(test)]
+pub fn identity_memo_hash_count() -> usize {
+    IDENTITY_MEMO.with(|memo| memo.borrow().hash_count)
+}
+
 pub fn batch_identity(
     req: &RustCoverageBatchRequest,
     tools: &RustCoverageToolIdentity,
 ) -> io::Result<RustCoverageBatchIdentity> {
+    if let Some(cached) = IDENTITY_MEMO.with(|memo| {
+        let memo = memo.borrow();
+        (memo.enabled).then(|| memo.value.clone()).flatten()
+    }) {
+        return Ok(cached);
+    }
+    IDENTITY_MEMO.with(|memo| {
+        if memo.borrow().enabled {
+            memo.borrow_mut().hash_count += 1;
+        }
+    });
     let snapshot = rust_input_snapshot(&req.source_root, req)
         .map_err(|err| io::Error::other(format!("{err:?}")))?;
     let generation_fingerprint = generation_fingerprint(
@@ -52,7 +100,36 @@ pub fn batch_identity(
         tools,
         &identity,
     );
+    IDENTITY_MEMO.with(|memo| {
+        let mut memo = memo.borrow_mut();
+        if memo.enabled {
+            memo.value = Some(identity.clone());
+        }
+    });
     Ok(identity)
+}
+
+#[cfg(test)]
+mod identity_memo_test {
+    use super::{batch_identity, begin_identity_memo, identity_memo_hash_count};
+
+    #[test]
+    fn begin_identity_memo_hashes_once_across_repeats() {
+        begin_identity_memo();
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+        std::fs::write(tmp.path().join("Cargo.toml"), "[package]\n").unwrap();
+        std::fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
+        let mut req =
+            crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
+        req.source_root = tmp.path().to_path_buf();
+        req.cwd = tmp.path().to_path_buf();
+        req.cache_root = tmp.path().join(".kiss").join("rust_llvm_cov_cache");
+        let tools = crate::rust_llvm_cov_runner::test_support::witness_batch_tools();
+        let _ = batch_identity(&req, &tools).unwrap();
+        let _ = batch_identity(&req, &tools).unwrap();
+        assert_eq!(identity_memo_hash_count(), 1);
+    }
 }
 
 pub fn entry_fingerprint(

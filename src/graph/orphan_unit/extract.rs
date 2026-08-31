@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::graph::orphan_unit::UnitRef;
 use crate::graph::{
-    ContextDependencyGraph, extract_imports_for_cache, module_name_for_path, qualified_module_name,
+    ContextDependencyGraph, extract_imports_spanned, module_name_for_path, qualified_module_name,
     resolve_import,
 };
 use crate::parsing::ParsedFile;
@@ -67,6 +67,8 @@ fn enclosing_class(
 }
 
 pub(super) struct NamedBind {
+    pub file: PathBuf,
+    pub line: usize,
     pub target_module: String,
     pub last: String,
 }
@@ -98,19 +100,24 @@ fn python_binds(py: &[ParsedFile], ctx: &ContextDependencyGraph) -> Vec<NamedBin
         let importer = module_name_for_path(ctx, &parsed.path)
             .unwrap_or_else(|| qualified_module_name(&parsed.path));
         let parent = importer.rsplit_once('.').map(|(p, _)| p);
-        let imports = extract_imports_for_cache(parsed.tree.root_node(), &parsed.source);
-        for spec in imports {
+        let imports = extract_imports_spanned(parsed.tree.root_node(), &parsed.source);
+        for (spec, span) in imports {
             let Some((prefix, last)) = split_nested(&spec) else {
                 continue;
             };
+            let line = span.start.line;
             for resolved in resolve_import(&prefix, parent, &bare) {
                 out.push(NamedBind {
+                    file: parsed.path.clone(),
+                    line,
                     target_module: resolved,
                     last: last.clone(),
                 });
             }
             if prod.nodes.contains_key(&prefix) {
                 out.push(NamedBind {
+                    file: parsed.path.clone(),
+                    line,
                     target_module: prefix,
                     last,
                 });
@@ -126,11 +133,13 @@ fn rust_binds(rs: &[ParsedRustFile], ctx: &ContextDependencyGraph) -> Vec<NamedB
     let mut out = Vec::new();
     for parsed in rs {
         let current = module_name_for_path(ctx, &parsed.path);
-        for (prefix, last) in collect_file_use_binds(&parsed.ast) {
+        for (prefix, last, line) in collect_file_use_binds(&parsed.ast) {
             if let Some(module) =
                 resolve_rust_prefix_from(&prefix, current.as_deref(), &prod, &last_idx)
             {
                 out.push(NamedBind {
+                    file: parsed.path.clone(),
+                    line,
                     target_module: module,
                     last,
                 });

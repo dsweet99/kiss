@@ -32,10 +32,10 @@ pub mod parsing;
 pub mod stats;
 pub mod stats_detailed;
 pub mod symbol_mv;
+pub mod test_cache_policy;
 pub mod test_refs;
 pub mod test_section_config;
 pub(crate) mod test_toml;
-pub mod test_cache_policy;
 pub mod units;
 
 pub mod code_roles;
@@ -92,10 +92,10 @@ pub use gate_config::{
 };
 pub use graph::{
     ContextDependencyGraph, CycleInfo, DependencyGraph, EdgeOrigin, GraphKeyMaxima,
-    ModuleGraphMetrics, RoleDependencyGraphs, analyze_graph, build_dependency_graph,
-    build_python_context_graph, collect_orphan_entry_paths, compute_cyclomatic_complexity,
-    graph_key_maxima, module_name_for_path, orphan_unit_violations, orphan_violations,
-    path_for_module_name, OrphanCoverage, OrphanUnitInput,
+    ModuleGraphMetrics, OrphanCoverage, OrphanUnitInput, RoleDependencyGraphs, analyze_graph,
+    build_dependency_graph, build_python_context_graph, collect_orphan_entry_callables,
+    collect_orphan_entry_paths, compute_cyclomatic_complexity, graph_key_maxima,
+    module_name_for_path, orphan_unit_violations, orphan_violations, path_for_module_name,
 };
 pub use layout_cycles::{CycleBreakSuggestion, LayoutCycleAnalysis, analyze_cycles};
 pub use layout_layers::{LayerInfo, compute_layers};

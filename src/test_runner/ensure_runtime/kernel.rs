@@ -125,12 +125,8 @@ fn reclassify_loaded_witness(
         Err(err) if module.language() == Language::Python => return Err(err),
         Err(_) => w.selectors.clone(),
     };
-    w.statuses = reclassify_statuses_with_gate(
-        &gate_selectors,
-        &w.raw_statuses,
-        &w.durations_ns,
-        gate,
-    );
+    w.statuses =
+        reclassify_statuses_with_gate(&gate_selectors, &w.raw_statuses, &w.durations_ns, gate);
     Ok(())
 }
 
@@ -272,7 +268,8 @@ fn union_incomparable_timing_misses(
     witness: &Option<crate::test_runner::lang_iface::ExecutionWitness>,
     misses: &mut Vec<String>,
 ) {
-    if request.gate.unit_test_time_gate_disabled() || timing_context_matches(request, module.language())
+    if request.gate.unit_test_time_gate_disabled()
+        || timing_context_matches(request, module.language())
     {
         return;
     }
@@ -283,7 +280,11 @@ fn union_incomparable_timing_misses(
         .iter()
         .filter_map(|sel| {
             let i = witness.selectors.iter().position(|s| s == sel)?;
-            let raw = witness.raw_statuses.get(i).copied().unwrap_or(witness.statuses[i]);
+            let raw = witness
+                .raw_statuses
+                .get(i)
+                .copied()
+                .unwrap_or(witness.statuses[i]);
             if raw == crate::test_runner::lang_iface::WitnessStatus::Passed
                 && witness.durations_ns.get(i).copied().flatten().is_some()
             {

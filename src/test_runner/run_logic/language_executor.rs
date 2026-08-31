@@ -12,11 +12,28 @@ pub(super) enum ExecutionPhase {
     Selective(Vec<String>),
 }
 
-pub(super) struct LanguagePhaseOutcome {
+pub(crate) struct LanguagePhaseOutcome {
     pub(super) phase: ExecutionPhase,
     pub(super) summary: SelectorExecutionSummary,
     pub(super) phase_duration: std::time::Duration,
     pub(super) index_rebuild_duration: std::time::Duration,
+}
+
+#[cfg(test)]
+impl LanguagePhaseOutcome {
+    pub(crate) fn test_selective(exit_code: i32) -> Self {
+        Self {
+            phase: ExecutionPhase::Selective(vec!["sel".into()]),
+            summary: SelectorExecutionSummary {
+                exit_code,
+                total: 1,
+                failed: usize::from(exit_code != 0),
+                ..SelectorExecutionSummary::default()
+            },
+            phase_duration: std::time::Duration::ZERO,
+            index_rebuild_duration: std::time::Duration::ZERO,
+        }
+    }
 }
 
 pub(super) fn execution_phase(
@@ -25,20 +42,10 @@ pub(super) fn execution_phase(
 ) -> Result<ExecutionPhase, String> {
     if module.population_required(ctx) {
         let language = LanguagePlanner::language(module);
-        let mut selectors: Vec<_> = LanguagePlanner::discover_universe(module)?
-            .into_iter()
-            .map(|selector| {
-                assert_eq!(
-                    selector.language, language,
-                    "discover_universe must return only selectors for the module language"
-                );
-                selector.id
-            })
-            .collect();
-        selectors.extend(module.selective_selectors(ctx));
-        selectors.sort();
-        selectors.dedup();
-        return Ok(ExecutionPhase::Population(selectors));
+        if language == kiss::Language::Rust {
+            return rust_population_phase(module, ctx);
+        }
+        return discover_population_selectors(module, ctx);
     }
     let selectors = module.selective_selectors(ctx);
     if selectors.is_empty() {
@@ -46,6 +53,54 @@ pub(super) fn execution_phase(
     } else {
         Ok(ExecutionPhase::Selective(selectors))
     }
+}
+
+fn rust_population_phase(
+    module: &dyn LanguageTestModule,
+    ctx: &RunContext<'_, '_>,
+) -> Result<ExecutionPhase, String> {
+    if crate::test_runner::rust_list_build::covering_population_list_build_done() {
+        return planned_population_selectors(module, ctx);
+    }
+    crate::test_runner::rust_list_build::overlap_with_discover(|| {
+        discover_population_selectors(module, ctx)
+    })
+}
+
+fn planned_population_selectors(
+    module: &dyn LanguageTestModule,
+    ctx: &RunContext<'_, '_>,
+) -> Result<ExecutionPhase, String> {
+    let language = LanguagePlanner::language(module);
+    let mut selectors = match language {
+        kiss::Language::Python => ctx.planned.sel.python.clone(),
+        kiss::Language::Rust => ctx.planned.sel.rust.clone(),
+    };
+    selectors.extend(module.selective_selectors(ctx));
+    selectors.sort();
+    selectors.dedup();
+    Ok(ExecutionPhase::Population(selectors))
+}
+
+fn discover_population_selectors(
+    module: &dyn LanguageTestModule,
+    ctx: &RunContext<'_, '_>,
+) -> Result<ExecutionPhase, String> {
+    let language = LanguagePlanner::language(module);
+    let mut selectors: Vec<_> = LanguagePlanner::discover_universe(module)?
+        .into_iter()
+        .map(|selector| {
+            assert_eq!(
+                selector.language, language,
+                "discover_universe must return only selectors for the module language"
+            );
+            selector.id
+        })
+        .collect();
+    selectors.extend(module.selective_selectors(ctx));
+    selectors.sort();
+    selectors.dedup();
+    Ok(ExecutionPhase::Population(selectors))
 }
 
 pub(super) fn execute_language_phase(
@@ -116,7 +171,7 @@ pub(super) fn print_dry_run(
         };
         let extra = *options.extras.get(LanguageExecutor::language(*module));
         for line in module.dry_run_lines(selectors, population, extra, options.jobs)? {
-            println!("{line}");
+            crate::test_runner::emit_test_progress(&line);
         }
     }
     Ok(())

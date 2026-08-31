@@ -13,7 +13,6 @@ fn write_gate_config(root: &std::path::Path, enabled: bool) {
         format!(
             "[global]\n\
              duplication_enabled = false\n\
-             orphan_module_enabled = false\n\
              comment_removal_enabled = {enabled}\n\
              \n\
              [test]\n\

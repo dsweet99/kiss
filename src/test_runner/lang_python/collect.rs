@@ -36,9 +36,9 @@ fn collection_input_stamp(repo_root: &Path) -> String {
 }
 
 fn mix_collection_audit(mut h: u64, repo_root: &Path) -> u64 {
-    let Ok(dir) = crate::test_runner::python_coverage_index::storage::python_coverage_cache_root(
-        repo_root,
-    ) else {
+    let Ok(dir) =
+        crate::test_runner::python_coverage_index::storage::python_coverage_cache_root(repo_root)
+    else {
         return h;
     };
     let path = dir.join("collection_audit.json");
@@ -62,9 +62,9 @@ fn mix_collection_audit(mut h: u64, repo_root: &Path) -> u64 {
 }
 
 fn persist_collection_audit(repo_root: &Path, observed: &[String]) {
-    let Ok(dir) = crate::test_runner::python_coverage_index::storage::python_coverage_cache_root(
-        repo_root,
-    ) else {
+    let Ok(dir) =
+        crate::test_runner::python_coverage_index::storage::python_coverage_cache_root(repo_root)
+    else {
         return;
     };
     let _ = fs::create_dir_all(&dir);

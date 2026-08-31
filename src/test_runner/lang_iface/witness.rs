@@ -392,7 +392,7 @@ fn count_test_statuses(records: &[(String, TestStatus, Duration)]) -> (usize, us
 
 fn print_cached_total(label: &str, count: usize) {
     if count > 0 {
-        println!("{label} (cached): {count} selectors");
+        crate::test_runner::emit_test_progress(&format!("{label} (cached): {count} selectors"));
     }
 }
 
@@ -414,4 +414,3 @@ pub(crate) fn all_misses_warm_skippable(witness: &ExecutionWitness, misses: &[St
         None => false,
     })
 }
-

@@ -58,9 +58,8 @@ impl Counter {
 
 #[test]
 fn marks_trait_impl_methods() {
-    let units = parse_and_extract(
-        "pub struct S;\nimpl Default for S { fn default() -> Self { S } }\n",
-    );
+    let units =
+        parse_and_extract("pub struct S;\nimpl Default for S { fn default() -> Self { S } }\n");
     let methods: Vec<_> = units
         .iter()
         .filter(|u| u.kind == CodeUnitKind::Method)

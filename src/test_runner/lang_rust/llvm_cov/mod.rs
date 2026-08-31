@@ -21,10 +21,12 @@ mod timeout;
 use timeout::selector_timeout_millis_for_batch;
 
 mod finish;
+mod live_status;
 mod witness;
 pub(crate) use finish::{
     cached_summary_from_check_aggregate_population, finish_rust_coverage_batch_result,
 };
+use live_status::install_live_rust_status_hook;
 use witness::publish_rust_witness_after_batch;
 
 pub(crate) fn validate_rust_extra_args(extra: &[String]) -> Result<(), String> {
@@ -234,7 +236,7 @@ where
         return Ok(SelectorExecutionSummary::default());
     }
     let stage_started = std::time::Instant::now();
-    println!("kiss test: Running batch-request");
+    crate::test_runner::emit_test_progress("kiss test: Running batch-request");
     let request_started = std::time::Instant::now();
     let mut batch_req = rust_coverage_batch_request_from_parts(
         repo_root,
@@ -247,12 +249,13 @@ where
         &options.gate,
     )?;
     batch_req.force_rerun_selectors = options.force_rerun_selectors.to_vec();
-    println!(
+    crate::test_runner::emit_test_progress(&format!(
         "kiss test: Ran batch-request {:.1}ms",
         request_started.elapsed().as_secs_f64() * 1000.0
-    );
+    ));
     build_rust_coverage_batch_plan(&batch_req)?;
     let versions = detect_versions(repo_root)?;
+    install_live_rust_status_hook(repo_root, selectors, &options.gate)?;
     let identity = rust_last_status_identity(
         &versions.cargo,
         &versions.llvm_cov,
@@ -261,7 +264,13 @@ where
         options.extra,
         &batch_req.runner_map_fingerprint,
     );
-    let result = execute_batch(&batch_req, &versions)?;
+    let result = execute_batch(&batch_req, &versions);
+    let live_err = kiss::rust_llvm_cov_runner::take_live_rust_error();
+    kiss::rust_llvm_cov_runner::clear_live_rust_test_hook();
+    if let Some(err) = live_err {
+        return Err(err);
+    }
+    let result = result?;
     crate::test_runner::emit_stage_time("rust_llvm_cov", stage_started.elapsed());
     let summary = finish_rust_coverage_batch_result(repo_root, &identity, result, &options.gate)?;
     publish_rust_witness_after_batch(repo_root, &batch_req, &summary)?;

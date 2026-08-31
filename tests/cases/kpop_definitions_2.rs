@@ -27,7 +27,7 @@ fn orphan_viols_for_temp_pkg(importer_code: &str) -> Vec<kiss::Violation> {
 
     let parsed_files: Vec<&ParsedFile> = vec![&importer, &target, &init];
     let graph = build_dependency_graph(&parsed_files);
-    analyze_graph(&graph, &Config::python_defaults(), true)
+    analyze_graph(&graph, &Config::python_defaults())
 }
 
 #[test]
@@ -115,7 +115,7 @@ fn kpop_orphan_module_ambiguous_bare_name_relative_import_should_resolve_to_same
 
     let parsed_files: Vec<&ParsedFile> = vec![&a_importer, &a_target, &a_init, &b_target, &b_init];
     let graph = build_dependency_graph(&parsed_files);
-    let viols = analyze_graph(&graph, &Config::python_defaults(), true);
+    let viols = analyze_graph(&graph, &Config::python_defaults());
 
     assert!(
         !viols
@@ -153,7 +153,7 @@ fn kpop_orphan_module_relative_import_two_dots_should_resolve_parent_package() {
 
     let parsed_files: Vec<&ParsedFile> = vec![&importer, &sub_init, &pkg_init, &target];
     let graph = build_dependency_graph(&parsed_files);
-    let viols = analyze_graph(&graph, &Config::python_defaults(), true);
+    let viols = analyze_graph(&graph, &Config::python_defaults());
 
     assert!(
         !viols
@@ -187,7 +187,7 @@ fn kpop_orphan_module_dynamic_import_importlib_import_module_string_literal() {
 
     let parsed_files: Vec<&ParsedFile> = vec![&importer, &target, &init];
     let graph = build_dependency_graph(&parsed_files);
-    let viols = analyze_graph(&graph, &Config::python_defaults(), true);
+    let viols = analyze_graph(&graph, &Config::python_defaults());
 
     assert!(
         !viols

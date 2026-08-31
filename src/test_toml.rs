@@ -211,8 +211,7 @@ fn apply_strict_runtime(
         config.ignore = parse_string_list_key(v, "ignore", "ignore patterns")?;
     }
     if let Some(v) = table.get("cache").and_then(|v| v.as_table()) {
-        config.cache_policy =
-            crate::test_cache_policy::TestCachePolicy::parse_table(v, repo_root)?;
+        config.cache_policy = crate::test_cache_policy::TestCachePolicy::parse_table(v, repo_root)?;
     }
     Ok(())
 }

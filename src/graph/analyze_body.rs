@@ -132,8 +132,7 @@ pub(crate) fn cycle_size_violation(
 pub(crate) fn collect_module_violations(
     graph: &DependencyGraph,
     config: &Config,
-    orphan_module_enabled: bool,
-    seen_paths: &HashMap<PathBuf, Vec<String>>,
+    _seen_paths: &HashMap<PathBuf, Vec<String>>,
 ) -> Vec<Violation> {
     let mut violations = Vec::new();
     let metrics_by_module = crate::graph::all_module_metrics(graph);
@@ -145,13 +144,6 @@ pub(crate) fn collect_module_violations(
             continue;
         };
 
-        if orphan_module_enabled
-            && !is_init_module(graph, module_name)
-            && is_orphan(metrics.fan_in, metrics.fan_out, module_name)
-            && !is_path_covered_by_another(graph, module_name, seen_paths)
-        {
-            violations.push(orphan_violation(graph, module_name));
-        }
         if metrics.indirect_dependencies > config.indirect_dependencies
             && !is_crate_root_aggregator(graph, module_name)
         {
@@ -244,11 +236,10 @@ pub fn graph_key_maxima(graph: &DependencyGraph) -> GraphKeyMaxima {
 pub fn analyze_graph(
     graph: &DependencyGraph,
     config: &Config,
-    orphan_module_enabled: bool,
 ) -> Vec<Violation> {
     let seen_paths = path_dedup_set(graph);
     let mut violations =
-        collect_module_violations(graph, config, orphan_module_enabled, &seen_paths);
+        collect_module_violations(graph, config, &seen_paths);
     for cycle in graph.find_cycles().cycles {
         if cycle.len() > config.cycle_size {
             violations.push(cycle_size_violation(graph, &cycle, config.cycle_size));

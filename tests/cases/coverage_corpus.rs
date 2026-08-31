@@ -16,7 +16,6 @@ fn cli_corpus_exercises_analysis_gate_paths() {
         &config,
         "[global]\n\
          duplication_enabled = false\n\
-         orphan_module_enabled = false\n\
          \n\
 [test]\n\
          test_coverage_threshold = 0\n\
@@ -193,7 +192,6 @@ fn write_mixed_repo(repo: &std::path::Path) {
         repo.join(".kissconfig"),
         "[global]\n\
          duplication_enabled = false\n\
-         orphan_module_enabled = false\n\
 \n\
 [test]\n\
          test_coverage_threshold = 0\n\

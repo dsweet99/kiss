@@ -23,7 +23,6 @@ fn write_permissive_config_with_scope(root: &std::path::Path, scope: Option<&str
         format!(
             "[global]\n\
              duplication_enabled = false\n\
-             orphan_module_enabled = false\n\
              \n\
              [test]\n\
              test_coverage_threshold = 90\n\

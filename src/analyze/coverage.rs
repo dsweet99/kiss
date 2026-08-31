@@ -1,7 +1,7 @@
 use crate::analyze::focus::{FocusFilter, is_focus_file};
 use crate::analyze::line_coverage::LineCoverageRecord;
-use kiss::cli_output::{coverage_unit_name, format_unreferenced_unit_coverage_message};
 use kiss::Violation;
+use kiss::cli_output::{coverage_unit_name, format_unreferenced_unit_coverage_message};
 
 pub(crate) fn collect_line_coverage_viols(
     records: &[LineCoverageRecord],

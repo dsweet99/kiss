@@ -16,11 +16,11 @@ fn same_path_two_module_names_no_phantom_orphan() {
         .insert("main".into(), std::path::PathBuf::from("src/main.py"));
     g.add_dependency("main", "utils");
 
-    let viols = analyze_graph(&g, &Config::python_defaults(), true);
+    let viols = analyze_graph(&g, &Config::python_defaults());
 
     let orphan_viols: Vec<_> = viols
         .iter()
-        .filter(|v| v.metric == "orphan_module")
+        .filter(|v| v.metric == "orphan_module" || v.metric == "orphan")
         .collect();
     assert!(
         orphan_viols.is_empty(),
@@ -33,7 +33,7 @@ fn same_path_two_module_names_no_phantom_orphan() {
 }
 
 #[test]
-fn different_paths_still_flags_real_orphan() {
+fn analyze_graph_does_not_emit_orphan_findings() {
     let mut g = DependencyGraph::new();
 
     g.get_or_create_node("utils");
@@ -47,14 +47,14 @@ fn different_paths_still_flags_real_orphan() {
         .insert("main".into(), std::path::PathBuf::from("src/main.py"));
     g.add_dependency("main", "utils");
 
-    let viols = analyze_graph(&g, &Config::python_defaults(), true);
+    let viols = analyze_graph(&g, &Config::python_defaults());
 
     let orphan_viols: Vec<_> = viols
         .iter()
-        .filter(|v| v.metric == "orphan_module")
+        .filter(|v| v.metric == "orphan_module" || v.metric == "orphan")
         .collect();
     assert!(
-        orphan_viols.iter().any(|v| v.unit_name == "orphan"),
-        "Real orphan should still be flagged"
+        orphan_viols.is_empty(),
+        "kiss check / analyze_graph must not emit orphan findings: {orphan_viols:?}"
     );
 }

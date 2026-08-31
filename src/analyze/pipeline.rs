@@ -154,14 +154,8 @@ fn run_full_pipeline_with_parse(in_: FullPipelineWithParseInput<'_>) -> FullPipe
         );
     }
     let t_py = std::time::Instant::now();
-    let (((py_graph, graph_viols_all), py_dups_all), mut py_stats) = run_py_graph_and_stats(
-        &result.py_parsed,
-        &result.roles,
-        &kiss::collect_orphan_entry_paths(&[], &result.rs_parsed, None, rs.graph.as_ref()),
-        &rs,
-        opts,
-        file_count,
-    );
+    let (((py_graph, graph_viols_all), py_dups_all), mut py_stats) =
+        run_py_graph_and_stats(&result.py_parsed, &result.roles, &rs, opts, file_count);
     if let Some(graph) = py_graph.as_ref() {
         py_stats.collect_graph_metrics(graph);
     }
@@ -280,24 +274,12 @@ fn assemble_split_pipeline(inp: AssembleSplit<'_>) -> FullPipelineResult {
         &crate::analyze_cache::repo_root_for_universe(opts.universe),
         Some(&roles),
     ));
-    let entries = kiss::collect_orphan_entry_paths(
-        &py_parsed,
-        &rs_side.parsed,
-        py_side.graph.as_ref(),
-        rs_side.analysis.graph.as_ref(),
-    );
     let graph_viols_all = build_graph_violations(BuildGraphViols {
         py_graph: py_side.graph.as_ref(),
         rs_graph: rs_side.analysis.graph.as_ref(),
-        py_ctx: Some(&py_side.ctx),
-        rs_ctx: Some(&rs_side.analysis.ctx),
-        entries: &entries,
         py_config: opts.py_config,
         rs_config: opts.rs_config,
         file_count,
-        orphan_enabled: opts.gate_config.orphan_module_enabled,
-        orphan_allowed: &opts.gate_config.orphan_allowed,
-        repo_root: &crate::analyze_cache::repo_root_for_universe(opts.universe),
     });
     let py_stats = graph_only_stats(py_side.graph.as_ref());
     let rs_stats = graph_only_stats(rs_side.analysis.graph.as_ref());
@@ -332,23 +314,18 @@ type PyGraphDupViols = (
 fn run_py_graph_and_stats(
     py_parsed: &[ParsedFile],
     roles: &kiss::code_roles::SourceRoleIndex,
-    rust_entries: &std::collections::HashSet<PathBuf>,
     rs: &crate::analyze::parallel::RustAnalysis,
     opts: &AnalyzeOptions<'_>,
     file_count: usize,
 ) -> (PyGraphDupViols, kiss::MetricStats) {
-    let repo_root = crate::analyze_cache::repo_root_for_universe(opts.universe);
     rayon::join(
         || {
             run_parallel_py_analysis(ParallelPyIn {
                 py_parsed,
-                rust_entries,
                 rs_graph: rs.graph.as_ref(),
-                rs_ctx: Some(&rs.ctx),
                 opts,
                 file_count,
                 roles,
-                repo_root: &repo_root,
             })
         },
         || build_python_metric_stats(py_parsed, None, roles),
@@ -401,7 +378,6 @@ pub(crate) fn empty_full_pipeline_result_for_tests() -> FullPipelineResult {
         py_graph: None,
         rs: RustAnalysis {
             graph: None,
-            ctx: kiss::ContextDependencyGraph::empty(),
             dups: Vec::new(),
         },
         graph_viols_all: Vec::new(),

@@ -281,6 +281,7 @@ def test_global_starts_clean():\n    assert stateful.VALUE == 0\n",
     assert_eq!(summary.cache_misses, 2);
 }
 
+#[cfg(unix)]
 #[test]
 fn print_rslip_outcome_accepts_all_status_cache_shapes() {
     for (status, cache_status) in [
@@ -289,24 +290,27 @@ fn print_rslip_outcome_accepts_all_status_cache_shapes() {
         (TestStatus::Failed, PyCacheStatus::Hit),
         (TestStatus::Failed, PyCacheStatus::MissStored),
     ] {
-        let mut sink = Vec::new();
-        print_rslip_outcome(
-            &RslipOutcome {
-                nodeid: "tests/test_app.py::test_ok".to_string(),
-                status,
-                exit_code: Some(i32::from(status == TestStatus::Failed)),
-                duration: Duration::from_millis(1),
-                coverage: LineCoverage {
-                    files: BTreeMap::new(),
+        let out = capture_stdout(|| {
+            print_rslip_outcome(
+                &RslipOutcome {
+                    nodeid: "tests/test_app.py::test_ok".to_string(),
+                    status,
+                    exit_code: Some(i32::from(status == TestStatus::Failed)),
+                    duration: Duration::from_millis(1),
+                    coverage: LineCoverage {
+                        files: BTreeMap::new(),
+                    },
+                    cache_status,
+                    stdout: None,
+                    stderr: Some(Vec::new()),
                 },
-                cache_status,
-                stdout: None,
-                stderr: Some(Vec::new()),
-            },
-            &kiss::GateConfig::default(),
-            &mut sink,
+                &kiss::GateConfig::default(),
+            );
+        });
+        assert!(
+            out.contains("tests/test_app.py::test_ok"),
+            "status line must go through emit_test_progress: {out}"
         );
-        assert!(!sink.is_empty());
     }
 }
 

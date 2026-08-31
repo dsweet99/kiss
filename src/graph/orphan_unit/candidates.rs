@@ -12,6 +12,7 @@ pub(super) struct CandidateIn<'a> {
     pub unit: &'a UnitRef,
     pub roles: &'a SourceRoleIndex,
     pub entries: &'a HashSet<PathBuf>,
+    pub entry_callables: &'a HashSet<(PathBuf, String)>,
     pub orphan_allowed: &'a [String],
     pub repo_root: &'a Path,
     pub coverage: &'a OrphanCoverage,
@@ -20,7 +21,9 @@ pub(super) struct CandidateIn<'a> {
 
 pub(super) fn is_candidate(in_: CandidateIn<'_>) -> bool {
     let path = &in_.unit.file;
-    if role_or_path_excluded(&in_, path) || unit_kind_excluded(in_.unit, in_.entries) {
+    if role_or_path_excluded(&in_, path)
+        || unit_kind_excluded(in_.unit, in_.entries, in_.entry_callables)
+    {
         return false;
     }
     let prod_coverable = production_coverable(in_.unit, in_.roles, in_.coverage);
@@ -41,8 +44,12 @@ fn role_or_path_excluded(in_: &CandidateIn<'_>, path: &Path) -> bool {
     path_in_allowed_dirs(path, in_.repo_root, &allowed)
 }
 
-fn unit_kind_excluded(unit: &UnitRef, entries: &HashSet<PathBuf>) -> bool {
-    unit.trait_impl || is_init_module_unit(unit) || is_entry_unit(unit, entries)
+fn unit_kind_excluded(
+    unit: &UnitRef,
+    entries: &HashSet<PathBuf>,
+    callables: &HashSet<(PathBuf, String)>,
+) -> bool {
+    unit.trait_impl || is_init_module_unit(unit) || is_entry_unit(unit, entries, callables)
 }
 
 fn is_init_module_unit(unit: &UnitRef) -> bool {
@@ -53,13 +60,26 @@ fn is_init_module_unit(unit: &UnitRef) -> bool {
             .is_some_and(|stem| stem == "__init__" || stem == "mod")
 }
 
-fn is_entry_unit(unit: &UnitRef, entries: &HashSet<PathBuf>) -> bool {
+fn is_entry_unit(
+    unit: &UnitRef,
+    entries: &HashSet<PathBuf>,
+    callables: &HashSet<(PathBuf, String)>,
+) -> bool {
     let canon = canonical_path(&unit.file);
     let file_is_entry = entries.contains(&canon) || entries.contains(&unit.file);
     if unit.kind == CodeUnitKind::Module && file_is_entry {
         return true;
     }
-    unit.is_rust && unit.kind == CodeUnitKind::Function && unit.name == "main"
+    if unit.is_rust && unit.kind == CodeUnitKind::Function && unit.name == "main" {
+        return true;
+    }
+    callable_hit(unit, &canon, callables)
+}
+
+fn callable_hit(unit: &UnitRef, canon: &Path, callables: &HashSet<(PathBuf, String)>) -> bool {
+    callables.iter().any(|(path, name)| {
+        name == &unit.name && (path == &unit.file || canonical_path(path) == canon)
+    })
 }
 
 fn production_coverable(

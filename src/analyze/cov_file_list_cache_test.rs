@@ -20,8 +20,8 @@ fn cov_file_list_cache_survives_population_change() {
     assert!(loaded_rs.is_empty());
 
     write_python_population_for_cache_tests(repo, "changed");
-    let (loaded_py, _) =
-        try_load_cov_file_list(&key).expect("source file list is independent of coverage population");
+    let (loaded_py, _) = try_load_cov_file_list(&key)
+        .expect("source file list is independent of coverage population");
     assert_eq!(loaded_py, vec![py]);
 }
 

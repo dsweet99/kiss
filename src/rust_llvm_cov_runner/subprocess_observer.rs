@@ -45,10 +45,7 @@ fn installed() -> &'static Mutex<Arc<dyn SubprocessObserver>> {
 }
 
 fn current() -> Arc<dyn SubprocessObserver> {
-    installed()
-        .lock()
-        .expect("subprocess observer")
-        .clone()
+    installed().lock().expect("subprocess observer").clone()
 }
 
 pub fn bind_subprocess_observer(observer: Arc<dyn SubprocessObserver>) {

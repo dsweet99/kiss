@@ -12,6 +12,7 @@ use crate::rust_llvm_cov_runner::execute_or_reuse::batch_result::{
 };
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_run::default_batch_subprocess_runner;
 use crate::rust_llvm_cov_runner::execute_or_reuse::worker::cleanup_legacy_worker_data_nonblocking;
+use crate::rust_llvm_cov_runner::file_lock::FileLockGuard;
 use crate::rust_llvm_cov_runner::plan::batch_fingerprint::{
     RustCoverageBatchIdentity, RustCoverageToolIdentity, batch_identity,
 };
@@ -40,10 +41,56 @@ fn default_instance_exporter(
     ))
 }
 
+thread_local! {
+    static HELD_LOCK: std::cell::RefCell<Option<FileLockGuard>> =
+        const { std::cell::RefCell::new(None) };
+    static LOCK_BATCH_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+pub(crate) fn install_held_batch_lock(guard: FileLockGuard) {
+    HELD_LOCK.with(|slot| *slot.borrow_mut() = Some(guard));
+}
+
+pub fn lock_and_hold_batch(cache_root: &std::path::Path) -> std::io::Result<()> {
+    install_held_batch_lock(lock_batch(cache_root)?);
+    Ok(())
+}
+
+pub fn try_lock_and_hold_batch(cache_root: &std::path::Path) -> std::io::Result<bool> {
+    match super::batch_lock::try_lock_batch(cache_root)? {
+        Some(guard) => {
+            install_held_batch_lock(guard);
+            Ok(true)
+        }
+        None => Ok(false),
+    }
+}
+
+#[cfg(test)]
+pub fn lock_batch_call_count() -> usize {
+    LOCK_BATCH_COUNT.with(std::cell::Cell::get)
+}
+
+#[cfg(test)]
+pub fn reset_lock_batch_call_count() {
+    LOCK_BATCH_COUNT.with(|c| c.set(0));
+}
+
 pub fn execute_rust_coverage_batch(
     req: &RustCoverageBatchRequest,
     tools: &RustCoverageToolIdentity,
 ) -> Result<RustCoverageBatchResult, RustLlvmCovError> {
+    execute_rust_coverage_batch_with_held_lock(req, tools, None)
+}
+
+pub(crate) fn execute_rust_coverage_batch_with_held_lock(
+    req: &RustCoverageBatchRequest,
+    tools: &RustCoverageToolIdentity,
+    held_lock: Option<FileLockGuard>,
+) -> Result<RustCoverageBatchResult, RustLlvmCovError> {
+    if let Some(guard) = held_lock {
+        install_held_batch_lock(guard);
+    }
     execute_rust_coverage_batch_with_fresh(req, tools, |req, tools, identity, plan| {
         let exporter = crate::rust_llvm_cov_runner::execute_or_reuse::progress::log_named_step(
             "export-prep",
@@ -99,16 +146,24 @@ where
         ));
     }
 
-    if matches!(
-        req.coverage_output_mode,
-        CoverageOutputMode::SelectorEntries
-    ) && !req.force_rerun
+    let held = HELD_LOCK.with(|slot| slot.borrow_mut().take());
+    if held.is_none()
+        && matches!(
+            req.coverage_output_mode,
+            CoverageOutputMode::SelectorEntries
+        )
+        && !req.force_rerun
         && let Some(result) = try_all_hit_fast_path(req, tools, &identity)?
     {
         return Ok(with_process_reverse_query_counters(result));
     }
 
-    let _batch_guard = lock_batch(&req.cache_root)?;
+    let _batch_guard = if let Some(guard) = held {
+        guard
+    } else {
+        LOCK_BATCH_COUNT.with(|c| c.set(c.get() + 1));
+        lock_batch(&req.cache_root)?
+    };
     let legacy_cleanup = cleanup_legacy_worker_data_nonblocking(&req.cache_root)?;
 
     if matches!(
@@ -366,3 +421,21 @@ mod all_hit_lock_tests;
 #[cfg(test)]
 #[path = "batch_executor_partition_test.rs"]
 mod partition_tests;
+
+#[cfg(test)]
+mod held_lock_test {
+    use super::{lock_batch_call_count, reset_lock_batch_call_count};
+    use crate::rust_llvm_cov_runner::execute_or_reuse::batch_lock::{lock_batch, try_lock_batch};
+
+    #[test]
+    fn preheld_lock_skips_nested_lock_and_try_lock_is_none() {
+        let tmp = tempfile::tempdir().unwrap();
+        reset_lock_batch_call_count();
+        let guard = lock_batch(tmp.path()).unwrap();
+        assert!(try_lock_batch(tmp.path()).unwrap().is_none());
+        super::install_held_batch_lock(guard);
+        assert_eq!(lock_batch_call_count(), 0);
+        drop(super::HELD_LOCK.with(|slot| slot.borrow_mut().take()));
+        assert!(try_lock_batch(tmp.path()).unwrap().is_some());
+    }
+}

@@ -1,6 +1,6 @@
 use super::*;
-use crate::rslip::cache::{load_rslip_cache_entry, rslip_cache_fingerprint};
 use crate::rpytest_runner::{PytestRunError, PytestRunOutcome, PytestRunner};
+use crate::rslip::cache::{load_rslip_cache_entry, rslip_cache_fingerprint};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};

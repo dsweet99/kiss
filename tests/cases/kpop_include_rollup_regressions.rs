@@ -212,7 +212,7 @@ fn include_in_mod_block_resolves_and_rollup_counts_body() {
     let body = parse_rust_file(&src.join("include_mod_block_body.inc")).unwrap();
     let parsed = vec![&lib, &body];
     let g = build_rust_dependency_graph(&parsed);
-    let viols = analyze_graph(&g, &Config::rust_defaults(), true);
+    let viols = analyze_graph(&g, &Config::rust_defaults());
     assert!(
         !viols.iter().any(|v| {
             v.metric == "orphan_module"
@@ -254,7 +254,7 @@ fn nested_include_chain_not_orphan() {
     let inner = parse_rust_file(&src.join("include_nested_inner.inc")).unwrap();
     let parsed = vec![&lib, &outer, &inner];
     let g = build_rust_dependency_graph(&parsed);
-    let viols = analyze_graph(&g, &Config::rust_defaults(), true);
+    let viols = analyze_graph(&g, &Config::rust_defaults());
 
     assert!(
         !viols.iter().any(|v| {

@@ -27,7 +27,12 @@ pub(super) fn to_violations(candidates: &[UnitRef], orphans: &[&UnitRef]) -> Vec
         }
         out.push(unit_violation(unit));
     }
-    out.sort_by(|a, b| a.file.cmp(&b.file).then(a.line.cmp(&b.line)).then(a.unit_name.cmp(&b.unit_name)));
+    out.sort_by(|a, b| {
+        a.file
+            .cmp(&b.file)
+            .then(a.line.cmp(&b.line))
+            .then(a.unit_name.cmp(&b.unit_name))
+    });
     out
 }
 

@@ -37,9 +37,13 @@ impl ForkserverPytestRunner {
         reqs: Vec<PytestRunRequest>,
         max_jobs: usize,
     ) -> Vec<Result<PytestRunOutcome, PytestRunError>> {
-        crate::rpytest_runner::runner::collect_bounded_results(reqs, max_jobs, |reqs, max_jobs, on_complete| {
-            self.run_many_bounded_with_on_complete(reqs, max_jobs, on_complete);
-        })
+        crate::rpytest_runner::runner::collect_bounded_results(
+            reqs,
+            max_jobs,
+            |reqs, max_jobs, on_complete| {
+                self.run_many_bounded_with_on_complete(reqs, max_jobs, on_complete);
+            },
+        )
     }
 
     pub fn run_many_bounded_with_on_complete(

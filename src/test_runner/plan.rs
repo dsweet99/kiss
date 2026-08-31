@@ -15,9 +15,14 @@ use plan_explicit::plan_explicit_target_selectors;
 
 #[path = "plan_vcs.rs"]
 mod plan_vcs;
-pub(crate) use plan_vcs::{PlanSelectorsRequest, plan_selectors};
+#[cfg(test)]
+pub(crate) use plan_vcs::plan_selectors;
+pub(crate) use plan_vcs::{
+    PlanSelectorsRequest, VcsWorkspace, plan_selectors_from_workspace, plan_vcs_workspace,
+};
 
 pub(crate) enum TargetPlanKind<'a> {
+    #[allow(dead_code)]
     All,
     Targets(&'a [String]),
 }
@@ -47,6 +52,9 @@ pub(crate) fn plan_target_selectors(
                 ExpandedTargetPlan::All => {
                     plan_all_selectors(&repo_root, &ignore_norm, extras.python, lang_filter, gate)
                 }
+                ExpandedTargetPlan::Files(files) if files.is_empty() => Ok(
+                    super::planned_selectors::empty_planned(repo_root.clone(), ignore_norm),
+                ),
                 ExpandedTargetPlan::Files(files) => plan_explicit_target_selectors(
                     &repo_root,
                     &files,
@@ -74,10 +82,84 @@ fn plan_all_selectors(
     let (py_sel, rs_sel) = discover_all_selectors(repo_root, ignore, python_extra, lang_filter)?;
     let fp = if lang_filter.is_none() {
         super::workspace_selector_cache::store_workspace_selectors(
-            repo_root, ignore, &py_sel, &rs_sel, python_extra,
+            repo_root,
+            ignore,
+            &py_sel,
+            &rs_sel,
+            python_extra,
         )
     } else {
         None
+    };
+    Ok(planned_all(
+        repo_root,
+        ignore,
+        python_extra,
+        py_sel,
+        rs_sel,
+        fp,
+        gate,
+    ))
+}
+
+pub(crate) struct AllWorkspaceCache {
+    pub py: Vec<String>,
+    pub rs: Vec<String>,
+    pub fp: String,
+}
+
+pub(crate) fn load_all_workspace_cache(
+    repo_root: &std::path::Path,
+    ignore: &[String],
+    python_extra: &[String],
+    lang_filter: Option<Language>,
+) -> Option<AllWorkspaceCache> {
+    let cache_started = std::time::Instant::now();
+    let (cached_py, cached_rs, fp) =
+        super::workspace_selector_cache::load_cached_workspace_selectors(
+            repo_root,
+            ignore,
+            python_extra,
+        )?;
+    let (py, rs) = match lang_filter {
+        None => (cached_py, cached_rs),
+        Some(Language::Python) => (cached_py, Vec::new()),
+        Some(Language::Rust) => (Vec::new(), cached_rs),
+    };
+    crate::test_runner::emit_stage_time("plan_cache", cache_started.elapsed());
+    Some(AllWorkspaceCache { py, rs, fp })
+}
+
+pub(crate) fn cover_all_language(
+    repo_root: &std::path::Path,
+    ignore: &[String],
+    python_extra: &[String],
+    language: Language,
+    gate: &kiss::GateConfig,
+    cached: Option<&AllWorkspaceCache>,
+) -> Result<PlannedSelectors, String> {
+    let (py_sel, rs_sel, fp) = match cached {
+        Some(cache) => (cache.py.clone(), cache.rs.clone(), Some(cache.fp.clone())),
+        None => {
+            let (py_sel, rs_sel) = match language {
+                Language::Python => {
+                    let (py_sel, py_elapsed) =
+                        timed_python_selectors(repo_root, ignore, python_extra);
+                    crate::test_runner::emit_stage_time("plan_python", py_elapsed);
+                    (py_sel?, Vec::new())
+                }
+                Language::Rust => {
+                    let (rs_sel, rs_elapsed) = timed_rust_selectors(repo_root, ignore);
+                    crate::test_runner::emit_stage_time("plan_rust", rs_elapsed);
+                    (Vec::new(), rs_sel?)
+                }
+            };
+            (py_sel, rs_sel, None)
+        }
+    };
+    let (py_sel, rs_sel) = match language {
+        Language::Python => (py_sel, Vec::new()),
+        Language::Rust => (Vec::new(), rs_sel),
     };
     Ok(planned_all(
         repo_root,
@@ -100,7 +182,9 @@ fn try_plan_all_from_cache(
     let cache_started = std::time::Instant::now();
     let (cached_py, cached_rs, fp) =
         super::workspace_selector_cache::load_cached_workspace_selectors(
-            repo_root, ignore, python_extra,
+            repo_root,
+            ignore,
+            python_extra,
         )?;
     let (py_sel, rs_sel) = match lang_filter {
         None => (cached_py, cached_rs),

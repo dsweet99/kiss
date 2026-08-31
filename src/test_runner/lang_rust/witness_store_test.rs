@@ -43,9 +43,7 @@ fn cover_delta_generation_and_bootstrap(root: &Path, identity: &RustCoverageBatc
         vec!["a".to_string()]
     );
     assert!(planned_misses_for(&planned, OrdinarySourceInvalidation::None).is_empty());
-    assert!(
-        super::generation_publish::try_load_full_generation_witness(root).is_some()
-    );
+    assert!(super::generation_publish::try_load_full_generation_witness(root).is_some());
     let _ = super::generation_publish::publish_complete_full_generation(
         root,
         "ctx",

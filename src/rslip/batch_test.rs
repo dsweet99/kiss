@@ -1,7 +1,7 @@
 use super::*;
+use crate::rpytest_runner::{PytestRunError, PytestRunOutcome, PytestRunner};
 use crate::rslip::batch::{PreparedRslipMisses, RslipCacheCandidate, RslipCacheCandidateGroup};
 use crate::rslip::cache::{rslip_cache_fingerprint, store_rslip_cache_entry};
-use crate::rpytest_runner::{PytestRunError, PytestRunOutcome, PytestRunner};
 use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::fs;
@@ -138,7 +138,8 @@ fn all_hit_batch_does_not_wait_for_entry_lock() {
     let root_for_lock = req.cache_root.clone();
     let fingerprint_for_lock = fingerprint.clone();
     let lock_holder = thread::spawn(move || {
-        let _guard = crate::rslip::lock_rslip_cache_entry(&root_for_lock, &fingerprint_for_lock).unwrap();
+        let _guard =
+            crate::rslip::lock_rslip_cache_entry(&root_for_lock, &fingerprint_for_lock).unwrap();
         locked_tx.send(()).unwrap();
         thread::sleep(Duration::from_millis(200));
     });

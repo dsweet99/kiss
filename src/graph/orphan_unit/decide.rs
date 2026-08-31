@@ -1,93 +1,116 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::graph::orphan_unit::extract::{NamedBind, file_key};
+use crate::graph::orphan_unit::extract::file_key;
 use crate::graph::orphan_unit::{OrphanCoverage, UnitRef};
-use crate::graph::{ContextDependencyGraph, DependencyGraph, module_name_for_path};
 use crate::rust_include::canonical_path;
 use crate::units::CodeUnitKind;
 
-struct BindIndex {
-    empty_last: HashSet<String>,
-    named: HashSet<(String, String)>,
-    lasts: HashSet<String>,
-    targets: HashSet<String>,
-}
+#[cfg(test)]
+mod bind_index {
+    use crate::graph::orphan_unit::extract::NamedBind;
+    use std::collections::HashSet;
 
-impl BindIndex {
-    fn new(binds: &[NamedBind]) -> Self {
-        let mut empty_last = HashSet::new();
-        let mut named = HashSet::new();
-        let mut lasts = HashSet::new();
-        let mut targets = HashSet::new();
-        for bind in binds {
-            lasts.insert(bind.last.clone());
-            if bind.target_module.is_empty() {
-                empty_last.insert(bind.last.clone());
-            } else {
-                targets.insert(bind.target_module.clone());
-                named.insert((bind.last.clone(), bind.target_module.clone()));
+    pub(super) struct BindIndex {
+        pub empty_last: HashSet<String>,
+        pub named: HashSet<(String, String)>,
+        pub lasts: HashSet<String>,
+        pub targets: HashSet<String>,
+    }
+
+    impl BindIndex {
+        pub fn new(binds: &[NamedBind]) -> Self {
+            let mut empty_last = HashSet::new();
+            let mut named = HashSet::new();
+            let mut lasts = HashSet::new();
+            let mut targets = HashSet::new();
+            for bind in binds {
+                lasts.insert(bind.last.clone());
+                if bind.target_module.is_empty() {
+                    empty_last.insert(bind.last.clone());
+                } else {
+                    targets.insert(bind.target_module.clone());
+                    named.insert((bind.last.clone(), bind.target_module.clone()));
+                }
             }
-        }
-        Self {
-            empty_last,
-            named,
-            lasts,
-            targets,
+            Self {
+                empty_last,
+                named,
+                lasts,
+                targets,
+            }
         }
     }
 }
 
-pub(super) fn graph_witnesses(
+pub(super) fn flood_reached(
     units: &[UnitRef],
-    py_ctx: &ContextDependencyGraph,
-    rs_ctx: &ContextDependencyGraph,
-    binds: &[NamedBind],
+    edges: &[Vec<usize>],
+    input: &crate::graph::orphan_unit::OrphanUnitInput<'_>,
+    coverage: &OrphanCoverage,
 ) -> Vec<bool> {
-    let index = BindIndex::new(binds);
-    let py_prod = py_ctx.production_view();
-    let rs_prod = rs_ctx.production_view();
-    units
-        .iter()
-        .map(|unit| {
-            if unit.is_rust {
-                graph_witness(unit, rs_ctx, &rs_prod, &index)
-            } else {
-                graph_witness(unit, py_ctx, &py_prod, &index)
-            }
-        })
-        .collect()
-}
-
-fn graph_witness(
-    unit: &UnitRef,
-    ctx: &ContextDependencyGraph,
-    prod: &DependencyGraph,
-    binds: &BindIndex,
-) -> bool {
-    let Some(module) = module_name_for_path(ctx, &unit.file) else {
-        return false;
-    };
-    if unit.kind == CodeUnitKind::Module {
-        return module_graph_witness(ctx, prod, &module)
-            || binds.targets.contains(&module)
-            || binds.lasts.contains(&module);
+    let cov = coverage_witnesses(units, coverage);
+    let mut reached = vec![false; units.len()];
+    let mut queue = Vec::new();
+    for (i, unit) in units.iter().enumerate() {
+        if is_root(unit, input, cov[i]) {
+            reached[i] = true;
+            mark_containers(units, i, &mut reached, &mut queue);
+            queue.push(i);
+        }
     }
-    binds.empty_last.contains(&unit.name) || binds.named.contains(&(unit.name.clone(), module))
+    while let Some(src) = queue.pop() {
+        for &dest in &edges[src] {
+            if !reached[dest] {
+                reached[dest] = true;
+                mark_containers(units, dest, &mut reached, &mut queue);
+                queue.push(dest);
+            }
+        }
+    }
+    reached
 }
 
-fn module_graph_witness(
-    ctx: &ContextDependencyGraph,
-    prod: &DependencyGraph,
-    module: &str,
+fn is_root(
+    unit: &UnitRef,
+    input: &crate::graph::orphan_unit::OrphanUnitInput<'_>,
+    coverage_root: bool,
 ) -> bool {
-    let fan_in = prod.module_metrics(module).fan_in;
-    let has_test_importer = !ctx.test_importers_of(module).is_empty();
-    !crate::graph::GraphIsolation::UnreferencedModule.module_is_isolated(
-        fan_in,
-        0,
-        has_test_importer,
-    )
+    if coverage_root {
+        return true;
+    }
+    if input.roles.role_at(&unit.file, unit.start_line) == crate::code_roles::CodeRole::TestOnly
+        || input.roles.file_composition(&unit.file) == crate::code_roles::FileComposition::TestOnly
+    {
+        return true;
+    }
+    let canon = crate::rust_include::canonical_path(&unit.file);
+    let file_is_entry = input.entries.contains(&canon) || input.entries.contains(&unit.file);
+    if unit.kind == CodeUnitKind::Module && file_is_entry {
+        return true;
+    }
+    if unit.is_rust && unit.kind == CodeUnitKind::Function && unit.name == "main" {
+        return true;
+    }
+    input.entry_callables.iter().any(|(path, name)| {
+        name == &unit.name
+            && (path == &unit.file || crate::rust_include::canonical_path(path) == canon)
+    })
+}
+
+fn mark_containers(units: &[UnitRef], idx: usize, reached: &mut [bool], queue: &mut Vec<usize>) {
+    let child = &units[idx];
+    for (i, unit) in units.iter().enumerate() {
+        if i == idx || unit.file != child.file || reached[i] {
+            continue;
+        }
+        let contains = unit.start_line <= child.start_line && child.end_line <= unit.end_line;
+        let is_container = matches!(unit.kind, CodeUnitKind::Class | CodeUnitKind::Module);
+        if contains && is_container {
+            reached[i] = true;
+            queue.push(i);
+        }
+    }
 }
 
 pub(super) fn coverage_witnesses(units: &[UnitRef], coverage: &OrphanCoverage) -> Vec<bool> {
@@ -96,7 +119,8 @@ pub(super) fn coverage_witnesses(units: &[UnitRef], coverage: &OrphanCoverage) -
     let mut out = direct.clone();
     for (i, unit) in units.iter().enumerate() {
         if unit.kind == CodeUnitKind::Class {
-            out[i] = nested_callable_hit(units, &by_file, unit, &direct);
+            out[i] = nested_callable_hit(units, &by_file, unit, &direct)
+                || exclusive_body_hit(units, &by_file, unit, coverage);
         }
     }
     for (i, unit) in units.iter().enumerate() {
@@ -198,20 +222,31 @@ fn module_coverage(
     {
         return true;
     }
-    let Some(coverable) = file_key(&coverage.coverable, &module.file) else {
+    exclusive_body_hit(units, by_file, module, coverage)
+}
+
+fn exclusive_body_hit(
+    units: &[UnitRef],
+    by_file: &HashMap<PathBuf, Vec<usize>>,
+    unit: &UnitRef,
+    coverage: &OrphanCoverage,
+) -> bool {
+    let Some(coverable) = file_key(&coverage.coverable, &unit.file) else {
         return false;
     };
-    let hits = file_key(&coverage.hit, &module.file)
+    let hits = file_key(&coverage.hit, &unit.file)
         .cloned()
         .unwrap_or_default();
     coverable.iter().any(|line| {
         if !hits.contains(line) {
             return false;
         }
-        let Some(idx) = innermost(units, by_file, &module.file, *line) else {
+        let Some(idx) = innermost(units, by_file, &unit.file, *line) else {
             return false;
         };
-        units[idx].kind == CodeUnitKind::Module
+        units[idx].start_line == unit.start_line
+            && units[idx].end_line == unit.end_line
+            && units[idx].kind == unit.kind
     })
 }
 
@@ -235,7 +270,8 @@ fn innermost(
 
 #[cfg(test)]
 mod bind_index_test {
-    use super::{BindIndex, NamedBind};
+    use super::bind_index::BindIndex;
+    use crate::graph::orphan_unit::extract::NamedBind;
 
     fn linear_nested(name: &str, module: &str, binds: &[NamedBind]) -> bool {
         binds.iter().any(|bind| {
@@ -251,20 +287,29 @@ mod bind_index_test {
 
     #[test]
     fn bind_index_matches_linear_scan() {
+        let file = std::path::PathBuf::from("a.py");
         let binds = [
             NamedBind {
+                file: file.clone(),
+                line: 1,
                 target_module: String::new(),
                 last: "foo".into(),
             },
             NamedBind {
+                file: file.clone(),
+                line: 2,
                 target_module: "m".into(),
                 last: "bar".into(),
             },
             NamedBind {
+                file: file.clone(),
+                line: 3,
                 target_module: "other".into(),
                 last: "bar".into(),
             },
             NamedBind {
+                file,
+                line: 4,
                 target_module: "m".into(),
                 last: "m".into(),
             },

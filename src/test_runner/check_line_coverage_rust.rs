@@ -177,9 +177,9 @@ pub(super) fn remap_rust_covered_lines(
         let rel = rust_repo_relative_coverage_file(repo_root, &file)
             .ok_or_else(|| coverage_error("Rust", "malformed out-of-repository path"))?;
         let mapped = match hashes.as_ref().and_then(|stored| stored.get(&rel)) {
-            Some(stored) => {
-                kiss::rust_llvm_cov_runner::remap_covered_file_lines(repo_root, &rel, stored, &lines)
-            }
+            Some(stored) => kiss::rust_llvm_cov_runner::remap_covered_file_lines(
+                repo_root, &rel, stored, &lines,
+            ),
             None => lines,
         };
         covered_lines.entry(rel).or_default().extend(mapped);

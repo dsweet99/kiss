@@ -5,8 +5,8 @@ use kiss::Language;
 use kiss::rpytest_runner::TestStatus;
 
 use crate::test_runner::lang_iface::{
-    EnsureRequest, ExecutionWitness, LanguageRuntime, OutcomeBatch, PublishBatch, SourceDeltaMisses,
-    WitnessStatus, summary_from_accepted_witness,
+    EnsureRequest, ExecutionWitness, LanguageRuntime, OutcomeBatch, PublishBatch,
+    SourceDeltaMisses, WitnessStatus, summary_from_accepted_witness,
 };
 use crate::test_runner::python_coverage_index::generation::{
     current_python_execution_identity, identity_matches_current,

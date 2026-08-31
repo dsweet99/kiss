@@ -214,7 +214,7 @@ fn top_level_help_describes_commands_and_global_flags() {
     assert!(!help.contains("Use built-in defaults, ignoring config files"));
     assert!(!help.contains("--defaults"));
     assert!(
-        help.contains("Run static complexity, graph, duplicate, comment, doc, and orphan checks")
+        help.contains("Run static complexity, graph, duplicate, comment, and doc checks")
     );
     assert!(help.contains("Show metric statistics for the codebase"));
     assert!(!help.contains("Generate .kissconfig thresholds from an existing codebase"));

@@ -5,9 +5,7 @@ use kiss::Language;
 
 use crate::analyze;
 use crate::analyze::cov_coverable_cache::{CovCoverableKey, load_or_build_coverable_denoms};
-use crate::analyze::cov_records_cache::{
-    CovRecordsCacheKey, store_cov_records,
-};
+use crate::analyze::cov_records_cache::{CovRecordsCacheKey, store_cov_records};
 use crate::analyze::gather_files;
 use crate::analyze::line_coverage::{RuntimeCoverageSnapshot, records_from_denoms};
 use crate::test_runner::check_line_coverage::repository_root_for_universe;

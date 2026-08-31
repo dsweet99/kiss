@@ -332,10 +332,10 @@ fn analyze_graph_false_emits_no_orphan() {
     let roles = build_source_role_index(std::slice::from_ref(&parsed), &[], &[utils], &[]).unwrap();
     let ctx = build_python_context_graph(&[&parsed], &roles);
     let prod = ctx.production_view();
-    let viols = analyze_graph(&prod, &Config::python_defaults(), false);
+    let viols = analyze_graph(&prod, &Config::python_defaults());
     assert!(
         !viols.iter().any(|v| v.metric == "orphan_module"),
-        "analyze_graph(..., false) must not emit orphan_module: {viols:#?}"
+        "analyze_graph(...) must not emit orphan_module: {viols:#?}"
     );
 }
 

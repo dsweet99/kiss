@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use kiss::lang_analysis::build_graphs as build_lang_graphs;
 use kiss::{
     Config, ContextDependencyGraph, DependencyGraph, GateConfig, ParsedFile, ParsedRustFile,
-    Violation, analyze_graph, orphan_violations,
+    Violation, analyze_graph,
 };
 
 pub struct GraphConfigs<'a> {
@@ -96,37 +96,6 @@ pub(crate) fn build_rs_graphs(
     }
 }
 
-pub(crate) fn append_orphan_violations(
-    py_ctx: Option<&ContextDependencyGraph>,
-    py_prod: Option<&DependencyGraph>,
-    rs_ctx: Option<&ContextDependencyGraph>,
-    rs_prod: Option<&DependencyGraph>,
-    entries: &HashSet<PathBuf>,
-    orphan_allowed: &[String],
-    repo_root: &Path,
-) -> Vec<Violation> {
-    let mut out = Vec::new();
-    if let (Some(ctx), Some(prod)) = (py_ctx, py_prod) {
-        out.extend(orphan_violations(
-            ctx,
-            prod,
-            entries,
-            orphan_allowed,
-            repo_root,
-        ));
-    }
-    if let (Some(ctx), Some(prod)) = (rs_ctx, rs_prod) {
-        out.extend(orphan_violations(
-            ctx,
-            prod,
-            entries,
-            orphan_allowed,
-            repo_root,
-        ));
-    }
-    out
-}
-
 pub(crate) fn build_role_graphs(
     py_parsed: &[ParsedFile],
     rs_parsed: &[ParsedRustFile],
@@ -182,22 +151,18 @@ pub(crate) fn graph_stats(
 pub fn analyze_graphs(in_: &AnalyzeGraphsIn<'_>) -> Vec<Violation> {
     let mut viols = Vec::new();
     if let Some(g) = in_.py_graph {
-        viols.extend(analyze_graph(g, in_.configs.py_config, false));
+        viols.extend(analyze_graph(g, in_.configs.py_config));
     }
     if let Some(g) = in_.rs_graph {
-        viols.extend(analyze_graph(g, in_.configs.rs_config, false));
+        viols.extend(analyze_graph(g, in_.configs.rs_config));
     }
-    if in_.configs.gate.orphan_module_enabled {
-        viols.extend(append_orphan_violations(
-            in_.py_ctx,
-            in_.py_graph,
-            in_.rs_ctx,
-            in_.rs_graph,
-            in_.entries,
-            &in_.configs.gate.orphan_allowed,
-            in_.repo_root,
-        ));
-    }
+    let _ = (
+        in_.py_ctx,
+        in_.rs_ctx,
+        in_.entries,
+        in_.configs.gate.orphan_allowed.as_slice(),
+        in_.repo_root,
+    );
     viols
 }
 
@@ -345,8 +310,10 @@ mod analyze_graphs_orphan {
             },
         });
         assert!(
-            viols.iter().any(|v| v.metric == "orphan_module"),
-            "analyze_graphs must emit orphan_module via orphan_violations: {viols:#?}"
+            !viols
+                .iter()
+                .any(|v| v.metric == "orphan_module" || v.metric == "orphan"),
+            "analyze_graphs must not emit orphan findings: {viols:#?}"
         );
     }
 
@@ -358,7 +325,6 @@ mod analyze_graphs_orphan {
         let py_config = Config::python_defaults();
         let rs_config = Config::rust_defaults();
         let gate = GateConfig {
-            orphan_module_enabled: false,
             ..GateConfig::default()
         };
         let viols = analyze_graphs(&AnalyzeGraphsIn {

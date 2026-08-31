@@ -55,7 +55,7 @@ pub(crate) fn expand_target_operands(
         return Ok(ExpandedTargetPlan::All);
     }
     if file_operands.is_empty() {
-        return Err("no source targets to plan".to_string());
+        return Ok(ExpandedTargetPlan::Files(Vec::new()));
     }
     Ok(ExpandedTargetPlan::Files(file_operands))
 }
@@ -86,11 +86,16 @@ fn append_directory_sources(
 ) -> Result<(), String> {
     let path_arg = abs.to_string_lossy().into_owned();
     let (py_files, rs_files) =
-        kiss::gather_files_by_lang(std::slice::from_ref(&path_arg), lang_filter, ignore);
+        kiss::gather_files_by_lang(std::slice::from_ref(&path_arg), None, ignore);
     if py_files.is_empty() && rs_files.is_empty() {
         return Err(format!("directory '{raw}' expands to zero source files"));
     }
-    for path in py_files.into_iter().chain(rs_files) {
+    let files: Vec<_> = match lang_filter {
+        Some(Language::Python) => py_files,
+        Some(Language::Rust) => rs_files,
+        None => py_files.into_iter().chain(rs_files).collect(),
+    };
+    for path in files {
         file_operands.push(path.to_string_lossy().into_owned());
     }
     Ok(())

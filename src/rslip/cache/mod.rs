@@ -83,11 +83,16 @@ pub(crate) fn store_rslip_cache_entry(
         .parent()
         .ok_or_else(|| io::Error::other("cache path has no parent"))?;
     let tmp_path = parent.join(format!(".{}.{}.tmp", fingerprint, rslip_unique_suffix()));
-    crate::kiss_publication_barrier::publish_atomically("rslip_selector_entry", &path, &tmp_path, |file| {
-        serde_json::to_writer(&mut *file, entry).map_err(io::Error::other)?;
-        file.write_all(b"\n")?;
-        Ok(())
-    })
+    crate::kiss_publication_barrier::publish_atomically(
+        "rslip_selector_entry",
+        &path,
+        &tmp_path,
+        |file| {
+            serde_json::to_writer(&mut *file, entry).map_err(io::Error::other)?;
+            file.write_all(b"\n")?;
+            Ok(())
+        },
+    )
 }
 
 #[cfg(test)]

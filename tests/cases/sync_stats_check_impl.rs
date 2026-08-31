@@ -210,7 +210,6 @@ fn write_zero_threshold_config(path: &std::path::Path) {
         r"[global]
 min_similarity = 1.0
 duplication_enabled = false
-orphan_module_enabled = false
 
 [test]
 test_coverage_threshold = 0

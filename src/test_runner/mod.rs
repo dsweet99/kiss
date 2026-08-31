@@ -32,9 +32,10 @@ pub(crate) mod unit_test_timing;
 mod watch;
 #[cfg(test)]
 pub(crate) use planned_selectors::should_force_cold_initialization;
+pub(crate) use planned_selectors::{PlannedSelectors, SelectorRunOptions, empty_planned};
+#[cfg(test)]
 pub(crate) use planned_selectors::{
-    PlannedSelectors, SelectorRunOptions, apply_cold_initialization_population,
-    apply_force_all_population,
+    apply_cold_initialization_population, apply_force_all_population,
 };
 pub(crate) use rust_batch_interrupt::consume_rust_batch_interrupted;
 
@@ -43,7 +44,9 @@ pub(crate) use lang_rust::llvm_cov as rust_llvm_cov;
 use kiss::Language;
 
 use crate::bin_cli::args::TestInvocation;
+#[cfg(test)]
 use crate::test_git::TestChangeMode;
+#[cfg(test)]
 pub(crate) use run_logic::run_selectors;
 
 #[cfg(test)]
@@ -139,21 +142,11 @@ pub(crate) fn emit_test_progress(message: &str) {
     if !crate::test_runner::check_runtime_refresh::test_runner_stdout_enabled() {
         return;
     }
-    #[cfg(unix)]
-    {
-        let mut line = Vec::with_capacity(message.len() + 1);
-        line.extend_from_slice(message.as_bytes());
-        line.push(b'\n');
-        unsafe {
-            let _ = libc::write(libc::STDOUT_FILENO, line.as_ptr().cast(), line.len());
-        }
-    }
-    #[cfg(not(unix))]
-    {
-        use std::io::Write;
-        println!("{message}");
-        let _ = std::io::stdout().flush();
-    }
+    emit_test_status(message);
+}
+
+pub(crate) fn emit_test_status(message: &str) {
+    kiss::rust_llvm_cov_runner::emit_progress(message);
 }
 
 pub(crate) fn emit_stage_time(stage: &str, duration: std::time::Duration) {
@@ -164,51 +157,16 @@ pub(crate) fn emit_stage_time(stage: &str, duration: std::time::Duration) {
 }
 
 pub(crate) fn run_test_once(a: RunTestCmdArgs<'_>) -> RunTestOnceOutcome {
-    let dry_run = a.dry_run;
-    let force_rerun = a.force_rerun;
-    let metrics = a.metrics;
-    let jobs = a.jobs;
-    let extra = a.extra;
-    let python_extra = a.python_extra;
-
     crate::test_runner::runners::clear_python_collect_memo();
 
+    let process_started = std::time::Instant::now();
     emit_test_progress("kiss test: Planning ...");
-    let plan_started = std::time::Instant::now();
-    match plan_for_invocation(&a) {
-        Ok(mut planned) => {
-            apply_cold_initialization_population(&a, &mut planned);
-            apply_force_all_population(&a, &mut planned);
-            if let Err(e) = apply_force_bad(&a, &mut planned) {
-                eprintln!("{e}");
-                return RunTestOnceOutcome::Code(1);
-            }
-            match run_selectors(
-                &planned,
-                SelectorRunOptions {
-                    dry_run,
-                    force_rerun,
-                    metrics,
-                    jobs,
-                    extras: crate::test_runner::language_keyed::LanguageKeyed {
-                        python: python_extra,
-                        rust: extra,
-                    },
-                    plan_duration: plan_started.elapsed(),
-                    gate: a.gate_config.clone(),
-                },
-            ) {
-                Ok(c) => RunTestOnceOutcome::Code(c),
-                Err(e) => {
-                    if rust_batch_interrupt::consume_rust_batch_interrupted() {
-                        return RunTestOnceOutcome::Interrupted;
-                    }
-                    eprintln!("{e}");
-                    RunTestOnceOutcome::Code(1)
-                }
-            }
-        }
+    match pipeline::run_overlapped_test(&a, process_started) {
+        Ok(c) => RunTestOnceOutcome::Code(c),
         Err(e) => {
+            if rust_batch_interrupt::consume_rust_batch_interrupted() {
+                return RunTestOnceOutcome::Interrupted;
+            }
             eprintln!("{e}");
             RunTestOnceOutcome::Code(1)
         }
@@ -221,6 +179,8 @@ pub(crate) use watch::control::{
 };
 pub(crate) use watch::{WatchCoverageParams, WatchCoverageResult, WatchReloadSeed, run_test_watch};
 
+#[cfg(test)]
+#[allow(dead_code)]
 fn plan_for_invocation(a: &RunTestCmdArgs<'_>) -> Result<PlannedSelectors, String> {
     match &a.invocation {
         TestInvocation::Commit => plan_selectors(PlanSelectorsRequest {
@@ -282,8 +242,11 @@ fn plan_for_invocation(a: &RunTestCmdArgs<'_>) -> Result<PlannedSelectors, Strin
     }
 }
 
+mod pipeline;
 mod plan;
+mod rust_list_build;
 mod workspace_selector_cache;
+#[cfg(test)]
 pub(crate) use plan::{
     PlanSelectorsRequest, TargetPlanKind, plan_selectors, plan_target_selectors,
 };
@@ -330,6 +293,14 @@ mod mod_test_b;
 #[cfg(test)]
 #[path = "planning_heartbeat_test.rs"]
 mod planning_heartbeat_test;
+
+#[cfg(test)]
+#[path = "pipeline_progress_test.rs"]
+mod pipeline_progress_test;
+
+#[cfg(test)]
+#[path = "pipeline_barrier_test.rs"]
+mod pipeline_barrier_test;
 
 #[cfg(test)]
 #[path = "mod_run_api_test.rs"]

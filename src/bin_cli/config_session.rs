@@ -131,8 +131,12 @@ mod tests {
             "created .kissconfig must disable duplication:\n{created}"
         );
         assert!(
-            created.contains("orphan_module_enabled = false"),
-            "created .kissconfig must disable orphan_module:\n{created}"
+            created.contains("orphan_detection = false"),
+            "created .kissconfig must write orphan_detection = false:\n{created}"
+        );
+        assert!(
+            !created.contains("orphan_module_enabled"),
+            "created .kissconfig must not write orphan_module_enabled:\n{created}"
         );
         assert!(
             created.contains("comment_removal_enabled = false"),

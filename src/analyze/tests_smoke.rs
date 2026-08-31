@@ -194,7 +194,6 @@ fn test_run_analyze_current_repo_in_process() {
     let gate_cfg = GateConfig {
         test_coverage_threshold: 0,
         duplication_enabled: false,
-        orphan_module_enabled: false,
         docs_allowed: vec!["src/".into()],
         ..GateConfig::default()
     };

@@ -28,7 +28,7 @@ fn c2_break_1_empty_init_py_is_falsely_orphaned() {
 
     let parsed_files: Vec<&ParsedFile> = vec![&init, &mod_a, &mod_b];
     let graph = build_dependency_graph(&parsed_files);
-    let viols = analyze_graph(&graph, &Config::python_defaults(), true);
+    let viols = analyze_graph(&graph, &Config::python_defaults());
 
     assert!(
         !viols
@@ -69,7 +69,7 @@ fn c2_break_2_ambiguous_dotted_suffix_skips_parent_fallback() {
     let parsed_files: Vec<&ParsedFile> =
         vec![&a_handler, &a_consumer, &a_init, &b_handler, &b_init];
     let graph = build_dependency_graph(&parsed_files);
-    let viols = analyze_graph(&graph, &Config::python_defaults(), true);
+    let viols = analyze_graph(&graph, &Config::python_defaults());
 
     assert!(
         !viols
@@ -125,7 +125,7 @@ fn c2_break_3_many_cross_package_importers_all_fail_on_ambiguous_suffix() {
     let parsed: Vec<_> = paths.iter().map(|p| parse_py(p)).collect();
     let refs: Vec<&ParsedFile> = parsed.iter().collect();
     let graph = build_dependency_graph(&refs);
-    let viols = analyze_graph(&graph, &Config::python_defaults(), true);
+    let viols = analyze_graph(&graph, &Config::python_defaults());
 
     let orphan_registries: Vec<_> = viols
         .iter()
@@ -176,7 +176,7 @@ fn c2_break_4_type_checking_only_import_makes_module_invisible() {
 
     let parsed_files: Vec<&ParsedFile> = vec![&types, &service, &init, &main];
     let graph = build_dependency_graph(&parsed_files);
-    let viols = analyze_graph(&graph, &Config::python_defaults(), true);
+    let viols = analyze_graph(&graph, &Config::python_defaults());
 
     assert!(
         !viols

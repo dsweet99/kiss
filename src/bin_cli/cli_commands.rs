@@ -7,7 +7,7 @@ use super::parse_positive_usize;
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     #[command(
-        about = "Run static complexity, graph, duplicate, comment, doc, and orphan checks",
+        about = "Run static complexity, graph, duplicate, comment, and doc checks",
         after_help = "If .kissconfig is missing, writes one from current-codebase maxima."
     )]
     Check {

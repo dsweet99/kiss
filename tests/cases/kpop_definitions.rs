@@ -193,7 +193,7 @@ fn bug_lazy_import_should_create_graph_edge_and_prevent_orphan() {
 
     let parsed_files: Vec<&ParsedFile> = vec![&importer, &target];
     let graph = build_dependency_graph(&parsed_files);
-    let viols = analyze_graph(&graph, &Config::python_defaults(), true);
+    let viols = analyze_graph(&graph, &Config::python_defaults());
 
     let orphan_viols: Vec<_> = viols
         .iter()
@@ -218,7 +218,7 @@ fn bug_graph_edge_dotted_import_should_create_internal_edge() {
         &pkg1_sub, &pkg1_init, &pkg2_sub, &pkg2_init, &importer1, &importer2,
     ];
     let graph = build_dependency_graph(&parsed_files);
-    let viols = analyze_graph(&graph, &Config::python_defaults(), true);
+    let viols = analyze_graph(&graph, &Config::python_defaults());
 
     assert!(
         !viols.iter().any(|v| v.metric == "orphan_module"),

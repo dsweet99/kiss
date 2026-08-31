@@ -187,7 +187,8 @@ fn clamp_then_check_is_green() {
     );
     assert!(
         config.contains("duplication_enabled = false")
-            && config.contains("orphan_module_enabled = false")
+            && config.contains("orphan_detection = false")
+            && !config.contains("orphan_module_enabled")
             && config.contains("comment_removal_enabled = false")
             && config.contains(r#"docs_allowed = ["./"]"#)
             && config.contains("test_coverage_threshold = 0")

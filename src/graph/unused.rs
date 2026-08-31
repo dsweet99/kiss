@@ -1,6 +1,7 @@
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum GraphIsolation {
     IsolatedModule,
+    #[allow(dead_code)]
     UnreferencedModule,
 }
 

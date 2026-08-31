@@ -13,6 +13,7 @@ mod decide;
 mod extract;
 mod name_refs;
 mod report;
+mod unit_edges;
 
 pub struct OrphanCoverage {
     pub coverable: BTreeMap<PathBuf, BTreeSet<usize>>,
@@ -25,6 +26,7 @@ pub struct OrphanUnitInput<'a> {
     pub py_ctx: &'a ContextDependencyGraph,
     pub rs_ctx: &'a ContextDependencyGraph,
     pub entries: &'a HashSet<PathBuf>,
+    pub entry_callables: &'a HashSet<(PathBuf, String)>,
     pub orphan_allowed: &'a [String],
     pub repo_root: &'a Path,
     pub roles: &'a SourceRoleIndex,
@@ -49,10 +51,10 @@ pub fn orphan_unit_violations(input: &OrphanUnitInput<'_>) -> Vec<Violation> {
         return Vec::new();
     };
     let units = extract::collect_units(input.py, input.rs);
-    let binds = extract::collect_binds(input.py, input.rs, input.py_ctx, input.rs_ctx);
+    let edges =
+        unit_edges::edges_from_units(&units, input.py, input.rs, input.py_ctx, input.rs_ctx);
     let coverage_off = extract::rust_coverage_off(input.rs);
-    let graph_ok = decide::graph_witnesses(&units, input.py_ctx, input.rs_ctx, &binds);
-    let cov_ok = decide::coverage_witnesses(&units, coverage);
+    let reached = decide::flood_reached(&units, &edges, input, coverage);
     let cand_idx: Vec<usize> = units
         .iter()
         .enumerate()
@@ -61,6 +63,7 @@ pub fn orphan_unit_violations(input: &OrphanUnitInput<'_>) -> Vec<Violation> {
                 unit,
                 roles: input.roles,
                 entries: input.entries,
+                entry_callables: input.entry_callables,
                 orphan_allowed: input.orphan_allowed,
                 repo_root: input.repo_root,
                 coverage,
@@ -72,7 +75,7 @@ pub fn orphan_unit_violations(input: &OrphanUnitInput<'_>) -> Vec<Violation> {
     let candidates: Vec<UnitRef> = cand_idx.iter().map(|&i| units[i].clone()).collect();
     let orphans: Vec<&UnitRef> = cand_idx
         .iter()
-        .filter(|&&i| !graph_ok[i] && !cov_ok[i])
+        .filter(|&&i| !reached[i])
         .map(|&i| &units[i])
         .collect();
     report::to_violations(&candidates, &orphans)

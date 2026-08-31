@@ -21,7 +21,6 @@ pub fn write_kissconfig_with_threshold(root: &Path, settle: f64, threshold: u8) 
         format!(
             "[global]\n\
              duplication_enabled = false\n\
-             orphan_module_enabled = false\n\
              \n\
 [test]\n\
              test_coverage_threshold = {threshold}\n\

@@ -47,7 +47,7 @@ pub(crate) fn print_classified_status_line(
         },
         cache_tag,
     );
-    println!("{line}");
+    crate::test_runner::emit_test_status(&line);
 }
 
 pub(crate) fn format_status_line(

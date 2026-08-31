@@ -46,14 +46,13 @@ impl fmt::Display for TestCoverageScope {
 const GLOBAL_KEYS: &[&str] = &[
     "min_similarity",
     "duplication_enabled",
-    "orphan_module_enabled",
     "comment_removal_enabled",
     "docs_allowed",
     "orphan_allowed",
 ];
 
 const GATE_RENAMED_MSG: &str = "\
-[gate] was renamed: put min_similarity/duplication_enabled/orphan_module_enabled/\
+[gate] was renamed: put min_similarity/duplication_enabled/\
 comment_removal_enabled/docs_allowed/orphan_allowed under [global], and test_coverage_threshold/\
 test_coverage_scope/orphan_detection/max_unit_test_seconds/max_num_tests under [test]";
 
@@ -65,7 +64,6 @@ pub struct GateConfig {
     pub max_num_tests: usize,
     pub min_similarity: f64,
     pub duplication_enabled: bool,
-    pub orphan_module_enabled: bool,
     pub orphan_detection: bool,
     pub comment_removal_enabled: bool,
     pub docs_allowed: Vec<String>,
@@ -81,7 +79,6 @@ impl Default for GateConfig {
             max_num_tests: defaults::gate::MAX_NUM_TESTS,
             min_similarity: defaults::duplication::MIN_SIMILARITY,
             duplication_enabled: true,
-            orphan_module_enabled: true,
             orphan_detection: false,
             comment_removal_enabled: false,
             docs_allowed: Vec::new(),

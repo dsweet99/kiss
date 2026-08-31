@@ -10,7 +10,6 @@ pub(crate) fn lock_batch(cache_root: &Path) -> std::io::Result<FileLockGuard> {
     FileLockGuard::lock(&batch_lock_path(cache_root))
 }
 
-#[allow(dead_code)]
 pub(crate) fn try_lock_batch(cache_root: &Path) -> std::io::Result<Option<FileLockGuard>> {
     FileLockGuard::try_lock(&batch_lock_path(cache_root))
 }

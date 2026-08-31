@@ -72,7 +72,6 @@ pub fn default_config_toml() -> String {
 [global]
 min_similarity = {min_sim}
 duplication_enabled = true
-orphan_module_enabled = true
 comment_removal_enabled = false
 docs_allowed = []
 orphan_allowed = []

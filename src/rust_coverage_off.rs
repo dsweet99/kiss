@@ -33,8 +33,7 @@ mod rust_coverage_off_test {
     fn coverage_off_and_doc_marker() {
         let off: syn::ItemFn = syn::parse_str("#[coverage(off)]\nfn f() {}").unwrap();
         let live: syn::ItemFn = syn::parse_str("fn g() {}").unwrap();
-        let doc: syn::ItemFn =
-            syn::parse_str("/// kiss-coverage-off\nfn h() {}").unwrap();
+        let doc: syn::ItemFn = syn::parse_str("/// kiss-coverage-off\nfn h() {}").unwrap();
         assert!(coverage_off_attrs(&off.attrs));
         assert!(!coverage_off_attrs(&live.attrs));
         assert!(coverage_off_attrs(&doc.attrs));

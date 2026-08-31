@@ -13,7 +13,6 @@ fn write_docs_config(root: &std::path::Path, docs_allowed: &str) {
         format!(
             "[global]\n\
              duplication_enabled = false\n\
-             orphan_module_enabled = false\n\
              comment_removal_enabled = false\n\
              docs_allowed = {docs_allowed}\n\
              \n\

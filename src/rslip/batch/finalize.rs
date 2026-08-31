@@ -4,7 +4,9 @@ use std::path::PathBuf;
 
 use crate::rpytest_runner::{PytestRunError, PytestRunOutcome, PytestRunRequest};
 
-use crate::rslip::cache::{RslipCacheEntry, load_reusable_rslip_cache_entry, store_rslip_cache_entry};
+use crate::rslip::cache::{
+    RslipCacheEntry, load_reusable_rslip_cache_entry, store_rslip_cache_entry,
+};
 use crate::rslip::{
     CacheStatus, RslipError, RslipOutcome, rslip_coverage_from_outcome, rslip_outcome_from_cache,
 };

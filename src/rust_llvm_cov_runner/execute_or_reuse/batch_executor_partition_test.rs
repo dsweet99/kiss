@@ -1,11 +1,11 @@
 use super::*;
 use crate::rpytest_runner::TestStatus;
+use crate::rust_llvm_cov_runner::RustCovCacheStatus;
+use crate::rust_llvm_cov_runner::RustLineCoverage;
 use crate::rust_llvm_cov_runner::test_support::{
     batch_executor_fixture_repo, batch_executor_request, store_batch_executor_selector,
     witness_batch_tools,
 };
-use crate::rust_llvm_cov_runner::RustCovCacheStatus;
-use crate::rust_llvm_cov_runner::RustLineCoverage;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
@@ -135,7 +135,7 @@ fn store_passed_entry(
 ) {
     use crate::rust_llvm_cov_runner::plan::batch_fingerprint::entry_fingerprint;
     use crate::rust_llvm_cov_runner::rust_cov_cache::{
-        store_rust_cov_cache_entry, RustCovCacheEntry,
+        RustCovCacheEntry, store_rust_cov_cache_entry,
     };
 
     let fingerprint = entry_fingerprint(&identity.input_digest, req, tools, selector);

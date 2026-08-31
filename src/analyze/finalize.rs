@@ -120,7 +120,6 @@ pub(crate) fn finalize_analysis(in_: FinalizeAnalysisIn<'_>) -> AnalyzeResult {
 
     let RustAnalysis {
         graph: rs_graph_owned,
-        ctx: _,
         dups: rs_dups_vec,
     } = products.rs;
 

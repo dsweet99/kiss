@@ -92,8 +92,8 @@ pub(super) fn emit_prepare_resolved_progress(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rslip::{CacheStatus, LineCoverage};
     use crate::rpytest_runner::TestStatus;
+    use crate::rslip::{CacheStatus, LineCoverage};
     use std::time::Duration;
 
     fn outcome(nodeid: &str, status: TestStatus) -> RslipOutcome {

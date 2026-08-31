@@ -181,7 +181,10 @@ pub(crate) fn is_python_test_module_path(path: &Path) -> bool {
 }
 
 pub(crate) fn python_selector_definition_digest(repo_root: &Path, selector: &str) -> String {
-    let file = selector.split_once("::").map(|(file, _)| file).unwrap_or(selector);
+    let file = selector
+        .split_once("::")
+        .map(|(file, _)| file)
+        .unwrap_or(selector);
     let bytes = fs::read(repo_root.join(file)).unwrap_or_default();
     let mut h = 0xcbf2_9ce4_8422_2325;
     h = python_fnv1a64(h, bytes.as_slice());

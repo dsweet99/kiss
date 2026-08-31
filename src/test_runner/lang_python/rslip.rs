@@ -1,5 +1,4 @@
 use std::collections::BTreeSet;
-use std::io::Write;
 use std::path::Path;
 use std::time::Duration;
 
@@ -85,7 +84,6 @@ fn run_rslip_selectors_with_runner(
     template.content_fingerprint = args.content_fingerprint;
     let mut summary = SelectorExecutionSummary::default();
     let mut statuses = Vec::new();
-    let mut stdout = std::io::BufWriter::new(std::io::stdout());
     let (reqs, runnable_selectors) = partition_rslip_requests(
         PartitionInput {
             selectors: args.selectors,
@@ -96,15 +94,13 @@ fn run_rslip_selectors_with_runner(
         },
         &mut summary,
         &mut statuses,
-        &mut stdout,
     );
     let results = Rslip::new(runner).run_or_reuse_many_bounded_with_progress(reqs, jobs, |event| {
         if let RslipBatchProgress::Prepared { elapsed, .. } = &event {
             crate::test_runner::emit_stage_time("rslip_prepare", *elapsed);
         }
-        handle_rslip_batch_progress(event, &runnable_selectors, gate, &mut stdout);
+        handle_rslip_batch_progress(event, &runnable_selectors, gate);
     });
-    let _ = std::io::Write::flush(&mut stdout);
     for (selector, result) in runnable_selectors.iter().zip(results) {
         record_rslip_selector_result(selector, result, gate, &mut summary, &mut statuses);
     }
@@ -124,7 +120,6 @@ fn partition_rslip_requests(
     input: PartitionInput<'_>,
     summary: &mut SelectorExecutionSummary,
     statuses: &mut Vec<(String, kiss::rpytest_runner::TestStatus)>,
-    stdout: &mut impl Write,
 ) -> (Vec<RslipRequest>, Vec<String>) {
     let mut reqs = Vec::new();
     let mut runnable = Vec::new();
@@ -132,7 +127,7 @@ fn partition_rslip_requests(
         let timeout = timeout_for_selector_with_gate(input.gate, selector);
 
         if timeout.is_zero() {
-            record_immediate_timeout(selector, summary, statuses, stdout);
+            record_immediate_timeout(selector, summary, statuses);
             continue;
         }
         let mut req = input.template.clone();
@@ -150,11 +145,15 @@ fn record_immediate_timeout(
     selector: &str,
     summary: &mut SelectorExecutionSummary,
     statuses: &mut Vec<(String, kiss::rpytest_runner::TestStatus)>,
-    stdout: &mut impl Write,
 ) {
     let status = kiss::rpytest_runner::TestStatus::TimedOut;
-    let line = crate::test_runner::status_labels::format_status_line(status, selector, "", None);
-    let _ = writeln!(stdout, "{line}");
+    crate::test_runner::status_labels::print_classified_status_line(
+        status,
+        selector,
+        Duration::ZERO,
+        None,
+        false,
+    );
     statuses.push((selector.to_string(), status));
     summary.record(SelectorExecutionRecord {
         selector: selector.to_string(),
@@ -218,7 +217,6 @@ fn handle_rslip_batch_progress(
     event: RslipBatchProgress,
     selectors: &[String],
     gate: &kiss::GateConfig,
-    stdout: &mut impl Write,
 ) {
     match event {
         RslipBatchProgress::Prepared {
@@ -231,34 +229,43 @@ fn handle_rslip_batch_progress(
             ));
         }
         RslipBatchProgress::SelectorFinalized { outcomes } => {
-            for (index, result) in outcomes {
-                match result {
-                    Ok(outcome) => {
-                        print_rslip_outcome(&outcome, gate, stdout);
-                    }
-                    Err(err) => {
-                        let selector = selectors
-                            .get(index)
-                            .map(String::as_str)
-                            .unwrap_or("<unknown>");
-                        let _ = writeln!(stdout, "FAIL: {selector} (rslip error)");
-                        eprintln!("{}", format_rslip_error(err));
-                    }
-                }
-            }
-            let _ = stdout.flush();
+            emit_finalized_outcomes(outcomes, selectors, gate);
         }
         RslipBatchProgress::CachedStatusDump { body } => {
-            if !crate::test_runner::check_runtime_refresh::test_runner_stdout_enabled() {
-                return;
-            }
-            let _ = stdout.write_all(body.as_bytes());
-            let _ = stdout.flush();
+            emit_progress_lines(&body);
         }
         RslipBatchProgress::TestsRemaining { remaining } => {
             crate::test_runner::emit_test_progress(&format!(
                 "kiss test: tests_remaining={remaining}"
             ));
+        }
+    }
+}
+
+fn emit_finalized_outcomes(
+    outcomes: Vec<(usize, Result<RslipOutcome, RslipError>)>,
+    selectors: &[String],
+    gate: &kiss::GateConfig,
+) {
+    for (index, result) in outcomes {
+        match result {
+            Ok(outcome) => print_rslip_outcome(&outcome, gate),
+            Err(err) => {
+                let selector = selectors
+                    .get(index)
+                    .map(String::as_str)
+                    .unwrap_or("<unknown>");
+                crate::test_runner::emit_test_status(&format!("FAIL: {selector} (rslip error)"));
+                eprintln!("{}", format_rslip_error(err));
+            }
+        }
+    }
+}
+
+fn emit_progress_lines(body: &str) {
+    for line in body.lines() {
+        if !line.is_empty() {
+            crate::test_runner::emit_test_progress(line);
         }
     }
 }
@@ -273,29 +280,24 @@ fn selected_rslip_pytest_runner() -> PytestRunner {
     kiss::rpytest_runner::subprocess_pytest_runner()
 }
 
-fn print_rslip_outcome(
-    outcome: &RslipOutcome,
-    gate: &kiss::GateConfig,
-    out: &mut impl std::io::Write,
-) {
+fn print_rslip_outcome(outcome: &RslipOutcome, gate: &kiss::GateConfig) {
     let status = crate::test_runner::status_labels::apply_unit_test_time_limit(
         outcome.status,
         &outcome.nodeid,
         outcome.duration,
         gate,
     );
-    let duration = crate::test_runner::duration::format_test_duration(outcome.duration);
     let cache_tag = match outcome.cache_status {
         PyCacheStatus::Hit => Some("cached"),
         PyCacheStatus::MissStored => None,
     };
-    let line = crate::test_runner::status_labels::format_status_line(
+    crate::test_runner::status_labels::print_classified_status_line(
         status,
         &outcome.nodeid,
-        if cache_tag.is_some() { "" } else { &duration },
+        outcome.duration,
         cache_tag,
+        cache_tag.is_none(),
     );
-    let _ = writeln!(out, "{line}");
     if matches!(
         status,
         kiss::rpytest_runner::TestStatus::Failed | kiss::rpytest_runner::TestStatus::TimedOut

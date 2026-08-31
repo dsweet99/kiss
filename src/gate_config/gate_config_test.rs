@@ -170,7 +170,6 @@ fn try_load_from_content_accepts_all_gate_fields() {
 [global]
 min_similarity = 0.75
 duplication_enabled = false
-orphan_module_enabled = false
 comment_removal_enabled = true
 docs_allowed = [\"docs\", \"src/api\"]
 orphan_allowed = [\"src/plugins\"]
@@ -191,7 +190,6 @@ max_num_tests = 12
     assert_eq!(gate.max_num_tests, 12);
     assert!((gate.min_similarity - 0.75).abs() < f64::EPSILON);
     assert!(!gate.duplication_enabled);
-    assert!(!gate.orphan_module_enabled);
     assert!(gate.orphan_detection);
     assert!(gate.comment_removal_enabled);
     assert_eq!(
@@ -216,6 +214,12 @@ max_num_tests = 12
     assert!(
         matches!(err, ConfigError::UnknownKey { .. }),
         "orphan_unit_enabled is not a [global] key: {err:?}"
+    );
+    let err =
+        GateConfig::try_load_from_content("[global]\norphan_module_enabled = false").unwrap_err();
+    assert!(
+        matches!(err, ConfigError::UnknownKey { .. }),
+        "orphan_module_enabled is rejected: {err:?}"
     );
     let off = GateConfig::try_load_from_content("[test]\norphan_detection = false").unwrap();
     assert!(!off.orphan_detection);

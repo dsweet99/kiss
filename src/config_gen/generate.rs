@@ -25,7 +25,6 @@ fn is_graph_metric_id(metric_id: &str) -> bool {
 pub fn auto_created_gate_config() -> GateConfig {
     GateConfig {
         duplication_enabled: false,
-        orphan_module_enabled: false,
         orphan_detection: false,
         comment_removal_enabled: false,
         docs_allowed: vec!["./".to_string()],
@@ -42,11 +41,6 @@ pub fn generate_config_toml_by_language(p: &GenerateConfigParams<'_>) -> String 
     let _ = writeln!(out, "[global]");
     let _ = writeln!(out, "min_similarity = {}", p.gate.min_similarity);
     let _ = writeln!(out, "duplication_enabled = {}", p.gate.duplication_enabled);
-    let _ = writeln!(
-        out,
-        "orphan_module_enabled = {}",
-        p.gate.orphan_module_enabled
-    );
     let _ = writeln!(
         out,
         "comment_removal_enabled = {}",
@@ -167,7 +161,6 @@ mod coverage_witness {
     fn auto_created_gate_disables_static_and_test_gates() {
         let gate = auto_created_gate_config();
         assert!(!gate.duplication_enabled);
-        assert!(!gate.orphan_module_enabled);
         assert!(!gate.orphan_detection);
         assert!(!gate.comment_removal_enabled);
         assert_eq!(gate.docs_allowed, vec!["./".to_string()]);
@@ -189,8 +182,8 @@ mod coverage_witness {
             "auto-created global flags:\n{toml}"
         );
         assert!(
-            toml.contains("orphan_module_enabled = false"),
-            "auto-created global flags:\n{toml}"
+            !toml.contains("orphan_module_enabled"),
+            "auto-created config must not write orphan_module_enabled:\n{toml}"
         );
         assert!(
             toml.contains("orphan_detection = false"),

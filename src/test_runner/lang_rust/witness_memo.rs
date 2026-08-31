@@ -31,8 +31,8 @@ pub(super) fn stash_published_witness(
     witness_path: &Path,
     witness: ExecutionWitness,
 ) {
-    let stamp = file_stamp(witness_path)
-        .unwrap_or_else(|| format!("gen:{}", witness.generation_id));
+    let stamp =
+        file_stamp(witness_path).unwrap_or_else(|| format!("gen:{}", witness.generation_id));
     let key = kiss::rust_include::canonical_path(repo_root);
     if let Ok(mut guard) = witness_memo().lock() {
         *guard = Some(WitnessMemo {

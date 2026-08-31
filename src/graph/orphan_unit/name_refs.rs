@@ -31,9 +31,11 @@ fn python_name_binds(py: &[ParsedFile], ctx: &ContextDependencyGraph) -> Vec<Nam
         let importer = module_name_for_path(ctx, &parsed.path)
             .unwrap_or_else(|| qualified_module_name(&parsed.path));
         let parent = importer.rsplit_once('.').map(|(p, _)| p);
-        for (prefix, last) in python_ident_refs(parsed) {
+        for (prefix, last, line) in python_ident_refs(parsed) {
             if prefix.is_empty() {
                 out.push(NamedBind {
+                    file: parsed.path.clone(),
+                    line,
                     target_module: String::new(),
                     last,
                 });
@@ -41,12 +43,16 @@ fn python_name_binds(py: &[ParsedFile], ctx: &ContextDependencyGraph) -> Vec<Nam
             }
             for resolved in resolve_import(&prefix, parent, &bare) {
                 out.push(NamedBind {
+                    file: parsed.path.clone(),
+                    line,
                     target_module: resolved,
                     last: last.clone(),
                 });
             }
             if prod.nodes.contains_key(&prefix) {
                 out.push(NamedBind {
+                    file: parsed.path.clone(),
+                    line,
                     target_module: prefix,
                     last,
                 });
@@ -62,8 +68,10 @@ fn rust_name_binds(rs: &[ParsedRustFile], ctx: &ContextDependencyGraph) -> Vec<N
     let mut out = Vec::new();
     for parsed in rs {
         let module = module_name_for_path(ctx, &parsed.path);
-        for (prefix, last) in collect_file_name_refs(&parsed.ast) {
+        for (prefix, last, line) in collect_file_name_refs(&parsed.ast) {
             out.push(NamedBind {
+                file: parsed.path.clone(),
+                line,
                 target_module: String::new(),
                 last: last.clone(),
             });
@@ -77,6 +85,8 @@ fn rust_name_binds(rs: &[ParsedRustFile], ctx: &ContextDependencyGraph) -> Vec<N
                 &last_idx,
             ) {
                 out.push(NamedBind {
+                    file: parsed.path.clone(),
+                    line,
                     target_module: resolved,
                     last,
                 });
@@ -86,7 +96,7 @@ fn rust_name_binds(rs: &[ParsedRustFile], ctx: &ContextDependencyGraph) -> Vec<N
     out
 }
 
-fn collect_file_name_refs(ast: &syn::File) -> Vec<(String, String)> {
+fn collect_file_name_refs(ast: &syn::File) -> Vec<(String, String, usize)> {
     let mut visitor = NameRefVisitor {
         out: Vec::new(),
         skip_path: false,
@@ -96,7 +106,7 @@ fn collect_file_name_refs(ast: &syn::File) -> Vec<(String, String)> {
 }
 
 struct NameRefVisitor {
-    out: Vec<(String, String)>,
+    out: Vec<(String, String, usize)>,
     skip_path: bool,
 }
 
@@ -122,12 +132,14 @@ impl<'ast> Visit<'ast> for NameRefVisitor {
     }
 
     fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
-        self.out.push((String::new(), node.method.to_string()));
+        let line = syn::spanned::Spanned::span(&node.method).start().line;
+        self.out
+            .push((String::new(), node.method.to_string(), line));
         syn::visit::visit_expr_method_call(self, node);
     }
 }
 
-fn push_path(path: &syn::Path, out: &mut Vec<(String, String)>) {
+fn push_path(path: &syn::Path, out: &mut Vec<(String, String, usize)>) {
     let segs: Vec<String> = path
         .segments
         .iter()
@@ -137,20 +149,21 @@ fn push_path(path: &syn::Path, out: &mut Vec<(String, String)>) {
     let Some(last) = segs.last().cloned() else {
         return;
     };
+    let line = syn::spanned::Spanned::span(path).start().line;
     for seg in &segs {
-        out.push((String::new(), seg.clone()));
+        out.push((String::new(), seg.clone(), line));
     }
     let prefix = segs[..segs.len().saturating_sub(1)].join(".");
-    out.push((prefix, last));
+    out.push((prefix, last, line));
 }
 
-fn python_ident_refs(parsed: &ParsedFile) -> Vec<(String, String)> {
+fn python_ident_refs(parsed: &ParsedFile) -> Vec<(String, String, usize)> {
     let mut out = Vec::new();
     walk_py(parsed.tree.root_node(), parsed.source.as_bytes(), &mut out);
     out
 }
 
-fn walk_py(node: tree_sitter::Node<'_>, src: &[u8], out: &mut Vec<(String, String)>) {
+fn walk_py(node: tree_sitter::Node<'_>, src: &[u8], out: &mut Vec<(String, String, usize)>) {
     match node.kind() {
         "function_definition" | "class_definition" => {
             walk_py_skip_name(node, src, out);
@@ -162,12 +175,20 @@ fn walk_py(node: tree_sitter::Node<'_>, src: &[u8], out: &mut Vec<(String, Strin
                 node.child_by_field_name("attribute"),
             ) && let (Ok(prefix), Ok(last)) = (obj.utf8_text(src), attr.utf8_text(src))
             {
-                out.push((prefix.to_string(), last.to_string()));
+                out.push((
+                    prefix.to_string(),
+                    last.to_string(),
+                    node.start_position().row + 1,
+                ));
             }
         }
         "identifier" => {
             if let Ok(name) = node.utf8_text(src) {
-                out.push((String::new(), name.to_string()));
+                out.push((
+                    String::new(),
+                    name.to_string(),
+                    node.start_position().row + 1,
+                ));
             }
         }
         _ => {}
@@ -178,7 +199,11 @@ fn walk_py(node: tree_sitter::Node<'_>, src: &[u8], out: &mut Vec<(String, Strin
     }
 }
 
-fn walk_py_skip_name(node: tree_sitter::Node<'_>, src: &[u8], out: &mut Vec<(String, String)>) {
+fn walk_py_skip_name(
+    node: tree_sitter::Node<'_>,
+    src: &[u8],
+    out: &mut Vec<(String, String, usize)>,
+) {
     let name = node.child_by_field_name("name");
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
@@ -195,6 +220,9 @@ mod name_refs_test {
 
     fn refs(src: &str) -> Vec<(String, String)> {
         collect_file_name_refs(&syn::parse_file(src).unwrap())
+            .into_iter()
+            .map(|(prefix, last, _line)| (prefix, last))
+            .collect()
     }
 
     #[test]

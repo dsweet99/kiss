@@ -208,7 +208,6 @@ fn write_incremental_rust_repo(repo: &TempDir, value: &str) {
         repo.path().join(".kissconfig"),
         "[global]\n\
          duplication_enabled = false\n\
-         orphan_module_enabled = false\n\
 \n\
 [test]\n\
          test_coverage_threshold = 100\n\

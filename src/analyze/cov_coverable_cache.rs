@@ -81,7 +81,10 @@ fn coverable_fingerprint(key: &CovCoverableKey<'_>) -> Option<String> {
         h = fnv1a64(h, prefix.as_bytes());
         h = fnv1a64(h, &[0]);
     }
-    h = crate::analyze_cache::mix_sorted_paths_len_mtime(h, key.py_files.iter().chain(key.rs_files));
+    h = crate::analyze_cache::mix_sorted_paths_len_mtime(
+        h,
+        key.py_files.iter().chain(key.rs_files),
+    );
     Some(format!("{h:016x}"))
 }
 

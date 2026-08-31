@@ -66,9 +66,7 @@ pub fn load_ordinary_source_snapshot(
         .map(|parsed| parsed.ordinary_source_digests)
 }
 
-pub fn load_ordinary_source_line_hashes(
-    cache_root: &Path,
-) -> Option<BTreeMap<String, Vec<u64>>> {
+pub fn load_ordinary_source_line_hashes(cache_root: &Path) -> Option<BTreeMap<String, Vec<u64>>> {
     let bytes = fs::read(cache_root.join(SNAPSHOT_FILE)).ok()?;
     let parsed: OrdinarySourceSnapshotFile = serde_json::from_slice(&bytes).ok()?;
     (parsed.schema_version == SNAPSHOT_SCHEMA).then_some(parsed.line_hashes)

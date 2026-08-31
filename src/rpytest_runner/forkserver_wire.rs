@@ -54,7 +54,9 @@ impl WireRequest {
                     path: artifact.path.to_string_lossy().to_string(),
                 })
                 .collect(),
-            timeout_ms: req.timeout.map(crate::rpytest_runner::forkserver::duration_millis_u64),
+            timeout_ms: req
+                .timeout
+                .map(crate::rpytest_runner::forkserver::duration_millis_u64),
         }
     }
 }

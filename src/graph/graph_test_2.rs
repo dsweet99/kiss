@@ -340,7 +340,7 @@ fn production_gates_ignore_cycles_on_test_only_edges() {
     );
     let mut cfg = Config::python_defaults();
     cfg.cycle_size = 0;
-    let viols = analyze_graph(&prod, &cfg, false);
+    let viols = analyze_graph(&prod, &cfg);
     assert!(
         !viols.iter().any(|v| v.metric == "cycle_size"),
         "production gates must ignore test-only cycles, got {viols:?}"

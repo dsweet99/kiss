@@ -143,7 +143,7 @@ fn run_tracked_batch_command(
     let mut child = spawn_tracked_batch_child(cwd, plan, env, process_tree, &program)?;
     let _finish_progress = begin_cargo_nextest_progress();
     let (stdout_handle, stderr_handle) =
-        spawn_batch_pipe_readers(&mut child, &program, &_finish_progress.0)?;
+        spawn_batch_pipe_readers(&mut child, &program, &_finish_progress.progress)?;
     let output_dir = plan.target_runner_output_dir.clone();
     let mut seen_shim_metadata = HashSet::new();
     let wait_result = wait_child_with_interruption(
@@ -192,7 +192,24 @@ fn spawn_tracked_batch_child(
 }
 
 fn begin_cargo_nextest_progress() -> FinishCargoNextestProgress {
-    FinishCargoNextestProgress(Arc::new(Mutex::new(CargoNextestProgress::start())))
+    let progress = Arc::new(Mutex::new(CargoNextestProgress::start()));
+    let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let tick_progress = Arc::clone(&progress);
+    let tick_stop = Arc::clone(&stop);
+    std::thread::spawn(move || {
+        let started = std::time::Instant::now();
+        while !tick_stop.load(std::sync::atomic::Ordering::Relaxed) {
+            std::thread::sleep(Duration::from_secs(2));
+            if tick_stop.load(std::sync::atomic::Ordering::Relaxed) {
+                break;
+            }
+            tick_progress
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .tick(started.elapsed());
+        }
+    });
+    FinishCargoNextestProgress { progress, stop }
 }
 
 type PipeReaderHandle = std::thread::JoinHandle<io::Result<Vec<u8>>>;

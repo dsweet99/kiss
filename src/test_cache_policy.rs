@@ -74,7 +74,11 @@ impl TestCachePolicy {
 
 pub fn merge_language_adapters(repo_root: &Path, policy: &mut TestCachePolicy) {
     for pattern in adapter_patterns(repo_root) {
-        if !policy.non_cacheable.iter().any(|existing| existing == &pattern) {
+        if !policy
+            .non_cacheable
+            .iter()
+            .any(|existing| existing == &pattern)
+        {
             policy.non_cacheable.push(pattern);
         }
     }

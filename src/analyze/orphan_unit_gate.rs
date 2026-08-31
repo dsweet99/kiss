@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use kiss::{
     OrphanCoverage, OrphanUnitInput, build_python_context_graph, build_rust_context_graph,
-    collect_orphan_entry_paths, orphan_unit_violations,
+    collect_orphan_entry_callables, collect_orphan_entry_paths, orphan_unit_violations,
 };
 
 use crate::analyze::line_coverage::{
@@ -22,9 +22,29 @@ pub(crate) fn evaluate_orphan_unit_gate(
     if bypass || !gate.orphan_detection {
         return false;
     }
-    let Ok((py_parsed, rs_parsed, roles)) = parse_classified(py_files, rs_files) else {
+    let Ok(viols) = collect_orphan_unit_violations(
+        repo_root,
+        py_files,
+        rs_files,
+        snapshot,
+        &gate.orphan_allowed,
+    ) else {
         eprintln!("error: kiss test: failed to parse sources for orphan units");
         return true;
+    };
+    kiss::cli_output::print_violations(&viols);
+    !viols.is_empty()
+}
+
+pub(crate) fn collect_orphan_unit_violations(
+    repo_root: &Path,
+    py_files: &[PathBuf],
+    rs_files: &[PathBuf],
+    snapshot: &RuntimeCoverageSnapshot,
+    orphan_allowed: &[String],
+) -> Result<Vec<kiss::Violation>, ()> {
+    let Ok((py_parsed, rs_parsed, roles)) = parse_classified(py_files, rs_files) else {
+        return Err(());
     };
     let facts =
         CoverageSourceFacts::from_index(roles.clone(), &py_parsed, &rs_parsed, py_files, rs_files);
@@ -43,25 +63,23 @@ pub(crate) fn evaluate_orphan_unit_gate(
     };
     let py_prod = py_ctx.production_view();
     let rs_prod = rs_ctx.production_view();
-    let entries = collect_orphan_entry_paths(
-        &py_parsed,
-        &rs_parsed,
-        (!py_parsed.is_empty()).then_some(&py_prod),
-        (!rs_parsed.is_empty()).then_some(&rs_prod),
-    );
+    let py_graph = (!py_parsed.is_empty()).then_some(&py_prod);
+    let rs_graph = (!rs_parsed.is_empty()).then_some(&rs_prod);
+    let entries = collect_orphan_entry_paths(&py_parsed, &rs_parsed, py_graph, rs_graph);
+    let callables = collect_orphan_entry_callables(&py_parsed, &rs_parsed, py_graph, rs_graph);
     let viols = orphan_unit_violations(&OrphanUnitInput {
         py: &py_parsed,
         rs: &rs_parsed,
         py_ctx: &py_ctx,
         rs_ctx: &rs_ctx,
         entries: &entries,
-        orphan_allowed: &gate.orphan_allowed,
+        entry_callables: &callables,
+        orphan_allowed,
         repo_root,
         roles: &roles,
         coverage: Some(&coverage),
     });
-    kiss::cli_output::print_violations(&viols);
-    !viols.is_empty()
+    Ok(viols)
 }
 
 fn snapshot_to_orphan_coverage(

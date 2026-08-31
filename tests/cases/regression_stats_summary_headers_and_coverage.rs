@@ -46,21 +46,20 @@ fn build_simple_corpus_for_violation_comparison(dir: &std::path::Path) {
     .unwrap();
 }
 
-fn parse_violation_counts(stdout: &str) -> (usize, usize) {
+fn parse_duplicate_count(stdout: &str) -> usize {
     let line = stdout
         .lines()
         .find(|l| l.starts_with("Violations:"))
         .unwrap_or_else(|| panic!("missing `Violations:` line in stdout:\n{stdout}"));
-    let mut values: Vec<usize> = line
-        .split(|c: char| !c.is_ascii_digit())
+    assert!(
+        !line.contains("orphan"),
+        "without a coverage snapshot, orphan counts must be omitted: {line}\nfull stdout:\n{stdout}"
+    );
+    line.split(|c: char| !c.is_ascii_digit())
         .filter(|s| !s.is_empty())
         .filter_map(|s| s.parse::<usize>().ok())
-        .collect();
-    assert!(
-        values.len() >= 2,
-        "expected at least 2 integers in `Violations:` line: {line}\nfull stdout:\n{stdout}"
-    );
-    (values.remove(0), values.remove(0))
+        .next()
+        .unwrap_or_else(|| panic!("expected a duplicate count in `{line}`\nfull stdout:\n{stdout}"))
 }
 
 #[test]
@@ -122,8 +121,8 @@ fn cli_stats_summary_emits_violations_header_with_duplicate_and_orphan_counts() 
         "Violations header missing `duplicate`: {line}\nfull stdout:\n{stdout}"
     );
     assert!(
-        line.contains("orphan"),
-        "Violations header missing `orphan`: {line}\nfull stdout:\n{stdout}"
+        !line.contains("orphan"),
+        "without a coverage snapshot, orphan counts must be omitted: {line}\nfull stdout:\n{stdout}"
     );
     assert!(
         line.contains("comment"),
@@ -141,16 +140,16 @@ fn cli_stats_summary_emits_violations_header_with_duplicate_and_orphan_counts() 
         .collect();
     assert_eq!(
         nums.len(),
-        4,
-        "expected exactly 4 numbers in `Violations:` line ({line:?}); full stdout:\n{stdout}"
+        3,
+        "expected exactly 3 numbers in `Violations:` line without snapshot ({line:?}); full stdout:\n{stdout}"
     );
     assert!(
         nums[0] > 0,
         "expected duplicate count > 0 (corpus has dup_a/dup_b near-clones); line: {line}\nstdout:\n{stdout}"
     );
     assert!(
-        nums[1] > 0,
-        "expected orphan count > 0 (corpus has lonely_orphan.py); line: {line}\nstdout:\n{stdout}"
+        !stdout.contains("Coverage:"),
+        "without a coverage snapshot, coverage numbers must be omitted.\nfull stdout:\n{stdout}"
     );
 }
 
@@ -187,13 +186,13 @@ fn cli_stats_summary_respects_explicit_config_override_for_gate_behavior() {
     let local = tmp.path().join(".kissconfig");
     fs::write(
         &local,
-        "[global]\nduplication_enabled = true\norphan_module_enabled = true\nmin_similarity = 0.7\n[python]\n[rust]\n",
+        "[global]\nduplication_enabled = true\nmin_similarity = 0.7\n[python]\n[rust]\n",
     )
     .unwrap();
     let custom = tmp.path().join("custom.toml");
     fs::write(
         &custom,
-        "[global]\nduplication_enabled = false\norphan_module_enabled = false\nmin_similarity = 1.0\n[python]\n[rust]\n",
+        "[global]\nduplication_enabled = false\nmin_similarity = 1.0\n[python]\n[rust]\n",
     )
     .unwrap();
     let home = tmp.path().join("home");
@@ -211,10 +210,10 @@ fn cli_stats_summary_respects_explicit_config_override_for_gate_behavior() {
         local_out.status.success(),
         "local stats should succeed:\n{local_stdout}"
     );
-    let (local_dup, local_orphan) = parse_violation_counts(&local_stdout);
+    let local_dup = parse_duplicate_count(&local_stdout);
     assert!(
-        local_dup > 0 && local_orphan > 0,
-        "local config enables gate checks; expected both counts > 0 in:\n{local_stdout}"
+        local_dup > 0,
+        "local config enables duplication; expected count > 0 in:\n{local_stdout}"
     );
 
     let override_out = kiss_binary()
@@ -231,10 +230,10 @@ fn cli_stats_summary_respects_explicit_config_override_for_gate_behavior() {
         override_out.status.success(),
         "stats with --config should succeed: {override_stdout}"
     );
-    let (override_dup, override_orphan) = parse_violation_counts(&override_stdout);
+    let override_dup = parse_duplicate_count(&override_stdout);
     assert!(
-        override_dup == 0 && override_orphan == 0,
-        "explicit --config should disable both checks:\n{override_stdout}"
+        override_dup == 0,
+        "explicit --config should disable duplication:\n{override_stdout}"
     );
 }
 
@@ -245,7 +244,7 @@ fn cli_stats_summary_defaults_can_disable_local_config_and_restore_defaults() {
 
     fs::write(
         tmp.path().join(".kissconfig"),
-        "[global]\nduplication_enabled = false\norphan_module_enabled = false\n[python]\n[rust]\n",
+        "[global]\nduplication_enabled = false\n[python]\n[rust]\n",
     )
     .unwrap();
 
@@ -264,10 +263,10 @@ fn cli_stats_summary_defaults_can_disable_local_config_and_restore_defaults() {
         local_out.status.success(),
         "local stats should succeed:\n{local_stdout}"
     );
-    let (local_dup, local_orphan) = parse_violation_counts(&local_stdout);
+    let local_dup = parse_duplicate_count(&local_stdout);
     assert!(
-        local_dup == 0 && local_orphan == 0,
-        "local config disables gate checks: expected both zero.\nstdout:\n{local_stdout}"
+        local_dup == 0,
+        "local config disables duplication: expected zero.\nstdout:\n{local_stdout}"
     );
 
     let config = write_builtin_language_config(tmp.path());
@@ -285,9 +284,9 @@ fn cli_stats_summary_defaults_can_disable_local_config_and_restore_defaults() {
         default_out.status.success(),
         "stats --config builtin should succeed:\n{default_stdout}"
     );
-    let (default_dup, default_orphan) = parse_violation_counts(&default_stdout);
+    let default_dup = parse_duplicate_count(&default_stdout);
     assert!(
-        default_dup > 0 && default_orphan > 0,
-        "builtin --config should ignore local .kissconfig and re-enable checks:\n{default_stdout}"
+        default_dup > 0,
+        "builtin --config should ignore local .kissconfig and re-enable duplication:\n{default_stdout}"
     );
 }
