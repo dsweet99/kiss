@@ -88,6 +88,9 @@ pub(crate) fn apply_target_runner_env(
 }
 
 fn build_nextest_default_filter(req: &RustCoverageBatchRequest) -> String {
+    if crate::rust_llvm_cov_runner::plan::batch_plan::is_workspace_list_build(req) {
+        return "all()".to_string();
+    }
     let runnable: Vec<&String> = req
         .logical_selectors
         .iter()

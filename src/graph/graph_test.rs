@@ -14,6 +14,16 @@ pub(super) fn new_graph() -> DependencyGraph {
 }
 
 #[test]
+fn graph_include_shim_modules_are_imported() {
+    use crate::graph::graph_analyze;
+    use crate::graph::graph_build;
+    use crate::graph::graph_python;
+    let _ = graph_analyze::analyze_graph;
+    let _ = graph_build::build_dependency_graph;
+    let _ = graph_python::extract_imports_spanned;
+}
+
+#[test]
 fn test_touch_dynamic_import_helpers_for_static_coverage() {
     let mut parser = create_parser().unwrap();
     let code = "def f():\n    import importlib\n    importlib.import_module(\"pkg.target\")\n    __import__(\"pkg.other\")\n";

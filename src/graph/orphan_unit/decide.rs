@@ -114,7 +114,7 @@ fn mark_containers(units: &[UnitRef], idx: usize, reached: &mut [bool], queue: &
 }
 
 pub(super) fn coverage_witnesses(units: &[UnitRef], coverage: &OrphanCoverage) -> Vec<bool> {
-    let by_file = units_by_file(units);
+    let by_file = crate::graph::orphan_unit::extract::units_by_file(units);
     let direct = direct_callable_hits(units, &by_file, coverage);
     let mut out = direct.clone();
     for (i, unit) in units.iter().enumerate() {
@@ -129,22 +129,6 @@ pub(super) fn coverage_witnesses(units: &[UnitRef], coverage: &OrphanCoverage) -
         }
     }
     out
-}
-
-fn units_by_file(units: &[UnitRef]) -> HashMap<PathBuf, Vec<usize>> {
-    let mut map: HashMap<PathBuf, Vec<usize>> = HashMap::new();
-    for (i, unit) in units.iter().enumerate() {
-        map.entry(unit.file.clone()).or_default().push(i);
-    }
-    let aliases: Vec<(PathBuf, Vec<usize>)> = map
-        .iter()
-        .filter_map(|(path, idxs)| {
-            let canon = canonical_path(path);
-            (!map.contains_key(&canon)).then(|| (canon, idxs.clone()))
-        })
-        .collect();
-    map.extend(aliases);
-    map
 }
 
 fn file_unit_idxs<'a>(

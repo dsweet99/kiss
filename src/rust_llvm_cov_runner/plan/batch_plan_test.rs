@@ -209,6 +209,16 @@ fn batch_plan_rejects_zero_jobs_and_empty_selectors_before_mutation() {
             .contains("selectors")
     );
 
+    let mut list_build = request();
+    list_build.logical_selectors.clear();
+    list_build.population_publication_selectors = Some(Vec::new());
+    let list_plan = build_rust_coverage_batch_plan(&list_build).expect("list-build");
+    assert!(
+        list_plan.generated_config_toml.contains("all()"),
+        "workspace list-build must compile the full suite: {}",
+        list_plan.generated_config_toml
+    );
+
     let mut empty_selector = request();
     empty_selector.logical_selectors.push(String::new());
     assert!(

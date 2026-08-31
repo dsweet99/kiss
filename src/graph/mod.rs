@@ -8,9 +8,9 @@ mod dependency_graph {
 
     include!("dependency_graph_body.rs");
 }
-mod graph_analyze;
-mod graph_build;
-mod graph_python;
+pub(crate) mod graph_analyze;
+pub(crate) mod graph_build;
+pub(crate) mod graph_python;
 mod orphan;
 mod orphan_unit;
 mod unused;

@@ -242,6 +242,22 @@ impl<'ast> Visit<'ast> for CovOffVisitor<'_> {
     }
 }
 
+pub(super) fn units_by_file(units: &[UnitRef]) -> HashMap<PathBuf, Vec<usize>> {
+    let mut map: HashMap<PathBuf, Vec<usize>> = HashMap::new();
+    for (i, unit) in units.iter().enumerate() {
+        map.entry(unit.file.clone()).or_default().push(i);
+    }
+    let aliases: Vec<(PathBuf, Vec<usize>)> = map
+        .iter()
+        .filter_map(|(path, idxs)| {
+            let canon = crate::rust_include::canonical_path(path);
+            (!map.contains_key(&canon)).then(|| (canon, idxs.clone()))
+        })
+        .collect();
+    map.extend(aliases);
+    map
+}
+
 pub(super) fn file_key<'a>(
     map: &'a std::collections::BTreeMap<PathBuf, BTreeSet<usize>>,
     path: &Path,

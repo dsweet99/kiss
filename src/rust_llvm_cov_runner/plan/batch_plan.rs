@@ -192,15 +192,20 @@ pub(crate) fn target_runner_output_dir(req: &RustCoverageBatchRequest) -> PathBu
         .unwrap_or_else(|| req.cache_root.join("runs").join("instances"))
 }
 
+pub(crate) fn is_workspace_list_build(req: &RustCoverageBatchRequest) -> bool {
+    req.logical_selectors.is_empty() && req.population_publication_selectors.as_deref() == Some(&[])
+}
+
 fn validate_batch_request(req: &RustCoverageBatchRequest) -> Result<(), String> {
     if req.jobs == 0 {
         return Err("jobs must be greater than zero".to_string());
     }
-    if req.logical_selectors.is_empty()
-        || req
-            .logical_selectors
-            .iter()
-            .any(|selector| selector.is_empty())
+    if !is_workspace_list_build(req)
+        && (req.logical_selectors.is_empty()
+            || req
+                .logical_selectors
+                .iter()
+                .any(|selector| selector.is_empty()))
     {
         return Err("logical selectors must not be empty".to_string());
     }
