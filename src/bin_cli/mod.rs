@@ -11,6 +11,8 @@ mod mimic;
 mod run;
 pub mod stats;
 mod test_cmd;
+#[cfg(test)]
+pub(crate) use test_cmd::{TestCommandArgs, finish_with_coverage};
 pub mod util;
 
 pub use run::run_cli_entrypoint as run;

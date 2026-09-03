@@ -256,8 +256,15 @@ pub(super) fn cover_language(
             let TestInvocation::Targets(targets) = &a.invocation else {
                 return Err("error: kiss test: missing targets".to_string());
             };
+            let thread_targets = cover_thread_targets(targets, language, a.lang_filter)?;
+            if thread_targets.is_empty() {
+                return Ok(super::empty_planned(
+                    prefix.repo_root.clone(),
+                    prefix.ignore.clone(),
+                ));
+            }
             plan_target_selectors(
-                TargetPlanKind::Targets(targets.as_slice()),
+                TargetPlanKind::Targets(thread_targets.as_slice()),
                 &prefix.ignore,
                 extras,
                 Some(language),
@@ -295,6 +302,57 @@ pub(crate) fn split_jobs(jobs: usize, both: bool) -> (usize, usize) {
         (half, half)
     } else {
         (full, full)
+    }
+}
+
+fn cover_thread_targets(
+    targets: &[String],
+    language: Language,
+    user_lang: Option<Language>,
+) -> Result<Vec<String>, String> {
+    reject_user_lang_on_targets(targets, user_lang)?;
+    Ok(targets
+        .iter()
+        .filter(|raw| target_belongs_to_thread(raw, language))
+        .cloned()
+        .collect())
+}
+
+fn reject_user_lang_on_targets(
+    targets: &[String],
+    user_lang: Option<Language>,
+) -> Result<(), String> {
+    let Some(filter) = user_lang else {
+        return Ok(());
+    };
+    for raw in targets {
+        let Some(language) = operand_source_language(raw) else {
+            continue;
+        };
+        if language != filter {
+            return Err(format!(
+                "error: kiss test: target '{raw}' is {} but --lang selects only {}",
+                language.label(),
+                filter.label()
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn target_belongs_to_thread(raw: &str, language: Language) -> bool {
+    operand_source_language(raw).is_none_or(|operand| operand == language)
+}
+
+fn operand_source_language(raw: &str) -> Option<Language> {
+    let path_part = raw.split_once("::").map_or(raw, |(path, _)| path);
+    match std::path::Path::new(path_part)
+        .extension()
+        .and_then(|ext| ext.to_str())
+    {
+        Some(ext) if ext.eq_ignore_ascii_case("py") => Some(Language::Python),
+        Some(ext) if ext.eq_ignore_ascii_case("rs") => Some(Language::Rust),
+        _ => None,
     }
 }
 

@@ -298,9 +298,6 @@ pub(super) fn run_rust_selectors_for_module(
                 misses,
                 &ctx.planned.prior_failure_selectors.rust,
             );
-            let publication = population_publication_selectors
-                .clone()
-                .or_else(|| Some(selectors.to_vec()));
             return runners::run_rust_llvm_cov_selectors(
                 &ctx.planned.repo_root,
                 misses,
@@ -308,7 +305,7 @@ pub(super) fn run_rust_selectors_for_module(
                 force_rerun,
                 &ctx.planned.prior_failure_selectors.rust,
                 ctx.options.jobs,
-                publication,
+                population_publication_selectors.clone(),
                 &ctx.options.gate,
             );
         }

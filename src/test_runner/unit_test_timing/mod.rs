@@ -106,7 +106,7 @@ fn load_rust_timings(repo_root: &Path) -> Option<Vec<UnitTestTiming>> {
         None,
     ) && !pairs.is_empty()
     {
-        let report_ids = rust_logical_to_kiss_test_ids_cached(repo_root, &[]).ok()?;
+        let report_ids = rust_logical_to_kiss_test_ids_cached(repo_root, &[]).unwrap_or_default();
         return Some(
             pairs
                 .into_iter()

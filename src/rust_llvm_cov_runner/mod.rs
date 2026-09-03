@@ -144,9 +144,9 @@ pub use batch_derived_incremental::{
 pub use batch_derived_index::{
     RustGenerationCoverageSnapshot, RustPopulationState, RustSnapshotDelta,
     current_population_manifest_test_binaries_match, current_test_binaries_match,
-    is_check_aggregate_population, load_current_generation_coverage_snapshot,
-    load_current_generation_line_index, load_current_population_state,
-    load_reusable_prior_population_state, reusable_snapshot_delta,
+    is_check_aggregate_population, load_current_generation_coverage_from_passing_entries,
+    load_current_generation_coverage_snapshot, load_current_generation_line_index,
+    load_current_population_state, load_reusable_prior_population_state, reusable_snapshot_delta,
 };
 pub use batch_entry_state::{
     ENTRY_STATE_SCHEMA, EntryState, invalidate_entry_state, publish_next_entry_state,

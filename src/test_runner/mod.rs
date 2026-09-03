@@ -351,3 +351,7 @@ mod rust_batch_witness_derived_test;
 #[cfg(test)]
 #[path = "test_cli_acceptance_test.rs"]
 mod test_cli_acceptance_test;
+
+#[cfg(test)]
+#[path = "kt_target_types_test.rs"]
+mod kt_target_types_test;

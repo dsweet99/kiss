@@ -2,8 +2,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use kiss::rpytest_runner::TestStatus;
-
 use crate::analyze::line_coverage::RuntimeCoverageSnapshot;
 pub(crate) use crate::test_runner::check_runtime_refresh::ensure_check_runtime_coverage;
 use crate::test_runner::python_coverage_index::{
@@ -11,7 +9,9 @@ use crate::test_runner::python_coverage_index::{
     repo_relative_coverage_file as python_repo_relative_coverage_file,
     repo_relative_path as python_repo_relative_path, stored_python_universe_population,
 };
-use crate::test_runner::runners::{detect_rslip_versions, rslip_request_from_parts};
+#[path = "check_line_coverage_python.rs"]
+mod check_line_coverage_python;
+use check_line_coverage_python::load_python_coverage_from_entries;
 #[path = "check_line_coverage_rust.rs"]
 mod check_line_coverage_rust;
 pub(crate) use check_line_coverage_rust::load_rust_runtime_coverage;
@@ -244,7 +244,7 @@ fn try_coverage_from_generation(
     }))
 }
 
-fn backend_from_population(
+pub(super) fn backend_from_population(
     population_identity: &str,
     selectors: &[String],
     covered_lines: BTreeMap<String, BTreeSet<u32>>,
@@ -260,70 +260,6 @@ fn backend_from_population(
         ),
         covered_lines,
     }
-}
-
-fn load_python_coverage_from_entries(
-    repo_root: &Path,
-    pytest_args: &[String],
-    population: &crate::test_runner::python_coverage_index::StoredPythonPopulation,
-    gate: &kiss::GateConfig,
-) -> Result<BackendCoverage, RuntimeCoverageLoadError> {
-    let selectors = &population.selectors;
-    let (python_version, pytest_version) = detect_rslip_versions(repo_root).map_err(|err| {
-        coverage_error(
-            "Python",
-            &format!("stale/incompatible tool identity ({err})"),
-        )
-    })?;
-    let reqs = selectors
-        .iter()
-        .map(|selector| {
-            rslip_request_from_parts(
-                repo_root,
-                selector,
-                pytest_args,
-                &python_version,
-                &pytest_version,
-                false,
-                gate,
-            )
-        })
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|err| coverage_error("Python", &format!("malformed request ({err})")))?;
-    let outcomes = kiss::rslip::load_cached_outcomes_many(&reqs);
-    let covered_lines = aggregate_passed_outcomes(repo_root, selectors, outcomes)?;
-    let _ = crate::test_runner::python_coverage_index::write_python_coverage_snapshot(
-        repo_root,
-        &covered_lines,
-    );
-    Ok(backend_from_population(
-        &population.identity,
-        selectors,
-        covered_lines,
-    ))
-}
-
-fn aggregate_passed_outcomes(
-    repo_root: &Path,
-    selectors: &[String],
-    outcomes: Vec<Result<Option<kiss::rslip::RslipOutcome>, kiss::rslip::RslipError>>,
-) -> Result<BTreeMap<String, BTreeSet<u32>>, RuntimeCoverageLoadError> {
-    let mut covered_lines = BTreeMap::<String, BTreeSet<u32>>::new();
-    for (selector, outcome) in selectors.iter().zip(outcomes) {
-        let outcome = outcome
-            .map_err(|err| coverage_error("Python", &format!("malformed cache entry ({err:?})")))?
-            .ok_or_else(|| coverage_error("Python", "incomplete population"))?;
-        if outcome.nodeid != *selector || outcome.status != TestStatus::Passed {
-            return Err(coverage_error("Python", "incomplete population"));
-        }
-        for (file, lines) in outcome.coverage.files {
-            let Some(rel) = classify_python_coverage_file(repo_root, &file)? else {
-                continue;
-            };
-            covered_lines.entry(rel).or_default().extend(lines);
-        }
-    }
-    Ok(covered_lines)
 }
 
 fn python_population_error(repo_root: &Path, pytest_args: &[String]) -> RuntimeCoverageLoadError {
@@ -348,7 +284,7 @@ fn format_python_coverage_env(env: &BTreeMap<String, String>) -> String {
         .unwrap_or_else(|| "PYTHONPATH unset".to_string())
 }
 
-fn classify_python_coverage_file(
+pub(super) fn classify_python_coverage_file(
     repo_root: &Path,
     file: &str,
 ) -> Result<Option<String>, RuntimeCoverageLoadError> {

@@ -306,6 +306,20 @@ fn load_durations_from_entry_probes_inner(
     selectors: &[String],
     require_passed: bool,
 ) -> Option<Vec<(String, Duration)>> {
+    if let Some(out) =
+        load_durations_from_fingerprinted_probes(repo_root, pytest_args, selectors, require_passed)
+    {
+        return Some(out);
+    }
+    load_durations_from_scanned_probes(repo_root, selectors, require_passed)
+}
+
+fn load_durations_from_fingerprinted_probes(
+    repo_root: &Path,
+    pytest_args: &[String],
+    selectors: &[String],
+    require_passed: bool,
+) -> Option<Vec<(String, Duration)>> {
     let (python_version, pytest_version) = detect_rslip_versions(repo_root).ok()?;
     let mut out = Vec::with_capacity(selectors.len());
     for selector in selectors {
@@ -335,6 +349,40 @@ fn load_durations_from_entry_probes_inner(
         out.push((selector.clone(), entry.duration));
     }
     Some(out)
+}
+
+fn load_durations_from_scanned_probes(
+    repo_root: &Path,
+    selectors: &[String],
+    require_passed: bool,
+) -> Option<Vec<(String, Duration)>> {
+    let cache_root = python_coverage_cache_root(repo_root).ok()?;
+    let wanted: std::collections::BTreeSet<_> = selectors.iter().cloned().collect();
+    let mut found = std::collections::BTreeMap::<String, Duration>::new();
+    for path in super::storage::python_coverage_entry_paths(&cache_root) {
+        let Ok(bytes) = fs::read(&path) else {
+            continue;
+        };
+        let Ok(entry) = serde_json::from_slice::<DurationProbeEntry>(&bytes) else {
+            continue;
+        };
+        if !wanted.contains(&entry.nodeid) {
+            continue;
+        }
+        if require_passed && entry.status != TestStatus::Passed {
+            continue;
+        }
+        found.insert(entry.nodeid, entry.duration);
+    }
+    if selectors.iter().any(|selector| !found.contains_key(selector)) {
+        return None;
+    }
+    Some(
+        selectors
+            .iter()
+            .map(|selector| (selector.clone(), found[selector]))
+            .collect(),
+    )
 }
 
 #[cfg(test)]

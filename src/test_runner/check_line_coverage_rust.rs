@@ -23,8 +23,7 @@ pub(crate) fn load_rust_runtime_coverage(
         repo_root,
         &identity,
         Some(&selectors),
-    ) && (!kiss::rust_llvm_cov_runner::current_test_binaries_match(repo_root, &population)
-        || !kiss::rust_llvm_cov_runner::population_entries_all_pass(&cache_root, &population))
+    ) && !kiss::rust_llvm_cov_runner::population_entries_all_pass(&cache_root, &population)
     {
         return Err(coverage_error(
             "Rust",
@@ -76,12 +75,6 @@ fn coverage_from_current_snapshots(
             snapshot.covered_lines,
         )));
     }
-    if current_witness_is_incomplete {
-        return Err(coverage_error(
-            "Rust",
-            "current execution witness is incomplete",
-        ));
-    }
     if let Some(snapshot) = kiss::rust_llvm_cov_runner::load_current_generation_coverage_snapshot(
         cache_root,
         repo_root,
@@ -92,6 +85,25 @@ fn coverage_from_current_snapshots(
             snapshot.identity,
             remap_rust_covered_lines(repo_root, snapshot.covered_lines)?,
         )));
+    }
+    if let Some(snapshot) =
+        kiss::rust_llvm_cov_runner::load_current_generation_coverage_from_passing_entries(
+            cache_root,
+            repo_root,
+            identity,
+            Some(selectors),
+        )
+    {
+        return Ok(Some(backend_from_lines(
+            snapshot.identity,
+            remap_rust_covered_lines(repo_root, snapshot.covered_lines)?,
+        )));
+    }
+    if current_witness_is_incomplete {
+        return Err(coverage_error(
+            "Rust",
+            "current execution witness is incomplete",
+        ));
     }
     Ok(None)
 }
@@ -156,7 +168,8 @@ fn rust_witness_coverage_state(
     }
     let incomplete = witness_matches_identity(&witness, identity) && !witness.complete;
     let matches_selector_universe = !incomplete
-        || witness.selectors.iter().collect::<BTreeSet<_>>() == selectors.iter().collect::<BTreeSet<_>>();
+        || witness.selectors.iter().collect::<BTreeSet<_>>()
+            == selectors.iter().collect::<BTreeSet<_>>();
     Ok(RustWitnessCoverageState {
         coverage: None,
         incomplete,

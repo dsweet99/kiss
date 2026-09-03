@@ -23,6 +23,27 @@ mod population_repair;
 
 pub(crate) struct RustRuntime;
 
+fn rust_population_publication_selectors(
+    mode: AcceptMode,
+    planned: &[String],
+) -> Option<Vec<String>> {
+    match mode {
+        AcceptMode::All => Some(planned.to_vec()),
+        AcceptMode::Subset => None,
+    }
+}
+
+fn rust_publication_universe(
+    mode: AcceptMode,
+    planned: &[String],
+    miss_set: &[String],
+) -> Option<Vec<String>> {
+    match mode {
+        AcceptMode::All => Some(planned.to_vec()),
+        AcceptMode::Subset => Some(miss_set.to_vec()),
+    }
+}
+
 impl SourceDeltaMisses for RustRuntime {
     fn extra_source_delta_misses(
         &self,
@@ -56,10 +77,7 @@ impl LanguageRuntime for RustRuntime {
         if miss_set.is_empty() {
             return Ok(OutcomeBatch::default());
         }
-        let publication = match request.mode {
-            AcceptMode::All => Some(request.planned.rust.clone()),
-            AcceptMode::Subset => Some(miss_set.to_vec()),
-        };
+        let publication_universe = rust_publication_universe(request.mode, &request.planned.rust, miss_set);
         let summary = match request.mode {
             AcceptMode::All => {
 
@@ -82,7 +100,7 @@ impl LanguageRuntime for RustRuntime {
                     request.force,
                     &request.force_selectors,
                     request.jobs,
-                    publication.clone(),
+                    rust_population_publication_selectors(request.mode, &request.planned.rust),
                     &request.gate,
                 )?
             }
@@ -95,7 +113,7 @@ impl LanguageRuntime for RustRuntime {
             statuses,
             durations_ns,
             covered_lines: BTreeMap::new(),
-            publication_universe: publication,
+            publication_universe,
         })
     }
 
@@ -210,6 +228,39 @@ impl LanguageRuntime for RustRuntime {
                 selectors,
             ),
         )
+    }
+}
+
+#[cfg(test)]
+mod publication_selector_tests {
+    use super::{rust_population_publication_selectors, rust_publication_universe};
+    use crate::test_runner::lang_iface::AcceptMode;
+
+    #[test]
+    fn subset_does_not_publish_a_selective_miss_set_as_population() {
+        let planned = vec!["a".into(), "b".into()];
+        let misses = vec!["a".into()];
+        assert_eq!(
+            rust_population_publication_selectors(AcceptMode::Subset, &planned),
+            None
+        );
+        assert_eq!(
+            rust_publication_universe(AcceptMode::Subset, &planned, &misses),
+            Some(misses)
+        );
+    }
+
+    #[test]
+    fn all_mode_publishes_the_planned_universe() {
+        let planned = vec!["a".into(), "b".into()];
+        assert_eq!(
+            rust_population_publication_selectors(AcceptMode::All, &planned),
+            Some(planned.clone())
+        );
+        assert_eq!(
+            rust_publication_universe(AcceptMode::All, &planned, &["a".into()]),
+            Some(planned)
+        );
     }
 }
 

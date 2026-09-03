@@ -146,6 +146,9 @@ pub(crate) fn publish_rust_derived_state_with_filter(
     };
     selectors.sort();
     selectors.dedup();
+    if selectors.is_empty() {
+        return Ok(());
+    }
     req.logical_selectors = selectors.clone();
     req.population_publication_selectors = Some(selectors.clone());
     let identity = kiss::rust_llvm_cov_runner::batch_identity(&req, &tools)

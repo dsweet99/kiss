@@ -337,6 +337,21 @@ pub(crate) fn load_durations_from_entries(
     req: &RustCoverageBatchRequest,
     tools: &RustCoverageToolIdentity,
 ) -> Option<Vec<(String, Duration)>> {
+    if let Some(out) =
+        load_durations_from_fingerprinted_entries(cache_root, population, identity, req, tools)
+    {
+        return Some(out);
+    }
+    load_durations_from_scanned_entries(cache_root, population)
+}
+
+fn load_durations_from_fingerprinted_entries(
+    cache_root: &Path,
+    population: &RustPopulationState,
+    identity: &RustCoverageBatchIdentity,
+    req: &RustCoverageBatchRequest,
+    tools: &RustCoverageToolIdentity,
+) -> Option<Vec<(String, Duration)>> {
     let mut out = Vec::with_capacity(population.selectors.len());
     for selector in &population.selectors {
         let fingerprint = entry_fingerprint(&identity.input_digest, req, tools, selector);
@@ -349,6 +364,41 @@ pub(crate) fn load_durations_from_entries(
             return None;
         }
         out.push((selector.clone(), entry.duration));
+    }
+    Some(out)
+}
+
+fn load_durations_from_scanned_entries(
+    cache_root: &Path,
+    population: &RustPopulationState,
+) -> Option<Vec<(String, Duration)>> {
+    let expected: BTreeSet<&str> = population.selectors.iter().map(String::as_str).collect();
+    let mut found = BTreeMap::<String, Duration>::new();
+    let entries = fs::read_dir(cache_root.join("entries")).ok()?;
+    for path in entries.flatten().map(|entry| entry.path()) {
+        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+            continue;
+        }
+        let Some(entry) = fs::read(&path).ok().and_then(|bytes| {
+            serde_json::from_slice::<crate::rust_llvm_cov_runner::RustCovCacheEntry>(&bytes).ok()
+        }) else {
+            continue;
+        };
+        if entry.generation_fingerprint != population.generation_fingerprint
+            || !expected.contains(entry.selector.as_str())
+            || entry.schema_version != CACHE_SCHEMA_VERSION
+            || entry.status != crate::rpytest_runner::TestStatus::Passed
+        {
+            continue;
+        }
+        found.insert(entry.selector, entry.duration);
+    }
+    if found.len() != population.selectors.len() {
+        return None;
+    }
+    let mut out = Vec::with_capacity(population.selectors.len());
+    for selector in &population.selectors {
+        out.push((selector.clone(), *found.get(selector)?));
     }
     Some(out)
 }

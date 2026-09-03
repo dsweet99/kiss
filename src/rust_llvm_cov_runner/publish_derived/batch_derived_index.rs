@@ -73,21 +73,7 @@ pub fn load_current_generation_coverage_snapshot(
 ) -> Option<RustGenerationCoverageSnapshot> {
     let population = load_current_population_state(cache_root, source_root, identity, selectors)?;
     current_test_binaries_match(source_root, &population).then_some(())?;
-    let entries = crate::rust_llvm_cov_runner::publish_derived::batch_derived_snapshot::load_manifest_generation_entries(
-        cache_root,
-        source_root,
-        &population,
-    )?;
-    let snapshot_identity =
-        crate::rust_llvm_cov_runner::publish_derived::batch_derived_snapshot::stable_generation_coverage_identity(
-            &population,
-            &entries,
-        );
-    Some(RustGenerationCoverageSnapshot {
-        identity: snapshot_identity,
-        covered_lines: entries,
-        population,
-    })
+    generation::generation_coverage_from_population(cache_root, source_root, population)
 }
 
 pub fn current_test_binaries_match(source_root: &Path, population: &RustPopulationState) -> bool {
@@ -398,6 +384,10 @@ pub(crate) fn read_population_manifest(cache_root: &Path) -> Option<PopulationMa
         reverse_line_index: raw.reverse_line_index,
     })
 }
+
+#[path = "batch_derived_index_generation.rs"]
+mod generation;
+pub use generation::load_current_generation_coverage_from_passing_entries;
 
 #[path = "batch_derived_index_manifest_match.rs"]
 mod manifest_match;

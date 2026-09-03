@@ -200,6 +200,7 @@ fn dynamic_rust_selectors(
 ) -> Result<Vec<(PathBuf, String)>, String> {
     let (mut request, tools) =
         crate::test_runner::rust_coverage_index::resolved_rust_batch_request_parts(repo_root, &[])?;
+    request.jobs = rust_dynamic_listing_jobs(repo_root)?;
     let target_sources = kiss::rust_llvm_cov_runner::workspace_test_target_sources(
         &request.cwd,
         &request.cargo,
@@ -235,6 +236,12 @@ fn dynamic_rust_selectors(
         }
     }
     Ok(selectors.into_iter().collect())
+}
+
+fn rust_dynamic_listing_jobs(repo_root: &Path) -> Result<usize, String> {
+    kiss::TestSectionConfig::try_load_path_only(&kiss::kissconfig_path_for_repo(repo_root))
+        .map(|config| config.num_jobs)
+        .map_err(|err| format!("error: kiss test: failed to load test configuration: {err}"))
 }
 
 fn source_for_listed_test(
@@ -406,4 +413,17 @@ fn enumerate_workspace_rust_test_entries(
         );
     }
     Ok(entries)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::rust_dynamic_listing_jobs;
+
+    #[test]
+    fn dynamic_rust_listing_uses_repository_num_jobs() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        std::fs::write(tmp.path().join(".kissconfig"), "[test]\nnum_jobs = 7\n").expect("config");
+
+        assert_eq!(rust_dynamic_listing_jobs(tmp.path()).expect("jobs"), 7);
+    }
 }
