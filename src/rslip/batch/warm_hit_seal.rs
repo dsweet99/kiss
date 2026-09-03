@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crate::rpytest_runner::TestStatus;
 use serde::{Deserialize, Serialize};
 
-use crate::rslip::cache::{digest_recorded_path, rslip_fnv1a64};
+use crate::rslip::cache::rslip_fnv1a64;
 use crate::rslip::{CacheStatus, LineCoverage, RslipOutcome, RslipRequest};
 
 const SEAL_SCHEMA_VERSION: &str = "rslip-warm-hit-v4";
@@ -73,23 +73,6 @@ fn stamp_for_path(source_root: &Path, recorded: &str, digest: &str) -> Option<Fi
     })
 }
 
-fn covered_files_still_match(source_root: &Path, files: &BTreeMap<String, FileStamp>) -> bool {
-    files.iter().all(|(recorded, stamp)| {
-        let path = if Path::new(recorded).is_absolute() {
-            PathBuf::from(recorded)
-        } else {
-            source_root.join(recorded)
-        };
-        let Ok(meta) = fs::metadata(&path) else {
-            return false;
-        };
-        if meta.len() == stamp.len && mtime_nanos(&meta) == stamp.mtime_nanos {
-            return true;
-        }
-        digest_recorded_path(source_root, recorded).as_ref() == Some(&stamp.digest)
-    })
-}
-
 fn content_fingerprint_matches(reqs: &[RslipRequest], seal: &WarmHitSeal) -> bool {
     let Some(seal_fp) = seal.content_fingerprint.as_deref() else {
         return false;
@@ -152,8 +135,7 @@ pub(crate) fn try_warm_hit_seal(
     let bytes = fs::read(seal_path(&first.cache_root)).ok()?;
     let seal: WarmHitSeal = serde_json::from_slice(&bytes).ok()?;
     let selectors_fp = selectors_fingerprint(reqs.iter().map(|req| req.nodeid.as_str()));
-    let files_ok = content_fingerprint_matches(reqs, &seal)
-        || covered_files_still_match(&first.source_root, &seal.covered_files);
+    let files_ok = content_fingerprint_matches(reqs, &seal);
     let schema_ok = seal.schema_version == SEAL_SCHEMA_VERSION;
     let ok = schema_ok
         && seal.context_fingerprint == context_fingerprint
@@ -276,6 +258,7 @@ fn outcome_durations_ns(outcomes: &[RslipOutcome]) -> BTreeMap<String, u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rslip::cache::digest_recorded_path;
     use crate::rslip::rslip_sample_request;
     use std::fs;
 
@@ -287,6 +270,7 @@ mod tests {
         let mut req = rslip_sample_request(tmp.path());
         req.nodeid = "test_sample.py::test_ok".to_string();
         req.cache_root = tmp.path().join("cache");
+        req.content_fingerprint = Some("fp-before".to_string());
         fs::create_dir_all(&req.cache_root).unwrap();
         let context = "ctx-1";
         let digests = BTreeMap::from([(
@@ -312,13 +296,14 @@ mod tests {
             std::slice::from_ref(&req.nodeid),
             &outcomes,
             digests,
-            None,
+            Some("fp-before".to_string()),
         )
         .unwrap();
         let hit = try_warm_hit_seal(std::slice::from_ref(&req), context).expect("warm hit");
         assert_eq!(hit[0].duration, Duration::from_millis(12));
 
         fs::write(&app, "x = 22\n").unwrap();
+        req.content_fingerprint = Some("fp-after".to_string());
         assert!(try_warm_hit_seal(std::slice::from_ref(&req), context).is_none());
     }
 
@@ -360,7 +345,6 @@ mod tests {
         )
         .unwrap();
 
-        fs::remove_file(&app).unwrap();
         assert!(try_warm_hit_seal(std::slice::from_ref(&req), context).is_some());
         req.content_fingerprint = Some("fp-other".to_string());
         assert!(try_warm_hit_seal(std::slice::from_ref(&req), context).is_none());

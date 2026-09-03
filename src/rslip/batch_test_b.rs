@@ -54,11 +54,32 @@ def test_false():\n    assert choose(False) == 2\n",
         .unwrap()
         .to_string_lossy()
         .to_string();
+    let test_key = tmp
+        .path()
+        .join("test_app.py")
+        .canonicalize()
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
 
     assert_eq!(outcomes[0].as_ref().unwrap().status, TestStatus::Passed);
     assert_eq!(outcomes[1].as_ref().unwrap().status, TestStatus::Passed);
     assert!(outcomes[0].as_ref().unwrap().coverage.files[&app_key].contains(&2));
     assert!(outcomes[1].as_ref().unwrap().coverage.files[&app_key].contains(&4));
+    assert!(
+        outcomes[0].as_ref().unwrap().coverage.files[&test_key].contains(&1),
+        "the first selector carries module collection coverage"
+    );
+    assert!(
+        !outcomes[1]
+            .as_ref()
+            .unwrap()
+            .coverage
+            .files
+            .get(&test_key)
+            .is_some_and(|lines| lines.contains(&1)),
+        "collection coverage must not make every selector cover module imports"
+    );
 }
 
 #[test]

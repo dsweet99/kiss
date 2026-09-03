@@ -98,9 +98,18 @@ pub(crate) fn apply_force_bad(
     if !a.force_bad {
         return Ok(());
     }
-    let py_bad =
-        runners::prior_failures_for_language(&planned.repo_root, Language::Python, a.python_extra)?;
-    let rs_bad = runners::prior_failures_for_language(&planned.repo_root, Language::Rust, a.extra)?;
+    let py_bad = runners::current_prior_failures(
+        &planned.repo_root,
+        Language::Python,
+        a.python_extra,
+        &planned.ignore,
+    )?;
+    let rs_bad = runners::current_prior_failures(
+        &planned.repo_root,
+        Language::Rust,
+        a.extra,
+        &planned.ignore,
+    )?;
     let mut py = planned.prior_failure_selectors.python.clone();
     py.extend(py_bad.into_iter().map(|s| s.id));
     py.sort();
@@ -245,7 +254,7 @@ fn plan_for_invocation(a: &RunTestCmdArgs<'_>) -> Result<PlannedSelectors, Strin
 mod pipeline;
 mod plan;
 mod rust_list_build;
-mod workspace_selector_cache;
+pub(crate) mod workspace_selector_cache;
 #[cfg(test)]
 pub(crate) use plan::{
     PlanSelectorsRequest, TargetPlanKind, plan_selectors, plan_target_selectors,

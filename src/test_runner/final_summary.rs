@@ -1,4 +1,4 @@
-use std::io::{IsTerminal, Write};
+use std::io::IsTerminal;
 use std::time::Duration;
 
 use super::duration::format_test_duration;
@@ -92,8 +92,7 @@ pub(crate) fn stdout_color_enabled() -> bool {
 
 pub(crate) fn print_final_test_summary(summary: &FinalTestSummary, total_duration: Duration) {
     let text = format_final_test_summary(summary, total_duration, stdout_color_enabled());
-    println!("{text}");
-    let _ = std::io::stdout().flush();
+    crate::test_runner::emit_test_progress(&text);
 }
 
 #[cfg(test)]

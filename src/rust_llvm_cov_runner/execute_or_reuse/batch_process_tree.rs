@@ -18,6 +18,12 @@ use std::time::{Duration, Instant};
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
 
+#[cfg(test)]
+pub(crate) fn signal_test_guard() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: Mutex<()> = Mutex::new(());
+    LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ProcessGroupIdentity {
     pub pid: u32,
@@ -80,6 +86,23 @@ pub fn batch_scope_interrupted() -> bool {
     batch_scope_sigint_state()
         .map(|(_, interrupted)| interrupted.load(Ordering::SeqCst))
         .unwrap_or(false)
+}
+
+pub fn cancel_active_batch_scope() {
+    let Some((registry, interrupted)) = batch_scope_sigint_state() else {
+        return;
+    };
+    interrupted.store(true, Ordering::SeqCst);
+    let identities = registry.identities();
+    for identity in &identities {
+        signal_validated_process_group(identity, libc::SIGTERM);
+    }
+    if !identities.is_empty() {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    for identity in &identities {
+        signal_validated_process_group(identity, libc::SIGKILL);
+    }
 }
 
 impl BatchProcessTreeGuard {

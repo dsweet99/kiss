@@ -8,6 +8,12 @@ use super::metrics_rust::{print_rust_batch_metrics, rust_cache_unstored};
 use super::runners::SelectorExecutionSummary;
 use super::{PlannedSelectors, SelectorRunOptions};
 
+macro_rules! println {
+    ($($arg:tt)*) => {
+        crate::test_runner::emit_test_progress(&format!($($arg)*))
+    };
+}
+
 #[derive(Default)]
 pub(super) struct PhaseMetrics {
     pub(super) duration: Duration,

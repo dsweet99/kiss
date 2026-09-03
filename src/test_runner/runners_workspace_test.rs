@@ -43,6 +43,131 @@ fn enumerate_workspace_rust_selectors_finds_cfg_test_modules() {
 }
 
 #[test]
+fn enumerate_workspace_rust_selectors_lists_macro_generated_tests() {
+    let tmp = TempDir::new().unwrap();
+    write_demo_crate(
+        &tmp,
+        r#"
+#[cfg(test)]
+mod tests {
+    macro_rules! cases {
+        ($($name:ident),* $(,)?) => { $(#[test] fn $name() {})* };
+    }
+    cases!(generated_a, generated_b);
+}
+"#,
+    );
+
+    let selectors = enumerate_workspace_rust_selectors(tmp.path(), &[]).unwrap();
+
+    assert!(selectors.contains(&"tests::generated_a".to_string()));
+    assert!(selectors.contains(&"tests::generated_b".to_string()));
+    assert!(
+        !tmp.path().join("target").exists(),
+        "dynamic discovery must not create a separate default Cargo target tree"
+    );
+    assert!(
+        tmp.path()
+            .join(".kiss/rust_llvm_cov_cache/build/target")
+            .is_dir(),
+        "dynamic discovery must use the reusable coverage build tree"
+    );
+}
+
+#[test]
+fn enumerate_workspace_rust_selectors_lists_included_tests() {
+    let tmp = TempDir::new().unwrap();
+    write_demo_crate(&tmp, "include!(\"included_tests.inc\");\n");
+    fs::write(
+        tmp.path().join("src/included_tests.inc"),
+        "#[test]\nfn included_test() {}\n",
+    )
+    .unwrap();
+
+    let selectors = enumerate_workspace_rust_selectors(tmp.path(), &[]).unwrap();
+
+    assert!(selectors.contains(&"included_test".to_string()));
+}
+
+#[test]
+fn dynamic_rust_listing_does_not_reintroduce_ignored_static_tests() {
+    let tmp = TempDir::new().unwrap();
+    write_demo_crate(
+        &tmp,
+        r#"
+#[cfg(test)]
+mod tests {
+    macro_rules! cases { ($name:ident) => { #[test] fn $name() {} }; }
+    cases!(generated);
+}
+"#,
+    );
+    fs::create_dir_all(tmp.path().join("tests")).unwrap();
+    fs::write(
+        tmp.path().join("tests/ignored.rs"),
+        "#[test]\nfn ignored_test() {}\n",
+    )
+    .unwrap();
+
+    let selectors = enumerate_workspace_rust_selectors(tmp.path(), &["tests".to_string()]).unwrap();
+
+    assert!(selectors.contains(&"tests::generated".to_string()));
+    assert!(!selectors.contains(&"ignored_test".to_string()));
+}
+
+#[test]
+fn dynamic_rust_listing_excludes_ignored_macro_generated_target() {
+    let tmp = TempDir::new().unwrap();
+    write_demo_crate(
+        &tmp,
+        r#"
+#[cfg(test)]
+mod tests {
+    macro_rules! cases { ($name:ident) => { #[test] fn $name() {} }; }
+    cases!(kept);
+}
+"#,
+    );
+    fs::create_dir_all(tmp.path().join("tests")).unwrap();
+    fs::write(
+        tmp.path().join("tests/macro_ignored.rs"),
+        "macro_rules! cases { ($name:ident) => { #[test] fn $name() {} }; }\ncases!(leaked);\n",
+    )
+    .unwrap();
+
+    let selectors = enumerate_workspace_rust_selectors(tmp.path(), &["tests".to_string()]).unwrap();
+
+    assert!(selectors.contains(&"tests::kept".to_string()));
+    assert!(!selectors.contains(&"leaked".to_string()));
+}
+
+#[test]
+fn enumerate_workspace_rust_selectors_lists_cfg_attr_generated_test() {
+    let tmp = TempDir::new().unwrap();
+    write_demo_crate(
+        &tmp,
+        "#[cfg_attr(test, test)]\nfn generated_by_attribute() {}\n",
+    );
+
+    let selectors = enumerate_workspace_rust_selectors(tmp.path(), &[]).unwrap();
+
+    assert!(selectors.contains(&"generated_by_attribute".to_string()));
+}
+
+#[test]
+fn dynamic_listing_failure_does_not_publish_partial_static_universe() {
+    let tmp = TempDir::new().unwrap();
+    write_demo_crate(
+        &tmp,
+        "include!(\"missing.inc\");\n#[test]\nfn known_test() {}\n",
+    );
+
+    let err = enumerate_workspace_rust_selectors(tmp.path(), &[]).unwrap_err();
+
+    assert!(err.contains("failed to list generated Rust tests"));
+}
+
+#[test]
 fn rust_logical_to_kiss_test_ids_uses_path_and_bare_fn_name() {
     let tmp = TempDir::new().unwrap();
     write_demo_crate(&tmp, demo_test_lib());
@@ -52,6 +177,27 @@ fn rust_logical_to_kiss_test_ids_uses_path_and_bare_fn_name() {
     assert_eq!(
         map.get("tests::gets_value").map(String::as_str),
         Some("src/lib.rs::gets_value")
+    );
+}
+
+#[test]
+fn dynamic_rust_report_id_uses_defining_submodule_path() {
+    let tmp = TempDir::new().unwrap();
+    write_demo_crate(&tmp, "mod extra;\n");
+    fs::write(
+        tmp.path().join("src/extra.rs"),
+        r#"
+macro_rules! cases { ($name:ident) => { #[test] fn $name() {} }; }
+cases!(from_extra);
+"#,
+    )
+    .unwrap();
+
+    let map = rust_logical_to_kiss_test_ids(tmp.path(), &[]).unwrap();
+
+    assert_eq!(
+        map.get("extra::from_extra").map(String::as_str),
+        Some("src/extra.rs::from_extra")
     );
 }
 

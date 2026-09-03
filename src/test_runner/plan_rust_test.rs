@@ -163,8 +163,8 @@ fn rust_witness_accepts_complete_full_universe() {
     })
     .unwrap();
     assert!(
-        rust_witness_accepts_full_universe(tmp.path(), &selectors, &id, &gate),
-        "incomplete json must not roll back a published Full generation"
+        !rust_witness_accepts_full_universe(tmp.path(), &selectors, &id, &gate),
+        "a newer incomplete witness must supersede an older passing generation"
     );
 
     let json_only = tempfile::tempdir().unwrap();

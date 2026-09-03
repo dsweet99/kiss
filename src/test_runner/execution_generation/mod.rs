@@ -12,9 +12,13 @@ mod types;
 pub(crate) use digest::sha256_hex;
 pub(crate) use gc::reclaim_unreferenced;
 pub(crate) use load::load_current_generation;
+#[cfg(test)]
+pub(crate) use load::{
+    load_current_generation_call_count, reset_load_current_generation_call_count,
+};
 pub(crate) use paths::{sync_dir, write_create_new_bytes};
 pub(crate) use pointer::read_pointer;
-pub(crate) use publish::publish_full_generation;
+pub(crate) use publish::{publish_full_generation, publish_witness_generation};
 pub(crate) use types::{
     FullExecutionGeneration, GENERATION_SCHEMA_VERSION, SelectorEvidenceRecord,
 };

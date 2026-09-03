@@ -5,7 +5,7 @@ use crate::analyze_cache::fnv1a64;
 
 use super::digest::hash_file_contents;
 
-const CONFIG_FILES: &[&str] = &[
+pub(super) const CONFIG_FILES: &[&str] = &[
     "pytest.ini",
     "pyproject.toml",
     "setup.cfg",

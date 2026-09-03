@@ -55,7 +55,7 @@ fn write_demo_crate(root: &std::path::Path) {
 fn empty_all_mode_plan_skips_repair() {
     let tmp = tempfile::tempdir().unwrap();
     let req = all_mode_request(tmp.path());
-    assert!(!repair_stale_population_on_all_mode_accept(&req, &[]));
+    assert!(!repair_stale_population_on_all_mode_accept(&req, &[]).unwrap());
 }
 
 #[test]
@@ -68,10 +68,7 @@ fn current_all_mode_manifest_skips_repair() {
         &["test_lib".to_string()],
         &[],
     ));
-    assert!(!repair_stale_population_on_all_mode_accept(
-        &req,
-        &["test_lib".to_string()],
-    ));
+    assert!(!repair_stale_population_on_all_mode_accept(&req, &["test_lib".to_string()],).unwrap());
 }
 
 #[test]
@@ -81,9 +78,31 @@ fn broken_all_mode_manifest_is_rebuilt() {
     let path = rust_population_manifest_path(tmp.path());
     fs::write(&path, "{ broken").unwrap();
     let req = all_mode_request(tmp.path());
-    assert!(repair_stale_population_on_all_mode_accept(
-        &req,
-        &["test_lib".to_string()],
-    ));
+    assert!(repair_stale_population_on_all_mode_accept(&req, &["test_lib".to_string()],).unwrap());
     serde_json::from_str::<serde_json::Value>(&fs::read_to_string(path).unwrap()).unwrap();
+}
+
+#[test]
+fn stale_derived_index_repair_preserves_binary_authority() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_demo_crate(tmp.path());
+    let population_path = rust_population_manifest_path(tmp.path());
+    let before: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&population_path).unwrap()).unwrap();
+    fs::write(
+        tmp.path()
+            .join(".kiss")
+            .join("rust_llvm_cov_cache")
+            .join("index.json"),
+        "{ broken",
+    )
+    .unwrap();
+    let req = all_mode_request(tmp.path());
+    assert!(repair_stale_population_on_all_mode_accept(&req, &["test_lib".to_string()]).unwrap());
+    let after: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(population_path).unwrap()).unwrap();
+    assert_eq!(
+        after["test_binaries"], before["test_binaries"],
+        "derived-only repair must not replace existing binary authority"
+    );
 }

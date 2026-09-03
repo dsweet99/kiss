@@ -5,7 +5,7 @@ use kiss::rust_llvm_cov_runner::{
     CoverageOutputMode, RustCoverageBatchIdentity, RustCoverageBatchRequest,
 };
 
-use super::{align_statuses, full_publication_selectors, merged_statuses};
+use super::{align_statuses, capture_covered_lines, full_publication_selectors, merged_statuses};
 use crate::test_runner::execution_witness::{ExecutionWitness, WitnessScope, WitnessStatus};
 use crate::test_runner::runners::SelectorExecutionSummary;
 
@@ -70,6 +70,21 @@ fn check_aggregate_req(logical: &[&str]) -> RustCoverageBatchRequest {
         },
         None,
     )
+}
+
+#[test]
+fn rejected_current_snapshots_do_not_restore_prior_coverage() {
+    let req = check_aggregate_req(&["alpha"]);
+    let mut prior = full_witness(&["alpha"]);
+    prior.covered_lines = BTreeMap::from([("src/lib.rs".into(), vec![1])]);
+    let covered = capture_covered_lines(
+        std::path::Path::new("/repo"),
+        &req,
+        &publish_test_identity(),
+        &["alpha".into()],
+        Some(&prior),
+    );
+    assert!(covered.is_empty());
 }
 
 #[test]

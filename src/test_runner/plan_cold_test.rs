@@ -66,6 +66,7 @@ fn assert_both_languages(planned: &PlannedSelectors) {
 
 #[test]
 fn cold_all_enumerates_and_stores_fingerprint() {
+    let _cwd = crate::cwd_test_lock::lock();
     let _cwd = cwd_test_lock::lock();
     let tmp = TempDir::new().unwrap();
     init_git_repo(tmp.path());
@@ -125,6 +126,7 @@ fn watch_stage_names_use_kiss_test_stage_format() {
 
 #[test]
 fn cold_lang_filter_miss_arms_do_not_store_all_cache() {
+    let _cwd = crate::cwd_test_lock::lock();
     let _cwd = cwd_test_lock::lock();
     let tmp = TempDir::new().unwrap();
     init_git_repo(tmp.path());
@@ -148,6 +150,7 @@ fn cold_lang_filter_miss_arms_do_not_store_all_cache() {
 
 #[test]
 fn cold_dot_target_uses_plan_all_and_rust_extras_validate() {
+    let _cwd = crate::cwd_test_lock::lock();
     let _cwd = cwd_test_lock::lock();
     let tmp = TempDir::new().unwrap();
     init_git_repo(tmp.path());

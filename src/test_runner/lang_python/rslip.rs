@@ -19,6 +19,10 @@ pub(crate) use super::rslip_request::timeout_for_selector;
 use super::rslip_request::timeout_for_selector_with_gate;
 pub(crate) use super::rslip_request::{detect_rslip_versions, rslip_request_from_parts};
 
+fn rslip_worker_cap() -> usize {
+    kiss::TestSectionConfig::load().num_jobs_pytest.max(1)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run_rslip_selectors(
     repo_root: &Path,
@@ -61,7 +65,13 @@ fn run_rslip_selectors_with_runner(
     runner: PytestRunner,
 ) -> Result<SelectorExecutionSummary, String> {
     assert!(args.jobs > 0, "jobs must be greater than zero");
-    let jobs = args.jobs;
+    let jobs = args.jobs.clamp(1, rslip_worker_cap());
+    if jobs < args.jobs {
+        crate::test_runner::emit_test_progress(&format!(
+            "kiss test: rslip workers={jobs} (capped from {})",
+            args.jobs
+        ));
+    }
     let (python_version, pytest_version) = detect_rslip_versions(args.repo_root)?;
     let identity = python_last_status_identity(&python_version, &pytest_version, args.extra);
     let force_set: BTreeSet<&str> = args
@@ -95,10 +105,12 @@ fn run_rslip_selectors_with_runner(
         &mut summary,
         &mut statuses,
     );
-    let results = Rslip::new(runner).run_or_reuse_many_bounded_with_progress(reqs, jobs, |event| {
+    let rslip = Rslip::new(runner);
+    let results = rslip.run_or_reuse_many_bounded_with_progress(reqs, jobs, |event| {
         if let RslipBatchProgress::Prepared { elapsed, .. } = &event {
             crate::test_runner::emit_stage_time("rslip_prepare", *elapsed);
         }
+        persist_rslip_progress_statuses(args.repo_root, &identity, &runnable_selectors, &event);
         handle_rslip_batch_progress(event, &runnable_selectors, gate);
     });
     for (selector, result) in runnable_selectors.iter().zip(results) {
@@ -188,6 +200,10 @@ fn record_rslip_selector_result(
                 raw_status: Some(raw),
                 cache_record: if outcome.cache_status == PyCacheStatus::Hit {
                     SelectorCacheRecord::Hit
+                } else if raw != kiss::rpytest_runner::TestStatus::Passed
+                    || outcome.coverage.files.is_empty()
+                {
+                    SelectorCacheRecord::MissUnstored
                 } else {
                     SelectorCacheRecord::MissStored
                 },
@@ -211,6 +227,36 @@ fn record_rslip_selector_result(
             });
         }
     }
+}
+
+fn persist_rslip_progress_statuses(
+    repo_root: &Path,
+    identity: &crate::test_runner::last_status::LastStatusIdentity,
+    selectors: &[String],
+    event: &RslipBatchProgress,
+) {
+    let RslipBatchProgress::SelectorFinalized { outcomes } = event else {
+        return;
+    };
+    let statuses: Vec<(String, kiss::rpytest_runner::TestStatus)> = outcomes
+        .iter()
+        .filter_map(|(index, result)| match result {
+            Ok(outcome)
+                if matches!(
+                    outcome.status,
+                    kiss::rpytest_runner::TestStatus::Failed
+                        | kiss::rpytest_runner::TestStatus::TimedOut
+                ) =>
+            {
+                Some((outcome.nodeid.clone(), outcome.status))
+            }
+            Err(_) => selectors
+                .get(*index)
+                .map(|selector| (selector.clone(), kiss::rpytest_runner::TestStatus::Failed)),
+            _ => None,
+        })
+        .collect();
+    let _ = record_statuses(repo_root, kiss::Language::Python, identity, &statuses);
 }
 
 fn handle_rslip_batch_progress(
@@ -255,8 +301,18 @@ fn emit_finalized_outcomes(
                     .get(index)
                     .map(String::as_str)
                     .unwrap_or("<unknown>");
-                crate::test_runner::emit_test_status(&format!("FAIL: {selector} (rslip error)"));
-                eprintln!("{}", format_rslip_error(err));
+                if rslip_protocol_is_quiet_timeout(&err) {
+                    let timeout = timeout_for_selector_with_gate(gate, selector);
+                    crate::test_runner::emit_test_status(&format!(
+                        "TIMEOUT: {selector} ({:.2}s)",
+                        timeout.as_secs_f64()
+                    ));
+                } else {
+                    crate::test_runner::emit_test_status(&format!(
+                        "FAIL: {selector} (rslip error)"
+                    ));
+                    eprintln!("{}", format_rslip_error(err));
+                }
             }
         }
     }
@@ -311,6 +367,15 @@ fn print_rslip_outcome(outcome: &RslipOutcome, gate: &kiss::GateConfig) {
 
 fn format_rslip_error(err: RslipError) -> String {
     format!("error: kiss test: rslip failed: {err:?}")
+}
+
+fn rslip_protocol_is_quiet_timeout(err: &RslipError) -> bool {
+    matches!(
+        err,
+        RslipError::Runner(kiss::rpytest_runner::PytestRunError::Protocol(message))
+            if message.contains("module batch result missing")
+                || message.contains("module batch timed out")
+    )
 }
 
 #[cfg(test)]

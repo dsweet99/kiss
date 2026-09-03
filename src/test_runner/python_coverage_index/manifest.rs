@@ -126,13 +126,26 @@ pub(crate) fn read_python_population_manifest(
         .and_then(|bytes| serde_json::from_slice::<PythonPopulationManifest>(&bytes).ok())
 }
 
+fn keep_non_ignored_selector(selector: &str, ignore: &[String]) -> bool {
+    let path = selector
+        .split_once("::")
+        .map_or(selector, |(path, _)| path);
+    !kiss::path_ignored_by_prefixes(path, ignore)
+}
+
 pub(crate) fn stored_python_universe_selectors(
     repo_root: &Path,
     test_args: &[String],
+    ignore: &[String],
     env_keys: &[&str],
 ) -> Option<Vec<String>> {
-    stored_python_universe_population(repo_root, test_args, env_keys)
-        .map(|population| population.selectors)
+    stored_python_universe_population(repo_root, test_args, env_keys).map(|population| {
+        population
+            .selectors
+            .into_iter()
+            .filter(|selector| keep_non_ignored_selector(selector, ignore))
+            .collect()
+    })
 }
 
 pub(crate) struct StoredPythonPopulation {

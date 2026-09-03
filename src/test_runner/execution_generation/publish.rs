@@ -33,6 +33,28 @@ pub(crate) fn publish_full_generation(
     }
 }
 
+pub(crate) fn publish_witness_generation(
+    cache_root: &Path,
+    generation: FullExecutionGeneration,
+) -> Result<String, String> {
+    if generation.selector_evidence.len() != generation.selectors.len()
+        || generation
+            .selector_evidence
+            .iter()
+            .any(|record| record.evidence_state != "valid" || record.raw_status.is_empty())
+    {
+        return Err("error: kiss: refusing malformed witness generation publication".into());
+    }
+    let _guard = publication_lock(cache_root)?;
+    remove_staging_dirs(cache_root);
+    let parent = read_pointer(cache_root)?;
+    let parent_id = parent
+        .as_ref()
+        .map(|pointer| pointer.generation_id.as_str())
+        .unwrap_or_default();
+    commit_generation_under_lock(cache_root, generation, parent_id)
+}
+
 fn rebase_stale_writer(
     cache_root: &Path,
     incoming: &FullExecutionGeneration,

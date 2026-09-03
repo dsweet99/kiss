@@ -61,8 +61,9 @@ pub(crate) fn publish_locked(
             "line_index.json",
             &evidence.line_index,
         )?;
-        push_hardlinked_artifact(&mut artifacts, &staged, src, "timings.json")?;
-        push_hardlinked_artifact(&mut artifacts, &staged, src, "durations.json")?;
+        push_artifact(&mut artifacts, &staged, "timings.json", &evidence.timings)?;
+        let durations = generation_durations_file(&evidence.timings);
+        push_artifact(&mut artifacts, &staged, "durations.json", &durations)?;
     } else {
         push_artifact(&mut artifacts, &staged, "coverage.json", &evidence.coverage)?;
         push_artifact(

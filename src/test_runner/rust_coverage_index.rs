@@ -150,8 +150,15 @@ pub(crate) fn publish_rust_derived_state_with_filter(
     req.population_publication_selectors = Some(selectors.clone());
     let identity = kiss::rust_llvm_cov_runner::batch_identity(&req, &tools)
         .map_err(|err| format!("batch identity: {err}"))?;
-    kiss::rust_llvm_cov_runner::publish_derived_state(&req, &tools, &identity, &selectors, true)
-        .map_err(|err| format!("{err:?}"))?;
+    kiss::rust_llvm_cov_runner::publish_derived_state_with_binaries(
+        &req,
+        &tools,
+        &identity,
+        &selectors,
+        &[],
+        true,
+    )
+    .map_err(|err| format!("{err:?}"))?;
     Ok(())
 }
 

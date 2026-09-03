@@ -44,12 +44,21 @@ impl PythonModule {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn for_execution(repo_root: &Path, ignore: &[String]) -> Self {
+        Self::for_execution_with_args(repo_root, ignore, &[])
+    }
+
+    pub(crate) fn for_execution_with_args(
+        repo_root: &Path,
+        ignore: &[String],
+        test_args: &[String],
+    ) -> Self {
         PythonModule {
             repo_root: repo_root.to_path_buf(),
             py_source_paths: Vec::new(),
             python_changed_lines: BTreeMap::new(),
-            test_args: Vec::new(),
+            test_args: test_args.to_vec(),
             ignore: ignore.to_vec(),
             changed_tests: Vec::new(),
             prior_failures: Vec::new(),
@@ -66,6 +75,7 @@ impl LanguagePlanner for PythonModule {
         if let Some(selectors) = stored_python_universe_selectors(
             &self.repo_root,
             &self.test_args,
+            &self.ignore,
             self.manifest_env_allowlist(),
         ) {
             return Ok(selectors
@@ -74,8 +84,8 @@ impl LanguagePlanner for PythonModule {
                 .collect());
         }
 
-        if let Some((cached_py, _cached_rs, _fp)) =
-            crate::test_runner::workspace_selector_cache::load_cached_workspace_selectors(
+        if let Some(cached_py) =
+            crate::test_runner::workspace_selector_cache::load_cached_python_workspace_selectors(
                 &self.repo_root,
                 &self.ignore,
                 &self.test_args,
@@ -131,6 +141,11 @@ impl LanguagePlanner for PythonModule {
             )
             .is_some();
         let has_line_precise_entries = !self.python_changed_lines.is_empty()
+            && crate::test_runner::python_coverage_index::python_index_covers_source_paths(
+                &self.repo_root,
+                &self.py_source_paths,
+                &self.test_args,
+            )
             && select_fresh_python_source_selectors(
                 &self.repo_root,
                 &self.py_source_paths,
@@ -225,7 +240,7 @@ mod tests {
         full_suite_subprocess_collects_for_tests, reset_full_suite_subprocess_collects_for_tests,
         reset_python_collect_memo_for_tests,
     };
-    use crate::test_runner::workspace_selector_cache::store_workspace_selectors;
+    use crate::test_runner::workspace_selector_cache::store_python_workspace_selectors;
     use std::fs;
 
     #[test]
@@ -244,7 +259,12 @@ mod tests {
             "tests/test_app.py::test_value".to_string(),
             "tests/test_other.py::test_cached_only".to_string(),
         ];
-        store_workspace_selectors(tmp.path(), &[], &cached, &[], &[]);
+        assert!(store_python_workspace_selectors(
+            tmp.path(),
+            &[],
+            &cached,
+            &[]
+        ));
         let before = full_suite_subprocess_collects_for_tests();
         let module = PythonModule::for_execution(tmp.path(), &[]);
         let discovered: Vec<String> = LanguagePlanner::discover_universe(&module)
@@ -282,7 +302,7 @@ mod tests {
     }
 
     #[test]
-    fn changed_line_cache_selection_is_reusable_prior_without_population_manifest() {
+    fn legacy_changed_line_cache_is_bound_to_execution_context() {
         let tmp = tempfile::tempdir().unwrap();
         let app = tmp.path().join("app.py");
         fs::write(&app, "def alpha():\n    return 'alpha'\n").unwrap();
@@ -299,10 +319,12 @@ mod tests {
             ),
         )
         .unwrap();
+        let test_args = vec!["-p".into(), "stored_plugin".into()];
         crate::test_runner::python_coverage_index::publish_python_derived_state_with_filter(
             tmp.path(),
             None,
-            &[],
+            &test_args,
+            &kiss::GateConfig::default(),
             |path, repo_root| {
                 crate::test_runner::python_coverage_index::repo_relative_coverage_file(
                     repo_root,
@@ -317,7 +339,7 @@ mod tests {
             tmp.path(),
             std::slice::from_ref(&app),
             &changed_lines,
-            &[],
+            &test_args,
             &[],
             &[],
             &[],
@@ -330,6 +352,31 @@ mod tests {
         assert_eq!(
             module.freshness(&universe).unwrap(),
             CoverageFreshness::ReusablePrior
+        );
+        assert!(
+            !crate::test_runner::python_coverage_index::python_index_covers_source_paths(
+                tmp.path(),
+                std::slice::from_ref(&app),
+                &["-p".into(), "different_plugin".into()],
+            )
+        );
+        let uncovered = tmp.path().join("uncovered.py");
+        fs::write(&uncovered, "def beta():\n    return 'beta'\n").unwrap();
+        let uncovered_lines = BTreeMap::from([(uncovered.clone(), BTreeSet::from([2_u32]))]);
+        let source_paths = vec![app, uncovered];
+        let uncovered_module = PythonModule::new(
+            tmp.path(),
+            &source_paths,
+            &uncovered_lines,
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+        assert_eq!(
+            uncovered_module.freshness(&universe).unwrap(),
+            CoverageFreshness::Stale,
+            "reusable-prior selection must fail closed for an uncovered source"
         );
     }
 

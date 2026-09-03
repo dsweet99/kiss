@@ -91,7 +91,7 @@ pub fn build_rust_coverage_batch_plan(
     req: &RustCoverageBatchRequest,
 ) -> Result<RustCoverageBatchPlan, String> {
     validate_batch_request(req)?;
-    let build_target = req.source_root.join("target");
+    let build_target = req.cache_root.join("build").join("target");
     let target_runner_output_dir = target_runner_output_dir(req);
     let runner_map_path = super::batch_plan_nextest_config::runner_map_path_for_request(req);
     let mut env = req.env.clone();
@@ -111,6 +111,7 @@ pub fn build_rust_coverage_batch_plan(
         build_target_value.clone(),
     );
     env.insert("CARGO_LLVM_COV_BUILD_DIR".to_string(), build_target_value);
+    env.insert("CARGO_INCREMENTAL".to_string(), "0".to_string());
     super::batch_plan_nextest_config::apply_target_runner_env(&mut env, req, &runner_map_path);
 
     let target_runner_cargo_config =

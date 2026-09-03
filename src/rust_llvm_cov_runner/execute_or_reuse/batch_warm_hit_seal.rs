@@ -35,7 +35,6 @@ pub(crate) fn selectors_fingerprint(selectors: &[String]) -> String {
     format!("{h:016x}")
 }
 
-#[allow(dead_code)]
 pub(crate) fn try_warm_all_hit_seal(
     req: &RustCoverageBatchRequest,
     identity: &RustCoverageBatchIdentity,

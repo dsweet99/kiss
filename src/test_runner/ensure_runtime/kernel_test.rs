@@ -154,7 +154,7 @@ impl LanguageRuntime for FakeRuntime {
         _request: &EnsureRequest,
         planned: &[String],
         _witness: &ExecutionWitness,
-    ) -> SelectorExecutionSummary {
+    ) -> Result<SelectorExecutionSummary, String> {
         let mut summary = SelectorExecutionSummary::default();
         for sel in planned {
             summary.record(SelectorExecutionRecord {
@@ -166,7 +166,7 @@ impl LanguageRuntime for FakeRuntime {
                 duration: std::time::Duration::from_millis(1),
             });
         }
-        summary
+        Ok(summary)
     }
 }
 
@@ -275,7 +275,7 @@ fn second_ensure_after_partial_failure_runs_only_problem_selectors() {
 }
 
 #[test]
-fn terminal_incomplete_reports_without_run_or_publish() {
+fn unresolved_with_duration_reruns_and_publishes() {
     let state = Rc::new(RefCell::new(FakeState {
         witness: Some(ExecutionWitness {
             language: "python".into(),
@@ -299,8 +299,8 @@ fn terminal_incomplete_reports_without_run_or_publish() {
     let result =
         ensure_runtime_cache(&request(vec!["a".into(), "b".into()]), &[&runtime]).expect("ensure");
     assert_ne!(result.exit_code, 0);
-    assert!(state.borrow().run_calls.is_empty());
-    assert_eq!(state.borrow().publish_calls, 0);
+    assert_eq!(state.borrow().run_calls, vec![vec!["b".to_string()]]);
+    assert_eq!(state.borrow().publish_calls, 1);
 }
 
 #[test]

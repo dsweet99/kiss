@@ -5,6 +5,7 @@ use super::{BatchProcessTreeGuard, ProcessGroupIdentity, record_child_process_gr
 
 #[test]
 fn configure_batch_child_process_group_records_current_identity() {
+    let _serial = super::signal_test_guard();
     let registry = super::ProcessTreeRegistry::default();
     super::configure_batch_child_process_group(&registry).expect("configure group");
     let identities = registry.identities();
@@ -15,6 +16,7 @@ fn configure_batch_child_process_group_records_current_identity() {
 
 #[test]
 fn process_tree_registry_records_and_counts_residuals() {
+    let _serial = super::signal_test_guard();
     let registry = super::ProcessTreeRegistry::default();
     assert!(registry.identities().is_empty());
     assert_eq!(registry.residual_count(), 0);
@@ -39,6 +41,7 @@ fn process_tree_registry_records_and_counts_residuals() {
 
 #[test]
 fn identity_still_valid_rejects_zero_pid_or_pgid() {
+    let _serial = super::signal_test_guard();
     assert!(!super::identity_still_valid(&ProcessGroupIdentity {
         pid: 0,
         pgid: 1
@@ -51,6 +54,7 @@ fn identity_still_valid_rejects_zero_pid_or_pgid() {
 
 #[test]
 fn process_tree_registry_records_explicit_identities() {
+    let _serial = super::signal_test_guard();
     let registry = super::ProcessTreeRegistry::default();
     let identity = ProcessGroupIdentity {
         pid: std::process::id(),
@@ -64,6 +68,7 @@ fn process_tree_registry_records_explicit_identities() {
 
 #[test]
 fn process_group_signal_helpers_ignore_invalid_inputs() {
+    let _serial = super::signal_test_guard();
     super::signal_validated_process_group(&ProcessGroupIdentity { pid: 0, pgid: 1 }, libc::SIGTERM);
     super::signal_process_group(0, libc::SIGTERM);
     assert!(!super::process_group_alive(0));
@@ -71,6 +76,7 @@ fn process_group_signal_helpers_ignore_invalid_inputs() {
 
 #[test]
 fn process_group_identity_supports_equality_and_debug() {
+    let _serial = super::signal_test_guard();
     let identity = ProcessGroupIdentity { pid: 42, pgid: 42 };
     assert_eq!(identity, identity);
     assert!(format!("{identity:?}").contains("42"));
@@ -79,6 +85,7 @@ fn process_group_identity_supports_equality_and_debug() {
 #[cfg(unix)]
 #[test]
 fn record_current_process_group_records_this_process() {
+    let _serial = super::signal_test_guard();
     let registry = super::ProcessTreeRegistry::default();
 
     super::record_current_process_group(&registry);
@@ -91,6 +98,7 @@ fn record_current_process_group_records_this_process() {
 
 #[test]
 fn reap_zombies_is_idempotent_when_no_children_are_waiting() {
+    let _serial = super::signal_test_guard();
     super::batch_process_tree_reap::reap_zombies();
     super::batch_process_tree_reap::reap_zombies();
     assert_eq!(super::batch_process_tree_reap::reap_zombies_count(), 0);
@@ -98,6 +106,7 @@ fn reap_zombies_is_idempotent_when_no_children_are_waiting() {
 
 #[test]
 fn reap_zombies_reaps_exited_child_processes() {
+    let _serial = super::signal_test_guard();
     let mut child = Command::new("/bin/sh")
         .arg("-c")
         .arg("exit 0")
@@ -125,6 +134,7 @@ fn reap_zombies_reaps_exited_child_processes() {
 #[cfg(unix)]
 #[test]
 fn reap_zombies_count_counts_forked_exited_child() {
+    let _serial = super::signal_test_guard();
     let pid = unsafe { libc::fork() };
     assert!(pid >= 0, "fork failed");
     if pid == 0 {
@@ -139,6 +149,7 @@ fn reap_zombies_count_counts_forked_exited_child() {
 
 #[test]
 fn batch_process_tree_guard_records_child_process_group() {
+    let _serial = super::signal_test_guard();
     let guard = BatchProcessTreeGuard::install().expect("install process tree guard");
     let registry = guard.registry();
     let mut command = Command::new("/bin/sh");
@@ -157,6 +168,7 @@ fn batch_process_tree_guard_records_child_process_group() {
 
 #[test]
 fn batch_process_tree_guard_reinstalls_after_drop() {
+    let _serial = super::signal_test_guard();
     {
         let _guard = BatchProcessTreeGuard::install().expect("install process tree guard");
     }
@@ -166,6 +178,7 @@ fn batch_process_tree_guard_reinstalls_after_drop() {
 
 #[test]
 fn batch_scope_interrupt_guard_installs_shared_state() {
+    let _serial = super::signal_test_guard();
     let _scope = super::BatchScopeInterruptGuard::install().expect("install scope guard");
     let guard = BatchProcessTreeGuard::install().expect("install scoped process tree guard");
 
@@ -175,7 +188,17 @@ fn batch_scope_interrupt_guard_installs_shared_state() {
 }
 
 #[test]
+fn peer_cancel_marks_batch_scope_interrupted_without_children() {
+    let _serial = super::signal_test_guard();
+    let _scope = super::BatchScopeInterruptGuard::install().expect("install scope guard");
+    assert!(!super::batch_scope_interrupted());
+    super::cancel_active_batch_scope();
+    assert!(super::batch_scope_interrupted());
+}
+
+#[test]
 fn batch_process_tree_guard_marks_interrupted_after_terminate() {
+    let _serial = super::signal_test_guard();
     let guard = BatchProcessTreeGuard::install().expect("install process tree guard");
     assert!(!guard.interrupted());
     let _ = guard.terminate_descendants(Duration::from_millis(1));
@@ -184,6 +207,7 @@ fn batch_process_tree_guard_marks_interrupted_after_terminate() {
 
 #[test]
 fn reap_lingering_descendants_does_not_mark_interrupted() {
+    let _serial = super::signal_test_guard();
     let guard = BatchProcessTreeGuard::install().expect("install process tree guard");
     assert!(!guard.interrupted());
     let _ = guard.reap_lingering_descendants(Duration::from_millis(1));
@@ -193,6 +217,7 @@ fn reap_lingering_descendants_does_not_mark_interrupted() {
 #[cfg(unix)]
 #[test]
 fn batch_process_tree_guard_terminates_signal_ignoring_descendant() {
+    let _serial = super::signal_test_guard();
     let guard = BatchProcessTreeGuard::install().expect("install process tree guard");
     let registry = guard.registry();
     let mut command = Command::new("/bin/sh");
@@ -219,6 +244,7 @@ fn batch_process_tree_guard_terminates_signal_ignoring_descendant() {
 #[cfg(unix)]
 #[test]
 fn identity_still_valid_rejects_reused_pid_with_mismatched_pgid() {
+    let _serial = super::signal_test_guard();
     let guard = BatchProcessTreeGuard::install().expect("install process tree guard");
     let registry = guard.registry();
     let mut command = Command::new("/bin/sh");
@@ -238,6 +264,7 @@ fn identity_still_valid_rejects_reused_pid_with_mismatched_pgid() {
 
 #[test]
 fn batch_process_tree_guard_terminates_sleeping_descendant() {
+    let _serial = super::signal_test_guard();
     let guard = BatchProcessTreeGuard::install().expect("install process tree guard");
     let registry = guard.registry();
     let mut command = Command::new("/bin/sh");
@@ -260,6 +287,7 @@ fn batch_process_tree_guard_terminates_sleeping_descendant() {
 
 #[test]
 fn batch_process_tree_guard_drop_terminates_recorded_child() {
+    let _serial = super::signal_test_guard();
     let mut child = {
         let guard = BatchProcessTreeGuard::install().expect("install process tree guard");
         let registry = guard.registry();

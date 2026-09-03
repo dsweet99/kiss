@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::analyze_cache::fnv1a64;
 
-const DISK_SCHEMA: &str = "selector-source-digests-v2";
+const DISK_SCHEMA: &str = "selector-source-digests-v4";
 const DISK_FILE: &str = "selector_source_digests.json";
 
 #[derive(Clone, Eq, PartialEq, Hash)]
@@ -30,6 +30,7 @@ struct DiskRecord {
     dev: u64,
     ino: u64,
     digest: u64,
+    has_literal_includes: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -116,21 +117,31 @@ fn load_disk_map(repo_root: &Path) -> BTreeMap<String, DiskRecord> {
     parsed.files
 }
 
-fn repo_disk_map(repo_root: &Path) -> BTreeMap<String, DiskRecord> {
+fn with_repo_disk_map<R>(
+    repo_root: &Path,
+    f: impl FnOnce(&BTreeMap<String, DiskRecord>) -> R,
+) -> R {
     let key = repo_root.to_path_buf();
-    if let Ok(guard) = disk_maps().lock()
-        && let Some(map) = guard.get(&key)
-    {
-        return map.clone();
+    let Ok(mut guard) = disk_maps().lock() else {
+        return f(&BTreeMap::new());
+    };
+    if !guard.contains_key(&key) {
+        let loaded = load_disk_map(repo_root);
+        guard.insert(key.clone(), loaded);
     }
-    let loaded = load_disk_map(repo_root);
-    if let Ok(mut guard) = disk_maps().lock() {
-        guard.insert(key, loaded.clone());
+    match guard.get(&key) {
+        Some(map) => f(map),
+        None => f(&BTreeMap::new()),
     }
-    loaded
 }
 
-fn remember_disk_record(repo_root: &Path, rel: &str, stamp: &FileStamp, digest: u64) {
+fn remember_disk_record(
+    repo_root: &Path,
+    rel: &str,
+    stamp: &FileStamp,
+    digest: u64,
+    has_literal_includes: bool,
+) {
     let key = repo_root.to_path_buf();
     let record = DiskRecord {
         len: stamp.len,
@@ -139,6 +150,7 @@ fn remember_disk_record(repo_root: &Path, rel: &str, stamp: &FileStamp, digest: 
         dev: stamp.dev,
         ino: stamp.ino,
         digest,
+        has_literal_includes,
     };
     if let Ok(mut guard) = disk_maps().lock() {
         guard
@@ -149,32 +161,178 @@ fn remember_disk_record(repo_root: &Path, rel: &str, stamp: &FileStamp, digest: 
 }
 
 fn content_digest(repo_root: &Path, rel: &str, path: &Path, stamp: &FileStamp) -> io::Result<u64> {
-    if let Ok(guard) = memo().lock()
-        && let Some(digest) = guard.get(stamp).copied()
-    {
-        return Ok(digest);
-    }
-    let disk = repo_disk_map(repo_root);
-    if let Some(record) = disk.get(rel)
-        && record_matches(record, stamp)
+    let cached = with_repo_disk_map(repo_root, |disk| {
+        disk.get(rel)
+            .filter(|record| record_matches(record, stamp))
+            .cloned()
+    });
+    if let Some(record) = cached.as_ref()
+        && !record.has_literal_includes
     {
         if let Ok(mut guard) = memo().lock() {
             guard.insert(stamp.clone(), record.digest);
         }
         return Ok(record.digest);
     }
+    if cached.is_none()
+        && let Ok(guard) = memo().lock()
+        && let Some(digest) = guard.get(stamp).copied()
+    {
+        return Ok(digest);
+    }
     let bytes = fs::read(path)?;
-    let hashed = if rel.ends_with(".rs") {
+    let mut hashed = if rel.ends_with(".rs") && !rel.ends_with("build.rs") {
         rust_selector_declaration_bytes(&bytes)
     } else {
-        bytes
+        bytes.clone()
     };
+    let has_literal_includes = rel.ends_with(".rs")
+        && append_literal_include_dependencies(
+            repo_root,
+            path,
+            &String::from_utf8_lossy(&bytes),
+            &mut hashed,
+        );
     let digest = fnv1a64(0xcbf2_9ce4_8422_2325, &hashed);
-    if let Ok(mut guard) = memo().lock() {
+    if !has_literal_includes && let Ok(mut guard) = memo().lock() {
         guard.insert(stamp.clone(), digest);
     }
-    remember_disk_record(repo_root, rel, stamp, digest);
+    remember_disk_record(repo_root, rel, stamp, digest, has_literal_includes);
     Ok(digest)
+}
+
+fn append_literal_include_dependencies(
+    repo_root: &Path,
+    includer: &Path,
+    source: &str,
+    out: &mut Vec<u8>,
+) -> bool {
+    let first = include_literals(source, &cargo_manifest_dir(includer, repo_root));
+    if first.is_empty() {
+        return false;
+    }
+    let canonical_root = kiss::rust_include::canonical_path(repo_root);
+    let mut queue: VecDeque<_> = first
+        .into_iter()
+        .map(|literal| (includer.to_path_buf(), literal))
+        .collect();
+    let mut seen = BTreeSet::new();
+    let mut dependencies = BTreeMap::new();
+    while let Some((parent, literal)) = queue.pop_front() {
+        let resolved = kiss::rust_include::resolve_include_path(&parent, &literal);
+        let canonical = kiss::rust_include::canonical_path(&resolved);
+        let Ok(relative) = canonical.strip_prefix(&canonical_root) else {
+            continue;
+        };
+        let rel = relative.to_string_lossy().replace('\\', "/");
+        if !seen.insert(rel.clone()) {
+            continue;
+        }
+        match fs::read(&canonical) {
+            Ok(bytes) => {
+                if let Ok(text) = std::str::from_utf8(&bytes) {
+                    queue.extend(
+                        include_literals(text, &cargo_manifest_dir(&canonical, repo_root))
+                            .into_iter()
+                            .map(|nested| (canonical.clone(), nested)),
+                    );
+                }
+                dependencies.insert(rel, bytes);
+            }
+            Err(_) => {
+                dependencies.insert(rel, b"<missing>".to_vec());
+            }
+        }
+        if seen.len() >= 10_000 {
+            break;
+        }
+    }
+    for (rel, bytes) in dependencies {
+        out.extend_from_slice(b"\ninclude-dependency:");
+        out.extend_from_slice(rel.as_bytes());
+        out.push(0);
+        out.extend_from_slice(&bytes);
+        out.push(0);
+    }
+    true
+}
+
+fn cargo_manifest_dir(includer: &Path, repo_root: &Path) -> PathBuf {
+    let mut current = includer.parent();
+    while let Some(dir) = current {
+        if dir.join("Cargo.toml").is_file() {
+            return dir.to_path_buf();
+        }
+        if dir == repo_root {
+            break;
+        }
+        current = dir.parent();
+    }
+    repo_root.to_path_buf()
+}
+
+fn include_literals(source: &str, cargo_manifest_dir: &Path) -> Vec<String> {
+    struct Collector<'a> {
+        cargo_manifest_dir: &'a Path,
+        literals: Vec<String>,
+    }
+    impl<'ast> syn::visit::Visit<'ast> for Collector<'_> {
+        fn visit_macro(&mut self, mac: &'ast syn::Macro) {
+            if let Some(literal) = resolved_include_expression(mac, self.cargo_manifest_dir) {
+                self.literals.push(literal);
+            }
+            syn::visit::visit_macro(self, mac);
+        }
+    }
+    use syn::visit::Visit;
+    let Ok(file) = syn::parse_file(source) else {
+        return Vec::new();
+    };
+    let mut collector = Collector {
+        cargo_manifest_dir,
+        literals: Vec::new(),
+    };
+    collector.visit_file(&file);
+    collector.literals
+}
+
+fn resolved_include_expression(mac: &syn::Macro, cargo_manifest_dir: &Path) -> Option<String> {
+    if let Some(literal) = kiss::rust_include::extract_include_literal_from_macro(mac) {
+        return Some(literal);
+    }
+    if !mac.path.is_ident("include") {
+        return None;
+    }
+    let expression: syn::Expr = syn::parse2(mac.tokens.clone()).ok()?;
+    resolve_include_expression_part(&expression, cargo_manifest_dir)
+}
+
+fn resolve_include_expression_part(
+    expression: &syn::Expr,
+    cargo_manifest_dir: &Path,
+) -> Option<String> {
+    match expression {
+        syn::Expr::Lit(literal) => match &literal.lit {
+            syn::Lit::Str(value) => Some(value.value()),
+            _ => None,
+        },
+        syn::Expr::Macro(expression_macro) if expression_macro.mac.path.is_ident("env") => {
+            let variable: syn::LitStr = syn::parse2(expression_macro.mac.tokens.clone()).ok()?;
+            (variable.value() == "CARGO_MANIFEST_DIR")
+                .then(|| cargo_manifest_dir.to_string_lossy().to_string())
+        }
+        syn::Expr::Macro(expression_macro) if expression_macro.mac.path.is_ident("concat") => {
+            use syn::parse::Parser;
+            let parser = syn::punctuated::Punctuated::<syn::Expr, syn::Token![,]>::parse_terminated;
+            let parts = parser.parse2(expression_macro.mac.tokens.clone()).ok()?;
+            let mut resolved = String::new();
+            for part in parts {
+                resolved.push_str(&resolve_include_expression_part(&part, cargo_manifest_dir)?);
+            }
+            Some(resolved)
+        }
+        _ => None,
+    }
 }
 
 pub(super) fn hash_file_contents(
@@ -213,42 +371,6 @@ pub(super) fn flush_persisted_digests(repo_root: &Path) {
     let _ = fs::write(dir.join(DISK_FILE), bytes);
 }
 
-fn rust_selector_declaration_bytes(bytes: &[u8]) -> Vec<u8> {
-    let text = String::from_utf8_lossy(bytes);
-    if rust_signature_ambiguous(&text) {
-        return bytes.to_vec();
-    }
-    let mut out = Vec::new();
-    for line in text.lines() {
-        let trimmed = line.trim_start();
-        if let Some(sig) = rust_declaration_signature(trimmed) {
-            out.extend_from_slice(sig.as_bytes());
-            out.push(b'\n');
-        }
-    }
-    out
-}
-
-fn rust_signature_ambiguous(text: &str) -> bool {
-    text.contains("proc_macro") || text.contains("include!") || text.contains("macro_rules!")
-}
-
-fn rust_declaration_signature(line: &str) -> Option<&str> {
-    if line.starts_with("#[") {
-        return Some(line);
-    }
-    if rust_declaration_line(line) {
-        return Some(line.split_once('{').map_or(line, |(sig, _)| sig).trim_end());
-    }
-    None
-}
-
-fn rust_declaration_line(line: &str) -> bool {
-    line.starts_with("fn ")
-        || line.starts_with("pub fn ")
-        || line.starts_with("pub(crate) fn ")
-        || line.starts_with("async fn ")
-        || line.starts_with("pub async fn ")
-        || line.starts_with("mod ")
-        || line.starts_with("pub mod ")
-}
+#[path = "workspace_selector_cache_digest_sig.rs"]
+mod digest_sig;
+use digest_sig::rust_selector_declaration_bytes;

@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::Duration;
 
@@ -165,10 +165,19 @@ fn run_module_with_reused_controller(
             }
         }
     }
-    controller
+    let result = controller
         .as_mut()
         .expect("controller initialized")
-        .run_module(reqs)
+        .run_module_once(&reqs);
+    match result {
+        Ok(outcomes) => outcomes,
+        Err(_) => {
+            *controller = None;
+            reqs.into_iter()
+                .map(|req| run_with_reused_controller(controller, req))
+                .collect()
+        }
+    }
 }
 
 pub(crate) fn duration_millis_u64(duration: Duration) -> u64 {
@@ -300,5 +309,26 @@ mod partition_tests {
         ];
         let parts = partition_requests_by_module(reqs, 2);
         assert_eq!(parts.len(), 2);
+    }
+
+    #[test]
+    fn module_protocol_failure_restarts_controller_and_runs_singles() {
+        let src = include_str!("forkserver.rs");
+        let fallback = src
+            .split("fn run_module_with_reused_controller")
+            .nth(1)
+            .expect("run_module_with_reused_controller");
+        assert!(
+            fallback.contains("run_module_once(&reqs)"),
+            "batch path must use run_module_once so a protocol miss can fall back"
+        );
+        assert!(
+            fallback.contains("*controller = None;"),
+            "failed module batch must drop the controller before single retries"
+        );
+        assert!(
+            fallback.contains("run_with_reused_controller(controller, req)"),
+            "failed module batch must retry each request individually"
+        );
     }
 }

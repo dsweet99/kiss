@@ -4,6 +4,7 @@ use kiss::Language;
 
 #[test]
 fn run_test_returns_nonzero_when_planning_fails_outside_git_repo() {
+    let _cwd = crate::cwd_test_lock::lock();
     let tmp = tempfile::tempdir().unwrap();
     let old = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
@@ -337,6 +338,7 @@ fn plan_subdirectory_is_not_workspace_enumerator() {
 
 #[test]
 fn plan_dot_all_from_nested_cwd_stays_repo_wide() {
+    let _cwd = crate::cwd_test_lock::lock();
     let cwd = std::env::current_dir().unwrap();
     let nested = cwd.join("src/bin_cli");
     assert!(nested.is_dir());

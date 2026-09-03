@@ -47,3 +47,48 @@ fn identity_only_keeps_digest_matched_maps() {
         CheckAggregateRepairDecision::IdentityOnly { .. }
     ));
 }
+
+#[test]
+fn aggregate_repair_full_refresh_when_current_ids_empty() {
+    let selectors = vec!["pkg::bin$alpha".to_string()];
+    let prior = aggregate_prior(&selectors, &[("bin-a", "digest-a")]);
+    let maps = std::collections::BTreeMap::from([(selectors[0].clone(), Vec::new())]);
+    let binaries = vec![super::test_binary("bin-a", "digest-a")];
+    assert_eq!(
+        super::super::classify_check_aggregate_repair(&selectors, &prior, &maps, &binaries),
+        CheckAggregateRepairDecision::FullRefresh
+    );
+}
+
+#[test]
+fn aggregate_repair_full_refresh_when_prior_ids_missing() {
+    let selectors = vec!["pkg::bin$alpha".to_string()];
+    let prior = aggregate_prior_with_maps(&selectors, &[("bin-a", "digest-a")], &[]);
+    let maps =
+        std::collections::BTreeMap::from([(selectors[0].clone(), vec!["bin-a".to_string()])]);
+    let binaries = vec![super::test_binary("bin-a", "digest-a")];
+    assert_eq!(
+        super::super::classify_check_aggregate_repair(&selectors, &prior, &maps, &binaries),
+        CheckAggregateRepairDecision::FullRefresh
+    );
+}
+
+#[test]
+fn aggregate_repair_full_refresh_when_rerun_selectors_empty() {
+    let selectors = vec!["pkg::bin$alpha".to_string()];
+    let prior = aggregate_prior(&selectors, &[("bin-a", "digest-a")]);
+    let maps =
+        std::collections::BTreeMap::from([(selectors[0].clone(), vec!["bin-a".to_string()])]);
+    let binaries = vec![super::test_binary("bin-a", "digest-a")];
+    let forced = std::collections::BTreeSet::from(["bin-orphan".to_string()]);
+    assert_eq!(
+        super::super::classify_check_aggregate_repair_with_replacements(
+            &selectors,
+            &prior,
+            &maps,
+            &binaries,
+            &forced,
+        ),
+        CheckAggregateRepairDecision::FullRefresh
+    );
+}

@@ -394,7 +394,7 @@ fn missing_duration_rejects_accept_and_repairs_selector() {
 }
 
 #[test]
-fn unresolved_without_duration_is_not_warm_skippable() {
+fn unresolved_is_not_warm_skippable() {
     let mut w = witness(
         WitnessScope::Full,
         "id",
@@ -411,7 +411,7 @@ fn unresolved_without_duration_is_not_warm_skippable() {
         &[WitnessStatus::Unresolved],
         false,
     );
-    assert!(all_misses_warm_skippable(&with_duration, &["a".into()]));
+    assert!(!all_misses_warm_skippable(&with_duration, &["a".into()]));
 }
 
 #[test]

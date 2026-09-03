@@ -1,6 +1,7 @@
 use crate::bin_cli::args::{
     Cli, Commands, TestInvocation, parse_test_invocation, validate_test_branch_options,
 };
+use crate::test_runner::test_mode_fixtures::warm_committed_rust_demo;
 use clap::Parser;
 use std::path::PathBuf;
 use std::process::Command;
@@ -12,9 +13,11 @@ fn kiss_bin() -> PathBuf {
 #[test]
 fn kiss_test_dot_dry_run_smoke() {
     let tmp = tempfile::TempDir::new().unwrap();
+    warm_committed_rust_demo(&tmp);
     let config = tmp.path().join("builtin.kissconfig");
     std::fs::write(&config, "[python]\n[rust]\n").unwrap();
     let output = Command::new(kiss_bin())
+        .current_dir(tmp.path())
         .args([
             "--config",
             config.to_str().unwrap(),

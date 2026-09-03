@@ -1,6 +1,8 @@
 use crate::analyze;
 use crate::analyze::build_focus_filter;
-use crate::analyze::cov_records_cache::{CovRecordsCacheKey, try_load_cov_records};
+use crate::analyze::cov_records_cache::{
+    CovRecordsCacheKey, mark_cached_records_orphan_clean, try_load_cov_records_with_orphan_state,
+};
 use crate::bin_cli::cov_cmd_cache::{
     compute_and_store_records, gather_cov_files, lang_filter_cache_label,
 };
@@ -122,6 +124,7 @@ fn evaluate_records_with_time(
     ctx: &RecordsEvalCtx<'_>,
     snapshot: Option<&analyze::line_coverage::RuntimeCoverageSnapshot>,
 ) -> i32 {
+    let orphan_failed = orphan_gate_failed(ctx, snapshot);
     let coverage_failed = evaluate_coverage_gate(
         records,
         ctx.focus,
@@ -133,7 +136,6 @@ fn evaluate_records_with_time(
     let time_failed = apply_time_gate_eval(&time_eval);
     let max_num_tests_failed =
         evaluate_max_num_tests_gate(ctx.args, ctx.universe_root, ctx.files, ctx.ignore);
-    let orphan_failed = orphan_gate_failed(ctx, snapshot);
     finish_sibling_gates(SiblingGateResult {
         coverage_failed,
         time_failed,
@@ -142,11 +144,20 @@ fn evaluate_records_with_time(
     })
 }
 
+#[cfg(test)]
 fn try_evaluate_records_with_time(
     records: &[analyze::line_coverage::LineCoverageRecord],
     ctx: &RecordsEvalCtx<'_>,
 ) -> Option<i32> {
-    if ctx.args.gate_config.orphan_detection && !ctx.args.bypass_gate {
+    try_evaluate_records_with_orphan_state(records, ctx, false)
+}
+
+fn try_evaluate_records_with_orphan_state(
+    records: &[analyze::line_coverage::LineCoverageRecord],
+    ctx: &RecordsEvalCtx<'_>,
+    orphan_clean: bool,
+) -> Option<i32> {
+    if ctx.args.gate_config.orphan_detection && !ctx.args.bypass_gate && !orphan_clean {
         return None;
     }
     let time_eval = evaluate_time_gate_for_cov(ctx.args, ctx.universe_root, ctx.files, ctx.ignore);
@@ -285,6 +296,7 @@ fn evaluate_gathered_cov(p: EvaluateGatheredCov<'_>) -> i32 {
         bypass_gate: p.args.bypass_gate,
         ignore: p.ignore,
         lang_filter: lang_filter_cache_label(p.args.lang_filter),
+        pytest_args: p.args.pytest_args,
     };
     let focus = build_focus_filter(p.focus_paths, p.universe, p.args.lang_filter, p.ignore);
     let t0 = Instant::now();
@@ -297,19 +309,25 @@ fn evaluate_gathered_cov(p: EvaluateGatheredCov<'_>) -> i32 {
         files: p.files,
         ignore: p.ignore,
     };
-    if let Some(records) = try_load_cov_records(&cache_key) {
+    if let Some((records, cached_orphan_policy)) =
+        try_load_cov_records_with_orphan_state(&cache_key)
+    {
+        let orphan_clean =
+            cached_orphan_policy == orphan_policy(&p.args.gate_config.orphan_allowed);
         if p.args.timing {
             eprintln!(
                 "TIMING:coverage_records_cache_hit_ms:{}",
                 t0.elapsed().as_millis()
             );
         }
-        if let Some(code) = try_evaluate_records_with_time(&records, &eval_ctx) {
+        if let Some(code) =
+            try_evaluate_records_with_orphan_state(&records, &eval_ctx, orphan_clean)
+        {
             return code;
         }
-        if let Some(code) =
-            evaluate_cached_records_for_orphan(&records, &eval_ctx, &repo_root, required, &t0)
-        {
+        if let Some(code) = evaluate_cached_records_for_orphan(
+            &records, &eval_ctx, &repo_root, required, &cache_key, &t0,
+        ) {
             return code;
         }
     }
@@ -352,6 +370,7 @@ fn evaluate_cached_records_for_orphan(
     eval_ctx: &RecordsEvalCtx<'_>,
     repo_root: &Path,
     required: RequiredCoverageLanguages,
+    cache_key: &CovRecordsCacheKey<'_>,
     t0: &Instant,
 ) -> Option<i32> {
     if !eval_ctx.args.gate_config.orphan_detection || eval_ctx.args.bypass_gate {
@@ -389,6 +408,13 @@ fn evaluate_cached_records_for_orphan(
             t0.elapsed().as_millis()
         );
     }
+    let orphan_failed = orphan_gate_failed(eval_ctx, Some(&validated.snapshot));
+    if !orphan_failed {
+        mark_cached_records_orphan_clean(
+            cache_key,
+            &orphan_policy(&eval_ctx.args.gate_config.orphan_allowed),
+        );
+    }
     Some(evaluate_records_with_time(
         records,
         eval_ctx,
@@ -396,6 +422,9 @@ fn evaluate_cached_records_for_orphan(
     ))
 }
 
+fn orphan_policy(orphan_allowed: &[String]) -> String {
+    format!("orphan-policy-v1:{}", orphan_allowed.join("\0"))
+}
 #[cfg(test)]
 #[path = "cov_cmd_refresh_test.rs"]
 mod refresh_tests;

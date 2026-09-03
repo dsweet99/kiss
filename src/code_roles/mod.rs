@@ -25,8 +25,8 @@ pub use fingerprint::{
     ROLE_SCHEMA_VERSION, role_input_fingerprint, workspace_preflight_fingerprint,
 };
 pub use index::{
-    SourceRoleIndex, contexts_at, contexts_for_span, is_test_only_file, production_line_count,
-    skip_syn,
+    SourceRoleIndex, contains_file, contexts_at, contexts_for_span, is_test_only_file,
+    production_line_count, skip_syn,
 };
 pub use python::classify_python;
 pub use python_path::{is_default_pytest_collect_candidate, is_python_test_module_path};

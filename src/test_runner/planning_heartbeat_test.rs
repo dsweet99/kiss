@@ -1,5 +1,6 @@
 #[test]
 fn run_test_emits_planning_heartbeat_before_plan_work() {
+    let _cwd = crate::cwd_test_lock::lock();
     let tmp = tempfile::tempdir().unwrap();
     let old = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();

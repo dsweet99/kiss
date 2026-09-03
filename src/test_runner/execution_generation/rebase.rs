@@ -9,6 +9,13 @@ pub(super) fn rebase_incoming_on_current(
     if current.execution_context_digest != incoming.execution_context_digest {
         return Err("error: kiss: stale generation writer identity moved".into());
     }
+    if current.selectors != incoming.selectors
+        && (!current.covered_lines.is_empty() || !incoming.covered_lines.is_empty())
+    {
+        return Err(
+            "error: kiss: stale generation writer cannot safely merge aggregate coverage".into(),
+        );
+    }
     Ok(merge_generations(current, incoming))
 }
 
@@ -54,6 +61,10 @@ pub(super) fn merge_generations(
         coverage_index_digest: current.coverage_index_digest.clone(),
         reverse_index_digest: current.reverse_index_digest.clone(),
         binary_index_digest: current.binary_index_digest.clone(),
-        covered_lines: incoming.covered_lines.clone(),
+        covered_lines: if incoming.covered_lines.is_empty() {
+            current.covered_lines.clone()
+        } else {
+            incoming.covered_lines.clone()
+        },
     }
 }

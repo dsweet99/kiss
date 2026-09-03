@@ -36,12 +36,14 @@ pub(crate) fn write_python_coverage_index_with_entries_fingerprint(
     repo_root: &Path,
     index: &PythonCoverageIndex,
     entries_fingerprint: &str,
+    test_args: &[String],
 ) -> Result<(), String> {
     #[derive(Serialize)]
     struct OnDiskIndex<'a> {
         schema_version: &'a str,
         source_root: String,
         entries_fingerprint: String,
+        execution_identity: Option<super::generation::PythonExecutionIdentity>,
         files: &'a PythonCoverageIndex,
     }
 
@@ -54,6 +56,10 @@ pub(crate) fn write_python_coverage_index_with_entries_fingerprint(
         schema_version: INDEX_SCHEMA_VERSION,
         source_root: normalized_python_repo_root(repo_root),
         entries_fingerprint: entries_fingerprint.to_string(),
+        execution_identity: super::generation::current_python_execution_identity(
+            repo_root, test_args,
+        )
+        .ok(),
         files: index,
     };
     kiss::kiss_publication_barrier::publish_atomically("python_index", &path, &tmp_path, |file| {
@@ -62,6 +68,32 @@ pub(crate) fn write_python_coverage_index_with_entries_fingerprint(
         Ok(())
     })
     .map_err(|e| e.to_string())
+}
+
+pub(crate) fn legacy_python_index_execution_context_matches(
+    repo_root: &Path,
+    test_args: &[String],
+) -> bool {
+    #[derive(Deserialize)]
+    struct OnDiskIndexContext {
+        schema_version: String,
+        source_root: String,
+        execution_identity: Option<super::generation::PythonExecutionIdentity>,
+    }
+    let Ok(path) = python_coverage_index_path(repo_root) else {
+        return false;
+    };
+    let Ok(bytes) = fs::read(path) else {
+        return false;
+    };
+    let Ok(index) = serde_json::from_slice::<OnDiskIndexContext>(&bytes) else {
+        return false;
+    };
+    index.schema_version == INDEX_SCHEMA_VERSION
+        && index.source_root == normalized_python_repo_root(repo_root)
+        && index.execution_identity.is_some_and(|identity| {
+            super::generation::execution_context_matches_current(repo_root, &identity, test_args)
+        })
 }
 
 pub(crate) fn load_current_python_coverage_index(repo_root: &Path) -> Option<PythonCoverageIndex> {

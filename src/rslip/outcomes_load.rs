@@ -35,23 +35,30 @@ fn load_cached_outcomes_many_with_reuse(
         }
     };
     reqs.iter()
-        .map(|req| {
-            validate_rslip_request(req)?;
-            let fingerprint = if rslip_requests_share_context(first, req) {
-                rslip_cache_fingerprint_from_context(&shared_context, &req.nodeid)
-            } else {
-                let context = rslip_request_context_fingerprint(req)?;
-                rslip_cache_fingerprint_from_context(&context, &req.nodeid)
-            };
-            let entry = if validate_reuse {
-                load_reusable_rslip_cache_entry(&req.cache_root, &fingerprint, &req.source_root)
-            } else {
-                load_rslip_cache_entry(&req.cache_root, &fingerprint)
-                    .filter(|entry| !entry.coverage.files.is_empty())
-            };
-            Ok(entry.map(rslip_outcome_from_cache))
-        })
+        .map(|req| load_one(req, first, &shared_context, validate_reuse))
         .collect()
+}
+
+fn load_one(
+    req: &RslipRequest,
+    first: &RslipRequest,
+    shared_context: &str,
+    validate_reuse: bool,
+) -> Result<Option<RslipOutcome>, RslipError> {
+    validate_rslip_request(req)?;
+    let fingerprint = if rslip_requests_share_context(first, req) {
+        rslip_cache_fingerprint_from_context(shared_context, &req.nodeid)
+    } else {
+        let context = rslip_request_context_fingerprint(req)?;
+        rslip_cache_fingerprint_from_context(&context, &req.nodeid)
+    };
+    let entry = if validate_reuse {
+        load_reusable_rslip_cache_entry(&req.cache_root, &fingerprint, &req.source_root)
+    } else {
+        load_rslip_cache_entry(&req.cache_root, &fingerprint)
+            .filter(|entry| !entry.coverage.files.is_empty())
+    };
+    Ok(entry.map(rslip_outcome_from_cache))
 }
 
 fn rslip_requests_share_context(first: &RslipRequest, other: &RslipRequest) -> bool {

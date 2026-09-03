@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use kiss::rpytest_runner::TestStatus;
 
 use crate::analyze::line_coverage::RuntimeCoverageSnapshot;
-use crate::analyze_cache::fnv1a64;
 pub(crate) use crate::test_runner::check_runtime_refresh::ensure_check_runtime_coverage;
 use crate::test_runner::python_coverage_index::{
     PYTHON_COVERAGE_ENV_KEYS, python_population_environment_mismatch,
@@ -148,6 +147,13 @@ pub(crate) fn load_python_runtime_coverage(
     pytest_args: &[String],
     gate: &kiss::GateConfig,
 ) -> Result<BackendCoverage, RuntimeCoverageLoadError> {
+    crate::test_runner::python_coverage_index::generation::restamp_complete_pinned_from_cache(
+        repo_root,
+        pytest_args,
+        &|path, root| python_repo_relative_coverage_file(root, &path.to_string_lossy()).is_some(),
+        gate,
+    )
+    .map_err(|err| coverage_error("Python", &err))?;
     if let Some(coverage) = try_coverage_from_generation(repo_root, pytest_args)? {
         return Ok(coverage);
     }
@@ -204,6 +210,17 @@ fn try_coverage_from_generation(
                 "generation identity mismatch (pinned fingerprint {}, current {})",
                 pinned.plan.base_identity.input_fingerprint, exec.input_fingerprint
             ),
+        ));
+    }
+    if let Some(stale) = pinned.timings.iter().find(|row| {
+        row.test_definition_digest.is_empty()
+            || row.test_definition_digest
+                != crate::test_runner::python_coverage_index::storage::
+                    python_selector_definition_digest(repo_root, &row.selector)
+    }) {
+        return Err(coverage_error(
+            "Python",
+            &format!("generation test definition mismatch for {}", stale.selector),
         ));
     }
     if !pinned.complete {
@@ -273,7 +290,7 @@ fn load_python_coverage_from_entries(
         })
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| coverage_error("Python", &format!("malformed request ({err})")))?;
-    let outcomes = kiss::rslip::load_cached_outcomes_many_trusting_population(&reqs);
+    let outcomes = kiss::rslip::load_cached_outcomes_many(&reqs);
     let covered_lines = aggregate_passed_outcomes(repo_root, selectors, outcomes)?;
     let _ = crate::test_runner::python_coverage_index::write_python_coverage_snapshot(
         repo_root,
@@ -395,27 +412,9 @@ fn backend_identity(
     combined_identity(&parts, covered_lines)
 }
 
-fn combined_identity(
-    parts: &[(String, String)],
-    covered_lines: &BTreeMap<String, BTreeSet<u32>>,
-) -> String {
-    let mut h = fnv1a64(0xcbf2_9ce4_8422_2325, b"kiss-runtime-line-coverage-v1");
-    for (key, value) in parts {
-        h = fnv1a64(h, key.as_bytes());
-        h = fnv1a64(h, &[0]);
-        h = fnv1a64(h, value.as_bytes());
-        h = fnv1a64(h, &[0]);
-    }
-    for (file, lines) in covered_lines {
-        h = fnv1a64(h, file.as_bytes());
-        h = fnv1a64(h, &[0]);
-        for line in lines {
-            h = fnv1a64(h, line.to_le_bytes().as_slice());
-        }
-        h = fnv1a64(h, &[0]);
-    }
-    format!("{h:016x}")
-}
+#[path = "check_line_coverage_identity.rs"]
+mod identity;
+use identity::combined_identity;
 
 #[cfg(test)]
 #[path = "check_line_coverage_identity_test.rs"]

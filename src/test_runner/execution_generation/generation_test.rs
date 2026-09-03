@@ -54,6 +54,16 @@ fn repair_sets_parent_and_keeps_universe() {
     let merged = super::rebase::rebase_incoming_on_current(&loaded, &disjoint).unwrap();
     assert!(merged.selectors.iter().any(|s| s == "c"));
     assert!(merged.is_complete_all_pass());
+    let mut covered = loaded.clone();
+    covered.covered_lines =
+        std::collections::BTreeMap::from([("src/lib.rs".to_string(), vec![1, 2, 3])]);
+    assert!(
+        super::rebase::rebase_incoming_on_current(&covered, &disjoint).is_err(),
+        "current-only selector coverage cannot be represented by incoming aggregate lines"
+    );
+    let same_universe_empty = generation(&["a", "b"]);
+    let merged = super::rebase::rebase_incoming_on_current(&covered, &same_universe_empty).unwrap();
+    assert_eq!(merged.covered_lines, covered.covered_lines);
     let mut overlap = generation(&["a", "b"]);
     overlap.selector_evidence[1].entry_content_digest = "blob-b-other".into();
     let conflicted = super::rebase::rebase_incoming_on_current(&loaded, &overlap).unwrap();

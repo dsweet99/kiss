@@ -43,6 +43,33 @@ fn witness_workspace_metadata_struct_fields() {
 }
 
 #[test]
+fn workspace_packages_excludes_registry_dependencies() {
+    let package = |id: &str, name: &str, manifest_path: &str| CargoMetadataPackage {
+        id: id.to_string(),
+        name: name.to_string(),
+        manifest_path: manifest_path.to_string(),
+        targets: Vec::new(),
+        dependencies: Vec::new(),
+    };
+    let metadata = CargoMetadata {
+        packages: vec![
+            package("workspace", "workspace", "/repo/Cargo.toml"),
+            package(
+                "registry-dependency",
+                "dependency",
+                "/cargo/registry/dependency/Cargo.toml",
+            ),
+        ],
+        workspace_members: vec!["workspace".to_string()],
+        workspace_root: Some("/repo".to_string()),
+    };
+
+    let packages = metadata.workspace_packages();
+    assert_eq!(packages.len(), 1);
+    assert_eq!(packages[0].id, "workspace");
+}
+
+#[test]
 fn default_target_and_dependency_structs_are_empty() {
     assert!(CargoMetadataTarget::default().kind.is_empty());
     assert!(CargoMetadataDependency::default().name.is_empty());

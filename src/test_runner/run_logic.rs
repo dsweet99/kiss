@@ -36,8 +36,11 @@ pub(crate) fn run_selectors(
         planned,
         options: &options,
     };
-    let python =
-        runners::python_backer::PythonModule::for_execution(&planned.repo_root, &planned.ignore);
+    let python = runners::python_backer::PythonModule::for_execution_with_args(
+        &planned.repo_root,
+        &planned.ignore,
+        options.extras.python,
+    );
     let rust = runners::rust_backer::RustModule::for_execution(&planned.repo_root, &planned.ignore);
     let python_phase = execution_phase(&python, &ctx)?;
     let rust_phase = execution_phase(&rust, &ctx)?;
@@ -54,7 +57,7 @@ fn finish_no_work(
     options: &SelectorRunOptions<'_>,
     total_started: Instant,
 ) -> i32 {
-    println!("{}", runners::NO_COVERING_TESTS_MSG);
+    crate::test_runner::emit_test_progress(runners::NO_COVERING_TESTS_MSG);
     if options.metrics {
         let mut metrics = LocalRubricMetrics::new(
             planned,
@@ -233,8 +236,11 @@ pub(crate) fn execute_one_language(
     options: &SelectorRunOptions<'_>,
     language: kiss::Language,
 ) -> Result<LanguagePhaseOutcome, String> {
-    let python =
-        runners::python_backer::PythonModule::for_execution(&planned.repo_root, &planned.ignore);
+    let python = runners::python_backer::PythonModule::for_execution_with_args(
+        &planned.repo_root,
+        &planned.ignore,
+        options.extras.python,
+    );
     let rust = runners::rust_backer::RustModule::for_execution(&planned.repo_root, &planned.ignore);
     let module: &dyn LanguageTestModule = match language {
         kiss::Language::Python => &python,
@@ -291,8 +297,11 @@ pub(crate) fn print_joined_dry_run(
     planned: &PlannedSelectors,
     options: &SelectorRunOptions<'_>,
 ) -> Result<(), String> {
-    let python =
-        runners::python_backer::PythonModule::for_execution(&planned.repo_root, &planned.ignore);
+    let python = runners::python_backer::PythonModule::for_execution_with_args(
+        &planned.repo_root,
+        &planned.ignore,
+        options.extras.python,
+    );
     let rust = runners::rust_backer::RustModule::for_execution(&planned.repo_root, &planned.ignore);
     let ctx = RunContext { planned, options };
     let python_phase = execution_phase(&python, &ctx)?;

@@ -51,7 +51,7 @@ fn accepted_summary_emits_cached_passes() {
         generation_id: "g".into(),
         raw_statuses: Vec::new(),
     };
-    let summary = rt.accepted_summary(&req, &["a".into()], &witness);
+    let summary = rt.accepted_summary(&req, &["a".into()], &witness).unwrap();
     assert_eq!(summary.total, 1);
     assert_eq!(summary.cache_hits, 1);
     assert!(!summary.rust_derived_repair);
@@ -159,7 +159,7 @@ fn prune_removed_rust_witness_selectors_drops_stale_entries() {
     };
     crate::test_runner::workspace_selector_cache::store_workspace_selectors(
         tmp.path(),
-        &[],
+        &["ignored".into()],
         &[],
         &["tests::case".into()],
         &[],
@@ -189,6 +189,14 @@ fn prune_removed_rust_witness_selectors_keeps_current_long_bare_names() {
         &[],
         &[],
         &["tests::case".into(), long.into()],
+        &[],
+    )
+    .unwrap();
+    crate::test_runner::workspace_selector_cache::store_workspace_selectors(
+        tmp.path(),
+        &["ignored".into()],
+        &[],
+        &["tests::case".into()],
         &[],
     )
     .unwrap();

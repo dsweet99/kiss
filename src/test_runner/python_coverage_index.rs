@@ -57,7 +57,8 @@ pub(crate) use crate::test_runner::lang_python::generation;
 pub(crate) use generation::{
     GenerationReason, clear_python_generation_warm_memo, current_complete_generation_matches,
     current_python_execution_identity, problem_selectors_from_timings,
-    repair_python_population_generation, selector_deltas_from_cached_outcomes,
+    repair_python_population_generation, restamp_and_repair_python_population_generation,
+    selector_deltas_from_cached_outcomes, selector_deltas_from_fresh_outcomes,
     try_load_pinned_python_generation, try_load_pinned_python_generation_warm,
     try_migrate_complete_v1_generation,
 };
@@ -68,9 +69,13 @@ pub(crate) type PythonCoverageIndex = BTreeMap<String, BTreeSet<String>>;
 pub(crate) fn rebuild_python_coverage_index(
     repo_root: &Path,
 ) -> Result<PythonCoverageIndex, String> {
-    publish_python_derived_state_with_filter(repo_root, None, &[], |path, repo_root| {
-        repo_relative_coverage_file(repo_root, &path.to_string_lossy()).is_some()
-    })
+    publish_python_derived_state_with_filter(
+        repo_root,
+        None,
+        &[],
+        &kiss::GateConfig::default(),
+        |path, repo_root| repo_relative_coverage_file(repo_root, &path.to_string_lossy()).is_some(),
+    )
 }
 
 #[cfg(test)]
@@ -78,19 +83,27 @@ pub(crate) fn rebuild_python_coverage_index_with_filter(
     repo_root: &Path,
     is_indexable: impl Fn(&Path, &Path) -> bool,
 ) -> Result<PythonCoverageIndex, String> {
-    publish_python_derived_state_with_filter(repo_root, None, &[], is_indexable)
+    publish_python_derived_state_with_filter(
+        repo_root,
+        None,
+        &[],
+        &kiss::GateConfig::default(),
+        is_indexable,
+    )
 }
 
 pub(crate) fn publish_python_derived_state_with_filter(
     repo_root: &Path,
     population_selectors: Option<&[String]>,
     test_args: &[String],
+    gate: &kiss::GateConfig,
     is_indexable: impl Fn(&Path, &Path) -> bool,
 ) -> Result<PythonCoverageIndex, String> {
     publish_python_derived_state_with_filter_force(
         repo_root,
         population_selectors,
         test_args,
+        gate,
         false,
         is_indexable,
     )
@@ -100,6 +113,7 @@ pub(crate) fn publish_python_derived_state_with_filter_force(
     repo_root: &Path,
     population_selectors: Option<&[String]>,
     test_args: &[String],
+    gate: &kiss::GateConfig,
     force_publish: bool,
     is_indexable: impl Fn(&Path, &Path) -> bool,
 ) -> Result<PythonCoverageIndex, String> {
@@ -113,7 +127,7 @@ pub(crate) fn publish_python_derived_state_with_filter_force(
             )
         });
     let Some(selectors) = selectors_to_publish else {
-        return rebuild_selection_index_fallback(repo_root, &is_indexable);
+        return rebuild_selection_index_fallback(repo_root, test_args, &is_indexable);
     };
     if !force_publish
         && generation::current_complete_generation_matches(repo_root, &selectors, test_args)
@@ -127,6 +141,7 @@ pub(crate) fn publish_python_derived_state_with_filter_force(
             &selectors,
             test_args,
             &is_indexable,
+            gate,
             None,
         )?
     {
@@ -155,6 +170,7 @@ pub(crate) fn publish_python_derived_state_with_filter_force(
         test_args,
         reason,
         &is_indexable,
+        gate,
     )?;
     load_current_python_coverage_index(repo_root).ok_or_else(|| {
         "error: kiss test: Python generation index missing after publication".to_string()
@@ -163,6 +179,7 @@ pub(crate) fn publish_python_derived_state_with_filter_force(
 
 fn rebuild_selection_index_fallback(
     repo_root: &Path,
+    test_args: &[String],
     is_indexable: &dyn Fn(&Path, &Path) -> bool,
 ) -> Result<PythonCoverageIndex, String> {
     let cache_root = python_coverage_cache_root(repo_root)?;
@@ -174,6 +191,7 @@ fn rebuild_selection_index_fallback(
         repo_root,
         &index,
         &entries_fingerprint,
+        test_args,
     )?;
     Ok(index)
 }
@@ -241,6 +259,46 @@ pub(crate) fn select_python_source_selectors_hybrid(
         selectors.extend(selected_for_file);
     }
     Some(selectors)
+}
+
+pub(crate) fn python_index_covers_source_paths(
+    repo_root: &Path,
+    source_paths: &[PathBuf],
+    test_args: &[String],
+) -> bool {
+    if crate::test_runner::lang_python::generation::pinned_python_generation_artifacts_present(
+        repo_root,
+    ) {
+        let Ok(pinned) = crate::test_runner::lang_python::generation::
+            try_load_pinned_python_generation_without_line_index(repo_root)
+        else {
+            return false;
+        };
+        if !crate::test_runner::lang_python::generation::execution_context_matches_current(
+            repo_root,
+            &pinned.plan.base_identity,
+            test_args,
+        ) {
+            return false;
+        }
+    } else if !storage::legacy_python_index_execution_context_matches(repo_root, test_args) {
+        return false;
+    }
+    let Some(index) = load_current_python_coverage_index(repo_root) else {
+        return false;
+    };
+    source_paths
+        .iter()
+        .all(|source_path| index_covers_source_path(repo_root, source_path, &index))
+}
+
+fn index_covers_source_path(
+    repo_root: &Path,
+    source_path: &Path,
+    index: &PythonCoverageIndex,
+) -> bool {
+    repo_relative_path(repo_root, source_path)
+        .is_some_and(|rel| index.get(&rel).is_some_and(|selectors| !selectors.is_empty()))
 }
 
 #[cfg(test)]

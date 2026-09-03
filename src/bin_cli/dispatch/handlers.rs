@@ -28,7 +28,7 @@ pub(in crate::bin_cli::dispatch) fn dispatch_check(o: CheckDispatchOptions<'_>) 
 }
 
 pub(in crate::bin_cli::dispatch) fn dispatch_cov(o: CovDispatchOptions<'_>) -> i32 {
-    let pytest_args = o.test_cfg.pytest_plugin_cli_args();
+    let pytest_args = kiss::effective_python_pytest_args(&o.test_cfg.pytest_plugins, &o.extra);
     let args = cov_cmd::CovCommandArgs {
         paths: &o.paths,
         lang_filter: o.lang,

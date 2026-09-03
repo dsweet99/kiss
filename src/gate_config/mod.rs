@@ -146,8 +146,7 @@ impl GateConfig {
             return;
         }
         if let Some(global) = value.get("global").and_then(|v| v.as_table()) {
-            if let Err(e) = check_unknown_keys(global, GLOBAL_KEYS, "global") {
-                eprintln!("Error: {e}");
+            if check_unknown_keys(global, GLOBAL_KEYS, "global").is_err() {
                 return;
             }
             merge_global_lenient(self, global);

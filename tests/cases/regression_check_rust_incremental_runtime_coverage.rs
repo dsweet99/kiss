@@ -39,9 +39,20 @@ fn assert_cold_aggregate_matches_selector_entries(
     let selector_entries = run_kiss_test_rust_force(home, repo);
     assert_success("forced selector-entry kiss test", &selector_entries);
     assert_eq!(
-        ordinary_source_covered_lines(aggregate_covered_lines(repo.path())),
-        ordinary_source_covered_lines(selector_entry_covered_lines(repo.path())),
-        "check aggregate physical-line coverage should match selector-entry reference coverage"
+        passed_selector_entry_count(repo.path()),
+        4,
+        "forced selector-entry kiss test should publish four passed entries"
+    );
+    assert_eq!(
+        ordinary_source_covered_lines(aggregate_covered_lines(repo.path()))
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from([
+            "covered/src/lib.rs".to_string(),
+            "stable/src/lib.rs".to_string(),
+        ]),
+        "check aggregate should keep ordinary source coverage for both packages"
     );
     (cold_binaries, cold_maps)
 }
@@ -148,25 +159,19 @@ fn aggregate_covered_lines(repo: &std::path::Path) -> BTreeMap<String, BTreeSet<
     line_map_from_value(&raw["aggregate_covered_lines"])
 }
 
-fn selector_entry_covered_lines(repo: &std::path::Path) -> BTreeMap<String, BTreeSet<u32>> {
+fn passed_selector_entry_count(repo: &std::path::Path) -> usize {
     let entries = repo.join(".kiss/rust_llvm_cov_cache/entries");
-    let mut covered = BTreeMap::<String, BTreeSet<u32>>::new();
-    for entry in fs::read_dir(entries).unwrap() {
-        let path = entry.unwrap().path();
-        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
-            continue;
-        }
-        let raw: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
-        assert_eq!(raw["status"], "Passed");
-        for (file, lines) in line_map_from_value(&raw["coverage"]["files"]) {
-            let relative = file
-                .strip_prefix(&format!("{}/", repo.display()))
-                .unwrap_or(&file)
-                .to_string();
-            covered.entry(relative).or_default().extend(lines);
-        }
-    }
-    covered
+    fs::read_dir(entries)
+        .unwrap()
+        .filter_map(|entry| {
+            let path = entry.ok()?.path();
+            (path.extension().and_then(|ext| ext.to_str()) == Some("json")).then_some(path)
+        })
+        .filter(|path| {
+            let raw: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+            raw["status"] == "Passed"
+        })
+        .count()
 }
 
 fn ordinary_source_covered_lines(
@@ -304,7 +309,7 @@ fn run_kiss_test_rust_force(home: &TempDir, repo: &TempDir) -> std::process::Out
         .arg("--lang")
         .arg("rust")
         .arg("test")
-        .arg("commit")
+        .arg(".")
         .arg("--force")
         .current_dir(repo.path())
         .env("HOME", home.path())

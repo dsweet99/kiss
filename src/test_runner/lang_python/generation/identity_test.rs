@@ -3,7 +3,8 @@ use std::fs;
 use tempfile::tempdir;
 
 use super::identity::{
-    current_python_execution_identity, identity_matches_current, population_plan_for_selectors,
+    current_python_execution_identity, execution_context_matches_current, identity_matches_current,
+    population_plan_for_selectors,
 };
 use crate::test_runner::runners::detect_rslip_versions;
 
@@ -98,4 +99,14 @@ fn population_plan_dedups_selectors_and_captures_plugin_args() {
         vec!["only_plugin".to_string()]
     );
     assert!(identity_matches_current(repo, &plan.base_identity, &args));
+    assert!(execution_context_matches_current(
+        repo,
+        &plan.base_identity,
+        &args
+    ));
+    assert!(!execution_context_matches_current(
+        repo,
+        &plan.base_identity,
+        &["-p".into(), "other_plugin".into()]
+    ));
 }

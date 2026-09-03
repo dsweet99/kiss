@@ -13,6 +13,7 @@ use crate::test_runner::check_line_coverage::{
     RequiredCoverageLanguages, load_check_runtime_coverage, repository_root_for_universe,
 };
 
+#[allow(dead_code)]
 pub(crate) fn warm_cov_caches_after_tests(
     universe_root: &Path,
     lang_filter: Option<Language>,
@@ -32,6 +33,7 @@ fn warm_cov_caches_after_tests_inner(
     gate: &GateConfig,
     pytest_args: &[String],
 ) {
+    crate::test_runner::python_coverage_index::clear_python_generation_warm_memo();
     let ignore = merge_check_ignore_prefixes(ignore_user);
     if gate.test_coverage_threshold == 0 && gate.unit_test_time_gate_disabled() {
         return;
@@ -74,6 +76,7 @@ fn warm_cov_caches_after_tests_inner(
             Language::Python => "python",
             Language::Rust => "rust",
         }),
+        pytest_args,
     };
     if try_load_cov_records(&cache_key).is_some() {
         return;

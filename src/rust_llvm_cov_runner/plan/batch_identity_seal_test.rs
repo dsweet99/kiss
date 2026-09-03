@@ -48,6 +48,11 @@ fn mtime_seal_round_trip_hits_then_misses_on_touch() {
     write_identity_mtime_seal(&req.cache_root, repo.path(), &req, &tools, &identity).unwrap();
     let hit = try_identity_from_mtime_seal(&req.cache_root, repo.path(), &req, &tools);
     assert_eq!(hit.as_ref().map(|i| i.input_digest.as_str()), Some("input"));
+    crate::rust_llvm_cov_runner::begin_identity_memo();
+    let production_hit =
+        crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    assert_eq!(production_hit.input_digest, "input");
+    assert_eq!(crate::rust_llvm_cov_runner::identity_memo_hash_count(), 0);
     std::thread::sleep(std::time::Duration::from_millis(20));
     std::fs::write(&src, "pub fn x() { 1 }\n").unwrap();
     let miss = try_identity_from_mtime_seal(&req.cache_root, repo.path(), &req, &tools);

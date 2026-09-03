@@ -238,19 +238,24 @@ fn engine_backers(input: EngineBackerInputs<'_>) -> Result<EngineBackers, String
         if !input.include_prior_failures || input.lang_filter == Some(kiss::Language::Rust) {
             Vec::new()
         } else {
-            prior_failures_for_language(
+            current_prior_failures(
                 input.repo_root,
                 kiss::Language::Python,
                 input.test_args.python,
+                input.ignore,
             )?
         };
-    let rust_prior_failures = if !input.include_prior_failures
-        || input.lang_filter == Some(kiss::Language::Python)
-    {
-        Vec::new()
-    } else {
-        prior_failures_for_language(input.repo_root, kiss::Language::Rust, input.test_args.rust)?
-    };
+    let rust_prior_failures =
+        if !input.include_prior_failures || input.lang_filter == Some(kiss::Language::Python) {
+            Vec::new()
+        } else {
+            current_prior_failures(
+                input.repo_root,
+                kiss::Language::Rust,
+                input.test_args.rust,
+                input.ignore,
+            )?
+        };
     if input.lang_filter != Some(kiss::Language::Rust)
         && (!input.py_source_paths.is_empty()
             || !input.changed_tests.python.is_empty()
@@ -297,6 +302,38 @@ fn engine_backers(input: EngineBackerInputs<'_>) -> Result<EngineBackers, String
         prior_failures,
         selection_basis,
     })
+}
+
+pub(crate) fn current_prior_failures(
+    repo_root: &Path,
+    language: kiss::Language,
+    test_args: &[String],
+    ignore: &[String],
+) -> Result<Vec<TestSelector>, String> {
+    let prior = prior_failures_for_language(repo_root, language, test_args)?;
+    if prior.is_empty() {
+        return Ok(prior);
+    }
+    let current: std::collections::BTreeSet<String> = match language {
+        kiss::Language::Python => match crate::test_runner::workspace_selector_cache::
+            load_cached_python_workspace_selectors(repo_root, ignore, test_args)
+        {
+            Some(cached) => cached,
+            None => super::enumerate_workspace_python_selectors(repo_root, ignore, test_args)?,
+        },
+        kiss::Language::Rust => match crate::test_runner::workspace_selector_cache::
+            load_cached_rust_workspace_selectors(repo_root, ignore)
+        {
+            Some(cached) => cached,
+            None => super::enumerate_workspace_rust_selectors(repo_root, ignore)?,
+        },
+    }
+    .into_iter()
+    .collect();
+    Ok(prior
+        .into_iter()
+        .filter(|selector| current.contains(&selector.id))
+        .collect())
 }
 
 pub(crate) use decision_prior::prior_failures_for_language;

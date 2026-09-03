@@ -121,3 +121,116 @@ def test_ok():\n    assert VALUE == 0\n",
     assert_eq!(second.nodeid, "test_sample.py::test_ok");
     assert_eq!(second.status, TestStatus::Passed);
 }
+
+#[test]
+fn forkserver_timeout_excludes_setup_phase() {
+    let tmp = tempfile::tempdir().unwrap();
+    let src = concat!(
+        "import time\n",
+        "\n",
+        "time.sleep(0.45)\n",
+        "\n",
+        "def test_fast():\n",
+        "    assert True\n",
+    );
+    fs::write(tmp.path().join("test_sample.py"), src).unwrap();
+    let outcomes = ForkserverPytestRunner::new().run_many_bounded(
+        vec![PytestRunRequest::from_parts(
+            "test_sample.py::test_fast".to_string(),
+            tmp.path().to_path_buf(),
+            python!(),
+            vec!["-q".to_string()],
+            BTreeMap::new(),
+            Vec::new(),
+            Vec::new(),
+            Some(Duration::from_millis(200)),
+        )],
+        1,
+    );
+    let outcome = outcomes[0]
+        .as_ref()
+        .expect("import/setup longer than limit must still pass");
+    assert_eq!(outcome.status, TestStatus::Passed);
+}
+
+#[test]
+fn forkserver_timeout_parent_kills_if_call_disables_sigalrm() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::write(
+        tmp.path().join("test_sample.py"),
+        concat!(
+            "import signal\n",
+            "import time\n",
+            "\n",
+            "def test_sleep():\n",
+            "    signal.signal(signal.SIGALRM, signal.SIG_IGN)\n",
+            "    signal.setitimer(signal.ITIMER_REAL, 0)\n",
+            "    time.sleep(10)\n",
+        ),
+    )
+    .unwrap();
+    let outcomes = ForkserverPytestRunner::new().run_many_bounded(
+        vec![PytestRunRequest::from_parts(
+            "test_sample.py::test_sleep".to_string(),
+            tmp.path().to_path_buf(),
+            python!(),
+            vec!["-q".to_string()],
+            BTreeMap::new(),
+            Vec::new(),
+            Vec::new(),
+            Some(Duration::from_millis(40)),
+        )],
+        1,
+    );
+    assert_eq!(
+        outcomes[0],
+        Err(PytestRunError::Timeout(Duration::from_millis(40)))
+    );
+}
+
+#[test]
+fn forkserver_module_timeout_excludes_setup_then_kills_slow_call() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::write(
+        tmp.path().join("test_sample.py"),
+        concat!(
+            "import time\n",
+            "\n",
+            "time.sleep(0.45)\n",
+            "\n",
+            "def test_fast():\n",
+            "    assert True\n",
+            "\n",
+            "def test_slow():\n",
+            "    time.sleep(0.45)\n",
+        ),
+    )
+    .unwrap();
+    let req = |nodeid: &str| {
+        PytestRunRequest::from_parts(
+            nodeid.to_string(),
+            tmp.path().to_path_buf(),
+            python!(),
+            vec!["-q".to_string()],
+            BTreeMap::new(),
+            Vec::new(),
+            Vec::new(),
+            Some(Duration::from_millis(200)),
+        )
+    };
+    let outcomes = ForkserverPytestRunner::new().run_many_bounded(
+        vec![
+            req("test_sample.py::test_fast"),
+            req("test_sample.py::test_slow"),
+        ],
+        1,
+    );
+    let first = outcomes[0]
+        .as_ref()
+        .expect("module setup longer than limit must still pass");
+    assert_eq!(first.status, TestStatus::Passed);
+    assert_eq!(
+        outcomes[1],
+        Err(PytestRunError::Timeout(Duration::from_millis(200)))
+    );
+}

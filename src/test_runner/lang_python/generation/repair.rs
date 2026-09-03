@@ -35,7 +35,7 @@ pub(crate) fn repair_python_population_generation(
     }
     let changed: Vec<SelectorEvidence> = deltas
         .iter()
-        .filter(|delta| !evidence_matches_pinned(&pinned, delta))
+        .filter(|delta| !evidence_matches_pinned(repo_root, &pinned, delta))
         .cloned()
         .collect();
     if changed.is_empty() {
@@ -77,7 +77,7 @@ pub(crate) fn restamp_and_repair_python_population_generation(
     }
     let changed: Vec<SelectorEvidence> = deltas
         .iter()
-        .filter(|delta| !evidence_matches_pinned(&pinned, delta))
+        .filter(|delta| !evidence_matches_pinned(repo_root, &pinned, delta))
         .cloned()
         .collect();
     if changed.is_empty() && pinned.plan.base_identity == new_plan.base_identity {
@@ -108,6 +108,7 @@ pub(crate) fn try_restamp_matching_pinned_universe(
     selectors: &[String],
     test_args: &[String],
     is_indexable: &dyn Fn(&Path, &Path) -> bool,
+    gate: &kiss::GateConfig,
     run_misses: Option<&[String]>,
 ) -> Result<bool, String> {
     let pinned = match try_load_pinned_python_generation_without_line_index(repo_root) {
@@ -126,22 +127,20 @@ pub(crate) fn try_restamp_matching_pinned_universe(
         return Ok(false);
     }
     let current = super::identity::current_python_execution_identity(repo_root, test_args)?;
-    if !restamp_is_safe(
-        &pinned.plan.base_identity,
-        &current,
-        expected.len(),
-        run_misses,
-    ) {
+    if !restamp_is_safe(repo_root, &pinned, &current, run_misses) {
         return Ok(false);
     }
-    let problems = problem_and_run_miss_selectors(&pinned.timings, run_misses);
+    let refresh = selectors_to_refresh(&pinned, run_misses);
     let deltas = super::materialize::selector_deltas_from_cached_outcomes(
         repo_root,
-        &problems,
+        &refresh,
         test_args,
         is_indexable,
-        &kiss::GateConfig::load_for_repo(repo_root),
+        gate,
     )?;
+    if deltas.len() != refresh.len() {
+        return Ok(false);
+    }
     let reason = if pinned.complete {
         GenerationReason::Complete
     } else {
@@ -164,12 +163,55 @@ fn is_problem_status(status: &str) -> bool {
 }
 
 fn restamp_is_safe(
-    pinned: &PythonExecutionIdentity,
+    repo_root: &Path,
+    pinned: &PinnedPythonGeneration,
     current: &PythonExecutionIdentity,
-    _selector_count: usize,
-    _run_misses: Option<&[String]>,
+    run_misses: Option<&[String]>,
 ) -> bool {
-    pinned == current
+    if pinned.plan.base_identity != *current {
+        return false;
+    }
+    pinned.timings.iter().all(|row| {
+        row.test_definition_digest
+            == crate::test_runner::python_coverage_index::storage::python_selector_definition_digest(
+                repo_root,
+                &row.selector,
+            )
+            || run_misses.is_some_and(|misses| misses.contains(&row.selector))
+    })
+}
+
+pub(crate) fn restamp_complete_pinned_from_cache(
+    repo_root: &Path,
+    test_args: &[String],
+    is_indexable: &dyn Fn(&Path, &Path) -> bool,
+    gate: &kiss::GateConfig,
+) -> Result<bool, String> {
+    let Ok(pinned) = try_load_pinned_python_generation_without_line_index(repo_root) else {
+        return Ok(false);
+    };
+    if !pinned.complete {
+        return Ok(false);
+    }
+    try_restamp_matching_pinned_universe(
+        repo_root,
+        &pinned.plan.selectors,
+        test_args,
+        is_indexable,
+        gate,
+        None,
+    )
+}
+
+fn selectors_to_refresh(
+    pinned: &PinnedPythonGeneration,
+    run_misses: Option<&[String]>,
+) -> Vec<String> {
+    if pinned.complete {
+        run_misses.unwrap_or_default().to_vec()
+    } else {
+        problem_and_run_miss_selectors(&pinned.timings, run_misses)
+    }
 }
 
 fn problem_and_run_miss_selectors(
@@ -188,7 +230,11 @@ fn problem_and_run_miss_selectors(
     problems
 }
 
-fn evidence_matches_pinned(pinned: &PinnedPythonGeneration, delta: &SelectorEvidence) -> bool {
+fn evidence_matches_pinned(
+    repo_root: &Path,
+    pinned: &PinnedPythonGeneration,
+    delta: &SelectorEvidence,
+) -> bool {
     let Some(timing) = pinned
         .timings
         .iter()
@@ -200,6 +246,14 @@ fn evidence_matches_pinned(pinned: &PinnedPythonGeneration, delta: &SelectorEvid
         return false;
     }
     if timing.effective_status != status_label(delta.effective_status) {
+        return false;
+    }
+    if timing.test_definition_digest
+        != crate::test_runner::python_coverage_index::storage::python_selector_definition_digest(
+            repo_root,
+            &delta.selector,
+        )
+    {
         return false;
     }
     let cov = pinned
@@ -221,4 +275,128 @@ fn evidence_from_pinned(
     evidence.complete = pinned.complete;
     evidence.rebuild_line_index();
     evidence
+}
+
+#[cfg(test)]
+mod refresh_tests {
+    use super::super::types::{
+        PythonExecutionIdentity, PythonPopulationPlan, TimingCacheDisposition,
+    };
+    use super::{
+        PinnedPythonGeneration, SelectorTimingRecord, restamp_complete_pinned_from_cache,
+        restamp_is_safe, selectors_to_refresh,
+    };
+
+    fn pin(
+        complete: bool,
+        selectors: &[&str],
+        timings: Vec<SelectorTimingRecord>,
+    ) -> PinnedPythonGeneration {
+        PinnedPythonGeneration {
+            generation_id: "g".into(),
+            plan: PythonPopulationPlan {
+                base_identity: PythonExecutionIdentity {
+                    schema_version: String::new(),
+                    runner_semantics_version: String::new(),
+                    collector_semantics_version: String::new(),
+                    source_root: String::new(),
+                    interpreter_identity: String::new(),
+                    python_version: String::new(),
+                    pytest_version: String::new(),
+                    plugin_identities: Vec::new(),
+                    pytest_args: Vec::new(),
+                    pytest_config_digest: String::new(),
+                    kissconfig_test_digest: String::new(),
+                    coverage_env_digest: String::new(),
+                    env: std::collections::BTreeMap::new(),
+                    input_fingerprint: String::new(),
+                    selector_discovery_version: String::new(),
+                    cache_schema_version: String::new(),
+                },
+                selectors: selectors.iter().map(|s| (*s).to_string()).collect(),
+            },
+            complete,
+            coverage: Default::default(),
+            timings,
+            line_index: Default::default(),
+            selector_coverage: Default::default(),
+        }
+    }
+
+    fn timing(selector: &str, status: &str) -> SelectorTimingRecord {
+        SelectorTimingRecord {
+            selector: selector.to_string(),
+            raw_status: status.to_string(),
+            effective_status: status.to_string(),
+            duration_ns: None,
+            cache_disposition: TimingCacheDisposition::Hit,
+            reason: None,
+            test_definition_digest: String::new(),
+        }
+    }
+
+    #[test]
+    fn complete_generation_refreshes_only_run_misses() {
+        let pinned = pin(
+            true,
+            &["a::t", "b::t"],
+            vec![timing("a::t", "passed"), timing("b::t", "failed")],
+        );
+        assert_eq!(
+            selectors_to_refresh(&pinned, Some(&["a::t".into()])),
+            vec!["a::t".to_string()]
+        );
+        assert!(selectors_to_refresh(&pinned, None).is_empty());
+    }
+
+    #[test]
+    fn incomplete_generation_refreshes_problems_and_run_misses() {
+        let pinned = pin(
+            false,
+            &["a::t", "b::t", "c::t"],
+            vec![
+                timing("a::t", "passed"),
+                timing("b::t", "failed"),
+                timing("c::t", "passed"),
+            ],
+        );
+        assert_eq!(
+            selectors_to_refresh(&pinned, Some(&["c::t".into()])),
+            vec!["b::t".to_string(), "c::t".to_string()]
+        );
+    }
+
+    #[test]
+    fn missing_pin_does_not_restamp_complete_generation() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(
+            !restamp_complete_pinned_from_cache(
+                tmp.path(),
+                &[],
+                &|_, _| true,
+                &kiss::GateConfig::default(),
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn restamp_requires_changed_test_to_be_a_run_miss() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("t.py"), "def test_a():\n    pass\n").unwrap();
+        let mut pinned = pin(
+            true,
+            &["t.py::test_a"],
+            vec![timing("t.py::test_a", "passed")],
+        );
+        pinned.timings[0].test_definition_digest = "stale".into();
+        let current = pinned.plan.base_identity.clone();
+        assert!(!restamp_is_safe(tmp.path(), &pinned, &current, None));
+        assert!(restamp_is_safe(
+            tmp.path(),
+            &pinned,
+            &current,
+            Some(&["t.py::test_a".into()])
+        ));
+    }
 }

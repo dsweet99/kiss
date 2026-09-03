@@ -7,7 +7,7 @@ use super::finalize::{clone_rslip_result, handle_rslip_miss_result};
 use super::lock_chunk::{brief_lock_filter_rslip_miss_groups, coalesce_rslip_miss_candidates};
 use super::pycache::purge_pycache_under;
 use super::{
-    prepare_rslip_misses, PreparedRslipMisses, RslipBatchProgress, RslipCacheCandidate, RslipMiss,
+    PreparedRslipMisses, RslipBatchProgress, RslipCacheCandidate, RslipMiss, prepare_rslip_misses,
 };
 
 fn emit_miss_progress(
@@ -50,6 +50,10 @@ pub(super) fn run_rslip_misses(
             .collect();
         for root in source_roots {
             purge_pycache_under(&root);
+        }
+    } else {
+        for miss in &runner_misses {
+            super::pycache::purge_pyc_for_nodeid(&miss.req.source_root, &miss.req.nodeid);
         }
     }
     let runner_reqs: Vec<_> = runner_misses

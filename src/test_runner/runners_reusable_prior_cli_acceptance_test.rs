@@ -12,6 +12,7 @@ use crate::test_runner::{
 
 #[test]
 fn plan_selectors_commit_uses_reusable_prior_after_ordinary_rs_edit() {
+    let _cwd = crate::cwd_test_lock::lock();
     let _cwd_guard = crate::cwd_test_lock::lock();
     let tmp = TempDir::new().unwrap();
     let lib = warm_committed_rust_demo(&tmp);

@@ -153,7 +153,7 @@ pub(crate) trait LanguageRuntime: SourceDeltaMisses {
         request: &EnsureRequest,
         planned: &[String],
         witness: &ExecutionWitness,
-    ) -> SelectorExecutionSummary;
+    ) -> Result<SelectorExecutionSummary, String>;
 
     fn cached_witness_summary(
         &self,

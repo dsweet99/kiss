@@ -16,7 +16,7 @@ fn miss_run_ignores_stale_same_size_pyc_for_rewritten_source() {
     .unwrap();
 
     let python = python();
-    let mut req = RslipRequest {
+    let req = RslipRequest {
         nodeid: "test_lib.py::test_value".to_string(),
         cwd: root.to_path_buf(),
         source_root: root.to_path_buf(),
@@ -48,12 +48,11 @@ fn miss_run_ignores_stale_same_size_pyc_for_rewritten_source() {
 
     restore_test_pycs(root, &stale_pycs);
 
-    req.force_rerun = true;
     let fixed = rslip.run_or_reuse(req).unwrap();
     assert_eq!(
         fixed.status,
         TestStatus::Passed,
-        "miss runs must purge stale bytecode before re-executing"
+        "ordinary misses must drop stale same-size bytecode for the rewritten test module"
     );
 }
 

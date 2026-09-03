@@ -6,9 +6,9 @@ use crate::rust_llvm_cov_runner::publish_derived::batch_derived::{
 };
 use crate::rust_llvm_cov_runner::publish_derived::batch_derived_index::{
     OnDiskIndex, OnDiskIndexWithFiles, PopulationManifestOnDisk, RustSnapshotDelta,
-    load_current_generation_coverage_snapshot, load_current_generation_line_index,
-    load_current_population_state, read_coverage_index, read_population_generation,
-    read_population_manifest, reusable_snapshot_delta,
+    current_test_binaries_match, load_current_generation_coverage_snapshot,
+    load_current_generation_line_index, load_current_population_state, read_coverage_index,
+    read_population_generation, read_population_manifest, reusable_snapshot_delta,
 };
 use crate::rust_llvm_cov_runner::test_support::{
     published_alpha_derived_fixture, tamper_json_file,
@@ -17,6 +17,24 @@ use crate::rust_llvm_cov_runner::test_support::{
 fn read_on_disk_index_with_files(cache_root: &std::path::Path) -> Option<OnDiskIndexWithFiles> {
     let bytes = std::fs::read(cache_root.join("index.json")).ok()?;
     serde_json::from_slice(&bytes).ok()
+}
+
+#[test]
+fn selector_population_rejects_empty_binary_authority() {
+    let population = RustPopulationState {
+        input_fingerprint: "input".into(),
+        generation_fingerprint: "generation".into(),
+        selection_context_fingerprint: "selection".into(),
+        entries_fingerprint: "entries".into(),
+        selectors: vec!["tests::case".into()],
+        line_index: BTreeMap::new(),
+        ordinary_source_digests: BTreeMap::new(),
+        test_binaries: BTreeMap::new(),
+    };
+    assert!(!current_test_binaries_match(
+        std::path::Path::new("."),
+        &population
+    ));
 }
 
 #[test]
@@ -92,6 +110,7 @@ fn load_current_generation_line_index_returns_published_files() {
 #[test]
 fn load_current_generation_coverage_snapshot_returns_published_lines() {
     let fixture = published_alpha_derived_fixture();
+    republish_fixture_with_current_binary(&fixture);
     let snapshot = load_current_generation_coverage_snapshot(
         &fixture.req.cache_root,
         fixture.repo.path(),
@@ -106,6 +125,53 @@ fn load_current_generation_coverage_snapshot_returns_published_lines() {
         BTreeSet::from([1_u32])
     );
     assert!(!snapshot.identity.is_empty());
+}
+
+#[test]
+fn load_current_generation_coverage_snapshot_rejects_changed_binary() {
+    let fixture = published_alpha_derived_fixture();
+    republish_fixture_with_current_binary(&fixture);
+    let population = load_current_population_state(
+        &fixture.req.cache_root,
+        fixture.repo.path(),
+        &fixture.identity,
+        Some(&["alpha".to_string()]),
+    )
+    .unwrap();
+    let binary = population.test_binaries.values().next().unwrap();
+    std::fs::write(&binary.executable, b"changed test binary").unwrap();
+    assert!(
+        load_current_generation_coverage_snapshot(
+            &fixture.req.cache_root,
+            fixture.repo.path(),
+            &fixture.identity,
+            Some(&["alpha".to_string()]),
+        )
+        .is_none()
+    );
+}
+
+fn republish_fixture_with_current_binary(
+    fixture: &crate::rust_llvm_cov_runner::test_support::PublishedAlphaFixture,
+) {
+    let executable = fixture.repo.path().join("target/test-bin");
+    std::fs::create_dir_all(executable.parent().unwrap()).unwrap();
+    std::fs::write(&executable, b"current test binary").unwrap();
+    let binary = crate::rust_llvm_cov_runner::RustTestBinaryIdentity {
+        id: "test-bin".to_string(),
+        executable: executable.to_string_lossy().to_string(),
+        digest: crate::rust_llvm_cov_runner::rust_cov_cache::digest_test_binary(&executable)
+            .unwrap(),
+    };
+    crate::rust_llvm_cov_runner::publish_derived_state_with_binaries(
+        &fixture.req,
+        &fixture.tools,
+        &fixture.identity,
+        &["alpha".to_string()],
+        &[binary],
+        false,
+    )
+    .unwrap();
 }
 
 #[test]

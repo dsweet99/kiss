@@ -57,7 +57,7 @@ fn ensure_one_language(
     let loaded = match module.load_full_witness(&request.repo_root) {
         Ok(witness) => Some(witness),
         Err(err) => {
-            if module.language() == Language::Rust {
+            if module.language() == Language::Rust && !err.contains("No such file") {
                 eprintln!("kiss test: rust witness load: {err}");
             }
             None
@@ -79,11 +79,11 @@ fn ensure_one_language(
     );
     union_source_delta_misses(request, module, &planned, &mut misses)?;
     union_incomparable_timing_misses(request, module, &planned, &witness, &mut misses);
-    if let Some(accepted) = try_accept_or_warm_report(request, module, &planned, &witness, &misses)
+    if let Some(accepted) = try_accept_or_warm_report(request, module, &planned, &witness, &misses)?
     {
         return Ok(accepted);
     }
-    run_misses_and_maybe_publish(request, module, &planned, witness, &misses, &identity)
+    run_misses_and_maybe_publish(request, module, &planned, witness, &misses)
 }
 
 fn union_source_delta_misses(
@@ -160,27 +160,27 @@ fn try_accept_or_warm_report(
     planned: &[String],
     witness: &Option<crate::test_runner::lang_iface::ExecutionWitness>,
     misses: &[String],
-) -> Option<LanguageEnsureResult> {
+) -> Result<Option<LanguageEnsureResult>, String> {
     if misses.is_empty() {
         let w = witness.as_ref().expect("accept implies loaded witness");
-        return Some(LanguageEnsureResult {
-            summary: module.accepted_summary(request, planned, w),
+        return Ok(Some(LanguageEnsureResult {
+            summary: module.accepted_summary(request, planned, w)?,
             published: false,
             generation_id: Some(w.generation_id.clone()),
-        });
+        }));
     }
 
     if !request.force
         && let Some(w) = witness.as_ref()
         && all_misses_warm_skippable(w, misses)
     {
-        return Some(LanguageEnsureResult {
+        return Ok(Some(LanguageEnsureResult {
             summary: module.cached_witness_summary(request, planned, w),
             published: false,
             generation_id: Some(w.generation_id.clone()),
-        });
+        }));
     }
-    None
+    Ok(None)
 }
 
 fn run_misses_and_maybe_publish(
@@ -189,7 +189,6 @@ fn run_misses_and_maybe_publish(
     planned: &[String],
     witness: Option<crate::test_runner::lang_iface::ExecutionWitness>,
     misses: &[String],
-    identity: &str,
 ) -> Result<LanguageEnsureResult, String> {
     let batch = module.run_selectors(request, misses)?;
 
@@ -209,17 +208,6 @@ fn run_misses_and_maybe_publish(
         summary: batch.summary.clone(),
     };
 
-    let identity_unchanged = witness
-        .as_ref()
-        .is_some_and(|w| w.identity_digest == identity);
-    if outcomes_unchanged_vs_prior(witness.as_ref(), &batch) && identity_unchanged {
-        return Ok(LanguageEnsureResult {
-            summary: merge_accept_and_run(planned, witness.as_ref(), &batch),
-            published: false,
-            generation_id: witness.map(|w| w.generation_id),
-        });
-    }
-
     module.publish_outcomes(request, &publish)?;
     Ok(LanguageEnsureResult {
         summary: merge_accept_and_run(planned, witness.as_ref(), &batch),
@@ -228,37 +216,46 @@ fn run_misses_and_maybe_publish(
     })
 }
 
-fn outcomes_unchanged_vs_prior(
-    prior: Option<&crate::test_runner::lang_iface::ExecutionWitness>,
-    batch: &crate::test_runner::lang_iface::OutcomeBatch,
-) -> bool {
-    let Some(prior) = prior else {
-        return false;
-    };
-    let index = prior
-        .selectors
-        .iter()
-        .enumerate()
-        .map(|(i, s)| (s.as_str(), i))
-        .collect::<std::collections::BTreeMap<_, _>>();
-    batch
-        .selectors
-        .iter()
-        .zip(batch.statuses.iter())
-        .zip(batch.durations_ns.iter())
-        .all(|((sel, status), dur)| match index.get(sel.as_str()) {
-            Some(&i) => prior.statuses[i] == *status && prior.durations_ns[i] == *dur,
-            None => false,
-        })
-}
-
 fn merge_accept_and_run(
     planned: &[String],
     prior: Option<&crate::test_runner::lang_iface::ExecutionWitness>,
     batch: &OutcomeBatch,
 ) -> crate::test_runner::runners::SelectorExecutionSummary {
-    let _ = (planned, prior);
-    batch.summary.clone()
+    let mut summary = batch.summary.clone();
+    let Some(prior) = prior else {
+        return summary;
+    };
+    for selector in planned {
+        if batch.selectors.contains(selector) {
+            continue;
+        }
+        let Some(index) = prior.selectors.iter().position(|stored| stored == selector) else {
+            continue;
+        };
+        let Some(status) = prior.statuses[index].to_test_status() else {
+            continue;
+        };
+        let Some(duration_ns) = prior.durations_ns.get(index).copied().flatten() else {
+            continue;
+        };
+        let raw_status = prior
+            .raw_statuses
+            .get(index)
+            .and_then(|status| status.to_test_status());
+        summary.record(crate::test_runner::runners::SelectorExecutionRecord {
+            selector: selector.clone(),
+            status,
+            raw_status,
+            cache_record: crate::test_runner::runners::SelectorCacheRecord::Hit,
+            exit_code: Some(if status == kiss::rpytest_runner::TestStatus::Passed {
+                0
+            } else {
+                1
+            }),
+            duration: std::time::Duration::from_nanos(duration_ns),
+        });
+    }
+    summary
 }
 
 fn union_incomparable_timing_misses(

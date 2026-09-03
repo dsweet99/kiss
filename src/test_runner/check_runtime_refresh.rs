@@ -1,7 +1,9 @@
 use std::fmt;
 use std::fs::{File, OpenOptions};
+use std::io::ErrorKind;
 use std::path::Path;
 use std::sync::Mutex;
+use std::time::Duration;
 
 use fs2::FileExt;
 
@@ -15,6 +17,7 @@ use check_runtime_refresh_repair::try_repair_rust_check_aggregate_labeled;
 #[cfg(test)]
 pub(crate) use check_runtime_refresh_repair::{
     CheckAggregateRepairDecision, classify_check_aggregate_repair,
+    classify_check_aggregate_repair_with_replacements,
 };
 
 #[path = "check_runtime_refresh_apply.rs"]
@@ -202,6 +205,7 @@ fn refresh_python_and_rust_parallel(
     })
 }
 
+#[derive(Debug)]
 pub(super) struct RefreshLockGuard {
     _file: File,
 }
@@ -250,6 +254,14 @@ pub(super) fn lock_refresh(
     repo_root: &Path,
     language: &'static str,
 ) -> Result<RefreshLockGuard, CoverageRefreshError> {
+    lock_refresh_for(repo_root, language, Duration::from_secs(30))
+}
+
+fn lock_refresh_for(
+    repo_root: &Path,
+    language: &'static str,
+    timeout: Duration,
+) -> Result<RefreshLockGuard, CoverageRefreshError> {
     let path = repo_root
         .join(".kiss")
         .join("check_runtime_coverage_locks")
@@ -265,8 +277,37 @@ pub(super) fn lock_refresh(
         .truncate(false)
         .open(&path)
         .map_err(|err| CoverageRefreshError::lock(language, err))?;
-    file.lock_exclusive()
-        .map_err(|err| CoverageRefreshError::lock(language, err))?;
+    let mut reported_wait = false;
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        match file.try_lock_exclusive() {
+            Ok(()) => break,
+            Err(err) if err.kind() == ErrorKind::WouldBlock => {
+                if !reported_wait {
+                    crate::test_runner::emit_test_progress(&format!(
+                        "kiss test: waiting for {language} runtime coverage refresh"
+                    ));
+                    reported_wait = true;
+                }
+                let now = std::time::Instant::now();
+                if now >= deadline {
+                    return Err(CoverageRefreshError::lock(
+                        language,
+                        std::io::Error::new(
+                            ErrorKind::TimedOut,
+                            format!("timed out after {}s", timeout.as_secs_f64()),
+                        ),
+                    ));
+                }
+                std::thread::sleep(
+                    deadline
+                        .saturating_duration_since(now)
+                        .min(Duration::from_millis(250)),
+                );
+            }
+            Err(err) => return Err(CoverageRefreshError::lock(language, err)),
+        }
+    }
     Ok(RefreshLockGuard { _file: file })
 }
 

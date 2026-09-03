@@ -65,6 +65,26 @@ fn population_durations_prefer_generation_timings() {
     assert_eq!(pairs[0].0, selector);
     let max = load_current_python_population_max_duration(repo, &[]).expect("max");
     assert_eq!(max, Duration::from_millis(9));
+    let drifted_args = vec!["-k".to_string(), "other".to_string()];
+    assert!(load_current_python_population_durations(repo, &drifted_args).is_none());
+    assert!(load_current_python_population_max_duration(repo, &drifted_args).is_none());
+    assert!(load_current_python_population_path_maxes(repo, &drifted_args).is_none());
+    let mut failed = PopulationEvidence::from_ordered_selectors(&plan.selectors);
+    failed.absorb_selector(SelectorEvidence {
+        selector,
+        raw_status: TestStatus::Failed,
+        effective_status: TestStatus::Failed,
+        duration: Some(Duration::from_millis(9)),
+        cache_disposition: TimingCacheDisposition::MissStored,
+        reason: None,
+        coverage: BTreeMap::new(),
+    });
+    publish_python_population_generation(repo, &plan, &failed, GenerationReason::IncompleteRepair)
+        .unwrap();
+    clear_python_generation_warm_memo();
+    assert!(load_current_python_population_durations(repo, &[]).is_none());
+    assert!(load_current_python_population_max_duration(repo, &[]).is_none());
+    assert!(load_current_python_population_path_maxes(repo, &[]).is_none());
 }
 
 #[test]
@@ -147,6 +167,7 @@ fn population_durations_sidecar_and_max_without_generation() {
 
 #[test]
 fn load_durations_allow_non_passed_keeps_failed_entries() {
+    let _cwd = crate::cwd_test_lock::lock();
     let _cwd = crate::cwd_test_lock::lock();
     let tmp = tempfile::tempdir().unwrap();
     let repo = tmp.path();

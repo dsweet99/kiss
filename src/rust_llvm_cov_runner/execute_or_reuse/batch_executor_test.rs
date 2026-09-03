@@ -24,6 +24,35 @@ fn write_check_aggregate_hit_durations(
     req: &crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest,
     identity: &crate::rust_llvm_cov_runner::plan::batch_fingerprint::RustCoverageBatchIdentity,
 ) {
+    let tools = tools();
+    for selector in &req.logical_selectors {
+        let fingerprint = crate::rust_llvm_cov_runner::plan::batch_fingerprint::entry_fingerprint(
+            &identity.input_digest,
+            req,
+            &tools,
+            selector,
+        );
+        let entry = RustCovCacheEntry::from_outcome(
+            &crate::rust_llvm_cov_runner::RustLlvmCovOutcome {
+                selector: selector.clone(),
+                status: TestStatus::Passed,
+                exit_code: Some(0),
+                duration: Duration::from_millis(1),
+                coverage: RustLineCoverage::default(),
+                test_binary_ids: Vec::new(),
+                cache_status: RustCovCacheStatus::Hit,
+                stdout: None,
+                stderr: None,
+            },
+            &identity.generation_fingerprint,
+        );
+        crate::rust_llvm_cov_runner::rust_cov_cache::store_rust_cov_cache_entry(
+            &req.cache_root,
+            &fingerprint,
+            &entry,
+        )
+        .unwrap();
+    }
     let population = crate::rust_llvm_cov_runner::publish_derived::batch_derived_index::load_current_population_state(
         &req.cache_root,
         &req.source_root,
@@ -331,7 +360,8 @@ fn check_aggregate_population_rechecks_cache_after_lock_without_fresh_run() {
     let binary = crate::rust_llvm_cov_runner::RustTestBinaryIdentity {
         id: "bin-a".to_string(),
         executable: binary_path.to_string_lossy().to_string(),
-        digest: "aaaaaaaaaaaaaaaa".to_string(),
+        digest: crate::rust_llvm_cov_runner::rust_cov_cache::digest_test_binary(&binary_path)
+            .unwrap(),
     };
     let aggregate = crate::rust_llvm_cov_runner::build_check_aggregate(
         &req,
@@ -357,12 +387,18 @@ fn check_aggregate_population_rechecks_cache_after_lock_without_fresh_run() {
     .unwrap();
     write_check_aggregate_hit_durations(&req, &identity);
 
+    reset_lock_batch_call_count();
     let result =
         execute_rust_coverage_batch_with_fresh(&req, &tools, |_req, _tools, _identity, _plan| {
             panic!("fresh check-aggregate run should be skipped after lock recheck")
         })
         .unwrap();
 
+    assert_eq!(
+        lock_batch_call_count(),
+        0,
+        "a read-only CheckAggregate hit must not acquire the writer lock"
+    );
     assert_eq!(result.completed.len(), 2);
     assert_eq!(result.counters.cache_hits, 2);
     assert_eq!(result.counters.build_invocations, 0);
@@ -372,6 +408,35 @@ fn check_aggregate_population_rechecks_cache_after_lock_without_fresh_run() {
             .iter()
             .all(|outcome| outcome.cache_status == RustCovCacheStatus::Hit)
     );
+    fs::write(&binary_path, "binary-a-rebuilt").unwrap();
+    let err =
+        execute_rust_coverage_batch_with_fresh(&req, &tools, |_req, _tools, _identity, _plan| {
+            Err(
+                crate::rust_llvm_cov_runner::RustLlvmCovError::InvalidRequest(
+                    "fresh-called-after-binary-drift".to_string(),
+                ),
+            )
+        })
+        .expect_err("binary drift must not use check-aggregate execution hit");
+    assert!(format!("{err:?}").contains("fresh-called-after-binary-drift"));
+    fs::write(&binary_path, "binary-a").unwrap();
+    let mut drifted = req.clone();
+    drifted
+        .env
+        .insert("RUSTFLAGS".to_string(), "-C debuginfo=1".to_string());
+    let err = execute_rust_coverage_batch_with_fresh(
+        &drifted,
+        &tools,
+        |_req, _tools, _identity, _plan| {
+            Err(
+                crate::rust_llvm_cov_runner::RustLlvmCovError::InvalidRequest(
+                    "fresh-called".to_string(),
+                ),
+            )
+        },
+    )
+    .expect_err("identity drift must not use reusable-prior execution hit");
+    assert!(format!("{err:?}").contains("fresh-called"));
 }
 
 fn store_obsolete_selective_entry(cache_root: &std::path::Path) {

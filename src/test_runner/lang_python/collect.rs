@@ -1,11 +1,11 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 #[cfg(test)]
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Mutex;
 
-use kiss::rpytest_runner::{collect_pytest_nodeids, PytestCollectRequest};
+use kiss::rpytest_runner::{PytestCollectRequest, collect_pytest_nodeids};
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 struct CollectMemoKey {
@@ -119,14 +119,19 @@ pub(crate) fn collect_python_nodeids(
 const COLLECT_SHARD_PATH_THRESHOLD: usize = 64;
 
 fn collect_shard_count(path_count: usize) -> usize {
+    collect_shard_count_for_cap(path_count, kiss::TestSectionConfig::load().num_jobs_pytest)
+}
+
+fn collect_shard_count_for_cap(path_count: usize, cap: usize) -> usize {
     if path_count < COLLECT_SHARD_PATH_THRESHOLD {
         return 1;
     }
+    let cap = cap.max(1);
     let cpus = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(4)
-        .clamp(2, 16);
-    cpus.min(path_count / 16).max(2)
+        .clamp(1, cap);
+    cpus.min(path_count / 16).max(1)
 }
 
 fn shard_collect_paths(paths: &[PathBuf], shard_count: usize) -> Vec<Vec<PathBuf>> {
@@ -333,7 +338,17 @@ mod shard_tests {
     #[test]
     fn collect_shard_count_stays_one_below_threshold() {
         assert_eq!(collect_shard_count(COLLECT_SHARD_PATH_THRESHOLD - 1), 1);
-        assert!(collect_shard_count(COLLECT_SHARD_PATH_THRESHOLD) >= 2);
+        assert!(collect_shard_count(COLLECT_SHARD_PATH_THRESHOLD) >= 1);
+    }
+
+    #[test]
+    fn collect_shard_count_respects_num_jobs_pytest_cap() {
+        assert_eq!(
+            collect_shard_count_for_cap(COLLECT_SHARD_PATH_THRESHOLD - 1, 3),
+            1
+        );
+        assert!(collect_shard_count_for_cap(1000, 3) <= 3);
+        assert_eq!(collect_shard_count_for_cap(1000, 1), 1);
     }
 
     #[test]

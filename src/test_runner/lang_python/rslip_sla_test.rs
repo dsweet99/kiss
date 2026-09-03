@@ -4,6 +4,7 @@ use std::time::Duration;
 
 #[test]
 fn batch_template_applies_per_selector_timeouts() {
+    let _cwd = crate::cwd_test_lock::lock();
     let tmp = tempfile::tempdir().unwrap();
     fs::write(
         tmp.path().join(".kissconfig"),
@@ -27,6 +28,7 @@ max_unit_test_seconds = [["tests/slow/dbs", 180], ["tests/allowed", 60], ["*", 0
 
 #[test]
 fn nonzero_sla_does_not_become_pytest_wall_kill() {
+    let _cwd = crate::cwd_test_lock::lock();
     let tmp = tempfile::tempdir().unwrap();
     fs::write(
         tmp.path().join(".kissconfig"),

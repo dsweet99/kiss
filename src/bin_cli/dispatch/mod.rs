@@ -46,6 +46,7 @@ fn dispatch_analyze(
             ignore,
             timing,
             jobs,
+            extra,
         } => dispatch_cov(CovDispatchOptions {
             lang,
             paths,
@@ -53,6 +54,7 @@ fn dispatch_analyze(
             ignore,
             timing,
             jobs,
+            extra,
             cfg,
             test_cfg: test_section,
         }),

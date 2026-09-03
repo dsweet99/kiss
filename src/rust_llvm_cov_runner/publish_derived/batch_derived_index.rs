@@ -72,6 +72,7 @@ pub fn load_current_generation_coverage_snapshot(
     selectors: Option<&[String]>,
 ) -> Option<RustGenerationCoverageSnapshot> {
     let population = load_current_population_state(cache_root, source_root, identity, selectors)?;
+    current_test_binaries_match(source_root, &population).then_some(())?;
     let entries = crate::rust_llvm_cov_runner::publish_derived::batch_derived_snapshot::load_manifest_generation_entries(
         cache_root,
         source_root,
@@ -86,6 +87,22 @@ pub fn load_current_generation_coverage_snapshot(
         identity: snapshot_identity,
         covered_lines: entries,
         population,
+    })
+}
+
+pub fn current_test_binaries_match(source_root: &Path, population: &RustPopulationState) -> bool {
+    if !population.selectors.is_empty() && population.test_binaries.is_empty() {
+        return false;
+    }
+    population.test_binaries.values().all(|binary| {
+        let path = Path::new(&binary.executable);
+        let path = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            source_root.join(path)
+        };
+        crate::rust_llvm_cov_runner::rust_cov_cache::digest_test_binary(&path)
+            .is_ok_and(|digest| digest == binary.digest)
     })
 }
 pub fn load_reusable_prior_population_state(
@@ -382,14 +399,10 @@ pub(crate) fn read_population_manifest(cache_root: &Path) -> Option<PopulationMa
     })
 }
 
-pub(crate) fn read_population_generation(cache_root: &Path) -> Option<String> {
-    let bytes = fs::read(cache_root.join("population.json")).ok()?;
-    let value: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
-    value
-        .get("generation_fingerprint")?
-        .as_str()
-        .map(str::to_string)
-}
+#[path = "batch_derived_index_manifest_match.rs"]
+mod manifest_match;
+pub use manifest_match::current_population_manifest_test_binaries_match;
+pub(crate) use manifest_match::read_population_generation;
 
 #[cfg(test)]
 #[path = "batch_derived_index_check_aggregate_test.rs"]

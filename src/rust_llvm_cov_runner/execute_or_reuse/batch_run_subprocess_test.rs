@@ -99,6 +99,8 @@ fn env_value(command: &Command, key: &str) -> Option<String> {
 
 #[test]
 fn ingest_live_shim_identities_records_each_identity_once() {
+    let _serial =
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::signal_test_guard();
     let guard = BatchProcessTreeGuard::install().expect("install guard");
     let mut children = Vec::new();
     let mut identities = Vec::new();
@@ -141,6 +143,8 @@ fn ingest_live_shim_identities_records_each_identity_once() {
 
 #[test]
 fn wait_child_with_interruption_returns_on_normal_exit() {
+    let _serial =
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::signal_test_guard();
     let guard = BatchProcessTreeGuard::install().expect("install guard");
     let mut command = Command::new("/bin/sh");
     command.arg("-c").arg("sleep 0.05");
@@ -165,6 +169,8 @@ fn wait_child_with_interruption_returns_on_normal_exit() {
 
 #[test]
 fn wait_child_with_interruption_fails_when_interrupted() {
+    let _serial =
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::signal_test_guard();
     let guard = BatchProcessTreeGuard::install().expect("install guard");
     let mut command = Command::new("/bin/sh");
     command.arg("-c").arg("sleep 2");

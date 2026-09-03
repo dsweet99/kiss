@@ -6,6 +6,7 @@ use std::path::Path;
 pub struct TestSectionConfig {
     pub main_branch: Option<String>,
     pub num_jobs: usize,
+    pub num_jobs_pytest: usize,
     pub watch_settle_seconds: f64,
     pub pytest_plugins: Vec<String>,
     pub ignore: Vec<String>,
@@ -17,6 +18,7 @@ impl Default for TestSectionConfig {
         Self {
             main_branch: None,
             num_jobs: crate::defaults::gate::NUM_JOBS,
+            num_jobs_pytest: crate::defaults::gate::NUM_JOBS_PYTEST,
             watch_settle_seconds: crate::defaults::gate::WATCH_SETTLE_SECONDS,
             pytest_plugins: Vec::new(),
             ignore: Vec::new(),

@@ -65,6 +65,11 @@ pub fn generate_config_toml_by_language(p: &GenerateConfigParams<'_>) -> String 
     let _ = writeln!(out, "num_jobs = {}", crate::defaults::gate::NUM_JOBS);
     let _ = writeln!(
         out,
+        "num_jobs_pytest = {}",
+        crate::defaults::gate::NUM_JOBS_PYTEST
+    );
+    let _ = writeln!(
+        out,
         "watch_settle_seconds = {:.1}",
         crate::defaults::gate::WATCH_SETTLE_SECONDS
     );

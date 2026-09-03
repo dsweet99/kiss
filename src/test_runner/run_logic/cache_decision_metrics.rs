@@ -7,6 +7,12 @@ use super::metrics_rust::{
 };
 use super::runners::SelectorExecutionSummary;
 
+macro_rules! println {
+    ($($arg:tt)*) => {
+        crate::test_runner::emit_test_progress(&format!($($arg)*))
+    };
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct CacheDecisionMetrics {
     pub(crate) fresh_executions: usize,

@@ -256,19 +256,18 @@ fn cheap_codebase_test_count(
     pytest_args: &[String],
 ) -> Option<usize> {
     let repo_root = repository_root_for_universe(universe);
+    let need_python = include.python && matches!(lang_filter, None | Some(Language::Python));
+    let need_rust = include.rust && matches!(lang_filter, None | Some(Language::Rust));
     let (py, rs) = super::workspace_selector_cache::load_workspace_selectors_for_count(
         &repo_root,
         ignore,
         pytest_args,
+        super::workspace_selector_cache::SelectorCountNeed {
+            python: need_python,
+            rust: need_rust,
+        },
     )?;
-    let mut total = 0usize;
-    if include.python && matches!(lang_filter, None | Some(Language::Python)) {
-        total += py.len();
-    }
-    if include.rust && matches!(lang_filter, None | Some(Language::Rust)) {
-        total += rs.len();
-    }
-    Some(total)
+    Some(py.len() + rs.len())
 }
 
 pub(crate) fn codebase_test_count_for_cov(

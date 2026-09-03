@@ -8,9 +8,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
 use super::runners::rust_logical_to_kiss_test_ids;
-use super::workspace_selector_cache::{normalized_root, workspace_files_fingerprint_for_cache};
+use super::workspace_selector_cache::{
+    load_cached_rust_workspace_fingerprint, normalized_root,
+    rust_selector_inputs_fingerprint_for_cache,
+};
 
-const SCHEMA_VERSION: &str = "rust-test-report-ids-v1";
+const SCHEMA_VERSION: &str = "rust-test-report-ids-v2";
 const CACHE_FILE_NAME: &str = "rust_test_report_ids.json";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -26,7 +29,7 @@ fn cache_path(repo_root: &Path) -> PathBuf {
     repo_root.join(".kiss").join(CACHE_FILE_NAME)
 }
 
-type ReportIdMemoEntry = (String, Vec<String>, BTreeMap<String, String>);
+type ReportIdMemoEntry = (String, Vec<String>, String, BTreeMap<String, String>);
 
 static IN_PROCESS_MEMO: Mutex<Option<ReportIdMemoEntry>> = Mutex::new(None);
 
@@ -35,14 +38,19 @@ pub(crate) fn rust_logical_to_kiss_test_ids_cached(
     ignore: &[String],
 ) -> Result<BTreeMap<String, String>, String> {
     let source_root = normalized_root(repo_root);
+    let files_fingerprint =
+        current_rust_selector_fingerprint(repo_root, ignore).map_err(|err| err.to_string())?;
     if let Ok(memo) = IN_PROCESS_MEMO.lock()
-        && let Some((root, ign, map)) = memo.as_ref()
+        && let Some((root, ign, fingerprint, map)) = memo.as_ref()
         && root == &source_root
         && ign == ignore
+        && fingerprint == &files_fingerprint
     {
         return Ok(map.clone());
     }
-    let map = if let Some(map) = try_load_cached(repo_root, ignore) {
+    let map = if let Some(map) =
+        try_load_cached_with_fingerprint(repo_root, ignore, &files_fingerprint)
+    {
         map
     } else {
         let map = rust_logical_to_kiss_test_ids(repo_root, ignore)?;
@@ -50,12 +58,22 @@ pub(crate) fn rust_logical_to_kiss_test_ids_cached(
         map
     };
     if let Ok(mut memo) = IN_PROCESS_MEMO.lock() {
-        *memo = Some((source_root, ignore.to_vec(), map.clone()));
+        *memo = Some((source_root, ignore.to_vec(), files_fingerprint, map.clone()));
     }
     Ok(map)
 }
 
+#[cfg(test)]
 fn try_load_cached(repo_root: &Path, ignore: &[String]) -> Option<BTreeMap<String, String>> {
+    let files_fingerprint = current_rust_selector_fingerprint(repo_root, ignore).ok()?;
+    try_load_cached_with_fingerprint(repo_root, ignore, &files_fingerprint)
+}
+
+fn try_load_cached_with_fingerprint(
+    repo_root: &Path,
+    ignore: &[String],
+    files_fingerprint: &str,
+) -> Option<BTreeMap<String, String>> {
     let bytes = fs::read(cache_path(repo_root)).ok()?;
     let cache: RustReportIdCache = serde_json::from_slice(&bytes).ok()?;
     if cache.schema_version != SCHEMA_VERSION
@@ -64,7 +82,6 @@ fn try_load_cached(repo_root: &Path, ignore: &[String]) -> Option<BTreeMap<Strin
     {
         return None;
     }
-    let files_fingerprint = workspace_files_fingerprint_for_cache(repo_root, ignore).ok()?;
     if cache.files_fingerprint != files_fingerprint {
         return None;
     }
@@ -76,7 +93,7 @@ fn store_cached(
     ignore: &[String],
     report_ids: &BTreeMap<String, String>,
 ) -> io::Result<()> {
-    let files_fingerprint = workspace_files_fingerprint_for_cache(repo_root, ignore)?;
+    let files_fingerprint = current_rust_selector_fingerprint(repo_root, ignore)?;
     let cache = RustReportIdCache {
         schema_version: SCHEMA_VERSION.to_string(),
         source_root: normalized_root(repo_root),
@@ -102,6 +119,13 @@ fn store_cached(
     drop(file);
     fs::rename(tmp, path)?;
     Ok(())
+}
+
+fn current_rust_selector_fingerprint(repo_root: &Path, ignore: &[String]) -> io::Result<String> {
+    load_cached_rust_workspace_fingerprint(repo_root, ignore).map_or_else(
+        || rust_selector_inputs_fingerprint_for_cache(repo_root, ignore),
+        Ok,
+    )
 }
 
 #[cfg(test)]

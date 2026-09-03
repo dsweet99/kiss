@@ -28,7 +28,7 @@ pub(crate) fn miss_is_warm_skippable(witness: &ExecutionWitness, i: usize) -> bo
         WitnessStatus::Passed => {
             matches!(effective, WitnessStatus::TimedOut | WitnessStatus::Failed)
         }
-        WitnessStatus::Unresolved => true,
+        WitnessStatus::Unresolved => false,
         WitnessStatus::TimedOut | WitnessStatus::Failed => false,
     }
 }

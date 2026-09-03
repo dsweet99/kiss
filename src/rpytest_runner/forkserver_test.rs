@@ -153,8 +153,14 @@ def test_c():\n    assert True\n",
     assert_eq!(outcomes[0].as_ref().unwrap().status, TestStatus::Passed);
     assert_eq!(outcomes[1].as_ref().unwrap().status, TestStatus::Passed);
     assert_eq!(outcomes[2].as_ref().unwrap().status, TestStatus::Passed);
-    assert_eq!(outcomes[0].as_ref().unwrap().nodeid, "test_sample.py::test_a");
-    assert_eq!(outcomes[1].as_ref().unwrap().nodeid, "test_sample.py::test_b");
+    assert_eq!(
+        outcomes[0].as_ref().unwrap().nodeid,
+        "test_sample.py::test_a"
+    );
+    assert_eq!(
+        outcomes[1].as_ref().unwrap().nodeid,
+        "test_sample.py::test_b"
+    );
 }
 
 #[test]

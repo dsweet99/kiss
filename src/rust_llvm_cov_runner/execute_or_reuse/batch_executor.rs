@@ -1,12 +1,10 @@
 use super::batch_executor_prepare::{
-    banned_timeout_outcome, merge_prepared, outcome_from_entry, prepare_rust_batch,
-    selector_timeout_is_ban,
+    PreparedRustBatch, merge_prepared, outcome_from_entry, prepare_rust_batch,
 };
-use crate::rpytest_runner::TestStatus;
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_executor_fresh::execute_fresh_batch_with_exporter;
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export::SubprocessInstanceExporter;
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export_tools::resolve_export_tools_from_rustc;
-use crate::rust_llvm_cov_runner::execute_or_reuse::batch_lock::lock_batch;
+use crate::rust_llvm_cov_runner::execute_or_reuse::batch_lock::try_lock_batch;
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_result::{
     RustCoverageBatchCounters, RustCoverageBatchResult,
 };
@@ -14,16 +12,14 @@ use crate::rust_llvm_cov_runner::execute_or_reuse::batch_run::default_batch_subp
 use crate::rust_llvm_cov_runner::execute_or_reuse::worker::cleanup_legacy_worker_data_nonblocking;
 use crate::rust_llvm_cov_runner::file_lock::FileLockGuard;
 use crate::rust_llvm_cov_runner::plan::batch_fingerprint::{
-    RustCoverageBatchIdentity, RustCoverageToolIdentity, batch_identity,
+    RustCoverageBatchIdentity, RustCoverageToolIdentity,
 };
 use crate::rust_llvm_cov_runner::plan::batch_plan::{
     CoverageOutputMode, RustCoverageBatchPlan, RustCoverageBatchRequest,
     build_rust_coverage_batch_plan,
 };
 use crate::rust_llvm_cov_runner::publish_derived::batch_derived::population_derived_state_stale;
-use crate::rust_llvm_cov_runner::{RustCovCacheStatus, RustLlvmCovError, RustLlvmCovOutcome};
-use std::collections::BTreeMap;
-use std::time::Duration;
+use crate::rust_llvm_cov_runner::RustLlvmCovError;
 
 fn default_instance_exporter(
     req: &RustCoverageBatchRequest,
@@ -51,8 +47,21 @@ pub(crate) fn install_held_batch_lock(guard: FileLockGuard) {
     HELD_LOCK.with(|slot| *slot.borrow_mut() = Some(guard));
 }
 
+fn lock_batch_with_progress(
+    cache_root: &std::path::Path,
+) -> std::io::Result<(FileLockGuard, bool)> {
+    if let Some(guard) = try_lock_batch(cache_root)? {
+        return Ok((guard, false));
+    }
+    super::progress::log_named_step("batch-lock-wait", || {
+        super::batch_lock::wait_for_batch_lock(cache_root)
+    })
+    .map(|guard| (guard, true))
+}
+
 pub fn lock_and_hold_batch(cache_root: &std::path::Path) -> std::io::Result<()> {
-    install_held_batch_lock(lock_batch(cache_root)?);
+    let (guard, _) = lock_batch_with_progress(cache_root)?;
+    install_held_batch_lock(guard);
     Ok(())
 }
 
@@ -121,49 +130,34 @@ where
     ) -> Result<RustCoverageBatchResult, RustLlvmCovError>,
 {
     crate::rust_llvm_cov_runner::plan::batch_platform::ensure_batch_platform_supported()?;
-    let identity = crate::rust_llvm_cov_runner::execute_or_reuse::progress::log_named_step(
-        "batch-identity",
-        || batch_identity(req, tools).map_err(RustLlvmCovError::Io),
-    )?;
-
-    if !req.logical_selectors.is_empty()
-        && req
-            .logical_selectors
-            .iter()
-            .all(|selector| selector_timeout_is_ban(req, selector))
-    {
-        return Ok(with_process_reverse_query_counters(
-            RustCoverageBatchResult {
-                completed: req
-                    .logical_selectors
-                    .iter()
-                    .map(|selector| banned_timeout_outcome(selector))
-                    .collect(),
-                batch_error: None,
-                counters: RustCoverageBatchCounters::default(),
-                test_binaries: Vec::new(),
-            },
-        ));
+    let identity = resolve_batch_identity(req, tools)?;
+    if let Some(result) = banned_timeout_batch_result(req) {
+        return Ok(result);
+    }
+    if let Some(result) = try_reuse_before_lock(req, tools, &identity)? {
+        return Ok(result);
     }
 
     let held = HELD_LOCK.with(|slot| slot.borrow_mut().take());
-    if held.is_none()
-        && matches!(
-            req.coverage_output_mode,
-            CoverageOutputMode::SelectorEntries
-        )
-        && !req.force_rerun
-        && let Some(result) = try_all_hit_fast_path(req, tools, &identity)?
-    {
-        return Ok(with_process_reverse_query_counters(result));
-    }
-
-    let _batch_guard = if let Some(guard) = held {
-        guard
+    let (_batch_guard, _) = if let Some(guard) = held {
+        (guard, false)
     } else {
         LOCK_BATCH_COUNT.with(|c| c.set(c.get() + 1));
-        lock_batch(&req.cache_root)?
+        lock_batch_with_progress(&req.cache_root)?
     };
+    let mut prepared = None;
+    if matches!(
+        req.coverage_output_mode,
+        CoverageOutputMode::SelectorEntries
+    ) && !req.force_rerun
+    {
+        match try_all_hit_fast_path(req, tools, &identity)? {
+            FastPathProbe::Hit(result) => {
+                return Ok(with_process_reverse_query_counters(*result));
+            }
+            FastPathProbe::Miss(probed) => prepared = probed,
+        }
+    }
     let legacy_cleanup = cleanup_legacy_worker_data_nonblocking(&req.cache_root)?;
 
     if matches!(
@@ -171,7 +165,14 @@ where
         CoverageOutputMode::SelectorEntries
     ) && !req.force_rerun
     {
-        return run_locked_selector_entries(req, tools, &identity, fresh, legacy_cleanup.deferred);
+        return run_locked_selector_entries(
+            req,
+            tools,
+            &identity,
+            fresh,
+            legacy_cleanup.deferred,
+            prepared,
+        );
     }
 
     let plan = crate::rust_llvm_cov_runner::execute_or_reuse::progress::log_named_step(
@@ -182,7 +183,7 @@ where
             })
         },
     )?;
-    if let Some(mut result) = try_check_aggregate_hit_after_lock(req, &identity)? {
+    if let Some(mut result) = try_check_aggregate_hit(req, &identity)? {
         result.counters.legacy_cleanup_deferred = legacy_cleanup.deferred;
         return Ok(with_process_reverse_query_counters(result));
     }
@@ -193,12 +194,20 @@ where
     })
 }
 
+#[path = "batch_executor_reuse.rs"]
+mod reuse;
+use reuse::{
+    banned_timeout_batch_result, resolve_batch_identity, try_check_aggregate_hit,
+    try_reuse_before_lock,
+};
+
 fn run_locked_selector_entries<F>(
     req: &RustCoverageBatchRequest,
     tools: &RustCoverageToolIdentity,
     identity: &RustCoverageBatchIdentity,
     fresh: F,
     deferred: bool,
+    prepared: Option<PreparedRustBatch>,
 ) -> Result<RustCoverageBatchResult, RustLlvmCovError>
 where
     F: FnOnce(
@@ -208,7 +217,10 @@ where
         &RustCoverageBatchPlan,
     ) -> Result<RustCoverageBatchResult, RustLlvmCovError>,
 {
-    let prepared = prepare_rust_batch(req, tools, identity)?;
+    let prepared = match prepared {
+        Some(prepared) => prepared,
+        None => prepare_rust_batch(req, tools, identity)?,
+    };
     if prepared.misses_empty() {
         return maybe_publish_derived_after_all_hit(
             req,
@@ -238,7 +250,7 @@ where
     })
 }
 
-fn with_process_reverse_query_counters(
+pub(super) fn with_process_reverse_query_counters(
     mut result: RustCoverageBatchResult,
 ) -> RustCoverageBatchResult {
     result.counters.incorporate_process_reverse_query_counters();
@@ -263,6 +275,7 @@ fn finalize_after_fresh_batch(
     crate::rust_llvm_cov_runner::publish_derived::batch_derived::maybe_prune_obsolete_selective_after_batch(
         req, identity, result,
     )?;
+    super::batch_executor_sealed::write_seal_after_complete_pass(req, identity, result);
     result.counters.legacy_cleanup_deferred = legacy_cleanup_deferred;
     Ok(())
 }
@@ -274,6 +287,7 @@ fn maybe_publish_derived_after_all_hit(
     mut result: RustCoverageBatchResult,
 ) -> Result<RustCoverageBatchResult, RustLlvmCovError> {
     apply_population_derived_publication(req, tools, identity, &mut result)?;
+    super::batch_executor_sealed::write_seal_after_complete_pass(req, identity, &result);
     Ok(result)
 }
 
@@ -310,100 +324,29 @@ fn apply_population_derived_publication(
     Ok(())
 }
 
+enum FastPathProbe {
+    Hit(Box<RustCoverageBatchResult>),
+    Miss(Option<PreparedRustBatch>),
+}
+
 fn try_all_hit_fast_path(
     req: &RustCoverageBatchRequest,
     tools: &RustCoverageToolIdentity,
     identity: &RustCoverageBatchIdentity,
-) -> Result<Option<RustCoverageBatchResult>, RustLlvmCovError> {
+) -> Result<FastPathProbe, RustLlvmCovError> {
+    if let Some(result) = super::batch_executor_sealed::try_sealed_all_hit(req, identity, tools) {
+        return Ok(FastPathProbe::Hit(Box::new(result)));
+    }
     if population_derived_state_stale(req, tools, identity)? {
-        return Ok(None);
+        return Ok(FastPathProbe::Miss(None));
     }
     let prepared = prepare_rust_batch(req, tools, identity)?;
     if !prepared.misses_empty() {
-        return Ok(None);
+        return Ok(FastPathProbe::Miss(Some(prepared)));
     }
-    Ok(Some(prepared.hit_result(&req.logical_selectors)))
-}
-
-fn try_check_aggregate_hit_after_lock(
-    req: &RustCoverageBatchRequest,
-    identity: &RustCoverageBatchIdentity,
-) -> Result<Option<RustCoverageBatchResult>, RustLlvmCovError> {
-    if !matches!(
-        req.coverage_output_mode,
-        CoverageOutputMode::CheckAggregate { .. }
-    ) {
-        return Ok(None);
-    }
-    let Some(selectors) = req.population_publication_selectors.as_deref() else {
-        return Ok(None);
-    };
-    let population = crate::rust_llvm_cov_runner::publish_derived::batch_derived_index::load_current_population_state(
-        &req.cache_root,
-        &req.source_root,
-        identity,
-        Some(selectors),
-    )
-    .or_else(|| {
-        crate::rust_llvm_cov_runner::publish_derived::batch_derived_index::load_reusable_prior_population_state(
-            &req.cache_root,
-            &req.source_root,
-            Some(selectors),
-            &identity.selection_context_fingerprint,
-        )
-        .filter(|population| population.ordinary_source_digests == identity.ordinary_source_digests)
-    });
-    let Some(population) = population else {
-        return Ok(None);
-    };
-    let Some(completed) = check_aggregate_hit_completed(req, &population) else {
-        return Ok(None);
-    };
-    Ok(Some(RustCoverageBatchResult {
-        completed,
-        batch_error: None,
-        counters: RustCoverageBatchCounters {
-            cache_hits: req.logical_selectors.len(),
-            ..Default::default()
-        },
-        test_binaries: population.test_binaries.into_values().collect(),
-    }))
-}
-
-fn check_aggregate_hit_completed(
-    req: &RustCoverageBatchRequest,
-    population: &crate::rust_llvm_cov_runner::publish_derived::batch_derived_index::RustPopulationState,
-) -> Option<Vec<RustLlvmCovOutcome>> {
-    if !population
-        .entries_fingerprint
-        .starts_with("check-aggregate:")
-    {
-        return None;
-    }
-    let pairs = crate::rust_llvm_cov_runner::publish_derived::batch_population_durations::try_load_population_durations(
-        &req.cache_root,
-        population,
-    )?;
-    let duration_by_selector: BTreeMap<_, _> = pairs.into_iter().collect();
-    req.logical_selectors
-        .iter()
-        .map(|selector| {
-            let duration = duration_by_selector.get(selector).copied()?;
-            Some(RustLlvmCovOutcome {
-                selector: selector.clone(),
-                status: TestStatus::Passed,
-                exit_code: Some(0),
-                duration,
-                coverage: crate::rust_llvm_cov_runner::RustLineCoverage {
-                    files: BTreeMap::new(),
-                },
-                test_binary_ids: Vec::new(),
-                cache_status: RustCovCacheStatus::Hit,
-                stdout: None,
-                stderr: None,
-            })
-        })
-        .collect()
+    Ok(FastPathProbe::Hit(Box::new(
+        prepared.hit_result(&req.logical_selectors),
+    )))
 }
 
 #[cfg(test)]
@@ -436,6 +379,16 @@ mod held_lock_test {
         super::install_held_batch_lock(guard);
         assert_eq!(lock_batch_call_count(), 0);
         drop(super::HELD_LOCK.with(|slot| slot.borrow_mut().take()));
-        assert!(try_lock_batch(tmp.path()).unwrap().is_some());
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        loop {
+            if try_lock_batch(tmp.path()).unwrap().is_some() {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "batch lock remained held after dropping its guard"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
     }
 }

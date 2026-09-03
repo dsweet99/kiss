@@ -60,6 +60,7 @@ fn public_dispatch_routes_analyze_and_tool_groups() {
                     ignore: vec![],
                     timing: false,
                     jobs: None,
+                    extra: vec![],
                 },
             },
             &py,

@@ -202,12 +202,50 @@ fn select_executable_for_test(
     if matches.len() == 1 {
         return Ok(matches[0].executable.clone());
     }
+    let fn_matches: Vec<_> = matches
+        .iter()
+        .filter(|candidate| src_defines_test_fn(candidate.src_path.as_deref(), test_name))
+        .collect();
+    if fn_matches.len() == 1 {
+        return Ok(fn_matches[0].executable.clone());
+    }
     Err(RustLlvmCovError::InvalidRequest(format!(
         "ambiguous test harnesses for libtest id `{prefix}` test `{test_name}` \
          (candidates={}, module_matches={})",
         candidates.len(),
         matches.len()
     )))
+}
+
+fn src_defines_test_fn(src_path: Option<&str>, test_name: &str) -> bool {
+    let Some(src_path) = src_path else {
+        return false;
+    };
+    let src_path = Path::new(src_path);
+    let leaf = test_name.rsplit("::").next().unwrap_or(test_name);
+    if file_defines_fn(src_path, leaf) {
+        return true;
+    }
+    let Some(parent) = src_path.parent() else {
+        return false;
+    };
+    let module = test_name.split("::").next().unwrap_or(test_name);
+    file_defines_fn(&parent.join(format!("{module}.rs")), leaf)
+        || file_defines_fn(&parent.join(module).join("mod.rs"), leaf)
+}
+
+fn file_defines_fn(path: &Path, name: &str) -> bool {
+    let Ok(text) = fs::read_to_string(path) else {
+        return false;
+    };
+    let needle = format!("fn {name}");
+    text.lines().any(|raw| {
+        let line = strip_line_comment(raw);
+        let Some(rest) = line.split_once(&needle).map(|(_, rest)| rest) else {
+            return false;
+        };
+        rest.trim_start().starts_with('(')
+    })
 }
 
 pub(crate) fn top_level_mod_names(src_path: &Path) -> BTreeSet<String> {

@@ -81,6 +81,55 @@ fn identity_drift_with_unchanged_outcomes_still_publishes() {
 }
 
 #[test]
+fn forced_run_with_unchanged_outcomes_still_publishes() {
+    let state = python_state(WitnessStatus::Passed, Some(1_000_000));
+    let runtime = FakeRuntime {
+        language: Language::Python,
+        state: Rc::clone(&state),
+    };
+    let mut req = request(vec!["a".into()]);
+    req.force_selectors = vec!["a".into()];
+    let result = ensure_runtime_cache(&req, &[&runtime]).expect("ensure");
+    assert_eq!(result.exit_code, 0);
+    assert_eq!(state.borrow().run_calls, vec![vec!["a".to_string()]]);
+    assert_eq!(
+        state.borrow().publish_calls,
+        1,
+        "executed selectors may have changed coverage even when status and duration match"
+    );
+}
+
+#[test]
+fn partial_run_summary_includes_accepted_cache_hits() {
+    let state = Rc::new(RefCell::new(FakeState {
+        witness: Some(ExecutionWitness {
+            language: "python".into(),
+            scope: WitnessScope::Full,
+            identity_digest: "id".into(),
+            selectors: vec!["a".into(), "b".into()],
+            statuses: vec![WitnessStatus::Passed, WitnessStatus::Passed],
+            durations_ns: vec![Some(1_000_000), Some(1_000_000)],
+            covered_lines: BTreeMap::new(),
+            complete: true,
+            generation_id: "g".into(),
+            raw_statuses: Vec::new(),
+        }),
+        ..Default::default()
+    }));
+    let runtime = FakeRuntime {
+        language: Language::Python,
+        state: Rc::clone(&state),
+    };
+    let mut req = request(vec!["a".into(), "b".into()]);
+    req.force_selectors = vec!["b".into()];
+    let result = ensure_runtime_cache(&req, &[&runtime]).expect("ensure");
+    let summary = result.by_language.python.unwrap().summary;
+    assert_eq!(summary.total, 2);
+    assert_eq!(summary.cache_hits, 1);
+    assert_eq!(summary.cache_misses, 1);
+}
+
+#[test]
 fn rust_warm_accept_still_emits_rust_identity_without_run() {
     let state = Rc::new(RefCell::new(FakeState {
         witness: Some(ExecutionWitness {

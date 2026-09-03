@@ -261,13 +261,7 @@ pub(crate) fn read_object_binary_id(
     tools: &ExportTools,
     object: &Path,
 ) -> Result<Option<String>, RustLlvmCovError> {
-    let output = Command::new(&tools.llvm_readobj)
-        .arg("--notes")
-        .arg(object)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .map_err(RustLlvmCovError::Io)?;
+    let output = run_readobj(tools, object)?;
     if !output.status.success() {
         return Ok(None);
     }
@@ -276,6 +270,28 @@ pub(crate) fn read_object_binary_id(
             &output.stdout,
         ),
     )
+}
+
+fn run_readobj(
+    tools: &ExportTools,
+    object: &Path,
+) -> Result<std::process::Output, RustLlvmCovError> {
+    for attempt in 0..4 {
+        let result = Command::new(&tools.llvm_readobj)
+            .arg("--notes")
+            .arg(object)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output();
+        match result {
+            Ok(output) => return Ok(output),
+            Err(err) if err.raw_os_error() == Some(libc::ETXTBSY) && attempt < 3 => {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            Err(err) => return Err(RustLlvmCovError::Io(err)),
+        }
+    }
+    unreachable!("readobj retry loop always returns")
 }
 
 #[cfg(test)]

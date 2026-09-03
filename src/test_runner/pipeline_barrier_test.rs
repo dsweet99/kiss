@@ -10,10 +10,7 @@ use crate::test_runner::pipeline::{
 
 static BARRIER_STDOUT: Mutex<()> = Mutex::new(());
 
-fn run_args(
-    dry_run: bool,
-    lang: Option<Language>,
-) -> crate::test_runner::RunTestCmdArgs<'static> {
+fn run_args(dry_run: bool, lang: Option<Language>) -> crate::test_runner::RunTestCmdArgs<'static> {
     crate::test_runner::RunTestCmdArgs {
         invocation: crate::bin_cli::args::TestInvocation::All,
         main_branch_cli: None,
@@ -72,6 +69,7 @@ fn status_printers_use_emit_test_progress() {
 #[cfg(unix)]
 #[test]
 fn covering_rust_running_appears_before_blocked_planner_returns() {
+    let _cwd = crate::cwd_test_lock::lock();
     let tmp = tempfile::tempdir().unwrap();
     crate::test_runner::test_mode_fixtures::init_git(&tmp);
     std::fs::write(tmp.path().join("lib.rs"), "fn f() {}\n").unwrap();
@@ -109,7 +107,9 @@ fn covering_rust_running_appears_before_blocked_planner_returns() {
     let running = out
         .find("kiss test: Running covering_rust")
         .expect("Running covering_rust");
-    let ran = out.find("kiss test: Ran covering_rust").expect("Ran covering");
+    let ran = out
+        .find("kiss test: Ran covering_rust")
+        .expect("Ran covering");
     assert!(running < ran, "Running must precede Ran: {out}");
     assert!(
         out.contains("kiss test: Ran covering_rust") && out.contains("ms"),
@@ -120,6 +120,7 @@ fn covering_rust_running_appears_before_blocked_planner_returns() {
 #[cfg(unix)]
 #[test]
 fn dry_run_omits_rust_selectors_until_python_covering_finishes() {
+    let _cwd = crate::cwd_test_lock::lock();
     let tmp = tempfile::tempdir().unwrap();
     crate::test_runner::test_mode_fixtures::init_git(&tmp);
     std::fs::write(tmp.path().join("lib.py"), "x = 1\n").unwrap();
@@ -202,7 +203,10 @@ fn with_stdout_file(path: &std::path::Path, f: impl FnOnce()) {
     let fd = file.as_raw_fd();
     let old = unsafe { libc::dup(libc::STDOUT_FILENO) };
     assert!(old >= 0);
-    assert_eq!(unsafe { libc::dup2(fd, libc::STDOUT_FILENO) }, libc::STDOUT_FILENO);
+    assert_eq!(
+        unsafe { libc::dup2(fd, libc::STDOUT_FILENO) },
+        libc::STDOUT_FILENO
+    );
     f();
     let _ = std::io::stdout().flush();
     assert_eq!(

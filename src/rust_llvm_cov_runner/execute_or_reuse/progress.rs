@@ -1,51 +1,84 @@
-use std::cell::RefCell;
 use std::collections::HashSet;
 use std::io::Write;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-type LiveRustHook = Box<dyn FnMut(&str, &str, f64)>;
+type LiveRustHook = Box<dyn FnMut(&str, &str, f64) + Send>;
 
-thread_local! {
-    static LIVE_HOOK: RefCell<Option<LiveRustHook>> = const { RefCell::new(None) };
-    static LIVE_PRINTED: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
-    static LIVE_ERROR: RefCell<Option<String>> = const { RefCell::new(None) };
+fn live_hook() -> &'static Mutex<Option<LiveRustHook>> {
+    static LIVE_HOOK: OnceLock<Mutex<Option<LiveRustHook>>> = OnceLock::new();
+    LIVE_HOOK.get_or_init(|| Mutex::new(None))
 }
 
-pub fn install_live_rust_test_hook(hook: impl FnMut(&str, &str, f64) + 'static) {
-    LIVE_PRINTED.with(|printed| printed.borrow_mut().clear());
-    LIVE_ERROR.with(|err| *err.borrow_mut() = None);
-    LIVE_HOOK.with(|slot| *slot.borrow_mut() = Some(Box::new(hook)));
+fn live_printed() -> &'static Mutex<HashSet<String>> {
+    static LIVE_PRINTED: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    LIVE_PRINTED.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+fn live_error() -> &'static Mutex<Option<String>> {
+    static LIVE_ERROR: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+    LIVE_ERROR.get_or_init(|| Mutex::new(None))
+}
+
+#[cfg(test)]
+pub fn live_rust_hook_test_guard() -> std::sync::MutexGuard<'static, ()> {
+    static TEST_GUARD: Mutex<()> = Mutex::new(());
+    TEST_GUARD
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+pub fn install_live_rust_test_hook(hook: impl FnMut(&str, &str, f64) + Send + 'static) {
+    live_printed()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clear();
+    *live_error()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    *live_hook()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Box::new(hook));
 }
 
 pub fn clear_live_rust_test_hook() {
-    LIVE_HOOK.with(|slot| *slot.borrow_mut() = None);
+    *live_hook()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
 }
 
 pub fn set_live_rust_error(message: String) {
-    LIVE_ERROR.with(|err| {
-        if err.borrow().is_none() {
-            *err.borrow_mut() = Some(message);
-        }
-    });
+    let mut err = live_error()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if err.is_none() {
+        *err = Some(message);
+    }
 }
 
 #[must_use]
 pub fn take_live_rust_error() -> Option<String> {
-    LIVE_ERROR.with(|err| err.borrow_mut().take())
+    live_error()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .take()
 }
 
 pub fn mark_live_rust_printed(id: &str) {
-    LIVE_PRINTED.with(|printed| {
-        printed.borrow_mut().insert(id.to_string());
-    });
+    live_printed()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .insert(id.to_string());
 }
 
 #[must_use]
 pub fn live_rust_was_printed(id: &str) -> bool {
-    LIVE_PRINTED.with(|printed| printed.borrow().contains(id))
+    live_printed()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .contains(id)
 }
 
 static PROGRESS_LOCK: Mutex<()> = Mutex::new(());
@@ -214,30 +247,30 @@ fn line_starts_nextest(line: &[u8]) -> bool {
 }
 
 fn emit_live_libtest_event(line: &[u8]) {
-    LIVE_HOOK.with(|slot| {
-        let mut hook_slot = slot.borrow_mut();
-        let Some(hook) = hook_slot.as_mut() else {
-            return;
-        };
-        let Ok(value) = serde_json::from_slice::<Value>(trim_ascii_line(line)) else {
-            return;
-        };
-        if value.get("type").and_then(Value::as_str) != Some("test") {
-            return;
-        }
-        let event = value.get("event").and_then(Value::as_str).unwrap_or("");
-        if !matches!(event, "ok" | "failed" | "timeout" | "timed_out") {
-            return;
-        }
-        let Some(name) = value.get("name").and_then(Value::as_str) else {
-            return;
-        };
-        let exec_time = value
-            .get("exec_time")
-            .and_then(Value::as_f64)
-            .unwrap_or(0.0);
+    let Ok(value) = serde_json::from_slice::<Value>(trim_ascii_line(line)) else {
+        return;
+    };
+    if value.get("type").and_then(Value::as_str) != Some("test") {
+        return;
+    }
+    let event = value.get("event").and_then(Value::as_str).unwrap_or("");
+    if !matches!(event, "ok" | "failed" | "timeout" | "timed_out") {
+        return;
+    }
+    let Some(name) = value.get("name").and_then(Value::as_str) else {
+        return;
+    };
+    let exec_time = value
+        .get("exec_time")
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0);
+    if let Some(hook) = live_hook()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .as_mut()
+    {
         hook(name, event, exec_time);
-    });
+    }
 }
 
 fn trim_ascii_line(line: &[u8]) -> &[u8] {
@@ -339,6 +372,7 @@ mod tests {
 
     #[test]
     fn live_hook_emits_terminal_libtest_events() {
+        let _hook_guard = live_rust_hook_test_guard();
         let seen = std::sync::Arc::new(Mutex::new(Vec::new()));
         let captured = std::sync::Arc::clone(&seen);
         install_live_rust_test_hook(move |name, event, exec_time| {
@@ -355,6 +389,27 @@ mod tests {
         clear_live_rust_test_hook();
         let events = seen.lock().unwrap().clone();
         assert_eq!(events, vec![("pkg::bin$case".into(), "ok".into(), 0.25)]);
+    }
+
+    #[test]
+    fn live_hook_receives_events_from_reader_thread() {
+        let _hook_guard = live_rust_hook_test_guard();
+        let seen = std::sync::Arc::new(Mutex::new(Vec::new()));
+        let captured = std::sync::Arc::clone(&seen);
+        install_live_rust_test_hook(move |name, _, _| {
+            captured.lock().unwrap().push(name.to_string());
+        });
+        std::thread::spawn(|| {
+            let _ = replay(
+                br#"{"reason":"build-finished","success":true}
+{"type":"test","event":"ok","name":"pkg::bin$cross_thread","exec_time":0.01}
+"#,
+            );
+        })
+        .join()
+        .unwrap();
+        clear_live_rust_test_hook();
+        assert_eq!(*seen.lock().unwrap(), vec!["pkg::bin$cross_thread"]);
     }
 
     #[test]

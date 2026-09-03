@@ -53,6 +53,22 @@ pub fn begin_identity_memo() {
     });
 }
 
+pub fn remember_identity_memo(identity: RustCoverageBatchIdentity) {
+    IDENTITY_MEMO.with(|memo| {
+        let mut memo = memo.borrow_mut();
+        if memo.enabled {
+            memo.value = Some(identity);
+        }
+    });
+}
+
+pub fn identity_memo_is_populated() -> bool {
+    IDENTITY_MEMO.with(|memo| {
+        let memo = memo.borrow();
+        memo.enabled && memo.value.is_some()
+    })
+}
+
 #[cfg(test)]
 pub fn identity_memo_hash_count() -> usize {
     IDENTITY_MEMO.with(|memo| memo.borrow().hash_count)
@@ -67,6 +83,17 @@ pub fn batch_identity(
         (memo.enabled).then(|| memo.value.clone()).flatten()
     }) {
         return Ok(cached);
+    }
+    if let Some(sealed) =
+        crate::rust_llvm_cov_runner::plan::batch_identity_seal::try_identity_from_mtime_seal(
+            &req.cache_root,
+            &req.source_root,
+            req,
+            tools,
+        )
+    {
+        remember_identity_memo(sealed.clone());
+        return Ok(sealed);
     }
     IDENTITY_MEMO.with(|memo| {
         if memo.borrow().enabled {
@@ -111,7 +138,10 @@ pub fn batch_identity(
 
 #[cfg(test)]
 mod identity_memo_test {
-    use super::{batch_identity, begin_identity_memo, identity_memo_hash_count};
+    use super::{
+        RustCoverageBatchIdentity, batch_identity, begin_identity_memo, identity_memo_hash_count,
+        remember_identity_memo,
+    };
 
     #[test]
     fn begin_identity_memo_hashes_once_across_repeats() {
@@ -129,6 +159,23 @@ mod identity_memo_test {
         let _ = batch_identity(&req, &tools).unwrap();
         let _ = batch_identity(&req, &tools).unwrap();
         assert_eq!(identity_memo_hash_count(), 1);
+    }
+
+    #[test]
+    fn transferred_identity_avoids_hashing_on_receiving_thread() {
+        begin_identity_memo();
+        let identity = RustCoverageBatchIdentity {
+            input_digest: "input".into(),
+            generation_fingerprint: "generation".into(),
+            selection_context_fingerprint: "selection".into(),
+            ordinary_source_digests: Default::default(),
+        };
+        remember_identity_memo(identity.clone());
+        let req =
+            crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
+        let tools = crate::rust_llvm_cov_runner::test_support::witness_batch_tools();
+        assert_eq!(batch_identity(&req, &tools).unwrap(), identity);
+        assert_eq!(identity_memo_hash_count(), 0);
     }
 }
 

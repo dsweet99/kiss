@@ -20,7 +20,49 @@ def _write_duration(path, plugin):
     except Exception:
         pass
 
-def _run_prepared_child(req, stdout_path, stderr_path, duration_path):
+_TIMEOUT_HIT = []
+_SETUP_WAIT_MS = 60000
+
+def _timeout_handler(_signum, _frame):
+    _TIMEOUT_HIT.append(1)
+    print("pytest timed out", file=sys.stderr, flush=True)
+    raise SystemExit(124)
+
+def _arm_timeout(timeout_ms):
+    _TIMEOUT_HIT.clear()
+    if timeout_ms is None:
+        return
+    signal.signal(signal.SIGALRM, _timeout_handler)
+    signal.setitimer(signal.ITIMER_REAL, max(timeout_ms / 1000.0, 0.001))
+
+def _disarm_timeout():
+    try:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+    except Exception:
+        pass
+
+def _mark_gate(path):
+    if not path:
+        return
+    try:
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("1\n")
+    except Exception:
+        pass
+
+class _CallTimeoutPlugin(object):
+    def __init__(self, timeout_ms, gate_path=None):
+        self.timeout_ms = timeout_ms
+        self.gate_path = gate_path
+
+    def pytest_runtest_logreport(self, report):
+        if report.when == "setup" and getattr(report, "passed", False):
+            _mark_gate(self.gate_path)
+            _arm_timeout(self.timeout_ms)
+        elif report.when == "call":
+            _disarm_timeout()
+
+def _run_prepared_child(req, stdout_path, stderr_path, duration_path, gate_path):
     from _pytest.main import Session, ExitCode
     from _pytest.config.exceptions import UsageError
     from _pytest.outcomes import Failed, exit as pytest_exit
@@ -47,14 +89,6 @@ def _run_prepared_child(req, stdout_path, stderr_path, duration_path):
             sys.__stdout__ = sys.stdout
             sys.__stderr__ = sys.stderr
 
-            timeout_ms = req.get("timeout_ms")
-            if timeout_ms is not None:
-                def _timeout(_signum, _frame):
-                    print("pytest timed out", file=sys.stderr, flush=True)
-                    raise SystemExit(124)
-                signal.signal(signal.SIGALRM, _timeout)
-                signal.setitimer(signal.ITIMER_REAL, max(timeout_ms / 1000.0, 0.001))
-
             for module_name in req.get("child_preload_modules", []):
                 importlib.import_module(module_name)
 
@@ -62,7 +96,9 @@ def _run_prepared_child(req, stdout_path, stderr_path, duration_path):
                 raise RuntimeError("controller was not bootstrapped")
 
             config = _CONFIG
+            timeout_plugin = _CallTimeoutPlugin(req.get("timeout_ms"), gate_path)
             config.pluginmanager.register(duration_plugin, "rpytest_test_duration")
+            config.pluginmanager.register(timeout_plugin, "rpytest_call_timeout")
             session = Session.from_config(config)
             session.exitstatus = ExitCode.OK
             initstate = 0
@@ -127,9 +163,14 @@ def _run_prepared_child(req, stdout_path, stderr_path, duration_path):
                             session.exitstatus = exc.returncode
                         sys.stderr.write("%s: %s\n" % (type(exc).__name__, exc))
                 try:
+                    config.pluginmanager.unregister(timeout_plugin)
+                except Exception:
+                    pass
+                try:
                     config.pluginmanager.unregister(duration_plugin)
                 except Exception:
                     pass
+                _disarm_timeout()
                 _write_duration(duration_path, duration_plugin)
             raise SystemExit(int(session.exitstatus))
         except Exception:
@@ -159,6 +200,25 @@ def _wait_status(pid, timeout_ms):
             return os.waitpid(pid, 0)[1], True
         time.sleep(0.005)
 
+def _wait_status_after_gate(pid, timeout_ms, gate_path):
+    if timeout_ms is None:
+        return os.waitpid(pid, 0)[1], False
+    setup_deadline = time.monotonic() + (_SETUP_WAIT_MS / 1000.0)
+    while True:
+        waited, status = os.waitpid(pid, os.WNOHANG)
+        if waited != 0:
+            return status, False
+        if gate_path and os.path.exists(gate_path):
+            break
+        if time.monotonic() >= setup_deadline:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass
+            return os.waitpid(pid, 0)[1], True
+        time.sleep(0.005)
+    return _wait_status(pid, timeout_ms)
+
 def _read_test_duration_ms(path):
     try:
         with open(path, "r", encoding="utf-8") as handle:
@@ -179,13 +239,21 @@ def _handle_run(req):
     os.close(stdout_fd)
     os.close(stderr_fd)
     os.close(duration_fd)
+    gate_path = os.path.join(
+        tempfile.gettempdir(),
+        "rpytest-fs-gate-%s-%s" % (os.getpid(), time.time_ns()),
+    )
     # Fork outside the cleanup try/finally: SystemExit in the child would
     # otherwise run that finally and delete duration_path before the parent reads it.
     pid = os.fork()
     if pid == 0:
-        _run_prepared_child(req, stdout_path, stderr_path, duration_path)
+        _run_prepared_child(
+            req, stdout_path, stderr_path, duration_path, gate_path
+        )
     try:
-        status, forced_timeout = _wait_status(pid, req.get("timeout_ms"))
+        status, forced_timeout = _wait_status_after_gate(
+            pid, req.get("timeout_ms"), gate_path
+        )
         if os.WIFEXITED(status):
             exit_code = os.WEXITSTATUS(status)
         elif os.WIFSIGNALED(status):
@@ -209,7 +277,7 @@ def _handle_run(req):
             "test_duration_ms": _read_test_duration_ms(duration_path),
         }
     finally:
-        for path in (stdout_path, stderr_path, duration_path):
+        for path in (stdout_path, stderr_path, duration_path, gate_path):
             try:
                 os.unlink(path)
             except FileNotFoundError:

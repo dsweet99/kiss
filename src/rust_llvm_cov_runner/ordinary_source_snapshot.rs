@@ -100,15 +100,17 @@ pub fn classify_ordinary_source_delta(
     source_root: &Path,
     identity: &RustCoverageBatchIdentity,
 ) -> OrdinarySourceInvalidation {
-    let stored = crate::rust_llvm_cov_runner::load_current_population_state(
-        cache_root,
-        source_root,
-        identity,
-        None,
-    )
-    .map(|state| state.ordinary_source_digests)
-    .or_else(|| stored_ordinary_source_digests_from_manifest(cache_root, identity))
-    .or_else(|| load_ordinary_source_snapshot(cache_root, &identity.generation_fingerprint));
+    let stored = stored_ordinary_source_digests_from_manifest(cache_root, identity)
+        .or_else(|| {
+            crate::rust_llvm_cov_runner::load_current_population_state(
+                cache_root,
+                source_root,
+                identity,
+                None,
+            )
+            .map(|state| state.ordinary_source_digests)
+        })
+        .or_else(|| load_ordinary_source_snapshot(cache_root, &identity.generation_fingerprint));
     let Some(stored) = stored else {
         return OrdinarySourceInvalidation::All;
     };
@@ -159,7 +161,7 @@ fn selectors_from_line_diff(
         }
     }
     if changed_rels.is_empty() {
-        return Some(BTreeSet::new());
+        return None;
     }
     let by_file = crate::rust_llvm_cov_runner::query_reverse_line_index(
         cache_root,
@@ -235,6 +237,16 @@ mod tests {
         assert!(load_ordinary_source_snapshot(tmp.path(), "gen-b").is_none());
         assert!(!OrdinarySourceInvalidation::None.invalidates("a"));
         assert!(OrdinarySourceInvalidation::All.invalidates("a"));
+        let only_a = OrdinarySourceInvalidation::Selectors(BTreeSet::from(["a".into()]));
+        assert!(only_a.invalidates("a"));
+        assert!(!only_a.invalidates("b"));
+        assert_eq!(
+            classify_ordinary_source_delta(tmp.path(), tmp.path(), &identity),
+            OrdinarySourceInvalidation::None
+        );
+        assert!(
+            remap_covered_file_lines(tmp.path(), "missing.rs", &[], &BTreeSet::from([1])).is_empty()
+        );
     }
 
     #[test]
@@ -273,7 +285,7 @@ mod tests {
     }
 
     #[test]
-    fn insert_only_edit_does_not_invalidate_when_line_hashes_exist() {
+    fn insert_only_edit_without_reverse_index_fails_closed() {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(tmp.path().join("src")).unwrap();
         std::fs::write(tmp.path().join("src").join("lib.rs"), "a\nb\n").unwrap();
@@ -291,7 +303,7 @@ mod tests {
         };
         assert_eq!(
             classify_ordinary_source_delta(tmp.path(), tmp.path(), &current),
-            OrdinarySourceInvalidation::None
+            OrdinarySourceInvalidation::All
         );
     }
 }

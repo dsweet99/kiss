@@ -26,13 +26,12 @@ fn cov_file_list_cache_survives_population_change() {
 }
 
 #[test]
-fn cov_file_list_cache_accepts_prior_schemas_without_regather() {
+fn cov_file_list_cache_rejects_prior_schemas() {
     for schema in ["kiss-cov-file-list-v4", "kiss-cov-file-list-v5"] {
         let tmp = tempfile::tempdir().unwrap();
         let repo = tmp.path();
         write_python_population_for_cache_tests(repo, "abc");
         std::fs::create_dir_all(repo.join(".kiss")).unwrap();
-        let py = PathBuf::from("pkg/a.py");
         let key = CovFileListKey {
             repo_root: repo,
             lang_filter: Some(kiss::Language::Python),
@@ -49,11 +48,10 @@ fn cov_file_list_cache_accepts_prior_schemas_without_regather() {
             .unwrap(),
         )
         .unwrap();
-        let (loaded_py, loaded_rs) = try_load_cov_file_list(&key).expect("prior lists must load");
-        assert_eq!(loaded_py, vec![py.clone()], "{schema}");
-        assert!(loaded_rs.is_empty(), "{schema}");
-        let (again_py, _) = try_load_cov_file_list(&key).expect("restamp still hits");
-        assert_eq!(again_py, vec![py], "{schema}");
+        assert!(
+            try_load_cov_file_list(&key).is_none(),
+            "{schema} must be regathered"
+        );
     }
 }
 
@@ -84,4 +82,22 @@ fn cov_file_list_cache_misses_when_cargo_toml_changes() {
         try_load_cov_file_list(&key).is_none(),
         "Cargo.toml target metadata must miss the file-list cache before parse"
     );
+}
+
+#[test]
+fn cov_file_list_cache_misses_when_source_inventory_changes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    write_python_population_for_cache_tests(repo, "abc");
+    std::fs::create_dir_all(repo.join("pkg")).unwrap();
+    std::fs::write(repo.join("pkg/a.py"), "x = 1\n").unwrap();
+    let key = CovFileListKey {
+        repo_root: repo,
+        lang_filter: Some(kiss::Language::Python),
+        ignore: &[],
+    };
+    store_cov_file_list(&key, &[PathBuf::from("pkg/a.py")], &[]);
+    assert!(try_load_cov_file_list(&key).is_some());
+    std::fs::write(repo.join("pkg/b.py"), "y = 2\n").unwrap();
+    assert!(try_load_cov_file_list(&key).is_none());
 }

@@ -21,6 +21,7 @@ fn one_missing_entry_preserves_hits_and_runs_only_misses() {
     store_batch_executor_selector(repo.path(), &req, "beta");
     req.logical_selectors = vec!["alpha".to_string(), "beta".to_string(), "gamma".to_string()];
     let fresh_selectors = std::sync::Mutex::new(Vec::new());
+    crate::rust_llvm_cov_runner::execute_or_reuse::batch_executor_prepare::reset_prepare_count();
     let result = execute_rust_coverage_batch_with_fresh(&req, &tools(), |miss_req, _, _, _| {
         fresh_selectors
             .lock()
@@ -54,6 +55,10 @@ fn one_missing_entry_preserves_hits_and_runs_only_misses() {
     })
     .unwrap();
     assert_eq!(*fresh_selectors.lock().unwrap(), vec!["gamma".to_string()]);
+    assert_eq!(
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_executor_prepare::prepare_count(),
+        1
+    );
     assert_eq!(result.counters.cache_hits, 2);
     assert_eq!(result.counters.build_invocations, 1);
     assert_eq!(

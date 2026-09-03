@@ -1,5 +1,24 @@
+fn run_env_body_in_isolated_process(test_name: &str) -> bool {
+    const ENV: &str = "KISS_ISOLATED_REFRESH_ENV_TEST";
+    if std::env::var(ENV).as_deref() == Ok(test_name) {
+        return false;
+    }
+    let full_name = format!("test_runner::check_runtime_refresh::apply_tests::{test_name}");
+    let status =
+        std::process::Command::new(std::env::current_exe().expect("current test executable"))
+            .args(["--exact", &full_name])
+            .env(ENV, test_name)
+            .status()
+            .expect("spawn isolated refresh environment test");
+    assert!(status.success(), "isolated refresh test failed: {status}");
+    true
+}
+
 #[test]
 fn scoped_refresh_env_guard_sets_and_restores_process_env() {
+    if run_env_body_in_isolated_process("scoped_refresh_env_guard_sets_and_restores_process_env") {
+        return;
+    }
     let key = super::COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV;
     let previous = std::env::var_os(key);
     unsafe { std::env::remove_var(key) };
@@ -23,6 +42,9 @@ fn scoped_refresh_env_guard_sets_and_restores_process_env() {
 
 #[test]
 fn scoped_refresh_env_guard_is_safe_across_threads() {
+    if run_env_body_in_isolated_process("scoped_refresh_env_guard_is_safe_across_threads") {
+        return;
+    }
     let key = super::COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV;
     let previous = std::env::var_os(key);
     unsafe { std::env::remove_var(key) };
@@ -51,6 +73,9 @@ fn scoped_refresh_env_guard_is_safe_across_threads() {
 
 #[test]
 fn restore_refresh_active_env_covers_set_and_clear_arms() {
+    if run_env_body_in_isolated_process("restore_refresh_active_env_covers_set_and_clear_arms") {
+        return;
+    }
     let key = super::COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV;
     let previous = std::env::var_os(key);
     unsafe { std::env::set_var(key, "seed") };
@@ -69,6 +94,11 @@ fn restore_refresh_active_env_covers_set_and_clear_arms() {
 
 #[test]
 fn restore_refresh_active_env_is_metamorphic_under_nested_clear_set() {
+    if run_env_body_in_isolated_process(
+        "restore_refresh_active_env_is_metamorphic_under_nested_clear_set",
+    ) {
+        return;
+    }
     let key = super::COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV;
     let previous = std::env::var_os(key);
     let seed = 0xC0FFEE_u64;
@@ -158,7 +188,14 @@ pub(super) fn inject_synthetic_binary_into_index(
     build.index.test_binaries = vec![kiss::rust_llvm_cov_runner::RustTestBinaryIdentity {
         id: binary_id.to_string(),
         executable: exe.to_string_lossy().to_string(),
-        digest: "synthetic-digest".to_string(),
+        digest: {
+            let h = b"synthetic-test-binary"
+                .iter()
+                .fold(0xcbf2_9ce4_8422_2325u64, |h, byte| {
+                    (h ^ u64::from(*byte)).wrapping_mul(0x0100_0000_01b3)
+                });
+            format!("{h:016x}")
+        },
     }];
     build.index.selector_binary_ids =
         std::collections::BTreeMap::from([(selector.to_string(), vec![binary_id.to_string()])]);
@@ -235,6 +272,23 @@ fn apply_identity_only_repair_publishes_when_maps_match_injected_index() {
     let retained = std::collections::BTreeMap::from([("bin-a".to_string(), line_map)]);
     let prior_generation = "prior-generation";
     seed_prior_selector_entries(&build, prior_generation, &selectors, "bin-a");
+    crate::test_runner::execution_witness::publish_rust_execution_witness(
+        crate::test_runner::execution_witness::PublishRustWitness {
+            repo_root: tmp.path(),
+            identity: &build.identity,
+            scope: crate::test_runner::execution_witness::WitnessScope::Full,
+            selectors: &selectors,
+            statuses: &vec![
+                crate::test_runner::execution_witness::WitnessStatus::Failed;
+                selectors.len()
+            ],
+            durations_ns: &vec![Some(1); selectors.len()],
+            covered_lines: &Default::default(),
+            complete: false,
+            jobs: 1,
+        },
+    )
+    .unwrap();
     let stats = super::apply_identity_only_repair(
         tmp.path(),
         &[],
@@ -246,6 +300,16 @@ fn apply_identity_only_repair_publishes_when_maps_match_injected_index() {
     .expect("identity-only repair should publish a valid aggregate");
     assert!(stats.by_language.rust.identity_only_repair);
     assert_eq!(stats.by_language.rust.aggregate_binaries, 1);
+    assert!(
+        kiss::rust_llvm_cov_runner::load_current_population_state(
+            &build.request.cache_root,
+            &build.request.source_root,
+            &build.identity,
+            Some(&selectors),
+        )
+        .is_some(),
+        "identity-only repair must publish matching population state"
+    );
 }
 
 #[test]

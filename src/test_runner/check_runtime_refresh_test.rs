@@ -12,6 +12,49 @@ fn refresh_guard_env_name_is_stable() {
 }
 
 #[test]
+fn refresh_lock_contention_is_bounded_and_actionable() {
+    let tmp = tempfile::tempdir().unwrap();
+    let first = super::lock_refresh(tmp.path(), "Python").expect("first lock");
+    drop(first);
+    super::lock_refresh(tmp.path(), "Python").expect("second lock after release");
+}
+
+#[test]
+fn refresh_lock_acquires_again_after_release() {
+    let tmp = tempfile::tempdir().unwrap();
+    let first = super::lock_refresh(tmp.path(), "Python").unwrap();
+    drop(first);
+    let _second = super::lock_refresh(tmp.path(), "Python").unwrap();
+}
+
+#[test]
+fn refresh_lock_reports_wait_when_contended() {
+    let tmp = tempfile::tempdir().unwrap();
+    let held = super::lock_refresh(tmp.path(), "Python").unwrap();
+    let started = std::time::Instant::now();
+    let path = tmp.path().to_path_buf();
+    let waiter = std::thread::spawn(move || super::lock_refresh(&path, "Python"));
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    drop(held);
+    waiter.join().unwrap().unwrap();
+    assert!(started.elapsed() >= std::time::Duration::from_millis(250));
+}
+
+#[test]
+fn refresh_lock_times_out_when_holder_is_stuck() {
+    let tmp = tempfile::tempdir().unwrap();
+    let _held = super::lock_refresh(tmp.path(), "Python").unwrap();
+    let started = std::time::Instant::now();
+    let err =
+        match super::lock_refresh_for(tmp.path(), "Python", std::time::Duration::from_millis(20)) {
+            Ok(_) => panic!("contended lock unexpectedly acquired"),
+            Err(err) => err,
+        };
+    assert!(started.elapsed() >= std::time::Duration::from_millis(20));
+    assert!(err.to_string().contains("timed out"));
+}
+
+#[test]
 fn rust_publication_error_mentions_refresh_phase() {
     let err = super::CoverageRefreshError::Publication {
         language: "Rust",
@@ -40,6 +83,27 @@ fn aggregate_repair_identity_only_retains_current_maps() {
     assert!(matches!(
         decision,
         super::CheckAggregateRepairDecision::IdentityOnly { .. }
+    ));
+}
+
+#[test]
+fn aggregate_repair_reruns_binary_covering_modified_source() {
+    let selectors = vec!["pkg::bin$alpha".to_string()];
+    let prior = aggregate_prior(&selectors, &[("bin-a", "digest-a")]);
+    let current_maps =
+        std::collections::BTreeMap::from([(selectors[0].clone(), vec!["bin-a".to_string()])]);
+    let current_binaries = vec![test_binary("bin-a", "digest-a")];
+    let forced = std::collections::BTreeSet::from(["bin-a".to_string()]);
+
+    assert!(matches!(
+        super::classify_check_aggregate_repair_with_replacements(
+            &selectors,
+            &prior,
+            &current_maps,
+            &current_binaries,
+            &forced,
+        ),
+        super::CheckAggregateRepairDecision::Rerun { .. }
     ));
 }
 

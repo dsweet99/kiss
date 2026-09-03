@@ -92,6 +92,7 @@ fn gap_between(lines: &[(Duration, String)], start_substr: &str, end_substr: &st
 #[test]
 #[cfg(unix)]
 fn explicit_single_python_test_harness_stays_under_50ms() {
+    let _cwd = crate::cwd_test_lock::lock();
     let _cwd = cwd_test_lock::lock();
     let tmp = TempDir::new().unwrap();
     init_git_repo(tmp.path());

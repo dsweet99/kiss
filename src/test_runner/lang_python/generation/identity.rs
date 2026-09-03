@@ -75,6 +75,19 @@ pub(crate) fn identity_matches_current(
     identity == &current
 }
 
+pub(crate) fn execution_context_matches_current(
+    repo_root: &Path,
+    identity: &PythonExecutionIdentity,
+    test_args: &[String],
+) -> bool {
+    let Ok(current) = current_python_execution_identity(repo_root, test_args) else {
+        return false;
+    };
+    let mut prior_context = identity.clone();
+    prior_context.input_fingerprint = current.input_fingerprint.clone();
+    prior_context == current
+}
+
 fn plugin_identities_from_args(args: &[String]) -> Vec<String> {
     let mut plugins = Vec::new();
     let mut idx = 0;

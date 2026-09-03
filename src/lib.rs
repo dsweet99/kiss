@@ -150,11 +150,35 @@ pub use global_metrics::GlobalMetrics;
 
 #[cfg(test)]
 pub mod cwd_test_lock {
+    use std::cell::Cell;
+    use std::path::PathBuf;
     use std::sync::Mutex;
 
     static LOCK: Mutex<()> = Mutex::new(());
+    thread_local! {
+        static DEPTH: Cell<usize> = const { Cell::new(0) };
+    }
 
-    pub fn lock() -> std::sync::MutexGuard<'static, ()> {
-        LOCK.lock().unwrap()
+    pub struct Guard {
+        _lock: Option<std::sync::MutexGuard<'static, ()>>,
+        original: Option<PathBuf>,
+    }
+
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            if let Some(original) = &self.original {
+                let _ = std::env::set_current_dir(original);
+            }
+            DEPTH.set(DEPTH.get().saturating_sub(1));
+        }
+    }
+
+    pub fn lock() -> Guard {
+        let lock = (DEPTH.get() == 0).then(|| LOCK.lock().unwrap());
+        DEPTH.set(DEPTH.get() + 1);
+        Guard {
+            _lock: lock,
+            original: std::env::current_dir().ok(),
+        }
     }
 }

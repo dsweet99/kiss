@@ -11,10 +11,11 @@ use crate::test_runner::lang_iface::{
     AcceptDecision, AcceptMode, ExecutionWitness, WitnessScope, WitnessStatus, accept_witness,
     identity_covers, reclassify_statuses_with_gate, summary_from_accepted_witness,
 };
-use crate::test_runner::runners::{SelectorExecutionSummary, rust_logical_to_kiss_test_ids};
+use crate::test_runner::runners::SelectorExecutionSummary;
 use crate::test_runner::rust_coverage_index::{
     create_new_file, rust_coverage_cache_root, unique_suffix,
 };
+use crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached;
 use crate::test_runner::selector_ids::report_string_for_logical_string;
 
 #[path = "witness_store_persist.rs"]
@@ -86,12 +87,10 @@ pub(crate) fn publish_rust_execution_witness(
     }
 
     let identity_digest = rust_identity_digest_from_batch(identity);
-    let generation_id = format!("rust-wit-{}", unique_suffix());
-    persist::PersistFullWitness {
+    let generation_id = persist::PersistFullWitness {
         repo_root,
         identity,
         identity_digest: &identity_digest,
-        generation_id: &generation_id,
         selectors: &selectors,
         statuses: &statuses,
         durations_ns: &durations_ns,
@@ -186,30 +185,19 @@ pub(crate) fn prune_removed_rust_witness_selectors(
 pub(crate) fn try_load_rust_execution_witness(
     repo_root: &Path,
 ) -> Result<ExecutionWitness, String> {
-    if let Some(mut witness) = witness_from_full_generation(repo_root) {
+    let cache_root = rust_coverage_cache_root(repo_root);
+    let memo_path = witness_path(repo_root);
+    if let Some(mut witness) = super::witness_memo::memo_witness(repo_root, &memo_path) {
         prune_removed_rust_witness_selectors(repo_root, &mut witness)?;
         return Ok(witness);
     }
-    if let Some(mut witness) =
-        super::witness_memo::memo_witness(repo_root, &witness_path(repo_root))
-    {
+    if crate::test_runner::execution_generation::read_pointer(&cache_root)?.is_some() {
+        let mut witness = super::generation_publish::load_full_generation_witness(repo_root)?;
+        super::witness_memo::stash_published_witness(repo_root, &memo_path, witness.clone());
         prune_removed_rust_witness_selectors(repo_root, &mut witness)?;
         return Ok(witness);
     }
     load_witness_from_disk(repo_root)
-}
-
-fn witness_from_full_generation(repo_root: &Path) -> Option<ExecutionWitness> {
-    let mut witness = super::generation_publish::try_load_full_generation_witness(repo_root)?;
-    if !witness.covered_lines.is_empty() {
-        return Some(witness);
-    }
-    if let Some(memo) = super::witness_memo::memo_witness(repo_root, &witness_path(repo_root)) {
-        witness.covered_lines = memo.covered_lines;
-    } else if let Ok(disk) = load_witness_from_disk(repo_root) {
-        witness.covered_lines = disk.covered_lines;
-    }
-    Some(witness)
 }
 
 fn load_witness_from_disk(repo_root: &Path) -> Result<ExecutionWitness, String> {
@@ -357,7 +345,24 @@ pub(crate) fn try_warm_rust_cached_summary(
         &witness_path(repo_root),
         witness.clone(),
     );
-    let report_ids = rust_logical_to_kiss_test_ids(repo_root, &[]).ok()?;
+    let status_by_selector: BTreeMap<&str, WitnessStatus> = witness
+        .selectors
+        .iter()
+        .map(String::as_str)
+        .zip(witness.statuses.iter().copied())
+        .collect();
+    if planned.len() > 64
+        && planned.iter().all(|selector| {
+            status_by_selector.get(selector.as_str()) == Some(&WitnessStatus::Passed)
+        })
+    {
+        return Some(summary_from_accepted_witness(
+            &planned,
+            &witness,
+            str::to_string,
+        ));
+    }
+    let report_ids = rust_logical_to_kiss_test_ids_cached(repo_root, &[]).ok()?;
     Some(summary_from_accepted_witness(
         &planned,
         &witness,
@@ -373,44 +378,30 @@ fn content_digest(disk: &OnDiskRustWitness) -> Result<String, String> {
     Ok(format!("{:016x}", crate::analyze_cache::fnv1a64(0, &bytes)))
 }
 
+#[rustfmt::skip]
 fn write_witness_atomic(repo_root: &Path, body: &OnDiskRustWitness) -> Result<(), String> {
     let cache = rust_coverage_cache_root(repo_root);
-    fs::create_dir_all(&cache).map_err(|e| {
-        format!(
-            "error: kiss: failed to create rust coverage cache {}: {e}",
-            cache.display()
-        )
-    })?;
+    fs::create_dir_all(&cache).map_err(|e| format!(
+        "error: kiss: failed to create rust coverage cache {}: {e}", cache.display()))?;
     let final_path = witness_path(repo_root);
     let tmp = cache.join(format!("execution_witness.{}.tmp", unique_suffix()));
     let bytes = serde_json::to_vec_pretty(body)
         .map_err(|e| format!("error: kiss: failed to serialize rust execution witness: {e}"))?;
     {
-        let mut file = create_new_file(&tmp).map_err(|e| {
-            format!(
-                "error: kiss: failed to create rust execution witness {}: {e}",
-                tmp.display()
-            )
-        })?;
-        file.write_all(&bytes).map_err(|e| {
-            format!(
-                "error: kiss: failed to write rust execution witness {}: {e}",
-                tmp.display()
-            )
-        })?;
-        file.sync_all().map_err(|e| {
-            format!(
-                "error: kiss: failed to sync rust execution witness {}: {e}",
-                tmp.display()
-            )
-        })?;
+        let mut file = create_new_file(&tmp).map_err(|e| format!(
+            "error: kiss: failed to create rust execution witness {}: {e}", tmp.display()))?;
+        file.write_all(&bytes).map_err(|e| format!(
+            "error: kiss: failed to write rust execution witness {}: {e}", tmp.display()))?;
+        file.sync_all().map_err(|e| format!(
+            "error: kiss: failed to sync rust execution witness {}: {e}", tmp.display()))?;
     }
     fs::rename(&tmp, &final_path).map_err(|e| {
         let _ = fs::remove_file(&tmp);
-        format!(
-            "error: kiss: failed to commit rust execution witness {}: {e}",
-            final_path.display()
-        )
+        format!("error: kiss: failed to commit rust execution witness {}: {e}", final_path.display())
     })?;
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "witness_store_load_test.rs"]
+mod witness_store_load_test;

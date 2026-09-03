@@ -257,10 +257,14 @@ fn aggregate_binaries(repo: &Path) -> [RustTestBinaryIdentity; 2] {
 }
 
 fn aggregate_binary(repo: &Path, id: &str, digest: &str) -> RustTestBinaryIdentity {
+    let executable = repo.join("target").join(id);
+    std::fs::create_dir_all(executable.parent().unwrap()).unwrap();
+    std::fs::write(&executable, digest).unwrap();
     RustTestBinaryIdentity {
         id: id.to_string(),
-        executable: repo.join("target").join(id).to_string_lossy().to_string(),
-        digest: digest.to_string(),
+        executable: executable.to_string_lossy().to_string(),
+        digest: crate::rust_llvm_cov_runner::rust_cov_cache::digest_test_binary(&executable)
+            .unwrap(),
     }
 }
 

@@ -13,6 +13,21 @@ use crate::rust_llvm_cov_runner::{
     ValidatedCheckAggregate, classify_ordinary_source_delta, write_ordinary_source_snapshot,
 };
 
+#[cfg(test)]
+thread_local! {
+    static PREPARE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn reset_prepare_count() {
+    PREPARE_COUNT.with(|count| count.set(0));
+}
+
+#[cfg(test)]
+pub(crate) fn prepare_count() -> usize {
+    PREPARE_COUNT.with(std::cell::Cell::get)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum SelectorMissReason {
     MissingEntry,
@@ -46,14 +61,9 @@ pub(crate) fn prepare_rust_batch(
     tools: &RustCoverageToolIdentity,
     identity: &RustCoverageBatchIdentity,
 ) -> Result<PreparedRustBatch, RustLlvmCovError> {
+    #[cfg(test)]
+    PREPARE_COUNT.with(|count| count.set(count.get() + 1));
     let mut prepared = PreparedRustBatch::default();
-    let source_invalid =
-        classify_ordinary_source_delta(&req.cache_root, &req.source_root, identity);
-    let forced: BTreeSet<&str> = req
-        .force_rerun_selectors
-        .iter()
-        .map(String::as_str)
-        .collect();
     let aggregate = crate::rust_llvm_cov_runner::load_current_check_aggregate_snapshot(
         &req.cache_root,
         &req.source_root,
@@ -61,6 +71,41 @@ pub(crate) fn prepare_rust_batch(
         None,
     )
     .map(|snapshot| snapshot.aggregate);
+    let source_invalid = if aggregate.is_some() {
+        classify_ordinary_source_delta(&req.cache_root, &req.source_root, identity)
+    } else {
+        match crate::rust_llvm_cov_runner::publish_derived::batch_derived_index::load_current_population_state(
+                &req.cache_root,
+                &req.source_root,
+                identity,
+                None,
+            ) {
+            Some(population) => {
+                if crate::rust_llvm_cov_runner::publish_derived::batch_derived_index::
+                    current_test_binaries_match(&req.source_root, &population)
+                {
+                    classify_ordinary_source_delta(&req.cache_root, &req.source_root, identity)
+                } else {
+                    OrdinarySourceInvalidation::All
+                }
+            }
+            None => match crate::rust_llvm_cov_runner::current_population_manifest_test_binaries_match(
+                &req.cache_root,
+                &req.source_root,
+                identity,
+            ) {
+                Some(false) => OrdinarySourceInvalidation::All,
+                Some(true) | None => {
+                    classify_ordinary_source_delta(&req.cache_root, &req.source_root, identity)
+                }
+            },
+        }
+    };
+    let forced: BTreeSet<&str> = req
+        .force_rerun_selectors
+        .iter()
+        .map(String::as_str)
+        .collect();
     for selector in &req.logical_selectors {
         classify_one_selector(
             req,

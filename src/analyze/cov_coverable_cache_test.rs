@@ -45,3 +45,27 @@ fn coverable_cache_hits_then_misses_on_source_change() {
         .ok();
     assert!(try_load_coverable_denoms(&key).is_none());
 }
+
+#[test]
+fn coverable_cache_misses_on_content_change_with_preserved_metadata() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    let py = touch_source(&repo.join("pkg/a.py"), "x = 1\n");
+    let key = CovCoverableKey {
+        repo_root: repo,
+        py_files: std::slice::from_ref(&py),
+        rs_files: &[],
+        ignore: &[],
+        lang_filter: None,
+    };
+    store_coverable_denoms(&key, &[]);
+    let modified = fs::metadata(&py).unwrap().modified().unwrap();
+    fs::write(&py, "y = 2\n").unwrap();
+    fs::File::options()
+        .write(true)
+        .open(&py)
+        .unwrap()
+        .set_modified(modified)
+        .unwrap();
+    assert!(try_load_coverable_denoms(&key).is_none());
+}

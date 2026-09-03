@@ -48,7 +48,7 @@ fn fresh_batch_stores_passed_selector_entries() {
     }));
     assert_eq!(result.counters.build_invocations, 1);
     assert_eq!(result.counters.export_jobs, 2);
-    assert_eq!(result.counters.build_target_baseline_bytes, 0);
+    assert_eq!(result.counters.build_target_baseline_bytes, 12);
 }
 
 #[test]
@@ -89,7 +89,7 @@ fn fresh_build_identity_helpers_track_build_compatible_inputs() {
 }
 
 #[test]
-fn fresh_build_identity_drops_incompatible_baseline_and_retains_external_target() {
+fn fresh_build_identity_drops_incompatible_cache_target() {
     let repo = batch_executor_fixture_repo();
     let mut req = batch_executor_request(repo.path());
     let tools = tools();
@@ -104,7 +104,7 @@ fn fresh_build_identity_drops_incompatible_baseline_and_retains_external_target(
 
     assert_eq!(prep.previous_baseline_bytes, 0);
     assert!(!identity.generation_fingerprint.is_empty());
-    assert!(changed_plan.build_target.exists());
+    assert!(!changed_plan.build_target.exists());
 }
 
 #[test]

@@ -13,57 +13,87 @@ pub(crate) fn load_rust_runtime_coverage(
     ignore: &[String],
     gate: &kiss::GateConfig,
 ) -> Result<BackendCoverage, RuntimeCoverageLoadError> {
-    if let Some((generation_id, covered_lines)) =
-        crate::test_runner::execution_witness::try_recall_published_rust_covered_lines(repo_root)
-        && !covered_lines.is_empty()
-    {
-        return Ok(backend_from_lines(generation_id, covered_lines));
-    }
     let identity = current_rust_coverage_batch_identity(repo_root, &[]).map_err(|err| {
         coverage_error("Rust", &format!("stale/incompatible tool identity ({err})"))
     })?;
     let cache_root = rust_coverage_cache_root(repo_root);
     let selectors = rust_selectors_for_coverage_load(repo_root, ignore)?;
-    if let Some(cov) = try_load_rust_coverage_from_witness(repo_root, &identity, &selectors, gate) {
+    if let Some(population) = kiss::rust_llvm_cov_runner::load_current_population_state(
+        &cache_root,
+        repo_root,
+        &identity,
+        Some(&selectors),
+    ) && (!kiss::rust_llvm_cov_runner::current_test_binaries_match(repo_root, &population)
+        || !kiss::rust_llvm_cov_runner::population_entries_all_pass(&cache_root, &population))
+    {
+        return Err(coverage_error(
+            "Rust",
+            "current execution evidence is stale or non-passing",
+        ));
+    }
+
+    let witness_state = rust_witness_coverage_state(repo_root, &identity, &selectors, gate)?;
+    if let Some(cov) = witness_state.coverage {
         return Ok(cov);
     }
-
-    if let Some(snapshot) = kiss::rust_llvm_cov_runner::load_current_check_aggregate_snapshot(
-        &cache_root,
-        repo_root,
-        &identity,
-        Some(&selectors),
-    ) {
-        return Ok(backend_from_lines(
-            snapshot.identity,
-            snapshot.covered_lines,
+    if witness_state.incomplete && !witness_state.matches_selector_universe {
+        return Err(coverage_error(
+            "Rust",
+            "current execution witness is incomplete for a different selector universe",
         ));
     }
-    if let Some(snapshot) = kiss::rust_llvm_cov_runner::load_current_generation_coverage_snapshot(
-        &cache_root,
-        repo_root,
-        &identity,
-        Some(&selectors),
-    ) {
-        return Ok(backend_from_lines(
-            snapshot.identity,
-            remap_rust_covered_lines(repo_root, snapshot.covered_lines)?,
-        ));
-    }
-
-    if let Some(cov) = try_load_rust_coverage_from_witness_prior(
+    if let Some(cov) = coverage_from_current_snapshots(
         repo_root,
         &cache_root,
         &identity,
         &selectors,
-        gate,
-    ) {
+        witness_state.incomplete,
+    )? {
         return Ok(cov);
     }
+
     Err(coverage_error(
         "Rust",
         "missing, stale/incompatible, incomplete, or malformed population",
     ))
+}
+
+fn coverage_from_current_snapshots(
+    repo_root: &Path,
+    cache_root: &Path,
+    identity: &kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity,
+    selectors: &[String],
+    current_witness_is_incomplete: bool,
+) -> Result<Option<BackendCoverage>, RuntimeCoverageLoadError> {
+    if let Some(snapshot) = kiss::rust_llvm_cov_runner::load_current_check_aggregate_snapshot(
+        cache_root,
+        repo_root,
+        identity,
+        Some(selectors),
+    ) {
+        return Ok(Some(backend_from_lines(
+            snapshot.identity,
+            snapshot.covered_lines,
+        )));
+    }
+    if current_witness_is_incomplete {
+        return Err(coverage_error(
+            "Rust",
+            "current execution witness is incomplete",
+        ));
+    }
+    if let Some(snapshot) = kiss::rust_llvm_cov_runner::load_current_generation_coverage_snapshot(
+        cache_root,
+        repo_root,
+        identity,
+        Some(selectors),
+    ) {
+        return Ok(Some(backend_from_lines(
+            snapshot.identity,
+            remap_rust_covered_lines(repo_root, snapshot.covered_lines)?,
+        )));
+    }
+    Ok(None)
 }
 
 fn rust_selectors_for_coverage_load(
@@ -85,6 +115,7 @@ fn rust_selectors_for_coverage_load(
     Ok(ids)
 }
 
+#[cfg(test)]
 pub(super) fn try_load_rust_coverage_from_witness(
     repo_root: &Path,
     identity: &kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity,
@@ -92,33 +123,88 @@ pub(super) fn try_load_rust_coverage_from_witness(
     gate: &kiss::GateConfig,
 ) -> Option<BackendCoverage> {
     let witness = try_load_rust_execution_witness(repo_root).ok()?;
+    rust_coverage_from_witness(repo_root, identity, selectors, gate, &witness)
+}
+
+struct RustWitnessCoverageState {
+    coverage: Option<BackendCoverage>,
+    incomplete: bool,
+    matches_selector_universe: bool,
+}
+
+fn rust_witness_coverage_state(
+    repo_root: &Path,
+    identity: &kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity,
+    selectors: &[String],
+    gate: &kiss::GateConfig,
+) -> Result<RustWitnessCoverageState, RuntimeCoverageLoadError> {
+    let Ok(witness) = try_load_rust_execution_witness(repo_root) else {
+        return Ok(RustWitnessCoverageState {
+            coverage: None,
+            incomplete: false,
+            matches_selector_universe: false,
+        });
+    };
+    if let Some(coverage) =
+        rust_coverage_from_witness(repo_root, identity, selectors, gate, &witness)
+    {
+        return Ok(RustWitnessCoverageState {
+            coverage: Some(coverage),
+            incomplete: false,
+            matches_selector_universe: true,
+        });
+    }
+    let incomplete = witness_matches_identity(&witness, identity) && !witness.complete;
+    let matches_selector_universe = !incomplete
+        || witness.selectors.iter().collect::<BTreeSet<_>>() == selectors.iter().collect::<BTreeSet<_>>();
+    Ok(RustWitnessCoverageState {
+        coverage: None,
+        incomplete,
+        matches_selector_universe,
+    })
+}
+
+fn rust_coverage_from_witness(
+    repo_root: &Path,
+    identity: &kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity,
+    selectors: &[String],
+    gate: &kiss::GateConfig,
+    witness: &crate::test_runner::lang_iface::ExecutionWitness,
+) -> Option<BackendCoverage> {
     if witness.covered_lines.is_empty() {
         return None;
     }
 
-    if !rust_witness_accepts_planned(repo_root, &witness, identity, selectors, gate) {
+    if !rust_witness_accepts_planned(repo_root, witness, identity, selectors, gate) {
         return None;
     }
     let covered: BTreeMap<String, BTreeSet<u32>> = witness
         .covered_lines
-        .into_iter()
-        .map(|(path, lines)| (path, lines.into_iter().collect()))
+        .iter()
+        .map(|(path, lines)| (path.clone(), lines.iter().copied().collect()))
         .collect();
-    Some(backend_from_lines(witness.generation_id, covered))
+    Some(backend_from_lines(witness.generation_id.clone(), covered))
+}
+
+fn witness_matches_identity(
+    witness: &crate::test_runner::lang_iface::ExecutionWitness,
+    identity: &kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity,
+) -> bool {
+    let current = crate::test_runner::execution_witness::rust_identity_digest_from_batch(identity);
+    crate::test_runner::lang_iface::identity_covers(&witness.identity_digest, &current)
 }
 
 fn rust_witness_accepts_planned(
     repo_root: &Path,
     witness: &crate::test_runner::lang_iface::ExecutionWitness,
     identity: &kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity,
-    _selectors: &[String],
+    selectors: &[String],
     _gate: &kiss::GateConfig,
 ) -> bool {
     use crate::test_runner::execution_witness::rust_identity_digest_from_batch;
     use crate::test_runner::lang_iface::{AcceptDecision, AcceptMode, accept_witness};
     let current = rust_identity_digest_from_batch(identity);
-    let universe = witness.selectors.clone();
-    if accept_witness(AcceptMode::All, &universe, &current, witness) != AcceptDecision::Accept {
+    if accept_witness(AcceptMode::All, selectors, &current, witness) != AcceptDecision::Accept {
         return false;
     }
     matches!(
@@ -131,6 +217,7 @@ fn rust_witness_accepts_planned(
     )
 }
 
+#[cfg(test)]
 pub(super) fn try_load_rust_coverage_from_witness_prior(
     repo_root: &Path,
     cache_root: &Path,
@@ -333,10 +420,27 @@ mod tests {
             )
             .is_none()
         );
+        let _ = publish_rust_execution_witness(PublishRustWitness {
+            repo_root: tmp.path(),
+            identity: &identity,
+            scope: WitnessScope::Full,
+            selectors: &selectors,
+            statuses: &[WitnessStatus::Failed, WitnessStatus::Passed],
+            durations_ns: &[Some(10), Some(20)],
+            covered_lines: &covered,
+            complete: false,
+            jobs: 1,
+        })
+        .unwrap();
+        let incomplete =
+            crate::test_runner::execution_witness::try_load_rust_execution_witness(tmp.path())
+                .unwrap();
+        assert!(!incomplete.complete);
+        assert!(witness_matches_identity(&incomplete, &identity));
     }
 
     #[test]
-    fn witness_coverage_accepts_complete_universe_despite_enumerator_extras_and_tight_gate() {
+    fn witness_coverage_rejects_enumerator_extras() {
         use crate::test_runner::execution_witness::{
             PublishRustWitness, WitnessScope, WitnessStatus, publish_rust_execution_witness,
         };
@@ -373,9 +477,9 @@ mod tests {
             max_unit_test_seconds: vec![("*".into(), 5.0)],
             ..kiss::GateConfig::default()
         };
-        let loaded =
+        assert!(
             try_load_rust_coverage_from_witness(tmp.path(), &identity, &enumerator, &tight)
-                .unwrap();
-        assert!(loaded.covered_lines.contains_key("src/lib.rs"));
+                .is_none()
+        );
     }
 }

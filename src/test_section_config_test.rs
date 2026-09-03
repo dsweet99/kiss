@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 struct CwdGuard {
     original: PathBuf,
-    _lock: std::sync::MutexGuard<'static, ()>,
+    _lock: crate::cwd_test_lock::Guard,
 }
 
 impl CwdGuard {
@@ -33,6 +33,14 @@ fn test_section_config_defaults_num_jobs_to_four() {
 }
 
 #[test]
+fn test_section_config_defaults_num_jobs_pytest_to_sixteen() {
+    assert_eq!(
+        TestSectionConfig::default().num_jobs_pytest,
+        crate::defaults::gate::NUM_JOBS_PYTEST
+    );
+}
+
+#[test]
 fn test_section_config_reads_positive_num_jobs() {
     let cwd = tempfile::TempDir::new().unwrap();
     let _cwd_guard = CwdGuard::enter(cwd.path());
@@ -52,6 +60,29 @@ fn test_section_config_rejects_nonpositive_num_jobs() {
     let _cwd_guard = CwdGuard::enter(cwd.path());
     let tmp = tempfile::NamedTempFile::new().unwrap();
     std::fs::write(tmp.path(), "[test]\nnum_jobs = 0\n").unwrap();
+    assert!(TestSectionConfig::try_load_from(tmp.path()).is_err());
+}
+
+#[test]
+fn test_section_config_reads_positive_num_jobs_pytest() {
+    let cwd = tempfile::TempDir::new().unwrap();
+    let _cwd_guard = CwdGuard::enter(cwd.path());
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(tmp.path(), "[test]\nnum_jobs_pytest = 5\n").unwrap();
+    assert_eq!(
+        TestSectionConfig::try_load_from(tmp.path())
+            .unwrap()
+            .num_jobs_pytest,
+        5
+    );
+}
+
+#[test]
+fn test_section_config_rejects_nonpositive_num_jobs_pytest() {
+    let cwd = tempfile::TempDir::new().unwrap();
+    let _cwd_guard = CwdGuard::enter(cwd.path());
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(tmp.path(), "[test]\nnum_jobs_pytest = 0\n").unwrap();
     assert!(TestSectionConfig::try_load_from(tmp.path()).is_err());
 }
 

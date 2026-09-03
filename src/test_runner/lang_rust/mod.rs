@@ -10,7 +10,6 @@ mod witness_warm;
 pub(crate) mod workspace;
 
 pub(crate) use bootstrap::maybe_bootstrap_rust_witness;
-pub(crate) use witness_memo::try_recall_published_rust_covered_lines;
 #[cfg(test)]
 pub(crate) use witness_store::rust_miss_selectors;
 pub(crate) use witness_store::{

@@ -13,6 +13,9 @@ use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export_resolve::{
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export_tools::ExportTools;
 use crate::rust_llvm_cov_runner::{RustLineCoverage, RustLlvmCovError};
 
+const MAX_PARALLEL_LLVM_EXPORTS: usize = 8;
+const ESTIMATED_CPUS_PER_LLVM_EXPORT: usize = 4;
+
 pub(crate) use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export_merge::{
     export_instance_coverage, merge_profiles,
 };
@@ -178,6 +181,7 @@ pub(crate) fn export_instances_bounded_with(
     requests: Vec<InstanceExportRequest>,
     export_fn: BatchInstanceExportFn,
 ) -> Result<(Vec<(String, RustLineCoverage)>, ExportCounters), RustLlvmCovError> {
+    let jobs = export_worker_count(jobs);
     assert!(jobs > 0, "jobs must be greater than zero");
     if requests.is_empty() {
         return Ok((Vec::new(), ExportCounters::default()));
@@ -244,6 +248,14 @@ pub(crate) fn export_instances_bounded_with(
     };
     drain_export_results(&mut drain)?;
     Ok((results, counters))
+}
+
+fn export_worker_count(jobs: usize) -> usize {
+    let available = std::thread::available_parallelism()
+        .map(|count| count.get())
+        .unwrap_or(1);
+    let cpu_bound = available.div_ceil(ESTIMATED_CPUS_PER_LLVM_EXPORT);
+    jobs.clamp(1, MAX_PARALLEL_LLVM_EXPORTS.min(cpu_bound.max(1)))
 }
 
 struct ExportDrainState<'a> {

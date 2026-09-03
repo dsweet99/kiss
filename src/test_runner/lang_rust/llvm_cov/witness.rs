@@ -17,7 +17,7 @@ pub(super) fn publish_rust_witness_after_batch(
     batch_req: &RustCoverageBatchRequest,
     summary: &SelectorExecutionSummary,
 ) -> Result<(), String> {
-    if summary.failed > 0 || !summary.timed_out_selectors.is_empty() || summary.total == 0 {
+    if summary.total == 0 {
         return Ok(());
     }
     let batch_identity =
@@ -117,10 +117,21 @@ pub(super) fn full_publication_selectors(
     let covers_population =
         population_equals(&batch_req.cache_root, repo_root, batch_identity, &selectors);
     if covers_population || existing_full.is_some() {
-        Some(selectors)
+        retain_known_logical(selectors, by_logical)
     } else {
         None
     }
+}
+
+fn retain_known_logical(
+    selectors: Vec<String>,
+    by_logical: &BTreeMap<String, WitnessStatus>,
+) -> Option<Vec<String>> {
+    let kept: Vec<String> = selectors
+        .into_iter()
+        .filter(|s| by_logical.contains_key(s))
+        .collect();
+    if kept.is_empty() { None } else { Some(kept) }
 }
 
 fn population_full_selectors(
@@ -138,11 +149,7 @@ fn population_full_selectors(
     }
     selectors.sort();
     selectors.dedup();
-    if selectors.iter().all(|s| by_logical.contains_key(s)) {
-        Some(selectors)
-    } else {
-        None
-    }
+    retain_known_logical(selectors, by_logical)
 }
 
 fn check_aggregate_full_selectors(
@@ -161,7 +168,7 @@ fn check_aggregate_full_selectors(
         }
         selectors.sort();
         selectors.dedup();
-        return Some(selectors);
+        return retain_known_logical(selectors, by_logical);
     }
 
     let mut selectors = batch_req.logical_selectors.clone();
@@ -170,11 +177,7 @@ fn check_aggregate_full_selectors(
     if !population_equals(&batch_req.cache_root, repo_root, batch_identity, &selectors) {
         return None;
     }
-    if selectors.iter().all(|s| by_logical.contains_key(s)) {
-        Some(selectors)
-    } else {
-        None
-    }
+    retain_known_logical(selectors, by_logical)
 }
 
 fn population_equals(
@@ -203,22 +206,25 @@ pub(super) fn merged_statuses(
     summary: &SelectorExecutionSummary,
     existing_full: Option<&ExecutionWitness>,
 ) -> Result<BTreeMap<String, WitnessStatus>, String> {
-    let report_ids = crate::test_runner::runners::rust_report_ids_for_selectors(
+    let universe = crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
         repo_root,
-        &batch_req.logical_selectors,
+        &[],
     )?;
     let mut by_logical = BTreeMap::new();
     if let Some(existing) = existing_full {
         for (sel, st) in existing.selectors.iter().zip(existing.statuses.iter()) {
-            by_logical.insert(sel.clone(), *st);
+            if universe.contains_key(sel) {
+                by_logical.insert(sel.clone(), *st);
+            }
         }
     }
     for logical in &batch_req.logical_selectors {
-        let report =
-            crate::test_runner::runners::require_kiss_test_report_id(&report_ids, logical)?;
-        let status = if summary.failed_selectors.iter().any(|s| s == &report) {
+        let Some(report) = universe.get(logical) else {
+            continue;
+        };
+        let status = if summary.failed_selectors.iter().any(|s| s == report) {
             WitnessStatus::Failed
-        } else if summary.timed_out_selectors.iter().any(|s| s == &report) {
+        } else if summary.timed_out_selectors.iter().any(|s| s == report) {
             WitnessStatus::TimedOut
         } else {
             WitnessStatus::Passed
@@ -278,7 +284,7 @@ fn capture_covered_lines(
     batch_req: &RustCoverageBatchRequest,
     batch_identity: &RustCoverageBatchIdentity,
     selectors: &[String],
-    existing_full: Option<&ExecutionWitness>,
+    _existing_full: Option<&ExecutionWitness>,
 ) -> std::collections::BTreeMap<String, std::collections::BTreeSet<u32>> {
     use std::collections::{BTreeMap, BTreeSet};
     if let Some(snapshot) = kiss::rust_llvm_cov_runner::load_current_check_aggregate_snapshot(
@@ -297,13 +303,7 @@ fn capture_covered_lines(
     ) {
         return snapshot.covered_lines;
     }
-    let mut from_prior = BTreeMap::<String, BTreeSet<u32>>::new();
-    if let Some(existing) = existing_full {
-        for (path, lines) in &existing.covered_lines {
-            from_prior.insert(path.clone(), lines.iter().copied().collect());
-        }
-    }
-    from_prior
+    BTreeMap::<String, BTreeSet<u32>>::new()
 }
 
 #[cfg(test)]

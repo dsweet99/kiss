@@ -25,6 +25,7 @@ mod batch_check_aggregate_coverage;
 #[path = "batch_check_aggregate_load.rs"]
 mod batch_check_aggregate_load;
 pub use batch_check_aggregate_coverage::{
+    file_selector_index_from_check_aggregate_generation, file_selector_index_from_validated,
     selector_coverage_from_check_aggregate_generation, selector_coverage_from_validated,
 };
 use batch_check_aggregate_load::{CheckAggregateLoadMode, current_load_mode};
@@ -119,7 +120,8 @@ fn load_validated_check_aggregate(
 ) -> Option<ValidatedCheckAggregate> {
     let bytes = fs::read(check_aggregate_path(cache_root)).ok()?;
     let raw: OnDiskCheckAggregate = serde_json::from_slice(&bytes).ok()?;
-    validate_check_aggregate(raw, source_root, selectors, mode)
+    let validate_current_binaries = matches!(mode, CheckAggregateLoadMode::Current { .. });
+    validate_check_aggregate(raw, source_root, selectors, mode, validate_current_binaries)
 }
 
 fn validate_check_aggregate(
@@ -127,11 +129,16 @@ fn validate_check_aggregate(
     source_root: &Path,
     selectors: Option<&[String]>,
     mode: CheckAggregateLoadMode,
+    validate_current_binaries: bool,
 ) -> Option<ValidatedCheckAggregate> {
     raw_identity_is_valid(&raw, source_root, &mode).then_some(())?;
     selector_population_is_valid(&raw, selectors).then_some(())?;
     validate_ordinary_source_digests(&raw.ordinary_source_digests).then_some(())?;
-    let binaries = validated_binary_records(source_root, std::mem::take(&mut raw.binaries))?;
+    let binaries = validated_binary_records(
+        source_root,
+        std::mem::take(&mut raw.binaries),
+        validate_current_binaries,
+    )?;
     aggregate_mapping_is_valid(&raw, &binaries, source_root).then_some(())?;
     let aggregate = ValidatedCheckAggregate {
         input_fingerprint: raw.input_fingerprint,
@@ -213,10 +220,12 @@ fn requested_selectors_match(stored: &[String], selectors: Option<&[String]>) ->
 fn validated_binary_records(
     source_root: &Path,
     records: Vec<CheckAggregateBinaryRecord>,
+    validate_current_binaries: bool,
 ) -> Option<BTreeMap<String, CheckAggregateBinaryRecord>> {
     let mut binaries = BTreeMap::new();
     for record in records {
-        binary_record_is_valid(source_root, &record, &binaries).then_some(())?;
+        binary_record_is_valid(source_root, &record, &binaries, validate_current_binaries)
+            .then_some(())?;
         binaries.insert(record.id.clone(), record);
     }
     Some(binaries)
@@ -226,11 +235,22 @@ fn binary_record_is_valid(
     source_root: &Path,
     record: &CheckAggregateBinaryRecord,
     binaries: &BTreeMap<String, CheckAggregateBinaryRecord>,
+    validate_current_binary: bool,
 ) -> bool {
+    let executable = Path::new(&record.executable);
+    let executable = if executable.is_absolute() {
+        executable.to_path_buf()
+    } else {
+        source_root.join(executable)
+    };
+    let current_digest_matches = !validate_current_binary
+        || crate::rust_llvm_cov_runner::rust_cov_cache::digest_test_binary(&executable)
+            .is_ok_and(|digest| digest == record.digest);
     !record.id.is_empty()
         && !binaries.contains_key(&record.id)
         && repo_relative_path(source_root, Path::new(&record.executable)).is_some()
         && !record.digest.is_empty()
+        && current_digest_matches
         && validate_line_map(source_root, &record.line_map)
 }
 
@@ -308,6 +328,7 @@ pub fn build_check_aggregate(
         &req.source_root,
         Some(&aggregate.selectors),
         current_load_mode(identity),
+        false,
     )
     .ok_or_else(|| RustLlvmCovError::InvalidRequest("built invalid check aggregate".into()))
 }
@@ -383,30 +404,9 @@ pub fn reusable_check_aggregate_delta(
     )
 }
 
-fn normalize_coverage_map(
-    source_root: &Path,
-    coverage: &RustLineCoverage,
-) -> Result<BTreeMap<String, BTreeSet<u32>>, RustLlvmCovError> {
-    let mut files = BTreeMap::new();
-    for (file, lines) in &coverage.files {
-        let rel = repo_relative_coverage_file(source_root, file).ok_or_else(|| {
-            RustLlvmCovError::InvalidRequest(format!(
-                "aggregate coverage path is outside repository Rust sources: {file}"
-            ))
-        })?;
-        if lines.iter().any(|line| *line == 0) {
-            return Err(RustLlvmCovError::InvalidRequest(format!(
-                "aggregate coverage path `{rel}` contains non-positive line"
-            )));
-        }
-        files.entry(rel).or_insert_with(BTreeSet::new).extend(lines);
-    }
-    Ok(files)
-}
-
-fn is_sorted_unique_nonempty(values: &[String]) -> bool {
-    !values.is_empty() && values.windows(2).all(|window| window[0] < window[1])
-}
+#[path = "batch_check_aggregate_normalize.rs"]
+mod normalize;
+use normalize::{is_sorted_unique_nonempty, normalize_coverage_map};
 
 #[cfg(test)]
 #[path = "batch_check_aggregate_test.rs"]

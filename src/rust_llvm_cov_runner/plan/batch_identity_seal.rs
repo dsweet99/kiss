@@ -104,21 +104,20 @@ fn collect_file_meta(source_root: &Path) -> io::Result<Vec<SealFileMeta>> {
     Ok(out)
 }
 
-#[allow(dead_code)]
-fn file_meta_matches(source_root: &Path, expected: &[SealFileMeta]) -> bool {
-    let Ok(current) = collect_file_meta(source_root) else {
-        return false;
-    };
-    current == expected
+fn matching_file_meta(source_root: &Path, expected: &[SealFileMeta]) -> Option<Vec<SealFileMeta>> {
+    let current = collect_file_meta(source_root).ok()?;
+    (current == expected).then_some(current)
 }
 
-#[allow(dead_code)]
-fn ordinary_source_digests_match(source_root: &Path, stored: &BTreeMap<String, String>) -> bool {
+fn ordinary_source_digests_match(
+    current: &[SealFileMeta],
+    stored: &BTreeMap<String, String>,
+) -> bool {
     stored.iter().all(|(rel, digest)| {
-        fs::read(source_root.join(rel)).ok().is_some_and(|bytes| {
-            crate::rust_llvm_cov_runner::plan::shared_input::ordinary_source_content_digest(&bytes)
-                == *digest
-        })
+        current
+            .iter()
+            .find(|meta| meta.path == *rel)
+            .is_some_and(|meta| meta.content_digest == *digest)
     })
 }
 
@@ -169,7 +168,6 @@ fn parent_tmp_path(path: &Path) -> io::Result<PathBuf> {
     Ok(parent.join(format!(".input_mtime_seal.{nanos}.tmp")))
 }
 
-#[allow(dead_code)]
 pub fn try_identity_from_mtime_seal(
     cache_root: &Path,
     source_root: &Path,
@@ -192,9 +190,8 @@ pub fn try_identity_from_mtime_seal(
     {
         return None;
     }
-    if !file_meta_matches(source_root, &seal.files)
-        || !ordinary_source_digests_match(source_root, &seal.ordinary_source_digests)
-    {
+    let current = matching_file_meta(source_root, &seal.files)?;
+    if !ordinary_source_digests_match(&current, &seal.ordinary_source_digests) {
         return None;
     }
 

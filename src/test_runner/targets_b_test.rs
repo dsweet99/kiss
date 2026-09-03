@@ -79,6 +79,40 @@ fn resolve_path_symbol_uses_definition_lines() {
 }
 
 #[test]
+fn resolve_cfg_attr_test_symbol_is_direct_selector_not_source_lines() {
+    let tmp = tempdir().unwrap();
+    init_git_repo(tmp.path());
+    fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname='demo'\nversion='0.1.0'\nedition='2021'\n",
+    )
+    .unwrap();
+    let src = tmp.path().join("src");
+    fs::create_dir_all(&src).unwrap();
+    fs::write(
+        src.join("lib.rs"),
+        "pub fn prod() {}\n#[cfg_attr(test, test)]\nfn generated_by_attribute() {}\n",
+    )
+    .unwrap();
+
+    let query = resolve_target_operands(
+        tmp.path(),
+        &["src/lib.rs::generated_by_attribute".into()],
+        Some(Language::Rust),
+        &[],
+        &[],
+    )
+    .unwrap();
+
+    assert_eq!(
+        query.direct_rust,
+        ["generated_by_attribute".to_string()].into()
+    );
+    assert!(query.rust_lines.is_empty());
+    assert!(query.rust_files.is_empty());
+}
+
+#[test]
 fn resolve_path_uses_file_level_not_line_map() {
     let tmp = tempdir().unwrap();
     init_git_repo(tmp.path());
@@ -313,6 +347,126 @@ fn resolve_ignored_rust_test_remains_explicit_selector() {
 }
 
 #[test]
+fn resolve_python_test_file_uses_workspace_selector_cache() {
+    let tmp = tempdir().unwrap();
+    init_git_repo(tmp.path());
+    fs::create_dir_all(tmp.path().join("tests")).unwrap();
+    fs::write(
+        tmp.path().join("tests").join("test_a.py"),
+        "def test_a():\n    assert True\n",
+    )
+    .unwrap();
+    fs::write(
+        tmp.path().join("conftest.py"),
+        "raise RuntimeError('pytest collect must not run when selectors are cached')\n",
+    )
+    .unwrap();
+    assert!(
+        crate::test_runner::workspace_selector_cache::store_python_workspace_selectors(
+            tmp.path(),
+            &[],
+            &["tests/test_a.py::test_a".into()],
+            &[],
+        )
+    );
+    let query = resolve_target_operands(
+        tmp.path(),
+        &["tests/test_a.py".into()],
+        Some(Language::Python),
+        &[],
+        &[],
+    )
+    .expect("cached selectors must skip pytest collect");
+    assert!(
+        query.direct_python.contains("tests/test_a.py::test_a"),
+        "cached nodeids must be used instead of pytest collect, got {:?}",
+        query.direct_python
+    );
+}
+
+#[test]
+fn unresolved_python_target_persists_enumerated_selectors_with_collection_identity() {
+    let tmp = tempdir().unwrap();
+    init_git_repo(tmp.path());
+    fs::create_dir_all(tmp.path().join("tests")).unwrap();
+    fs::write(
+        tmp.path().join("tests/test_empty.py"),
+        "# no direct tests\n",
+    )
+    .unwrap();
+    fs::write(
+        tmp.path().join("tests/test_other.py"),
+        "def test_other():\n    assert True\n",
+    )
+    .unwrap();
+    let pytest_args = vec!["-q".to_string()];
+    let query = resolve_target_operands(
+        tmp.path(),
+        &["tests/test_empty.py".into()],
+        Some(Language::Python),
+        &[],
+        &pytest_args,
+    )
+    .unwrap();
+    assert!(
+        query
+            .direct_python
+            .contains("tests/test_other.py::test_other")
+    );
+    assert_eq!(
+        crate::test_runner::workspace_selector_cache::load_cached_python_workspace_selectors(
+            tmp.path(),
+            &[],
+            &pytest_args,
+        ),
+        Some(vec!["tests/test_other.py::test_other".to_string()])
+    );
+}
+
+#[test]
+fn unresolved_python_test_file_falls_back_to_workspace_selector_cache() {
+    let tmp = tempdir().unwrap();
+    init_git_repo(tmp.path());
+    fs::create_dir_all(tmp.path().join("tests")).unwrap();
+    fs::write(
+        tmp.path().join("tests/test_empty.py"),
+        "# no direct tests\n",
+    )
+    .unwrap();
+    fs::write(
+        tmp.path().join("tests/test_other.py"),
+        "def test_other():\n    assert True\n",
+    )
+    .unwrap();
+    fs::write(
+        tmp.path().join("conftest.py"),
+        "raise RuntimeError('pytest collect must not run when selectors are cached')\n",
+    )
+    .unwrap();
+    assert!(
+        crate::test_runner::workspace_selector_cache::store_python_workspace_selectors(
+            tmp.path(),
+            &[],
+            &["tests/test_other.py::test_other".into()],
+            &[],
+        )
+    );
+    let query = resolve_target_operands(
+        tmp.path(),
+        &["tests/test_empty.py".into()],
+        Some(Language::Python),
+        &[],
+        &[],
+    )
+    .expect("unresolved fallback must use cached universe");
+    assert!(
+        query
+            .direct_python
+            .contains("tests/test_other.py::test_other")
+    );
+}
+
+#[test]
 fn resolve_non_test_source_path_still_inserts_file() {
     let tmp = tempdir().unwrap();
     init_git_repo(tmp.path());
@@ -328,4 +482,21 @@ fn resolve_non_test_source_path_still_inserts_file() {
     .unwrap();
     assert_eq!(query.python_files.len(), 1);
     assert!(query.direct_python.is_empty());
+}
+
+#[test]
+fn target_role_resolution_does_not_parse_unrelated_sources() {
+    let tmp = tempdir().unwrap();
+    init_git_repo(tmp.path());
+    fs::write(tmp.path().join("app.py"), "def value():\n    return 1\n").unwrap();
+    fs::write(tmp.path().join("unrelated.py"), "def broken(:\n").unwrap();
+    let query = resolve_target_operands(
+        tmp.path(),
+        &["app.py::value".into()],
+        Some(Language::Python),
+        &[],
+        &[],
+    )
+    .expect("unrelated parse errors must not affect a bounded target");
+    assert!(query.python_lines.contains_key(&tmp.path().join("app.py")));
 }

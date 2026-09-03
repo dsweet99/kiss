@@ -81,6 +81,7 @@ fn migrate_publishes_generation_from_complete_v1_bundle() {
         repo,
         &index,
         &manifest.entries_fingerprint,
+        &[],
     )
     .unwrap();
     write_population_durations(

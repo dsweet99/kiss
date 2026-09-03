@@ -3,8 +3,34 @@ use syn::{Attribute, Item};
 
 use crate::rust_parsing::ParsedRustFile;
 
-fn has_test_attribute(attrs: &[Attribute]) -> bool {
-    attrs.iter().any(|a| a.path().is_ident("test"))
+#[must_use]
+pub fn has_rust_test_attribute(attrs: &[Attribute]) -> bool {
+    attrs.iter().any(|attribute| {
+        if attribute.path().is_ident("test") {
+            return true;
+        }
+        if !attribute.path().is_ident("cfg_attr") {
+            return false;
+        }
+        let mut position = 0_usize;
+        let mut enabled_for_test = false;
+        let mut injects_test = false;
+        if attribute
+            .parse_nested_meta(|meta| {
+                position += 1;
+                if position == 1 {
+                    enabled_for_test = meta.path.is_ident("test");
+                } else if enabled_for_test && meta.path.is_ident("test") {
+                    injects_test = true;
+                }
+                Ok(())
+            })
+            .is_err()
+        {
+            return false;
+        }
+        injects_test
+    })
 }
 
 #[must_use]
@@ -33,7 +59,7 @@ fn collect_test_fn_ids(items: &[Item], prefix: &str, out: &mut Vec<String>) {
                     collect_test_fn_ids(mod_items, &mod_prefix, out);
                 }
             }
-            Item::Fn(f) if has_test_attribute(&f.attrs) => {
+            Item::Fn(f) if has_rust_test_attribute(&f.attrs) => {
                 out.push(prefixed_test_id(prefix, &f.sig.ident.to_string()));
             }
             Item::Impl(item_impl) => {
@@ -42,7 +68,7 @@ fn collect_test_fn_ids(items: &[Item], prefix: &str, out: &mut Vec<String>) {
                 };
                 for impl_item in &item_impl.items {
                     if let syn::ImplItem::Fn(method) = impl_item
-                        && has_test_attribute(&method.attrs)
+                        && has_rust_test_attribute(&method.attrs)
                     {
                         out.push(format!("{owner}::{}", method.sig.ident));
                     }
@@ -145,5 +171,30 @@ mod tests {
                 .iter()
                 .any(|id| id == "T::method")
         );
+    }
+
+    #[test]
+    fn rust_test_functions_in_finds_cfg_attr_test() {
+        let src = "#[cfg_attr(test, test)]\nfn generated() {}\n";
+        let parsed = ParsedRustFile {
+            path: Path::new("src/lib.rs").to_path_buf(),
+            source: src.to_string(),
+            ast: syn::parse_file(src).unwrap(),
+        };
+        assert_eq!(
+            rust_test_functions_in(&parsed),
+            vec!["generated".to_string()]
+        );
+    }
+
+    #[test]
+    fn rust_test_functions_in_ignores_non_test_cfg_attr() {
+        let src = "#[cfg_attr(test, ignore)]\nfn helper() {}\n";
+        let parsed = ParsedRustFile {
+            path: Path::new("src/lib.rs").to_path_buf(),
+            source: src.to_string(),
+            ast: syn::parse_file(src).unwrap(),
+        };
+        assert!(rust_test_functions_in(&parsed).is_empty());
     }
 }

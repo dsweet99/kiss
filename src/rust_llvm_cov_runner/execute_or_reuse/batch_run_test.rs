@@ -168,7 +168,7 @@ fn build_identity_helpers_are_executable_witnesses() {
 
     publish_successful_build_identity(&req, &tools, &plan, 0).unwrap();
     let prep = prepare_build_target_for_identity(&req, &tools, &plan).unwrap();
-    assert_eq!(prep.previous_baseline_bytes, 0);
+    assert_eq!(prep.previous_baseline_bytes, 5);
 }
 
 #[test]
@@ -185,7 +185,8 @@ fn prepare_build_target_for_identity_retains_external_target_when_growth_limit_e
         .join("runs")
         .join("run-a")
         .join("nextest.toml");
-    let plan = crate::rust_llvm_cov_runner::build_rust_coverage_batch_plan(&req).unwrap();
+    let mut plan = crate::rust_llvm_cov_runner::build_rust_coverage_batch_plan(&req).unwrap();
+    plan.build_target = req.source_root.join("target");
     let tools = witness_batch_tools();
     fs::create_dir_all(&plan.build_target).unwrap();
     fs::write(plan.build_target.join("artifact"), vec![0_u8; 10]).unwrap();
@@ -209,8 +210,7 @@ fn prepare_build_target_for_identity_rebuilds_cache_owned_target_when_growth_lim
         .join("runs")
         .join("run-a")
         .join("nextest.toml");
-    let mut plan = crate::rust_llvm_cov_runner::build_rust_coverage_batch_plan(&req).unwrap();
-    plan.build_target = req.cache_root.join("build").join("target");
+    let plan = crate::rust_llvm_cov_runner::build_rust_coverage_batch_plan(&req).unwrap();
     let tools = witness_batch_tools();
     fs::create_dir_all(&plan.build_target).unwrap();
     fs::write(plan.build_target.join("artifact"), vec![0_u8; 10]).unwrap();

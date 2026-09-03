@@ -27,16 +27,54 @@ pub(super) fn publish_complete_full_generation(
             durations_ns,
             timing_context_digest,
             covered_lines,
+            true,
         ),
     )?;
     let _ = reclaim_unreferenced(&cache_root);
     Ok(generation_id)
 }
 
-pub(super) fn try_load_full_generation_witness(repo_root: &Path) -> Option<ExecutionWitness> {
+pub(super) struct WitnessGenerationState<'a> {
+    pub(super) timing_context_digest: &'a str,
+    pub(super) complete: bool,
+}
+
+pub(super) fn publish_current_witness_generation(
+    repo_root: &Path,
+    identity_digest: &str,
+    selectors: &[String],
+    statuses: &[WitnessStatus],
+    durations_ns: &[Option<u64>],
+    covered_lines: &BTreeMap<String, Vec<u32>>,
+    state: WitnessGenerationState<'_>,
+) -> Result<String, String> {
     let cache_root = rust_coverage_cache_root(repo_root);
-    let (generation, _pin) = load_current_generation(&cache_root).ok()?;
+    let generation_id = crate::test_runner::execution_generation::publish_witness_generation(
+        &cache_root,
+        rust_generation(
+            identity_digest,
+            selectors,
+            statuses,
+            durations_ns,
+            state.timing_context_digest,
+            covered_lines,
+            state.complete,
+        ),
+    )?;
+    let _ = reclaim_unreferenced(&cache_root);
+    Ok(generation_id)
+}
+
+pub(super) fn load_full_generation_witness(repo_root: &Path) -> Result<ExecutionWitness, String> {
+    let cache_root = rust_coverage_cache_root(repo_root);
+    let (generation, _pin) = load_current_generation(&cache_root)?;
     witness_from_generation(generation)
+        .ok_or_else(|| "error: kiss: malformed Rust witness generation".to_string())
+}
+
+#[cfg(test)]
+pub(super) fn try_load_full_generation_witness(repo_root: &Path) -> Option<ExecutionWitness> {
+    load_full_generation_witness(repo_root).ok()
 }
 
 fn rust_generation(
@@ -46,9 +84,10 @@ fn rust_generation(
     durations_ns: &[Option<u64>],
     timing_context_digest: &str,
     covered_lines: &BTreeMap<String, Vec<u32>>,
+    complete: bool,
 ) -> FullExecutionGeneration {
     let mut selector_evidence = Vec::with_capacity(selectors.len());
-    let mut all_pass = true;
+    let mut all_pass = complete;
     for ((selector, status), duration) in selectors
         .iter()
         .zip(statuses.iter())
@@ -179,6 +218,7 @@ mod tests {
             &[Some(1)],
             "timing",
             &BTreeMap::new(),
+            true,
         );
         generation.selectors.push("b".into());
         assert!(witness_from_generation(generation).is_none());

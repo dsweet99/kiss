@@ -155,7 +155,7 @@ impl LanguageRuntime for RustRuntime {
         request: &EnsureRequest,
         planned: &[String],
         witness: &ExecutionWitness,
-    ) -> SelectorExecutionSummary {
+    ) -> Result<SelectorExecutionSummary, String> {
         let report_ids =
             crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
                 &request.repo_root,
@@ -165,10 +165,10 @@ impl LanguageRuntime for RustRuntime {
         let mut summary = summary_from_accepted_witness(planned, witness, |selector| {
             report_string_for_logical_string(&report_ids, selector)
         });
-        if population_repair::repair_stale_population_on_all_mode_accept(request, planned) {
+        if population_repair::repair_stale_population_on_all_mode_accept(request, planned)? {
             summary.rust_derived_repair = true;
         }
-        summary
+        Ok(summary)
     }
 
     fn cached_witness_summary(

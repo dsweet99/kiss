@@ -21,14 +21,40 @@ fn print_classified_status_line_uses_emit_test_progress() {
 
 #[test]
 fn jobs_split_matches_process_cap_rule() {
-    assert_eq!(split_jobs(4, true), (4, 2));
+    assert_eq!(split_jobs(4, true), (2, 2));
     assert_eq!(split_jobs(4, false), (4, 4));
     assert_eq!(split_jobs(1, true), (1, 1));
+}
+
+#[test]
+fn spawn_language_jobs_honors_configured_jobs() {
+    let jobs = include_str!("pipeline_jobs.rs");
+    let share = include_str!("pipeline_job_share.rs");
+    let src = include_str!("pipeline.rs");
+    assert!(
+        jobs.contains("share.acquire_execute(language)"),
+        "execute must use its fixed share without waiting for the peer language"
+    );
+    assert!(
+        share.contains("split_jobs(self.total, self.both)"),
+        "covering and execution jobs must stay on the process cap"
+    );
+    assert!(
+        !share.contains("while self.peer_executing"),
+        "language execution must not restore a cross-language barrier"
+    );
+    assert!(
+        !src.contains("MAX_PARALLEL_TEST_JOBS"),
+        "configured num_jobs must not be silently clamped"
+    );
+    assert_eq!(split_jobs(48, false), (48, 48));
+    assert_eq!(split_jobs(48, true), (24, 24));
 }
 
 #[cfg(unix)]
 #[test]
 fn covering_and_workspace_lines_appear_for_all_dry_run() {
+    let _cwd = crate::cwd_test_lock::lock();
     let tmp = tempfile::tempdir().unwrap();
     crate::test_runner::test_mode_fixtures::init_git(&tmp);
     std::fs::write(tmp.path().join("lib.py"), "x = 1\n").unwrap();
@@ -134,6 +160,7 @@ fn cold_init_is_decided_in_shared_prefix() {
 #[cfg(unix)]
 #[test]
 fn rust_covering_proceeds_while_python_covering_waits() {
+    let _cwd = crate::cwd_test_lock::lock();
     use crate::test_runner::pipeline::{COVERING_HOOKS, CoveringHooks};
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Condvar, Mutex};
@@ -261,6 +288,7 @@ fn run_args(
 #[cfg(unix)]
 #[test]
 fn rust_execute_proceeds_while_python_covering_waits() {
+    let _cwd = crate::cwd_test_lock::lock();
     use crate::test_runner::pipeline::{
         COVERING_HOOKS, CoveringHooks, EXECUTE_HOOKS, ExecuteHooks, STUB_LANGUAGE_EXECUTE,
     };
@@ -358,7 +386,103 @@ fn rust_execute_proceeds_while_python_covering_waits() {
 
 #[cfg(unix)]
 #[test]
+fn peer_does_not_execute_after_rust_covering_failure() {
+    let _cwd = crate::cwd_test_lock::lock();
+    use crate::test_runner::pipeline::{
+        COVERING_HOOKS, CoveringHooks, EXECUTE_HOOKS, ExecuteHooks, STUB_LANGUAGE_EXECUTE,
+    };
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Condvar, Mutex};
+    use std::time::{Duration, Instant};
+
+    let tmp = tempfile::tempdir().unwrap();
+    crate::test_runner::test_mode_fixtures::init_git(&tmp);
+    std::fs::write(tmp.path().join("lib.py"), "x = 1\n").unwrap();
+    std::fs::write(tmp.path().join("lib.rs"), "fn f() {}\n").unwrap();
+
+    let hold = Arc::new((Mutex::new(true), Condvar::new()));
+    let rust_covering = Arc::new(AtomicBool::new(false));
+    let python_executed = Arc::new(AtomicBool::new(false));
+    let hold_py = Arc::clone(&hold);
+    let rust_flag = Arc::clone(&rust_covering);
+    let python_flag = Arc::clone(&python_executed);
+    *COVERING_HOOKS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = CoveringHooks {
+        python: Some(Arc::new(move || {
+            let (lock, cvar) = &*hold_py;
+            let mut waiting = lock
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            while *waiting {
+                waiting = cvar
+                    .wait(waiting)
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+            }
+        })),
+        rust: Some(Arc::new(move || {
+            rust_flag.store(true, Ordering::SeqCst);
+        })),
+    };
+    *EXECUTE_HOOKS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = ExecuteHooks {
+        python: Some(Arc::new(move || {
+            python_flag.store(true, Ordering::SeqCst);
+        })),
+        rust: None,
+    };
+    STUB_LANGUAGE_EXECUTE.store(true, Ordering::SeqCst);
+    crate::test_runner::pipeline::set_fail_covering(Some(Language::Rust));
+
+    let old = std::env::current_dir().unwrap();
+    std::env::set_current_dir(tmp.path()).unwrap();
+    let job = std::thread::spawn(|| {
+        crate::test_runner::run_test(run_args(
+            crate::bin_cli::args::TestInvocation::All,
+            false,
+            None,
+        ))
+    });
+    let started = Instant::now();
+    while !rust_covering.load(Ordering::SeqCst) && started.elapsed() < Duration::from_secs(15) {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    std::thread::sleep(Duration::from_millis(50));
+    {
+        let (lock, cvar) = &*hold;
+        *lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = false;
+        cvar.notify_all();
+    }
+    let result = job.join().expect("pipeline job");
+    std::env::set_current_dir(old).unwrap();
+    crate::test_runner::pipeline::set_fail_covering(None);
+    STUB_LANGUAGE_EXECUTE.store(false, Ordering::SeqCst);
+    *COVERING_HOOKS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = CoveringHooks {
+        python: None,
+        rust: None,
+    };
+    *EXECUTE_HOOKS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = ExecuteHooks {
+        python: None,
+        rust: None,
+    };
+    assert_ne!(result, 0);
+    assert!(
+        !python_executed.load(Ordering::SeqCst),
+        "peer must not enter execute after a recorded covering failure"
+    );
+}
+
+#[cfg(unix)]
+#[test]
 fn workspace_span_completes_before_covering_error() {
+    let _cwd = crate::cwd_test_lock::lock();
     let tmp = tempfile::tempdir().unwrap();
     crate::test_runner::test_mode_fixtures::init_git(&tmp);
     std::fs::write(tmp.path().join("lib.py"), "x = 1\n").unwrap();
@@ -418,6 +542,7 @@ fn covering_population_overlaps_list_build() {
 #[cfg(unix)]
 #[test]
 fn recap_wall_time_tracks_process_clock() {
+    let _cwd = crate::cwd_test_lock::lock();
     use crate::test_runner::pipeline::STUB_LANGUAGE_EXECUTE;
     use std::sync::atomic::Ordering;
     use std::time::{Duration, Instant};

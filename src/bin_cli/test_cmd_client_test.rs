@@ -7,7 +7,7 @@ use kiss::TestSectionConfig;
 struct IsolatedPythonRepo {
     restore: PathBuf,
     _tmp: tempfile::TempDir,
-    _cwd: std::sync::MutexGuard<'static, ()>,
+    _cwd: crate::cwd_test_lock::Guard,
 }
 
 impl Drop for IsolatedPythonRepo {

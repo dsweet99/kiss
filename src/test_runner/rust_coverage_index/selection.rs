@@ -131,7 +131,24 @@ fn load_reusable_or_stale(
     args: &ResolveRustPopulationArgs<'_>,
 ) -> Result<ResolvedRustPopulation, String> {
     let universe =
-        super::super::runners::enumerate_workspace_rust_selectors(args.repo_root, args.ignore)?;
+        match crate::test_runner::workspace_selector_cache::load_cached_rust_workspace_selectors(
+            args.repo_root,
+            args.ignore,
+        ) {
+            Some(selectors) => selectors,
+            None => {
+                let selectors = super::super::runners::enumerate_workspace_rust_selectors(
+                    args.repo_root,
+                    args.ignore,
+                )?;
+                crate::test_runner::workspace_selector_cache::store_rust_workspace_selectors(
+                    args.repo_root,
+                    args.ignore,
+                    &selectors,
+                );
+                selectors
+            }
+        };
     let reusable = kiss::rust_llvm_cov_runner::load_reusable_prior_population_state(
         cache_root,
         args.repo_root,
@@ -279,12 +296,13 @@ fn select_check_aggregate_current_basis(
             &changed_rels,
             &population.generation_fingerprint,
         );
+        let file_selectors = check_aggregate_file_selectors(repo_root, population);
         let mut selectors = BTreeSet::new();
         let mut saw_covered_file = false;
         for source_path in rust_source_paths {
             let rel = repo_relative_path(repo_root, source_path)?;
             if !population.line_index.contains_key(&rel) {
-                continue;
+                return None;
             }
             saw_covered_file = true;
             if let Some(selected_for_file) = line_selectors_by_file
@@ -295,18 +313,26 @@ fn select_check_aggregate_current_basis(
                     selected_for_file,
                     &population.selectors,
                 );
-                if narrowed.is_empty() {
-                    return Some(population.selectors.iter().cloned().collect());
+                if !narrowed.is_empty() {
+                    selectors.extend(narrowed);
+                    continue;
                 }
-                selectors.extend(narrowed);
-            } else {
+            }
+            let narrowed = file_selectors
+                .get(&rel)
+                .map(|selected| {
+                    planned_check_aggregate_line_selectors(selected, &population.selectors)
+                })
+                .unwrap_or_default();
+            if narrowed.is_empty() {
                 return Some(population.selectors.iter().cloned().collect());
             }
+            selectors.extend(narrowed);
         }
         if saw_covered_file {
             return Some(selectors);
         }
-        return Some(BTreeSet::new());
+        return None;
     }
     select_check_aggregate_source_selectors(repo_root, rust_source_paths, population)
 }
@@ -326,20 +352,35 @@ fn select_check_aggregate_source_selectors(
 ) -> Option<BTreeSet<String>> {
     let plan_trace = std::env::var_os("KISS_PLAN_TRACE").is_some();
     let mark = std::time::Instant::now();
+    let file_selectors = check_aggregate_file_selectors(repo_root, population);
+    let mut out = BTreeSet::new();
+    let mut saw_covered_file = false;
     for source_path in rust_source_paths {
         let rel = repo_relative_path(repo_root, source_path)?;
-        if population.line_index.contains_key(&rel) {
-            let out: BTreeSet<String> = population.selectors.iter().cloned().collect();
-            if plan_trace {
-                eprintln!(
-                    "KISS_PLAN_TRACE check_agg_select_ms={} sources={} selectors={}",
-                    mark.elapsed().as_millis(),
-                    rust_source_paths.len(),
-                    out.len()
-                );
-            }
-            return Some(out);
+        if !population.line_index.contains_key(&rel) {
+            return None;
         }
+        saw_covered_file = true;
+        let narrowed = file_selectors
+            .get(&rel)
+            .map(|selected| planned_check_aggregate_line_selectors(selected, &population.selectors))
+            .unwrap_or_default();
+        if narrowed.is_empty() {
+            out.extend(population.selectors.iter().cloned());
+        } else {
+            out.extend(narrowed);
+        }
+    }
+    if saw_covered_file {
+        if plan_trace {
+            eprintln!(
+                "KISS_PLAN_TRACE check_agg_select_ms={} sources={} selectors={}",
+                mark.elapsed().as_millis(),
+                rust_source_paths.len(),
+                out.len()
+            );
+        }
+        return Some(out);
     }
     if plan_trace {
         eprintln!(
@@ -348,61 +389,33 @@ fn select_check_aggregate_source_selectors(
             rust_source_paths.len()
         );
     }
-    Some(BTreeSet::new())
+    None
 }
 
-fn select_reusable_prior_rust_source_selectors(
+fn check_aggregate_file_selectors(
     repo_root: &Path,
-    rust_source_paths: &[PathBuf],
-    rust_changed_lines: &BTreeMap<PathBuf, BTreeSet<u32>>,
     population: &kiss::rust_llvm_cov_runner::RustPopulationState,
-) -> Option<BTreeSet<String>> {
-    if kiss::rust_llvm_cov_runner::is_check_aggregate_population(population) {
-        for source_path in rust_source_paths {
-            if !source_path
-                .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("rs"))
-            {
-                return None;
-            }
-        }
-        return select_check_aggregate_current_basis(
-            repo_root,
-            rust_source_paths,
-            rust_changed_lines,
-            population,
-        );
+) -> BTreeMap<String, BTreeSet<String>> {
+    if !kiss::rust_llvm_cov_runner::current_test_binaries_match(repo_root, population) {
+        return BTreeMap::new();
     }
-    let line_selectors_by_file = if rust_changed_lines.is_empty() {
-        BTreeMap::new()
-    } else {
-        selectors_by_changed_file_line(
-            repo_root,
-            &changed_line_rels(repo_root, rust_changed_lines),
-            &population.generation_fingerprint,
-        )
+    let Some(snapshot) = kiss::rust_llvm_cov_runner::load_reusable_prior_check_aggregate(
+        &rust_coverage_cache_root(repo_root),
+        repo_root,
+        &population.selectors,
+        &population.selection_context_fingerprint,
+    ) else {
+        return BTreeMap::new();
     };
-    let mut selectors = BTreeSet::new();
-    for source_path in rust_source_paths {
-        if !source_path
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("rs"))
-        {
-            return None;
-        }
-        let rel = repo_relative_path(repo_root, source_path)?;
-        let file_selectors = population.line_index.get(&rel)?;
-        if file_selectors.is_empty() {
-            return None;
-        }
-        let selected_for_file = line_selectors_by_file
-            .get(&rel)
-            .filter(|selectors| !selectors.is_empty())
-            .unwrap_or(file_selectors);
-        selectors.extend(selected_for_file.iter().cloned());
+    if snapshot.generation_fingerprint != population.generation_fingerprint {
+        return BTreeMap::new();
     }
-    Some(selectors)
+    kiss::rust_llvm_cov_runner::file_selector_index_from_validated(&snapshot)
 }
+
+#[path = "selection_reuse.rs"]
+mod selection_reuse;
+use selection_reuse::select_reusable_prior_rust_source_selectors;
 
 #[cfg(test)]
 #[path = "selection_coverage_witness_test.rs"]

@@ -263,6 +263,10 @@ fn finish_fresh_check_aggregate_returns_failed_outcomes_without_publishing() {
     assert!(result.batch_error.is_none());
     assert_eq!(result.completed.len(), 1);
     assert_eq!(result.completed[0].status, TestStatus::Failed);
+    let fingerprint = entry_fingerprint(&identity.input_digest, &req, &tools, "alpha");
+    let stored =
+        load_rust_cov_cache_entry(&req.cache_root, &fingerprint).expect("failed status stored");
+    assert_eq!(stored.status, TestStatus::Failed);
 }
 
 #[test]
@@ -362,7 +366,8 @@ fn finish_fresh_check_aggregate_success_publishes_final_state_after_entries() {
         test_binaries: vec![crate::rust_llvm_cov_runner::RustTestBinaryIdentity {
             id: "bin-a".to_string(),
             executable: binary_path.to_string_lossy().to_string(),
-            digest: "aaaaaaaaaaaaaaaa".to_string(),
+            digest: crate::rust_llvm_cov_runner::rust_cov_cache::digest_test_binary(&binary_path)
+                .unwrap(),
         }],
         repair_publication: None,
     };

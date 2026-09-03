@@ -13,6 +13,7 @@ pub(crate) struct SelectorExecutionSummary {
     pub(crate) cache_misses: usize,
     pub(crate) cache_miss_selectors: Vec<String>,
     pub(crate) cache_unstored: usize,
+    pub(crate) cache_unstored_selectors: Vec<String>,
     pub(crate) failed: usize,
     pub(crate) failed_selectors: Vec<String>,
     pub(crate) timed_out_selectors: Vec<String>,
@@ -84,6 +85,7 @@ impl SelectorExecutionSummary {
                 self.cache_misses += 1;
                 self.cache_unstored += 1;
                 self.cache_miss_selectors.push(record.selector.clone());
+                self.cache_unstored_selectors.push(record.selector.clone());
             }
         }
         match record.status {

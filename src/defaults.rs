@@ -62,6 +62,7 @@ pub mod gate {
     pub const MAX_UNIT_TEST_SECONDS: f64 = 2.0;
     pub const MAX_NUM_TESTS: usize = 999_999;
     pub const NUM_JOBS: usize = 4;
+    pub const NUM_JOBS_PYTEST: usize = 16;
     pub const WATCH_SETTLE_SECONDS: f64 = 1.0;
 }
 
@@ -82,6 +83,7 @@ test_coverage_scope = {gate_scope}
 orphan_detection = false
 max_num_tests = {max_num_tests}
 num_jobs = {num_jobs}
+num_jobs_pytest = {num_jobs_pytest}
 watch_settle_seconds = {watch_settle:.1}
 pytest_plugins = []
 ignore = []
@@ -140,6 +142,7 @@ dependency_depth = {rs_dep_depth}
         max_unit_test_seconds = gate::MAX_UNIT_TEST_SECONDS,
         max_num_tests = gate::MAX_NUM_TESTS,
         num_jobs = gate::NUM_JOBS,
+        num_jobs_pytest = gate::NUM_JOBS_PYTEST,
         watch_settle = gate::WATCH_SETTLE_SECONDS,
         min_sim = duplication::MIN_SIMILARITY,
         py_statements = python::STATEMENTS_PER_FUNCTION,
@@ -240,7 +243,7 @@ mod tests {
         );
         assert!(
             toml.contains(
-                "num_jobs = 4\nwatch_settle_seconds = 1.0\npytest_plugins = []\nignore = []\n"
+                "num_jobs = 4\nnum_jobs_pytest = 16\nwatch_settle_seconds = 1.0\npytest_plugins = []\nignore = []\n"
             ),
             "init default must emit [test] runtime defaults:\n{toml}"
         );

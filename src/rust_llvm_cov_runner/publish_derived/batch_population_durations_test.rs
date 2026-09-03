@@ -1,6 +1,7 @@
 use super::{
     invalidate_population_durations, load_current_population_durations,
-    load_durations_from_entries, population_durations_path, try_load_population_durations,
+    load_durations_from_entries, population_durations_path, population_entries_all_pass,
+    population_nonpassed_selectors, try_load_population_durations,
     try_publish_durations_after_population, write_population_durations,
 };
 use crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity;
@@ -44,6 +45,36 @@ fn population_durations_round_trip_and_invalidate() {
     assert!(try_load_population_durations(tmp.path(), &mismatched).is_none());
 
     invalidate_population_durations(tmp.path());
+    assert!(try_load_population_durations(tmp.path(), &pop).is_none());
+}
+
+#[test]
+fn valid_population_durations_avoid_entry_directory_dependency() {
+    let tmp = tempfile::tempdir().unwrap();
+    let pop = population(&["a", "b"]);
+    write_population_durations(
+        tmp.path(),
+        &pop,
+        &[
+            ("a".into(), Duration::from_millis(1)),
+            ("b".into(), Duration::from_millis(2)),
+        ],
+    )
+    .unwrap();
+    assert!(population_entries_all_pass(tmp.path(), &pop));
+    assert!(population_nonpassed_selectors(tmp.path(), &pop).is_empty());
+    assert!(!tmp.path().join("entries").exists());
+}
+
+#[test]
+fn population_certificate_rejects_entry_directory_mutation() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::create_dir_all(tmp.path().join("entries")).unwrap();
+    let pop = population(&["a"]);
+    let pairs = vec![("a".into(), Duration::from_millis(1))];
+    write_population_durations(tmp.path(), &pop, &pairs).unwrap();
+    assert!(try_load_population_durations(tmp.path(), &pop).is_some());
+    fs::write(tmp.path().join("entries/a.json"), b"changed entry").unwrap();
     assert!(try_load_population_durations(tmp.path(), &pop).is_none());
 }
 
@@ -103,6 +134,12 @@ fn load_and_publish_durations_from_entries_round_trip() {
     assert_eq!(pairs.len(), 2);
     assert!(pairs.iter().all(|(_, d)| *d == Duration::from_millis(7)));
 
+    crate::rust_llvm_cov_runner::publish_next_entry_state(
+        &req.cache_root,
+        &identity.generation_fingerprint,
+        "ent-fixture",
+    )
+    .unwrap();
     try_publish_durations_after_population(
         &req.cache_root,
         &identity,
@@ -247,6 +284,35 @@ fn load_current_population_durations_hits_sidecar_then_rebuilds_on_miss() {
     .expect("rebuild from entries");
     assert_eq!(rebuilt, hit);
     assert!(population_durations_path(&fixture.req.cache_root).is_file());
+    let fingerprint = crate::rust_llvm_cov_runner::plan::batch_fingerprint::entry_fingerprint(
+        &fixture.identity.input_digest,
+        &fixture.req,
+        &fixture.tools,
+        "alpha",
+    );
+    let mut failed = crate::rust_llvm_cov_runner::rust_cov_cache::load_rust_cov_cache_entry(
+        &fixture.req.cache_root,
+        &fingerprint,
+    )
+    .unwrap();
+    failed.status = crate::rpytest_runner::TestStatus::Failed;
+    crate::rust_llvm_cov_runner::rust_cov_cache::store_rust_cov_cache_entry(
+        &fixture.req.cache_root,
+        &fingerprint,
+        &failed,
+    )
+    .unwrap();
+    assert!(
+        load_current_population_durations(
+            &fixture.req.cache_root,
+            &fixture.req.source_root,
+            &fixture.identity,
+            &fixture.req,
+            &fixture.tools,
+            None,
+        )
+        .is_none()
+    );
 }
 
 #[test]

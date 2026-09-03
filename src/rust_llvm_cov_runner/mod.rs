@@ -49,6 +49,7 @@ pub(crate) use execute_or_reuse::batch_output_channel;
 pub(crate) use execute_or_reuse::batch_output_channel_frame;
 pub(crate) use execute_or_reuse::batch_output_channel_token;
 pub(crate) use execute_or_reuse::batch_process_tree;
+pub use execute_or_reuse::batch_process_tree::cancel_active_batch_scope;
 pub(crate) use execute_or_reuse::batch_result;
 pub(crate) use execute_or_reuse::batch_run;
 pub(crate) use execute_or_reuse::batch_shim;
@@ -58,6 +59,8 @@ pub(crate) use execute_or_reuse::batch_shim_lookup;
 pub(crate) use execute_or_reuse::batch_shim_synthesize;
 pub(crate) use execute_or_reuse::batch_warm_hit_seal;
 pub(crate) use execute_or_reuse::llvm_cov_json;
+#[cfg(test)]
+pub use execute_or_reuse::progress::live_rust_hook_test_guard;
 pub use execute_or_reuse::progress::{
     clear_live_rust_test_hook, emit_progress, install_live_rust_test_hook, live_rust_was_printed,
     mark_live_rust_printed, set_live_rust_error, take_live_rust_error,
@@ -121,15 +124,18 @@ use std::time::Duration;
 pub use batch_aggregate::{AggregationCounters, InstanceResult, aggregate_logical_selectors};
 pub use batch_check_aggregate::{
     CHECK_AGGREGATE_SCHEMA_VERSION, CheckAggregateBinaryRecord, CheckAggregateSnapshot,
-    ValidatedCheckAggregate, build_check_aggregate, load_current_check_aggregate_snapshot,
-    load_reusable_prior_check_aggregate, publish_check_aggregate, reusable_check_aggregate_delta,
+    ValidatedCheckAggregate, build_check_aggregate,
+    file_selector_index_from_check_aggregate_generation, file_selector_index_from_validated,
+    load_current_check_aggregate_snapshot, load_reusable_prior_check_aggregate,
+    publish_check_aggregate, reusable_check_aggregate_delta,
     selector_coverage_from_check_aggregate_generation, selector_coverage_from_validated,
 };
 pub use batch_derived::{
     DerivedPublishCounters, INDEX_SCHEMA_VERSION as BATCH_INDEX_SCHEMA_VERSION,
     POPULATION_SCHEMA_VERSION as BATCH_POPULATION_SCHEMA_VERSION, population_derived_state_stale,
     population_manifest_state_is_current, prune_obsolete_selective_generations,
-    publish_derived_state, publish_derived_state_with_binaries,
+    publish_conservative_derived_state_from_check_aggregate, publish_derived_state,
+    publish_derived_state_with_binaries,
 };
 pub use batch_derived_entries::{RustReusableSelectorEntry, load_reusable_prior_selector_entries};
 pub use batch_derived_incremental::{
@@ -137,6 +143,7 @@ pub use batch_derived_incremental::{
 };
 pub use batch_derived_index::{
     RustGenerationCoverageSnapshot, RustPopulationState, RustSnapshotDelta,
+    current_population_manifest_test_binaries_match, current_test_binaries_match,
     is_check_aggregate_population, load_current_generation_coverage_snapshot,
     load_current_generation_line_index, load_current_population_state,
     load_reusable_prior_population_state, reusable_snapshot_delta,
@@ -149,7 +156,10 @@ pub use batch_events::{
     BatchCompilerArtifact, BatchEventStream, BatchTestTerminal, aggregate_selectors_for_test,
     parse_batch_event_stream, selector_matches_test,
 };
-pub use batch_executable_index::{RustTestExecutableIndex, build_rust_test_executable_index};
+pub use batch_executable_index::{
+    RustListedTest, RustTestExecutableIndex, build_rust_test_executable_index,
+    build_rust_test_executable_index_with_tests,
+};
 pub use batch_executor::{
     execute_rust_coverage_batch, lock_and_hold_batch, try_lock_and_hold_batch,
 };
@@ -172,7 +182,7 @@ pub use batch_export_tools::{
 pub use batch_fingerprint::identity_memo_hash_count;
 pub use batch_fingerprint::{
     RustCoverageBatchIdentity, RustCoverageToolIdentity, batch_identity, begin_identity_memo,
-    entry_fingerprint,
+    entry_fingerprint, identity_memo_is_populated, remember_identity_memo,
 };
 pub use batch_plan::{
     CheckAggregateRepairPublication, CoverageOutputMode, RustCoverageBatchPlan,
@@ -181,7 +191,8 @@ pub use batch_plan::{
 pub use batch_plan_publish::publish_generated_nextest_config;
 pub use batch_plan_test_args::{identity_relevant_test_args, validate_supported_rust_test_args};
 pub use batch_population_durations::{
-    load_current_population_durations, try_load_population_durations,
+    load_current_population_durations, population_entries_all_pass, population_nonpassed_selectors,
+    try_load_population_durations,
 };
 pub use batch_result::{RustCoverageBatchCounters, RustCoverageBatchResult};
 pub use batch_reverse_line_index::{
@@ -202,6 +213,7 @@ pub use batch_runner_resolve::{
     resolve_delegated_runners, runner_map_fingerprint, write_runner_map,
 };
 pub use batch_shim::run_target_runner_shim;
+pub use cargo_workspace_metadata::workspace_test_target_sources;
 pub use kiss_profraw::{
     KissProfrawProcessGuard, discover_repo_root, redirect_this_process, sweep_kiss_profraw_dir,
 };

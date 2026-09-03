@@ -22,6 +22,7 @@ pub(crate) use durations_load::{
 #[allow(unused_imports)]
 pub(crate) use evidence::{PopulationEvidence, SelectorEvidence};
 pub(crate) use identity::current_python_execution_identity;
+pub(crate) use identity::execution_context_matches_current;
 pub(crate) use identity::identity_matches_current;
 #[allow(unused_imports)]
 pub(crate) use identity::population_plan_for_selectors;
@@ -34,6 +35,7 @@ pub(crate) use load::{
 };
 pub(crate) use materialize::{
     materialize_and_publish_from_cached_outcomes, selector_deltas_from_cached_outcomes,
+    selector_deltas_from_fresh_outcomes,
 };
 pub(crate) use memo::clear_python_generation_warm_memo;
 pub(crate) use migrate::try_migrate_complete_v1_generation;
@@ -42,6 +44,7 @@ pub(crate) use publish::publish_python_population_generation;
 pub(crate) use publish::{PathMaxDuration, path_maxes_from_selector_durations};
 pub(crate) use repair::{
     problem_selectors_from_timings, repair_python_population_generation,
+    restamp_and_repair_python_population_generation, restamp_complete_pinned_from_cache,
     try_restamp_matching_pinned_universe,
 };
 #[allow(unused_imports)]

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::analyze::line_coverage::{CoverableDenom, CoverageSourceFacts};
 use crate::analyze_cache::fnv1a64;
 
-const SCHEMA_VERSION: &str = "kiss-cov-coverable-v2";
+const SCHEMA_VERSION: &str = "kiss-cov-coverable-v3";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct CovCoverableCache {
@@ -50,10 +50,14 @@ pub(crate) fn store_coverable_denoms(key: &CovCoverableKey<'_>, denoms: &[Covera
     if let Some(parent) = path.parent() {
         let _ = fs::create_dir_all(parent);
     }
-    let tmp = path.with_extension("json.tmp");
+    let tmp = path.with_file_name(format!(
+        ".cov_coverable.{}.tmp",
+        kiss::kiss_publication_barrier::unique_process_suffix()
+    ));
     if fs::write(&tmp, bytes).is_ok() {
-        let _ = fs::rename(tmp, path);
+        let _ = fs::rename(&tmp, path);
     }
+    let _ = fs::remove_file(tmp);
 }
 
 pub(crate) fn load_or_build_coverable_denoms(
@@ -81,10 +85,19 @@ fn coverable_fingerprint(key: &CovCoverableKey<'_>) -> Option<String> {
         h = fnv1a64(h, prefix.as_bytes());
         h = fnv1a64(h, &[0]);
     }
-    h = crate::analyze_cache::mix_sorted_paths_len_mtime(
-        h,
-        key.py_files.iter().chain(key.rs_files),
-    );
+    let mut files: Vec<&Path> = key
+        .py_files
+        .iter()
+        .chain(key.rs_files)
+        .map(PathBuf::as_path)
+        .collect();
+    files.sort();
+    for path in files {
+        h = fnv1a64(h, path.to_string_lossy().as_bytes());
+        h = fnv1a64(h, &[0]);
+        h = fnv1a64(h, &fs::read(path).ok()?);
+        h = fnv1a64(h, &[0]);
+    }
     Some(format!("{h:016x}"))
 }
 

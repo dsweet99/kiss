@@ -37,13 +37,20 @@ pub(super) fn selector_timeout_millis_for_batch(
 
     let report_ids =
         crate::test_runner::runners::rust_report_ids_for_selectors(repo_root, selectors)?;
-    selectors
+    if matches!(coverage_output_mode, CoverageOutputMode::SelectorEntries) {
+        for selector in selectors {
+            crate::test_runner::runners::require_kiss_test_report_id(&report_ids, selector)?;
+        }
+    }
+    Ok(selectors
         .iter()
         .map(|selector| {
-            let for_limit =
-                crate::test_runner::runners::require_kiss_test_report_id(&report_ids, selector)?;
+            let for_limit = report_ids
+                .get(selector)
+                .cloned()
+                .unwrap_or_else(|| selector.clone());
             let secs = kiss::limit_for_selector(&gate.max_unit_test_seconds, &for_limit);
-            Ok((selector.clone(), timeout_millis_from_limit(secs)))
+            (selector.clone(), timeout_millis_from_limit(secs))
         })
-        .collect()
+        .collect())
 }

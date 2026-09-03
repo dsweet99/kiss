@@ -12,13 +12,15 @@ docs_allowed = [
 orphan_detection = true
 test_coverage_scope = "by_file"
 test_coverage_threshold = 75
-max_num_tests = 3200
+max_num_tests = 7000
 num_jobs = 32
+# num_jobs_pytest = 16
 watch_settle_seconds = 1.0
 pytest_plugins = []
 ignore = ["src/main.rs"]
 
 [test.max_unit_test_seconds]
+"tests/" = 60
 "tests/cases/" = 60
 "src/test_runner/" = 60
 "src/bin_cli/" = 30

@@ -11,13 +11,15 @@ use kiss::Language;
 
 use super::SharedPrefix;
 use super::cover_language;
-use super::split_jobs;
+#[path = "pipeline_job_share.rs"]
+mod job_share;
 use crate::test_runner::RunTestCmdArgs;
 use crate::test_runner::planned_selectors::{
     PlannedSelectors, SelectorRunOptions, apply_cold_initialization_population,
     apply_force_all_population,
 };
 use crate::test_runner::run_logic::{execute_one_language, language_has_work};
+use job_share::JobShare;
 
 #[cfg(test)]
 pub(crate) struct CoveringHooks {
@@ -88,6 +90,7 @@ pub(crate) fn unpark_blocked_covering() {
 pub(super) struct LanguageSlots {
     python_planned: Mutex<Option<PlannedSelectors>>,
     rust_planned: Mutex<Option<PlannedSelectors>>,
+    first_error: Mutex<Option<String>>,
     python_outcome:
         Mutex<Option<Result<crate::test_runner::run_logic::LanguagePhaseOutcome, String>>>,
     rust_outcome:
@@ -99,63 +102,99 @@ pub(super) fn spawn_language_jobs(
     prefix: &SharedPrefix,
     slots: &LanguageSlots,
 ) -> Result<(), String> {
-    let spawn_python = prefix.python_may_work && a.lang_filter != Some(Language::Rust);
-    let spawn_rust = prefix.rust_may_work && a.lang_filter != Some(Language::Python);
-    let (python_jobs, rust_jobs) = split_jobs(a.jobs, spawn_python && spawn_rust);
-    std::thread::scope(|scope| {
-        let python = spawn_one(
-            scope,
-            spawn_python,
-            a,
-            prefix,
-            Language::Python,
-            python_jobs,
-            &slots.python_planned,
-            &slots.python_outcome,
-        );
-        let rust = spawn_one(
-            scope,
-            spawn_rust,
-            a,
-            prefix,
-            Language::Rust,
-            rust_jobs,
-            &slots.rust_planned,
-            &slots.rust_outcome,
-        );
-        join_named(python, "python")?;
-        join_named(rust, "rust")
-    })
+    let spawn = LanguageSpawn {
+        python: prefix.python_may_work && a.lang_filter != Some(Language::Rust),
+        rust: prefix.rust_may_work && a.lang_filter != Some(Language::Python),
+    };
+    let share = JobShare::new(a.jobs, spawn.python && spawn.rust);
+    std::thread::scope(|scope| join_language_scope(scope, a, prefix, &share, spawn, slots))
 }
 
-#[allow(clippy::too_many_arguments)]
-fn spawn_one<'scope, 'env>(
+fn join_language_scope<'scope, 'env: 'scope>(
     scope: &'scope std::thread::Scope<'scope, 'env>,
-    spawn: bool,
     a: &'env RunTestCmdArgs<'env>,
     prefix: &'env SharedPrefix,
-    language: Language,
-    jobs: usize,
-    planned_out: &'env Mutex<Option<PlannedSelectors>>,
-    outcome_out: &'env Mutex<
-        Option<Result<crate::test_runner::run_logic::LanguagePhaseOutcome, String>>,
-    >,
+    share: &'env JobShare,
+    spawn: LanguageSpawn,
+    slots: &'env LanguageSlots,
+) -> Result<(), String> {
+    let python = start_language(
+        scope,
+        spawn.python,
+        LanguageJob {
+            a,
+            prefix,
+            language: Language::Python,
+            share,
+            planned_out: &slots.python_planned,
+            outcome_out: &slots.python_outcome,
+            first_error: &slots.first_error,
+        },
+    );
+    let rust = start_language(
+        scope,
+        spawn.rust,
+        LanguageJob {
+            a,
+            prefix,
+            language: Language::Rust,
+            share,
+            planned_out: &slots.rust_planned,
+            outcome_out: &slots.rust_outcome,
+            first_error: &slots.first_error,
+        },
+    );
+    if let Err(err) = join_named(python, "python") {
+        let needs_cancel = !has_recorded_error(&slots.first_error);
+        record_first_error(&slots.first_error, err);
+        if needs_cancel {
+            cancel_peer(Language::Python);
+        }
+    }
+    if let Err(err) = join_named(rust, "rust") {
+        let needs_cancel = !has_recorded_error(&slots.first_error);
+        record_first_error(&slots.first_error, err);
+        if needs_cancel {
+            cancel_peer(Language::Rust);
+        }
+    }
+    take_mutex(&slots.first_error).map_or(Ok(()), Err)
+}
+
+fn start_language<'scope, 'env: 'scope>(
+    scope: &'scope std::thread::Scope<'scope, 'env>,
+    spawn: bool,
+    job: LanguageJob<'env>,
 ) -> Option<std::thread::ScopedJoinHandle<'scope, Result<(), String>>> {
-    spawn.then(|| {
-        scope.spawn(move || language_job(a, prefix, language, jobs, planned_out, outcome_out))
-    })
+    spawn.then(|| scope.spawn(move || language_job(job)))
+}
+
+#[derive(Clone, Copy)]
+struct LanguageSpawn {
+    python: bool,
+    rust: bool,
+}
+
+struct LanguageJob<'a> {
+    a: &'a RunTestCmdArgs<'a>,
+    prefix: &'a SharedPrefix,
+    language: Language,
+    share: &'a JobShare,
+    planned_out: &'a Mutex<Option<PlannedSelectors>>,
+    outcome_out:
+        &'a Mutex<Option<Result<crate::test_runner::run_logic::LanguagePhaseOutcome, String>>>,
+    first_error: &'a Mutex<Option<String>>,
 }
 
 fn join_named(
     handle: Option<std::thread::ScopedJoinHandle<'_, Result<(), String>>>,
     name: &str,
 ) -> Result<(), String> {
-    match handle {
-        Some(handle) => handle
+    handle.map_or(Ok(()), |handle| {
+        handle
             .join()
-            .unwrap_or_else(|_| Err(format!("{name} language job panicked"))),
-        None => Ok(()),
-    }
+            .unwrap_or_else(|_| Err(format!("{name} language job panicked")))
+    })
 }
 
 pub(super) fn take_job_results(
@@ -176,11 +215,7 @@ pub(super) fn take_job_results(
 fn take_outcome(
     slot: &Mutex<Option<Result<crate::test_runner::run_logic::LanguagePhaseOutcome, String>>>,
 ) -> Result<Option<crate::test_runner::run_logic::LanguagePhaseOutcome>, String> {
-    match take_mutex(slot) {
-        Some(Err(err)) => Err(err),
-        Some(Ok(outcome)) => Ok(Some(outcome)),
-        None => Ok(None),
-    }
+    take_mutex(slot).map_or(Ok(None), |result| result.map(Some))
 }
 
 pub(super) fn take_planned(
@@ -198,16 +233,78 @@ fn take_mutex<T>(slot: &Mutex<Option<T>>) -> Option<T> {
         .take()
 }
 
-fn language_job(
+fn language_job(job: LanguageJob<'_>) -> Result<(), String> {
+    let LanguageJob {
+        a,
+        prefix,
+        language,
+        share,
+        planned_out,
+        outcome_out,
+        first_error,
+    } = job;
+    let planned = match run_covering(a, prefix, language, share.covering(language)) {
+        Ok(planned) => planned,
+        Err(err) => return fail_language_job(language, first_error, err),
+    };
+    if has_recorded_error(first_error) {
+        return Ok(());
+    }
+    *planned_out
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(planned.clone());
+    if a.dry_run || has_recorded_error(first_error) {
+        return Ok(());
+    }
+    invoke_execute_hook(language);
+    if stub_language_execute() || !language_has_work(&planned, language) {
+        return Ok(());
+    }
+    let turn = share.acquire_execute(language);
+    if let Err(err) = execute_planned(a, turn.jobs, language, &planned, outcome_out) {
+        return fail_language_job(language, first_error, err);
+    }
+    Ok(())
+}
+
+fn fail_language_job(
+    language: Language,
+    first_error: &Mutex<Option<String>>,
+    err: String,
+) -> Result<(), String> {
+    record_first_error(first_error, err.clone());
+    cancel_peer(language);
+    Err(err)
+}
+
+fn cancel_peer(language: Language) {
+    match language {
+        Language::Python => kiss::rust_llvm_cov_runner::cancel_active_batch_scope(),
+        Language::Rust => kiss::rpytest_runner::cancel_active_forkservers(),
+    }
+}
+
+fn record_first_error(slot: &Mutex<Option<String>>, err: String) {
+    let mut first = slot
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if first.is_none() {
+        *first = Some(err);
+    }
+}
+
+fn has_recorded_error(slot: &Mutex<Option<String>>) -> bool {
+    slot.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .is_some()
+}
+
+fn run_covering(
     a: &RunTestCmdArgs<'_>,
     prefix: &SharedPrefix,
     language: Language,
     jobs: usize,
-    planned_out: &Mutex<Option<PlannedSelectors>>,
-    outcome_out: &Mutex<
-        Option<Result<crate::test_runner::run_logic::LanguagePhaseOutcome, String>>,
-    >,
-) -> Result<(), String> {
+) -> Result<PlannedSelectors, String> {
     let covering_name = match language {
         Language::Python => "covering_python",
         Language::Rust => "covering_rust",
@@ -236,19 +333,18 @@ fn language_job(
     }
     apply_force_all_population(a, &mut planned);
     crate::test_runner::apply_force_bad(a, &mut planned)?;
-    *planned_out
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(planned.clone());
-    if a.dry_run {
-        return Ok(());
-    }
-    invoke_execute_hook(language);
-    if stub_language_execute() {
-        return Ok(());
-    }
-    if !language_has_work(&planned, language) {
-        return Ok(());
-    }
+    Ok(planned)
+}
+
+fn execute_planned(
+    a: &RunTestCmdArgs<'_>,
+    jobs: usize,
+    language: Language,
+    planned: &PlannedSelectors,
+    outcome_out: &Mutex<
+        Option<Result<crate::test_runner::run_logic::LanguagePhaseOutcome, String>>,
+    >,
+) -> Result<(), String> {
     let options = SelectorRunOptions {
         dry_run: false,
         force_rerun: a.force_rerun,
@@ -261,11 +357,20 @@ fn language_job(
         plan_duration: std::time::Duration::ZERO,
         gate: a.gate_config.clone(),
     };
-    let result = execute_one_language(&planned, &options, language);
-    *outcome_out
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(result);
-    Ok(())
+    match execute_one_language(planned, &options, language) {
+        Ok(outcome) => {
+            *outcome_out
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Ok(outcome));
+            Ok(())
+        }
+        Err(err) => {
+            *outcome_out
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Err(err.clone()));
+            Err(err)
+        }
+    }
 }
 
 fn invoke_covering_hook(language: Language) {
@@ -327,27 +432,22 @@ fn invoke_execute_hook(language: Language) {
 
 fn stub_language_execute() -> bool {
     #[cfg(test)]
-    {
-        STUB_LANGUAGE_EXECUTE.load(Ordering::SeqCst)
+    if STUB_LANGUAGE_EXECUTE.load(Ordering::SeqCst) {
+        return true;
     }
-    #[cfg(not(test))]
-    {
-        false
-    }
+    false
 }
 
 pub(super) fn covering_should_fail(language: Language) -> bool {
     #[cfg(test)]
+    if FAIL_COVERING
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .as_ref()
+        == Some(&language)
     {
-        FAIL_COVERING
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .as_ref()
-            == Some(&language)
+        return true;
     }
-    #[cfg(not(test))]
-    {
-        let _ = language;
-        false
-    }
+    let _ = language;
+    false
 }

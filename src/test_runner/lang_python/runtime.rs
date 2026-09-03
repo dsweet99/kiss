@@ -12,9 +12,9 @@ use crate::test_runner::python_coverage_index::generation::{
     current_python_execution_identity, identity_matches_current,
 };
 use crate::test_runner::python_coverage_index::{
-    GenerationReason, publish_python_derived_state_with_filter,
-    repair_python_population_generation, repo_relative_coverage_file,
-    selector_deltas_from_cached_outcomes, try_load_pinned_python_generation_warm,
+    GenerationReason, publish_python_derived_state_with_filter, repo_relative_coverage_file,
+    restamp_and_repair_python_population_generation, selector_deltas_from_fresh_outcomes,
+    try_load_pinned_python_generation_warm,
 };
 use crate::test_runner::runners::SelectorExecutionSummary;
 
@@ -31,20 +31,23 @@ impl SourceDeltaMisses for PythonRuntime {
         let Ok(pinned) = try_load_pinned_python_generation_warm(&request.repo_root) else {
             return Ok(Vec::new());
         };
+        let stored: BTreeMap<&str, &str> = pinned
+            .timings
+            .iter()
+            .map(|row| (row.selector.as_str(), row.test_definition_digest.as_str()))
+            .collect();
+        let mut current_by_file = BTreeMap::<String, String>::new();
         let mut misses = Vec::new();
         for selector in planned {
-            let current =
-                crate::test_runner::python_coverage_index::storage::python_selector_definition_digest(
-                    &request.repo_root,
-                    selector,
-                );
-            let stored = pinned
-                .timings
-                .iter()
-                .find(|row| row.selector == *selector)
-                .map(|row| row.test_definition_digest.as_str())
-                .unwrap_or("");
-            if stored != current {
+            let file = selector
+                .split_once("::")
+                .map(|(file, _)| file)
+                .unwrap_or(selector);
+            let current = current_by_file.entry(file.to_string()).or_insert_with(|| {
+                crate::test_runner::python_coverage_index::storage::
+                    python_selector_definition_digest(&request.repo_root, file)
+            });
+            if stored.get(selector.as_str()).copied().unwrap_or("") != current.as_str() {
                 misses.push(selector.clone());
             }
         }
@@ -135,6 +138,7 @@ impl LanguageRuntime for PythonRuntime {
                     universe,
                     &request.extras.python,
                     &is_indexable,
+                    &request.gate,
                     Some(batch.summary.cache_miss_selectors.as_slice()),
                 )?;
             if !restamped {
@@ -142,24 +146,33 @@ impl LanguageRuntime for PythonRuntime {
                     &request.repo_root,
                     Some(universe),
                     &request.extras.python,
+                    &request.gate,
                     is_indexable,
                 )?;
             }
             crate::test_runner::emit_stage_time("python_generation_publish", started.elapsed());
         } else {
             let started = std::time::Instant::now();
-            let deltas = selector_deltas_from_cached_outcomes(
-                &request.repo_root,
-                &batch.selectors,
-                &request.extras.python,
-                &is_indexable,
-                &request.gate,
-            )?;
-            let _ = repair_python_population_generation(
-                &request.repo_root,
-                &deltas,
-                GenerationReason::IncompleteRepair,
-            )?;
+            let misses = &batch.summary.cache_miss_selectors;
+            if !misses.is_empty() {
+                let deltas = selector_deltas_from_fresh_outcomes(
+                    &request.repo_root,
+                    misses,
+                    &batch.summary,
+                    &request.extras.python,
+                    &is_indexable,
+                    &request.gate,
+                )?;
+                if deltas.len() != misses.len() {
+                    return Err("error: kiss: incomplete fresh Python generation evidence".into());
+                }
+                let _ = restamp_and_repair_python_population_generation(
+                    &request.repo_root,
+                    &request.extras.python,
+                    &deltas,
+                    GenerationReason::IncompleteRepair,
+                )?;
+            }
             crate::test_runner::emit_stage_time("selective_index_repair", started.elapsed());
         }
         crate::test_runner::python_coverage_index::clear_python_generation_warm_memo();
@@ -193,8 +206,12 @@ impl LanguageRuntime for PythonRuntime {
         _request: &EnsureRequest,
         planned: &[String],
         witness: &ExecutionWitness,
-    ) -> SelectorExecutionSummary {
-        summary_from_accepted_witness(planned, witness, |selector| selector.to_string())
+    ) -> Result<SelectorExecutionSummary, String> {
+        Ok(summary_from_accepted_witness(
+            planned,
+            witness,
+            |selector| selector.to_string(),
+        ))
     }
 }
 
@@ -219,7 +236,6 @@ fn statuses_from_summary(
             TestStatus::Passed => WitnessStatus::Passed,
         };
         statuses.push(status);
-
         durations.push(summary.selector_durations_ns.get(sel).copied());
     }
     (statuses, durations)

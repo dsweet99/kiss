@@ -2,6 +2,22 @@ use super::*;
 use crate::config::{ConfigError, get_usize};
 
 #[test]
+fn lenient_merge_ignores_legacy_orphan_module_enabled_without_applying_test() {
+    let mut gate = GateConfig::default();
+    gate.merge_from_toml(
+        "[global]\norphan_module_enabled = false\n[test]\nmax_unit_test_seconds = 90\n",
+    );
+    assert_eq!(
+        gate.max_unit_test_seconds,
+        default_max_unit_test_seconds(),
+        "legacy unknown [global] key must not apply [test] 90s timeouts"
+    );
+    assert!((gate.unit_test_seconds_limit("tests/fast/a.py::t") - 2.0).abs() < f64::EPSILON);
+    assert!((gate.unit_test_seconds_limit("tests/slow/a.py::t") - 2.0).abs() < f64::EPSILON);
+    assert!((gate.unit_test_seconds_limit("rust/foo.rs::t") - 2.0).abs() < f64::EPSILON);
+}
+
+#[test]
 fn test_gate_config_merge_from_toml() {
     let mut gate = GateConfig::default();
     gate.merge_from_toml(

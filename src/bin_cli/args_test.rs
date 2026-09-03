@@ -57,6 +57,12 @@ fn cov_subcommand_parses_as_coverage() {
         cli.command,
         Commands::Coverage { jobs: Some(7), .. }
     ));
+    let cli = Cli::parse_from(["kiss", "__coverage", ".", "--", "-p", "my_plugin"]);
+    assert!(matches!(
+        cli.command,
+        Commands::Coverage { extra, .. }
+            if extra == vec!["-p".to_string(), "my_plugin".to_string()]
+    ));
 }
 
 #[test]
@@ -213,9 +219,7 @@ fn top_level_help_describes_commands_and_global_flags() {
     assert!(help.contains("Filter by language: python (py) or rust (rs)"));
     assert!(!help.contains("Use built-in defaults, ignoring config files"));
     assert!(!help.contains("--defaults"));
-    assert!(
-        help.contains("Run static complexity, graph, duplicate, comment, and doc checks")
-    );
+    assert!(help.contains("Run static complexity, graph, duplicate, comment, and doc checks"));
     assert!(help.contains("Show metric statistics for the codebase"));
     assert!(!help.contains("Generate .kissconfig thresholds from an existing codebase"));
     assert!(!help.contains("Generate .kissconfig from the current directory"));

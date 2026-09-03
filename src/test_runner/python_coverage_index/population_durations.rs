@@ -33,13 +33,16 @@ pub(crate) fn load_current_python_population_durations(
     repo_root: &Path,
     pytest_args: &[String],
 ) -> Option<Vec<(String, Duration)>> {
-    if let Some(pairs) = super::generation::try_load_generation_durations_pairs(repo_root) {
-        return Some(pairs);
-    }
     if let Ok(pinned) = super::generation::try_load_pinned_python_generation_warm(repo_root) {
+        if !pinned.complete {
+            return None;
+        }
         let exec =
             super::generation::current_python_execution_identity(repo_root, pytest_args).ok()?;
         if pinned.plan.base_identity == exec {
+            if let Some(pairs) = super::generation::try_load_generation_durations_pairs(repo_root) {
+                return Some(pairs);
+            }
             return Some(
                 pinned
                     .timings
@@ -65,26 +68,36 @@ pub(crate) fn load_current_python_population_durations(
     Some(pairs)
 }
 
+fn pinned_generation_max_duration(
+    repo_root: &Path,
+    pytest_args: &[String],
+) -> Option<Duration> {
+    let pinned = super::generation::try_load_pinned_python_generation_warm(repo_root).ok()?;
+    if !pinned.complete {
+        return None;
+    }
+    let exec = super::generation::current_python_execution_identity(repo_root, pytest_args).ok()?;
+    if pinned.plan.base_identity != exec {
+        return None;
+    }
+    if let Some(max) = super::generation::try_load_generation_max_duration(repo_root) {
+        return Some(max);
+    }
+    let max_ns = pinned
+        .timings
+        .iter()
+        .filter_map(|row| row.duration_ns)
+        .max()
+        .unwrap_or(0);
+    Some(Duration::from_nanos(max_ns))
+}
+
 pub(crate) fn load_current_python_population_max_duration(
     repo_root: &Path,
     pytest_args: &[String],
 ) -> Option<Duration> {
-    if let Some(max) = super::generation::try_load_generation_max_duration(repo_root) {
-        return Some(max);
-    }
-    if let Ok(pinned) = super::generation::try_load_pinned_python_generation_warm(repo_root) {
-        let exec =
-            super::generation::current_python_execution_identity(repo_root, pytest_args).ok()?;
-        if pinned.plan.base_identity == exec {
-            let max_ns = pinned
-                .timings
-                .iter()
-                .filter_map(|row| row.duration_ns)
-                .max()
-                .unwrap_or(0);
-            return Some(Duration::from_nanos(max_ns));
-        }
-        return None;
+    if super::generation::try_load_pinned_python_generation_warm(repo_root).is_ok() {
+        return pinned_generation_max_duration(repo_root, pytest_args);
     }
     let identity =
         super::manifest::current_python_population_manifest_identity(repo_root, pytest_args)
@@ -128,8 +141,19 @@ pub(crate) fn load_current_python_population_path_maxes(
     repo_root: &Path,
     pytest_args: &[String],
 ) -> Option<Vec<super::generation::PathMaxDuration>> {
-    if let Some(path_maxes) = super::generation::try_load_generation_path_maxes_only(repo_root) {
-        return Some(path_maxes);
+    if let Ok(pinned) = super::generation::try_load_pinned_python_generation_warm(repo_root) {
+        if !pinned.complete {
+            return None;
+        }
+        let exec =
+            super::generation::current_python_execution_identity(repo_root, pytest_args).ok()?;
+        if pinned.plan.base_identity != exec {
+            return None;
+        }
+        if let Some(path_maxes) = super::generation::try_load_generation_path_maxes_only(repo_root)
+        {
+            return Some(path_maxes);
+        }
     }
     let pairs = load_current_python_population_durations(repo_root, pytest_args)?;
     Some(super::generation::path_maxes_from_selector_durations(

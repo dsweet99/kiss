@@ -52,6 +52,7 @@ fn write_generation_fixture(repo: &Path, with_path_maxes: bool) -> PathBuf {
     )
     .unwrap();
     let manifest = serde_json::json!({
+        "complete": true,
         "plan": {
             "selectors": [
                 "tests/test_a.py::test_one",
@@ -65,6 +66,24 @@ fn write_generation_fixture(repo: &Path, with_path_maxes: bool) -> PathBuf {
     )
     .unwrap();
     gen_dir
+}
+
+#[test]
+fn incomplete_generation_has_no_complete_timing_population() {
+    let tmp = tempfile::tempdir().unwrap();
+    let gen_dir = write_generation_fixture(tmp.path(), true);
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(gen_dir.join("manifest.json")).unwrap()).unwrap();
+    manifest["complete"] = serde_json::Value::Bool(false);
+    fs::write(
+        gen_dir.join("manifest.json"),
+        serde_json::to_vec_pretty(&manifest).unwrap(),
+    )
+    .unwrap();
+    clear_generation_durations_memo();
+    assert!(try_load_generation_durations_pairs(tmp.path()).is_none());
+    assert!(try_load_generation_max_duration(tmp.path()).is_none());
+    assert!(try_load_generation_path_maxes(tmp.path()).is_none());
 }
 
 #[test]

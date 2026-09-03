@@ -87,6 +87,16 @@ fn cover_warm_selector_invalidation(root: &Path, identity: &RustCoverageBatchIde
         &planned,
         identity,
         &gate,
+        OrdinarySourceInvalidation::Selectors(BTreeSet::from(["outside".into()])),
+    ) {
+        RustWarmDecision::Warm(_) => {}
+        other => panic!("unaffected planned selectors should stay warm, got {other:?}"),
+    }
+    match apply_warm_invalidation(
+        root,
+        &planned,
+        identity,
+        &gate,
         OrdinarySourceInvalidation::All,
     ) {
         RustWarmDecision::Miss => {}
@@ -115,8 +125,9 @@ fn publish_load_round_trip_and_warm_accept() {
         jobs: 1,
     })
     .unwrap();
-    assert!(id.starts_with("rust-wit-"));
+    assert!(!id.is_empty());
     let loaded = try_load_rust_execution_witness(tmp.path()).unwrap();
+    assert_eq!(loaded.generation_id, id);
     assert_eq!(loaded.selectors, selectors);
     assert_eq!(loaded.statuses, statuses);
     assert_eq!(loaded.durations_ns, durations);
@@ -149,8 +160,8 @@ fn publish_load_round_trip_and_warm_accept() {
         &identity,
         &kiss::GateConfig::default(),
     ) {
-        RustWarmDecision::RunMisses(misses) => assert_eq!(misses, vec!["c".to_string()]),
-        other => panic!("expected RunMisses, got {other:?}"),
+        RustWarmDecision::Miss => {}
+        other => panic!("expected Miss without binary authority, got {other:?}"),
     }
     match rust_warm_or_miss_selectors(
         tmp.path(),
@@ -158,8 +169,8 @@ fn publish_load_round_trip_and_warm_accept() {
         &identity,
         &kiss::GateConfig::default(),
     ) {
-        RustWarmDecision::Warm(_) => {}
-        other => panic!("expected Warm, got {other:?}"),
+        RustWarmDecision::Miss => {}
+        other => panic!("expected Miss without binary authority, got {other:?}"),
     }
     maybe_bootstrap_rust_witness(tmp.path(), &selectors, &identity);
     cover_warm_selector_invalidation(tmp.path(), &identity);
@@ -227,7 +238,7 @@ fn subset_scope_does_not_overwrite_full_pointer() {
 }
 
 #[test]
-fn checksum_mismatch_rejects_load() {
+fn corrupted_legacy_sidecar_cannot_override_generation() {
     let tmp = tempfile::tempdir().unwrap();
     write_minimal_repo(tmp.path());
     let identity = sample_identity();
@@ -283,7 +294,8 @@ fn checksum_mismatch_rejects_load() {
     let mut json_raw = std::fs::read_to_string(&json_path).unwrap();
     json_raw = json_raw.replace("\"complete\": false", "\"complete\": true");
     std::fs::write(&json_path, json_raw).unwrap();
-    assert!(try_load_rust_execution_witness(json_only.path()).is_err());
+    let authoritative = try_load_rust_execution_witness(json_only.path()).unwrap();
+    assert!(!authoritative.complete);
 }
 
 #[test]
@@ -326,6 +338,163 @@ fn warm_helpers_use_caller_gate_not_cwd_defaults() {
         rust_miss_selectors(tmp.path(), &selectors, &identity, &tight),
         Some(Vec::<String>::new())
     );
+}
+
+#[test]
+fn pointer_backed_witness_load_populates_in_process_memo() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_minimal_repo(tmp.path());
+    let identity = sample_identity();
+    let selectors = vec!["a".into()];
+    publish_rust_execution_witness(PublishRustWitness {
+        repo_root: tmp.path(),
+        identity: &identity,
+        scope: WitnessScope::Full,
+        selectors: &selectors,
+        statuses: &[WitnessStatus::Passed],
+        durations_ns: &[Some(1)],
+        covered_lines: &Default::default(),
+        complete: true,
+        jobs: 1,
+    })
+    .unwrap();
+    super::witness_memo::clear_published_witness_memo_for_tests();
+    let cache = crate::test_runner::rust_coverage_index::rust_coverage_cache_root(tmp.path());
+    crate::test_runner::execution_generation::reset_load_current_generation_call_count(&cache);
+    let first = try_load_rust_execution_witness(tmp.path()).unwrap();
+    let second = try_load_rust_execution_witness(tmp.path()).unwrap();
+    assert_eq!(second.generation_id, first.generation_id);
+    assert_eq!(
+        crate::test_runner::execution_generation::load_current_generation_call_count(),
+        1
+    );
+    let pointer = crate::test_runner::execution_generation::read_pointer(&cache)
+        .unwrap()
+        .unwrap();
+    std::fs::remove_file(cache.join("current_generation.json")).unwrap();
+    std::fs::remove_dir_all(cache.join("generations").join(pointer.generation_id)).unwrap();
+    assert!(
+        try_load_rust_execution_witness(tmp.path()).is_err(),
+        "a pointer-backed memo must not outlive its generation authority"
+    );
+}
+
+#[test]
+fn publish_rejects_shape_mismatch() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_minimal_repo(tmp.path());
+    let empty_cov = Default::default();
+    let err = publish_rust_execution_witness(PublishRustWitness {
+        repo_root: tmp.path(),
+        identity: &sample_identity(),
+        scope: WitnessScope::Full,
+        selectors: &["a".into(), "b".into()],
+        statuses: &[WitnessStatus::Passed],
+        durations_ns: &[Some(1)],
+        covered_lines: &empty_cov,
+        complete: true,
+        jobs: 1,
+    });
+    assert!(err.is_err());
+}
+
+#[test]
+fn publish_dedups_duplicate_selectors() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_minimal_repo(tmp.path());
+    let identity = sample_identity();
+    let empty_cov = Default::default();
+    publish_rust_execution_witness(PublishRustWitness {
+        repo_root: tmp.path(),
+        identity: &identity,
+        scope: WitnessScope::Full,
+        selectors: &["b".into(), "a".into(), "a".into()],
+        statuses: &[
+            WitnessStatus::Passed,
+            WitnessStatus::Failed,
+            WitnessStatus::Passed,
+        ],
+        durations_ns: &[Some(1), Some(2), Some(3)],
+        covered_lines: &empty_cov,
+        complete: true,
+        jobs: 1,
+    })
+    .unwrap();
+    let loaded = try_load_rust_execution_witness(tmp.path()).unwrap();
+    assert_eq!(loaded.selectors, vec!["a".to_string(), "b".to_string()]);
+}
+
+#[test]
+fn rust_miss_and_warm_are_none_without_witness() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_minimal_repo(tmp.path());
+    let identity = sample_identity();
+    let gate = kiss::GateConfig::default();
+    assert!(rust_miss_selectors(tmp.path(), &["a".into()], &identity, &gate).is_none());
+    assert!(try_warm_rust_cached_summary(tmp.path(), &["a".into()], &identity, &gate).is_none());
+}
+
+#[test]
+fn rust_miss_is_none_when_identity_drifts() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_minimal_repo(tmp.path());
+    let identity = sample_identity();
+    let empty_cov = Default::default();
+    publish_rust_execution_witness(PublishRustWitness {
+        repo_root: tmp.path(),
+        identity: &identity,
+        scope: WitnessScope::Full,
+        selectors: &["a".into()],
+        statuses: &[WitnessStatus::Passed],
+        durations_ns: &[Some(1)],
+        covered_lines: &empty_cov,
+        complete: true,
+        jobs: 1,
+    })
+    .unwrap();
+    let mut drifted = identity.clone();
+    drifted.input_digest = "other-input".into();
+    assert!(
+        rust_miss_selectors(
+            tmp.path(),
+            &["a".into()],
+            &drifted,
+            &kiss::GateConfig::default()
+        )
+        .is_none()
+    );
+}
+
+#[test]
+fn rust_miss_repairs_raw_status_len_mismatch() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_minimal_repo(tmp.path());
+    let identity = sample_identity();
+    let path = super::witness_store::witness_path(tmp.path());
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, "x").unwrap();
+    super::witness_memo::stash_published_witness(
+        tmp.path(),
+        &path,
+        crate::test_runner::lang_iface::ExecutionWitness {
+            language: "rust".into(),
+            scope: WitnessScope::Full,
+            identity_digest: rust_identity_digest_from_batch(&identity),
+            selectors: vec!["a".into()],
+            statuses: vec![WitnessStatus::Passed],
+            durations_ns: vec![Some(1)],
+            covered_lines: Default::default(),
+            complete: true,
+            generation_id: "g".into(),
+            raw_statuses: Vec::new(),
+        },
+    );
+    let gate = kiss::GateConfig::default();
+    assert_eq!(
+        rust_miss_selectors(tmp.path(), &["a".into()], &identity, &gate),
+        Some(Vec::<String>::new())
+    );
+    let _ = try_warm_rust_cached_summary(tmp.path(), &["a".into()], &identity, &gate);
 }
 
 #[test]

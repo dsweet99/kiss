@@ -2,23 +2,23 @@
 mod pipeline_jobs;
 #[cfg(test)]
 pub(crate) use pipeline_jobs::{
-    set_blocked_covering_language, set_fail_covering, unpark_blocked_covering, CoveringHooks,
-    ExecuteHooks, COVERING_HOOKS, EXECUTE_HOOKS, STUB_LANGUAGE_EXECUTE,
+    COVERING_HOOKS, CoveringHooks, EXECUTE_HOOKS, ExecuteHooks, STUB_LANGUAGE_EXECUTE,
+    set_blocked_covering_language, set_fail_covering, unpark_blocked_covering,
 };
 
 use std::time::Instant;
 
 use kiss::Language;
 
+use super::RunTestCmdArgs;
 use super::plan::{
-    cover_all_language, plan_selectors_from_workspace, plan_target_selectors, plan_vcs_workspace,
-    AllWorkspaceCache, PlanSelectorsRequest, TargetPlanKind, VcsWorkspace,
+    AllWorkspaceCache, PlanSelectorsRequest, TargetPlanKind, VcsWorkspace, cover_all_language,
+    plan_selectors_from_workspace, plan_target_selectors, plan_vcs_workspace_at,
 };
 use super::planned_selectors::{
-    should_force_cold_initialization, PlannedSelectors, SelectorRunOptions,
+    PlannedSelectors, SelectorRunOptions, should_force_cold_initialization,
 };
 use super::run_logic::{finish_joined_run, merge_language_planned, print_joined_dry_run};
-use super::RunTestCmdArgs;
 use crate::bin_cli::args::TestInvocation;
 use crate::test_git::TestChangeMode;
 
@@ -41,7 +41,12 @@ pub(crate) fn run_overlapped_test(
     a: &RunTestCmdArgs<'_>,
     process_started: Instant,
 ) -> Result<i32, String> {
-    let prefix = run_workspace_prefix(a)?;
+    let cwd = std::env::current_dir().map_err(|e| format!("error: kiss test: {e}"))?;
+    let session_root = crate::test_git::require_git_repo_root(&cwd)
+        .map_err(|e| format!("error: kiss test requires a git repository ({e})"))?;
+    let _inventory_session =
+        super::workspace_selector_cache::begin_inventory_session(&session_root);
+    let prefix = run_workspace_prefix(a, &session_root)?;
     let slots = pipeline_jobs::LanguageSlots::default();
     pipeline_jobs::spawn_language_jobs(a, &prefix, &slots)?;
     let (python_job, rust_job) = pipeline_jobs::take_job_results(&slots)?;
@@ -54,10 +59,13 @@ pub(crate) fn run_overlapped_test(
     finish_joined_run(&planned, &options, process_started, python_job, rust_job)
 }
 
-fn run_workspace_prefix(a: &RunTestCmdArgs<'_>) -> Result<SharedPrefix, String> {
+fn run_workspace_prefix(
+    a: &RunTestCmdArgs<'_>,
+    repo_root: &std::path::Path,
+) -> Result<SharedPrefix, String> {
     super::emit_test_progress("kiss test: Running workspace");
     let workspace_started = Instant::now();
-    let prefix = plan_shared_prefix(a)?;
+    let prefix = plan_shared_prefix(a, repo_root)?;
     super::emit_test_progress(&format!(
         "kiss test: Ran workspace {}ms",
         workspace_started.elapsed().as_millis()
@@ -113,16 +121,19 @@ fn run_options<'a>(
     }
 }
 
-fn plan_shared_prefix(a: &RunTestCmdArgs<'_>) -> Result<SharedPrefix, String> {
+fn plan_shared_prefix(
+    a: &RunTestCmdArgs<'_>,
+    repo_root: &std::path::Path,
+) -> Result<SharedPrefix, String> {
     match &a.invocation {
         TestInvocation::Commit | TestInvocation::Base | TestInvocation::Main => {
             let req = change_request(a);
-            let ws = plan_vcs_workspace(&req)?;
+            let ws = plan_vcs_workspace_at(&req, repo_root.to_path_buf())?;
             let cold_init = should_force_cold_initialization(a, &ws.repo_root);
             let python_may_work = a.lang_filter != Some(Language::Rust)
-                && language_thread_may_work(a, &ws, Language::Python, cold_init)?;
+                && language_thread_may_work(&ws, Language::Python, cold_init)?;
             let rust_may_work = a.lang_filter != Some(Language::Python)
-                && language_thread_may_work(a, &ws, Language::Rust, cold_init)?;
+                && language_thread_may_work(&ws, Language::Rust, cold_init)?;
             Ok(SharedPrefix {
                 repo_root: ws.repo_root.clone(),
                 ignore: ws.ignore_norm.clone(),
@@ -132,26 +143,24 @@ fn plan_shared_prefix(a: &RunTestCmdArgs<'_>) -> Result<SharedPrefix, String> {
                 cold_init,
             })
         }
-        TestInvocation::All => plan_all_or_targets_prefix(a, None),
-        TestInvocation::Targets(targets) => plan_all_or_targets_prefix(a, Some(targets)),
+        TestInvocation::All => plan_all_or_targets_prefix(a, repo_root, None),
+        TestInvocation::Targets(targets) => plan_all_or_targets_prefix(a, repo_root, Some(targets)),
     }
 }
 
 fn plan_all_or_targets_prefix(
     a: &RunTestCmdArgs<'_>,
+    repo_root: &std::path::Path,
     targets: Option<&[String]>,
 ) -> Result<SharedPrefix, String> {
     let ignore = kiss::normalize_ignore_prefixes(a.ignore);
-    let cwd = std::env::current_dir().map_err(|e| format!("error: kiss test: {e}"))?;
-    let repo_root = crate::test_git::require_git_repo_root(&cwd)
-        .map_err(|e| format!("error: kiss test requires a git repository ({e})"))?;
     if matches!(a.lang_filter, Some(Language::Rust)) {
         super::rust_llvm_cov::validate_rust_extra_args(a.extra)?;
     }
     let kind = if targets.is_none() {
         SharedKind::All {
             cache: super::plan::load_all_workspace_cache(
-                &repo_root,
+                repo_root,
                 &ignore,
                 a.python_extra,
                 a.lang_filter,
@@ -160,11 +169,15 @@ fn plan_all_or_targets_prefix(
     } else {
         SharedKind::Targets
     };
-    let cold_init = should_force_cold_initialization(a, &repo_root);
+    let python_has_cached_work =
+        !matches!(&kind, SharedKind::All { cache: Some(cache) } if cache.py.is_empty());
+    let rust_has_cached_work =
+        !matches!(&kind, SharedKind::All { cache: Some(cache) } if cache.rs.is_empty());
+    let cold_init = should_force_cold_initialization(a, repo_root);
     Ok(SharedPrefix {
-        python_may_work: a.lang_filter != Some(Language::Rust),
-        rust_may_work: a.lang_filter != Some(Language::Python),
-        repo_root,
+        python_may_work: a.lang_filter != Some(Language::Rust) && python_has_cached_work,
+        rust_may_work: a.lang_filter != Some(Language::Python) && rust_has_cached_work,
+        repo_root: repo_root.to_path_buf(),
         ignore,
         kind,
         cold_init,
@@ -184,29 +197,23 @@ impl LanguageMayWork {
 }
 
 fn language_thread_may_work(
-    a: &RunTestCmdArgs<'_>,
     ws: &VcsWorkspace,
     language: Language,
     cold_init: bool,
 ) -> Result<bool, String> {
     Ok(LanguageMayWork {
         paths: language_paths_may_work(ws, language),
-        priors: language_has_prior_failures(a, &ws.repo_root, language)?,
+        priors: language_has_prior_failure_records(&ws.repo_root, language)?,
         cold_init,
     }
     .yes())
 }
 
-fn language_has_prior_failures(
-    a: &RunTestCmdArgs<'_>,
+fn language_has_prior_failure_records(
     repo_root: &std::path::Path,
     language: Language,
 ) -> Result<bool, String> {
-    let extra = match language {
-        Language::Python => a.python_extra,
-        Language::Rust => a.extra,
-    };
-    Ok(!super::runners::prior_failures_for_language(repo_root, language, extra)?.is_empty())
+    crate::test_runner::last_status::has_language_records(repo_root, language)
 }
 
 fn language_paths_may_work(ws: &VcsWorkspace, language: Language) -> bool {
@@ -284,7 +291,8 @@ fn change_request<'a>(a: &'a RunTestCmdArgs<'a>) -> PlanSelectorsRequest<'a> {
 pub(crate) fn split_jobs(jobs: usize, both: bool) -> (usize, usize) {
     let full = jobs.max(1);
     if both {
-        (full, (jobs / 2).max(1))
+        let half = (full / 2).max(1);
+        (half, half)
     } else {
         (full, full)
     }
@@ -292,44 +300,62 @@ pub(crate) fn split_jobs(jobs: usize, both: bool) -> (usize, usize) {
 
 #[cfg(test)]
 mod pipeline_tests {
-    use super::{language_paths_may_work, split_jobs, LanguageMayWork, VcsWorkspace};
+    use super::{LanguageMayWork, VcsWorkspace, language_paths_may_work, split_jobs};
     use kiss::Language;
     use std::collections::BTreeMap;
     use std::path::PathBuf;
 
     #[test]
     fn jobs_split_both_languages_and_lang_filter() {
-        assert_eq!(split_jobs(4, true), (4, 2));
+        assert_eq!(split_jobs(4, true), (2, 2));
         assert_eq!(split_jobs(4, false), (4, 4));
         assert_eq!(split_jobs(1, true), (1, 1));
     }
 
     #[test]
+    fn configured_jobs_are_honored_without_a_hidden_cap() {
+        assert_eq!(split_jobs(48, true), (24, 24));
+        assert_eq!(split_jobs(48, false), (48, 48));
+        assert_eq!(split_jobs(32, true), (16, 16));
+        assert_eq!(split_jobs(16, false), (16, 16));
+        assert_eq!(split_jobs(8, false), (8, 8));
+        assert_eq!(split_jobs(0, false), (1, 1));
+    }
+
+    #[test]
     fn vcs_spawn_uses_paths_priors_and_cold_init() {
-        assert!(!LanguageMayWork {
-            paths: false,
-            priors: false,
-            cold_init: false
-        }
-        .yes());
-        assert!(LanguageMayWork {
-            paths: true,
-            priors: false,
-            cold_init: false
-        }
-        .yes());
-        assert!(LanguageMayWork {
-            paths: false,
-            priors: true,
-            cold_init: false
-        }
-        .yes());
-        assert!(LanguageMayWork {
-            paths: false,
-            priors: false,
-            cold_init: true
-        }
-        .yes());
+        assert!(
+            !LanguageMayWork {
+                paths: false,
+                priors: false,
+                cold_init: false
+            }
+            .yes()
+        );
+        assert!(
+            LanguageMayWork {
+                paths: true,
+                priors: false,
+                cold_init: false
+            }
+            .yes()
+        );
+        assert!(
+            LanguageMayWork {
+                paths: false,
+                priors: true,
+                cold_init: false
+            }
+            .yes()
+        );
+        assert!(
+            LanguageMayWork {
+                paths: false,
+                priors: false,
+                cold_init: true
+            }
+            .yes()
+        );
         let ws = VcsWorkspace {
             repo_root: PathBuf::from("."),
             ignore_norm: Vec::new(),

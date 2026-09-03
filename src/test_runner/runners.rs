@@ -16,8 +16,7 @@ mod decision;
 #[cfg(test)]
 pub(crate) use decision::combined_selectors;
 pub(crate) use decision::{
-    CombinedSelectorInput, SelectorPlan, combined_selectors_with_direct,
-    prior_failures_for_language,
+    CombinedSelectorInput, SelectorPlan, combined_selectors_with_direct, current_prior_failures,
 };
 
 #[path = "runners/rust_enumerate.rs"]
@@ -104,19 +103,7 @@ pub(crate) fn partition_changed_paths_with_roles(
     (source, test)
 }
 
-pub(crate) fn roles_for_universe(
-    repo_root: &Path,
-    ignore: &[String],
-) -> Result<kiss::code_roles::SourceRoleIndex, kiss::code_roles::RoleBuildError> {
-    let root = repo_root.to_string_lossy().to_string();
-    let (py, rs) = kiss::gather_files_by_lang(&[root], None, ignore);
-    let py_parsed = crate::analyze_parse::parse_py_files(&py)?;
-    let rs_parsed = crate::analyze_parse::parse_rs_files(&rs)?;
-    kiss::code_roles::build_source_role_index(&py_parsed, &rs_parsed, &py, &rs)
-}
-
-#[cfg(test)]
-fn roles_for_changed_paths(
+pub(crate) fn roles_for_changed_paths(
     paths: &[PathBuf],
 ) -> Result<kiss::code_roles::SourceRoleIndex, kiss::code_roles::RoleBuildError> {
     let py: Vec<_> = paths
@@ -199,7 +186,8 @@ fn python_nodeids_from_stored_universe(
     repo_root: &Path,
     py_files: &[PathBuf],
 ) -> Option<BTreeSet<String>> {
-    let selectors = stored_python_universe_selectors(repo_root, &[], PYTHON_COVERAGE_ENV_KEYS)?;
+    let selectors =
+        stored_python_universe_selectors(repo_root, &[], &[], PYTHON_COVERAGE_ENV_KEYS)?;
     let mut rels = BTreeSet::new();
     for path in py_files {
         rels.insert(python_repo_relative_path(repo_root, path)?);
@@ -227,11 +215,15 @@ pub(crate) fn rust_report_ids_for_selectors(
     repo_root: &Path,
     selectors: &[String],
 ) -> Result<BTreeMap<String, String>, String> {
-    let map = rust_logical_to_kiss_test_ids(repo_root, &[])?;
+    let universe =
+        super::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(repo_root, &[])?;
+    let mut out = BTreeMap::new();
     for selector in selectors {
-        require_kiss_test_report_id(&map, selector)?;
+        if let Some(id) = universe.get(selector) {
+            out.insert(selector.clone(), id.clone());
+        }
     }
-    Ok(map)
+    Ok(out)
 }
 
 pub fn enumerate_workspace_python_selectors(

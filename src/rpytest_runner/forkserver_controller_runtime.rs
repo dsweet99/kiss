@@ -1,7 +1,12 @@
+use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
+
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -32,19 +37,21 @@ impl ForkserverController {
         python: &Path,
         bootstrap: &PytestBootstrap,
     ) -> Result<Self, PytestRunError> {
-        let mut child = Command::new(python)
+        let mut command = Command::new(python);
+        command
             .current_dir("/")
             .arg("-u")
             .arg("-c")
             .arg(&*FORKSERVER_CONTROLLER)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|err| PytestRunError::Spawn {
-                program: python.to_path_buf(),
-                message: err.to_string(),
-            })?;
+            .stderr(Stdio::null());
+        #[cfg(unix)]
+        command.process_group(0);
+        let mut child = command.spawn().map_err(|err| PytestRunError::Spawn {
+            program: python.to_path_buf(),
+            message: err.to_string(),
+        })?;
         let stdin = take_stdin(&mut child)?;
         let stdout = take_stdout(&mut child)?;
         let mut controller = Self {
@@ -56,6 +63,7 @@ impl ForkserverController {
             next_id: 0,
             shutting_down: false,
         };
+        register_active_forkserver(controller.child.id());
         controller.bootstrap_parent(bootstrap)?;
         Ok(controller)
     }
@@ -99,20 +107,7 @@ impl ForkserverController {
         outcome_from_response(response, request_id, timeout, started)
     }
 
-    pub(crate) fn run_module(
-        &mut self,
-        reqs: Vec<PytestRunRequest>,
-    ) -> Vec<Result<PytestRunOutcome, PytestRunError>> {
-        if reqs.len() == 1 {
-            return vec![self.run(reqs.into_iter().next().expect("one request"))];
-        }
-        match self.run_module_once(&reqs) {
-            Ok(outcomes) => outcomes,
-            Err(err) => reqs.iter().map(|_| Err(err.cloned())).collect(),
-        }
-    }
-
-    fn run_module_once(
+    pub(crate) fn run_module_once(
         &mut self,
         reqs: &[PytestRunRequest],
     ) -> Result<Vec<Result<PytestRunOutcome, PytestRunError>>, PytestRunError> {
@@ -149,7 +144,9 @@ impl ForkserverController {
         }
         let mut outcomes = Vec::with_capacity(reqs.len());
         for (response, (request_id, timeout)) in response.results.into_iter().zip(ids) {
-            outcomes.push(outcome_from_response(response, request_id, timeout, started));
+            outcomes.push(outcome_from_response(
+                response, request_id, timeout, started,
+            ));
         }
         Ok(outcomes)
     }
@@ -209,7 +206,58 @@ impl ForkserverController {
 
 impl Drop for ForkserverController {
     fn drop(&mut self) {
+        unregister_active_forkserver(self.child.id());
         self.shutdown();
+    }
+}
+
+fn active_forkservers() -> &'static Mutex<HashSet<u32>> {
+    static ACTIVE: OnceLock<Mutex<HashSet<u32>>> = OnceLock::new();
+    ACTIVE.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+fn register_active_forkserver(pid: u32) {
+    active_forkservers()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .insert(pid);
+}
+
+fn unregister_active_forkserver(pid: u32) {
+    active_forkservers()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .remove(&pid);
+}
+
+pub fn cancel_active_forkservers() {
+    #[cfg(unix)]
+    {
+        let pids: Vec<u32> = active_forkservers()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .copied()
+            .collect();
+        for pid in &pids {
+            signal_forkserver_group(*pid, libc::SIGTERM);
+        }
+        if !pids.is_empty() {
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        for pid in pids {
+            signal_forkserver_group(pid, libc::SIGKILL);
+        }
+    }
+}
+
+#[cfg(unix)]
+fn signal_forkserver_group(pid: u32, signal: libc::c_int) {
+    let pid = pid as libc::pid_t;
+    if pid > 0 && unsafe { libc::getpgid(pid) } == pid {
+        unsafe {
+            libc::kill(-pid, signal);
+        }
     }
 }
 
@@ -290,4 +338,3 @@ fn outcome_from_response(
             .collect(),
     })
 }
-

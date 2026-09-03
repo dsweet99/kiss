@@ -25,6 +25,7 @@ pub(crate) struct CovDispatchOptions<'a> {
     pub ignore: Vec<String>,
     pub timing: bool,
     pub jobs: Option<usize>,
+    pub extra: Vec<String>,
     pub cfg: &'a TriConfig<'a>,
     pub test_cfg: &'a TestSectionConfig,
 }

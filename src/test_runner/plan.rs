@@ -18,7 +18,7 @@ mod plan_vcs;
 #[cfg(test)]
 pub(crate) use plan_vcs::plan_selectors;
 pub(crate) use plan_vcs::{
-    PlanSelectorsRequest, VcsWorkspace, plan_selectors_from_workspace, plan_vcs_workspace,
+    PlanSelectorsRequest, VcsWorkspace, plan_selectors_from_workspace, plan_vcs_workspace_at,
 };
 
 pub(crate) enum TargetPlanKind<'a> {
@@ -116,10 +116,11 @@ pub(crate) fn load_all_workspace_cache(
 ) -> Option<AllWorkspaceCache> {
     let cache_started = std::time::Instant::now();
     let (cached_py, cached_rs, fp) =
-        super::workspace_selector_cache::load_cached_workspace_selectors(
+        super::workspace_selector_cache::load_cached_workspace_selectors_for_lang(
             repo_root,
             ignore,
             python_extra,
+            lang_filter,
         )?;
     let (py, rs) = match lang_filter {
         None => (cached_py, cached_rs),
@@ -181,10 +182,11 @@ fn try_plan_all_from_cache(
 ) -> Option<PlannedSelectors> {
     let cache_started = std::time::Instant::now();
     let (cached_py, cached_rs, fp) =
-        super::workspace_selector_cache::load_cached_workspace_selectors(
+        super::workspace_selector_cache::load_cached_workspace_selectors_for_lang(
             repo_root,
             ignore,
             python_extra,
+            lang_filter,
         )?;
     let (py_sel, rs_sel) = match lang_filter {
         None => (cached_py, cached_rs),
@@ -209,7 +211,22 @@ fn timed_python_selectors(
     python_extra: &[String],
 ) -> (Result<Vec<String>, String>, std::time::Duration) {
     let started = std::time::Instant::now();
+    if let Some(cached) = super::workspace_selector_cache::load_cached_python_workspace_selectors(
+        repo_root,
+        ignore,
+        python_extra,
+    ) {
+        return (Ok(cached), started.elapsed());
+    }
     let out = runners::enumerate_workspace_python_selectors(repo_root, ignore, python_extra);
+    if let Ok(ids) = out.as_ref() {
+        super::workspace_selector_cache::store_python_workspace_selectors(
+            repo_root,
+            ignore,
+            ids,
+            python_extra,
+        );
+    }
     (out, started.elapsed())
 }
 

@@ -25,10 +25,17 @@ pub(crate) struct VcsWorkspace {
 }
 
 pub(crate) fn plan_vcs_workspace(req: &PlanSelectorsRequest<'_>) -> Result<VcsWorkspace, String> {
-    let ignore_norm = kiss::normalize_ignore_prefixes(req.ignore);
     let cwd = std::env::current_dir().map_err(|e| format!("error: kiss test: {e}"))?;
     let repo_root = crate::test_git::require_git_repo_root(&cwd)
         .map_err(|e| format!("error: kiss test requires a git repository ({e})"))?;
+    plan_vcs_workspace_at(req, repo_root)
+}
+
+pub(crate) fn plan_vcs_workspace_at(
+    req: &PlanSelectorsRequest<'_>,
+    repo_root: std::path::PathBuf,
+) -> Result<VcsWorkspace, String> {
+    let ignore_norm = kiss::normalize_ignore_prefixes(req.ignore);
     let diff_target = crate::test_git::resolve_diff_target(
         &repo_root,
         req.mode,
@@ -67,7 +74,12 @@ pub(crate) fn plan_vcs_workspace(req: &PlanSelectorsRequest<'_>) -> Result<VcsWo
         &ignore_norm,
         lang_filter,
     );
-    let roles = runners::roles_for_universe(&repo_root, &ignore_norm)
+    let existing_changed: Vec<_> = abs_paths
+        .iter()
+        .filter(|path| path.exists())
+        .cloned()
+        .collect();
+    let roles = runners::roles_for_changed_paths(&existing_changed)
         .map_err(|err| format!("error: kiss test: {err}"))?;
     let (source_changed, test_changed) =
         runners::partition_changed_paths_with_roles(&abs_paths, &roles);

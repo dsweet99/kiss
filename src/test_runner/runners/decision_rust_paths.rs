@@ -177,8 +177,8 @@ fn effective_paths_for_resolution(
     resolved: &ResolvedRustPopulation,
     rust_vcs_source_paths: &[PathBuf],
     rust_vcs_test_paths: &[PathBuf],
-    repo_root: &Path,
-    ignore: &[String],
+    _repo_root: &Path,
+    _ignore: &[String],
 ) -> Result<(Vec<PathBuf>, Vec<PathBuf>, usize, bool), String> {
     match resolved {
         ResolvedRustPopulation::Current { .. } => Ok((
@@ -189,7 +189,7 @@ fn effective_paths_for_resolution(
         )),
         ResolvedRustPopulation::ReusablePrior { delta, .. } => match delta {
             kiss::rust_llvm_cov_runner::RustSnapshotDelta::Modified(paths) => {
-                let roles = roles_for_modified_paths(repo_root, ignore, paths)?;
+                let roles = roles_for_modified_paths(paths)?;
                 let (source_paths, test_paths) =
                     crate::test_runner::runners::partition_changed_paths_with_roles(paths, &roles);
                 Ok((source_paths, test_paths, paths.len(), false))
@@ -212,15 +212,10 @@ fn effective_paths_for_resolution(
 }
 
 fn roles_for_modified_paths(
-    repo_root: &Path,
-    ignore: &[String],
     paths: &[PathBuf],
 ) -> Result<kiss::code_roles::SourceRoleIndex, String> {
-    if paths.iter().all(|path| !path.exists()) {
-        return Ok(kiss::code_roles::SourceRoleIndex::empty());
-    }
-    crate::test_runner::runners::roles_for_universe(repo_root, ignore)
-        .map_err(|err| err.to_string())
+    let existing: Vec<_> = paths.iter().filter(|path| path.exists()).cloned().collect();
+    crate::test_runner::runners::roles_for_changed_paths(&existing).map_err(|err| err.to_string())
 }
 
 fn effective_rust_changed_lines(

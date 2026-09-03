@@ -47,6 +47,7 @@ pub use collector::{
     collect_pytest_nodeids, subprocess_pytest_collector,
 };
 pub use forkserver::{ForkserverPytestRunner, forkserver_pytest_runner};
+pub use forkserver_controller_runtime::cancel_active_forkservers;
 pub use runner::{PytestRunner, SubprocessPytestRunner, subprocess_pytest_runner};
 pub use types::{
     PytestBootstrap, PytestRunError, PytestRunOutcome, PytestRunRequest, RequestedArtifact,

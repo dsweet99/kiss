@@ -34,6 +34,50 @@ fn format_rslip_error_includes_context() {
 }
 
 #[test]
+fn protocol_batch_missing_is_quiet_timeout() {
+    assert!(rslip_protocol_is_quiet_timeout(&RslipError::Runner(
+        kiss::rpytest_runner::PytestRunError::Protocol(
+            "module batch result missing: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')"
+                .to_string(),
+        )
+    )));
+    assert!(rslip_protocol_is_quiet_timeout(&RslipError::Runner(
+        kiss::rpytest_runner::PytestRunError::Protocol("module batch timed out".to_string())
+    )));
+    assert!(!rslip_protocol_is_quiet_timeout(
+        &RslipError::InvalidRequest("bad selector".to_string())
+    ));
+}
+
+#[cfg(unix)]
+#[test]
+fn emit_finalized_outcomes_maps_protocol_batch_missing_to_timeout() {
+    let gate = kiss::GateConfig {
+        max_unit_test_seconds: vec![("*".into(), 7.0)],
+        ..kiss::GateConfig::default()
+    };
+    let out = capture_stdout(|| {
+        emit_finalized_outcomes(
+            vec![(
+                0,
+                Err(RslipError::Runner(
+                    kiss::rpytest_runner::PytestRunError::Protocol(
+                        "module batch result missing: JSONDecodeError".to_string(),
+                    ),
+                )),
+            )],
+            &["mod.py::test_a".to_string()],
+            &gate,
+        );
+    });
+    assert!(
+        out.contains("TIMEOUT: mod.py::test_a (7.00s)"),
+        "protocol batch miss must print TIMEOUT: {out}"
+    );
+    assert!(!out.contains("FAIL:"));
+}
+
+#[test]
 #[should_panic(expected = "jobs must be greater than zero")]
 fn run_rslip_selectors_rejects_zero_jobs_before_spawning() {
     let tmp = tempfile::tempdir().unwrap();
@@ -52,6 +96,7 @@ fn run_rslip_selectors_rejects_zero_jobs_before_spawning() {
 
 #[test]
 fn zero_limit_selectors_timeout_without_invoking_runner() {
+    let _cwd = crate::cwd_test_lock::lock();
     let tmp = tempfile::tempdir().unwrap();
     fs::write(
         tmp.path().join(".kissconfig"),
@@ -418,4 +463,224 @@ def test_b():\n    assert True\n",
         "cache hits must print via prepare-time SelectorFinalized: {hit_out}"
     );
     assert_eq!(hit_out.matches("PASS (cached):").count(), 2);
+}
+
+#[test]
+fn rslip_progress_error_and_stderr_paths_are_covered() {
+    let gate = kiss::GateConfig::default();
+    handle_rslip_batch_progress(
+        RslipBatchProgress::Prepared {
+            cache_hits: 1,
+            cache_misses: 2,
+            elapsed: Duration::ZERO,
+        },
+        &[],
+        &gate,
+    );
+    handle_rslip_batch_progress(
+        RslipBatchProgress::CachedStatusDump {
+            body: "\ncached line\n".to_string(),
+        },
+        &[],
+        &gate,
+    );
+    handle_rslip_batch_progress(
+        RslipBatchProgress::TestsRemaining { remaining: 4 },
+        &[],
+        &gate,
+    );
+    emit_progress_lines("\n\nprogress\n");
+
+    let mut summary = SelectorExecutionSummary::default();
+    let mut statuses = Vec::new();
+    record_rslip_selector_result(
+        "t.py::t",
+        Err(RslipError::InvalidRequest("x".to_string())),
+        &gate,
+        &mut summary,
+        &mut statuses,
+    );
+    assert_eq!(summary.failed, 1);
+    record_rslip_selector_result(
+        "t.py::failed",
+        Ok(RslipOutcome {
+            nodeid: "t.py::failed".to_string(),
+            status: TestStatus::Failed,
+            exit_code: Some(1),
+            duration: Duration::from_millis(1),
+            coverage: LineCoverage {
+                files: BTreeMap::new(),
+            },
+            cache_status: PyCacheStatus::MissStored,
+            stdout: None,
+            stderr: None,
+        }),
+        &gate,
+        &mut summary,
+        &mut statuses,
+    );
+    assert!(
+        summary
+            .cache_unstored_selectors
+            .contains(&"t.py::failed".to_string())
+    );
+
+    emit_finalized_outcomes(
+        vec![(9, Err(RslipError::InvalidRequest("x".to_string())))],
+        &[],
+        &gate,
+    );
+    print_rslip_outcome(
+        &RslipOutcome {
+            nodeid: "t.py::t".to_string(),
+            status: TestStatus::Failed,
+            exit_code: Some(1),
+            duration: Duration::from_millis(1),
+            coverage: LineCoverage {
+                files: BTreeMap::new(),
+            },
+            cache_status: PyCacheStatus::MissStored,
+            stdout: None,
+            stderr: Some(b"boom\n".to_vec()),
+        },
+        &gate,
+    );
+}
+
+#[test]
+fn progress_failures_are_persisted_before_the_batch_ends() {
+    let tmp = tempfile::tempdir().unwrap();
+    let identity = python_last_status_identity("3.12.0", "8.0.0", &[]);
+    persist_rslip_progress_statuses(
+        tmp.path(),
+        &identity,
+        &["t.py::fail".to_string()],
+        &RslipBatchProgress::SelectorFinalized {
+            outcomes: vec![(
+                0,
+                Ok(RslipOutcome {
+                    nodeid: "t.py::fail".to_string(),
+                    status: TestStatus::Failed,
+                    exit_code: Some(1),
+                    duration: Duration::from_millis(1),
+                    coverage: LineCoverage {
+                        files: BTreeMap::new(),
+                    },
+                    cache_status: PyCacheStatus::MissStored,
+                    stdout: None,
+                    stderr: None,
+                }),
+            )],
+        },
+    );
+    assert_eq!(
+        crate::test_runner::last_status::prior_failures(
+            tmp.path(),
+            kiss::Language::Python,
+            &identity
+        )
+        .unwrap(),
+        vec!["t.py::fail".to_string()]
+    );
+}
+
+#[test]
+fn progress_timeouts_are_persisted_as_failures() {
+    let tmp = tempfile::tempdir().unwrap();
+    let identity = python_last_status_identity("3.12.0", "8.0.0", &[]);
+    persist_rslip_progress_statuses(
+        tmp.path(),
+        &identity,
+        &["t.py::slow".to_string()],
+        &RslipBatchProgress::SelectorFinalized {
+            outcomes: vec![(
+                0,
+                Ok(RslipOutcome {
+                    nodeid: "t.py::slow".to_string(),
+                    status: TestStatus::TimedOut,
+                    exit_code: Some(124),
+                    duration: Duration::from_secs(5),
+                    coverage: LineCoverage {
+                        files: BTreeMap::new(),
+                    },
+                    cache_status: PyCacheStatus::MissStored,
+                    stdout: None,
+                    stderr: None,
+                }),
+            )],
+        },
+    );
+    assert_eq!(
+        crate::test_runner::last_status::prior_failures(
+            tmp.path(),
+            kiss::Language::Python,
+            &identity
+        )
+        .unwrap(),
+        vec!["t.py::slow".to_string()]
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn timeouts_are_not_retried() {
+    let _cwd = crate::cwd_test_lock::lock();
+    let tmp = tempfile::tempdir().unwrap();
+    fs::write(
+        tmp.path().join("test_sample.py"),
+        "def test_a():\n    assert True\n",
+    )
+    .unwrap();
+    let calls = Rc::new(Cell::new(0usize));
+    let jobs_seen = Rc::new(RefCell::new(Vec::new()));
+    let calls_for_runner = Rc::clone(&calls);
+    let jobs_for_runner = Rc::clone(&jobs_seen);
+    let runner = PytestRunner::from_bounded_fn(move |reqs, jobs| {
+        jobs_for_runner.borrow_mut().push(jobs);
+        let attempt = calls_for_runner.get();
+        calls_for_runner.set(attempt + 1);
+        reqs.into_iter()
+            .map(|req| {
+                let path = req.artifacts[0].path.clone();
+                let artifact_name = req.artifacts[0].name.clone();
+                fs::write(&path, r#"{"files":{}}"#).unwrap();
+                Ok(PytestRunOutcome {
+                    nodeid: req.nodeid,
+                    status: if attempt == 0 {
+                        TestStatus::TimedOut
+                    } else {
+                        TestStatus::Passed
+                    },
+                    exit_code: Some(if attempt == 0 { 124 } else { 0 }),
+                    stdout: Vec::new(),
+                    stderr: Vec::new(),
+                    duration: Duration::from_millis(if attempt == 0 { 5000 } else { 1 }),
+                    artifacts: BTreeMap::from([(artifact_name, path)]),
+                })
+            })
+            .collect()
+    });
+    let previous = std::env::current_dir().unwrap();
+    std::env::set_current_dir(tmp.path()).unwrap();
+    let summary = run_rslip_selectors_with_runner(
+        RslipBatchArgs {
+            repo_root: tmp.path(),
+            selectors: &["test_sample.py::test_a".to_string()],
+            extra: &[],
+            force_rerun: true,
+            force_rerun_selectors: &[],
+            jobs: 8,
+            content_fingerprint: None,
+            gate: kiss::GateConfig::default(),
+        },
+        runner,
+    )
+    .unwrap();
+    std::env::set_current_dir(previous).unwrap();
+    assert_eq!(*jobs_seen.borrow(), vec![8]);
+    assert_eq!(
+        summary.timed_out_selectors,
+        vec!["test_sample.py::test_a".to_string()]
+    );
+    assert_eq!(summary.failed, 1);
 }

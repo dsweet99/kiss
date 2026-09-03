@@ -28,9 +28,13 @@ fn run_kiss_main() -> i32 {
     set_sigpipe_default();
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let repo_root = discover_repo_root(&cwd);
-    let _ = redirect_this_process(&repo_root);
-    let _ = sweep_kiss_profraw_dir(&repo_root);
-    let _profraw_guard = KissProfrawProcessGuard::for_current_process(&repo_root);
+    let _profraw_guard = if cfg!(test) {
+        None
+    } else {
+        let _ = redirect_this_process(&repo_root);
+        let _ = sweep_kiss_profraw_dir(&repo_root);
+        Some(KissProfrawProcessGuard::for_current_process(&repo_root))
+    };
     let exit_code = run();
     let d = t0.elapsed();
     if d.as_secs() >= 1 {
@@ -43,14 +47,66 @@ fn run_kiss_main() -> i32 {
 
 #[cfg(test)]
 pub(crate) mod cwd_test_lock {
+    use std::cell::Cell;
+    use std::path::PathBuf;
     use std::sync::Mutex;
 
     static MUTEX: Mutex<()> = Mutex::new(());
+    thread_local! {
+        static DEPTH: Cell<usize> = const { Cell::new(0) };
+    }
 
-    pub fn lock() -> std::sync::MutexGuard<'static, ()> {
-        MUTEX
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    pub struct Guard {
+        _lock: Option<std::sync::MutexGuard<'static, ()>>,
+        original: Option<PathBuf>,
+    }
+
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            if let Some(original) = &self.original {
+                let _ = std::env::set_current_dir(original);
+            }
+            DEPTH.set(DEPTH.get().saturating_sub(1));
+        }
+    }
+
+    pub fn lock() -> Guard {
+        let lock = (DEPTH.get() == 0).then(|| {
+            MUTEX
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+        });
+        DEPTH.set(DEPTH.get() + 1);
+        Guard {
+            _lock: lock,
+            original: std::env::current_dir().ok(),
+        }
+    }
+
+    #[test]
+    fn guard_restores_current_directory_during_unwind() {
+        const ENV: &str = "KISS_ISOLATED_CWD_GUARD_TEST";
+        if std::env::var_os(ENV).is_none() {
+            let status = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "cwd_test_lock::guard_restores_current_directory_during_unwind",
+                ])
+                .env(ENV, "1")
+                .status()
+                .unwrap();
+            assert!(status.success());
+            return;
+        }
+        let original = std::env::current_dir().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let result = std::panic::catch_unwind(|| {
+            let _guard = lock();
+            std::env::set_current_dir(tmp.path()).unwrap();
+            panic!("exercise panic-safe restoration");
+        });
+        assert!(result.is_err());
+        assert_eq!(std::env::current_dir().unwrap(), original);
     }
 }
 

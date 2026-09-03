@@ -12,7 +12,6 @@ pub(super) struct PersistFullWitness<'a> {
     pub repo_root: &'a Path,
     pub identity: &'a RustCoverageBatchIdentity,
     pub identity_digest: &'a str,
-    pub generation_id: &'a str,
     pub selectors: &'a [String],
     pub statuses: &'a [WitnessStatus],
     pub durations_ns: &'a [Option<u64>],
@@ -22,10 +21,15 @@ pub(super) struct PersistFullWitness<'a> {
 }
 
 impl PersistFullWitness<'_> {
-    pub(super) fn persist(self) -> Result<(), String> {
+    pub(super) fn persist(self) -> Result<String, String> {
         let timing = crate::test_runner::lang_iface::session_timing_context_digest(self.jobs);
-        let published_full = self.complete
-            && super::super::generation_publish::publish_complete_full_generation(
+        let complete_all_pass = self.complete
+            && self
+                .statuses
+                .iter()
+                .all(|status| *status == WitnessStatus::Passed);
+        let generation_id = if complete_all_pass {
+            super::super::generation_publish::publish_complete_full_generation(
                 self.repo_root,
                 self.identity_digest,
                 self.selectors,
@@ -34,24 +38,37 @@ impl PersistFullWitness<'_> {
                 &timing,
                 &covered_lines_for_disk(self.covered_lines),
             )
-            .is_ok();
-        if !published_full {
-            self.write_legacy_json()?;
+        } else {
+            super::super::generation_publish::publish_current_witness_generation(
+                self.repo_root,
+                self.identity_digest,
+                self.selectors,
+                self.statuses,
+                self.durations_ns,
+                &covered_lines_for_disk(self.covered_lines),
+                super::super::generation_publish::WitnessGenerationState {
+                    timing_context_digest: &timing,
+                    complete: self.complete,
+                },
+            )
+        }?;
+        if !self.complete {
+            let _ = self.write_legacy_json(&generation_id);
         }
         let _ = kiss::rust_llvm_cov_runner::write_ordinary_source_snapshot(
             &crate::test_runner::rust_coverage_index::rust_coverage_cache_root(self.repo_root),
             self.repo_root,
             self.identity,
         );
-        Ok(())
+        Ok(generation_id)
     }
 
-    fn write_legacy_json(&self) -> Result<(), String> {
+    fn write_legacy_json(&self, generation_id: &str) -> Result<(), String> {
         let mut body = OnDiskRustWitness {
             schema_version: SCHEMA_VERSION.to_string(),
             scope: "full".to_string(),
             identity_digest: self.identity_digest.to_string(),
-            generation_id: self.generation_id.to_string(),
+            generation_id: generation_id.to_string(),
             complete: self.complete,
             selectors: self.selectors.to_vec(),
             statuses: self

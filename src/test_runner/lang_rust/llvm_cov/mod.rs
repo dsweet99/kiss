@@ -1,8 +1,5 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use kiss::rust_llvm_cov_runner::{
     CheckAggregateRepairPublication, CoverageOutputMode, RustCoverageBatchRequest,
     RustCoverageBatchResult, RustCoverageToolIdentity, RustTestExecutableIndex,
@@ -138,12 +135,22 @@ pub(crate) fn cached_rust_check_aggregate_selectors(
             crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(
                 repo_root, extra,
             )?;
-        if let Some(summary) = crate::test_runner::execution_witness::try_warm_rust_cached_summary(
-            repo_root,
-            selectors,
-            &identity,
-            &kiss::GateConfig::load_for_repo(repo_root),
-        ) {
+        let binaries_are_current =
+            kiss::rust_llvm_cov_runner::current_population_manifest_test_binaries_match(
+                &cache_root,
+                repo_root,
+                &identity,
+            )
+            .unwrap_or(false);
+        if binaries_are_current
+            && let Some(summary) =
+                crate::test_runner::execution_witness::try_warm_rust_cached_summary(
+                    repo_root,
+                    selectors,
+                    &identity,
+                    &kiss::GateConfig::load_for_repo(repo_root),
+                )
+        {
             return Ok(Some(summary));
         }
     }
@@ -255,7 +262,6 @@ where
     ));
     build_rust_coverage_batch_plan(&batch_req)?;
     let versions = detect_versions(repo_root)?;
-    install_live_rust_status_hook(repo_root, selectors, &options.gate)?;
     let identity = rust_last_status_identity(
         &versions.cargo,
         &versions.llvm_cov,
@@ -264,6 +270,7 @@ where
         options.extra,
         &batch_req.runner_map_fingerprint,
     );
+    install_live_rust_status_hook(repo_root, selectors, &options.gate, &identity)?;
     let result = execute_batch(&batch_req, &versions);
     let live_err = kiss::rust_llvm_cov_runner::take_live_rust_error();
     kiss::rust_llvm_cov_runner::clear_live_rust_test_hook();
@@ -273,6 +280,7 @@ where
     let result = result?;
     crate::test_runner::emit_stage_time("rust_llvm_cov", stage_started.elapsed());
     let summary = finish_rust_coverage_batch_result(repo_root, &identity, result, &options.gate)?;
+    live_status::finish_live_rust_remaining();
     publish_rust_witness_after_batch(repo_root, &batch_req, &summary)?;
     Ok(summary)
 }
@@ -386,23 +394,8 @@ pub(crate) fn rust_coverage_tool_identity_from_versions(
     }
 }
 
-fn unique_rust_coverage_batch_config_path(repo_root: &Path) -> PathBuf {
-    static NEXT_RUN_ID: AtomicU64 = AtomicU64::new(0);
-    let run_id = NEXT_RUN_ID.fetch_add(1, Ordering::Relaxed);
-    let timestamp_nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system time must be after Unix epoch")
-        .as_nanos();
-    repo_root
-        .join(".kiss")
-        .join("rust_llvm_cov_cache")
-        .join("runs")
-        .join(format!(
-            "run-{}-{timestamp_nanos}-{run_id}",
-            std::process::id()
-        ))
-        .join("nextest.toml")
-}
+mod run_id;
+use run_id::unique_rust_coverage_batch_config_path;
 
 pub(crate) fn detect_rust_coverage_tool_versions(
     repo_root: &Path,

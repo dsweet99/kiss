@@ -266,6 +266,7 @@ fn dispatch_private_routers_cover_additional_command_variants() {
             ignore: vec![],
             timing: false,
             jobs: None,
+            extra: vec![],
         },
         &cfg,
         &test,

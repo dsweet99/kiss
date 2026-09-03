@@ -6,7 +6,6 @@ use kiss::TestSectionConfig;
 
 use crate::bin_cli::args::TestInvocation;
 use crate::bin_cli::cov_cmd::{CovCommandArgs, run_cov_command};
-use crate::bin_cli::cov_warm::warm_cov_caches_after_tests;
 use crate::test_runner::{
     RunTestCmdArgs, WatchCoverageParams, WatchCoverageResult, run_test, run_test_watch,
 };
@@ -220,13 +219,6 @@ struct AfterTestCoverage<'a> {
 
 fn run_after_test_coverage(p: AfterTestCoverage<'_>) -> i32 {
     let universe = universe_root_for_test_invocation(p.invocation);
-    warm_cov_caches_after_tests(
-        &universe,
-        p.lang_filter,
-        p.ignore,
-        p.gate_config,
-        p.pytest_args,
-    );
     let universe_s = universe.to_string_lossy().into_owned();
     let paths = [universe_s];
     let started = std::time::Instant::now();
@@ -291,7 +283,7 @@ pub(crate) fn finish_with_coverage(args: &TestCommandArgs<'_>, test_exit: i32) -
         pytest_args: &python_extra,
         language_tables: args.language_tables,
     });
-    if cov_code != 0 { cov_code } else { test_exit }
+    if test_exit != 0 { test_exit } else { cov_code }
 }
 
 fn universe_root_for_test_invocation(invocation: &TestInvocation) -> PathBuf {

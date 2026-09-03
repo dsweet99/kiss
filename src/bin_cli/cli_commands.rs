@@ -174,6 +174,12 @@ pub enum Commands {
             help = "Maximum number of coverage jobs to run concurrently"
         )]
         jobs: Option<usize>,
+        #[arg(
+            last = true,
+            value_name = "ARG",
+            help = "Arguments matching the test run that produced Python coverage"
+        )]
+        extra: Vec<String>,
     },
     #[command(name = "__rust-llvm-cov-target-runner", hide = true)]
     RustLlvmCovTargetRunner {

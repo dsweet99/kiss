@@ -45,6 +45,9 @@ pub(super) fn execution_phase(
         if language == kiss::Language::Rust {
             return rust_population_phase(module, ctx);
         }
+        if !ctx.planned.sel.python.is_empty() {
+            return planned_population_selectors(module, ctx);
+        }
         return discover_population_selectors(module, ctx);
     }
     let selectors = module.selective_selectors(ctx);

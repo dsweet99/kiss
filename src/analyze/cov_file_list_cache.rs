@@ -6,11 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::analyze_cache::fnv1a64;
 
-const SCHEMA_VERSION: &str = "kiss-cov-file-list-v6";
-
-fn is_prior_file_list_schema(schema: &str) -> bool {
-    schema == "kiss-cov-file-list-v4" || schema == "kiss-cov-file-list-v5"
-}
+const SCHEMA_VERSION: &str = "kiss-cov-file-list-v7";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct CovFileListCache {
@@ -33,18 +29,14 @@ pub(crate) fn try_load_cov_file_list(
     let raw = fs::read(cache_path(key.repo_root)).ok()?;
     let cache: CovFileListCache = serde_json::from_slice(&raw).ok()?;
     let current = cache.schema_version == SCHEMA_VERSION;
-    let prior = is_prior_file_list_schema(&cache.schema_version);
-    if !current && !prior {
+    if !current {
         return None;
     }
-    if current && cache.fingerprint != fingerprint {
+    if cache.fingerprint != fingerprint {
         return None;
     }
     if cache.py_files.is_empty() && cache.rs_files.is_empty() {
         return None;
-    }
-    if prior {
-        store_cov_file_list(key, &cache.py_files, &cache.rs_files);
     }
     Some((cache.py_files, cache.rs_files))
 }
@@ -70,10 +62,14 @@ pub(crate) fn store_cov_file_list(
     if let Some(parent) = path.parent() {
         let _ = fs::create_dir_all(parent);
     }
-    let tmp = path.with_extension("json.tmp");
+    let tmp = path.with_file_name(format!(
+        ".cov_file_list.{}.tmp",
+        kiss::kiss_publication_barrier::unique_process_suffix()
+    ));
     if fs::write(&tmp, bytes).is_ok() {
-        let _ = fs::rename(tmp, path);
+        let _ = fs::rename(&tmp, path);
     }
+    let _ = fs::remove_file(tmp);
 }
 
 fn cache_path(repo_root: &Path) -> PathBuf {
@@ -95,11 +91,10 @@ fn file_list_fingerprint(key: &CovFileListKey<'_>) -> Option<String> {
         h = fnv1a64(h, prefix.as_bytes());
         h = fnv1a64(h, &[0]);
     }
-    let cargo = key.repo_root.join("Cargo.toml");
-    h = fnv1a64(h, cargo.to_string_lossy().as_bytes());
-    if let Ok(bytes) = fs::read(&cargo) {
-        h = fnv1a64(h, &bytes);
-    }
+    let workspace = crate::test_runner::workspace_selector_cache::
+        workspace_source_inventory_fingerprint_for_cache(key.repo_root, key.ignore)
+        .ok()?;
+    h = fnv1a64(h, workspace.as_bytes());
     Some(format!("{h:016x}"))
 }
 

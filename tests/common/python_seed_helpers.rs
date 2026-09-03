@@ -77,7 +77,10 @@ fn visit_python_source_inputs(dir: &Path, out: &mut Vec<PathBuf>) {
                 continue;
             }
             visit_python_source_inputs(&path, out);
-        } else if file_type.is_file() && is_python_source_input_path(&path) {
+        } else if file_type.is_file()
+            && is_python_source_input_path(&path)
+            && !is_python_test_module_path(&path)
+        {
             out.push(path);
         }
     }
@@ -89,6 +92,11 @@ fn should_skip_python_source_input_dir(path: &Path) -> bool {
 
 fn is_python_source_input_path(path: &Path) -> bool {
     kiss::rslip::is_rslip_cache_input(path)
+}
+
+fn is_python_test_module_path(path: &Path) -> bool {
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    name.ends_with(".py") && (name.starts_with("test_") || name.ends_with("_test.py"))
 }
 
 fn trim_outer_ascii_whitespace(bytes: &[u8]) -> &[u8] {

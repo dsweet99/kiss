@@ -148,6 +148,12 @@ fn prior_failures_for_language_loads_rust_failures_with_live_identity() {
             "demo::tests::failed"
         )]
     );
+    assert!(
+        super::current_prior_failures(tmp.path(), kiss::Language::Rust, &[], &[])
+            .unwrap()
+            .is_empty(),
+        "removed tests must not return through prior-failure selection"
+    );
 }
 
 #[test]

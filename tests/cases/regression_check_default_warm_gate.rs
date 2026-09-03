@@ -96,7 +96,13 @@ fn regression_cached_coverage_violations_do_not_leak_into_default_gate_mode() {
         "def uncovered_function(x):\n    return x * 2\n",
     )
     .unwrap();
-    seed_python_runtime_coverage(repo.path(), &[("test_default.py::test_default", vec![])]);
+    seed_python_runtime_coverage(
+        repo.path(),
+        &[(
+            "test_default.py::test_default",
+            vec![("default.py", vec![])],
+        )],
+    );
 
     let cold = run_default_check_with_config(home.path(), repo.path());
     let cold_stdout = String::from_utf8_lossy(&cold.stdout).to_string();
@@ -139,7 +145,13 @@ fn regression_default_gate_fail_still_reports_timing() {
         "def uncovered_function(x):\n    return x * 2\n",
     )
     .unwrap();
-    seed_python_runtime_coverage(repo.path(), &[("test_default.py::test_default", vec![])]);
+    seed_python_runtime_coverage(
+        repo.path(),
+        &[(
+            "test_default.py::test_default",
+            vec![("default.py", vec![])],
+        )],
+    );
 
     let out = kiss_binary()
         .arg("__coverage")

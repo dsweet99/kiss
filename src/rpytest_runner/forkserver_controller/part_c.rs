@@ -25,26 +25,6 @@ def _redirect_stdio(stdout_path, stderr_path):
     sys.__stdout__ = sys.stdout
     sys.__stderr__ = sys.stderr
 
-_TIMEOUT_HIT = []
-
-def _timeout_handler(_signum, _frame):
-    _TIMEOUT_HIT.append(1)
-    print("pytest timed out", file=sys.stderr, flush=True)
-    raise SystemExit(124)
-
-def _arm_timeout(timeout_ms):
-    _TIMEOUT_HIT.clear()
-    if timeout_ms is None:
-        return
-    signal.signal(signal.SIGALRM, _timeout_handler)
-    signal.setitimer(signal.ITIMER_REAL, max(timeout_ms / 1000.0, 0.001))
-
-def _disarm_timeout():
-    try:
-        signal.setitimer(signal.ITIMER_REAL, 0)
-    except Exception:
-        pass
-
 def _reset_rslip_coverage(req):
     out_path = (req.get("env") or {}).get("RSLIP_COVERAGE_OUT")
     runtime = sys.modules.get("rslip_runtime")
@@ -62,7 +42,20 @@ def _flush_rslip_coverage():
     if write is not None:
         write()
 
-def _run_item_inprocess(item, req, stdout_path, stderr_path, duration_path):
+def _snapshot_rslip_coverage():
+    runtime = sys.modules.get("rslip_runtime")
+    snapshot = getattr(runtime, "snapshot_coverage", None) if runtime is not None else None
+    return snapshot() if snapshot is not None else {}
+
+def _merge_rslip_coverage(files):
+    runtime = sys.modules.get("rslip_runtime")
+    merge = getattr(runtime, "merge_coverage", None) if runtime is not None else None
+    if merge is not None:
+        merge(files)
+
+def _run_item_inprocess(
+    item, req, stdout_path, stderr_path, duration_path, collection_coverage
+):
     from _pytest.runner import runtestprotocol
 
     duration_plugin = _TestDurationPlugin()
@@ -72,7 +65,8 @@ def _run_item_inprocess(item, req, stdout_path, stderr_path, duration_path):
     os.environ.update(req.get("env", {}))
     _apply_pythonpath_from_env()
     _redirect_stdio(stdout_path, stderr_path)
-    _arm_timeout(req.get("timeout_ms"))
+    timeout_plugin = _CallTimeoutPlugin(req.get("timeout_ms"))
+    item.config.pluginmanager.register(timeout_plugin, "rpytest_call_timeout")
     exit_code = 1
     try:
         for module_name in req.get("child_preload_modules", []):
@@ -97,7 +91,12 @@ def _run_item_inprocess(item, req, stdout_path, stderr_path, duration_path):
         traceback.print_exc()
         exit_code = 124 if _TIMEOUT_HIT else 1
     finally:
+        try:
+            item.config.pluginmanager.unregister(timeout_plugin)
+        except Exception:
+            pass
         _disarm_timeout()
+        _merge_rslip_coverage(collection_coverage)
         _flush_rslip_coverage()
         _write_duration(duration_path, duration_plugin)
         try:
@@ -107,7 +106,7 @@ def _run_item_inprocess(item, req, stdout_path, stderr_path, duration_path):
             pass
     return exit_code
 
-def _run_one_collected_result(item, test_req, shared_preload):
+def _run_one_collected_result(item, test_req, shared_preload, collection_coverage):
     stdout_fd, stdout_path = tempfile.mkstemp(prefix="rpytest-forkserver-out-")
     stderr_fd, stderr_path = tempfile.mkstemp(prefix="rpytest-forkserver-err-")
     duration_fd, duration_path = tempfile.mkstemp(prefix="rpytest-forkserver-dur-")
@@ -119,7 +118,7 @@ def _run_one_collected_result(item, test_req, shared_preload):
         child_req["child_preload_modules"] = shared_preload
     try:
         exit_code = _run_item_inprocess(
-            item, child_req, stdout_path, stderr_path, duration_path
+            item, child_req, stdout_path, stderr_path, duration_path, collection_coverage
         )
         timed_out = child_req.get("timeout_ms") is not None and exit_code == 124
         artifacts = {a["name"]: a["path"] for a in child_req.get("artifacts", [])}
@@ -145,16 +144,27 @@ def _run_module_in_child(req):
     tests = list(req.get("tests") or [])
     if _CONFIG is None:
         raise RuntimeError("controller was not bootstrapped")
+    first = tests[0]
+    os.chdir(req.get("cwd") or first.get("cwd"))
+    os.environ.update(first.get("env") or {})
+    _apply_pythonpath_from_env()
+    preload = req.get("child_preload_modules", [])
+    for module_name in preload:
+        importlib.import_module(module_name)
+    _reset_rslip_coverage(first)
     config = _CONFIG
     session = Session.from_config(config)
     session.exitstatus = ExitCode.OK
     nodeids = [test["nodeid"] for test in tests]
     config.hook.pytest_sessionstart(session=session)
     items = list(session.perform_collect(args=nodeids))
+    collection_coverage = _snapshot_rslip_coverage()
     session.items = items
     by_nodeid = {item.nodeid: item for item in items}
     results = []
-    preload = req.get("child_preload_modules", [])
+    # Attribute collection-only lines once per module. Repeating them on every
+    # selector makes a module-level edit unnecessarily select every test.
+    collection_pending = collection_coverage
     try:
         for test in tests:
             item = by_nodeid.get(test["nodeid"])
@@ -167,7 +177,10 @@ def _run_module_in_child(req):
                 continue
             test = dict(test)
             test["cwd"] = req.get("cwd") or test.get("cwd")
-            results.append(_run_one_collected_result(item, test, preload))
+            results.append(
+                _run_one_collected_result(item, test, preload, collection_pending)
+            )
+            collection_pending = {}
             if results[-1].get("timeout"):
                 break
     finally:
@@ -181,7 +194,7 @@ def _module_wait_timeout_ms(tests):
     timeouts = [test.get("timeout_ms") for test in tests]
     if any(timeout is None for timeout in timeouts):
         return None
-    return int(sum(timeouts) + 60000)
+    return int(sum(timeouts) + _SETUP_WAIT_MS)
 
 def _fork_module_chunk(req, tests):
     fd, path = tempfile.mkstemp(prefix="rpytest-forkserver-mod-")

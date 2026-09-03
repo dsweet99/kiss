@@ -109,6 +109,7 @@ fn assert_restamp_rewrites_stale_kissconfig_and_refuses_fingerprint(repo: &Path)
         &stale_fp.selectors,
         &[],
         &|_, _| true,
+        &kiss::GateConfig::default(),
         None,
     )
     .unwrap();
@@ -129,6 +130,7 @@ fn assert_restamp_rewrites_stale_kissconfig_and_refuses_fingerprint(repo: &Path)
         &stale_fp.selectors,
         &[],
         &|_, _| true,
+        &kiss::GateConfig::default(),
         Some(&[]),
     )
     .unwrap();
@@ -204,11 +206,18 @@ fn publish_then_warm_load_reads_coverage_and_timings() {
 }
 
 fn cover_exact_identity_restamp_and_closed_misses(repo: &Path, selectors: &[String]) {
+    let _ = super::repair::restamp_complete_pinned_from_cache(
+        repo,
+        &[],
+        &|_, _| true,
+        &kiss::GateConfig::default(),
+    );
     let matched = super::repair::try_restamp_matching_pinned_universe(
         repo,
         selectors,
         &[],
         &|_, _| true,
+        &kiss::GateConfig::default(),
         Some(&[]),
     )
     .unwrap();
@@ -219,6 +228,7 @@ fn cover_exact_identity_restamp_and_closed_misses(repo: &Path, selectors: &[Stri
             &["other.py::test_z".into()],
             &[],
             &|_, _| true,
+            &kiss::GateConfig::default(),
             None,
         )
         .unwrap()
@@ -230,6 +240,7 @@ fn cover_exact_identity_restamp_and_closed_misses(repo: &Path, selectors: &[Stri
             selectors,
             &[],
             &|_, _| true,
+            &kiss::GateConfig::default(),
             None,
         )
         .unwrap()
@@ -261,6 +272,11 @@ fn selective_repair_updates_only_changed_selector_coverage() {
     let repo = tmp.path();
     std::fs::create_dir_all(repo.join(".git")).unwrap();
     std::fs::write(repo.join("app.py"), b"x = 1\ny = 2\n").unwrap();
+    std::fs::write(
+        repo.join("t.py"),
+        b"def test_a(): pass\ndef test_b(): pass\n",
+    )
+    .unwrap();
     let Ok((_py, _pt)) = detect_rslip_versions(repo) else {
         return;
     };
@@ -280,6 +296,21 @@ fn selective_repair_updates_only_changed_selector_coverage() {
     )
     .unwrap();
     assert!(unchanged.is_none(), "matching evidence must not rewrite");
+    std::fs::write(
+        repo.join("t.py"),
+        b"def test_a(): pass  # changed\ndef test_b(): pass\n",
+    )
+    .unwrap();
+    let digest_repaired = super::repair::repair_python_population_generation(
+        repo,
+        &[passed_evidence("t.py::test_a", "app.py", &[1])],
+        GenerationReason::SelectiveRepair,
+    )
+    .unwrap();
+    assert!(
+        digest_repaired.is_some(),
+        "changed test definition must rewrite matching evidence"
+    );
     let changed = super::repair::repair_python_population_generation(
         repo,
         &[passed_evidence("t.py::test_a", "app.py", &[2])],

@@ -25,12 +25,27 @@ pub struct RustTestExecutableIndex {
     pub counters: RustCoverageBatchCounters,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RustListedTest {
+    pub executable: String,
+    pub logical_name: String,
+}
+
 pub fn build_rust_test_executable_index(
+    req: &RustCoverageBatchRequest,
+    tools: &RustCoverageToolIdentity,
+    identity: &RustCoverageBatchIdentity,
+    plan: &RustCoverageBatchPlan,
+) -> Result<RustTestExecutableIndex, RustLlvmCovError> {
+    build_rust_test_executable_index_with_tests(req, tools, identity, plan).map(|(index, _)| index)
+}
+
+pub fn build_rust_test_executable_index_with_tests(
     req: &RustCoverageBatchRequest,
     tools: &RustCoverageToolIdentity,
     _identity: &RustCoverageBatchIdentity,
     plan: &RustCoverageBatchPlan,
-) -> Result<RustTestExecutableIndex, RustLlvmCovError> {
+) -> Result<(RustTestExecutableIndex, Vec<RustListedTest>), RustLlvmCovError> {
     crate::rust_llvm_cov_runner::plan::batch_platform::ensure_batch_platform_supported()?;
     let scope =
         FreshBatchRunScope::begin_with_layout(&req.cache_root, plan, CurrentRunCleanup::default())
@@ -62,17 +77,20 @@ pub fn build_rust_test_executable_index(
             plan,
             build_identity.previous_baseline_bytes,
         )?;
-        let index = executable_index_from_list_metadata(req, plan)?;
-        Ok(RustTestExecutableIndex {
-            selector_binary_ids: index.selector_binary_ids,
-            test_binaries: index.test_binaries,
-            counters: RustCoverageBatchCounters {
-                build_invocations: 1,
-                build_target_baseline_bytes,
-                process_residual_count: run.process_residual_count,
-                ..Default::default()
+        let (index, listed_tests) = executable_index_and_listed_tests(req, plan)?;
+        Ok((
+            RustTestExecutableIndex {
+                selector_binary_ids: index.selector_binary_ids,
+                test_binaries: index.test_binaries,
+                counters: RustCoverageBatchCounters {
+                    build_invocations: 1,
+                    build_target_baseline_bytes,
+                    process_residual_count: run.process_residual_count,
+                    ..Default::default()
+                },
             },
-        })
+            listed_tests,
+        ))
     })();
     match outcome {
         Ok(index) => scope.finish(Ok(index)),
@@ -88,10 +106,18 @@ fn select_no_tests(plan: &mut RustCoverageBatchPlan) {
     plan.argv.push(String::new());
 }
 
+#[cfg(test)]
 fn executable_index_from_list_metadata(
     req: &RustCoverageBatchRequest,
     plan: &RustCoverageBatchPlan,
 ) -> Result<RustTestExecutableIndex, RustLlvmCovError> {
+    executable_index_and_listed_tests(req, plan).map(|(index, _)| index)
+}
+
+fn executable_index_and_listed_tests(
+    req: &RustCoverageBatchRequest,
+    plan: &RustCoverageBatchPlan,
+) -> Result<(RustTestExecutableIndex, Vec<RustListedTest>), RustLlvmCovError> {
     let exact = req.test_args.iter().any(|arg| arg == "--exact");
     let list_metadata = load_target_runner_list_metadata(&plan.target_runner_output_dir)
         .map_err(RustLlvmCovError::Io)?;
@@ -104,44 +130,88 @@ fn executable_index_from_list_metadata(
         crate::rust_llvm_cov_runner::kiss_profraw::kiss_profraw_dir(&req.source_root);
     let mut binary_by_id = BTreeMap::new();
     let mut selector_binary_ids = BTreeMap::<String, BTreeSet<String>>::new();
+    let mut listed_tests = BTreeSet::new();
     for item in list_metadata {
-        let executable = item
-            .argv
-            .first()
-            .ok_or_else(|| RustLlvmCovError::InvalidRequest("missing list executable".into()))?;
-        let path = std::path::Path::new(executable);
-        let id = test_binary_id_for_path(path);
-        let digest = digest_test_binary(path)?;
-        binary_by_id.insert(
-            id.clone(),
-            RustTestBinaryIdentity {
-                id: id.clone(),
-                executable: executable.clone(),
-                digest,
+        accumulate_listed_executable(
+            req,
+            exact,
+            &kiss_profraw,
+            item,
+            &mut ListedIndexAcc {
+                binary_by_id: &mut binary_by_id,
+                selector_binary_ids: &mut selector_binary_ids,
+                listed_tests: &mut listed_tests,
             },
-        );
-        let test_names = list_test_names_from_executable(path, &id, &kiss_profraw)?;
-        for selector in &req.logical_selectors {
-            if test_names
-                .iter()
-                .any(|test_name| selector_matches_test(test_name, selector, exact))
-            {
-                selector_binary_ids
-                    .entry(selector.clone())
-                    .or_default()
-                    .insert(id.clone());
-            }
-        }
+        )?;
     }
     let selector_binary_ids = selector_binary_ids
         .into_iter()
         .map(|(selector, ids)| (selector, ids.into_iter().collect()))
         .collect();
-    Ok(RustTestExecutableIndex {
-        selector_binary_ids,
-        test_binaries: binary_by_id.into_values().collect(),
-        counters: RustCoverageBatchCounters::default(),
-    })
+    Ok((
+        RustTestExecutableIndex {
+            selector_binary_ids,
+            test_binaries: binary_by_id.into_values().collect(),
+            counters: RustCoverageBatchCounters::default(),
+        },
+        listed_tests
+            .into_iter()
+            .map(|(executable, logical_name)| RustListedTest {
+                executable,
+                logical_name,
+            })
+            .collect(),
+    ))
+}
+
+struct ListedIndexAcc<'a> {
+    binary_by_id: &'a mut BTreeMap<String, RustTestBinaryIdentity>,
+    selector_binary_ids: &'a mut BTreeMap<String, BTreeSet<String>>,
+    listed_tests: &'a mut BTreeSet<(String, String)>,
+}
+
+fn accumulate_listed_executable(
+    req: &RustCoverageBatchRequest,
+    exact: bool,
+    kiss_profraw: &std::path::Path,
+    item: crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim::BatchShimListMetadata,
+    acc: &mut ListedIndexAcc<'_>,
+) -> Result<(), RustLlvmCovError> {
+    let executable = item
+        .argv
+        .first()
+        .ok_or_else(|| RustLlvmCovError::InvalidRequest("missing list executable".into()))?;
+    let path = std::path::Path::new(executable);
+    let id = test_binary_id_for_path(path);
+    let digest = digest_test_binary(path)?;
+    acc.binary_by_id.insert(
+        id.clone(),
+        RustTestBinaryIdentity {
+            id: id.clone(),
+            executable: executable.clone(),
+            digest,
+        },
+    );
+    let test_names = list_test_names_from_executable(path, &id, kiss_profraw)?;
+    let prefix = format!("{id}$");
+    for test_name in &test_names {
+        if let Some(logical_name) = test_name.strip_prefix(&prefix) {
+            acc.listed_tests
+                .insert((executable.clone(), logical_name.to_string()));
+        }
+    }
+    for selector in &req.logical_selectors {
+        if test_names
+            .iter()
+            .any(|test_name| selector_matches_test(test_name, selector, exact))
+        {
+            acc.selector_binary_ids
+                .entry(selector.clone())
+                .or_default()
+                .insert(id.clone());
+        }
+    }
+    Ok(())
 }
 
 fn list_test_names_from_executable(

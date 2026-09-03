@@ -132,6 +132,57 @@ fn colliding_lib_and_bin_libtest_prefix_disambiguates_via_src_mods() {
 }
 
 #[test]
+fn colliding_same_mod_disambiguates_via_fn_body() {
+    let tmp = tempfile::tempdir().unwrap();
+    let lib_src = tmp.path().join("lib.rs");
+    let bin_src = tmp.path().join("main.rs");
+    std::fs::write(
+        &lib_src,
+        "#[cfg(test)]\npub mod cwd_test_lock {\n    pub fn lock() {}\n}\n",
+    )
+    .unwrap();
+    std::fs::write(
+        &bin_src,
+        "#[cfg(test)]\npub(crate) mod cwd_test_lock {\n    pub fn lock() {}\n    #[test]\n    fn guard_restores_current_directory_during_unwind() {}\n}\n",
+    )
+    .unwrap();
+
+    let stream = BatchEventStream {
+        compiler_artifacts: vec![
+            BatchCompilerArtifact {
+                executable: Some("/repo/target/debug/deps/kiss-lib".into()),
+                filenames: vec![],
+                nextest_binary_id: Some("kiss-ai::kiss".into()),
+                libtest_binary_prefix: Some("kiss-ai::kiss".into()),
+                src_path: Some(lib_src.to_string_lossy().into_owned()),
+                is_test_harness: true,
+            },
+            BatchCompilerArtifact {
+                executable: Some("/repo/target/debug/deps/kiss-bin".into()),
+                filenames: vec![],
+                nextest_binary_id: Some("kiss-ai::bin/kiss".into()),
+                libtest_binary_prefix: Some("kiss-ai::kiss".into()),
+                src_path: Some(bin_src.to_string_lossy().into_owned()),
+                is_test_harness: true,
+            },
+        ],
+        terminal_tests: vec![terminal(
+            "kiss-ai::kiss$cwd_test_lock::guard_restores_current_directory_during_unwind",
+            true,
+        )],
+        ..BatchEventStream::default()
+    };
+    let meta = synthesize_check_aggregate_shim_metadata(
+        &stream,
+        PathBuf::from("/tmp/pool-%32m.profraw").as_path(),
+        PathBuf::from("/repo").as_path(),
+    )
+    .unwrap();
+    assert_eq!(meta.len(), 1);
+    assert_eq!(meta[0].argv, vec!["/repo/target/debug/deps/kiss-bin"]);
+}
+
+#[test]
 fn pool_profile_path_uses_online_merge_pattern() {
     let run_path = check_aggregate_pool_profile_path_for_run(
         PathBuf::from("/tmp/target").as_path(),
