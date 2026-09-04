@@ -105,6 +105,12 @@ fn fresh_build_identity_drops_incompatible_cache_target() {
     assert_eq!(prep.previous_baseline_bytes, 0);
     assert!(!identity.generation_fingerprint.is_empty());
     assert!(!changed_plan.build_target.exists());
+    let marker: BuildIdentityFile = serde_json::from_slice(
+        &fs::read(req.cache_root.join("build").join("identity.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(marker.input, build_identity_input(&req, &tools));
+    assert_eq!(marker.build_target_baseline_bytes, 0);
 }
 
 #[test]
@@ -362,4 +368,50 @@ fn apply_non_primary_cleanup_error_passes_through_clean_result() {
     };
     let ok = apply_non_primary_cleanup_error(result, None).unwrap();
     assert!(ok.completed.is_empty());
+}
+
+#[test]
+fn failed_build_does_not_publish_baseline_or_coverage_outcomes() {
+    let repo = batch_executor_fixture_repo();
+    let req = batch_executor_request(repo.path());
+    let runner = BatchSubprocessRunner::from_fn(|_, plan| {
+        fs::create_dir_all(&plan.build_target).unwrap();
+        fs::write(plan.build_target.join("partial"), b"x").unwrap();
+        Ok(
+            crate::rust_llvm_cov_runner::execute_or_reuse::batch_run::BatchSubprocessRunOutcome {
+                exit_code: Some(0),
+                stdout: br#"{"reason":"build-finished","success":false}"#.to_vec(),
+                stderr: b"build failed".to_vec(),
+                duration: Duration::from_millis(1),
+                process_residual_count: 0,
+            },
+        )
+    });
+    let err = execute_rust_coverage_batch_fresh_with_fake(&req, runner).unwrap_err();
+    assert!(
+        matches!(err, RustLlvmCovError::InvalidRequest(message) if message.contains("build failed"))
+    );
+    let marker: BuildIdentityFile = serde_json::from_slice(
+        &fs::read(req.cache_root.join("build").join("identity.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(marker.build_target_baseline_bytes, 0);
+    assert!(!req.cache_root.join("index.json").exists());
+    assert!(!req.cache_root.join("execution_witness.json").exists());
+}
+
+#[test]
+fn interrupted_batch_keeps_context_marker_without_coverage_publication() {
+    let repo = batch_executor_fixture_repo();
+    let req = batch_executor_request(repo.path());
+    let runner = BatchSubprocessRunner::from_fn(|_, _| {
+        Err(
+            crate::rust_llvm_cov_runner::execute_or_reuse::batch_run::BatchSubprocessRunError::Interrupted,
+        )
+    });
+    let err = execute_rust_coverage_batch_fresh_with_fake(&req, runner).unwrap_err();
+    assert!(matches!(err, RustLlvmCovError::Interrupted));
+    assert!(req.cache_root.join("build").join("identity.json").is_file());
+    assert!(!req.cache_root.join("index.json").exists());
+    assert!(!req.cache_root.join("execution_witness.json").exists());
 }

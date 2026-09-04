@@ -25,7 +25,7 @@ pub(crate) use batch_run_cleanup::{CurrentRunCleanup, FreshBatchRunScope};
 pub(crate) use batch_run_identity::{
     BuildIdentityFile, BuildIdentityInput, BuildIdentityPreparation, build_identity_input,
     build_identity_path, path_size_bytes, prepare_build_target_for_identity,
-    publish_successful_build_identity,
+    update_build_target_baseline,
 };
 pub(crate) use batch_run_subprocess::run_batch_subprocess;
 

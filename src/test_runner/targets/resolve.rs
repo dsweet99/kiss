@@ -271,13 +271,7 @@ fn attach_python_tests(
     let rel =
         repo_relative(repo_root, &model.path).unwrap_or_else(|| model.path.display().to_string());
     let nodeids = match cached_selectors {
-        Some(cached) => {
-            crate::test_runner::emit_stage_time(
-                "python_target_selectors",
-                std::time::Duration::ZERO,
-            );
-            python_selectors_for_rel_path(cached, &rel)
-        }
+        Some(cached) => python_selectors_for_rel_path(cached, &rel),
         None => collect_python_nodeids_for_targets(
             repo_root,
             Some(std::slice::from_ref(&model.path)),

@@ -272,7 +272,7 @@ fn prepare_fresh_batch_run(
     if batch_run::batch_scope_interrupted() {
         return Err(RustLlvmCovError::Interrupted);
     }
-    let build_target_baseline_bytes = batch_run::publish_successful_build_identity(
+    let build_target_baseline_bytes = batch_run::update_build_target_baseline(
         req,
         tools,
         plan,

@@ -71,7 +71,7 @@ pub fn build_rust_test_executable_index_with_tests(
                 String::from_utf8_lossy(&run.stderr)
             )));
         }
-        let build_target_baseline_bytes = batch_run::publish_successful_build_identity(
+        let build_target_baseline_bytes = batch_run::update_build_target_baseline(
             req,
             tools,
             plan,

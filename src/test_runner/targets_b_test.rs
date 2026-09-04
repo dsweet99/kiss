@@ -385,6 +385,51 @@ fn resolve_python_test_file_uses_workspace_selector_cache() {
 }
 
 #[test]
+fn cached_python_target_selectors_do_not_spam_stage_lines() {
+    let tmp = tempdir().unwrap();
+    init_git_repo(tmp.path());
+    fs::create_dir_all(tmp.path().join("tests")).unwrap();
+    let mut operands = Vec::new();
+    let mut selectors = Vec::new();
+    for i in 0..8 {
+        let name = format!("test_{i}.py");
+        fs::write(
+            tmp.path().join("tests").join(&name),
+            format!("def test_{i}():\n    assert True\n"),
+        )
+        .unwrap();
+        operands.push(format!("tests/{name}"));
+        selectors.push(format!("tests/{name}::test_{i}"));
+    }
+    assert!(
+        crate::test_runner::workspace_selector_cache::store_python_workspace_selectors(
+            tmp.path(),
+            &[],
+            &selectors,
+            &[],
+        )
+    );
+    let out = crate::test_runner::capture_stdout::capture_stdout(|| {
+        let query = resolve_target_operands(
+            tmp.path(),
+            &operands,
+            Some(Language::Python),
+            &[],
+            &[],
+        )
+        .expect("cached resolve");
+        assert_eq!(query.direct_python.len(), 8);
+    });
+    let n = out
+        .matches("kiss test: stage python_target_selectors")
+        .count();
+    assert!(
+        n <= 1,
+        "python_target_selectors must not repeat per file ({n} times):\n{out}"
+    );
+}
+
+#[test]
 fn unresolved_python_target_persists_enumerated_selectors_with_collection_identity() {
     let tmp = tempdir().unwrap();
     init_git_repo(tmp.path());

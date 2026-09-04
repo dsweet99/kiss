@@ -194,7 +194,7 @@ fn build_identity_helpers_are_executable_witnesses() {
             .ends_with("identity.json")
     );
 
-    publish_successful_build_identity(&req, &tools, &plan, 0).unwrap();
+    update_build_target_baseline(&req, &tools, &plan, 0).unwrap();
     let prep = prepare_build_target_for_identity(&req, &tools, &plan).unwrap();
     assert_eq!(prep.previous_baseline_bytes, 5);
 }
@@ -218,7 +218,7 @@ fn prepare_build_target_for_identity_retains_external_target_when_growth_limit_e
     let tools = witness_batch_tools();
     fs::create_dir_all(&plan.build_target).unwrap();
     fs::write(plan.build_target.join("artifact"), vec![0_u8; 10]).unwrap();
-    publish_successful_build_identity(&req, &tools, &plan, 0).unwrap();
+    update_build_target_baseline(&req, &tools, &plan, 0).unwrap();
     fs::write(plan.build_target.join("artifact"), vec![0_u8; 20]).unwrap();
     prepare_build_target_for_identity(&req, &tools, &plan).unwrap();
     assert!(plan.build_target.exists());
@@ -242,7 +242,7 @@ fn prepare_build_target_for_identity_rebuilds_cache_owned_target_when_growth_lim
     let tools = witness_batch_tools();
     fs::create_dir_all(&plan.build_target).unwrap();
     fs::write(plan.build_target.join("artifact"), vec![0_u8; 10]).unwrap();
-    publish_successful_build_identity(&req, &tools, &plan, 0).unwrap();
+    update_build_target_baseline(&req, &tools, &plan, 0).unwrap();
     fs::write(plan.build_target.join("artifact"), vec![0_u8; 20]).unwrap();
     prepare_build_target_for_identity(&req, &tools, &plan).unwrap();
     assert!(!plan.build_target.exists());
