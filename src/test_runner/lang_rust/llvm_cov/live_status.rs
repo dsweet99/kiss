@@ -68,7 +68,6 @@ fn emit_one_live_status(
         kiss::rust_llvm_cov_runner::set_live_rust_error(format!(
             "error: kiss: missing PATH::symbol report id for rust selector `{logical}`"
         ));
-        kiss::rust_llvm_cov_runner::cancel_active_batch_scope();
         return;
     };
     let Some(raw) = status_from_libtest_event(event) else {
@@ -239,6 +238,16 @@ mod live_status_test {
             None,
         );
         assert_eq!(remaining, 0);
+    }
+
+    #[test]
+    fn missing_report_id_does_not_cancel_the_rust_batch() {
+        let src = include_str!("live_status.rs");
+        let code = src.split("mod live_status_test").next().expect("prod src");
+        assert!(
+            !code.contains("cancel_active_batch_scope"),
+            "unmapped live rust names must not cancel the batch (peer Python SIGPIPE)"
+        );
     }
 
     #[test]

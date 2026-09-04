@@ -40,7 +40,7 @@ clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# Ignore BrokenPipe panics on Unix by restoring SIGPIPE default behavior
+# Keep SIGPIPE ignored so internal pipe writes (forkserver stdin) return EPIPE instead of killing kiss
 libc = "0.2"
 fs2 = "0.4"
 

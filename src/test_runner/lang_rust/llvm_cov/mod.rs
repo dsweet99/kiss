@@ -275,7 +275,7 @@ where
     let live_err = kiss::rust_llvm_cov_runner::take_live_rust_error();
     kiss::rust_llvm_cov_runner::clear_live_rust_test_hook();
     if let Some(err) = live_err {
-        return Err(err);
+        eprintln!("{err}");
     }
     let result = result?;
     crate::test_runner::emit_stage_time("rust_llvm_cov", stage_started.elapsed());

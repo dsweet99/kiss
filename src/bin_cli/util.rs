@@ -4,7 +4,7 @@ pub use kiss::reject_unconfigured_languages;
 
 #[rustfmt::skip]
 pub fn set_sigpipe_default() {
-    #[cfg(unix)] unsafe { libc::signal(libc::SIGPIPE, libc::SIG_DFL); }
+    #[cfg(unix)] unsafe { libc::signal(libc::SIGPIPE, libc::SIG_IGN); }
 }
 
 pub use kiss::merge_check_ignore_prefixes;
