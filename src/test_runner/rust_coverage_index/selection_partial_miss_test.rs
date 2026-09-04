@@ -1,6 +1,6 @@
 use super::{
-    current_partial_population_covers_selection, select_rust_source_selectors_for_basis,
-    ResolvedRustPopulation,
+    ResolvedRustPopulation, current_partial_population_covers_selection,
+    select_rust_source_selectors_for_basis,
 };
 use kiss::rust_llvm_cov_runner::RustPopulationState;
 use std::collections::{BTreeMap, BTreeSet};

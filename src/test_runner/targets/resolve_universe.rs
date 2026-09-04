@@ -2,8 +2,8 @@ use std::path::Path;
 
 use kiss::Language;
 
-use super::resolve_insert::insert_direct;
 use super::TargetSelectionQuery;
+use super::resolve_insert::insert_direct;
 use crate::test_runner::workspace_selector_cache::{
     load_cached_python_workspace_selectors, load_cached_rust_workspace_selectors,
     store_python_workspace_selectors, store_rust_workspace_selectors,

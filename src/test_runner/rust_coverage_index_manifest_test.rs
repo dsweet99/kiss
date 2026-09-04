@@ -46,11 +46,7 @@ fn write_rust_population_manifest_for_args_marks_population_current() {
         Some(grown.as_slice())
     );
     assert_eq!(
-        rust_selective_rebuild_publication_selectors(
-            tmp.path(),
-            &["test_lib".to_string()],
-            &[],
-        ),
+        rust_selective_rebuild_publication_selectors(tmp.path(), &["test_lib".to_string()], &[],),
         None
     );
 }

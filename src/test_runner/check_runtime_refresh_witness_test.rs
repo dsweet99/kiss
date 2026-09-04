@@ -83,11 +83,7 @@ fn aggregate_repair_full_refresh_when_rerun_selectors_empty() {
     let forced = std::collections::BTreeSet::from(["bin-orphan".to_string()]);
     assert_eq!(
         super::super::classify_check_aggregate_repair_with_replacements(
-            &selectors,
-            &prior,
-            &maps,
-            &binaries,
-            &forced,
+            &selectors, &prior, &maps, &binaries, &forced,
         ),
         CheckAggregateRepairDecision::FullRefresh
     );

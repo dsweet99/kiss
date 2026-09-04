@@ -86,7 +86,10 @@ fn matching_marker_above_growth_limit_resets_zero_baseline() {
     let prep = prepare_build_target_for_identity(&h.req, &h.tools, &h.plan).unwrap();
     assert_eq!(prep.previous_baseline_bytes, 0);
     assert!(!h.plan.build_target.exists());
-    assert_eq!(loaded_identity(&h.req.cache_root).build_target_baseline_bytes, 0);
+    assert_eq!(
+        loaded_identity(&h.req.cache_root).build_target_baseline_bytes,
+        0
+    );
 }
 
 #[test]

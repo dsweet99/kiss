@@ -127,9 +127,7 @@ pub(crate) fn read_python_population_manifest(
 }
 
 fn keep_non_ignored_selector(selector: &str, ignore: &[String]) -> bool {
-    let path = selector
-        .split_once("::")
-        .map_or(selector, |(path, _)| path);
+    let path = selector.split_once("::").map_or(selector, |(path, _)| path);
     !kiss::path_ignored_by_prefixes(path, ignore)
 }
 

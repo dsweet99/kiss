@@ -1,11 +1,11 @@
-use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
 use kiss::rust_llvm_cov_runner::{
     CheckAggregateRepairPublication, CoverageOutputMode, RustCoverageBatchRequest,
     RustCoverageBatchResult, RustCoverageToolIdentity, RustTestExecutableIndex,
     build_rust_coverage_batch_plan, build_rust_test_executable_index, execute_rust_coverage_batch,
     resolve_batch_request_runners, validate_supported_rust_test_args,
 };
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 
 use crate::test_runner::last_status::rust_last_status_identity;
 use crate::test_runner::runners::SelectorExecutionSummary;

@@ -1,21 +1,23 @@
-use crate::bin_cli::args::{parse_test_invocation, TestInvocation};
-use crate::bin_cli::{finish_with_coverage, TestCommandArgs};
+use crate::bin_cli::args::{TestInvocation, parse_test_invocation};
+use crate::bin_cli::{TestCommandArgs, finish_with_coverage};
 use crate::test_runner::test_mode_fixtures::{
     checkout_branch, git_in, init_git, warm_committed_rust_demo, warm_python_covering_demo,
     with_cwd,
 };
-use crate::test_runner::{plan_target_selectors, RunTestCmdArgs, TargetPlanKind};
+use crate::test_runner::{RunTestCmdArgs, TargetPlanKind, plan_target_selectors};
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
 
 fn commit_seed(root: &Path) {
     assert!(git_in(root).args(["add", "-A"]).status().unwrap().success());
-    assert!(git_in(root)
-        .args(["commit", "-m", "seed"])
-        .status()
-        .unwrap()
-        .success());
+    assert!(
+        git_in(root)
+            .args(["commit", "-m", "seed"])
+            .status()
+            .unwrap()
+            .success()
+    );
 }
 
 fn write_python_tree(root: &Path) {

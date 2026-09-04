@@ -245,7 +245,8 @@ mod tests {
             OrdinarySourceInvalidation::None
         );
         assert!(
-            remap_covered_file_lines(tmp.path(), "missing.rs", &[], &BTreeSet::from([1])).is_empty()
+            remap_covered_file_lines(tmp.path(), "missing.rs", &[], &BTreeSet::from([1]))
+                .is_empty()
         );
     }
 

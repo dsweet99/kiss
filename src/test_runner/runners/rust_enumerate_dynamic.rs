@@ -79,9 +79,10 @@ fn items_need_dynamic_listing(items: &[syn::Item], local_generators: &BTreeSet<S
                 "proptest" | "quickcheck" | "test_suite" | "rstest"
             ) || local_generators.contains(&name)
         }
-        syn::Item::Mod(item_mod) => item_mod.content.as_ref().is_some_and(|(_, nested)| {
-            items_need_dynamic_listing(nested, local_generators)
-        }),
+        syn::Item::Mod(item_mod) => item_mod
+            .content
+            .as_ref()
+            .is_some_and(|(_, nested)| items_need_dynamic_listing(nested, local_generators)),
         syn::Item::Fn(item_fn) => item_fn.attrs.iter().any(attribute_may_generate_tests),
         syn::Item::Impl(item_impl) => item_impl.items.iter().any(|item| {
             matches!(

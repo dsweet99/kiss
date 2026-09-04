@@ -68,10 +68,7 @@ pub(crate) fn load_current_python_population_durations(
     Some(pairs)
 }
 
-fn pinned_generation_max_duration(
-    repo_root: &Path,
-    pytest_args: &[String],
-) -> Option<Duration> {
+fn pinned_generation_max_duration(repo_root: &Path, pytest_args: &[String]) -> Option<Duration> {
     let pinned = super::generation::try_load_pinned_python_generation_warm(repo_root).ok()?;
     if !pinned.complete {
         return None;
@@ -374,7 +371,10 @@ fn load_durations_from_scanned_probes(
         }
         found.insert(entry.nodeid, entry.duration);
     }
-    if selectors.iter().any(|selector| !found.contains_key(selector)) {
+    if selectors
+        .iter()
+        .any(|selector| !found.contains_key(selector))
+    {
         return None;
     }
     Some(

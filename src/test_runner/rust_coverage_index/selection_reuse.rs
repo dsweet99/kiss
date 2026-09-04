@@ -1,9 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use super::super::{
-    changed_line_rels, repo_relative_path, selectors_by_changed_file_line,
-};
+use super::super::{changed_line_rels, repo_relative_path, selectors_by_changed_file_line};
 use super::select_check_aggregate_current_basis;
 
 pub(super) fn select_reusable_prior_rust_source_selectors(

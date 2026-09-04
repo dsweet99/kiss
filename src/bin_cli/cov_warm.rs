@@ -2,14 +2,14 @@ use std::path::Path;
 
 use kiss::{GateConfig, Language};
 
-use crate::analyze::cov_coverable_cache::{load_or_build_coverable_denoms, CovCoverableKey};
+use crate::analyze::cov_coverable_cache::{CovCoverableKey, load_or_build_coverable_denoms};
 use crate::analyze::cov_records_cache::{
-    store_cov_records, try_load_cov_records, CovRecordsCacheKey,
+    CovRecordsCacheKey, store_cov_records, try_load_cov_records,
 };
 use crate::analyze::line_coverage::records_from_denoms;
 use crate::bin_cli::util::merge_check_ignore_prefixes;
 use crate::test_runner::check_line_coverage::{
-    load_check_runtime_coverage, repository_root_for_universe, RequiredCoverageLanguages,
+    RequiredCoverageLanguages, load_check_runtime_coverage, repository_root_for_universe,
 };
 
 #[allow(dead_code)]

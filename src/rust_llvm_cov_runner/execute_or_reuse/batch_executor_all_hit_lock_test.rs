@@ -1,8 +1,8 @@
 use super::*;
 use crate::rpytest_runner::TestStatus;
+use crate::rust_llvm_cov_runner::RustCovCacheStatus;
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_lock::lock_batch;
 use crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity;
-use crate::rust_llvm_cov_runner::RustCovCacheStatus;
 use crate::rust_llvm_cov_runner::test_support::{
     batch_executor_fixture_repo, batch_executor_request, store_batch_executor_selector,
     witness_batch_tools,

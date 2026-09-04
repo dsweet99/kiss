@@ -5,7 +5,11 @@ use kiss::Language;
 
 use super::TargetSelectionQuery;
 
-pub(super) fn insert_direct(query: &mut TargetSelectionQuery, language: Language, selector: String) {
+pub(super) fn insert_direct(
+    query: &mut TargetSelectionQuery,
+    language: Language,
+    selector: String,
+) {
     match language {
         Language::Python => {
             query.direct_python.insert(selector);

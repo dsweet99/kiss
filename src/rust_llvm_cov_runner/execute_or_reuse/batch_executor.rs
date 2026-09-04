@@ -1,6 +1,7 @@
 use super::batch_executor_prepare::{
     PreparedRustBatch, merge_prepared, outcome_from_entry, prepare_rust_batch,
 };
+use crate::rust_llvm_cov_runner::RustLlvmCovError;
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_executor_fresh::execute_fresh_batch_with_exporter;
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export::SubprocessInstanceExporter;
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export_tools::resolve_export_tools_from_rustc;
@@ -19,7 +20,6 @@ use crate::rust_llvm_cov_runner::plan::batch_plan::{
     build_rust_coverage_batch_plan,
 };
 use crate::rust_llvm_cov_runner::publish_derived::batch_derived::population_derived_state_stale;
-use crate::rust_llvm_cov_runner::RustLlvmCovError;
 
 fn default_instance_exporter(
     req: &RustCoverageBatchRequest,

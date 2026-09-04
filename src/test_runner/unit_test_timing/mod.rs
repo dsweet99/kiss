@@ -96,7 +96,8 @@ fn load_rust_timings(repo_root: &Path) -> Option<Vec<UnitTestTiming>> {
     let cache_root = rust_coverage_cache_root(repo_root);
     let (req, tools) = resolved_rust_batch_request_parts(repo_root, &[]).ok()?;
     let identity = match kiss::rust_llvm_cov_runner::try_source_matched_seal_identity(
-        &cache_root, repo_root,
+        &cache_root,
+        repo_root,
     ) {
         Some(sealed)
             if kiss::rust_llvm_cov_runner::load_current_population_state(

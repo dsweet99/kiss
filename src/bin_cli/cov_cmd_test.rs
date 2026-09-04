@@ -82,10 +82,11 @@ fn gather_cov_files_test_directory_is_none_even_with_repo_cache() {
     .unwrap();
 
     let root = gather_cov_files(repo, None, &[]).expect("production files at repo root");
-    assert!(root
-        .py_files
-        .iter()
-        .any(|path| path.ends_with("pkg/app.py") || path.ends_with("app.py")));
+    assert!(
+        root.py_files
+            .iter()
+            .any(|path| path.ends_with("pkg/app.py") || path.ends_with("app.py"))
+    );
     assert!(gather_cov_files(&repo.join("tests/fast"), None, &[]).is_none());
 }
 

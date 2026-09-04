@@ -297,8 +297,11 @@ fn index_covers_source_path(
     source_path: &Path,
     index: &PythonCoverageIndex,
 ) -> bool {
-    repo_relative_path(repo_root, source_path)
-        .is_some_and(|rel| index.get(&rel).is_some_and(|selectors| !selectors.is_empty()))
+    repo_relative_path(repo_root, source_path).is_some_and(|rel| {
+        index
+            .get(&rel)
+            .is_some_and(|selectors| !selectors.is_empty())
+    })
 }
 
 #[cfg(test)]

@@ -410,14 +410,9 @@ fn cached_python_target_selectors_do_not_spam_stage_lines() {
         )
     );
     let out = crate::test_runner::capture_stdout::capture_stdout(|| {
-        let query = resolve_target_operands(
-            tmp.path(),
-            &operands,
-            Some(Language::Python),
-            &[],
-            &[],
-        )
-        .expect("cached resolve");
+        let query =
+            resolve_target_operands(tmp.path(), &operands, Some(Language::Python), &[], &[])
+                .expect("cached resolve");
         assert_eq!(query.direct_python.len(), 8);
     });
     let n = out

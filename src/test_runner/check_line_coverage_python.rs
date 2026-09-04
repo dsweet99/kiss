@@ -39,13 +39,14 @@ pub(super) fn load_python_coverage_from_entries(
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| coverage_error("Python", &format!("malformed request ({err})")))?;
     let outcomes = kiss::rslip::load_cached_outcomes_many(&reqs);
-    let covered_lines = aggregate_passed_outcomes(repo_root, selectors, outcomes).or_else(|err| {
-        match scanned_python_coverage_for_selectors(repo_root, selectors) {
-            Ok(Some(lines)) => Ok(lines),
-            Ok(None) => Err(err),
-            Err(scan_err) => Err(scan_err),
-        }
-    })?;
+    let covered_lines =
+        aggregate_passed_outcomes(repo_root, selectors, outcomes).or_else(|err| {
+            match scanned_python_coverage_for_selectors(repo_root, selectors) {
+                Ok(Some(lines)) => Ok(lines),
+                Ok(None) => Err(err),
+                Err(scan_err) => Err(scan_err),
+            }
+        })?;
     let _ = crate::test_runner::python_coverage_index::write_python_coverage_snapshot(
         repo_root,
         &covered_lines,
@@ -91,9 +92,9 @@ fn scanned_python_coverage_for_selectors(
     };
     let wanted: BTreeSet<_> = selectors.iter().cloned().collect();
     let mut found = BTreeMap::<String, kiss::rslip::LineCoverage>::new();
-    for path in crate::test_runner::python_coverage_index::storage::python_coverage_entry_paths(
-        &cache_root,
-    ) {
+    for path in
+        crate::test_runner::python_coverage_index::storage::python_coverage_entry_paths(&cache_root)
+    {
         let Some((selector, status, coverage)) = load_python_entry_for_index(&path) else {
             continue;
         };
@@ -149,8 +150,8 @@ mod tests {
     fn mismatched_nodeid_is_incomplete_population() {
         use std::time::Duration;
 
-        use kiss::rslip::{CacheStatus, LineCoverage, RslipOutcome};
         use kiss::rpytest_runner::TestStatus;
+        use kiss::rslip::{CacheStatus, LineCoverage, RslipOutcome};
 
         let tmp = tempfile::tempdir().unwrap();
         let err = super::aggregate_passed_outcomes(
@@ -170,9 +171,6 @@ mod tests {
             }))],
         )
         .expect_err("selector/nodeid mismatch is incomplete");
-        assert!(
-            err.to_string().contains("incomplete population"),
-            "{err}"
-        );
+        assert!(err.to_string().contains("incomplete population"), "{err}");
     }
 }

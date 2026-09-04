@@ -10,7 +10,8 @@ use crate::rust_llvm_cov_runner::execute_or_reuse::batch_executor_fresh::{
 };
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export::FakeInstanceExporter;
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_run::{
-    BatchSubprocessRunner, CurrentRunCleanup, prepare_batch_run_layout,
+    BatchSubprocessRunner, CurrentRunCleanup, build_identity_path, prepare_batch_run_layout,
+    prepare_build_target_for_identity,
 };
 use crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity;
 use crate::rust_llvm_cov_runner::plan::batch_plan::build_rust_coverage_batch_plan;
@@ -247,6 +248,27 @@ fn interrupted_batch_attempts_current_run_cleanup() {
     let err = execute_rust_coverage_batch_fresh_with_fake(&req, runner).unwrap_err();
     assert!(matches!(err, RustLlvmCovError::Interrupted));
     assert!(!run_root.exists());
+}
+
+#[test]
+fn interrupted_batch_preserves_initialized_build_target_for_retry() {
+    let repo = batch_executor_fixture_repo();
+    let req = batch_executor_request(repo.path());
+    let plan = build_rust_coverage_batch_plan(&req).unwrap();
+    let tools = tools();
+    let runner = BatchSubprocessRunner::from_fn(|_, plan| {
+        fs::create_dir_all(&plan.build_target).unwrap();
+        fs::write(plan.build_target.join("partial-artifact"), b"compiled").unwrap();
+        Err(crate::rust_llvm_cov_runner::execute_or_reuse::batch_run::BatchSubprocessRunError::Interrupted)
+    });
+
+    let err = execute_rust_coverage_batch_fresh_with_fake(&req, runner).unwrap_err();
+
+    assert!(matches!(err, RustLlvmCovError::Interrupted));
+    assert!(build_identity_path(&req.cache_root).is_file());
+    assert!(plan.build_target.join("partial-artifact").is_file());
+    prepare_build_target_for_identity(&req, &tools, &plan).unwrap();
+    assert!(plan.build_target.join("partial-artifact").is_file());
 }
 
 #[test]

@@ -1,7 +1,7 @@
 use crate::rust_llvm_cov_runner::plan::batch_fingerprint::RustCoverageBatchIdentity;
 use std::path::Path;
 
-use super::{load_current_population_state, RustGenerationCoverageSnapshot, RustPopulationState};
+use super::{RustGenerationCoverageSnapshot, RustPopulationState, load_current_population_state};
 
 pub fn load_current_generation_coverage_from_passing_entries(
     cache_root: &Path,

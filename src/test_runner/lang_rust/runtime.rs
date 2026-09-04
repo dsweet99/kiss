@@ -77,7 +77,8 @@ impl LanguageRuntime for RustRuntime {
         if miss_set.is_empty() {
             return Ok(OutcomeBatch::default());
         }
-        let publication_universe = rust_publication_universe(request.mode, &request.planned.rust, miss_set);
+        let publication_universe =
+            rust_publication_universe(request.mode, &request.planned.rust, miss_set);
         let summary = match request.mode {
             AcceptMode::All => {
 

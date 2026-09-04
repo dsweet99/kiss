@@ -7,9 +7,7 @@ use crate::rust_llvm_cov_runner::execute_or_reuse::batch_result::{
 use crate::rust_llvm_cov_runner::plan::batch_fingerprint::{
     RustCoverageBatchIdentity, RustCoverageToolIdentity, batch_identity,
 };
-use crate::rust_llvm_cov_runner::plan::batch_plan::{
-    CoverageOutputMode, RustCoverageBatchRequest,
-};
+use crate::rust_llvm_cov_runner::plan::batch_plan::{CoverageOutputMode, RustCoverageBatchRequest};
 use crate::rust_llvm_cov_runner::{RustCovCacheStatus, RustLlvmCovError, RustLlvmCovOutcome};
 use std::collections::BTreeMap;
 

@@ -64,10 +64,7 @@ fn rust_runtime_batch_identity(
     match sealed {
         Some(sealed)
             if kiss::rust_llvm_cov_runner::load_current_population_state(
-                cache_root,
-                repo_root,
-                &sealed,
-                None,
+                cache_root, repo_root, &sealed, None,
             )
             .is_some() =>
         {
@@ -110,10 +107,7 @@ fn coverage_from_current_snapshots(
     }
     if let Some(snapshot) =
         kiss::rust_llvm_cov_runner::load_current_generation_coverage_from_passing_entries(
-            cache_root,
-            repo_root,
-            identity,
-            None,
+            cache_root, repo_root, identity, None,
         )
     {
         return Ok(Some(backend_from_lines(

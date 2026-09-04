@@ -46,10 +46,7 @@ fn real_kiss_cache_load_current_when_env_set() {
         .collect();
     let identity = crate::rust_llvm_cov_runner::RustCoverageBatchIdentity {
         input_digest: seal["input_digest"].as_str().unwrap().to_string(),
-        generation_fingerprint: seal["generation_fingerprint"]
-            .as_str()
-            .unwrap()
-            .to_string(),
+        generation_fingerprint: seal["generation_fingerprint"].as_str().unwrap().to_string(),
         selection_context_fingerprint: seal["selection_context_fingerprint"]
             .as_str()
             .unwrap()
