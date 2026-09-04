@@ -119,3 +119,60 @@ fn scanned_python_coverage_for_selectors(
     }
     Ok(Some(covered_lines))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::load_python_coverage_from_entries;
+    use crate::test_runner::python_coverage_index::StoredPythonPopulation;
+
+    #[test]
+    fn missing_repo_is_stale_tool_identity() {
+        let tmp = tempfile::tempdir().unwrap();
+        let missing = tmp.path().join("no-such-repo");
+        let err = load_python_coverage_from_entries(
+            &missing,
+            &[],
+            &StoredPythonPopulation {
+                selectors: vec!["app.py::test_x".into()],
+                identity: "id".into(),
+            },
+            &kiss::GateConfig::default(),
+        )
+        .expect_err("missing repo cannot resolve python tool identity");
+        assert!(
+            err.to_string().contains("stale/incompatible tool identity"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn mismatched_nodeid_is_incomplete_population() {
+        use std::time::Duration;
+
+        use kiss::rslip::{CacheStatus, LineCoverage, RslipOutcome};
+        use kiss::rpytest_runner::TestStatus;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let err = super::aggregate_passed_outcomes(
+            tmp.path(),
+            &["app.py::test_x".into()],
+            vec![Ok(Some(RslipOutcome {
+                nodeid: "app.py::test_other".into(),
+                status: TestStatus::Passed,
+                exit_code: Some(0),
+                duration: Duration::from_millis(1),
+                coverage: LineCoverage {
+                    files: Default::default(),
+                },
+                cache_status: CacheStatus::Hit,
+                stdout: None,
+                stderr: None,
+            }))],
+        )
+        .expect_err("selector/nodeid mismatch is incomplete");
+        assert!(
+            err.to_string().contains("incomplete population"),
+            "{err}"
+        );
+    }
+}

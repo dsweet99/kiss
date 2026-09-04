@@ -190,7 +190,7 @@ fn rust_witness_accepts_complete_full_universe() {
 }
 
 #[test]
-fn rust_plan_selectors_keeps_discovered_when_cache_is_subset() {
+fn rust_plan_selectors_requires_population_when_cache_is_subset() {
     let tmp = tempfile::tempdir().unwrap();
     demo_lib(&tmp);
     crate::test_runner::rust_coverage_index::write_rust_population_manifest_for_args(
@@ -204,7 +204,7 @@ fn rust_plan_selectors_keeps_discovered_when_cache_is_subset() {
         vec!["a".into(), "b".into()],
         &GateConfig::default(),
     );
-    assert!(!plan.population_required);
+    assert!(plan.population_required);
     assert_eq!(plan.planned, vec!["a".to_string(), "b".to_string()]);
     assert_eq!(plan.classification.mandatory_misses, vec!["b".to_string()]);
     assert_eq!(plan.classification.intersection, vec!["a".to_string()]);

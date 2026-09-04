@@ -162,9 +162,15 @@ impl LanguageExecutor for RustModule {
             index.index_file_present(&ctx.planned.repo_root),
         );
 
+        let publication =
+            crate::test_runner::rust_coverage_index::rust_selective_rebuild_publication_selectors(
+                &ctx.planned.repo_root,
+                &ctx.planned.sel.rust,
+                ctx.options.extras.rust,
+            );
         crate::test_runner::rust_coverage_index::publish_rust_derived_state_with_filter(
             &ctx.planned.repo_root,
-            None,
+            publication,
             ctx.options.extras.rust,
             |path, repo_root| self.is_indexable_source(path, repo_root),
         )
@@ -226,27 +232,6 @@ fn ensure_rust_via_kernel(
         });
     let result = ensure_languages_runtime(&request)?;
     Ok(result.rust().map(|r| r.summary.clone()).unwrap_or_default())
-}
-
-#[allow(dead_code)]
-pub(super) fn run_rslip_selectors_for_module(
-    selectors: &[String],
-    ctx: &RunContext<'_, '_>,
-) -> Result<SelectorExecutionSummary, String> {
-    if selectors.is_empty() {
-        return Ok(SelectorExecutionSummary::default());
-    }
-
-    runners::run_rslip_selectors(
-        &ctx.planned.repo_root,
-        selectors,
-        ctx.options.extras.python,
-        ctx.options.force_rerun,
-        &ctx.planned.prior_failure_selectors.python,
-        ctx.options.jobs,
-        ctx.planned.workspace_files_fingerprint.clone(),
-        &ctx.options.gate,
-    )
 }
 
 #[allow(dead_code)]

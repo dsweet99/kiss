@@ -82,7 +82,8 @@ fn plan_selective_or_population(
 ) -> Result<(BTreeSet<TestSelector>, BTreeSet<TestSelector>, bool), String> {
     let plan_trace = std::env::var_os("KISS_PLAN_TRACE").is_some();
     let mut mark = std::time::Instant::now();
-    let freshness = planner.freshness(&[])?;
+    let universe = planner.discover_universe()?;
+    let freshness = planner.freshness(&universe)?;
     if plan_trace {
         eprintln!(
             "KISS_PLAN_TRACE rust_freshness_ms={} requires_pop={}",
@@ -109,8 +110,7 @@ fn plan_selective_or_population(
     }
     let mut prior_failures = planner.prior_failures();
     if !prior_failures.is_empty() {
-        let universe_ids = planner
-            .discover_universe()?
+        let universe_ids = universe
             .into_iter()
             .map(|selector| selector.id)
             .collect::<BTreeSet<_>>();

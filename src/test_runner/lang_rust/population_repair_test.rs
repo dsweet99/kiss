@@ -9,6 +9,13 @@ use kiss::rust_llvm_cov_runner::RustLineCoverage;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 
+fn subset_mode_request(repo: &std::path::Path, rust: Vec<String>) -> EnsureRequest {
+    let mut req = all_mode_request(repo);
+    req.mode = AcceptMode::Subset;
+    req.planned.rust = rust;
+    req
+}
+
 fn all_mode_request(repo: &std::path::Path) -> EnsureRequest {
     EnsureRequest {
         repo_root: repo.to_path_buf(),
@@ -49,6 +56,30 @@ fn write_demo_crate(root: &std::path::Path) {
         },
     );
     write_rust_population_manifest_for_args(root, &["test_lib".to_string()], &[]).unwrap();
+}
+
+#[test]
+fn subset_mode_repairs_when_planned_universe_grows() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_demo_crate(tmp.path());
+    let lib = tmp.path().join("src").join("lib.rs");
+    write_test_entry(
+        tmp.path(),
+        "b",
+        "test_new",
+        TestStatus::Passed,
+        RustLineCoverage {
+            files: BTreeMap::from([(lib.to_string_lossy().to_string(), BTreeSet::from([1]))]),
+        },
+    );
+    let grown = vec!["test_lib".to_string(), "test_new".to_string()];
+    let req = subset_mode_request(tmp.path(), grown.clone());
+    assert!(repair_stale_population_on_all_mode_accept(&req, &grown).unwrap());
+    assert!(rust_population_manifest_is_current_for_args(
+        tmp.path(),
+        &grown,
+        &[],
+    ));
 }
 
 #[test]

@@ -151,14 +151,24 @@ impl LanguagePlanner for RustModule {
         self.prior_failures.clone()
     }
 
-    fn freshness(&self, _universe: &[TestSelector]) -> Result<CoverageFreshness, String> {
-        if self.rust_source_paths.is_empty()
+    fn freshness(&self, universe: &[TestSelector]) -> Result<CoverageFreshness, String> {
+        if universe.is_empty()
+            && self.rust_source_paths.is_empty()
             && self.changed_tests.is_empty()
             && self.resolved.get().is_none()
         {
             return Ok(CoverageFreshness::Fresh);
         }
         let resolved = self.resolved_state()?;
+        if let Some(state) = resolved.state() {
+            let published: BTreeSet<&str> = state.selectors.iter().map(String::as_str).collect();
+            if universe
+                .iter()
+                .any(|sel| !published.contains(sel.id.as_str()))
+            {
+                return Ok(CoverageFreshness::Stale);
+            }
+        }
         Ok(resolved.freshness())
     }
 
@@ -246,7 +256,7 @@ mod tests {
     use kiss::rust_llvm_cov_runner::RustPopulationState;
 
     #[test]
-    fn freshness_trusts_resolved_partial_current_population() {
+    fn freshness_stale_when_universe_not_in_population() {
         let tmp = tempfile::tempdir().unwrap();
         let resolved = ResolvedRustPopulation::Current {
             state: RustPopulationState {
@@ -270,13 +280,21 @@ mod tests {
             prior_failures: &[],
             resolved: Some(resolved),
         });
-        let universe = [TestSelector::new(
+        let missing = [TestSelector::new(
             kiss::Language::Rust,
             "tests::full_universe_member",
         )];
+        let covered = [TestSelector::new(
+            kiss::Language::Rust,
+            "tests::selected_by_changed_source",
+        )];
 
         assert_eq!(
-            module.freshness(&universe).unwrap(),
+            module.freshness(&missing).unwrap(),
+            CoverageFreshness::Stale
+        );
+        assert_eq!(
+            module.freshness(&covered).unwrap(),
             CoverageFreshness::Fresh
         );
     }

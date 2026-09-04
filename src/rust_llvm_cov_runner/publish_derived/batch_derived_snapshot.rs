@@ -13,6 +13,7 @@ pub(crate) fn load_manifest_generation_entries(
     population: &RustPopulationState,
 ) -> Option<BTreeMap<String, BTreeSet<u32>>> {
     let entries_dir = cache_root.join("entries");
+    let expected: BTreeSet<&str> = population.selectors.iter().map(String::as_str).collect();
     let mut by_selector = BTreeMap::<String, RustLineCoverage>::new();
     for entry in fs::read_dir(entries_dir).ok()?.flatten() {
         let path = entry.path();
@@ -22,6 +23,7 @@ pub(crate) fn load_manifest_generation_entries(
         let parsed: RustCovCacheEntry = serde_json::from_slice(&fs::read(path).ok()?).ok()?;
         if parsed.schema_version != CACHE_SCHEMA_VERSION
             || parsed.generation_fingerprint != population.generation_fingerprint
+            || !expected.contains(parsed.selector.as_str())
         {
             continue;
         }

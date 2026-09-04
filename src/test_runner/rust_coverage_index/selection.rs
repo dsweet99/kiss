@@ -420,3 +420,6 @@ use selection_reuse::select_reusable_prior_rust_source_selectors;
 #[cfg(test)]
 #[path = "selection_coverage_witness_test.rs"]
 mod coverage_witness;
+#[cfg(test)]
+#[path = "selection_partial_miss_test.rs"]
+mod selection_partial_miss_test;

@@ -28,6 +28,7 @@ mod rust_report_id_cache;
 mod selector_ids;
 mod status_labels;
 mod targets;
+pub(crate) mod tests_remaining;
 pub(crate) mod unit_test_timing;
 mod watch;
 #[cfg(test)]

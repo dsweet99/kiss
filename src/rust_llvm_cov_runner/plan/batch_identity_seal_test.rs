@@ -1,6 +1,6 @@
 use crate::rust_llvm_cov_runner::plan::batch_fingerprint::generation_fingerprint;
 use crate::rust_llvm_cov_runner::plan::batch_identity_seal::{
-    try_identity_from_mtime_seal, write_identity_mtime_seal,
+    try_identity_from_mtime_seal, try_source_matched_seal_identity, write_identity_mtime_seal,
 };
 use crate::rust_llvm_cov_runner::plan::shared_input::ordinary_source_content_digest;
 use crate::rust_llvm_cov_runner::test_support::{derived_fixture_request, witness_batch_tools};
@@ -48,6 +48,12 @@ fn mtime_seal_round_trip_hits_then_misses_on_touch() {
     write_identity_mtime_seal(&req.cache_root, repo.path(), &req, &tools, &identity).unwrap();
     let hit = try_identity_from_mtime_seal(&req.cache_root, repo.path(), &req, &tools);
     assert_eq!(hit.as_ref().map(|i| i.input_digest.as_str()), Some("input"));
+    assert_eq!(
+        try_source_matched_seal_identity(&req.cache_root, repo.path())
+            .as_ref()
+            .map(|i| i.generation_fingerprint.as_str()),
+        Some(identity.generation_fingerprint.as_str())
+    );
     crate::rust_llvm_cov_runner::begin_identity_memo();
     let production_hit =
         crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();

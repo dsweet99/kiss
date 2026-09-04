@@ -40,6 +40,19 @@ fn write_rust_population_manifest_for_args_marks_population_current() {
         &["missing_selector".to_string()],
         &[],
     ));
+    let grown = ["test_lib".to_string(), "test_new".to_string()];
+    assert_eq!(
+        rust_selective_rebuild_publication_selectors(tmp.path(), &grown, &[]),
+        Some(grown.as_slice())
+    );
+    assert_eq!(
+        rust_selective_rebuild_publication_selectors(
+            tmp.path(),
+            &["test_lib".to_string()],
+            &[],
+        ),
+        None
+    );
 }
 
 #[test]

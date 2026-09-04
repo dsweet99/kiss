@@ -182,8 +182,9 @@ pub use batch_export_tools::{
 pub use batch_fingerprint::identity_memo_hash_count;
 pub use batch_fingerprint::{
     RustCoverageBatchIdentity, RustCoverageToolIdentity, batch_identity, begin_identity_memo,
-    entry_fingerprint, identity_memo_is_populated, remember_identity_memo,
+    entry_fingerprint, identity_memo_is_populated, refresh_identity_memo, remember_identity_memo,
 };
+pub use batch_identity_seal::try_source_matched_seal_identity;
 pub use batch_plan::{
     CheckAggregateRepairPublication, CoverageOutputMode, RustCoverageBatchPlan,
     RustCoverageBatchRequest, build_rust_coverage_batch_plan, validate_supported_rust_cargo_args,

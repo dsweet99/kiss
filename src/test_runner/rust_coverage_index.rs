@@ -130,6 +130,7 @@ pub(crate) fn publish_rust_derived_state_with_filter(
     test_args: &[String],
     _is_indexable: impl Fn(&Path, &Path) -> bool,
 ) -> Result<(), String> {
+    kiss::rust_llvm_cov_runner::refresh_identity_memo();
     let (mut req, tools) = resolved_rust_batch_request_parts(repo_root, test_args)?;
     let identity = kiss::rust_llvm_cov_runner::batch_identity(&req, &tools)
         .map_err(|err| format!("batch identity: {err}"))?;
@@ -163,6 +164,29 @@ pub(crate) fn publish_rust_derived_state_with_filter(
     )
     .map_err(|err| format!("{err:?}"))?;
     Ok(())
+}
+
+pub(crate) fn rust_selective_rebuild_publication_selectors<'a>(
+    repo_root: &Path,
+    planned: &'a [String],
+    extras: &[String],
+) -> Option<&'a [String]> {
+    if planned.is_empty() {
+        return None;
+    }
+    if rust_population_manifest_is_current_for_args(repo_root, planned, extras) {
+        return None;
+    }
+    let path = rust_coverage_cache_root(repo_root).join("population.json");
+    let count = std::fs::read(path).ok().and_then(|bytes| {
+        let value: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+        Some(value.get("selectors")?.as_array()?.len())
+    });
+    match count {
+        Some(n) if planned.len() < n => None,
+        Some(_) => Some(planned),
+        None => None,
+    }
 }
 
 pub(crate) fn rust_population_manifest_is_current_for_args(

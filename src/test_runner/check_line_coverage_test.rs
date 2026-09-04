@@ -356,3 +356,94 @@ fn load_python_runtime_coverage_honors_session_pytest_extra() {
         "got: {msg}"
     );
 }
+
+#[test]
+fn load_rust_runtime_coverage_and_timings_from_seeded_cache() {
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::time::Duration;
+
+    use crate::test_runner::rust_coverage_index::resolved_rust_batch_request_parts;
+    use crate::test_runner::unit_test_timing::{
+        TimingCollectOpts, TimingLangInclude, TimingPopulation, collect_current_unit_test_timings,
+    };
+    use crate::test_runner::workspace_selector_cache::store_rust_workspace_selectors;
+    use kiss::Language;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    fs::create_dir_all(repo.join("src")).unwrap();
+    fs::create_dir_all(repo.join(".git")).unwrap();
+    fs::write(
+        repo.join("Cargo.toml"),
+        "[package]\nname = \"seeded_cov\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.join("src/lib.rs"),
+        "pub fn x() -> i32 { 1 }\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn test_x() { assert_eq!(super::x(), 1); }\n}\n",
+    )
+    .unwrap();
+    let selector = "tests::test_x".to_string();
+    let (mut req, tools) = resolved_rust_batch_request_parts(repo, &[]).unwrap();
+    req.logical_selectors = vec![selector.clone()];
+    req.population_publication_selectors = Some(vec![selector.clone()]);
+    let identity = kiss::rust_llvm_cov_runner::batch_identity(&req, &tools).unwrap();
+    let files = BTreeMap::from([(
+        repo.join("src/lib.rs").to_string_lossy().to_string(),
+        (1_u32..=3).collect::<BTreeSet<_>>(),
+    )]);
+    let outcome = kiss::rust_llvm_cov_runner::RustLlvmCovOutcome {
+        selector: selector.clone(),
+        status: kiss::rpytest_runner::TestStatus::Passed,
+        exit_code: Some(0),
+        duration: Duration::from_millis(1),
+        coverage: kiss::rust_llvm_cov_runner::RustLineCoverage { files },
+        test_binary_ids: vec!["test-bin".to_string()],
+        cache_status: kiss::rust_llvm_cov_runner::RustCovCacheStatus::MissStored,
+        stdout: None,
+        stderr: None,
+    };
+    let entry = kiss::rust_llvm_cov_runner::RustCovCacheEntry::from_outcome(
+        &outcome,
+        &identity.generation_fingerprint,
+    );
+    let fingerprint = kiss::rust_llvm_cov_runner::entry_fingerprint(
+        &identity.input_digest,
+        &req,
+        &tools,
+        &selector,
+    );
+    kiss::rust_llvm_cov_runner::store_rust_cov_cache_entry(&req.cache_root, &fingerprint, &entry)
+        .unwrap();
+    kiss::rust_llvm_cov_runner::publish_derived_state(
+        &req,
+        &tools,
+        &identity,
+        std::slice::from_ref(&selector),
+        false,
+    )
+    .unwrap();
+    store_rust_workspace_selectors(repo, &[], std::slice::from_ref(&selector));
+
+    let cov = load_rust_runtime_coverage(repo, &[], &kiss::GateConfig::default())
+        .expect("seeded rust population must load");
+    assert!(
+        cov.covered_lines.contains_key("src/lib.rs"),
+        "seeded lines: {:?}",
+        cov.covered_lines.keys().collect::<Vec<_>>()
+    );
+    let timings = collect_current_unit_test_timings(TimingCollectOpts {
+        universe: repo,
+        lang_filter: Some(Language::Rust),
+        include: TimingLangInclude {
+            python: false,
+            rust: true,
+        },
+        ignore: &[],
+        pytest_args: &[],
+    });
+    assert!(
+        matches!(timings, TimingPopulation::Complete(ref rows) if !rows.is_empty()),
+        "{timings:?}"
+    );
+}

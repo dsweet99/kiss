@@ -212,3 +212,27 @@ pub fn try_identity_from_mtime_seal(
         ordinary_source_digests: seal.ordinary_source_digests,
     })
 }
+
+pub fn try_source_matched_seal_identity(
+    cache_root: &Path,
+    source_root: &Path,
+) -> Option<RustCoverageBatchIdentity> {
+    let bytes = fs::read(seal_path(cache_root)).ok()?;
+    let seal: InputMtimeSeal = serde_json::from_slice(&bytes).ok()?;
+    if seal.schema_version != SEAL_SCHEMA_VERSION
+        || seal.source_root
+            != crate::rust_llvm_cov_runner::rust_cov_cache::normalized_source_root(source_root)
+    {
+        return None;
+    }
+    let current = collect_file_meta(source_root).ok()?;
+    if !ordinary_source_digests_match(&current, &seal.ordinary_source_digests) {
+        return None;
+    }
+    Some(RustCoverageBatchIdentity {
+        input_digest: seal.input_digest,
+        generation_fingerprint: seal.generation_fingerprint,
+        selection_context_fingerprint: seal.selection_context_fingerprint,
+        ordinary_source_digests: seal.ordinary_source_digests,
+    })
+}

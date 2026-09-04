@@ -93,10 +93,24 @@ fn load_python_timings(repo_root: &Path, pytest_args: &[String]) -> Option<Vec<U
 }
 
 fn load_rust_timings(repo_root: &Path) -> Option<Vec<UnitTestTiming>> {
-    let (req, tools) = resolved_rust_batch_request_parts(repo_root, &[]).ok()?;
-    let identity = kiss::rust_llvm_cov_runner::batch_identity(&req, &tools).ok()?;
     let cache_root = rust_coverage_cache_root(repo_root);
-
+    let (req, tools) = resolved_rust_batch_request_parts(repo_root, &[]).ok()?;
+    let identity = match kiss::rust_llvm_cov_runner::try_source_matched_seal_identity(
+        &cache_root, repo_root,
+    ) {
+        Some(sealed)
+            if kiss::rust_llvm_cov_runner::load_current_population_state(
+                &cache_root,
+                repo_root,
+                &sealed,
+                None,
+            )
+            .is_some() =>
+        {
+            sealed
+        }
+        _ => kiss::rust_llvm_cov_runner::batch_identity(&req, &tools).ok()?,
+    };
     if let Some(pairs) = kiss::rust_llvm_cov_runner::load_current_population_durations(
         &cache_root,
         repo_root,
@@ -106,19 +120,24 @@ fn load_rust_timings(repo_root: &Path) -> Option<Vec<UnitTestTiming>> {
         None,
     ) && !pairs.is_empty()
     {
-        let report_ids = rust_logical_to_kiss_test_ids_cached(repo_root, &[]).unwrap_or_default();
-        return Some(
-            pairs
-                .into_iter()
-                .map(|(selector, duration)| UnitTestTiming {
-                    language: Language::Rust,
-                    selector: report_string_for_logical_string(&report_ids, &selector),
-                    duration,
-                })
-                .collect(),
-        );
+        return Some(map_rust_timing_pairs(repo_root, pairs));
     }
     load_rust_timings_from_witness(repo_root, &identity)
+}
+
+fn map_rust_timing_pairs(
+    repo_root: &Path,
+    pairs: Vec<(String, std::time::Duration)>,
+) -> Vec<UnitTestTiming> {
+    let report_ids = rust_logical_to_kiss_test_ids_cached(repo_root, &[]).unwrap_or_default();
+    pairs
+        .into_iter()
+        .map(|(selector, duration)| UnitTestTiming {
+            language: Language::Rust,
+            selector: report_string_for_logical_string(&report_ids, &selector),
+            duration,
+        })
+        .collect()
 }
 
 fn load_rust_timings_from_witness(

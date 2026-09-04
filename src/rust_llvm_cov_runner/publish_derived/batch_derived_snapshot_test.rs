@@ -26,6 +26,11 @@ fn load_manifest_generation_entries_ignores_non_json_and_stale_entries() {
         "alpha",
         entry("alpha", "generation", TestStatus::Passed, "src/lib.rs", 1),
     );
+    store_entry(
+        &cache,
+        "extra",
+        entry("gamma", "generation", TestStatus::Passed, "src/lib.rs", 7),
+    );
 
     let entries =
         load_manifest_generation_entries(&cache, repo.path(), &population(&["alpha"])).unwrap();

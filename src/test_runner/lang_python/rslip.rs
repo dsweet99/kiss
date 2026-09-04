@@ -281,9 +281,7 @@ fn handle_rslip_batch_progress(
             emit_progress_lines(&body);
         }
         RslipBatchProgress::TestsRemaining { remaining } => {
-            crate::test_runner::emit_test_progress(&format!(
-                "kiss test: tests_remaining={remaining}"
-            ));
+            crate::test_runner::tests_remaining::emit_tests_remaining(remaining);
         }
     }
 }

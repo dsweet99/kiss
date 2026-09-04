@@ -45,7 +45,7 @@ pub(super) fn install_live_rust_status_hook(
 
 pub(super) fn finish_live_rust_remaining() {
     if LIVE_REMAINING.swap(0, Ordering::SeqCst) > 0 {
-        crate::test_runner::emit_test_progress("kiss test: tests_remaining=0");
+        crate::test_runner::tests_remaining::emit_tests_remaining(0);
     }
 }
 
@@ -96,10 +96,7 @@ fn emit_one_live_status(
     }
     *state.remaining = state.remaining.saturating_sub(1);
     LIVE_REMAINING.store(*state.remaining, Ordering::SeqCst);
-    crate::test_runner::emit_test_progress(&format!(
-        "kiss test: tests_remaining={}",
-        state.remaining
-    ));
+    crate::test_runner::tests_remaining::emit_tests_remaining(*state.remaining);
 }
 
 fn kiss_id_for_libtest(report_ids: &BTreeMap<String, String>, name: &str) -> Option<String> {

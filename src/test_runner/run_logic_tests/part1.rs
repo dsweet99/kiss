@@ -352,10 +352,6 @@ fn empty_module_runs_return_default_summaries_without_spawning() {
     };
 
     assert_eq!(
-        language_modules::run_rslip_selectors_for_module(&[], &ctx).unwrap(),
-        SelectorExecutionSummary::default()
-    );
-    assert_eq!(
         language_modules::run_rust_selectors_for_module(&[], &ctx, None).unwrap(),
         SelectorExecutionSummary::default()
     );

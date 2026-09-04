@@ -62,6 +62,12 @@ pub fn remember_identity_memo(identity: RustCoverageBatchIdentity) {
     });
 }
 
+pub fn refresh_identity_memo() {
+    IDENTITY_MEMO.with(|memo| {
+        memo.borrow_mut().value = None;
+    });
+}
+
 pub fn identity_memo_is_populated() -> bool {
     IDENTITY_MEMO.with(|memo| {
         let memo = memo.borrow();
@@ -140,7 +146,7 @@ pub fn batch_identity(
 mod identity_memo_test {
     use super::{
         RustCoverageBatchIdentity, batch_identity, begin_identity_memo, identity_memo_hash_count,
-        remember_identity_memo,
+        refresh_identity_memo, remember_identity_memo,
     };
 
     #[test]
@@ -159,6 +165,20 @@ mod identity_memo_test {
         let _ = batch_identity(&req, &tools).unwrap();
         let _ = batch_identity(&req, &tools).unwrap();
         assert_eq!(identity_memo_hash_count(), 1);
+    }
+
+    #[test]
+    fn refresh_identity_memo_drops_remembered_value() {
+        begin_identity_memo();
+        remember_identity_memo(RustCoverageBatchIdentity {
+            input_digest: "input".into(),
+            generation_fingerprint: "generation".into(),
+            selection_context_fingerprint: "selection".into(),
+            ordinary_source_digests: Default::default(),
+        });
+        assert!(super::identity_memo_is_populated());
+        refresh_identity_memo();
+        assert!(!super::identity_memo_is_populated());
     }
 
     #[test]

@@ -13,11 +13,9 @@ pub(crate) fn load_rust_runtime_coverage(
     ignore: &[String],
     gate: &kiss::GateConfig,
 ) -> Result<BackendCoverage, RuntimeCoverageLoadError> {
-    let identity = current_rust_coverage_batch_identity(repo_root, &[]).map_err(|err| {
-        coverage_error("Rust", &format!("stale/incompatible tool identity ({err})"))
-    })?;
     let cache_root = rust_coverage_cache_root(repo_root);
     let selectors = rust_selectors_for_coverage_load(repo_root, ignore)?;
+    let identity = rust_runtime_batch_identity(repo_root, &cache_root)?;
     if let Some(population) = kiss::rust_llvm_cov_runner::load_current_population_state(
         &cache_root,
         repo_root,
@@ -57,6 +55,30 @@ pub(crate) fn load_rust_runtime_coverage(
     ))
 }
 
+fn rust_runtime_batch_identity(
+    repo_root: &Path,
+    cache_root: &Path,
+) -> Result<kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity, RuntimeCoverageLoadError> {
+    let sealed =
+        kiss::rust_llvm_cov_runner::try_source_matched_seal_identity(cache_root, repo_root);
+    match sealed {
+        Some(sealed)
+            if kiss::rust_llvm_cov_runner::load_current_population_state(
+                cache_root,
+                repo_root,
+                &sealed,
+                None,
+            )
+            .is_some() =>
+        {
+            Ok(sealed)
+        }
+        _ => current_rust_coverage_batch_identity(repo_root, &[]).map_err(|err| {
+            coverage_error("Rust", &format!("stale/incompatible tool identity ({err})"))
+        }),
+    }
+}
+
 fn coverage_from_current_snapshots(
     repo_root: &Path,
     cache_root: &Path,
@@ -91,7 +113,7 @@ fn coverage_from_current_snapshots(
             cache_root,
             repo_root,
             identity,
-            Some(selectors),
+            None,
         )
     {
         return Ok(Some(backend_from_lines(
@@ -291,6 +313,26 @@ pub(super) fn remap_rust_covered_lines(
 mod tests {
     use super::*;
     use std::collections::{BTreeMap, BTreeSet};
+
+    #[test]
+    fn snapshots_report_incomplete_witness_when_cache_empty() {
+        let tmp = tempfile::tempdir().unwrap();
+        let identity = kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity {
+            input_digest: "i".into(),
+            generation_fingerprint: "g".into(),
+            selection_context_fingerprint: "s".into(),
+            ordinary_source_digests: Default::default(),
+        };
+        let err = coverage_from_current_snapshots(
+            tmp.path(),
+            &tmp.path().join(".kiss/rust_llvm_cov_cache"),
+            &identity,
+            &["a".into()],
+            true,
+        )
+        .expect_err("empty cache + incomplete witness");
+        assert!(err.reason.contains("incomplete"), "{err:?}");
+    }
 
     #[test]
     fn backend_from_lines_preserves_identity_and_map() {
