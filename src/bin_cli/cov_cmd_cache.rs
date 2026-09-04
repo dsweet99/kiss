@@ -4,10 +4,10 @@ use std::time::Instant;
 use kiss::Language;
 
 use crate::analyze;
-use crate::analyze::cov_coverable_cache::{CovCoverableKey, load_or_build_coverable_denoms};
-use crate::analyze::cov_records_cache::{CovRecordsCacheKey, store_cov_records};
+use crate::analyze::cov_coverable_cache::{load_or_build_coverable_denoms, CovCoverableKey};
+use crate::analyze::cov_records_cache::{store_cov_records, CovRecordsCacheKey};
 use crate::analyze::gather_files;
-use crate::analyze::line_coverage::{RuntimeCoverageSnapshot, records_from_denoms};
+use crate::analyze::line_coverage::{records_from_denoms, RuntimeCoverageSnapshot};
 use crate::test_runner::check_line_coverage::repository_root_for_universe;
 
 pub(crate) struct CovFileSets {
@@ -21,31 +21,56 @@ pub(crate) fn gather_cov_files(
     ignore: &[String],
 ) -> Option<CovFileSets> {
     let repo_root = repository_root_for_universe(universe_root);
-    let list_key = crate::analyze::cov_file_list_cache::CovFileListKey {
-        repo_root: &repo_root,
-        lang_filter,
-        ignore,
-    };
-    let (py_files, mut rs_files) = if let Some(cached) =
-        crate::analyze::cov_file_list_cache::try_load_cov_file_list(&list_key)
-    {
-        cached
-    } else {
-        let (py_files, rs_files) = gather_files(universe_root, lang_filter, ignore);
-        if !py_files.is_empty() || !rs_files.is_empty() {
-            crate::analyze::cov_file_list_cache::store_cov_file_list(
-                &list_key, &py_files, &rs_files,
-            );
-        }
-        (py_files, rs_files)
-    };
+    let (mut py_files, mut rs_files) =
+        load_or_gather_scoped_files(universe_root, &repo_root, lang_filter, ignore);
     rs_files =
         super::cov_workspace_files::filter_root_workspace_rust_cov_files(&repo_root, rs_files);
+    retain_production_cov_files(&mut py_files, &mut rs_files);
     if py_files.is_empty() && rs_files.is_empty() {
         None
     } else {
         Some(CovFileSets { py_files, rs_files })
     }
+}
+
+fn load_or_gather_scoped_files(
+    universe_root: &Path,
+    repo_root: &Path,
+    lang_filter: Option<Language>,
+    ignore: &[String],
+) -> (Vec<PathBuf>, Vec<PathBuf>) {
+    if !universe_is_repo_root(universe_root, repo_root) {
+        return gather_files(universe_root, lang_filter, ignore);
+    }
+    let list_key = crate::analyze::cov_file_list_cache::CovFileListKey {
+        repo_root,
+        lang_filter,
+        ignore,
+    };
+    if let Some(cached) = crate::analyze::cov_file_list_cache::try_load_cov_file_list(&list_key) {
+        return cached;
+    }
+    let gathered = gather_files(universe_root, lang_filter, ignore);
+    if !gathered.0.is_empty() || !gathered.1.is_empty() {
+        crate::analyze::cov_file_list_cache::store_cov_file_list(
+            &list_key,
+            &gathered.0,
+            &gathered.1,
+        );
+    }
+    gathered
+}
+
+fn universe_is_repo_root(universe_root: &Path, repo_root: &Path) -> bool {
+    match (universe_root.canonicalize(), repo_root.canonicalize()) {
+        (Ok(universe), Ok(repo)) => universe == repo,
+        _ => false,
+    }
+}
+
+fn retain_production_cov_files(py_files: &mut Vec<PathBuf>, rs_files: &mut Vec<PathBuf>) {
+    py_files.retain(|path| !kiss::is_python_test_module_path(path));
+    rs_files.retain(|path| !kiss::is_in_test_directory(path));
 }
 
 pub(crate) fn lang_filter_cache_label(lang_filter: Option<Language>) -> Option<&'static str> {

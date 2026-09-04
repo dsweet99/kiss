@@ -500,3 +500,53 @@ fn target_role_resolution_does_not_parse_unrelated_sources() {
     .expect("unrelated parse errors must not affect a bounded target");
     assert!(query.python_lines.contains_key(&tmp.path().join("app.py")));
 }
+
+#[test]
+fn resolve_empty_and_helper_among_real_tests_does_not_dump_universe() {
+    let tmp = tempdir().unwrap();
+    init_git_repo(tmp.path());
+    fs::create_dir_all(tmp.path().join("tests/fast")).unwrap();
+    fs::write(
+        tmp.path().join("tests/fast/test_ok.py"),
+        "def test_ok():\n    assert True\n",
+    )
+    .unwrap();
+    fs::write(tmp.path().join("tests/fast/test_empty.py"), "# no tests\n").unwrap();
+    fs::write(
+        tmp.path().join("tests/fast/helpers.py"),
+        "def helper():\n    return 1\n",
+    )
+    .unwrap();
+    fs::write(
+        tmp.path().join("tests/test_other.py"),
+        "def test_other():\n    assert True\n",
+    )
+    .unwrap();
+    assert!(
+        crate::test_runner::workspace_selector_cache::store_python_workspace_selectors(
+            tmp.path(),
+            &[],
+            &[
+                "tests/fast/test_ok.py::test_ok".into(),
+                "tests/test_other.py::test_other".into(),
+            ],
+            &[],
+        )
+    );
+    let query = resolve_target_operands(
+        tmp.path(),
+        &[
+            "tests/fast/test_ok.py".into(),
+            "tests/fast/test_empty.py".into(),
+            "tests/fast/helpers.py".into(),
+        ],
+        Some(Language::Python),
+        &[],
+        &[],
+    )
+    .expect("mixed empty/helper targets");
+    assert_eq!(
+        query.direct_python.iter().cloned().collect::<Vec<_>>(),
+        vec!["tests/fast/test_ok.py::test_ok".to_string()]
+    );
+}

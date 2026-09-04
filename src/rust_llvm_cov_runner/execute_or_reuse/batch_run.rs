@@ -103,6 +103,53 @@ pub fn prepare_batch_run_layout(plan: &RustCoverageBatchPlan) -> io::Result<Path
     Ok(run_root)
 }
 
+pub fn terminate_stale_cache_processes(cache_root: &Path) -> usize {
+    let Some(needle) = stale_cache_cmdline_needle(cache_root) else {
+        return 0;
+    };
+    let self_pid = std::process::id();
+    let mut killed = 0;
+    let Ok(proc_dir) = fs::read_dir("/proc") else {
+        return 0;
+    };
+    for entry in proc_dir.flatten() {
+        let pid = match entry.file_name().to_string_lossy().parse::<u32>() {
+            Ok(pid) if pid > 1 && pid != self_pid => pid,
+            _ => continue,
+        };
+        let Ok(raw) = fs::read(entry.path().join("cmdline")) else {
+            continue;
+        };
+        if raw.is_empty() {
+            continue;
+        }
+        let cmdline = String::from_utf8_lossy(&raw);
+        if !cmdline.contains(&needle) {
+            continue;
+        }
+        #[cfg(unix)]
+        {
+            let _ = unsafe { libc::kill(pid as i32, libc::SIGKILL) };
+            killed += 1;
+        }
+    }
+    killed
+}
+
+fn stale_cache_cmdline_needle(cache_root: &Path) -> Option<String> {
+    let raw = cache_root.to_string_lossy();
+    if !raw.contains("rust_llvm_cov_cache") {
+        return None;
+    }
+    if let Ok(canon) = cache_root.canonicalize() {
+        let canon_s = canon.to_string_lossy();
+        if canon_s.contains("rust_llvm_cov_cache") {
+            return Some(canon_s.into_owned());
+        }
+    }
+    Some(raw.into_owned())
+}
+
 pub fn remove_stale_run_directories(cache_root: &Path, keep_run_root: &Path) -> io::Result<()> {
     let runs_root = cache_root.join("runs");
     if !runs_root.is_dir() {

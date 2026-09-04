@@ -68,6 +68,68 @@ fn gather_cov_files_none_when_empty_dir() {
 }
 
 #[test]
+fn gather_cov_files_test_directory_is_none_even_with_repo_cache() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    std::fs::create_dir_all(repo.join(".git")).unwrap();
+    std::fs::create_dir_all(repo.join("pkg")).unwrap();
+    std::fs::create_dir_all(repo.join("tests/fast")).unwrap();
+    std::fs::write(repo.join("pkg/app.py"), "VALUE = 1\n").unwrap();
+    std::fs::write(
+        repo.join("tests/fast/test_a.py"),
+        "def test_a():\n    assert True\n",
+    )
+    .unwrap();
+
+    let root = gather_cov_files(repo, None, &[]).expect("production files at repo root");
+    assert!(root
+        .py_files
+        .iter()
+        .any(|path| path.ends_with("pkg/app.py") || path.ends_with("app.py")));
+    assert!(gather_cov_files(&repo.join("tests/fast"), None, &[]).is_none());
+}
+
+#[test]
+fn run_cov_command_test_directory_without_population_succeeds() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    std::fs::create_dir_all(repo.join(".git")).unwrap();
+    std::fs::create_dir_all(repo.join("tests/fast")).unwrap();
+    std::fs::write(repo.join("app.py"), "VALUE = 1\n").unwrap();
+    std::fs::write(
+        repo.join("tests/fast/test_a.py"),
+        "def test_a():\n    assert True\n",
+    )
+    .unwrap();
+    let _ = gather_cov_files(repo, None, &[]);
+
+    let py = Config::python_defaults();
+    let rs = Config::rust_defaults();
+    let gate = GateConfig {
+        test_coverage_threshold: 75,
+        orphan_detection: false,
+        max_unit_test_seconds: vec![("*".into(), 5.0)],
+        ..GateConfig::default()
+    };
+    let path = repo.join("tests/fast").to_string_lossy().into_owned();
+    let args = CovCommandArgs {
+        paths: std::slice::from_ref(&path),
+        lang_filter: None,
+        py_config: &py,
+        rs_config: &rs,
+        gate_config: &gate,
+        bypass_gate: false,
+        ignore: &[],
+        timing: false,
+        jobs: 1,
+        allow_refresh: false,
+        pytest_args: &[],
+        language_tables: Default::default(),
+    };
+    assert_eq!(run_cov_command(&args), 0);
+}
+
+#[test]
 fn both_gates_disabled_short_circuits() {
     let py = Config::python_defaults();
     let rs = Config::rust_defaults();

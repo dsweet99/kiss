@@ -9,6 +9,10 @@ use crate::test_runner::lang_rust::workspace::{
 };
 use crate::test_runner::targets::rust_direct_test_selectors;
 
+#[path = "rust_enumerate_dynamic.rs"]
+mod rust_enumerate_dynamic;
+use rust_enumerate_dynamic::rust_file_needs_dynamic_listing;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ParseErrorPolicy {
     Fail,
@@ -122,75 +126,6 @@ fn selectors_in_rust_file(path: &Path) -> Result<(PathBuf, Vec<String>), String>
         )
     })?;
     Ok((path.to_path_buf(), selectors))
-}
-
-fn rust_file_needs_dynamic_listing(path: &Path) -> bool {
-    let Ok(source) = std::fs::read_to_string(path) else {
-        return false;
-    };
-    if !source.contains('!') && !source.contains("#[") {
-        return false;
-    }
-    fn attribute_may_generate_tests(attribute: &syn::Attribute) -> bool {
-        if attribute.path().is_ident("test") {
-            return false;
-        }
-        let name = attribute
-            .path()
-            .segments
-            .last()
-            .map(|segment| segment.ident.to_string())
-            .unwrap_or_default();
-        !matches!(
-            name.as_str(),
-            "cfg"
-                | "allow"
-                | "expect"
-                | "warn"
-                | "deny"
-                | "forbid"
-                | "doc"
-                | "inline"
-                | "cold"
-                | "must_use"
-                | "deprecated"
-                | "track_caller"
-                | "coverage"
-        )
-    }
-    fn items_need_dynamic_listing(items: &[syn::Item]) -> bool {
-        items.iter().any(|item| match item {
-            syn::Item::Macro(item_macro) => {
-                let name = item_macro
-                    .mac
-                    .path
-                    .segments
-                    .last()
-                    .map(|segment| segment.ident.to_string())
-                    .unwrap_or_default();
-                !matches!(
-                    name.as_str(),
-                    "macro_rules" | "thread_local" | "lazy_static" | "bitflags"
-                )
-            }
-            syn::Item::Mod(item_mod) => item_mod
-                .content
-                .as_ref()
-                .is_some_and(|(_, nested)| items_need_dynamic_listing(nested)),
-            syn::Item::Fn(item_fn) => item_fn.attrs.iter().any(attribute_may_generate_tests),
-            syn::Item::Impl(item_impl) => item_impl.items.iter().any(|item| {
-                matches!(
-                    item,
-                    syn::ImplItem::Fn(method)
-                        if method.attrs.iter().any(attribute_may_generate_tests)
-                )
-            }),
-            _ => false,
-        })
-    }
-    syn::parse_file(&source)
-        .ok()
-        .is_some_and(|file| items_need_dynamic_listing(&file.items))
 }
 
 fn dynamic_rust_selectors(
@@ -416,14 +351,5 @@ fn enumerate_workspace_rust_test_entries(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::rust_dynamic_listing_jobs;
-
-    #[test]
-    fn dynamic_rust_listing_uses_repository_num_jobs() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        std::fs::write(tmp.path().join(".kissconfig"), "[test]\nnum_jobs = 7\n").expect("config");
-
-        assert_eq!(rust_dynamic_listing_jobs(tmp.path()).expect("jobs"), 7);
-    }
-}
+#[path = "rust_enumerate_test.rs"]
+mod tests;

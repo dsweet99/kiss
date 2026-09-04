@@ -159,7 +159,13 @@ fn dynamic_listing_failure_does_not_publish_partial_static_universe() {
     let tmp = TempDir::new().unwrap();
     write_demo_crate(
         &tmp,
-        "include!(\"missing.inc\");\n#[test]\nfn known_test() {}\n",
+        r#"
+macro_rules! cases { ($name:ident) => { #[test] fn $name() {} }; }
+cases!(generated);
+include!("missing.inc");
+#[test]
+fn known_test() {}
+"#,
     );
 
     let err = enumerate_workspace_rust_selectors(tmp.path(), &[]).unwrap_err();

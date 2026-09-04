@@ -61,10 +61,12 @@ pub(crate) fn format_final_test_summary(
     } else {
         icon.to_string()
     };
-    let mut line = format!("{icon} {} passed", summary.passed);
-    if summary.failed > 0 {
-        line.push_str(&format!(" · {} failed", summary.failed));
-    }
+    let timed_out = summary.timed_out_selectors.len();
+    let failed = summary.failed.saturating_sub(timed_out);
+    let mut line = format!(
+        "{icon} {} passed · {} failed · {} timed out",
+        summary.passed, failed, timed_out
+    );
     line.push_str(&format!(
         " · {} total · {} max pass",
         format_test_duration(total_duration),
@@ -90,7 +92,19 @@ pub(crate) fn stdout_color_enabled() -> bool {
     std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none()
 }
 
+pub(crate) fn coverage_skip_for_failures_message(
+    summary: &FinalTestSummary,
+) -> Option<&'static str> {
+    if summary.failed == 0 {
+        return None;
+    }
+    Some("kiss test: skipping coverage because tests failed or timed out")
+}
+
 pub(crate) fn print_final_test_summary(summary: &FinalTestSummary, total_duration: Duration) {
+    if let Some(msg) = coverage_skip_for_failures_message(summary) {
+        crate::test_runner::emit_test_progress(msg);
+    }
     let text = format_final_test_summary(summary, total_duration, stdout_color_enabled());
     crate::test_runner::emit_test_progress(&text);
 }

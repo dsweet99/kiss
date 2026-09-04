@@ -385,6 +385,9 @@ fn defined_child_env(env: &BTreeMap<String, String>) -> BTreeMap<String, String>
         "SSL_CERT_DIR",
         "CC",
         "CXX",
+        "CONDA_PREFIX",
+        "CMAKE_PREFIX_PATH",
+        "PKG_CONFIG_PATH",
     ] {
         if !defined.contains_key(key)
             && let Ok(value) = std::env::var(key)
@@ -394,6 +397,11 @@ fn defined_child_env(env: &BTreeMap<String, String>) -> BTreeMap<String, String>
     }
     for (key, value) in crate::cargo_target_linker_env() {
         defined.entry(key).or_insert(value);
+    }
+    if !defined.contains_key("CMAKE_PREFIX_PATH")
+        && let Some(conda) = defined.get("CONDA_PREFIX").cloned()
+    {
+        defined.insert("CMAKE_PREFIX_PATH".to_string(), conda);
     }
     defined
 }

@@ -8,6 +8,34 @@ use crate::rust_llvm_cov_runner::{
 };
 
 #[test]
+fn terminate_stale_cache_processes_kills_cmdline_match_and_skips_self() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cache_root = tmp.path().join(".kiss").join("rust_llvm_cov_cache");
+    fs::create_dir_all(&cache_root).unwrap();
+    let marker = cache_root.canonicalize().unwrap();
+    let mut child = std::process::Command::new("python3")
+        .arg("-c")
+        .arg("import time; time.sleep(30)")
+        .arg(marker.as_os_str())
+        .spawn()
+        .unwrap();
+    let pid = child.id();
+    assert!(
+        terminate_stale_cache_processes(&cache_root) >= 1,
+        "must kill the process whose cmdline contains the cache root"
+    );
+    let _ = child.wait();
+    assert!(
+        !std::path::Path::new(&format!("/proc/{pid}")).exists(),
+        "stale cache process should be gone"
+    );
+    assert_eq!(
+        terminate_stale_cache_processes(&tmp.path().join("not_a_cache")),
+        0
+    );
+}
+
+#[test]
 fn remove_stale_run_directories_failure_is_recoverable_on_next_run() {
     let tmp = tempfile::tempdir().unwrap();
     let cache_root = tmp.path().join(".kiss").join("rust_llvm_cov_cache");

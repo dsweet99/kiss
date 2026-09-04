@@ -114,6 +114,7 @@ impl FreshBatchRunScope {
         cleanup: CurrentRunCleanup,
     ) -> io::Result<Self> {
         let interrupt_guard = BatchScopeInterruptGuard::install()?;
+        let _ = super::terminate_stale_cache_processes(cache_root);
         let stale_cleanup_error = super::remove_stale_run_directories(cache_root, &run_root).err();
         Ok(Self {
             stale_cleanup_error,

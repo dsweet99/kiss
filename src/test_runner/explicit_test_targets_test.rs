@@ -163,3 +163,58 @@ fn explicit_nested_non_member_rust_target_is_rejected() {
         "unexpected error: {err}"
     );
 }
+
+#[test]
+fn directory_target_does_not_dump_universe_for_empty_helpers() {
+    let _cwd = cwd_test_lock::lock();
+    let tmp = TempDir::new().unwrap();
+    init_git_repo(tmp.path());
+    fs::create_dir_all(tmp.path().join("tests/fast")).unwrap();
+    fs::write(
+        tmp.path().join("tests/fast/test_ok.py"),
+        "def test_ok():\n    assert True\n",
+    )
+    .unwrap();
+    fs::write(tmp.path().join("tests/fast/test_empty.py"), "# no tests\n").unwrap();
+    fs::write(
+        tmp.path().join("tests/fast/helpers.py"),
+        "def helper():\n    return 1\n",
+    )
+    .unwrap();
+    fs::create_dir_all(tmp.path().join("tests/slow")).unwrap();
+    fs::write(
+        tmp.path().join("tests/slow/test_slow.py"),
+        "def test_slow():\n    assert True\n",
+    )
+    .unwrap();
+    assert!(
+        crate::test_runner::workspace_selector_cache::store_python_workspace_selectors(
+            tmp.path(),
+            &[],
+            &[
+                "tests/fast/test_ok.py::test_ok".into(),
+                "tests/slow/test_slow.py::test_slow".into(),
+            ],
+            &[],
+        )
+    );
+
+    let orig = std::env::current_dir().unwrap();
+    std::env::set_current_dir(tmp.path()).unwrap();
+    let planned = plan_target_selectors(
+        TargetPlanKind::Targets(&["tests/fast/".into()]),
+        &[],
+        crate::test_runner::language_keyed::LanguageKeyed {
+            python: &[],
+            rust: &[],
+        },
+        Some(kiss::Language::Python),
+        &kiss::GateConfig::default(),
+    );
+    std::env::set_current_dir(orig).unwrap();
+    let planned = planned.expect("plan directory target");
+    assert_eq!(
+        planned.sel.python,
+        vec!["tests/fast/test_ok.py::test_ok".to_string()]
+    );
+}

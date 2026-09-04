@@ -237,3 +237,20 @@ fn write_malformed_entries(repo_root: &Path) {
     )
     .unwrap();
 }
+
+#[test]
+fn fill_cmake_prefix_from_conda_copies_when_missing() {
+    let mut env = BTreeMap::from([("CONDA_PREFIX".to_string(), "/opt/conda".to_string())]);
+    fill_cmake_prefix_from_conda(&mut env);
+    assert_eq!(env.get("CMAKE_PREFIX_PATH").map(String::as_str), Some("/opt/conda"));
+}
+
+#[test]
+fn fill_cmake_prefix_from_conda_keeps_explicit_path() {
+    let mut env = BTreeMap::from([
+        ("CONDA_PREFIX".to_string(), "/opt/conda".to_string()),
+        ("CMAKE_PREFIX_PATH".to_string(), "/opt/other".to_string()),
+    ]);
+    fill_cmake_prefix_from_conda(&mut env);
+    assert_eq!(env.get("CMAKE_PREFIX_PATH").map(String::as_str), Some("/opt/other"));
+}

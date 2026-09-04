@@ -12,9 +12,7 @@ use super::model_python::attach_python_nodeids;
 use super::parse::{ParsedTestTarget, parse_test_target};
 use crate::test_runner::runners::collect_python_nodeids_for_targets;
 use crate::test_runner::workspace_selector_cache::{
-    load_cached_python_workspace_selectors, load_cached_rust_workspace_selectors,
-    python_selectors_for_rel_path, store_python_workspace_selectors,
-    store_rust_workspace_selectors,
+    load_cached_python_workspace_selectors, python_selectors_for_rel_path,
 };
 #[derive(Clone, Debug, Default)]
 pub(crate) struct TargetSelectionQuery {
@@ -24,6 +22,8 @@ pub(crate) struct TargetSelectionQuery {
     pub rust_files: BTreeSet<PathBuf>,
     pub python_lines: BTreeMap<PathBuf, BTreeSet<u32>>,
     pub rust_lines: BTreeMap<PathBuf, BTreeSet<u32>>,
+    unresolved_python_test_module: bool,
+    unresolved_rust_test_module: bool,
 }
 
 pub(crate) fn resolve_target_operands(
@@ -39,22 +39,9 @@ pub(crate) fn resolve_target_operands(
     let mut roles = RolesOnDemand {
         loaded: Default::default(),
         parsed: Default::default(),
-        pytest_args,
     };
-    let cache_started = std::time::Instant::now();
-    let mut python_selector_cache = (lang_filter != Some(Language::Rust))
-        .then(|| load_cached_python_workspace_selectors(repo_root, ignore, pytest_args))
-        .flatten();
-    if lang_filter != Some(Language::Rust) {
-        crate::test_runner::emit_stage_time(
-            if python_selector_cache.is_some() {
-                "python_target_cache"
-            } else {
-                "python_target_cache_miss"
-            },
-            cache_started.elapsed(),
-        );
-    }
+    let mut python_selector_cache =
+        load_python_target_cache(repo_root, ignore, pytest_args, lang_filter);
     for raw in operands {
         if !seen_raw.insert(raw.clone()) {
             continue;
@@ -81,14 +68,13 @@ pub(crate) fn resolve_target_operands(
             models.insert(abs.clone(), model);
         }
         let model = models.get(&abs).expect("model inserted above");
-        apply_parsed_target(
-            &mut query, model, &parsed, &abs, repo_root, ignore, &mut roles,
-        )?;
+        apply_parsed_target(&mut query, model, &parsed, &abs, &mut roles)?;
         if parsed.language == Language::Python && python_selector_cache.is_none() {
             python_selector_cache =
                 load_cached_python_workspace_selectors(repo_root, ignore, pytest_args);
         }
     }
+    flush_unresolved_universes(&mut query, repo_root, ignore, pytest_args)?;
     Ok(query)
 }
 
@@ -114,13 +100,12 @@ fn explicit_python_test_selector(
     }
 }
 
-struct RolesOnDemand<'a> {
+struct RolesOnDemand {
     loaded: kiss::code_roles::SourceRoleIndex,
     parsed: BTreeSet<PathBuf>,
-    pytest_args: &'a [String],
 }
 
-impl RolesOnDemand<'_> {
+impl RolesOnDemand {
     fn get(&mut self, path: &Path) -> Result<&kiss::code_roles::SourceRoleIndex, String> {
         if contains_file(&self.loaded, path) {
             return Ok(&self.loaded);
@@ -141,9 +126,7 @@ fn apply_parsed_target(
     model: &SourceModel,
     parsed: &ParsedTestTarget,
     abs: &Path,
-    repo_root: &Path,
-    ignore: &[String],
-    roles: &mut RolesOnDemand<'_>,
+    roles: &mut RolesOnDemand,
 ) -> Result<(), String> {
     if let Some(nodeid) = &parsed.python_nodeid {
         if model.direct_tests.iter().any(|t| t.selector == *nodeid) {
@@ -157,7 +140,7 @@ fn apply_parsed_target(
         ));
     }
     match (&parsed.symbol, parsed.member.as_deref()) {
-        (None, _) => apply_file_operand(query, model, abs, repo_root, ignore, roles)?,
+        (None, _) => apply_file_operand(query, model, abs, roles)?,
         (Some(name), member) => {
             apply_symbol_target(query, model, parsed, abs, name, member, roles)?
         }
@@ -169,9 +152,7 @@ fn apply_file_operand(
     query: &mut TargetSelectionQuery,
     model: &SourceModel,
     abs: &Path,
-    repo_root: &Path,
-    ignore: &[String],
-    roles: &mut RolesOnDemand<'_>,
+    roles: &mut RolesOnDemand,
 ) -> Result<(), String> {
     let before_py = query.direct_python.len();
     let before_rs = query.direct_rust.len();
@@ -182,73 +163,18 @@ fn apply_file_operand(
         insert_direct(query, model.language, test.selector.clone());
     }
     if is_python_test_module_path(abs) || is_test_only_file(roles.get(abs)?, abs) {
-        insert_universe_if_unresolved(
-            query,
-            model.language,
-            repo_root,
-            ignore,
-            roles.pytest_args,
-            before_py,
-            before_rs,
-        )?;
+        match model.language {
+            Language::Python if query.direct_python.len() == before_py => {
+                query.unresolved_python_test_module = true;
+            }
+            Language::Rust if query.direct_rust.len() == before_rs => {
+                query.unresolved_rust_test_module = true;
+            }
+            _ => {}
+        }
         return Ok(());
     }
     insert_file(query, model.language, abs);
-    Ok(())
-}
-
-fn insert_universe_if_unresolved(
-    query: &mut TargetSelectionQuery,
-    language: Language,
-    repo_root: &Path,
-    ignore: &[String],
-    pytest_args: &[String],
-    before_py: usize,
-    before_rs: usize,
-) -> Result<(), String> {
-    match language {
-        Language::Python if query.direct_python.len() == before_py => {
-            let selectors =
-                match load_cached_python_workspace_selectors(repo_root, ignore, pytest_args) {
-                    Some(selectors) => selectors,
-                    None => {
-                        let selectors =
-                            crate::test_runner::runners::enumerate_workspace_python_selectors(
-                                repo_root,
-                                ignore,
-                                pytest_args,
-                            )?;
-                        store_python_workspace_selectors(
-                            repo_root,
-                            ignore,
-                            &selectors,
-                            pytest_args,
-                        );
-                        selectors
-                    }
-                };
-            for selector in selectors {
-                insert_direct(query, Language::Python, selector);
-            }
-        }
-        Language::Rust if query.direct_rust.len() == before_rs => {
-            let selectors = match load_cached_rust_workspace_selectors(repo_root, ignore) {
-                Some(selectors) => selectors,
-                None => {
-                    let selectors =
-                        crate::test_runner::runners::enumerate_workspace_rust_selectors(
-                            repo_root, ignore,
-                        )?;
-                    store_rust_workspace_selectors(repo_root, ignore, &selectors);
-                    selectors
-                }
-            };
-            for selector in selectors {
-                insert_direct(query, Language::Rust, selector);
-            }
-        }
-        _ => {}
-    }
     Ok(())
 }
 
@@ -259,7 +185,7 @@ fn apply_symbol_target(
     abs: &Path,
     name: &str,
     member: Option<&str>,
-    roles: &mut RolesOnDemand<'_>,
+    roles: &mut RolesOnDemand,
 ) -> Result<(), String> {
     let def = model.find_definition(name, member)?;
     if !def.is_unit_test {
@@ -308,6 +234,29 @@ fn unit_test_selectors_for_def(
         .map(|test| test.selector.clone())
         .filter(|selector| !selector.is_empty())
         .collect()
+}
+
+fn load_python_target_cache(
+    repo_root: &Path,
+    ignore: &[String],
+    pytest_args: &[String],
+    lang_filter: Option<Language>,
+) -> Option<Vec<String>> {
+    let started = std::time::Instant::now();
+    let cache = (lang_filter != Some(Language::Rust))
+        .then(|| load_cached_python_workspace_selectors(repo_root, ignore, pytest_args))
+        .flatten();
+    if lang_filter != Some(Language::Rust) {
+        crate::test_runner::emit_stage_time(
+            if cache.is_some() {
+                "python_target_cache"
+            } else {
+                "python_target_cache_miss"
+            },
+            started.elapsed(),
+        );
+    }
+    cache
 }
 
 fn attach_python_tests(
@@ -417,4 +366,7 @@ fn reject_lang_mismatch(
 
 #[path = "resolve_insert.rs"]
 mod resolve_insert;
+#[path = "resolve_universe.rs"]
+mod resolve_universe;
 use resolve_insert::{insert_direct, insert_file, insert_lines, language_label, repo_relative};
+use resolve_universe::flush_unresolved_universes;

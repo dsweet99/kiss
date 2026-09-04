@@ -24,6 +24,7 @@ pub(crate) const RUST_COVERAGE_ENV_KEYS: &[&str] = &[
     "CARGO_TARGET_DIR",
     "LLVM_PROFILE_FILE",
     "KISS_RUST_LLVM_COV_HOLD_BEFORE_GO_MS",
+    "CMAKE_PREFIX_PATH",
 ];
 const RUST_CHILD_ENV_KEYS: &[&str] = &[
     "PATH",
@@ -45,12 +46,23 @@ const RUST_CHILD_ENV_KEYS: &[&str] = &[
     "LD_LIBRARY_PATH",
     "CC",
     "CXX",
+    "CONDA_PREFIX",
+    "PKG_CONFIG_PATH",
 ];
 pub(crate) fn relevant_rust_batch_env() -> BTreeMap<String, String> {
     let mut env = kiss::env_map_from_allowlist(RUST_CHILD_ENV_KEYS);
     env.extend(kiss::env_map_from_allowlist(RUST_COVERAGE_ENV_KEYS));
     env.extend(kiss::cargo_target_linker_env());
+    fill_cmake_prefix_from_conda(&mut env);
     env
+}
+
+fn fill_cmake_prefix_from_conda(env: &mut BTreeMap<String, String>) {
+    if !env.contains_key("CMAKE_PREFIX_PATH")
+        && let Some(conda) = env.get("CONDA_PREFIX").cloned()
+    {
+        env.insert("CMAKE_PREFIX_PATH".to_string(), conda);
+    }
 }
 
 pub(crate) fn rust_coverage_cache_root(repo_root: &Path) -> PathBuf {
