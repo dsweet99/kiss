@@ -4,7 +4,7 @@ use std::time::Duration;
 use super::*;
 use crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest;
 use crate::rust_llvm_cov_runner::{
-    BATCH_EXECUTION_POLICY_VERSION, CACHE_SCHEMA_VERSION, RustLlvmCovError,
+    RustLlvmCovError, BATCH_EXECUTION_POLICY_VERSION, CACHE_SCHEMA_VERSION,
 };
 
 #[test]
@@ -172,6 +172,7 @@ fn build_identity_helpers_are_executable_witnesses() {
         source_root: input.source_root.clone(),
         cargo_args: input.cargo_args.clone(),
         env: input.env.clone(),
+        resolved_tools: input.resolved_tools.clone(),
     };
     let _ = BuildIdentityFile {
         input: input.clone(),
@@ -188,11 +189,9 @@ fn build_identity_helpers_are_executable_witnesses() {
         path_size_bytes(&plan.build_target.join("missing")).unwrap(),
         0
     );
-    assert!(
-        build_identity_path(&req.cache_root)
-            .to_string_lossy()
-            .ends_with("identity.json")
-    );
+    assert!(build_identity_path(&req.cache_root)
+        .to_string_lossy()
+        .ends_with("identity.json"));
 
     update_build_target_baseline(&req, &tools, &plan, 0).unwrap();
     let prep = prepare_build_target_for_identity(&req, &tools, &plan).unwrap();

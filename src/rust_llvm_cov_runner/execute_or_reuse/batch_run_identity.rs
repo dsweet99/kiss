@@ -29,6 +29,8 @@ pub(crate) struct BuildIdentityInput {
     pub(crate) source_root: String,
     pub(crate) cargo_args: Vec<String>,
     pub(crate) env: BTreeMap<String, String>,
+    #[serde(default)]
+    pub(crate) resolved_tools: BTreeMap<String, String>,
 }
 
 const BUILD_TARGET_GROWTH_NUMERATOR: u64 = 3;
@@ -42,11 +44,28 @@ pub(crate) fn prepare_build_target_for_identity(
     let expected = build_identity_input(req, tools);
     let cache_owned = plan.build_target.starts_with(&req.cache_root);
     if let Some(previous) = load_build_identity(&req.cache_root)?
-        && previous.input == expected
+        && identity_input_matches(&previous.input, &expected)
     {
+        if previous.input != expected {
+            write_build_identity_atomic(
+                &req.cache_root,
+                &BuildIdentityFile {
+                    input: expected,
+                    build_target_baseline_bytes: previous.build_target_baseline_bytes,
+                },
+            )?;
+        }
         return retain_matching_or_reset_if_grown(req, tools, plan, previous, cache_owned);
     }
     reset_cache_owned_target_for_expected_context(req, tools, plan, cache_owned)
+}
+
+fn identity_input_matches(previous: &BuildIdentityInput, expected: &BuildIdentityInput) -> bool {
+    let mut previous = previous.clone();
+    let mut expected = expected.clone();
+    previous.env.remove("PATH");
+    expected.env.remove("PATH");
+    previous == expected
 }
 
 fn retain_matching_or_reset_if_grown(
@@ -131,8 +150,9 @@ pub(crate) fn build_identity_input(
     req: &RustCoverageBatchRequest,
     tools: &RustCoverageToolIdentity,
 ) -> BuildIdentityInput {
-    let env =
+    let mut env =
         crate::rust_llvm_cov_runner::plan::batch_plan::effective_coverage_identity_environment(req);
+    env.remove("PATH");
     BuildIdentityInput {
         cache_schema: CACHE_SCHEMA_VERSION.to_string(),
         execution_policy: BATCH_EXECUTION_POLICY_VERSION.to_string(),
@@ -145,6 +165,10 @@ pub(crate) fn build_identity_input(
         source_root: req.source_root.to_string_lossy().to_string(),
         cargo_args: req.cargo_args.clone(),
         env,
+        resolved_tools: crate::rust_llvm_cov_runner::plan::batch_plan_env::resolved_identity_tools(
+            &req.env,
+            &req.cwd,
+        ),
     }
 }
 

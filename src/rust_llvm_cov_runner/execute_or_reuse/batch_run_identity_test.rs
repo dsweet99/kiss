@@ -88,6 +88,16 @@ fn append_duplicate_path_entry(path: &str) -> String {
     format!("{path}{separator}{first}")
 }
 
+fn write_executable_stub(path: &std::path::Path, contents: &[u8]) {
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, contents).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+}
+
 #[test]
 fn missing_marker_removes_cache_owned_target_and_writes_zero_baseline() {
     let h = identity_harness();
@@ -133,7 +143,7 @@ fn duplicate_path_entry_retains_cargo_artifacts() {
     assert_eq!(prep.previous_baseline_bytes, 0);
     assert!(h.plan.build_target.join("artifact").is_file());
     let marker = loaded_identity(&h.req.cache_root);
-    assert_eq!(marker.input.env["PATH"], normalized);
+    assert!(!marker.input.env.contains_key("PATH"));
     assert_eq!(marker.build_target_baseline_bytes, 0);
 }
 
@@ -141,14 +151,85 @@ fn duplicate_path_entry_retains_cargo_artifacts() {
 fn path_resolution_change_replaces_cargo_artifacts() {
     let mut h = identity_harness();
     seed_target(&h.plan, 8);
-    h.req.env.insert("PATH".into(), "/old/bin".into());
+    let old_bin = h.req.source_root.join("old-bin");
+    let new_bin = h.req.source_root.join("new-bin");
+    write_executable_stub(&old_bin.join("cmake"), b"old\n");
+    write_executable_stub(&new_bin.join("cmake"), b"new\n");
+    h.req
+        .env
+        .insert("PATH".into(), old_bin.to_string_lossy().into_owned());
     write_expected_zero_baseline_marker(&h.req, &h.tools).unwrap();
-    h.req.env.insert("PATH".into(), "/new/bin".into());
+    h.req
+        .env
+        .insert("PATH".into(), new_bin.to_string_lossy().into_owned());
 
     let prep = prepare_build_target_for_identity(&h.req, &h.tools, &h.plan).unwrap();
 
     assert_eq!(prep.previous_baseline_bytes, 0);
     assert!(!h.plan.build_target.exists());
+    let marker = loaded_identity(&h.req.cache_root);
+    assert_eq!(
+        marker.input.resolved_tools.get("cmake").map(String::as_str),
+        Some(new_bin.join("cmake").to_str().unwrap())
+    );
+}
+
+#[test]
+fn unused_path_prefix_retains_cargo_artifacts() {
+    let mut h = identity_harness();
+    seed_target(&h.plan, 8);
+    h.req.env.insert(
+        "PATH".into(),
+        "/home/dsweet/micromamba/envs/sameq/bin:/usr/bin".into(),
+    );
+    write_expected_zero_baseline_marker(&h.req, &h.tools).unwrap();
+    h.req.env.insert(
+        "PATH".into(),
+        "/home/dsweet/bin:/home/dsweet/.local/opt/node/bin:/home/dsweet/micromamba/envs/sameq/bin:/usr/bin".into(),
+    );
+
+    let prep = prepare_build_target_for_identity(&h.req, &h.tools, &h.plan).unwrap();
+
+    assert_eq!(prep.previous_baseline_bytes, 0);
+    assert!(h.plan.build_target.join("artifact").is_file());
+    assert!(
+        !loaded_identity(&h.req.cache_root)
+            .input
+            .env
+            .contains_key("PATH")
+    );
+}
+
+#[test]
+fn legacy_marker_with_changed_tool_path_replaces_cargo_artifacts() {
+    let mut h = identity_harness();
+    seed_target(&h.plan, 8);
+    let old_bin = h.req.source_root.join("old-bin");
+    let new_bin = h.req.source_root.join("new-bin");
+    write_executable_stub(&old_bin.join("cmake"), b"old\n");
+    write_executable_stub(&new_bin.join("cmake"), b"new\n");
+    h.req
+        .env
+        .insert("PATH".into(), old_bin.to_string_lossy().into_owned());
+    write_expected_zero_baseline_marker(&h.req, &h.tools).unwrap();
+    let mut legacy = loaded_identity(&h.req.cache_root);
+    legacy.input.resolved_tools.clear();
+    write_build_identity_atomic(&h.req.cache_root, &legacy).unwrap();
+    h.req
+        .env
+        .insert("PATH".into(), new_bin.to_string_lossy().into_owned());
+
+    prepare_build_target_for_identity(&h.req, &h.tools, &h.plan).unwrap();
+
+    assert!(!h.plan.build_target.exists());
+    assert_eq!(
+        loaded_identity(&h.req.cache_root)
+            .input
+            .resolved_tools
+            .get("cmake")
+            .map(String::as_str),
+        Some(new_bin.join("cmake").to_str().unwrap())
+    );
 }
 
 #[test]
@@ -235,6 +316,33 @@ fn duplicate_path_launch_reuses_real_llvm_cov_cargo_artifacts() {
     let second_plan = crate::rust_llvm_cov_runner::build_rust_coverage_batch_plan(&h.req).unwrap();
     assert_eq!(h.plan.env["PATH"], second_plan.env["PATH"]);
     prepare_build_target_for_identity(&h.req, &h.tools, &second_plan).unwrap();
+    let second = run_llvm_cov_and_read_fresh(&h.req.source_root, &second_plan);
+
+    assert!(!second.is_empty());
+    assert!(second.iter().all(|fresh| *fresh));
+}
+
+#[test]
+fn unused_path_prefix_reuses_real_llvm_cov_cargo_artifacts() {
+    let mut h = identity_harness();
+    write_cargo_fixture(&h.req.source_root);
+    let path = std::env::var("PATH").unwrap();
+    h.req.env.insert("PATH".into(), path.clone());
+    h.plan = crate::rust_llvm_cov_runner::build_rust_coverage_batch_plan(&h.req).unwrap();
+    prepare_build_target_for_identity(&h.req, &h.tools, &h.plan).unwrap();
+    let first = run_llvm_cov_and_read_fresh(&h.req.source_root, &h.plan);
+    assert!(first.iter().any(|fresh| !fresh));
+
+    let unused = h.req.source_root.join("unused-bin");
+    fs::create_dir_all(&unused).unwrap();
+    let separator = if cfg!(windows) { ';' } else { ':' };
+    h.req.env.insert(
+        "PATH".into(),
+        format!("{}{separator}{path}", unused.display()),
+    );
+    let second_plan = crate::rust_llvm_cov_runner::build_rust_coverage_batch_plan(&h.req).unwrap();
+    prepare_build_target_for_identity(&h.req, &h.tools, &second_plan).unwrap();
+    assert!(second_plan.build_target.join("debug").exists() || second_plan.build_target.exists());
     let second = run_llvm_cov_and_read_fresh(&h.req.source_root, &second_plan);
 
     assert!(!second.is_empty());

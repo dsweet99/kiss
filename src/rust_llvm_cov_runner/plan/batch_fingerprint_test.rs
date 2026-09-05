@@ -11,6 +11,16 @@ fn request() -> RustCoverageBatchRequest {
     RustCoverageBatchRequest::witness()
 }
 
+fn write_executable_stub(path: &std::path::Path) {
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, b"stub\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+}
+
 #[test]
 fn entry_fingerprints_differ_by_selector_but_share_generation() {
     let tmp = tempfile::tempdir().unwrap();
@@ -87,16 +97,52 @@ fn generation_fingerprint_tracks_path_changes() {
     fs::create_dir_all(tmp.path().join("src")).unwrap();
     fs::write(tmp.path().join("Cargo.toml"), "[package]\n").unwrap();
     fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
+    let old_bin = tmp.path().join("old-bin");
+    let new_bin = tmp.path().join("new-bin");
+    write_executable_stub(&old_bin.join("cmake"));
+    write_executable_stub(&new_bin.join("cmake"));
 
     let mut req = request();
     req.source_root = tmp.path().to_path_buf();
     req.cwd = tmp.path().to_path_buf();
-    req.env.insert("PATH".to_string(), "/old/bin".to_string());
+    req.env
+        .insert("PATH".to_string(), old_bin.to_string_lossy().into_owned());
     let old = batch_identity(&req, &tools()).unwrap();
-    req.env.insert("PATH".to_string(), "/new/bin".to_string());
+    req.env
+        .insert("PATH".to_string(), new_bin.to_string_lossy().into_owned());
     let new = batch_identity(&req, &tools()).unwrap();
 
     assert_ne!(old.generation_fingerprint, new.generation_fingerprint);
+}
+
+#[test]
+fn generation_fingerprint_ignores_unused_path_prefix() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::create_dir_all(tmp.path().join("src")).unwrap();
+    fs::write(tmp.path().join("Cargo.toml"), "[package]\n").unwrap();
+    fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
+    let tool_bin = tmp.path().join("tool-bin");
+    let unused_bin = tmp.path().join("unused-bin");
+    write_executable_stub(&tool_bin.join("cmake"));
+    fs::create_dir_all(&unused_bin).unwrap();
+    let separator = if cfg!(windows) { ';' } else { ':' };
+
+    let mut req = request();
+    req.source_root = tmp.path().to_path_buf();
+    req.cwd = tmp.path().to_path_buf();
+    req.env
+        .insert("PATH".to_string(), tool_bin.to_string_lossy().into_owned());
+    let original = batch_identity(&req, &tools()).unwrap();
+    req.env.insert(
+        "PATH".to_string(),
+        format!("{}{separator}{}", unused_bin.display(), tool_bin.display()),
+    );
+    let prefixed = batch_identity(&req, &tools()).unwrap();
+
+    assert_eq!(
+        original.generation_fingerprint,
+        prefixed.generation_fingerprint
+    );
 }
 
 #[test]

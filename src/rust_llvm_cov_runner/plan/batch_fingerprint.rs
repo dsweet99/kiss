@@ -278,9 +278,16 @@ fn generation_hash(
         h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(h, part);
         h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(h, &[0]);
     }
-    let env =
+    let mut env =
         crate::rust_llvm_cov_runner::plan::batch_plan::effective_coverage_identity_environment(req);
+    env.remove("PATH");
     h = hash_env(&mut h, &env);
+    h = hash_env(
+        &mut h,
+        &crate::rust_llvm_cov_runner::plan::batch_plan_env::resolved_identity_tools(
+            &req.env, &req.cwd,
+        ),
+    );
     h = hash_string_list(&mut h, &req.cargo_args);
     hash_string_list(
         &mut h,
