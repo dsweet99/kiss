@@ -1,4 +1,5 @@
 use crate::common::seed_python_runtime_coverage;
+use crate::support::git::{commit_all, init_git_repo};
 use std::fmt::Write as _;
 use std::fs;
 use std::process::Command;
@@ -39,6 +40,7 @@ fn write_permissive_config_with_scope(root: &std::path::Path, scope: Option<&str
 }
 
 fn write_aggregate_masking_corpus(root: &std::path::Path) {
+    init_git_repo(root);
     let mut good = String::from("import bad\n\n");
     for i in 1..=COVERED_FUNCTION_COUNT {
         write!(good, "def f{i}():\n    return {i}\n\n").unwrap();
@@ -67,6 +69,7 @@ fn write_aggregate_masking_corpus(root: &std::path::Path) {
         )],
     );
     write_permissive_config(root);
+    commit_all(root, "init");
 }
 
 fn run_cov_from_corpus_root(
@@ -77,7 +80,7 @@ fn run_cov_from_corpus_root(
     kiss_binary()
         .current_dir(root)
         .env("HOME", home)
-        .arg("__coverage")
+        .arg("test")
         .arg("--lang")
         .arg("python")
         .arg(target)

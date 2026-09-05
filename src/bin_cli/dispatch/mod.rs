@@ -6,14 +6,14 @@ mod test_dispatch;
 #[cfg(test)]
 mod test_dispatch_b;
 
-use crate::bin_cli::args::{Cli, Commands, parse_test_invocation, validate_test_branch_options};
+use crate::bin_cli::args::{parse_test_invocation, validate_test_branch_options, Cli, Commands};
 
 use handlers::{
-    dispatch_check, dispatch_cov, dispatch_dry, dispatch_mv, dispatch_rules, dispatch_stats,
-    dispatch_test, dispatch_viz,
+    dispatch_check, dispatch_dry, dispatch_mv, dispatch_rules, dispatch_stats, dispatch_test,
+    dispatch_viz,
 };
 use options::{
-    CheckDispatchOptions, CovDispatchOptions, DryDispatchOptions, MvDispatchOptions, MvOutputFlags,
+    CheckDispatchOptions, DryDispatchOptions, MvDispatchOptions, MvOutputFlags,
     RulesDispatchOptions, StatsDispatchOptions, TestDispatchOptions, TriConfig, VizDispatchOptions,
 };
 
@@ -25,7 +25,7 @@ fn dispatch_analyze(
     config: Option<std::path::PathBuf>,
     command: Commands,
     cfg: &TriConfig<'_>,
-    test_section: &TestSectionConfig,
+    _test_section: &TestSectionConfig,
 ) -> i32 {
     match command {
         Commands::Check {
@@ -39,24 +39,6 @@ fn dispatch_analyze(
             timing,
             config,
             cfg,
-        }),
-        Commands::Coverage {
-            paths,
-            all,
-            ignore,
-            timing,
-            jobs,
-            extra,
-        } => dispatch_cov(CovDispatchOptions {
-            lang,
-            paths,
-            bypass_gate: all,
-            ignore,
-            timing,
-            jobs,
-            extra,
-            cfg,
-            test_cfg: test_section,
         }),
         Commands::Stats {
             paths,
@@ -228,8 +210,7 @@ pub fn dispatch(
         Cli {
             lang,
             config,
-            command:
-                command @ (Commands::Check { .. } | Commands::Coverage { .. } | Commands::Stats { .. }),
+            command: command @ (Commands::Check { .. } | Commands::Stats { .. }),
         } => dispatch_analyze(lang, config, command, &cfg, test_section),
         Cli {
             lang,

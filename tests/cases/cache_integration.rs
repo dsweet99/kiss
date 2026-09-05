@@ -1,4 +1,5 @@
 use crate::common::{generate_lockfile, list_full_check_cache_files, seed_python_runtime_coverage};
+use crate::support::git::{commit_all, init_git_repo};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
@@ -189,11 +190,11 @@ fn check_cache_invalidates_on_same_size_content_change() {
 fn run_mixed_cmd(home: &Path, repo: &Path, args: &[&str]) -> Output {
     let config = crate::common::write_builtin_language_config(home);
     let mut cmd = kiss_binary();
-    cmd.arg("--config").arg(&config);
+    cmd.current_dir(repo).arg("--config").arg(&config);
     for arg in args {
         cmd.arg(arg);
     }
-    cmd.arg(repo).env("HOME", home).output().unwrap()
+    cmd.arg(".").env("HOME", home).output().unwrap()
 }
 
 fn sorted_stdout_lines(out: &Output) -> Vec<String> {
@@ -207,6 +208,7 @@ fn sorted_stdout_lines(out: &Output) -> Vec<String> {
 }
 
 fn write_mixed_workspace(repo: &Path) {
+    init_git_repo(repo);
     fs::create_dir_all(repo.join("src")).unwrap();
     fs::write(repo.join("app.py"), "def py_value():\n    return 1\n").unwrap();
     fs::write(
@@ -229,6 +231,7 @@ fn write_mixed_workspace(repo: &Path) {
         repo,
         &[("test_app.py::test_py_value", vec![("app.py", vec![1, 2])])],
     );
+    commit_all(repo, "init");
 }
 
 #[test]
@@ -250,7 +253,7 @@ fn mixed_workspace_cached_check_and_stats_match_uncached() {
         sorted_stdout_lines(&stats2),
         "cached kiss stats must match the uncached production dataset"
     );
-    assert_coverage_identity(home.path(), repo.path(), &["__coverage", "--all"]);
+    assert_coverage_identity(home.path(), repo.path(), &["test", "--coverage-all"]);
 }
 
 fn product_gate_lines(out: &Output) -> Vec<String> {
@@ -259,13 +262,17 @@ fn product_gate_lines(out: &Output) -> Vec<String> {
         .filter(|line| {
             !line.starts_with("kiss test:")
                 && !line.starts_with("PASS:")
+                && !line.starts_with("PASS (cached):")
                 && !line.starts_with("FAIL:")
                 && !line.starts_with("SKIP:")
+                && !line.starts_with('✓')
+                && !line.starts_with('✗')
         })
         .collect()
 }
 
 fn write_rust_inline_external_crate(repo: &Path) {
+    init_git_repo(repo);
     fs::create_dir_all(repo.join("src")).unwrap();
     fs::create_dir_all(repo.join("tests")).unwrap();
     fs::write(
@@ -284,6 +291,7 @@ fn write_rust_inline_external_crate(repo: &Path) {
     )
     .unwrap();
     generate_lockfile(repo);
+    commit_all(repo, "init");
 }
 
 fn replay_cmd(home: &Path, repo: &Path, args: &[&str]) -> (Output, Output) {
@@ -313,6 +321,7 @@ fn assert_coverage_identity(home: &Path, repo: &Path, args: &[&str]) {
 fn python_only_cached_coverage_matches_uncached() {
     let repo = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
+    init_git_repo(repo.path());
     fs::write(repo.path().join("simple.py"), "def foo():\n    return 1\n").unwrap();
     fs::write(
         repo.path().join("test_simple.py"),
@@ -326,10 +335,11 @@ fn python_only_cached_coverage_matches_uncached() {
             vec![("simple.py", vec![1, 2])],
         )],
     );
+    commit_all(repo.path(), "init");
     assert_coverage_identity(
         home.path(),
         repo.path(),
-        &["__coverage", "--all", "--lang", "python"],
+        &["test", "--coverage-all", "--lang", "python"],
     );
 }
 
@@ -366,6 +376,6 @@ fn rust_inline_and_external_tests_cached_check_stats_and_coverage_match_uncached
     assert_coverage_identity(
         home.path(),
         repo.path(),
-        &["__coverage", "--all", "--lang", "rust"],
+        &["test", "--coverage-all", "--lang", "rust"],
     );
 }

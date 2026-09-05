@@ -49,27 +49,6 @@ fn public_dispatch_routes_analyze_and_tool_groups() {
         ),
         2
     );
-    assert_ne!(
-        dispatch(
-            Cli {
-                config: None,
-                lang: Some(kiss::Language::Python),
-                command: Commands::Coverage {
-                    paths: vec![".".to_string()],
-                    all: false,
-                    ignore: vec![],
-                    timing: false,
-                    jobs: None,
-                    extra: vec![],
-                },
-            },
-            &py,
-            &rs,
-            &gate,
-            &test,
-        ),
-        2
-    );
     assert_eq!(
         dispatch(
             Cli {

@@ -57,31 +57,36 @@ fn write_corpus(dir: &std::path::Path) {
 #[test]
 fn kiss_check_all_passes_without_test_module_violations() {
     let corpus = TempDir::new().unwrap();
+    crate::support::git::init_git_repo(corpus.path());
     write_corpus(corpus.path());
     seed_python_runtime_coverage(
         corpus.path(),
         &[("tests/test_lib.py::test_add", vec![("lib.py", vec![1, 2])])],
     );
+    crate::support::git::commit_all(corpus.path(), "init");
 
     let home = TempDir::new().unwrap();
 
     let out = Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .arg("__coverage")
-        .arg("--all")
-        .arg(corpus.path())
+        .current_dir(corpus.path())
+        .arg("test")
+        .arg("--coverage-all")
+        .arg(".")
         .env("HOME", home.path())
         .output()
-        .expect("kiss __coverage --all should run");
+        .expect("kiss test --coverage-all should run");
 
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         out.status.success(),
-        "kiss __coverage --all failed (exit {:?})\nstdout:\n{stdout}\nstderr:\n{stderr}",
+        "kiss test --coverage-all failed (exit {:?})\nstdout:\n{stdout}\nstderr:\n{stderr}",
         out.status.code(),
     );
     assert!(
-        !stdout.contains("tests/test_lib.py"),
+        !stdout
+            .lines()
+            .any(|line| line.contains("VIOLATION") && line.contains("tests/test_lib.py")),
         "expected no test-module coverage violations, got:\n{stdout}"
     );
 }

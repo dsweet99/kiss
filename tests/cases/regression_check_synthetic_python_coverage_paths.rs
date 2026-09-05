@@ -1,4 +1,5 @@
 use crate::common::{list_full_check_cache_files, seed_python_runtime_coverage};
+use crate::support::git::{commit_all, init_git_repo};
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
@@ -7,6 +8,7 @@ use tempfile::TempDir;
 fn synthetic_python_runtime_coverage_paths_do_not_make_check_malformed() {
     let home = TempDir::new().unwrap();
     let repo = TempDir::new().unwrap();
+    init_git_repo(repo.path());
     fs::write(repo.path().join("lib.py"), "VALUE = 1\n").unwrap();
     fs::write(
         repo.path().join(".kissconfig"),
@@ -30,9 +32,10 @@ fn synthetic_python_runtime_coverage_paths_do_not_make_check_malformed() {
             ],
         )],
     );
+    commit_all(repo.path(), "init");
 
     let out = Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .arg("__coverage")
+        .arg("test")
         .arg("--lang")
         .arg("python")
         .arg(repo.path())
@@ -59,6 +62,7 @@ fn synthetic_python_runtime_coverage_paths_do_not_make_check_malformed() {
 fn seeded_python_runtime_coverage_becomes_stale_after_source_change() {
     let home = TempDir::new().unwrap();
     let repo = TempDir::new().unwrap();
+    init_git_repo(repo.path());
     fs::write(repo.path().join("lib.py"), "VALUE = 1\n").unwrap();
     fs::write(
         repo.path().join(".kissconfig"),
@@ -75,9 +79,10 @@ fn seeded_python_runtime_coverage_becomes_stale_after_source_change() {
         repo.path(),
         &[("test_lib.py::test_value", vec![("lib.py", vec![1])])],
     );
+    commit_all(repo.path(), "init");
 
     let first = Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .arg("__coverage")
+        .arg("test")
         .arg("--lang")
         .arg("python")
         .arg(repo.path())
@@ -94,7 +99,7 @@ fn seeded_python_runtime_coverage_becomes_stale_after_source_change() {
 
     fs::write(repo.path().join("lib.py"), "VALUE = 1\nOTHER = 2\n").unwrap();
     let second = Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .arg("__coverage")
+        .arg("test")
         .arg("--lang")
         .arg("python")
         .arg(repo.path())
@@ -110,9 +115,9 @@ fn seeded_python_runtime_coverage_becomes_stale_after_source_change() {
         "stale seeded coverage should fail closed after the source changes"
     );
     assert!(
-        stderr.contains("refreshing Python runtime coverage")
+        stderr.contains("Python runtime line coverage is missing or stale")
             && !stderr.contains("kiss test commit"),
-        "stale coverage should trigger automatic Python refresh without the old manual hint. \
+        "stale coverage should fail closed without the old manual hint. \
          stdout:\n{stdout}\nstderr:\n{stderr}"
     );
 }
@@ -121,6 +126,7 @@ fn seeded_python_runtime_coverage_becomes_stale_after_source_change() {
 fn cold_python_check_refreshes_runtime_coverage_and_warm_check_reuses_cache() {
     let home = TempDir::new().unwrap();
     let repo = TempDir::new().unwrap();
+    init_git_repo(repo.path());
     fs::write(repo.path().join("lib.py"), "def value():\n    return 1\n").unwrap();
     fs::write(
         repo.path().join("test_lib.py"),
@@ -138,6 +144,7 @@ fn cold_python_check_refreshes_runtime_coverage_and_warm_check_reuses_cache() {
          [rust]\n",
     )
     .unwrap();
+    commit_all(repo.path(), "init");
 
     let cold = run_python_check(&home, &repo);
     let cold_stdout = String::from_utf8_lossy(&cold.stdout);
@@ -147,12 +154,8 @@ fn cold_python_check_refreshes_runtime_coverage_and_warm_check_reuses_cache() {
         "cold cov should refresh coverage and pass. stdout:\n{cold_stdout}\nstderr:\n{cold_stderr}"
     );
     assert!(
-        cold_stderr.contains("refreshing Python runtime coverage"),
-        "cold cov should announce the automatic refresh. stdout:\n{cold_stdout}\nstderr:\n{cold_stderr}"
-    );
-    assert!(
         cold_stdout.contains("PASS: test_lib.py::test_value"),
-        "cold cov should run the discovered Python population. stdout:\n{cold_stdout}"
+        "cold kiss test should run the discovered Python population. stdout:\n{cold_stdout}"
     );
     assert!(
         list_full_check_cache_files(repo.path()).is_empty(),
@@ -167,12 +170,8 @@ fn cold_python_check_refreshes_runtime_coverage_and_warm_check_reuses_cache() {
         "warm cov should pass from coverage caches. stdout:\n{warm_stdout}\nstderr:\n{warm_stderr}"
     );
     assert!(
-        !warm_stderr.contains("refreshing Python runtime coverage"),
-        "warm cov should not refresh valid runtime coverage. stdout:\n{warm_stdout}\nstderr:\n{warm_stderr}"
-    );
-    assert!(
-        !warm_stdout.contains("PASS:"),
-        "warm cov should not run the Python population again. stdout:\n{warm_stdout}"
+        warm_stdout.contains("PASS (cached): test_lib.py::test_value"),
+        "warm kiss test should reuse the cached Python result. stdout:\n{warm_stdout}"
     );
 }
 
@@ -190,9 +189,9 @@ fn failed_python_check_refresh_does_not_publish_full_check_cache() {
         "failing test should make cold cov fail. stdout:\n{failed_stdout}\nstderr:\n{failed_stderr}"
     );
     assert!(
-        failed_stderr.contains("failed to refresh Python runtime line coverage")
-            && failed_stderr.contains("population test run failed"),
-        "failure should report refresh/test execution, not stale cache advice. \
+        failed_stdout.contains("FAIL: test_lib.py::test_value")
+            && failed_stdout.contains("skipping coverage because tests failed"),
+        "failure should report the failing test and skip coverage. \
          stdout:\n{failed_stdout}\nstderr:\n{failed_stderr}"
     );
     assert!(
@@ -209,9 +208,8 @@ fn failed_python_check_refresh_does_not_publish_full_check_cache() {
         "fixed test should refresh and pass under cov. stdout:\n{fixed_stdout}\nstderr:\n{fixed_stderr}"
     );
     assert!(
-        fixed_stderr.contains("refreshing Python runtime coverage")
-            && fixed_stdout.contains("PASS: test_lib.py::test_value"),
-        "after a failed refresh, the next valid cov should run and publish the population. \
+        fixed_stdout.contains("PASS: test_lib.py::test_value"),
+        "after a failing test, the next valid kiss test should run and pass. \
          stdout:\n{fixed_stdout}\nstderr:\n{fixed_stderr}"
     );
     assert!(
@@ -257,13 +255,14 @@ fn kiss_check_succeeds_when_tests_fail_while_cov_fails_refresh() {
         "kiss test must fail when the population tests fail.\nstdout:\n{cov_stdout}\nstderr:\n{cov_stderr}"
     );
     assert!(
-        cov_stderr.contains("failed to refresh Python runtime line coverage")
-            && cov_stderr.contains("population test run failed"),
-        "kiss test must report the existing refresh/population failure.\nstdout:\n{cov_stdout}\nstderr:\n{cov_stderr}"
+        cov_stdout.contains("FAIL: test_lib.py::test_value")
+            && cov_stdout.contains("skipping coverage because tests failed"),
+        "kiss test must report the failing test and skip coverage.\nstdout:\n{cov_stdout}\nstderr:\n{cov_stderr}"
     );
 }
 
 fn write_refreshable_python_repo(repo: &TempDir, assertion: &str) {
+    init_git_repo(repo.path());
     fs::write(repo.path().join("lib.py"), "def value():\n    return 1\n").unwrap();
     fs::write(
         repo.path().join("test_lib.py"),
@@ -281,11 +280,12 @@ fn write_refreshable_python_repo(repo: &TempDir, assertion: &str) {
          [rust]\n",
     )
     .unwrap();
+    commit_all(repo.path(), "init");
 }
 
 fn run_python_check(home: &TempDir, repo: &TempDir) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .arg("__coverage")
+        .arg("test")
         .arg("--lang")
         .arg("python")
         .arg(repo.path())

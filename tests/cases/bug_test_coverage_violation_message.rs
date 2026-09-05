@@ -1,4 +1,5 @@
 use crate::common::seed_python_runtime_coverage;
+use crate::support::git::{commit_all, init_git_repo};
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
@@ -11,21 +12,24 @@ fn kiss_binary() -> Command {
 fn bug_check_all_never_claims_100_percent_on_unreferenced_unit() {
     let home = TempDir::new().unwrap();
     let repo = TempDir::new().unwrap();
+    init_git_repo(repo.path());
     fs::write(repo.path().join("lib.py"), "def helper():\n    return 1\n").unwrap();
     seed_python_runtime_coverage(
         repo.path(),
         &[("test_lib.py::test_helper", vec![("lib.py", vec![1])])],
     );
+    commit_all(repo.path(), "init");
 
     let out = kiss_binary()
-        .arg("__coverage")
-        .arg("--all")
+        .current_dir(repo.path())
+        .arg("test")
+        .arg("--coverage-all")
         .arg("--lang")
         .arg("python")
-        .arg(repo.path())
+        .arg(".")
         .env("HOME", home.path())
         .output()
-        .expect("kiss __coverage --all should run");
+        .expect("kiss test --coverage-all should run");
 
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(

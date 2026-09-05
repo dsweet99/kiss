@@ -1,15 +1,15 @@
 use crate::analyze;
 use crate::analyze::DryRunParams;
-use crate::bin_cli::stats::{RunStatsArgs, run_stats};
+use crate::bin_cli::check_cmd;
+use crate::bin_cli::stats::{run_stats, RunStatsArgs};
 use crate::bin_cli::test_cmd::run_test_command;
 use crate::bin_cli::util;
-use crate::bin_cli::{check_cmd, cov_cmd};
 use crate::rules::run_rules;
-use crate::viz::{VizCoarsen, run_viz};
+use crate::viz::{run_viz, VizCoarsen};
 
 use super::options::{
-    CheckDispatchOptions, CovDispatchOptions, DryDispatchOptions, MvDispatchOptions,
-    RulesDispatchOptions, StatsDispatchOptions, TestDispatchOptions, VizDispatchOptions,
+    CheckDispatchOptions, DryDispatchOptions, MvDispatchOptions, RulesDispatchOptions,
+    StatsDispatchOptions, TestDispatchOptions, VizDispatchOptions,
 };
 
 pub(in crate::bin_cli::dispatch) fn dispatch_check(o: CheckDispatchOptions<'_>) -> i32 {
@@ -25,25 +25,6 @@ pub(in crate::bin_cli::dispatch) fn dispatch_check(o: CheckDispatchOptions<'_>) 
         language_tables: o.cfg.language_tables,
     };
     check_cmd::run_check_command(&args)
-}
-
-pub(in crate::bin_cli::dispatch) fn dispatch_cov(o: CovDispatchOptions<'_>) -> i32 {
-    let pytest_args = kiss::effective_python_pytest_args(&o.test_cfg.pytest_plugins, &o.extra);
-    let args = cov_cmd::CovCommandArgs {
-        paths: &o.paths,
-        lang_filter: o.lang,
-        py_config: o.cfg.py,
-        rs_config: o.cfg.rs,
-        gate_config: o.cfg.gate,
-        bypass_gate: o.bypass_gate,
-        ignore: &o.ignore,
-        timing: o.timing,
-        jobs: o.jobs.unwrap_or(o.test_cfg.num_jobs),
-        allow_refresh: true,
-        pytest_args: &pytest_args,
-        language_tables: o.cfg.language_tables,
-    };
-    cov_cmd::run_cov_command(&args)
 }
 
 pub(in crate::bin_cli::dispatch) fn dispatch_stats(o: StatsDispatchOptions) -> i32 {

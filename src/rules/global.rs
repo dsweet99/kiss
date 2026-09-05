@@ -11,7 +11,7 @@ pub(super) const GLOBAL_RULE_SPECS: &[RuleSpec] = &[
         metric: "comment",
         op: ThresholdOp::Equal,
         threshold: ThresholdValue::Usize(|_, _| 0),
-        description: "comment counts non-doc comments. Enforced only when comment_removal_enabled=true. Python docstrings, Rust doc comments (///, //!, /**, /*!), and Rust clap CLI help comments are not counted.",
+        description: "comment counts non-doc comments. Enforced only when comment_removal_enabled=true. Python shebang lines (#!...), Python docstrings, Rust doc comments (///, //!, /**, /*!), and Rust clap CLI help comments are not counted.",
     },
     RuleSpec {
         metric: "doc",

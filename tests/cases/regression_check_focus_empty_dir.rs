@@ -1,4 +1,5 @@
 use crate::common::seed_python_runtime_coverage;
+use crate::support::git::{commit_all, init_git_repo};
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
@@ -86,6 +87,7 @@ fn cli_check_focus_dir_with_no_source_does_not_leak_universe() {
 fn cli_check_requires_runtime_coverage_for_universe_languages_before_focus() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
+    init_git_repo(root);
     fs::create_dir_all(root.join("src")).unwrap();
     fs::write(root.join("app.py"), "def covered():\n    return 1\n").unwrap();
     fs::write(
@@ -107,12 +109,13 @@ fn cli_check_requires_runtime_coverage_for_universe_languages_before_focus() {
         root,
         &[("test_app.py::test_app", vec![("app.py", vec![1, 2])])],
     );
+    commit_all(root, "init");
 
     let focused = kiss_binary()
-        .arg("__coverage")
-        .arg("--all")
-        .arg(root)
-        .arg(root.join("app.py"))
+        .current_dir(root)
+        .arg("test")
+        .arg("--coverage-all")
+        .arg(".")
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&focused.stdout);

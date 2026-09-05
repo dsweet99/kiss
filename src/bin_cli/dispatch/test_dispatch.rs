@@ -257,20 +257,6 @@ fn dispatch_private_routers_cover_additional_command_variants() {
         &cfg,
         &test,
     );
-    let _ = dispatch_analyze(
-        None,
-        None,
-        Commands::Coverage {
-            paths: vec![".".to_string()],
-            all: false,
-            ignore: vec![],
-            timing: false,
-            jobs: None,
-            extra: vec![],
-        },
-        &cfg,
-        &test,
-    );
     let _ = dispatch_tools(
         None,
         None,

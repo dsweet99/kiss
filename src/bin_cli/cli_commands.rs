@@ -148,39 +148,6 @@ pub enum Commands {
         )]
         extra: Vec<String>,
     },
-    #[command(
-        name = "__coverage",
-        hide = true,
-        about = "Coverage-only evaluation (prefer kiss test for the full path)"
-    )]
-    Coverage {
-        #[arg(
-            default_value = ".",
-            value_name = "PATH",
-            help = "Files or directories to analyze"
-        )]
-        paths: Vec<String>,
-        #[arg(long, help = "Include files that currently pass the coverage gate")]
-        all: bool,
-        #[arg(long, value_name = "PREFIX", help = "Path prefix to exclude")]
-        ignore: Vec<String>,
-        #[arg(long, help = "Print coverage stage timings")]
-        timing: bool,
-        #[arg(
-            short = 'j',
-            long,
-            value_name = "JOBS",
-            value_parser = parse_positive_usize,
-            help = "Maximum number of coverage jobs to run concurrently"
-        )]
-        jobs: Option<usize>,
-        #[arg(
-            last = true,
-            value_name = "ARG",
-            help = "Arguments matching the test run that produced Python coverage"
-        )]
-        extra: Vec<String>,
-    },
     #[command(name = "__rust-llvm-cov-target-runner", hide = true)]
     RustLlvmCovTargetRunner {
         #[arg(long, value_name = "DIR")]

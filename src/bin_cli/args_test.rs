@@ -52,17 +52,8 @@ fn cov_subcommand_parses_as_coverage() {
             .any(|w| w.eq_ignore_ascii_case("cov")),
         "top-level help must not mention the token cov\n{help}"
     );
-    let cli = Cli::parse_from(["kiss", "__coverage", ".", "-j", "7"]);
-    assert!(matches!(
-        cli.command,
-        Commands::Coverage { jobs: Some(7), .. }
-    ));
-    let cli = Cli::parse_from(["kiss", "__coverage", ".", "--", "-p", "my_plugin"]);
-    assert!(matches!(
-        cli.command,
-        Commands::Coverage { extra, .. }
-            if extra == vec!["-p".to_string(), "my_plugin".to_string()]
-    ));
+    assert!(Cli::try_parse_from(["kiss", "__coverage"]).is_err());
+    assert!(Cli::command().find_subcommand("__coverage").is_none());
 }
 
 #[test]
@@ -172,14 +163,12 @@ fn test_branch_options_are_mode_specific() {
     assert!(validate_test_branch_options(&TestInvocation::Base, None, Some("origin/main")).is_ok());
     assert!(validate_test_branch_options(&TestInvocation::All, Some("main"), None).is_err());
     assert!(validate_test_branch_options(&TestInvocation::Commit, None, Some("base")).is_err());
-    assert!(
-        validate_test_branch_options(
-            &TestInvocation::Targets(vec!["a.py".into()]),
-            Some("main"),
-            None
-        )
-        .is_err()
-    );
+    assert!(validate_test_branch_options(
+        &TestInvocation::Targets(vec!["a.py".into()]),
+        Some("main"),
+        None
+    )
+    .is_err());
 }
 
 #[test]
@@ -192,11 +181,8 @@ fn test_command_help_is_language_neutral_for_shared_options() {
         .to_string();
 
     assert!(help.contains("Force selected tests to rerun instead of reusing test-runner caches"));
-    assert!(
-        help.contains(
-            "Rerun tests that need it under normal rules, plus any marked FAIL or TIMEOUT"
-        )
-    );
+    assert!(help
+        .contains("Rerun tests that need it under normal rules, plus any marked FAIL or TIMEOUT"));
     assert!(help.contains("Maximum number of test jobs to run concurrently"));
     assert!(help.contains("commit, base, main, ., or PATH / PATH::symbol / directory"));
     assert!(help.contains("[TARGET]"));
@@ -236,6 +222,7 @@ fn top_level_help_describes_commands_and_global_flags() {
     assert!(!help.contains("Output markdown path"));
     assert!(help.contains("Run covering tests and enforce coverage and time gates"));
     assert!(!help.contains("Coverage-only evaluation (prefer kiss test for the full path)"));
+    assert!(Cli::command().find_subcommand("__coverage").is_none());
     assert!(!help.contains("Coverage is enforced by kiss test, not a standalone command"));
     assert!(
         !help.lines().any(|line| {

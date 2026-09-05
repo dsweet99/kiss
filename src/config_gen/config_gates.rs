@@ -177,6 +177,19 @@ fn test_infer_gate_config_comment_removal_enabled() {
         !gated.comment_removal_enabled,
         "comments should set comment_removal_enabled=false"
     );
+
+    let tmp3 = TempDir::new().unwrap();
+    std::fs::write(
+        tmp3.path().join("script.py"),
+        "#!/usr/bin/env python3\ndef foo():\n    return 1\n",
+    )
+    .unwrap();
+    let paths3 = vec![tmp3.path().to_string_lossy().to_string()];
+    let shebang = infer_gate_config_for_paths(&paths3, Some(Language::Python), &[]).unwrap();
+    assert!(
+        shebang.comment_removal_enabled,
+        "a shebang is not a comment and must not disable comment_removal"
+    );
 }
 #[test]
 fn test_write_mimic_config_smoke() {

@@ -1,4 +1,5 @@
 use crate::common::{generate_lockfile, seed_python_runtime_coverage, seed_rust_runtime_coverage};
+use crate::support::git::{commit_all, init_git_repo};
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
@@ -7,6 +8,7 @@ use tempfile::TempDir;
 fn mixed_python_and_rust_runtime_line_coverage_can_pass_together() {
     let home = TempDir::new().unwrap();
     let repo = TempDir::new().unwrap();
+    init_git_repo(repo.path());
     write_mixed_runtime_repo(&repo);
     generate_lockfile(repo.path());
     seed_python_runtime_coverage(
@@ -20,6 +22,7 @@ fn mixed_python_and_rust_runtime_line_coverage_can_pass_together() {
             vec![("src/lib.rs", (1_u32..=13).collect())],
         )],
     );
+    commit_all(repo.path(), "init");
 
     let out = run_kiss_cov_all(&home, &repo);
     let stdout = String::from_utf8_lossy(&out.stdout);
@@ -82,9 +85,10 @@ fn write_mixed_runtime_repo(repo: &TempDir) {
 
 fn run_kiss_cov_all(home: &TempDir, repo: &TempDir) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .arg("__coverage")
-        .arg("--all")
-        .arg(repo.path())
+        .current_dir(repo.path())
+        .arg("test")
+        .arg("--coverage-all")
+        .arg(".")
         .env("HOME", home.path())
         .output()
         .expect("kiss test should run")

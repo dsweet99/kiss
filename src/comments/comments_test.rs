@@ -54,6 +54,15 @@ fn python_flags_hash_comments_not_docstrings_or_strings() {
 }
 
 #[test]
+fn python_accepts_shebangs_and_does_not_count_them_as_comments() {
+    assert_eq!(py_count("#!/usr/bin/env python3\nx = 1\n"), 0);
+    assert_eq!(py_count("#!/usr/bin/env python3\n"), 0);
+    assert_eq!(py_count("#!/usr/bin/env python3\n# keep\nx = 1\n"), 1);
+    assert_eq!(py_count("x = 1\n#!/usr/bin/env python3\n"), 0);
+    assert_eq!(py_count("# ! not a shebang\nx = 1\n"), 1);
+}
+
+#[test]
 fn rust_flags_plain_comments_not_docs_or_strings() {
     assert_eq!(rs_count("fn f() {}\n"), 0);
     assert_eq!(rs_count("// n\nfn f() {}\n"), 1);

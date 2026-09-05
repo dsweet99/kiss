@@ -1,4 +1,5 @@
 use crate::common::seed_python_runtime_coverage;
+use crate::support::git::{commit_all, init_git_repo};
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
@@ -9,12 +10,13 @@ fn kiss_binary() -> Command {
 
 fn run_default_cov(home: &std::path::Path, repo: &std::path::Path) -> std::process::Output {
     kiss_binary()
-        .arg("__coverage")
+        .current_dir(repo)
+        .arg("test")
         .arg("--config")
         .arg(repo.join(".kissconfig"))
         .arg("--lang")
         .arg("python")
-        .arg(repo)
+        .arg(".")
         .env("HOME", home)
         .output()
         .unwrap()
@@ -40,6 +42,7 @@ fn run_default_check_with_config(
 fn regression_check_default_warm_gate_matches_cold_and_warm_output() {
     let repo = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
+    init_git_repo(repo.path());
 
     fs::write(
         repo.path().join(".kissconfig"),
@@ -63,6 +66,7 @@ fn regression_check_default_warm_gate_matches_cold_and_warm_output() {
             vec![("test_default.py", vec![1, 2])],
         )],
     );
+    commit_all(repo.path(), "init");
 
     let cold = run_default_cov(home.path(), repo.path());
     let warm = run_default_cov(home.path(), repo.path());
@@ -72,19 +76,29 @@ fn regression_check_default_warm_gate_matches_cold_and_warm_output() {
         warm.status.code(),
         "exit status should match on cold and warm default runs"
     );
+    let cold_stdout = String::from_utf8_lossy(&cold.stdout);
+    let warm_stdout = String::from_utf8_lossy(&warm.stdout);
+    let cold_violations: Vec<_> = cold_stdout
+        .lines()
+        .filter(|line| line.contains("VIOLATION:test_coverage"))
+        .collect();
+    let warm_violations: Vec<_> = warm_stdout
+        .lines()
+        .filter(|line| line.contains("VIOLATION:test_coverage"))
+        .collect();
     assert_eq!(
-        String::from_utf8_lossy(&cold.stdout),
-        String::from_utf8_lossy(&warm.stdout),
-        "default warm-hit output should match cold-hit output"
+        cold_violations, warm_violations,
+        "default warm-hit coverage violations should match cold-hit output"
     );
-    assert!(String::from_utf8_lossy(&cold.stdout).contains("VIOLATION:test_coverage:"));
-    assert!(String::from_utf8_lossy(&warm.stdout).contains("VIOLATION:test_coverage:"));
+    assert!(cold_stdout.contains("VIOLATION:test_coverage:"));
+    assert!(warm_stdout.contains("VIOLATION:test_coverage:"));
 }
 
 #[test]
 fn regression_cached_coverage_violations_do_not_leak_into_default_gate_mode() {
     let repo = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
+    init_git_repo(repo.path());
 
     fs::write(
         repo.path().join(".kissconfig"),
@@ -103,6 +117,7 @@ fn regression_cached_coverage_violations_do_not_leak_into_default_gate_mode() {
             vec![("default.py", vec![])],
         )],
     );
+    commit_all(repo.path(), "init");
 
     let cold = run_default_check_with_config(home.path(), repo.path());
     let cold_stdout = String::from_utf8_lossy(&cold.stdout).to_string();
@@ -110,13 +125,14 @@ fn regression_cached_coverage_violations_do_not_leak_into_default_gate_mode() {
     assert!(!cold_stdout.contains("VIOLATION:test_coverage"));
 
     let all = kiss_binary()
-        .arg("__coverage")
+        .current_dir(repo.path())
+        .arg("test")
         .arg("--config")
         .arg(repo.path().join(".kissconfig"))
         .arg("--lang")
         .arg("python")
-        .arg("--all")
-        .arg(repo.path())
+        .arg("--coverage-all")
+        .arg(".")
         .env("HOME", home.path())
         .output()
         .unwrap();
@@ -128,52 +144,6 @@ fn regression_cached_coverage_violations_do_not_leak_into_default_gate_mode() {
     let warm_stdout = String::from_utf8_lossy(&warm_default.stdout).to_string();
     assert_eq!(warm_default.status.code(), cold.status.code());
     assert!(!warm_stdout.contains("VIOLATION:test_coverage"));
-}
-
-#[test]
-fn regression_default_gate_fail_still_reports_timing() {
-    let repo = TempDir::new().unwrap();
-    let home = TempDir::new().unwrap();
-
-    fs::write(
-        repo.path().join(".kissconfig"),
-        "[test]\ntest_coverage_threshold = 100\n[python]\n[rust]\n",
-    )
-    .unwrap();
-    fs::write(
-        repo.path().join("default.py"),
-        "def uncovered_function(x):\n    return x * 2\n",
-    )
-    .unwrap();
-    seed_python_runtime_coverage(
-        repo.path(),
-        &[(
-            "test_default.py::test_default",
-            vec![("default.py", vec![])],
-        )],
-    );
-
-    let out = kiss_binary()
-        .arg("__coverage")
-        .arg("--config")
-        .arg(repo.path().join(".kissconfig"))
-        .arg("--timing")
-        .arg("--lang")
-        .arg("python")
-        .arg(repo.path())
-        .env("HOME", home.path())
-        .output()
-        .unwrap();
-    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-
-    assert_eq!(out.status.code(), Some(1));
-    assert!(stderr.contains("TIMING:coverage_snapshot_load_or_refresh_ms"));
-    assert!(
-        !stderr.contains("TIMING:parse")
-            && !stderr.contains("TIMING:graph")
-            && !stderr.contains("TIMING:phase"),
-        "cov --timing must not emit static-analysis timing labels. stderr:\n{stderr}"
-    );
 }
 
 #[test]

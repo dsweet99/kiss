@@ -1,6 +1,5 @@
 use kiss::GateConfig;
 use kiss::Language;
-use kiss::TestSectionConfig;
 
 pub(crate) struct TriConfig<'a> {
     pub py: &'a kiss::Config,
@@ -16,18 +15,6 @@ pub(crate) struct CheckDispatchOptions<'a> {
     pub timing: bool,
     pub config: Option<std::path::PathBuf>,
     pub cfg: &'a TriConfig<'a>,
-}
-
-pub(crate) struct CovDispatchOptions<'a> {
-    pub lang: Option<Language>,
-    pub paths: Vec<String>,
-    pub bypass_gate: bool,
-    pub ignore: Vec<String>,
-    pub timing: bool,
-    pub jobs: Option<usize>,
-    pub extra: Vec<String>,
-    pub cfg: &'a TriConfig<'a>,
-    pub test_cfg: &'a TestSectionConfig,
 }
 
 pub(crate) struct StatsDispatchOptions<'a> {
@@ -50,9 +37,6 @@ mod coverage_witness {
     impl CheckDispatchOptions<'_> {
         fn witness() {}
     }
-    impl CovDispatchOptions<'_> {
-        fn witness() {}
-    }
     impl StatsDispatchOptions<'_> {
         fn witness() {}
     }
@@ -61,7 +45,6 @@ mod coverage_witness {
     fn witness_opt_batch_a() {
         TriConfig::witness();
         CheckDispatchOptions::witness();
-        CovDispatchOptions::witness();
         StatsDispatchOptions::witness();
     }
 }

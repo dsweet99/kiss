@@ -1471,7 +1471,7 @@ def witness_env(repo: Path, marker_dir: Path) -> dict[str, str]:
 
 def witness_check_command(language: str, repo: Path, jobs: int | None = None) -> list[str]:
     # Honor the fixture `.kissconfig`.
-    command = [str(KISS), "--lang", language, "__coverage"]
+    command = [str(KISS), "--lang", language, "test"]
     if jobs is not None:
         command.extend(["-j", str(jobs)])
     command.append(str(repo))
@@ -1693,7 +1693,7 @@ def publication_writer_command(
     jobs: int | None = None,
 ) -> list[str]:
     if language == "python":
-        # Warm `__coverage` does not republish rslip entries or generation pointers.
+        # Warm coverage scoring does not republish rslip entries or generation pointers.
         # Forced `kiss test` re-executes and hits the publication barriers.
         command = [
             str(KISS),
@@ -1713,7 +1713,7 @@ def publication_writer_command(
         #   SelectorEntries publish hits rust_entry_state / rust_reverse_* barriers.
         # - Aggregate/population/index artifacts need AcceptMode::All (`test .`) so
         #   CheckAggregate publish hits rust_check_aggregate / rust_population /
-        #   rust_derived_index. Warm `__coverage` can skip those republishes.
+        #   rust_derived_index. Warm coverage scoring can skip those republishes.
         if artifact in RUST_SELECTOR_PUBLISH_ARTIFACTS:
             targets = ["tests/alpha.rs", "tests/beta.rs"]
         else:
@@ -1924,7 +1924,7 @@ def run_aggregate_benchmark_trial(
             str(KISS),
             "--lang",
             "rust",
-            "__coverage",
+            "test",
             "-j",
             str(jobs),
             str(repo),
@@ -3507,7 +3507,7 @@ def aggregate_coverage() -> None:
             str(KISS),
             "--lang",
             "rust",
-            "__coverage",
+            "test",
             "-j",
             str(jobs),
             *fixture.ignores["rust"],

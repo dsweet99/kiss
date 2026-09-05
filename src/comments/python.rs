@@ -22,7 +22,7 @@ fn walk_comment_nodes(
 ) {
     loop {
         let node = cursor.node();
-        if is_comment_kind(node.kind()) {
+        if is_comment_kind(node.kind()) && !is_shebang_comment(node, parsed) {
             let line = node.start_position().row + 1;
             if !skip_test_only_line(roles, &parsed.path, line) {
                 out.push(comment_violation(&parsed.path, line));
@@ -44,6 +44,11 @@ fn walk_comment_nodes(
 
 fn is_comment_kind(kind: &str) -> bool {
     kind == "comment" || kind == "type_comment"
+}
+
+fn is_shebang_comment(node: Node<'_>, parsed: &ParsedFile) -> bool {
+    node.utf8_text(parsed.source.as_bytes())
+        .is_ok_and(|text| text.starts_with("#!"))
 }
 
 pub(super) fn append_python_doc_violations(

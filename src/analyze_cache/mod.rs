@@ -18,7 +18,7 @@ use path_helpers::{cache_path_full, same_cached_paths};
 pub(crate) use stats_top::try_run_cached_stats_summary;
 pub use store_full::{FullCacheInputs, store_full_cache_from_run};
 
-const CACHE_SCHEMA_VERSION: &str = "v15-orphan-allowed";
+const CACHE_SCHEMA_VERSION: &str = "v16-shebang-comments";
 
 pub fn fnv1a64(mut h: u64, bytes: &[u8]) -> u64 {
     for &b in bytes {

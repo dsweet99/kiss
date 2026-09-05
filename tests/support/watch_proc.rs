@@ -1,3 +1,5 @@
+use std::io::{Read, Write};
+use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
@@ -97,6 +99,55 @@ pub fn wait_watch_session(dir: &Path, watch: &mut WatchProc) {
     }
 }
 
-pub fn wait_watch_idle_cycle(_dir: &Path) {
-    std::thread::sleep(Duration::from_secs(3));
+pub fn wait_watch_idle_cycle(dir: &Path) {
+    let session_path = dir.join(".kiss").join("watch").join("session.json");
+    let deadline = Instant::now() + Duration::from_secs(90);
+    loop {
+        if let Some(socket) = session_socket_path(&session_path)
+            && nudge_watcher(&socket)
+        {
+            return;
+        }
+        if Instant::now() >= deadline {
+            panic!("watch idle cycle not ready");
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+fn session_socket_path(session_path: &Path) -> Option<String> {
+    let bytes = std::fs::read(session_path).ok()?;
+    let text = String::from_utf8(bytes).ok()?;
+    let key = "\"socket\"";
+    let start = text.find(key)? + key.len();
+    let rest = text.get(start..)?;
+    let colon = rest.find(':')?;
+    let after = rest.get(colon + 1..)?.trim_start();
+    let after = after.strip_prefix('"')?;
+    let end = after.find('"')?;
+    Some(after[..end].to_string())
+}
+
+fn nudge_watcher(socket: &str) -> bool {
+    let mut stream = match UnixStream::connect(socket) {
+        Ok(stream) => stream,
+        Err(_) => return false,
+    };
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(90)));
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
+    let body = b"{}";
+    let len = u32::try_from(body.len()).expect("nudge frame fits u32");
+    if stream.write_all(&len.to_be_bytes()).is_err() || stream.write_all(body).is_err() {
+        return false;
+    }
+    let mut len_buf = [0u8; 4];
+    if stream.read_exact(&mut len_buf).is_err() {
+        return false;
+    }
+    let n = usize::try_from(u32::from_be_bytes(len_buf)).unwrap_or(0);
+    if n == 0 || n > 256 * 1024 {
+        return false;
+    }
+    let mut reply = vec![0u8; n];
+    stream.read_exact(&mut reply).is_ok()
 }
