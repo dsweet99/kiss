@@ -131,6 +131,8 @@ pub(crate) fn build_identity_input(
     req: &RustCoverageBatchRequest,
     tools: &RustCoverageToolIdentity,
 ) -> BuildIdentityInput {
+    let env =
+        crate::rust_llvm_cov_runner::plan::batch_plan::effective_coverage_identity_environment(req);
     BuildIdentityInput {
         cache_schema: CACHE_SCHEMA_VERSION.to_string(),
         execution_policy: BATCH_EXECUTION_POLICY_VERSION.to_string(),
@@ -142,7 +144,7 @@ pub(crate) fn build_identity_input(
         ],
         source_root: req.source_root.to_string_lossy().to_string(),
         cargo_args: req.cargo_args.clone(),
-        env: req.env.clone(),
+        env,
     }
 }
 

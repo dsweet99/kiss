@@ -61,7 +61,7 @@ impl RustCoverageBatchIdentity {
                 ),
             ]),
             runner_map_fingerprint: req.runner_map_fingerprint.clone(),
-            normalized_child_environment: req.env.clone(),
+            normalized_child_environment: crate::rust_llvm_cov_runner::plan::batch_plan::effective_coverage_identity_environment(req),
             test_args:
                 crate::rust_llvm_cov_runner::plan::batch_plan_test_args::identity_relevant_test_args(
                     &req.test_args,
@@ -166,5 +166,31 @@ mod tests {
         let mut compile = identity.clone();
         compile.selection_context_fingerprint = "sel-other".into();
         assert_ne!(base, compile.execution_context(&req, &tools));
+    }
+
+    #[test]
+    fn execution_context_normalizes_duplicate_path_and_inherited_profile() {
+        let mut req = RustCoverageBatchRequest::witness();
+        let tools = witness_batch_tools();
+        let identity = RustCoverageBatchIdentity {
+            input_digest: "global".into(),
+            generation_fingerprint: "gen".into(),
+            selection_context_fingerprint: "sel".into(),
+            ordinary_source_digests: BTreeMap::new(),
+        };
+        let separator = if cfg!(windows) { ';' } else { ':' };
+        req.env
+            .insert("PATH".into(), ["/one", "/two"].join(&separator.to_string()));
+        req.env
+            .insert("LLVM_PROFILE_FILE".into(), "/outer/old.profraw".into());
+        let base = identity.execution_context(&req, &tools);
+        req.env.insert(
+            "PATH".into(),
+            ["/one", "/two", "/one"].join(&separator.to_string()),
+        );
+        req.env
+            .insert("LLVM_PROFILE_FILE".into(), "/outer/new.profraw".into());
+
+        assert_eq!(base, identity.execution_context(&req, &tools));
     }
 }

@@ -65,6 +65,32 @@ fn resolve_delegated_runners_returns_host_platform_and_map() {
 }
 
 #[test]
+fn runner_resolve_cache_normalizes_duplicate_path_entries() {
+    let repo = tempfile::tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+    fs::write(
+        repo.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\n",
+    )
+    .unwrap();
+    fs::write(repo.path().join("src/lib.rs"), "pub fn x() {}\n").unwrap();
+
+    let separator = if cfg!(windows) { ';' } else { ':' };
+    let mut req = runner_resolve_base_request(repo.path());
+    req.env.insert(
+        "PATH".to_string(),
+        ["/first", "/second"].join(&separator.to_string()),
+    );
+    resolve_delegated_runners(&req).unwrap();
+    req.env.insert(
+        "PATH".to_string(),
+        ["/first", "/second", "/first"].join(&separator.to_string()),
+    );
+
+    assert!(super::try_runner_resolve_cache(&req).is_some());
+}
+
+#[test]
 fn resolve_batch_request_runners_populates_mutable_request_fields() {
     let repo = tempfile::tempdir().unwrap();
     fs::create_dir_all(repo.path().join("src")).unwrap();

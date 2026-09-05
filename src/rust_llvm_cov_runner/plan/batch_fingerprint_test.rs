@@ -82,6 +82,120 @@ fn generation_fingerprint_tracks_env_and_tool_identity_fields() {
 }
 
 #[test]
+fn generation_fingerprint_tracks_path_changes() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::create_dir_all(tmp.path().join("src")).unwrap();
+    fs::write(tmp.path().join("Cargo.toml"), "[package]\n").unwrap();
+    fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
+
+    let mut req = request();
+    req.source_root = tmp.path().to_path_buf();
+    req.cwd = tmp.path().to_path_buf();
+    req.env.insert("PATH".to_string(), "/old/bin".to_string());
+    let old = batch_identity(&req, &tools()).unwrap();
+    req.env.insert("PATH".to_string(), "/new/bin".to_string());
+    let new = batch_identity(&req, &tools()).unwrap();
+
+    assert_ne!(old.generation_fingerprint, new.generation_fingerprint);
+}
+
+#[test]
+fn generation_fingerprint_normalizes_effective_child_environment() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::create_dir_all(tmp.path().join("src")).unwrap();
+    fs::write(tmp.path().join("Cargo.toml"), "[package]\n").unwrap();
+    fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
+    let separator = if cfg!(windows) { ';' } else { ':' };
+
+    let mut req = request();
+    req.source_root = tmp.path().to_path_buf();
+    req.cwd = tmp.path().to_path_buf();
+    req.env.insert(
+        "PATH".to_string(),
+        ["/one", "/two"].join(&separator.to_string()),
+    );
+    req.env.insert(
+        "LLVM_PROFILE_FILE".to_string(),
+        "/outer/old.profraw".to_string(),
+    );
+    let old = batch_identity(&req, &tools()).unwrap();
+    req.env.insert(
+        "PATH".to_string(),
+        ["/one", "/two", "/one"].join(&separator.to_string()),
+    );
+    req.env.insert(
+        "LLVM_PROFILE_FILE".to_string(),
+        "/outer/new.profraw".to_string(),
+    );
+    let new = batch_identity(&req, &tools()).unwrap();
+
+    assert_eq!(old.generation_fingerprint, new.generation_fingerprint);
+    assert_eq!(
+        old.selection_context_fingerprint,
+        new.selection_context_fingerprint
+    );
+}
+
+#[test]
+fn generation_fingerprint_ignores_inherited_plan_owned_environment() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::create_dir_all(tmp.path().join("src")).unwrap();
+    fs::write(tmp.path().join("Cargo.toml"), "[package]\n").unwrap();
+    fs::write(tmp.path().join("src/lib.rs"), "pub fn x() {}\n").unwrap();
+
+    let mut req = request();
+    req.source_root = tmp.path().to_path_buf();
+    req.cwd = tmp.path().to_path_buf();
+    req.cache_root = tmp.path().join(".kiss/rust_llvm_cov_cache");
+    let base = batch_identity(&req, &tools()).unwrap();
+    for key in [
+        "CARGO_TARGET_DIR",
+        "CARGO_LLVM_COV_TARGET_DIR",
+        "CARGO_LLVM_COV_BUILD_DIR",
+        "CARGO_INCREMENTAL",
+        "NEXTEST_EXPERIMENTAL_LIBTEST_JSON",
+        "KISS_RUST_COVERAGE_PROFILE_POOL",
+    ] {
+        req.env.insert(key.to_string(), "inherited".to_string());
+    }
+
+    let with_inherited = batch_identity(&req, &tools()).unwrap();
+
+    assert_eq!(
+        with_inherited.generation_fingerprint,
+        base.generation_fingerprint
+    );
+    assert_eq!(
+        with_inherited.selection_context_fingerprint,
+        base.selection_context_fingerprint
+    );
+}
+
+#[test]
+fn generation_fingerprint_ignores_aggregate_profile_file_name() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::create_dir_all(tmp.path().join("src")).unwrap();
+    fs::write(tmp.path().join("Cargo.toml"), "[package]\n").unwrap();
+    fs::write(tmp.path().join("src/lib.rs"), "pub fn x() {}\n").unwrap();
+
+    let mut req = request();
+    req.source_root = tmp.path().to_path_buf();
+    req.cwd = tmp.path().to_path_buf();
+    let selector_entries = batch_identity(&req, &tools()).unwrap();
+    req.coverage_output_mode =
+        crate::rust_llvm_cov_runner::plan::batch_plan::CoverageOutputMode::CheckAggregate {
+            publication_binary_ids: None,
+            repair_publication: None,
+        };
+    let check_aggregate = batch_identity(&req, &tools()).unwrap();
+
+    assert_eq!(
+        selector_entries.generation_fingerprint,
+        check_aggregate.generation_fingerprint
+    );
+}
+
+#[test]
 fn ordinary_source_edit_does_not_change_generation() {
     let tmp = tempfile::tempdir().unwrap();
     fs::create_dir_all(tmp.path().join("src")).unwrap();

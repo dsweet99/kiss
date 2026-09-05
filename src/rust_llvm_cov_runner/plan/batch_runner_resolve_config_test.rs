@@ -48,6 +48,61 @@ fn resolve_delegated_runners_reads_runner_from_cargo_home_env() {
 }
 
 #[test]
+fn resolve_delegated_runners_preserves_ambient_cargo_home_for_empty_request_env() {
+    const CHILD: &str = "KISS_TEST_AMBIENT_CARGO_HOME_CHILD";
+    const REPO: &str = "KISS_TEST_AMBIENT_CARGO_HOME_REPO";
+    if std::env::var_os(CHILD).is_some() {
+        let repo = std::path::PathBuf::from(std::env::var_os(REPO).unwrap());
+        let req = runner_resolve_base_request(&repo);
+        assert!(req.env.is_empty());
+        let resolved = resolve_delegated_runners(&req).unwrap();
+        let wrapper = std::path::PathBuf::from(std::env::var_os("CARGO_HOME").unwrap())
+            .join("ambient-runner.sh");
+        assert_eq!(
+            resolved.map.get(&resolved.host_platform),
+            Some(&vec![wrapper.to_string_lossy().to_string()])
+        );
+        return;
+    }
+
+    let repo = tempfile::tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+    fs::write(
+        repo.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\n",
+    )
+    .unwrap();
+    fs::write(repo.path().join("src/lib.rs"), "pub fn x() {}\n").unwrap();
+
+    let cargo_home = tempfile::tempdir().unwrap();
+    let wrapper = cargo_home.path().join("ambient-runner.sh");
+    fs::write(&wrapper, "#!/bin/sh\nexec \"$@\"\n").unwrap();
+    make_executable(&wrapper);
+
+    fs::write(
+        cargo_home.path().join("config.toml"),
+        format!(
+            "[target.'cfg(unix)']\nrunner = [{}]\n",
+            runner_resolve_toml_string(&wrapper.to_string_lossy())
+        ),
+    )
+    .unwrap();
+
+    let status = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "rust_llvm_cov_runner::plan::batch_runner_resolve::config_tests::resolve_delegated_runners_preserves_ambient_cargo_home_for_empty_request_env",
+            "--nocapture",
+        ])
+        .env(CHILD, "1")
+        .env(REPO, repo.path())
+        .env("CARGO_HOME", cargo_home.path())
+        .status()
+        .unwrap();
+    assert!(status.success());
+}
+
+#[test]
 fn resolve_delegated_runners_reads_cfg_target_runner_section() {
     let repo = tempfile::tempdir().unwrap();
     fs::create_dir_all(repo.path().join(".cargo")).unwrap();

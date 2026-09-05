@@ -278,7 +278,9 @@ fn generation_hash(
         h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(h, part);
         h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(h, &[0]);
     }
-    h = hash_env(&mut h, &req.env);
+    let env =
+        crate::rust_llvm_cov_runner::plan::batch_plan::effective_coverage_identity_environment(req);
+    h = hash_env(&mut h, &env);
     h = hash_string_list(&mut h, &req.cargo_args);
     hash_string_list(
         &mut h,

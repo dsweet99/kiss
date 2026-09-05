@@ -64,6 +64,26 @@ fn batch_plan_uses_one_shared_build_target_and_bounded_nextest_jobs() {
 }
 
 #[test]
+fn batch_plan_ignores_inherited_values_for_plan_owned_environment() {
+    let base = build_rust_coverage_batch_plan(&request()).unwrap();
+    let mut req = request();
+    for key in [
+        "CARGO_TARGET_DIR",
+        "CARGO_LLVM_COV_TARGET_DIR",
+        "CARGO_LLVM_COV_BUILD_DIR",
+        "CARGO_INCREMENTAL",
+        "NEXTEST_EXPERIMENTAL_LIBTEST_JSON",
+        "KISS_RUST_COVERAGE_PROFILE_POOL",
+    ] {
+        req.env.insert(key.to_string(), "inherited".to_string());
+    }
+
+    let with_inherited = build_rust_coverage_batch_plan(&req).unwrap();
+
+    assert_eq!(with_inherited.env, base.env);
+}
+
+#[test]
 fn batch_plan_uses_serial_nextest_threads_when_nocapture_is_requested() {
     for no_capture_arg in ["--nocapture", "--no-capture"] {
         let mut req = request();

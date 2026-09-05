@@ -2,6 +2,7 @@ use super::*;
 use crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest;
 use crate::rust_llvm_cov_runner::test_support::witness_batch_tools;
 use std::fs;
+use std::process::Command;
 
 struct IdentityHarness {
     req: RustCoverageBatchRequest,
@@ -39,6 +40,54 @@ fn loaded_identity(cache_root: &std::path::Path) -> BuildIdentityFile {
     serde_json::from_slice(&fs::read(build_identity_path(cache_root)).unwrap()).unwrap()
 }
 
+fn write_cargo_fixture(root: &std::path::Path) {
+    fs::create_dir_all(root.join("src")).unwrap();
+    fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname='restart_reuse'\nversion='0.1.0'\nedition='2024'\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("src/lib.rs"),
+        "pub fn answer() -> u32 { 42 }\n#[cfg(test)] mod tests { #[test] fn answers() { assert_eq!(super::answer(), 42); } }\n",
+    )
+    .unwrap();
+}
+
+fn run_llvm_cov_and_read_fresh(root: &std::path::Path, plan: &RustCoverageBatchPlan) -> Vec<bool> {
+    let output = Command::new("cargo")
+        .args([
+            "llvm-cov",
+            "nextest",
+            "--no-report",
+            "--cargo-message-format",
+            "json",
+            "--test-threads",
+            "1",
+        ])
+        .current_dir(root)
+        .envs(&plan.env)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "cargo llvm-cov failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter(|value| value["reason"] == "compiler-artifact")
+        .filter_map(|value| value["fresh"].as_bool())
+        .collect()
+}
+
+fn append_duplicate_path_entry(path: &str) -> String {
+    let separator = if cfg!(windows) { ';' } else { ':' };
+    let first = path.split(separator).next().unwrap();
+    format!("{path}{separator}{first}")
+}
+
 #[test]
 fn missing_marker_removes_cache_owned_target_and_writes_zero_baseline() {
     let h = identity_harness();
@@ -68,6 +117,94 @@ fn mismatched_marker_replaces_target_with_expected_zero_baseline() {
 }
 
 #[test]
+fn duplicate_path_entry_retains_cargo_artifacts() {
+    let mut h = identity_harness();
+    seed_target(&h.plan, 8);
+    let separator = if cfg!(windows) { ';' } else { ':' };
+    let normalized = ["/one", "/two"].join(&separator.to_string());
+    h.req.env.insert("PATH".into(), normalized.clone());
+    write_expected_zero_baseline_marker(&h.req, &h.tools).unwrap();
+    h.req
+        .env
+        .insert("PATH".into(), append_duplicate_path_entry(&normalized));
+
+    let prep = prepare_build_target_for_identity(&h.req, &h.tools, &h.plan).unwrap();
+
+    assert_eq!(prep.previous_baseline_bytes, 0);
+    assert!(h.plan.build_target.join("artifact").is_file());
+    let marker = loaded_identity(&h.req.cache_root);
+    assert_eq!(marker.input.env["PATH"], normalized);
+    assert_eq!(marker.build_target_baseline_bytes, 0);
+}
+
+#[test]
+fn path_resolution_change_replaces_cargo_artifacts() {
+    let mut h = identity_harness();
+    seed_target(&h.plan, 8);
+    h.req.env.insert("PATH".into(), "/old/bin".into());
+    write_expected_zero_baseline_marker(&h.req, &h.tools).unwrap();
+    h.req.env.insert("PATH".into(), "/new/bin".into());
+
+    let prep = prepare_build_target_for_identity(&h.req, &h.tools, &h.plan).unwrap();
+
+    assert_eq!(prep.previous_baseline_bytes, 0);
+    assert!(!h.plan.build_target.exists());
+}
+
+#[test]
+fn inherited_profile_path_does_not_replace_cargo_artifacts() {
+    let mut h = identity_harness();
+    seed_target(&h.plan, 8);
+    h.req
+        .env
+        .insert("LLVM_PROFILE_FILE".into(), "/outer/old.profraw".into());
+    write_expected_zero_baseline_marker(&h.req, &h.tools).unwrap();
+    h.req
+        .env
+        .insert("LLVM_PROFILE_FILE".into(), "/outer/new.profraw".into());
+
+    let prep = prepare_build_target_for_identity(&h.req, &h.tools, &h.plan).unwrap();
+
+    assert_eq!(prep.previous_baseline_bytes, 0);
+    assert!(h.plan.build_target.join("artifact").is_file());
+    assert_eq!(
+        loaded_identity(&h.req.cache_root).input.env["LLVM_PROFILE_FILE"],
+        h.req
+            .source_root
+            .join(".kiss/profraw/default_%m_%p.profraw")
+            .to_string_lossy()
+    );
+}
+
+#[test]
+fn non_path_environment_mismatch_replaces_cargo_artifacts() {
+    let mut h = identity_harness();
+    seed_target(&h.plan, 8);
+    h.req.env.insert("RUSTFLAGS".into(), "-Copt-level=1".into());
+    write_expected_zero_baseline_marker(&h.req, &h.tools).unwrap();
+    h.req.env.insert("RUSTFLAGS".into(), "-Copt-level=2".into());
+
+    let prep = prepare_build_target_for_identity(&h.req, &h.tools, &h.plan).unwrap();
+
+    assert_eq!(prep.previous_baseline_bytes, 0);
+    assert!(!h.plan.build_target.exists());
+}
+
+#[test]
+fn tool_identity_mismatch_replaces_cargo_artifacts() {
+    let h = identity_harness();
+    seed_target(&h.plan, 8);
+    write_expected_zero_baseline_marker(&h.req, &h.tools).unwrap();
+    let mut changed_tools = h.tools.clone();
+    changed_tools.rustc_version.push_str(" changed");
+
+    let prep = prepare_build_target_for_identity(&h.req, &changed_tools, &h.plan).unwrap();
+
+    assert_eq!(prep.previous_baseline_bytes, 0);
+    assert!(!h.plan.build_target.exists());
+}
+
+#[test]
 fn matching_zero_baseline_retains_partial_target() {
     let h = identity_harness();
     seed_target(&h.plan, 8);
@@ -75,6 +212,33 @@ fn matching_zero_baseline_retains_partial_target() {
     let prep = prepare_build_target_for_identity(&h.req, &h.tools, &h.plan).unwrap();
     assert_eq!(prep.previous_baseline_bytes, 0);
     assert!(h.plan.build_target.join("artifact").is_file());
+}
+
+#[test]
+fn duplicate_path_launch_reuses_real_llvm_cov_cargo_artifacts() {
+    let mut h = identity_harness();
+    write_cargo_fixture(&h.req.source_root);
+    let path = std::env::var("PATH").unwrap();
+    h.req.env.insert("PATH".into(), path.clone());
+    h.plan = crate::rust_llvm_cov_runner::build_rust_coverage_batch_plan(&h.req).unwrap();
+    prepare_build_target_for_identity(&h.req, &h.tools, &h.plan).unwrap();
+    let first = run_llvm_cov_and_read_fresh(&h.req.source_root, &h.plan);
+    assert!(first.iter().any(|fresh| !fresh));
+    assert_eq!(
+        loaded_identity(&h.req.cache_root).build_target_baseline_bytes,
+        0
+    );
+
+    h.req
+        .env
+        .insert("PATH".into(), append_duplicate_path_entry(&path));
+    let second_plan = crate::rust_llvm_cov_runner::build_rust_coverage_batch_plan(&h.req).unwrap();
+    assert_eq!(h.plan.env["PATH"], second_plan.env["PATH"]);
+    prepare_build_target_for_identity(&h.req, &h.tools, &second_plan).unwrap();
+    let second = run_llvm_cov_and_read_fresh(&h.req.source_root, &second_plan);
+
+    assert!(!second.is_empty());
+    assert!(second.iter().all(|fresh| *fresh));
 }
 
 #[test]

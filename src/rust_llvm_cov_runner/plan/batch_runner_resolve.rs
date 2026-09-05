@@ -149,10 +149,11 @@ fn try_runner_resolve_cache(req: &RustCoverageBatchRequest) -> Option<ResolvedDe
     {
         return None;
     }
-    if cached.cargo_args != req.cargo_args || cached.env != req.env {
+    let env = super::batch_plan_env::normalized_request_environment(&req.env);
+    if cached.cargo_args != req.cargo_args || cached.env != env {
         return None;
     }
-    if cached.config_fingerprint != cargo_config_fingerprint(&req.cwd, &req.env) {
+    if cached.config_fingerprint != cargo_config_fingerprint(&req.cwd, &env) {
         return None;
     }
     Some(ResolvedDelegatedRunners {
@@ -169,12 +170,13 @@ fn write_runner_resolve_cache(
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
+    let env = super::batch_plan_env::normalized_request_environment(&req.env);
     let cached = RunnerResolveCache {
         schema_version: RUNNER_RESOLVE_CACHE_SCHEMA.to_string(),
         policy_version: RUNNER_RESOLVER_POLICY_VERSION.to_string(),
         cargo_args: req.cargo_args.clone(),
-        env: req.env.clone(),
-        config_fingerprint: cargo_config_fingerprint(&req.cwd, &req.env),
+        config_fingerprint: cargo_config_fingerprint(&req.cwd, &env),
+        env,
         host_platform: resolved.host_platform.clone(),
         map: resolved.map.clone(),
     };
@@ -237,12 +239,9 @@ pub fn delegated_runner_for_platform<'a>(
 fn load_cargo_config(req: &RustCoverageBatchRequest) -> Result<Config, RustLlvmCovError> {
     let mut options = ResolveOptions::default().cargo(req.cargo.as_os_str());
     if !req.env.is_empty() {
-        options = options.env(
-            req.env
-                .iter()
-                .map(|(key, value)| (key.clone(), value.clone())),
-        );
-        if let Some(cargo_home) = req.env.get("CARGO_HOME") {
+        let env = super::batch_plan_env::normalized_request_environment(&req.env);
+        options = options.env(env.iter().map(|(key, value)| (key.clone(), value.clone())));
+        if let Some(cargo_home) = env.get("CARGO_HOME") {
             options = options.cargo_home(PathBuf::from(cargo_home));
         }
     }

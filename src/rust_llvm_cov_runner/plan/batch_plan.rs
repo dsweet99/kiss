@@ -2,7 +2,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use crate::rust_llvm_cov_runner::RustTestBinaryIdentity;
-use crate::rust_llvm_cov_runner::plan::batch_plan_env::ensure_coverage_link_build_id;
+use crate::rust_llvm_cov_runner::plan::batch_plan_env::{
+    ensure_coverage_link_build_id, normalized_request_environment,
+};
 use crate::rust_llvm_cov_runner::plan::batch_plan_nextest_config::build_nextest_config_toml;
 use crate::rust_llvm_cov_runner::plan::batch_plan_test_args::validate_supported_rust_test_args;
 
@@ -94,25 +96,7 @@ pub fn build_rust_coverage_batch_plan(
     let build_target = req.cache_root.join("build").join("target");
     let target_runner_output_dir = target_runner_output_dir(req);
     let runner_map_path = super::batch_plan_nextest_config::runner_map_path_for_request(req);
-    let mut env = req.env.clone();
-    ensure_coverage_link_build_id(&mut env);
-
-    env.remove("KISS_RUST_COVERAGE_PROFILE_POOL");
-
-    crate::rust_llvm_cov_runner::kiss_profraw::ensure_kiss_profraw_env(&mut env, &req.source_root);
-    let build_target_value = build_target.to_string_lossy().to_string();
-    env.insert(
-        "NEXTEST_EXPERIMENTAL_LIBTEST_JSON".to_string(),
-        "1".to_string(),
-    );
-    env.insert("CARGO_TARGET_DIR".to_string(), build_target_value.clone());
-    env.insert(
-        "CARGO_LLVM_COV_TARGET_DIR".to_string(),
-        build_target_value.clone(),
-    );
-    env.insert("CARGO_LLVM_COV_BUILD_DIR".to_string(), build_target_value);
-    env.insert("CARGO_INCREMENTAL".to_string(), "0".to_string());
-    super::batch_plan_nextest_config::apply_target_runner_env(&mut env, req, &runner_map_path);
+    let env = effective_coverage_environment(req);
 
     let target_runner_cargo_config =
         super::batch_plan_nextest_config::target_runner_cargo_config_path(req);
@@ -184,6 +168,40 @@ pub fn build_rust_coverage_batch_plan(
             &req.test_args,
         ),
     })
+}
+
+pub(crate) fn effective_coverage_environment(
+    req: &RustCoverageBatchRequest,
+) -> BTreeMap<String, String> {
+    let mut env = normalized_request_environment(&req.env);
+    ensure_coverage_link_build_id(&mut env);
+    crate::rust_llvm_cov_runner::kiss_profraw::ensure_kiss_profraw_env(&mut env, &req.source_root);
+    env.remove("KISS_RUST_COVERAGE_PROFILE_POOL");
+
+    let build_target = req.cache_root.join("build").join("target");
+    let build_target_value = build_target.to_string_lossy().to_string();
+    env.insert(
+        "NEXTEST_EXPERIMENTAL_LIBTEST_JSON".to_string(),
+        "1".to_string(),
+    );
+    env.insert("CARGO_TARGET_DIR".to_string(), build_target_value.clone());
+    env.insert(
+        "CARGO_LLVM_COV_TARGET_DIR".to_string(),
+        build_target_value.clone(),
+    );
+    env.insert("CARGO_LLVM_COV_BUILD_DIR".to_string(), build_target_value);
+    env.insert("CARGO_INCREMENTAL".to_string(), "0".to_string());
+    let runner_map_path = super::batch_plan_nextest_config::runner_map_path_for_request(req);
+    super::batch_plan_nextest_config::apply_target_runner_env(&mut env, req, &runner_map_path);
+    env
+}
+
+pub(crate) fn effective_coverage_identity_environment(
+    req: &RustCoverageBatchRequest,
+) -> BTreeMap<String, String> {
+    let mut env = effective_coverage_environment(req);
+    env.remove("LLVM_PROFILE_FILE_NAME");
+    env
 }
 
 pub(crate) fn target_runner_output_dir(req: &RustCoverageBatchRequest) -> PathBuf {
