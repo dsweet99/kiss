@@ -62,7 +62,7 @@ fn evaluate_by_file(
         unreferenced: &unreferenced,
         file_stats: &file_stats,
     }) {
-        println!("{line}");
+        kiss::rust_llvm_cov_runner::emit_progress(&line);
     }
     Some(crate::analyze::options::AnalyzeResult { success: false })
 }
@@ -108,7 +108,7 @@ fn evaluate_codebase(
         threshold,
         diagnostics: &diagnostics,
     }) {
-        println!("{line}");
+        kiss::rust_llvm_cov_runner::emit_progress(&line);
     }
     Some(crate::analyze::options::AnalyzeResult { success: false })
 }

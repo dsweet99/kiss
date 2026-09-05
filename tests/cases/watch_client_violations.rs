@@ -41,12 +41,12 @@ fn oneshot_surfaces_watcher_coverage_violations() {
         "expected non-zero; stdout={stdout:?} stderr={stderr:?}"
     );
     assert!(
-        stdout.contains("kiss test: Planning"),
-        "oneshot must plan locally; stdout={stdout:?}"
+        !stdout.contains("kiss test: Planning"),
+        "oneshot must echo the watcher instead of planning locally; stdout={stdout:?}"
     );
     assert!(
         stdout.contains("VIOLATION:test_coverage:"),
-        "T finish_with_coverage must show VIOLATION lines; stdout={stdout:?} stderr={stderr:?}"
+        "oneshot must echo watcher coverage VIOLATION lines; stdout={stdout:?} stderr={stderr:?}"
     );
     assert!(
         !stdout.lines().any(|l| l.trim() == "FAIL"),

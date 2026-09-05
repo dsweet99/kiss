@@ -2,16 +2,16 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 #[cfg(unix)]
-use super::control::NudgeRequest;
+use super::control::{NudgeReplyMsg, NudgeRequest};
 use super::coverage::WatchCoverageResult;
 use super::event_source::WatchEventSource;
 use super::filter::WatchPathFilter;
 use super::reload::{WatchLiveConfig, WatchReloadSeed};
 #[cfg(not(unix))]
-use super::session_cycle::NudgeRequest;
+use super::session_cycle::{NudgeReplyMsg, NudgeRequest};
 use super::session_cycle::{CycleOutcome, EXIT_INTERRUPTED, WatchCycleCtx, run_one_watch_cycle};
 use super::session_idle::{
-    QueuedCycle, coalesce_nudges, force_ready_if_pending, try_reply_idle_nudge,
+    QueuedCycle, coalesce_nudges, force_ready_if_pending, reply_all_queued, try_reply_idle_nudge,
     wait_until_next_cycle,
 };
 use super::settle::SettleMachine;
@@ -132,12 +132,24 @@ where
             run_cycle: &mut run_cycle,
             run_cov: &mut run_cov,
         }) {
-            CycleOutcome::Interrupted => return EXIT_INTERRUPTED,
+            CycleOutcome::Interrupted => {
+                coalesce_nudges(nudge_rx, &mut queued);
+                let msg = last_reply.clone().unwrap_or(NudgeReplyMsg {
+                    exit_code: EXIT_INTERRUPTED,
+                    pid: std::process::id(),
+                    error: None,
+                    output: None,
+                });
+                reply_all_queued(&mut queued, &msg);
+                return EXIT_INTERRUPTED;
+            }
             CycleOutcome::Error => return 1,
             CycleOutcome::Continue => {}
         }
         coalesce_nudges(nudge_rx, &mut queued);
-        if !try_reply_idle_nudge(&mut queued, last_reply.as_ref()) && queued.is_some() {
+        if !try_reply_idle_nudge(&mut queued, last_reply.as_ref(), machine.has_pending_work())
+            && queued.is_some()
+        {
             force_ready_if_pending(&mut machine, repo_root);
             continue;
         }

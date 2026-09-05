@@ -142,7 +142,7 @@ fn run_local_tests_after_client(
     run_args: RunTestCmdArgs<'_>,
     run_local: impl FnOnce(RunTestCmdArgs<'_>) -> i32,
 ) -> i32 {
-    if let Some(code) = wait_out_live_watcher() {
+    if let Some(code) = wait_out_live_watcher(args) {
         return code;
     }
     if let Err(code) = reject_test_universe_languages(args) {
@@ -155,27 +155,28 @@ fn run_local_tests_after_client(
     finish_with_coverage(args, code)
 }
 
-fn wait_out_live_watcher() -> Option<i32> {
+fn wait_out_live_watcher(args: &TestCommandArgs<'_>) -> Option<i32> {
     #[cfg(unix)]
-    let result = match try_wait_out_live_watcher() {
-        Ok(()) => None,
+    let result = match try_wait_out_live_watcher(args) {
+        Ok(Some(code)) => Some(code),
+        Ok(None) => None,
         Err(e) => {
             eprintln!("error: kiss test: {e}");
             Some(1)
         }
     };
     #[cfg(not(unix))]
-    let result = None;
+    let result = {
+        let _ = args;
+        None
+    };
     result
 }
 
 #[cfg(unix)]
-fn try_wait_out_live_watcher() -> Result<(), String> {
+fn try_wait_out_live_watcher(args: &TestCommandArgs<'_>) -> Result<Option<i32>, String> {
     if let Some(overridden) = CLIENT_RESULT_OVERRIDE.with(Cell::take) {
-        return match overridden {
-            Ok(_) => Ok(()),
-            Err(e) => Err(e),
-        };
+        return overridden;
     }
 
     use crate::test_runner::{
@@ -185,14 +186,18 @@ fn try_wait_out_live_watcher() -> Result<(), String> {
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
     let repo_root = crate::test_git::require_git_repo_root(&cwd)?;
     let Some(session) = probe_live_watcher(&repo_root)? else {
-        return Ok(());
+        return Ok(None);
     };
     let pid = session.pid;
     let mut printed_waiting = false;
-    let _reply = nudge_watcher_with_retry_on_wait(
+    let reply = nudge_watcher_with_retry_on_wait(
         &repo_root,
         &session,
-        &NudgeRequestMsg::default(),
+        &NudgeRequestMsg {
+            force: args.force,
+            force_bad: args.force_bad,
+            metrics: args.metrics,
+        },
         &mut || {
             if !printed_waiting {
                 printed_waiting = true;
@@ -200,7 +205,18 @@ fn try_wait_out_live_watcher() -> Result<(), String> {
             }
         },
     )?;
-    Ok(())
+    if let Some(output) = reply.output.as_deref()
+        && !output.is_empty()
+    {
+        print!("{output}");
+        if !output.ends_with('\n') {
+            println!();
+        }
+    }
+    if let Some(error) = reply.error.as_deref() {
+        eprintln!("error: kiss test: {error}");
+    }
+    Ok(Some(reply.exit_code))
 }
 
 struct AfterTestCoverage<'a> {

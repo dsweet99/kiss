@@ -22,10 +22,10 @@ fn write_kissconfig(root: &Path, settle: f64) {
     write_kissconfig_with_threshold(root, settle, 0);
 }
 
-fn assert_local_oneshot_report(stdout: &str) {
+fn assert_watcher_oneshot_report(stdout: &str) {
     assert!(
-        stdout.contains("kiss test: Planning"),
-        "oneshot must plan locally; stdout={stdout:?}"
+        !stdout.contains("kiss test: Planning"),
+        "oneshot must echo the watcher instead of planning locally; stdout={stdout:?}"
     );
     assert!(
         !stdout.contains("watcher cycle complete"),
@@ -63,7 +63,7 @@ fn oneshot_defers_to_idle_watcher() {
         "status={:?} stdout={stdout:?} stderr={stderr:?}",
         output.status
     );
-    assert_local_oneshot_report(&stdout);
+    assert_watcher_oneshot_report(&stdout);
     assert!(!stdout.contains("waiting for watcher"), "stdout={stdout:?}");
     assert!(
         stdout.contains("passed") && stdout.contains("total"),
@@ -103,8 +103,11 @@ fn oneshot_during_settle_skips_quiet_period() {
         "stdout={stdout:?} stderr={:?}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_local_oneshot_report(&stdout);
-    assert!(!stdout.contains("waiting for watcher"), "stdout={stdout:?}");
+    assert_watcher_oneshot_report(&stdout);
+    assert!(
+        stdout.contains("PASS:") || stdout.contains("passed"),
+        "settle oneshot must echo watcher results; stdout={stdout:?}"
+    );
     assert!(
         elapsed < Duration::from_secs(10),
         "T must not wait the 20s settle; elapsed={elapsed:?}"
@@ -200,7 +203,7 @@ fn oneshot_waits_out_long_inflight_cycle() {
         "stdout={stdout:?} stderr={:?}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_local_oneshot_report(&stdout);
+    assert_watcher_oneshot_report(&stdout);
 }
 
 #[test]
@@ -230,7 +233,7 @@ fn oneshot_with_coverage_gate_defers_to_watcher() {
         "status={:?} stdout={stdout:?} stderr={stderr:?}",
         output.status
     );
-    assert_local_oneshot_report(&stdout);
+    assert_watcher_oneshot_report(&stdout);
     assert!(!stdout.contains("waiting for watcher"), "stdout={stdout:?}");
     assert!(
         !stderr.contains("missing or stale/incompatible population"),
@@ -267,8 +270,7 @@ fn stale_generation_repaired_on_watcher_not_client() {
         .expect("oneshot T after fingerprint drift");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert_local_oneshot_report(&stdout);
-    assert!(!stdout.contains("waiting for watcher"), "stdout={stdout:?}");
+    assert_watcher_oneshot_report(&stdout);
     assert!(
         output.status.success(),
         "T+W after a source edit must match no-W coverage success; stdout={stdout:?} stderr={stderr:?}"
@@ -333,7 +335,7 @@ fn watcher_reloads_kissconfig_threshold_change() {
         !output.status.success(),
         "expected coverage fail after reload; stdout={stdout:?} stderr={stderr:?}"
     );
-    assert_local_oneshot_report(&stdout);
+    assert_watcher_oneshot_report(&stdout);
     assert!(!stdout.contains("waiting for watcher"), "stdout={stdout:?}");
     assert!(
         stdout.contains("VIOLATION:test_coverage:") || stderr.contains("VIOLATION:test_coverage:"),
@@ -371,7 +373,7 @@ fn oneshot_idle_watcher_prints_local_fail_not_bare_fail() {
         !output.status.success(),
         "expected failure; stdout={stdout:?} stderr={stderr:?}"
     );
-    assert_local_oneshot_report(&stdout);
+    assert_watcher_oneshot_report(&stdout);
     assert!(!stdout.contains("waiting for watcher"), "stdout={stdout:?}");
     assert!(
         stdout.contains("FAIL:") || stdout.contains("FAIL tests/") || stdout.contains("FAIL test_"),

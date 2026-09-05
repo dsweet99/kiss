@@ -50,7 +50,7 @@ fn python_oneshot_args<'a>(
 
 #[cfg(unix)]
 #[test]
-fn injected_client_result_still_runs_local_test() {
+fn injected_client_result_is_used() {
     let test_cfg = TestSectionConfig::default();
     let py = kiss::Config::python_defaults();
     let rs = kiss::Config::rust_defaults();
@@ -63,20 +63,17 @@ fn injected_client_result_still_runs_local_test() {
         4
     });
     set_client_result_override_for_test(None);
-    assert_eq!(
-        code, 4,
-        "local runner exit is the product, not the watcher reply"
-    );
+    assert_eq!(code, 9, "oneshot must use the watcher reply exit code");
     assert_eq!(
         calls.load(Ordering::SeqCst),
-        1,
-        "waiting on W must still call the local test runner"
+        0,
+        "oneshot must not rerun tests locally after a watcher reply"
     );
 }
 
 #[cfg(unix)]
 #[test]
-fn injected_client_pass_still_runs_local() {
+fn injected_client_pass_skips_local() {
     let test_cfg = TestSectionConfig::default();
     let py = kiss::Config::python_defaults();
     let rs = kiss::Config::rust_defaults();
@@ -92,11 +89,11 @@ fn injected_client_pass_still_runs_local() {
         1
     });
     set_client_result_override_for_test(None);
-    assert_eq!(code, 1, "watcher pass must not skip the local runner");
+    assert_eq!(code, 0, "watcher pass is the oneshot product");
     assert_eq!(
         calls.load(Ordering::SeqCst),
-        1,
-        "waiting on W must not skip run_local"
+        0,
+        "watcher pass must skip the local runner"
     );
 }
 

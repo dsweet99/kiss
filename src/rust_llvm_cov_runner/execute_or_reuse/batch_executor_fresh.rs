@@ -269,9 +269,6 @@ fn prepare_fresh_batch_run(
     )?;
     reject_failed_build_without_tests(&run, &parsed)?;
     reject_nonzero_without_terminal_events(&run, &parsed)?;
-    if batch_run::batch_scope_interrupted() {
-        return Err(RustLlvmCovError::Interrupted);
-    }
     let build_target_baseline_bytes = batch_run::update_build_target_baseline(
         req,
         tools,

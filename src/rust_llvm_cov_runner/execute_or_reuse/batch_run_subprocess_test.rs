@@ -168,6 +168,61 @@ fn wait_child_with_interruption_returns_on_normal_exit() {
 }
 
 #[test]
+fn wait_child_keeps_completed_status_if_interrupted_after_exit() {
+    let _serial =
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::signal_test_guard();
+    let guard = BatchProcessTreeGuard::install().expect("install guard");
+    let mut command = Command::new("/bin/sh");
+    command.arg("-c").arg("exit 0");
+    command.stdin(Stdio::null());
+    command.stdout(Stdio::null());
+    command.stderr(Stdio::null());
+    let mut child = guard
+        .spawn_batch_command(&mut command)
+        .expect("spawn child");
+    record_child_process_group(guard.registry().as_ref(), &child);
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    guard.set_interrupted_for_test(true);
+    let mut seen = HashSet::new();
+    let waited = wait_child_with_interruption(
+        &mut child,
+        &guard,
+        std::path::Path::new("/nonexistent"),
+        &mut seen,
+    )
+    .expect("completed child must not be rewritten as interrupted");
+    assert!(waited.success());
+}
+
+#[test]
+fn wait_child_killed_status_stays_interrupted() {
+    let _serial =
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::signal_test_guard();
+    let guard = BatchProcessTreeGuard::install().expect("install guard");
+    let mut command = Command::new("/bin/sh");
+    command.arg("-c").arg("sleep 2");
+    command.stdin(Stdio::null());
+    command.stdout(Stdio::null());
+    command.stderr(Stdio::null());
+    let mut child = guard
+        .spawn_batch_command(&mut command)
+        .expect("spawn child");
+    record_child_process_group(guard.registry().as_ref(), &child);
+    let _ = child.kill();
+    let _ = child.try_wait();
+    guard.set_interrupted_for_test(true);
+    let mut seen = HashSet::new();
+    let err = wait_child_with_interruption(
+        &mut child,
+        &guard,
+        std::path::Path::new("/nonexistent"),
+        &mut seen,
+    )
+    .expect_err("killed child plus interrupt flag must stay interrupted");
+    assert_eq!(err.kind(), std::io::ErrorKind::Interrupted);
+}
+
+#[test]
 fn wait_child_with_interruption_fails_when_interrupted() {
     let _serial =
         crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::signal_test_guard();

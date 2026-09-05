@@ -30,14 +30,10 @@ fn skip_under_llvm_profile() -> bool {
     std::env::var_os("LLVM_PROFILE_FILE").is_some()
 }
 
-fn assert_local_oneshot_ok(stdout: &str, stderr: &str, status_ok: bool) {
+fn assert_oneshot_clean(stdout: &str, stderr: &str, status_ok: bool) {
     assert!(
         status_ok,
         "oneshot must succeed; stdout={stdout:?} stderr={stderr:?}"
-    );
-    assert!(
-        stdout.contains("kiss test: Planning"),
-        "oneshot must plan locally; stdout={stdout:?} stderr={stderr:?}"
     );
     assert!(
         !stderr.contains("session is not ready"),
@@ -46,6 +42,36 @@ fn assert_local_oneshot_ok(stdout: &str, stderr: &str, status_ok: bool) {
     assert!(
         !stderr.contains("already running"),
         "oneshot must not take the watch lock; stderr={stderr:?}"
+    );
+}
+
+fn assert_local_oneshot_ok(stdout: &str, stderr: &str, status_ok: bool) {
+    assert_oneshot_clean(stdout, stderr, status_ok);
+    assert!(
+        stdout.contains("kiss test: Planning"),
+        "oneshot without a watcher must plan locally; stdout={stdout:?} stderr={stderr:?}"
+    );
+}
+
+fn assert_watcher_oneshot_ok(stdout: &str, stderr: &str, status_ok: bool) {
+    assert_oneshot_clean(stdout, stderr, status_ok);
+    assert!(
+        !stdout.contains("kiss test: Planning"),
+        "oneshot must echo the watcher instead of planning locally; stdout={stdout:?}"
+    );
+    assert!(
+        stdout.contains("PASS") || stdout.contains("passed"),
+        "oneshot must echo watcher pass/fail/timeout results; stdout={stdout:?}"
+    );
+}
+
+fn assert_oneshot_local_or_watcher(stdout: &str, stderr: &str, status_ok: bool) {
+    assert_oneshot_clean(stdout, stderr, status_ok);
+    let planned = stdout.contains("kiss test: Planning");
+    let echoed = stdout.contains("PASS") || stdout.contains("passed");
+    assert!(
+        planned || echoed,
+        "oneshot must plan locally or echo the watcher; stdout={stdout:?} stderr={stderr:?}"
     );
 }
 
@@ -131,7 +157,7 @@ fn oneshot_then_watch_sequential() {
     assert!(watch.still_running(), "watcher must stay up after oneshot");
 
     let (ok, stdout, stderr) = run_oneshot(tmp.path());
-    assert_local_oneshot_ok(&stdout, &stderr, ok);
+    assert_watcher_oneshot_ok(&stdout, &stderr, ok);
     assert_json_under_kiss_parses(tmp.path());
 }
 
@@ -144,7 +170,7 @@ fn watch_then_oneshot_sequential() {
     let mut watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
     wait_watch_idle_cycle(tmp.path());
     let (ok, stdout, stderr) = run_oneshot(tmp.path());
-    assert_local_oneshot_ok(&stdout, &stderr, ok);
+    assert_watcher_oneshot_ok(&stdout, &stderr, ok);
     assert!(watch.still_running(), "watcher must stay up after oneshot");
     assert_json_under_kiss_parses(tmp.path());
 }
@@ -159,14 +185,14 @@ fn oneshot_and_watch_start_together_oneshot_first() {
     let mut watch = spawn_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
     let (ok, stdout, stderr) = finish_oneshot(oneshot);
     wait_watch_session(tmp.path(), &mut watch);
-    assert_local_oneshot_ok(&stdout, &stderr, ok);
+    assert_oneshot_local_or_watcher(&stdout, &stderr, ok);
     assert!(
         watch.still_running(),
         "watcher must start while oneshot is running"
     );
 
     let (ok, stdout, stderr) = run_oneshot(tmp.path());
-    assert_local_oneshot_ok(&stdout, &stderr, ok);
+    assert_watcher_oneshot_ok(&stdout, &stderr, ok);
     assert_json_under_kiss_parses(tmp.path());
 }
 
@@ -180,14 +206,14 @@ fn oneshot_and_watch_start_together_watch_first() {
     let oneshot = spawn_oneshot(tmp.path());
     let (ok, stdout, stderr) = finish_oneshot(oneshot);
     wait_watch_session(tmp.path(), &mut watch);
-    assert_local_oneshot_ok(&stdout, &stderr, ok);
+    assert_oneshot_local_or_watcher(&stdout, &stderr, ok);
     assert!(
         watch.still_running(),
         "watcher must stay up when oneshot starts in the same window"
     );
 
     let (ok, stdout, stderr) = run_oneshot(tmp.path());
-    assert_local_oneshot_ok(&stdout, &stderr, ok);
+    assert_watcher_oneshot_ok(&stdout, &stderr, ok);
     assert_json_under_kiss_parses(tmp.path());
 }
 
@@ -203,7 +229,7 @@ fn overlapping_oneshot_and_watch_leave_usable_cache() {
     let mut watch = spawn_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
     let (ok, stdout, stderr) = finish_oneshot(oneshot);
     wait_watch_session(tmp.path(), &mut watch);
-    assert_local_oneshot_ok(&stdout, &stderr, ok);
+    assert_oneshot_local_or_watcher(&stdout, &stderr, ok);
     assert!(
         t0.elapsed() < Duration::from_secs(60),
         "overlap must finish promptly; elapsed={:?}",
@@ -212,7 +238,7 @@ fn overlapping_oneshot_and_watch_leave_usable_cache() {
     assert_json_under_kiss_parses(tmp.path());
 
     let (ok, stdout, stderr) = run_oneshot(tmp.path());
-    assert_local_oneshot_ok(&stdout, &stderr, ok);
+    assert_watcher_oneshot_ok(&stdout, &stderr, ok);
     assert!(
         stdout.contains("PASS") || stdout.contains("passed"),
         "follow-up oneshot must still report a pass; stdout={stdout:?}"

@@ -26,8 +26,8 @@ fn watch_cycle_runs_cov_after_tests_and_propagates_cov_exit() {
         assert_eq!(reply.exit_code, 1);
         assert_eq!(reply.error.as_deref(), Some("coverage gate failed"));
         assert!(
-            reply.output.is_none(),
-            "watcher replies must not carry stdout; output={:?}",
+            reply.output.as_deref().is_none_or(str::is_empty),
+            "coverage-only failure has no PASS/FAIL transcript; output={:?}",
             reply.output
         );
     });

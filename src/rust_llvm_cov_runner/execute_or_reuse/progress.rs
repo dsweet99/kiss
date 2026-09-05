@@ -84,6 +84,7 @@ pub fn live_rust_was_printed(id: &str) -> bool {
 static PROGRESS_LOCK: Mutex<()> = Mutex::new(());
 
 pub fn emit_progress(message: &str) {
+    super::progress_watch_report::record_watch_report_line(message);
     let _guard = PROGRESS_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);

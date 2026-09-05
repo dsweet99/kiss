@@ -42,7 +42,7 @@ pub(super) fn wait_until_next_cycle(
     crate::test_runner::emit_test_progress("kiss test: Waiting");
     loop {
         coalesce_nudges(nudge_rx, queued);
-        if try_reply_idle_nudge(queued, last_reply) {
+        if try_reply_idle_nudge(queued, last_reply, machine.has_pending_work()) {
             continue;
         }
         if queued.is_some() {
@@ -63,14 +63,23 @@ pub(super) fn wait_until_next_cycle(
     }
 }
 
+pub(super) fn reply_all_queued(queued: &mut Option<QueuedCycle>, msg: &NudgeReplyMsg) {
+    if let Some(q) = queued.take() {
+        for reply in q.replies {
+            let _ = reply.send(msg.clone());
+        }
+    }
+}
+
 pub(super) fn try_reply_idle_nudge(
     queued: &mut Option<QueuedCycle>,
     last_reply: Option<&NudgeReplyMsg>,
+    pending_files: bool,
 ) -> bool {
     let Some(q) = queued.as_ref() else {
         return false;
     };
-    if q.wants_new_cycle() {
+    if q.wants_new_cycle() || pending_files {
         return false;
     }
     let Some(last) = last_reply else {

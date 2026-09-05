@@ -37,11 +37,17 @@ where
     F: FnMut(RunTestCmdArgs<'_>) -> RunTestOnceOutcome,
     C: FnMut(&RunTestCmdArgs<'_>, &WatchLiveConfig) -> WatchCoverageResult,
 {
+    kiss::rust_llvm_cov_runner::begin_watch_report_capture();
     let (cycle_args, replies) = take_queued_cycle_args(ctx.live, ctx.queued);
     let test_outcome = (ctx.run_cycle)(clone_args(&cycle_args));
     let test_exit = match test_outcome {
         RunTestOnceOutcome::Interrupted => {
-            reply_all(&replies, EXIT_INTERRUPTED, None);
+            *ctx.last_reply = Some(reply_all(
+                &replies,
+                EXIT_INTERRUPTED,
+                None,
+                kiss::rust_llvm_cov_runner::take_watch_report_capture(),
+            ));
             return CycleOutcome::Interrupted;
         }
         RunTestOnceOutcome::Code(code) => code,
@@ -54,11 +60,21 @@ where
         live: ctx.live,
     }) {
         CovStep::Interrupted => {
-            reply_all(&replies, EXIT_INTERRUPTED, None);
+            *ctx.last_reply = Some(reply_all(
+                &replies,
+                EXIT_INTERRUPTED,
+                None,
+                kiss::rust_llvm_cov_runner::take_watch_report_capture(),
+            ));
             return CycleOutcome::Interrupted;
         }
         CovStep::Done { exit_code, error } => {
-            *ctx.last_reply = Some(reply_all(&replies, exit_code, error));
+            *ctx.last_reply = Some(reply_all(
+                &replies,
+                exit_code,
+                error,
+                kiss::rust_llvm_cov_runner::take_watch_report_capture(),
+            ));
         }
     }
     if let Some(msg) = drain_into_machine(
@@ -130,12 +146,14 @@ fn reply_all(
     replies: &[SyncSender<NudgeReplyMsg>],
     exit_code: i32,
     error: Option<String>,
+    output: Option<String>,
 ) -> NudgeReplyMsg {
+    let output = output.filter(|s| !s.is_empty());
     let msg = NudgeReplyMsg {
         exit_code,
         pid: std::process::id(),
         error,
-        output: None,
+        output,
     };
     for reply in replies {
         let _ = reply.send(msg.clone());
@@ -163,7 +181,7 @@ fn clone_args<'a>(args: &RunTestCmdArgs<'a>) -> RunTestCmdArgs<'a> {
 }
 
 #[cfg(not(unix))]
-pub(crate) use nudge_stub::NudgeRequest;
+pub(crate) use nudge_stub::{NudgeReplyMsg, NudgeRequest};
 #[cfg(not(unix))]
 use nudge_stub::*;
 #[cfg(not(unix))]

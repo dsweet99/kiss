@@ -234,6 +234,18 @@ fn spawn_batch_pipe_readers(
     Ok((stdout_handle, stderr_handle))
 }
 
+fn batch_status_was_killed(status: &std::process::ExitStatus) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        status.signal().is_some() || status.code() == Some(130)
+    }
+    #[cfg(not(unix))]
+    {
+        status.code() == Some(130)
+    }
+}
+
 fn wait_child_with_interruption(
     child: &mut std::process::Child,
     process_tree: &BatchProcessTreeGuard,
@@ -247,7 +259,7 @@ fn wait_child_with_interruption(
             seen_shim_metadata,
         );
         if let Some(status) = child.try_wait()? {
-            if process_tree.interrupted() {
+            if process_tree.interrupted() && batch_status_was_killed(&status) {
                 return Err(io::Error::new(
                     io::ErrorKind::Interrupted,
                     "batch interrupted",
