@@ -64,10 +64,6 @@ fn emit_one_live_status(
     exec_time: f64,
 ) {
     let Some(report) = kiss_id_for_libtest(report_ids, name) else {
-        let logical = name.rsplit_once('$').map_or(name, |(_, test)| test);
-        kiss::rust_llvm_cov_runner::set_live_rust_error(format!(
-            "error: kiss: missing PATH::symbol report id for rust selector `{logical}`"
-        ));
         return;
     };
     let Some(raw) = status_from_libtest_event(event) else {
@@ -251,7 +247,7 @@ mod live_status_test {
     }
 
     #[test]
-    fn emit_live_status_dedups_and_fails_unknown() {
+    fn emit_live_status_dedups_and_skips_unknown() {
         let mut ids = BTreeMap::new();
         ids.insert("case".into(), "src/lib.rs::case".into());
         let gate = kiss::GateConfig::default();
@@ -268,10 +264,7 @@ mod live_status_test {
             0.1,
             None,
         );
-        assert_eq!(
-            kiss::rust_llvm_cov_runner::take_live_rust_error().as_deref(),
-            Some("error: kiss: missing PATH::symbol report id for rust selector `missing`")
-        );
+        assert_eq!(kiss::rust_llvm_cov_runner::take_live_rust_error(), None);
         assert_eq!(remaining, 2);
         emit(
             &ids,

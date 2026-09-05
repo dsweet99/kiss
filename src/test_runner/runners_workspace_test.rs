@@ -43,6 +43,50 @@ fn enumerate_workspace_rust_selectors_finds_cfg_test_modules() {
 }
 
 #[test]
+fn enumerate_workspace_rust_selectors_skips_undeclared_src_files() {
+    let tmp = TempDir::new().unwrap();
+    write_demo_crate(&tmp, demo_test_lib());
+    fs::write(
+        tmp.path().join("src").join("orphan.rs"),
+        "#[cfg(test)]\nmod tests {\n    #[test]\n    fn only_in_orphan() {}\n}\n",
+    )
+    .unwrap();
+
+    let selectors = enumerate_workspace_rust_selectors(tmp.path(), &[]).unwrap();
+
+    assert_eq!(selectors, vec!["tests::gets_value".to_string()]);
+    assert!(
+        !selectors
+            .iter()
+            .any(|selector| selector.contains("only_in_orphan")),
+        "undeclared source files are not cargo tests: {selectors:?}"
+    );
+}
+
+#[test]
+fn enumerate_workspace_rust_selectors_includes_path_attribute_modules() {
+    let tmp = TempDir::new().unwrap();
+    write_demo_crate(
+        &tmp,
+        "#[cfg(test)]\n#[path = \"engine_tests.rs\"]\nmod engine_tests;\n",
+    );
+    fs::write(
+        tmp.path().join("src").join("engine_tests.rs"),
+        "#[test]\nfn via_path_attr() {}\n",
+    )
+    .unwrap();
+
+    let selectors = enumerate_workspace_rust_selectors(tmp.path(), &[]).unwrap();
+
+    assert!(
+        selectors
+            .iter()
+            .any(|selector| selector.contains("via_path_attr")),
+        "#[path] modules must stay in the universe: {selectors:?}"
+    );
+}
+
+#[test]
 fn enumerate_workspace_rust_selectors_lists_macro_generated_tests() {
     let tmp = TempDir::new().unwrap();
     write_demo_crate(

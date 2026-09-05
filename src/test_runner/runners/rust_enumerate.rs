@@ -94,7 +94,7 @@ fn gather_member_rust_files(repo_root: &Path, ignore: &[String]) -> Vec<PathBuf>
     match cargo_workspace_member_manifest_dirs(repo_root) {
         Ok(member_manifest_dirs) => {
             let mut nearest_cache = HashMap::new();
-            rs_files
+            let mut files: Vec<PathBuf> = rs_files
                 .into_iter()
                 .filter(|path| {
                     is_workspace_rust_selector_file_cached(
@@ -103,10 +103,22 @@ fn gather_member_rust_files(repo_root: &Path, ignore: &[String]) -> Vec<PathBuf>
                         &mut nearest_cache,
                     )
                 })
-                .collect()
+                .collect();
+            retain_cargo_reachable_rust_files(repo_root, &mut files);
+            files
         }
         Err(_) => rs_files,
     }
+}
+
+fn retain_cargo_reachable_rust_files(repo_root: &Path, files: &mut Vec<PathBuf>) {
+    let Ok(reachable) = kiss::code_roles::reachable_workspace_rust_sources(repo_root) else {
+        return;
+    };
+    if reachable.is_empty() {
+        return;
+    }
+    files.retain(|path| reachable.contains(&kiss::rust_include::canonical_path(path)));
 }
 
 fn selectors_in_rust_file(path: &Path) -> Result<(PathBuf, Vec<String>), String> {

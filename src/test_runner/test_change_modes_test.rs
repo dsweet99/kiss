@@ -112,12 +112,15 @@ fn row_a_main_warm_rust_edit_selects_covering() {
 fn row_b_rust_test_file_only_selects_that_test() {
     let _cwd_guard = crate::cwd_test_lock::lock();
     let tmp = TempDir::new().unwrap();
-    let _lib = warm_multi_branch_rust_demo(&tmp);
+    let lib = warm_multi_branch_rust_demo(&tmp);
     let test_file = tmp.path().join("src").join("extra_test.rs");
     std::fs::write(&test_file, "#[test]\nfn only_extra() {}\n").unwrap();
+    let mut lib_src = std::fs::read_to_string(&lib).unwrap();
+    lib_src.push_str("#[cfg(test)]\nmod extra_test;\n");
+    std::fs::write(&lib, lib_src).unwrap();
     assert!(
         git_in(tmp.path())
-            .args(["add", "src/extra_test.rs"])
+            .args(["add", "src/extra_test.rs", "src/lib.rs"])
             .status()
             .unwrap()
             .success()

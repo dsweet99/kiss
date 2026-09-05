@@ -1,16 +1,19 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 
-use crate::rust_include::canonical_path;
+use crate::rust_include::{
+    canonical_path, extract_include_literal_from_macro, resolve_include_path,
+};
 use crate::rust_parsing::ParsedRustFile;
 
 use super::cfg_pred::{AtomInterner, CfgPred};
 use super::error::RoleBuildError;
 use super::facts::{FileRoleFacts, RoleRange};
 use super::index::SourceRoleIndex;
-use super::rust_cargo::{CargoRoot, cargo_roots_for_files};
-use super::rust_include_parse::{IncludeAst, IncludeKind, parse_include_source};
-use super::rust_walk::{WalkOutput, walk_file};
+use super::rust_cargo::{cargo_roots_for_files, workspace_roots_at, CargoRoot};
+use super::rust_include_parse::{parse_include_source, IncludeAst, IncludeKind};
+use super::rust_modules::resolve_external_mod;
+use super::rust_walk::{walk_file, WalkOutput};
 use super::span::SourceSpan;
 use super::sweep::normalize_ranges;
 use super::types::CodeContextSet;
@@ -49,6 +52,71 @@ pub fn classify_rust(
         process_work_item(item, &by_path, &mut atoms, &mut acc, &mut base, &mut queue)?;
     }
     Ok(finish_rust_index(&paths, acc, base))
+}
+
+pub fn reachable_workspace_rust_sources(
+    repo_root: &Path,
+) -> Result<HashSet<PathBuf>, RoleBuildError> {
+    let roots = workspace_roots_at(repo_root)?;
+    Ok(reachable_rust_sources_from(
+        roots.into_iter().map(|root| root.src_path),
+    ))
+}
+
+fn reachable_rust_sources_from(entry_paths: impl IntoIterator<Item = PathBuf>) -> HashSet<PathBuf> {
+    let mut seen = HashSet::new();
+    let mut stack: Vec<PathBuf> = entry_paths
+        .into_iter()
+        .map(|path| canonical_path(&path))
+        .filter(|path| path.is_file())
+        .collect();
+    while let Some(path) = stack.pop() {
+        if !seen.insert(path.clone()) {
+            continue;
+        }
+        let Ok(source) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(ast) = syn::parse_file(&source) else {
+            continue;
+        };
+        for child in rust_child_source_paths(&path, &ast.items) {
+            if child.is_file() {
+                stack.push(canonical_path(&child));
+            }
+        }
+    }
+    seen
+}
+
+fn rust_child_source_paths(parent: &Path, items: &[syn::Item]) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    collect_child_source_paths(parent, items, &mut out);
+    out
+}
+
+fn collect_child_source_paths(parent: &Path, items: &[syn::Item], out: &mut Vec<PathBuf>) {
+    for item in items {
+        match item {
+            syn::Item::Mod(module) => {
+                if let Some((_, nested)) = &module.content {
+                    collect_child_source_paths(parent, nested, out);
+                    continue;
+                }
+                let mut atoms = AtomInterner::new();
+                if let Ok(edges) = resolve_external_mod(parent, module, &CfgPred::True, &mut atoms)
+                {
+                    out.extend(edges.into_iter().map(|edge| edge.target));
+                }
+            }
+            syn::Item::Macro(item_macro) => {
+                if let Some(lit) = extract_include_literal_from_macro(&item_macro.mac) {
+                    out.push(resolve_include_path(parent, &lit));
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 fn seed_queue(cargo_roots: &[CargoRoot], paths: &[PathBuf]) -> VecDeque<WorkItem> {
@@ -388,5 +456,25 @@ mod rust_roles_test {
             index.file_composition(&inner),
             super::super::types::FileComposition::TestOnly
         );
+    }
+
+    #[test]
+    fn reachable_sources_follow_mods_and_skip_orphans() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(
+            tmp.path().join("Cargo.toml"),
+            "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
+        )
+        .unwrap();
+        std::fs::write(src.join("lib.rs"), "mod kept;\n").unwrap();
+        std::fs::write(src.join("kept.rs"), "pub fn k() {}\n").unwrap();
+        std::fs::write(src.join("orphan.rs"), "pub fn o() {}\n").unwrap();
+
+        let reachable = reachable_workspace_rust_sources(tmp.path()).unwrap();
+        assert!(reachable.contains(&canonical_path(&src.join("lib.rs"))));
+        assert!(reachable.contains(&canonical_path(&src.join("kept.rs"))));
+        assert!(!reachable.contains(&canonical_path(&src.join("orphan.rs"))));
     }
 }

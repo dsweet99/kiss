@@ -30,7 +30,7 @@ pub use index::{
 };
 pub use python::classify_python;
 pub use python_path::{is_default_pytest_collect_candidate, is_python_test_module_path};
-pub use rust::classify_rust;
+pub use rust::{classify_rust, reachable_workspace_rust_sources};
 pub(crate) use rust_cargo::cargo_entry_src_paths;
 pub(crate) use rust_modules::declared_mod_path;
 pub use span::{SourcePosition, SourceSpan};

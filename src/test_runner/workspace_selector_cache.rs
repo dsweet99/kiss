@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::analyze_cache::fnv1a64;
 
-const SCHEMA_VERSION: &str = "workspace-test-selectors-v9";
+const SCHEMA_VERSION: &str = "workspace-test-selectors-v10";
 const PYTHON_CACHE_FILE: &str = "python_test_selectors.json";
 const RUST_CACHE_FILE: &str = "rust_test_selectors.json";
 
