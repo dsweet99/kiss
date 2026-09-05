@@ -316,6 +316,26 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn watched_parent_relative_config_outside_repo_enters_the_watch_queue() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        std::fs::create_dir(&repo).unwrap();
+        let config = tmp.path().join("watch.toml");
+        std::fs::write(&config, "[test]\n").unwrap();
+        let event = Event::new(notify::EventKind::Modify(notify::event::ModifyKind::Data(
+            notify::event::DataChange::Any,
+        )))
+        .add_path(config);
+        let watched_config = config_rel_for_watch(&repo, Path::new("../watch.toml"));
+        assert!(event_should_enter_watch_queue(
+            &Ok(event),
+            &repo,
+            &TestInvocation::All,
+            &watched_config,
+        ));
+    }
+
     #[cfg(target_os = "linux")]
     #[test]
     fn native_register_on_tempdir() {

@@ -177,6 +177,8 @@ mod sync_stats_check;
 mod watch_client;
 #[path = "cases/watch_client_violations.rs"]
 mod watch_client_violations;
+#[path = "cases/watch_paths.rs"]
+mod watch_paths;
 #[path = "cases/watch_sigint.rs"]
 mod watch_sigint;
 #[path = "cases/watch_startup_order.rs"]

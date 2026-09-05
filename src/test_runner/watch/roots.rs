@@ -18,6 +18,7 @@ pub(crate) fn resolve_watch_registrations(
     repo_root: &Path,
     invocation: &TestInvocation,
     _ignore: &[String],
+    config_path: &Path,
 ) -> Result<Vec<WatchRegistration>, String> {
     let mut regs: Vec<WatchRegistration> = Vec::new();
     match invocation {
@@ -37,7 +38,24 @@ pub(crate) fn resolve_watch_registrations(
         }
     }
     push_support_registrations(repo_root, invocation, &mut regs);
+    push_config_registration(repo_root, config_path, &mut regs);
     Ok(dedup_registrations(regs))
+}
+
+fn push_config_registration(
+    repo_root: &Path,
+    config_path: &Path,
+    regs: &mut Vec<WatchRegistration>,
+) {
+    let path = if config_path.as_os_str().is_empty() {
+        resolve_target_abs(repo_root, Path::new(".kissconfig"))
+    } else {
+        resolve_target_abs(repo_root, config_path)
+    };
+    regs.push(WatchRegistration {
+        path: path.parent().unwrap_or(repo_root).to_path_buf(),
+        kind: WatchRootKind::NonRecursive,
+    });
 }
 
 fn push_target_registration(
@@ -46,8 +64,8 @@ fn push_target_registration(
     regs: &mut Vec<WatchRegistration>,
 ) -> Result<(), String> {
     let path_part = raw.split_once("::").map_or(raw, |(path, _)| path);
-    let abs = resolve_target_abs(repo_root, path_part);
-    if is_source_file_operand(path_part, &abs) {
+    let abs = resolve_target_abs(repo_root, Path::new(path_part));
+    if is_source_file_operand(Path::new(path_part), &abs) {
         let parent = abs.parent().unwrap_or(repo_root).to_path_buf();
         regs.push(WatchRegistration {
             path: parent,
@@ -66,9 +84,9 @@ fn push_target_registration(
     Ok(())
 }
 
-fn resolve_target_abs(repo_root: &Path, path_part: &str) -> PathBuf {
-    let candidate = if Path::new(path_part).is_absolute() {
-        PathBuf::from(path_part)
+pub(super) fn resolve_target_abs(repo_root: &Path, path_part: &Path) -> PathBuf {
+    let candidate = if path_part.is_absolute() {
+        path_part.to_path_buf()
     } else {
         repo_root.join(path_part)
     };
@@ -84,11 +102,13 @@ fn resolve_target_abs(repo_root: &Path, path_part: &str) -> PathBuf {
     candidate
 }
 
-fn is_source_file_operand(path_part: &str, abs: &Path) -> bool {
-    abs.is_file()
-        || Path::new(path_part)
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("py") || ext.eq_ignore_ascii_case("rs"))
+pub(super) fn is_source_file_operand(path_part: &Path, abs: &Path) -> bool {
+    if abs.exists() {
+        return abs.is_file();
+    }
+    path_part
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("py") || ext.eq_ignore_ascii_case("rs"))
 }
 
 fn push_support_registrations(
@@ -133,7 +153,7 @@ fn push_python_ancestor_support_roots(
     };
     for raw in targets {
         let path_part = raw.split_once("::").map_or(raw.as_str(), |(path, _)| path);
-        let abs = resolve_target_abs(repo_root, path_part);
+        let abs = resolve_target_abs(repo_root, Path::new(path_part));
         if !is_python_collection_root(path_part, &abs) {
             continue;
         }
@@ -160,7 +180,7 @@ fn is_python_collection_root(path_part: &str, abs: &Path) -> bool {
     {
         return false;
     }
-    abs.is_dir() || !is_source_file_operand(path_part, abs)
+    abs.is_dir() || !is_source_file_operand(Path::new(path_part), abs)
 }
 
 fn push_ancestors_to_repo_root(repo_root: &Path, start: &Path, regs: &mut Vec<WatchRegistration>) {
@@ -218,7 +238,13 @@ mod tests {
     #[test]
     fn all_registers_repo_root_recursive() {
         let tmp = tempfile::tempdir().unwrap();
-        let regs = resolve_watch_registrations(tmp.path(), &TestInvocation::All, &[]).unwrap();
+        let regs = resolve_watch_registrations(
+            tmp.path(),
+            &TestInvocation::All,
+            &[],
+            Path::new(".kissconfig"),
+        )
+        .unwrap();
         assert!(
             regs.iter()
                 .any(|r| { r.path == tmp.path() && matches!(r.kind, WatchRootKind::Recursive) })
@@ -236,6 +262,7 @@ mod tests {
             tmp.path(),
             &TestInvocation::Targets(vec!["src/a.py".into()]),
             &[],
+            Path::new(".kissconfig"),
         )
         .unwrap();
         assert!(regs.iter().any(|r| {
@@ -253,6 +280,7 @@ mod tests {
             tmp.path(),
             &TestInvocation::Targets(vec!["src/pkg/a.py".into()]),
             &[],
+            Path::new(".kissconfig"),
         )
         .unwrap();
         let src = tmp.path().join("src");
@@ -276,10 +304,65 @@ mod tests {
             tmp.path(),
             &TestInvocation::Targets(vec!["src".into()]),
             &[],
+            Path::new(".kissconfig"),
         )
         .unwrap();
         assert!(regs.iter().any(|r| {
             path_eq_canon(&r.path, &src) && matches!(r.kind, WatchRootKind::Recursive)
+        }));
+    }
+
+    #[test]
+    fn extension_suffixed_existing_directory_registers_recursively() {
+        let tmp = tempfile::tempdir().unwrap();
+        let suite = tmp.path().join("suite.py");
+        std::fs::create_dir(&suite).unwrap();
+        let regs = resolve_watch_registrations(
+            tmp.path(),
+            &TestInvocation::Targets(vec!["suite.py".into()]),
+            &[],
+            Path::new(".kissconfig"),
+        )
+        .unwrap();
+        assert!(regs.iter().any(|r| {
+            path_eq_canon(&r.path, &suite) && matches!(r.kind, WatchRootKind::Recursive)
+        }));
+    }
+
+    #[test]
+    fn custom_config_registers_parent_non_recursive() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config_dir = tmp.path().join("config");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        let regs = resolve_watch_registrations(
+            tmp.path(),
+            &TestInvocation::Targets(vec!["src/a.py".into()]),
+            &[],
+            Path::new("config/watch.toml"),
+        )
+        .unwrap();
+        assert!(regs.iter().any(|r| {
+            path_eq_canon(&r.path, &config_dir) && matches!(r.kind, WatchRootKind::NonRecursive)
+        }));
+    }
+
+    #[test]
+    fn parent_relative_config_outside_repo_registers_canonical_parent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        std::fs::create_dir(&repo).unwrap();
+        let config = tmp.path().join("watch.toml");
+        std::fs::write(&config, "[test]\n").unwrap();
+        let regs = resolve_watch_registrations(
+            &repo,
+            &TestInvocation::Targets(vec!["src/a.py".into()]),
+            &[],
+            Path::new("../watch.toml"),
+        )
+        .unwrap();
+        assert!(regs.iter().any(|r| {
+            path_eq_canon(&r.path, tmp.path())
+                && matches!(r.kind, WatchRootKind::NonRecursive)
         }));
     }
 

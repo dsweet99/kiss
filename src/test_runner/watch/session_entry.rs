@@ -75,7 +75,12 @@ fn prepare_watch_session(
     let cwd = std::env::current_dir().map_err(|e| { eprintln!("error: kiss test: {e}"); 1 })?;
     let repo_root = crate::test_git::require_git_repo_root(&cwd)
         .map_err(|e| { eprintln!("error: kiss test requires a git repository ({e})"); 1 })?;
-    let registrations = resolve_watch_registrations(&repo_root, &args.invocation, args.ignore)
+    let registrations = resolve_watch_registrations(
+        &repo_root,
+        &args.invocation,
+        args.ignore,
+        config_path,
+    )
         .map_err(|e| { eprintln!("error: kiss test --watch: {e}"); 1 })?;
     #[cfg(unix)] let owner = WatchSessionOwner::acquire(&repo_root)
         .map_err(|e| { eprintln!("error: kiss test --watch: {e}"); 1 })?;

@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use kiss::Language;
 
+use super::roots::{is_source_file_operand, resolve_target_abs};
 use crate::bin_cli::args::TestInvocation;
 
 const HARD_EXCLUDED_DIRS: &[&str] = &[
@@ -23,8 +24,23 @@ pub(crate) struct WatchPathFilter {
     cli_ignore: Vec<String>,
     lang_filter: Option<Language>,
     invocation: TestInvocation,
-    exact_files: Option<Vec<PathBuf>>,
+    target_scope: Option<WatchTargetScope>,
     watched_config: PathBuf,
+}
+
+struct WatchTargetScope {
+    files: Vec<PathBuf>,
+    dirs: Vec<PathBuf>,
+}
+
+impl WatchTargetScope {
+    fn contains(&self, rel: &Path) -> bool {
+        self.files.iter().any(|file| file == rel)
+            || self
+                .dirs
+                .iter()
+                .any(|dir| rel == dir || rel.starts_with(dir))
+    }
 }
 
 impl WatchPathFilter {
@@ -57,7 +73,7 @@ impl WatchPathFilter {
             cli_ignore: kiss::normalize_ignore_prefixes(cli_ignore),
             lang_filter,
             invocation: invocation.clone(),
-            exact_files: exact_file_targets(invocation),
+            target_scope: target_scope(repo_root, invocation),
             watched_config: config_rel_for_watch(repo_root, config_path),
         }
     }
@@ -110,28 +126,40 @@ impl WatchPathFilter {
         {
             return true;
         }
-        if let Some(files) = &self.exact_files {
-            return files.iter().any(|f| f == rel);
+        if let Some(scope) = &self.target_scope {
+            return matches_lang_filter(rel, self.lang_filter) && scope.contains(rel);
         }
         matches_lang_filter(rel, self.lang_filter)
     }
 }
 
-fn exact_file_targets(invocation: &TestInvocation) -> Option<Vec<PathBuf>> {
+fn target_scope(repo_root: &Path, invocation: &TestInvocation) -> Option<WatchTargetScope> {
     let TestInvocation::Targets(targets) = invocation else {
         return None;
     };
-    let files: Vec<_> = targets
-        .iter()
-        .map(|raw| raw.split_once("::").map_or(raw.as_str(), |(p, _)| p))
-        .filter(|path_part| {
-            Path::new(path_part)
-                .extension()
-                .is_some_and(|e| e.eq_ignore_ascii_case("py") || e.eq_ignore_ascii_case("rs"))
-        })
-        .map(PathBuf::from)
-        .collect();
-    if files.is_empty() { None } else { Some(files) }
+    let mut scope = WatchTargetScope {
+        files: Vec::new(),
+        dirs: Vec::new(),
+    };
+    for raw in targets {
+        let path_part = raw.split_once("::").map_or(raw.as_str(), |(path, _)| path);
+        let absolute = resolve_target_abs(repo_root, Path::new(path_part));
+        let path = normalize_target_path(repo_root, &absolute);
+        if is_source_file_operand(Path::new(path_part), &absolute) {
+            scope.files.push(path);
+        } else {
+            scope.dirs.push(path);
+        }
+    }
+    Some(scope)
+}
+
+fn normalize_target_path(repo_root: &Path, absolute: &Path) -> PathBuf {
+    absolute
+        .strip_prefix(repo_root)
+        .unwrap_or(absolute)
+        .components()
+        .collect()
 }
 
 fn matches_lang_filter(rel: &Path, lang_filter: Option<Language>) -> bool {
@@ -210,14 +238,10 @@ pub(crate) fn config_rel_for_watch(repo_root: &Path, config_path: &Path) -> Path
     if config_path.as_os_str().is_empty() {
         return PathBuf::from(".kissconfig");
     }
-    let abs = if config_path.is_absolute() {
-        config_path.to_path_buf()
-    } else {
-        repo_root.join(config_path)
-    };
+    let abs = resolve_target_abs(repo_root, config_path);
     abs.strip_prefix(repo_root)
         .map(Path::to_path_buf)
-        .unwrap_or_else(|_| config_path.to_path_buf())
+        .unwrap_or(abs)
 }
 
 fn is_support_input(rel: &Path) -> bool {
@@ -321,6 +345,82 @@ mod tests {
         assert!(exact.is_relevant(Path::new("src/a.py")));
         assert!(!exact.is_relevant(Path::new("src/b.py")));
         assert!(exact.is_relevant(Path::new("pytest.ini")));
+    }
+
+    #[test]
+    fn absolute_file_target_matches_repo_relative_event() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("src/a.py");
+        let f = WatchPathFilter::build(
+            tmp.path(),
+            &[],
+            None,
+            &TestInvocation::Targets(vec![target.to_string_lossy().into_owned()]),
+        );
+        assert!(f.is_relevant(Path::new("src/a.py")));
+        assert!(!f.is_relevant(Path::new("src/b.py")));
+    }
+
+    #[test]
+    fn parent_dir_file_target_matches_canonical_event() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+        std::fs::create_dir_all(tmp.path().join("tests")).unwrap();
+        std::fs::write(tmp.path().join("tests/a.py"), "x = 1\n").unwrap();
+        let f = WatchPathFilter::build(
+            tmp.path(),
+            &[],
+            None,
+            &TestInvocation::Targets(vec!["src/../tests/a.py".into()]),
+        );
+        assert!(f.is_relevant(Path::new("tests/a.py")));
+        assert!(!f.is_relevant(Path::new("tests/b.py")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_file_target_matches_canonical_event() {
+        use std::os::unix::fs::symlink;
+
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("real.py"), "x = 1\n").unwrap();
+        symlink("real.py", tmp.path().join("link.py")).unwrap();
+        let f = WatchPathFilter::build(
+            tmp.path(),
+            &[],
+            None,
+            &TestInvocation::Targets(vec!["link.py".into()]),
+        );
+        assert!(f.is_relevant(Path::new("real.py")));
+        assert!(!f.is_relevant(Path::new("link.py")));
+    }
+
+    #[test]
+    fn mixed_file_and_directory_targets_keep_both_scopes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let f = WatchPathFilter::build(
+            tmp.path(),
+            &[],
+            None,
+            &TestInvocation::Targets(vec!["src/a.py".into(), "tests".into()]),
+        );
+        assert!(f.is_relevant(Path::new("src/a.py")));
+        assert!(!f.is_relevant(Path::new("src/b.py")));
+        assert!(f.is_relevant(Path::new("tests/test_b.py")));
+        assert!(!f.is_relevant(Path::new("other/test_c.py")));
+    }
+
+    #[test]
+    fn extension_suffixed_existing_directory_keeps_directory_scope() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(tmp.path().join("suite.py")).unwrap();
+        let f = WatchPathFilter::build(
+            tmp.path(),
+            &[],
+            None,
+            &TestInvocation::Targets(vec!["suite.py".into()]),
+        );
+        assert!(f.is_relevant(Path::new("suite.py/test_child.py")));
     }
 
     #[test]
