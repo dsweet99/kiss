@@ -21,7 +21,6 @@ def test_publication_writer_command_rust_selector_uses_file_targets_force_metric
 
     test_idx = cmd.index("test")
     assert cmd[test_idx + 1 : test_idx + 3] == ["tests/alpha.rs", "tests/beta.rs"]
-    assert "--force" in cmd
     assert "--metrics" in cmd
     assert "-j" in cmd and "2" in cmd
     assert "commit" not in cmd
@@ -33,7 +32,6 @@ def test_publication_writer_command_rust_aggregate_uses_dot_force() -> None:
 
     cmd = publication_writer_command("rust", Path("/tmp/repo"), "rust_check_aggregate", jobs=1)
     assert cmd[cmd.index("test") + 1] == "."
-    assert "--force" in cmd
 
 
 def test_force_publication_target_clears_cov_records_cache(tmp_path: Path) -> None:

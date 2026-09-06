@@ -117,14 +117,9 @@ pub enum Commands {
         dry_run: bool,
         #[arg(
             long,
-            help = "Force selected tests to rerun instead of reusing test-runner caches"
-        )]
-        force: bool,
-        #[arg(
-            long,
             help = "Rerun tests that need it under normal rules, plus any marked FAIL or TIMEOUT"
         )]
-        force_bad: bool,
+        retry_bad: bool,
         #[arg(long, help = "Print test-run metrics")]
         metrics: bool,
         #[arg(long, help = "Include files that currently pass the coverage gate")]

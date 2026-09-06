@@ -1701,7 +1701,6 @@ def publication_writer_command(
             "python",
             "test",
             ".",
-            "--force",
             "--metrics",
         ]
         if jobs is not None:
@@ -1724,7 +1723,6 @@ def publication_writer_command(
             "rust",
             "test",
             *targets,
-            "--force",
             "--metrics",
         ]
         if jobs is not None:
@@ -2244,7 +2242,6 @@ def reverse_index_concurrency_stress() -> None:
                 "rust",
                 "test",
                 RS_SOURCE.as_posix(),
-                "--force",
                 "--metrics",
                 "-j",
                 str(jobs),
@@ -2322,7 +2319,6 @@ def reverse_index_concurrency_stress() -> None:
                         "rust",
                         "test",
                         RS_SOURCE.as_posix(),
-                        "--force",
                         "--metrics",
                     ]
                 else:
@@ -2330,7 +2326,6 @@ def reverse_index_concurrency_stress() -> None:
                     force_cmd = kiss_command(
                         "rust",
                         fixture.ignores["rust"],
-                        "--force",
                         "--metrics",
                     )
                 kill_cmd = force_cmd + ["-j", "1"]
@@ -2362,7 +2357,6 @@ def reverse_index_concurrency_stress() -> None:
                         kiss_command(
                             "rust",
                             fixture.ignores["rust"],
-                            "--force",
                             "--metrics",
                             "-j",
                             str(jobs),
@@ -2387,7 +2381,6 @@ def reverse_index_concurrency_stress() -> None:
                             "rust",
                             "test",
                             RS_SOURCE.as_posix(),
-                            "--force",
                             "--metrics",
                             "-j",
                             str(jobs),
@@ -2679,7 +2672,6 @@ def coverage_stress() -> None:
                     language,
                     fixture.ignores[language],
                     "--metrics",
-                    "--force",
                     "-j",
                     str(jobs),
                 ),
@@ -3155,7 +3147,6 @@ def concurrent_cache_recovery() -> None:
                 "rust",
                 "test",
                 RS_SOURCE.as_posix(),
-                "--force",
                 "--metrics",
                 "-j",
                 str(jobs),
@@ -3365,7 +3356,6 @@ def rust_batch_e2e() -> None:
                 "rust",
                 fixture.ignores["rust"],
                 "--metrics",
-                "--force",
                 "-j",
                 str(jobs),
                 trailing_test_args=("--nocapture",),
@@ -3385,7 +3375,6 @@ def rust_batch_e2e() -> None:
                     "rust",
                     fixture.ignores["rust"],
                     "--metrics",
-                    "--force",
                     "-j",
                     str(jobs),
                 ),
@@ -3396,7 +3385,6 @@ def rust_batch_e2e() -> None:
                     "rust",
                     fixture.ignores["rust"],
                     "--metrics",
-                    "--force",
                     "-j",
                     str(jobs),
                 ),
@@ -3435,7 +3423,6 @@ def rust_batch_e2e() -> None:
                 "rust",
                 fixture.ignores["rust"],
                 "--metrics",
-                "--force",
                 "-j",
                 str(jobs),
             ),
@@ -3463,7 +3450,6 @@ def rust_batch_e2e() -> None:
             "rust",
             fixture.ignores["rust"],
             "--metrics",
-            "--force",
             "-j",
             str(jobs),
         )
@@ -3683,7 +3669,6 @@ def rust_phase_interrupt() -> None:
             "rust",
             fixture.ignores["rust"],
             "--metrics",
-            "--force",
             "-j",
             str(jobs),
         )
@@ -3877,7 +3862,6 @@ def rust_retained_cache_audit(log_dir: Path | None) -> None:
             "rust",
             "test",
             "--metrics",
-            "--force",
             *fixture.ignores["rust"],
         ]
         cache_bytes_by_jobs: dict[int, int] = {}
@@ -4055,7 +4039,6 @@ def rust_distinct_groups_interrupt() -> None:
             "rust",
             fixture.ignores["rust"],
             "--metrics",
-            "--force",
             "-j",
             str(jobs),
         )

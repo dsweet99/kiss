@@ -58,7 +58,7 @@ fn nested_non_member_path_target_fails_fast() {
     write_nested_workspace_repo(tmp.path());
     let output = kiss_binary()
         .current_dir(tmp.path())
-        .args(["test", "nested", "--force"])
+        .args(["test", "nested"])
         .output()
         .expect("run kiss test nested");
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -79,7 +79,7 @@ fn nested_non_member_sources_do_not_fail_by_file_gate() {
     write_nested_workspace_repo(tmp.path());
     let output = kiss_binary()
         .current_dir(tmp.path())
-        .args(["test", ".", "--force"])
+        .args(["test", "."])
         .output()
         .expect("run kiss test .");
     let stdout = String::from_utf8_lossy(&output.stdout);

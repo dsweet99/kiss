@@ -15,8 +15,7 @@ pub struct TestCommandArgs<'a> {
     pub main_branch: Option<&'a str>,
     pub base_branch: Option<&'a str>,
     pub dry_run: bool,
-    pub force: bool,
-    pub force_bad: bool,
+    pub retry_bad: bool,
     pub metrics: bool,
     pub coverage_all: bool,
     pub watch: bool,
@@ -70,8 +69,8 @@ pub(crate) fn run_test_command_with(
         main_branch_cli: args.main_branch,
         base_branch_cli: args.base_branch,
         dry_run: args.dry_run,
-        force_rerun: args.force,
-        force_bad: args.force_bad,
+        force_rerun: false,
+        force_bad: args.retry_bad,
         metrics: args.metrics,
         jobs: args.jobs,
         extra: args.extra,
@@ -176,8 +175,8 @@ fn wait_out_live_watcher(args: &TestCommandArgs<'_>) -> Option<i32> {
 #[cfg(unix)]
 fn nudge_request_from_test_args(args: &TestCommandArgs<'_>) -> crate::test_runner::NudgeRequestMsg {
     crate::test_runner::NudgeRequestMsg {
-        force: args.force,
-        force_bad: args.force_bad,
+        force: false,
+        force_bad: args.retry_bad,
         metrics: args.metrics,
         targets: match &args.invocation {
             TestInvocation::Targets(targets) => targets.clone(),
@@ -364,7 +363,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn nudge_request_forwards_selected_force_targets() {
+    fn nudge_request_forwards_selected_targets_without_cli_force() {
         let test_cfg = TestSectionConfig::default();
         let py = kiss::Config::python_defaults();
         let rs = kiss::Config::rust_defaults();
@@ -376,8 +375,7 @@ mod tests {
             main_branch: None,
             base_branch: None,
             dry_run: false,
-            force: true,
-            force_bad: false,
+            retry_bad: false,
             metrics: false,
             coverage_all: false,
             watch: false,
@@ -396,19 +394,54 @@ mod tests {
             language_tables: Default::default(),
         };
         let msg = nudge_request_from_test_args(&args);
-        assert!(msg.force);
+        assert!(!msg.force);
+        assert!(!msg.force_bad);
         assert_eq!(
             msg.targets,
             vec!["tests/fast/analysis/test_gantt.py::test_one".to_string()]
         );
         let all_args = TestCommandArgs {
             invocation: TestInvocation::All,
-            force: true,
             ..args
         };
         let all_msg = nudge_request_from_test_args(&all_args);
-        assert!(all_msg.force);
+        assert!(!all_msg.force);
         assert!(all_msg.targets.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn nudge_request_forwards_retry_bad() {
+        let test_cfg = TestSectionConfig::default();
+        let py = kiss::Config::python_defaults();
+        let rs = kiss::Config::rust_defaults();
+        let gate = kiss::GateConfig::default();
+        let args = TestCommandArgs {
+            invocation: TestInvocation::All,
+            main_branch: None,
+            base_branch: None,
+            dry_run: false,
+            retry_bad: true,
+            metrics: false,
+            coverage_all: false,
+            watch: false,
+            jobs: 1,
+            jobs_cli: Some(1),
+            ignore: &[],
+            cli_ignore: &[],
+            extra: &[],
+            lang_filter: None,
+            test_cfg: &test_cfg,
+            py_config: &py,
+            rs_config: &rs,
+            gate_config: &gate,
+            reload_kissconfig: false,
+            config_path: None,
+            language_tables: Default::default(),
+        };
+        let msg = nudge_request_from_test_args(&args);
+        assert!(!msg.force);
+        assert!(msg.force_bad);
     }
 
     #[cfg(unix)]
@@ -426,8 +459,7 @@ mod tests {
             main_branch: None,
             base_branch: None,
             dry_run: false,
-            force: true,
-            force_bad: false,
+            retry_bad: false,
             metrics: false,
             coverage_all: false,
             watch: false,
@@ -446,7 +478,7 @@ mod tests {
             language_tables: Default::default(),
         };
         let msg = nudge_request_from_test_args(&args);
-        assert!(msg.force);
+        assert!(!msg.force);
         assert_eq!(
             msg.targets,
             vec![
@@ -473,8 +505,7 @@ mod tests {
                 main_branch: None,
                 base_branch: None,
                 dry_run: false,
-                force: true,
-                force_bad: false,
+                retry_bad: false,
                 metrics: false,
                 coverage_all: false,
                 watch: false,
@@ -493,7 +524,7 @@ mod tests {
                 language_tables: Default::default(),
             };
             let msg = nudge_request_from_test_args(&args);
-            assert!(msg.force, "invocation={:?}", args.invocation);
+            assert!(!msg.force, "invocation={:?}", args.invocation);
             assert!(
                 msg.targets.is_empty(),
                 "reserved actions must not invent path targets; invocation={:?}",

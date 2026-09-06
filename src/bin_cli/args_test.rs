@@ -126,6 +126,20 @@ fn check_rejects_removed_coverage_flags() {
 }
 
 #[test]
+fn test_retry_bad_parses_and_removed_force_flags_are_rejected() {
+    let cli = Cli::parse_from(["kiss", "test", ".", "--retry-bad"]);
+    assert!(matches!(
+        cli.command,
+        Commands::Test {
+            retry_bad: true,
+            ..
+        }
+    ));
+    assert!(Cli::try_parse_from(["kiss", "test", ".", "--force"]).is_err());
+    assert!(Cli::try_parse_from(["kiss", "test", ".", "--force-bad"]).is_err());
+}
+
+#[test]
 fn test_invocation_parses_modes_dot_all_and_targets() {
     assert_eq!(
         parse_test_invocation(&[".".into()]).unwrap(),
@@ -180,7 +194,8 @@ fn test_command_help_is_language_neutral_for_shared_options() {
         .render_long_help()
         .to_string();
 
-    assert!(help.contains("Force selected tests to rerun instead of reusing test-runner caches"));
+    assert!(help.contains("--retry-bad"));
+    assert!(!help.contains("--force"));
     assert!(help
         .contains("Rerun tests that need it under normal rules, plus any marked FAIL or TIMEOUT"));
     assert!(help.contains("Maximum number of test jobs to run concurrently"));

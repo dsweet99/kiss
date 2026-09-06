@@ -13,7 +13,7 @@ fn rust_runtime_coverage_refresh_publishes_incremental_generation() {
     write_incremental_rust_repo(&repo, "1");
     generate_lockfile(repo.path());
 
-    let cold = run_kiss_test_rust(home.path(), repo.path(), true);
+    let cold = run_kiss_test_rust(home.path(), repo.path());
     assert_success("cold kiss test", &cold);
     assert_eq!(
         passed_selector_entry_count(repo.path()),
@@ -22,7 +22,7 @@ fn rust_runtime_coverage_refresh_publishes_incremental_generation() {
     );
 
     write_incremental_rust_repo(&repo, "2");
-    let incremental = run_kiss_test_rust(home.path(), repo.path(), true);
+    let incremental = run_kiss_test_rust(home.path(), repo.path());
     assert_success("incremental kiss test", &incremental);
     assert_eq!(
         passed_selector_entry_count(repo.path()),
@@ -30,7 +30,7 @@ fn rust_runtime_coverage_refresh_publishes_incremental_generation() {
         "editing one package should still publish four passed entries"
     );
 
-    let warm = run_kiss_test_rust(home.path(), repo.path(), false);
+    let warm = run_kiss_test_rust(home.path(), repo.path());
     assert_success("warm kiss test", &warm);
 }
 
@@ -154,23 +154,17 @@ fn write_stable_package(stable: &std::path::Path) {
     .unwrap();
 }
 
-fn run_kiss_test_rust(
-    home: &std::path::Path,
-    repo: &std::path::Path,
-    force: bool,
-) -> std::process::Output {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
-    cmd.arg("--lang")
+fn run_kiss_test_rust(home: &std::path::Path, repo: &std::path::Path) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_kiss"))
+        .arg("--lang")
         .arg("rust")
         .arg("test")
         .arg(".")
         .current_dir(repo)
         .env("HOME", home)
-        .env_remove("LLVM_PROFILE_FILE");
-    if force {
-        cmd.arg("--force");
-    }
-    cmd.output().expect("kiss test should run")
+        .env_remove("LLVM_PROFILE_FILE")
+        .output()
+        .expect("kiss test should run")
 }
 
 fn assert_success(label: &str, output: &std::process::Output) {

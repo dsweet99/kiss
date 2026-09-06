@@ -132,7 +132,7 @@ fn kiss_test_dot_prints_final_pass_recap() {
     let bin = env!("CARGO_BIN_EXE_kiss");
     let cold = std::process::Command::new(bin)
         .current_dir(tmp.path())
-        .args(["test", ".", "--force"])
+        .args(["test", "."])
         .env("NO_COLOR", "1")
         .output()
         .expect("kiss test cold");
@@ -197,7 +197,7 @@ fn kiss_test_python_failure_prints_failed_recap_line() {
     let bin = env!("CARGO_BIN_EXE_kiss");
     let out = std::process::Command::new(bin)
         .current_dir(tmp.path())
-        .args(["test", ".", "--force"])
+        .args(["test", "."])
         .env("NO_COLOR", "1")
         .output()
         .expect("kiss test fail");
@@ -240,7 +240,6 @@ fn kiss_test_force_explicit_python_target_stays_selective_on_dry_run() {
         &[
             "test",
             "test_lib.py::test_f",
-            "--force",
             "--dry-run",
             "--lang",
             "python",
@@ -299,7 +298,6 @@ mod tests {\n\
         &[
             "test",
             "src/lib.rs::gets_value",
-            "--force",
             "--dry-run",
             "--lang",
             "rust",
@@ -333,7 +331,7 @@ fn kiss_test_force_dot_python_dry_run_prints_population_marker() {
     commit_all(tmp.path(), "init");
     let out = kiss_test_dry_run(
         tmp.path(),
-        &["test", ".", "--force", "--dry-run", "--lang", "python"],
+        &["test", ".", "--dry-run", "--lang", "python"],
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
@@ -343,7 +341,7 @@ fn kiss_test_force_dot_python_dry_run_prints_population_marker() {
     );
     assert!(
         stdout.contains("PYTHON COVERAGE POPULATION"),
-        "kiss test . --force must keep complete-population dry-run, got {stdout}"
+        "kiss test . dry-run must keep complete-population listing, got {stdout}"
     );
 }
 
@@ -374,7 +372,7 @@ mod tests {\n\
     let bin = env!("CARGO_BIN_EXE_kiss");
     let out = std::process::Command::new(bin)
         .current_dir(tmp.path())
-        .args(["test", ".", "--force", "--lang", "rust"])
+        .args(["test", ".", "--lang", "rust"])
         .env("NO_COLOR", "1")
         .output()
         .expect("kiss test rust fail");
