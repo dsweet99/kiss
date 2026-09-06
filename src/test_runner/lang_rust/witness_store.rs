@@ -280,15 +280,7 @@ pub(crate) fn rust_miss_selectors(
     ) {
         return None;
     }
-    if witness.raw_statuses.len() != witness.statuses.len() {
-        witness.raw_statuses = witness.statuses.clone();
-    }
-    witness.statuses = reclassify_statuses_with_gate(
-        &witness.selectors,
-        &witness.raw_statuses,
-        &witness.durations_ns,
-        gate,
-    );
+    reclassify_rust_witness_with_report_ids(repo_root, &mut witness, gate);
     let index: std::collections::BTreeMap<&str, usize> = witness
         .selectors
         .iter()
@@ -319,15 +311,7 @@ pub(crate) fn try_warm_rust_cached_summary(
     let Ok(mut witness) = try_load_rust_execution_witness(repo_root) else {
         return None;
     };
-    if witness.raw_statuses.len() != witness.statuses.len() {
-        witness.raw_statuses = witness.statuses.clone();
-    }
-    witness.statuses = reclassify_statuses_with_gate(
-        &witness.selectors,
-        &witness.raw_statuses,
-        &witness.durations_ns,
-        gate,
-    );
+    reclassify_rust_witness_with_report_ids(repo_root, &mut witness, gate);
     let current = rust_identity_digest_from_batch(identity);
     let mut planned = planned_selectors.to_vec();
     planned.sort();
@@ -368,6 +352,31 @@ pub(crate) fn try_warm_rust_cached_summary(
         &witness,
         |selector| report_string_for_logical_string(&report_ids, selector),
     ))
+}
+
+fn rust_time_gate_selectors(repo_root: &Path, selectors: &[String]) -> Vec<String> {
+    let report_ids = rust_logical_to_kiss_test_ids_cached(repo_root, &[]).unwrap_or_default();
+    selectors
+        .iter()
+        .map(|selector| report_string_for_logical_string(&report_ids, selector))
+        .collect()
+}
+
+fn reclassify_rust_witness_with_report_ids(
+    repo_root: &Path,
+    witness: &mut ExecutionWitness,
+    gate: &GateConfig,
+) {
+    if witness.raw_statuses.len() != witness.statuses.len() {
+        witness.raw_statuses = witness.statuses.clone();
+    }
+    let gate_selectors = rust_time_gate_selectors(repo_root, &witness.selectors);
+    witness.statuses = reclassify_statuses_with_gate(
+        &gate_selectors,
+        &witness.raw_statuses,
+        &witness.durations_ns,
+        gate,
+    );
 }
 
 fn content_digest(disk: &OnDiskRustWitness) -> Result<String, String> {

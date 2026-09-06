@@ -27,12 +27,24 @@ pub(crate) enum TargetPlanKind<'a> {
     Targets(&'a [String]),
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn plan_target_selectors(
     kind: TargetPlanKind<'_>,
     ignore: &[String],
     extras: crate::test_runner::language_keyed::LanguageKeyed<&[String]>,
     lang_filter: Option<Language>,
     gate: &kiss::GateConfig,
+) -> Result<PlannedSelectors, String> {
+    plan_target_selectors_with_priors(kind, ignore, extras, lang_filter, gate, false)
+}
+
+pub(crate) fn plan_target_selectors_with_priors(
+    kind: TargetPlanKind<'_>,
+    ignore: &[String],
+    extras: crate::test_runner::language_keyed::LanguageKeyed<&[String]>,
+    lang_filter: Option<Language>,
+    gate: &kiss::GateConfig,
+    include_prior_failures: bool,
 ) -> Result<PlannedSelectors, String> {
     let ignore_norm = kiss::normalize_ignore_prefixes(ignore);
     let cwd = std::env::current_dir().map_err(|e| format!("error: kiss test: {e}"))?;
@@ -61,6 +73,7 @@ pub(crate) fn plan_target_selectors(
                     &ignore_norm,
                     extras,
                     lang_filter,
+                    include_prior_failures,
                 ),
             }
         }

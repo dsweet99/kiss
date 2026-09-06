@@ -10,6 +10,8 @@ pub(crate) mod duration;
 pub(crate) mod ensure_runtime;
 mod execution_generation;
 pub(crate) mod execution_witness;
+pub(crate) mod force_bad;
+pub(crate) use force_bad::apply_force_bad;
 mod final_summary;
 pub(crate) mod lang_iface;
 pub(crate) mod lang_python;
@@ -90,49 +92,6 @@ pub struct RunTestCmdArgs<'a> {
     pub lang_filter: Option<Language>,
     pub config_main_branch: Option<&'a str>,
     pub gate_config: kiss::GateConfig,
-}
-
-pub(crate) fn apply_force_bad(
-    a: &RunTestCmdArgs<'_>,
-    planned: &mut PlannedSelectors,
-) -> Result<(), String> {
-    if !a.force_bad {
-        return Ok(());
-    }
-    let py_bad = runners::current_prior_failures(
-        &planned.repo_root,
-        Language::Python,
-        a.python_extra,
-        &planned.ignore,
-    )?;
-    let rs_bad = runners::current_prior_failures(
-        &planned.repo_root,
-        Language::Rust,
-        a.extra,
-        &planned.ignore,
-    )?;
-    let mut py = planned.prior_failure_selectors.python.clone();
-    py.extend(py_bad.into_iter().map(|s| s.id));
-    py.sort();
-    py.dedup();
-    planned.prior_failure_selectors.python = py;
-    let mut rs = planned.prior_failure_selectors.rust.clone();
-    rs.extend(rs_bad.into_iter().map(|s| s.id));
-    rs.sort();
-    rs.dedup();
-    planned.prior_failure_selectors.rust = rs;
-
-    for sel in &planned.prior_failure_selectors.python {
-        if !planned.sel.python.iter().any(|s| s == sel) {
-            planned.sel.python.push(sel.clone());
-        }
-    }
-    for sel in &planned.prior_failure_selectors.rust {
-        if !planned.sel.rust.iter().any(|s| s == sel) {
-            planned.sel.rust.push(sel.clone());
-        }
-    }
-    Ok(())
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -297,8 +256,8 @@ mod test_change_modes_b_test;
 mod mod_test;
 
 #[cfg(test)]
-#[path = "mod_test_b.rs"]
-mod mod_test_b;
+#[path = "force_bad_test.rs"]
+mod force_bad_test;
 
 #[cfg(test)]
 #[path = "planning_heartbeat_test.rs"]

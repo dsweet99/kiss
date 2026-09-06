@@ -13,7 +13,7 @@ use kiss::Language;
 use super::RunTestCmdArgs;
 use super::plan::{
     AllWorkspaceCache, PlanSelectorsRequest, TargetPlanKind, VcsWorkspace, cover_all_language,
-    plan_selectors_from_workspace, plan_target_selectors, plan_vcs_workspace_at,
+    plan_selectors_from_workspace, plan_target_selectors_with_priors, plan_vcs_workspace_at,
 };
 use super::planned_selectors::{
     PlannedSelectors, SelectorRunOptions, should_force_cold_initialization,
@@ -263,12 +263,13 @@ pub(super) fn cover_language(
                     prefix.ignore.clone(),
                 ));
             }
-            plan_target_selectors(
+            plan_target_selectors_with_priors(
                 TargetPlanKind::Targets(thread_targets.as_slice()),
                 &prefix.ignore,
                 extras,
                 Some(language),
                 &a.gate_config,
+                a.force_bad,
             )
         }
     }

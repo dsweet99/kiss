@@ -13,6 +13,7 @@ pub(super) fn plan_explicit_target_selectors(
     ignore: &[String],
     extras: crate::test_runner::language_keyed::LanguageKeyed<&[String]>,
     lang_filter: Option<Language>,
+    include_prior_failures: bool,
 ) -> Result<PlannedSelectors, String> {
     let query = resolve_target_operands(repo_root, targets, lang_filter, ignore, extras.python)
         .map_err(|e| format!("error: kiss test: {e}"))?;
@@ -88,7 +89,7 @@ pub(super) fn plan_explicit_target_selectors(
         ignore,
         extra_direct_python: &direct_python,
         extra_direct_rust: &direct_rust,
-        include_prior_failures: false,
+        include_prior_failures,
     };
     let selector_plan = runners::combined_selectors_with_direct(input)?;
     Ok(planned_from_selector_plan(

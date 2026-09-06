@@ -117,7 +117,7 @@ pub enum Commands {
         dry_run: bool,
         #[arg(
             long,
-            help = "Rerun tests that need it under normal rules, plus any marked FAIL or TIMEOUT"
+            help = "Rerun FAIL and TIMEOUT tests in the TARGET subset"
         )]
         retry_bad: bool,
         #[arg(long, help = "Print test-run metrics")]

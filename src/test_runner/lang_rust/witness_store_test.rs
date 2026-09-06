@@ -341,6 +341,54 @@ fn warm_helpers_use_caller_gate_not_cwd_defaults() {
 }
 
 #[test]
+fn warm_reclassify_applies_path_rules_to_report_ids() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+    std::fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname='demo'\nversion='0.1.0'\nedition='2021'\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tmp.path().join("src").join("lib.rs"),
+        "#[cfg(test)]\nmod tests {\n    #[test]\n    fn case() {}\n}\n",
+    )
+    .unwrap();
+    let identity = sample_identity();
+    let selectors = vec!["tests::case".into()];
+    let empty_cov = Default::default();
+    publish_rust_execution_witness(PublishRustWitness {
+        repo_root: tmp.path(),
+        identity: &identity,
+        scope: WitnessScope::Full,
+        selectors: &selectors,
+        statuses: &[WitnessStatus::Passed],
+        durations_ns: &[Some(1_000_000)],
+        covered_lines: &empty_cov,
+        complete: true,
+        jobs: 1,
+    })
+    .unwrap();
+    let path_rules = kiss::GateConfig {
+        max_unit_test_seconds: vec![("src".into(), 15.0), ("*".into(), 0.0)],
+        ..kiss::GateConfig::default()
+    };
+    let summary = try_warm_rust_cached_summary(tmp.path(), &selectors, &identity, &path_rules)
+        .expect("mapped report id must warm-accept under the path rule");
+    assert!(
+        summary.timed_out_selectors.is_empty(),
+        "logical name would hit the 0s catch-all; report id src/lib.rs::case must stay PASS: {:?}",
+        summary.timed_out_selectors
+    );
+    assert_eq!(summary.failed, 0);
+    assert_eq!(summary.exit_code, 0);
+    assert_eq!(
+        rust_miss_selectors(tmp.path(), &selectors, &identity, &path_rules),
+        Some(Vec::<String>::new())
+    );
+}
+
+#[test]
 fn pointer_backed_witness_load_populates_in_process_memo() {
     let tmp = tempfile::tempdir().unwrap();
     write_minimal_repo(tmp.path());

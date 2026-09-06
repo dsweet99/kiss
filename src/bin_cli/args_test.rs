@@ -197,7 +197,7 @@ fn test_command_help_is_language_neutral_for_shared_options() {
     assert!(help.contains("--retry-bad"));
     assert!(!help.contains("--force"));
     assert!(help
-        .contains("Rerun tests that need it under normal rules, plus any marked FAIL or TIMEOUT"));
+        .contains("Rerun FAIL and TIMEOUT tests in the TARGET subset"));
     assert!(help.contains("Maximum number of test jobs to run concurrently"));
     assert!(help.contains("commit, base, main, ., or PATH / PATH::symbol / directory"));
     assert!(help.contains("[TARGET]"));
