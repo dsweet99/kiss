@@ -410,6 +410,97 @@ mod tests {
         assert!(all_msg.force);
         assert!(all_msg.targets.is_empty());
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn nudge_request_forwards_two_force_targets() {
+        let test_cfg = TestSectionConfig::default();
+        let py = kiss::Config::python_defaults();
+        let rs = kiss::Config::rust_defaults();
+        let gate = kiss::GateConfig::default();
+        let args = TestCommandArgs {
+            invocation: TestInvocation::Targets(vec![
+                "tests/test_trio.py::test_first".into(),
+                "tests/test_trio.py::test_third".into(),
+            ]),
+            main_branch: None,
+            base_branch: None,
+            dry_run: false,
+            force: true,
+            force_bad: false,
+            metrics: false,
+            coverage_all: false,
+            watch: false,
+            jobs: 1,
+            jobs_cli: Some(1),
+            ignore: &[],
+            cli_ignore: &[],
+            extra: &[],
+            lang_filter: None,
+            test_cfg: &test_cfg,
+            py_config: &py,
+            rs_config: &rs,
+            gate_config: &gate,
+            reload_kissconfig: false,
+            config_path: None,
+            language_tables: Default::default(),
+        };
+        let msg = nudge_request_from_test_args(&args);
+        assert!(msg.force);
+        assert_eq!(
+            msg.targets,
+            vec![
+                "tests/test_trio.py::test_first".to_string(),
+                "tests/test_trio.py::test_third".to_string()
+            ]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn nudge_request_commit_base_main_are_unscoped() {
+        let test_cfg = TestSectionConfig::default();
+        let py = kiss::Config::python_defaults();
+        let rs = kiss::Config::rust_defaults();
+        let gate = kiss::GateConfig::default();
+        for invocation in [
+            TestInvocation::Commit,
+            TestInvocation::Base,
+            TestInvocation::Main,
+        ] {
+            let args = TestCommandArgs {
+                invocation,
+                main_branch: None,
+                base_branch: None,
+                dry_run: false,
+                force: true,
+                force_bad: false,
+                metrics: false,
+                coverage_all: false,
+                watch: false,
+                jobs: 1,
+                jobs_cli: Some(1),
+                ignore: &[],
+                cli_ignore: &[],
+                extra: &[],
+                lang_filter: None,
+                test_cfg: &test_cfg,
+                py_config: &py,
+                rs_config: &rs,
+                gate_config: &gate,
+                reload_kissconfig: false,
+                config_path: None,
+                language_tables: Default::default(),
+            };
+            let msg = nudge_request_from_test_args(&args);
+            assert!(msg.force, "invocation={:?}", args.invocation);
+            assert!(
+                msg.targets.is_empty(),
+                "reserved actions must not invent path targets; invocation={:?}",
+                args.invocation
+            );
+        }
+    }
 }
 
 #[cfg(test)]
