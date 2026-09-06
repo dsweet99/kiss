@@ -40,11 +40,12 @@ pub(crate) struct WatchLiveConfig {
     kissconfig_digest: u64,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct CycleForceFlags {
     pub force_rerun: bool,
     pub force_bad: bool,
     pub metrics: bool,
+    pub targets: Vec<String>,
 }
 
 impl WatchLiveConfig {
@@ -80,8 +81,13 @@ impl WatchLiveConfig {
     }
 
     pub(crate) fn cycle_args(&self, force: CycleForceFlags) -> RunTestCmdArgs<'_> {
+        let invocation = if force.force_rerun && !force.targets.is_empty() {
+            TestInvocation::Targets(force.targets)
+        } else {
+            self.invocation.clone()
+        };
         RunTestCmdArgs {
-            invocation: self.invocation.clone(),
+            invocation,
             main_branch_cli: self.main_branch_cli.as_deref(),
             base_branch_cli: self.base_branch_cli.as_deref(),
             dry_run: self.dry_run,

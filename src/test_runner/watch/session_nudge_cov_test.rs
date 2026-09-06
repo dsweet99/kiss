@@ -118,6 +118,7 @@ fn watch_cycle_interrupted_during_tests_replies_130_without_cov() {
                 force: true,
                 force_bad: false,
                 metrics: false,
+                ..Default::default()
             },
             reply: reply_tx,
         })
@@ -176,6 +177,7 @@ fn watch_cycle_interrupted_during_cov_replies_130() {
                 force: true,
                 force_bad: false,
                 metrics: false,
+                ..Default::default()
             },
             reply: reply_tx,
         })

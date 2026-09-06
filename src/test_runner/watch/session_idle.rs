@@ -16,6 +16,8 @@ pub(super) struct QueuedCycle {
     pub force: bool,
     pub force_bad: bool,
     pub metrics: bool,
+    pub targets: Vec<String>,
+    pub unscoped_force: bool,
 }
 
 impl QueuedCycle {
@@ -94,6 +96,20 @@ pub(super) fn try_reply_idle_nudge(
     true
 }
 
+fn merge_nudge_targets(q: &mut QueuedCycle, force: bool, targets: &[String]) {
+    if force && targets.is_empty() {
+        q.unscoped_force = true;
+        q.targets.clear();
+        return;
+    }
+    if q.unscoped_force || targets.is_empty() {
+        return;
+    }
+    q.targets.extend(targets.iter().cloned());
+    q.targets.sort();
+    q.targets.dedup();
+}
+
 pub(super) fn coalesce_nudges(
     nudge_rx: Option<&std::sync::mpsc::Receiver<NudgeRequest>>,
     queued: &mut Option<QueuedCycle>,
@@ -107,6 +123,7 @@ pub(super) fn coalesce_nudges(
                 q.force |= req.msg.force;
                 q.force_bad |= req.msg.force_bad;
                 q.metrics |= req.msg.metrics;
+                merge_nudge_targets(q, req.msg.force, &req.msg.targets);
                 q.replies.push(req.reply);
             }
             None => {
@@ -115,6 +132,8 @@ pub(super) fn coalesce_nudges(
                     force: req.msg.force,
                     force_bad: req.msg.force_bad,
                     metrics: req.msg.metrics,
+                    unscoped_force: req.msg.force && req.msg.targets.is_empty(),
+                    targets: req.msg.targets,
                 });
             }
         }

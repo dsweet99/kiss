@@ -137,6 +137,9 @@ pub(crate) fn take_queued_cycle_args<'a>(
         force.force_rerun = q.force;
         force.force_bad = q.force_bad;
         force.metrics = q.metrics;
+        if !q.unscoped_force {
+            force.targets = q.targets;
+        }
         replies = q.replies;
     }
     (live.cycle_args(force), replies)
@@ -200,6 +203,7 @@ mod nudge_stub {
         pub force: bool,
         pub force_bad: bool,
         pub metrics: bool,
+        pub targets: Vec<String>,
     }
 
     pub(crate) struct NudgeRequest {

@@ -32,6 +32,7 @@ fn protocol_round_trip_on_socket() {
             force: true,
             force_bad: false,
             metrics: false,
+            ..Default::default()
         },
     )
     .unwrap();

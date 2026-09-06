@@ -29,6 +29,8 @@ pub(crate) struct NudgeRequestMsg {
     pub force_bad: bool,
     #[serde(default)]
     pub metrics: bool,
+    #[serde(default)]
+    pub targets: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

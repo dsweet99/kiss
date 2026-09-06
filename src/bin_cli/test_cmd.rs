@@ -174,14 +174,25 @@ fn wait_out_live_watcher(args: &TestCommandArgs<'_>) -> Option<i32> {
 }
 
 #[cfg(unix)]
+fn nudge_request_from_test_args(args: &TestCommandArgs<'_>) -> crate::test_runner::NudgeRequestMsg {
+    crate::test_runner::NudgeRequestMsg {
+        force: args.force,
+        force_bad: args.force_bad,
+        metrics: args.metrics,
+        targets: match &args.invocation {
+            TestInvocation::Targets(targets) => targets.clone(),
+            _ => Vec::new(),
+        },
+    }
+}
+
+#[cfg(unix)]
 fn try_wait_out_live_watcher(args: &TestCommandArgs<'_>) -> Result<Option<i32>, String> {
     if let Some(overridden) = CLIENT_RESULT_OVERRIDE.with(Cell::take) {
         return overridden;
     }
 
-    use crate::test_runner::{
-        NudgeRequestMsg, nudge_watcher_with_retry_on_wait, probe_live_watcher,
-    };
+    use crate::test_runner::{nudge_watcher_with_retry_on_wait, probe_live_watcher};
 
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
     let repo_root = crate::test_git::require_git_repo_root(&cwd)?;
@@ -193,11 +204,7 @@ fn try_wait_out_live_watcher(args: &TestCommandArgs<'_>) -> Result<Option<i32>, 
     let reply = nudge_watcher_with_retry_on_wait(
         &repo_root,
         &session,
-        &NudgeRequestMsg {
-            force: args.force,
-            force_bad: args.force_bad,
-            metrics: args.metrics,
-        },
+        &nudge_request_from_test_args(args),
         &mut || {
             if !printed_waiting {
                 printed_waiting = true;
@@ -353,6 +360,55 @@ mod tests {
             universe_root_for_test_invocation(&TestInvocation::Targets(vec!["./".into()])),
             PathBuf::from(".")
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn nudge_request_forwards_selected_force_targets() {
+        let test_cfg = TestSectionConfig::default();
+        let py = kiss::Config::python_defaults();
+        let rs = kiss::Config::rust_defaults();
+        let gate = kiss::GateConfig::default();
+        let args = TestCommandArgs {
+            invocation: TestInvocation::Targets(vec![
+                "tests/fast/analysis/test_gantt.py::test_one".into(),
+            ]),
+            main_branch: None,
+            base_branch: None,
+            dry_run: false,
+            force: true,
+            force_bad: false,
+            metrics: false,
+            coverage_all: false,
+            watch: false,
+            jobs: 1,
+            jobs_cli: Some(1),
+            ignore: &[],
+            cli_ignore: &[],
+            extra: &[],
+            lang_filter: None,
+            test_cfg: &test_cfg,
+            py_config: &py,
+            rs_config: &rs,
+            gate_config: &gate,
+            reload_kissconfig: false,
+            config_path: None,
+            language_tables: Default::default(),
+        };
+        let msg = nudge_request_from_test_args(&args);
+        assert!(msg.force);
+        assert_eq!(
+            msg.targets,
+            vec!["tests/fast/analysis/test_gantt.py::test_one".to_string()]
+        );
+        let all_args = TestCommandArgs {
+            invocation: TestInvocation::All,
+            force: true,
+            ..args
+        };
+        let all_msg = nudge_request_from_test_args(&all_args);
+        assert!(all_msg.force);
+        assert!(all_msg.targets.is_empty());
     }
 }
 
