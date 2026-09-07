@@ -135,6 +135,28 @@ fn test_retry_bad_parses_and_removed_force_flags_are_rejected() {
             ..
         }
     ));
+    let targeted = Cli::parse_from([
+        "kiss",
+        "test",
+        "--retry-bad",
+        "tests/fast/app_server/test_transact_grid.py::test_assign_method_follows_grid_queue_after_rebind",
+    ]);
+    match targeted.command {
+        Commands::Test {
+            operands,
+            retry_bad,
+            ..
+        } => {
+            assert!(retry_bad);
+            assert_eq!(
+                parse_test_invocation(&operands).unwrap(),
+                TestInvocation::Targets(vec![
+                    "tests/fast/app_server/test_transact_grid.py::test_assign_method_follows_grid_queue_after_rebind".into()
+                ])
+            );
+        }
+        _ => panic!("expected Test"),
+    }
     assert!(Cli::try_parse_from(["kiss", "test", ".", "--force"]).is_err());
     assert!(Cli::try_parse_from(["kiss", "test", ".", "--force-bad"]).is_err());
 }

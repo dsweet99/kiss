@@ -81,7 +81,7 @@ impl WatchLiveConfig {
     }
 
     pub(crate) fn cycle_args(&self, force: CycleForceFlags) -> RunTestCmdArgs<'_> {
-        let invocation = if force.force_rerun && !force.targets.is_empty() {
+        let invocation = if !force.targets.is_empty() {
             TestInvocation::Targets(force.targets)
         } else {
             self.invocation.clone()

@@ -292,6 +292,37 @@ fn unscoped_force_nudge_keeps_running_watcher_invocation() {
 }
 
 #[test]
+fn retry_bad_targets_override_watcher_all_invocation() {
+    use crate::test_runner::watch::control::NudgeRequestMsg as Msg;
+    let selected = "tests/fast/app_server/test_transact_grid.py::test_assign_method_follows_grid_queue_after_rebind";
+    let (tx, rx) = mpsc::channel::<NudgeRequest>();
+    let (reply, _wait) = mpsc::sync_channel(1);
+    tx.send(NudgeRequest {
+        msg: Msg {
+            force: false,
+            force_bad: true,
+            targets: vec![selected.into()],
+            ..Default::default()
+        },
+        reply,
+    })
+    .unwrap();
+    let mut queued = None;
+    coalesce_nudges(Some(&rx), &mut queued);
+    let mut base = py_dry_args();
+    base.invocation = TestInvocation::All;
+    let live = live_from_args_disabled(base, Duration::from_secs(1), Path::new("."));
+    let (cycle, _) = take_queued_cycle_args(&live, &mut queued);
+    assert!(cycle.force_bad);
+    assert!(!cycle.force_rerun);
+    assert_eq!(
+        cycle.invocation,
+        TestInvocation::Targets(vec![selected.into()]),
+        "retry-bad TARGET must scope the watcher cycle"
+    );
+}
+
+#[test]
 fn forwarded_force_targets_override_watcher_all_invocation() {
     use crate::test_runner::watch::control::NudgeRequestMsg as Msg;
     let (tx, rx) = mpsc::channel::<NudgeRequest>();
@@ -396,6 +427,116 @@ fn coalesce_unions_force_targets_until_unscoped_force() {
     assert!(cycle.force_rerun);
     assert_eq!(cycle.invocation, TestInvocation::All);
     assert_eq!(replies.len(), 3);
+}
+
+#[test]
+fn retry_bad_nudge_reruns_only_selected_fake_python_test_on_tmp_repo() {
+    let _cwd = crate::cwd_test_lock::lock();
+    let tmp = tempfile::tempdir().unwrap();
+    init_git(&tmp);
+    let tests = tmp.path().join("tests");
+    fs::create_dir_all(&tests).unwrap();
+    fs::write(
+        tests.join("test_pair.py"),
+        "def test_first():\n    assert True\n\ndef test_second():\n    assert True\n",
+    )
+    .unwrap();
+    assert!(
+        git_in(tmp.path())
+            .args(["add", "-A"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        git_in(tmp.path())
+            .args(["commit", "-m", "init"])
+            .status()
+            .unwrap()
+            .success()
+    );
+
+    let selected = "tests/test_pair.py::test_first";
+    let (tx, rx) = mpsc::channel::<NudgeRequest>();
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    let cycles = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let seen = Arc::new(Mutex::new(Vec::<TestInvocation>::new()));
+    let forced_out = Arc::new(Mutex::new(String::new()));
+    let cycles_nudge = Arc::clone(&cycles);
+    let sender = std::thread::spawn(move || {
+        while cycles_nudge.load(std::sync::atomic::Ordering::SeqCst) < 1 {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        std::thread::sleep(Duration::from_millis(20));
+        tx.send(NudgeRequest {
+            msg: NudgeRequestMsg {
+                force: false,
+                force_bad: true,
+                targets: vec![selected.into()],
+                ..Default::default()
+            },
+            reply: reply_tx,
+        })
+        .unwrap();
+        assert_eq!(
+            reply_rx
+                .recv_timeout(Duration::from_secs(30))
+                .unwrap()
+                .exit_code,
+            0
+        );
+    });
+
+    let orig = env::current_dir().unwrap();
+    env::set_current_dir(tmp.path()).unwrap();
+    let cycles_run = Arc::clone(&cycles);
+    let seen_run = Arc::clone(&seen);
+    let out_run = Arc::clone(&forced_out);
+    let mut src = NudgeScript {
+        steps: timeout_steps(12),
+    };
+    let mut args = py_dry_args();
+    args.invocation = TestInvocation::All;
+    args.dry_run = false;
+    let code = run_watch_loop_with(
+        args,
+        Duration::from_secs(3600),
+        tmp.path(),
+        &mut src,
+        Some(&rx),
+        move |cycle_args| {
+            let n = cycles_run.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+            seen_run.lock().unwrap().push(cycle_args.invocation.clone());
+            if n == 1 {
+                return RunTestOnceOutcome::Code(0);
+            }
+            let stdout = capture_stdout(|| {
+                assert_eq!(run_test(cycle_args), 0);
+            });
+            *out_run.lock().unwrap() = stdout;
+            RunTestOnceOutcome::Code(0)
+        },
+        |_args| WatchCoverageResult::ok(0),
+    );
+    sender.join().unwrap();
+    env::set_current_dir(orig).unwrap();
+    assert_eq!(code, 1);
+    let invocations = seen.lock().unwrap().clone();
+    assert_eq!(invocations.len(), 2, "initial All plus retry-bad TARGET");
+    assert_eq!(invocations[0], TestInvocation::All);
+    assert_eq!(
+        invocations[1],
+        TestInvocation::Targets(vec![selected.to_string()])
+    );
+    let stdout = forced_out.lock().unwrap().clone();
+    assert!(
+        stdout.contains("test_pair.py::test_first"),
+        "retry-bad selector must run, got:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("test_pair.py::test_second"),
+        "sibling test must not run when TARGET is set, got:\n{stdout}"
+    );
 }
 
 #[test]
