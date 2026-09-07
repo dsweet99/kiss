@@ -1,18 +1,19 @@
 from pathlib import Path
 
 import python
-from ops.qa import (
+from evals._harness import (
+    RUST_SELECTOR_PUBLISH_ARTIFACTS,
+    cargo_build_jobs_from_command,
     cargo_executable_name,
     force_publication_target,
     llvm_tool_uses_single_thread,
+    publication_writer_command,
     python_rslip_cache_root,
     sample_phase_flags,
 )
 
 
 def test_publication_writer_command_rust_selector_uses_file_targets_force_metrics() -> None:
-    from ops.qa import RUST_SELECTOR_PUBLISH_ARTIFACTS, publication_writer_command
-
     assert python.__name__ == "python"
 
     artifact = next(iter(RUST_SELECTOR_PUBLISH_ARTIFACTS))
@@ -28,8 +29,6 @@ def test_publication_writer_command_rust_selector_uses_file_targets_force_metric
 
 
 def test_publication_writer_command_rust_aggregate_uses_dot_force() -> None:
-    from ops.qa import publication_writer_command
-
     cmd = publication_writer_command("rust", Path("/tmp/repo"), "rust_check_aggregate", jobs=1)
     assert cmd[cmd.index("test") + 1] == "."
 
@@ -97,8 +96,6 @@ def test_observer_keeps_max_build_jobs_across_nested_invocations() -> None:
 
 
 def test_cargo_build_jobs_ignores_tmp_fixture_batches_for_observer_contract() -> None:
-    from ops.qa import cargo_build_jobs_from_command
-
     top = (
         "/home/user/.cargo/bin/cargo-llvm-cov llvm-cov nextest --no-report "
         "--build-jobs 32 --message-format libtest-json-plus "

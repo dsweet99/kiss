@@ -1,4 +1,3 @@
 target/
-ops/qa.py
+evals/
 tests/conftest.py
-
