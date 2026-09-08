@@ -9,8 +9,9 @@ def test_evaluation_names_include_qa_commands() -> None:
     names = evaluation_names()
     assert "coverage_cache_witness" in names
     assert "timing_rust_throughput" in names
-    assert "kiss_test_watch" in names
+    assert "kiss_test_watch" not in names
     assert all(" " not in name for name in names)
+    assert all(not name.startswith("kiss_test_") for name in names)
 
 
 def test_evaluate_list_prints_names(capsys) -> None:

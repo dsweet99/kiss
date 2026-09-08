@@ -26,12 +26,10 @@ pub mod discovery;
 pub mod duplication;
 pub mod graph;
 pub mod layout_cycles;
-mod macro_expr_parser;
 pub mod minhash;
 pub mod parsing;
 pub mod stats;
 pub mod stats_detailed;
-pub mod symbol_mv;
 pub mod test_cache_policy;
 pub mod test_refs;
 pub mod test_section_config;
@@ -52,8 +50,6 @@ pub mod rust_units;
 pub mod global_metrics;
 pub mod layout_layers;
 pub mod layout_output;
-
-pub(crate) mod symbol_mv_support;
 
 #[cfg(test)]
 pub mod test_utils;

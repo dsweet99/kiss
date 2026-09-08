@@ -93,19 +93,6 @@ fn call_handler_dispatchers(
         reload_kissconfig: true,
         config_path: None,
     });
-    let _ = handlers::dispatch_mv(options::MvDispatchOptions {
-        lang: None,
-        query: "sample.py::old".to_string(),
-        new_name: "new".to_string(),
-        paths: vec![".".to_string()],
-        to: None,
-        mv_flags: options::MvOutputFlags {
-            dry_run: true,
-            json: false,
-        },
-        ignore: vec![],
-        language_tables: kiss::LanguageTablesPresent::both(),
-    });
 }
 
 fn call_router_dispatchers(
@@ -265,21 +252,6 @@ fn dispatch_private_routers_cover_additional_command_variants() {
             minhash_size: 100,
             lsh_bands: 20,
             min_similarity: Some(0.9),
-            ignore: vec![],
-        },
-        &cfg,
-        &test,
-    );
-    let _ = dispatch_tools(
-        None,
-        None,
-        Commands::Mv {
-            query: "sample.py::old".to_string(),
-            new_name: "new".to_string(),
-            paths: vec![".".to_string()],
-            to: None,
-            dry_run: true,
-            json: false,
             ignore: vec![],
         },
         &cfg,

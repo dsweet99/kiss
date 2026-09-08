@@ -83,12 +83,6 @@ fn test_cli_and_commands() {
         Commands::Stats { .. }
     ));
     assert!(matches!(
-        Cli::try_parse_from(["kiss", "mv", "src/a.py::foo", "bar"])
-            .unwrap()
-            .command,
-        Commands::Mv { .. }
-    ));
-    assert!(matches!(
         Cli::try_parse_from(["kiss", "check"]).unwrap().command,
         Commands::Check { .. }
     ));

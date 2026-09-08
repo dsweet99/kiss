@@ -85,28 +85,6 @@ fn public_dispatch_routes_analyze_and_tool_groups() {
         ),
         2
     );
-    assert_ne!(
-        dispatch(
-            Cli {
-                config: None,
-                lang: Some(kiss::Language::Python),
-                command: Commands::Mv {
-                    query: "sample.py::value".to_string(),
-                    new_name: "new_value".to_string(),
-                    paths: vec![".".to_string()],
-                    to: None,
-                    dry_run: true,
-                    json: false,
-                    ignore: vec![],
-                },
-            },
-            &py,
-            &rs,
-            &gate,
-            &test,
-        ),
-        2
-    );
     assert_eq!(
         dispatch(
             Cli {

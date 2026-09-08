@@ -154,29 +154,4 @@ pub enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         command: Vec<OsString>,
     },
-    #[command(about = "Rename or move a Python or Rust symbol (beta)")]
-    Mv {
-        #[arg(value_name = "SOURCE", help = "Symbol to rename (PATH::symbol)")]
-        query: String,
-        #[arg(value_name = "TARGET", help = "New symbol name")]
-        new_name: String,
-        #[arg(
-            default_value = ".",
-            value_name = "PATH",
-            help = "Files or directories to search"
-        )]
-        paths: Vec<String>,
-        #[arg(
-            long,
-            value_name = "DEST_FILE",
-            help = "Write the renamed symbol to DEST_FILE"
-        )]
-        to: Option<PathBuf>,
-        #[arg(long, help = "Show the rename without writing files")]
-        dry_run: bool,
-        #[arg(long, help = "Print JSON instead of text")]
-        json: bool,
-        #[arg(long, value_name = "PREFIX", help = "Path prefix to exclude")]
-        ignore: Vec<String>,
-    },
 }

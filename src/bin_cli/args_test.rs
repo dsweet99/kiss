@@ -268,7 +268,8 @@ fn top_level_help_describes_commands_and_global_flags() {
         }),
         "top-level help must not list cov\n{help}"
     );
-    assert!(help.contains("Rename or move a Python or Rust symbol (beta)"));
+    assert!(!help.contains("Rename or move a Python or Rust symbol (beta)"));
+    assert!(Cli::command().find_subcommand("mv").is_none());
     assert!(help.contains("Usage:"));
     assert!(help.contains("Examples:"));
     assert!(help.contains("kiss check"));

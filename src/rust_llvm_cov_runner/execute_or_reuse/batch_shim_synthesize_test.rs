@@ -216,12 +216,12 @@ fn top_level_mod_names_reads_pub_and_private_mods() {
     let path = tmp.path().join("main.rs");
     std::fs::write(
         &path,
-        "// mod ignored_comment;\npub mod analyze;\nmod test_runner;\npub(crate) mod symbol_mv_support;\nfn main() {}\n",
+        "// mod ignored_comment;\npub mod analyze;\nmod test_runner;\npub(crate) mod rust_units;\nfn main() {}\n",
     )
     .unwrap();
     let mods = top_level_mod_names(&path);
     assert!(mods.contains("analyze"));
     assert!(mods.contains("test_runner"));
-    assert!(mods.contains("symbol_mv_support"));
+    assert!(mods.contains("rust_units"));
     assert!(!mods.contains("ignored_comment"));
 }

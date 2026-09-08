@@ -8,8 +8,8 @@ use crate::rules::run_rules;
 use crate::viz::{run_viz, VizCoarsen};
 
 use super::options::{
-    CheckDispatchOptions, DryDispatchOptions, MvDispatchOptions, RulesDispatchOptions,
-    StatsDispatchOptions, TestDispatchOptions, VizDispatchOptions,
+    CheckDispatchOptions, DryDispatchOptions, RulesDispatchOptions, StatsDispatchOptions,
+    TestDispatchOptions, VizDispatchOptions,
 };
 
 pub(in crate::bin_cli::dispatch) fn dispatch_check(o: CheckDispatchOptions<'_>) -> i32 {
@@ -126,22 +126,6 @@ pub(in crate::bin_cli::dispatch) fn dispatch_test(o: TestDispatchOptions<'_>) ->
         config_path: o.config_path,
         language_tables: o.cfg.language_tables,
     })
-}
-
-pub(in crate::bin_cli::dispatch) fn dispatch_mv(o: MvDispatchOptions) -> i32 {
-    let ignore = util::merge_check_ignore_prefixes(&o.ignore);
-    let opts = kiss::symbol_mv::MvOptions {
-        query: o.query,
-        new_name: o.new_name,
-        paths: o.paths,
-        to: o.to,
-        dry_run: o.mv_flags.dry_run,
-        json: o.mv_flags.json,
-        lang_filter: o.lang,
-        ignore,
-        language_tables: o.language_tables,
-    };
-    kiss::symbol_mv::run_mv_command(opts)
 }
 
 #[cfg(test)]

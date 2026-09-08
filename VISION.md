@@ -17,14 +17,12 @@
 - No __main__ scripts should appear outside of ops/.
 
 # evals/
+- A repeatable measurement of a system-level property or outcome—such as performance, reliability, output quality, or usability.
 - Each eval runs in under 60s.
 - An eval may publish multiple metrics. Each metric should appear on a line with on of
   these formats:
 ```
 EVAL: metric_name = LARGER(metric_value)
 EVAL: metric_name = SMALLER(metric_value)
-EVAL: metric_name = PASS
-EVAL: metric_name = FAIL
 ```
 LARGER() means "larger is better", SMALLER() means "smaller is better"
-PASS and FAIL mean the metric is pass fail, and the eval passed or failed.

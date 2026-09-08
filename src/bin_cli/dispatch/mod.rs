@@ -9,12 +9,11 @@ mod test_dispatch_b;
 use crate::bin_cli::args::{parse_test_invocation, validate_test_branch_options, Cli, Commands};
 
 use handlers::{
-    dispatch_check, dispatch_dry, dispatch_mv, dispatch_rules, dispatch_stats, dispatch_test,
-    dispatch_viz,
+    dispatch_check, dispatch_dry, dispatch_rules, dispatch_stats, dispatch_test, dispatch_viz,
 };
 use options::{
-    CheckDispatchOptions, DryDispatchOptions, MvDispatchOptions, MvOutputFlags,
-    RulesDispatchOptions, StatsDispatchOptions, TestDispatchOptions, TriConfig, VizDispatchOptions,
+    CheckDispatchOptions, DryDispatchOptions, RulesDispatchOptions, StatsDispatchOptions,
+    TestDispatchOptions, TriConfig, VizDispatchOptions,
 };
 
 use kiss::GateConfig;
@@ -104,24 +103,6 @@ fn dispatch_tools(
         test_command @ Commands::Test { .. } => {
             dispatch_test_command(lang, config.as_ref(), test_command, cfg, test_section)
         }
-        Commands::Mv {
-            query,
-            new_name,
-            paths,
-            to,
-            dry_run,
-            json,
-            ignore,
-        } => dispatch_mv(MvDispatchOptions {
-            lang,
-            query,
-            new_name,
-            paths,
-            to,
-            mv_flags: MvOutputFlags { dry_run, json },
-            ignore,
-            language_tables: cfg.language_tables,
-        }),
         _ => 2,
     }
 }

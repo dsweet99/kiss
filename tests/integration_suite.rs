@@ -111,22 +111,6 @@ mod regression_stats_grouped_unit_test_runtime;
 mod regression_stats_summary_headers_and_coverage;
 #[path = "cases/regression_stats_summary_uses_cache.rs"]
 mod regression_stats_summary_uses_cache;
-#[path = "cases/review_findings.rs"]
-mod review_findings;
-#[path = "cases/review_findings_cache.rs"]
-mod review_findings_cache;
-#[path = "cases/review_findings_python.rs"]
-mod review_findings_python;
-#[path = "cases/review_findings_python_2.rs"]
-mod review_findings_python_2;
-#[path = "cases/review_findings_python_3.rs"]
-mod review_findings_python_3;
-#[path = "cases/review_findings_rust.rs"]
-mod review_findings_rust;
-#[path = "cases/review_findings_rust_2.rs"]
-mod review_findings_rust_2;
-#[path = "cases/review_findings_rust_3.rs"]
-mod review_findings_rust_3;
 #[path = "cases/rules_config_integration.rs"]
 mod rules_config_integration;
 #[path = "cases/rust_counts_violations.rs"]
@@ -135,42 +119,6 @@ mod rust_counts_violations;
 mod stress_break_kiss;
 #[path = "cases/stress_break_kiss_2.rs"]
 mod stress_break_kiss_2;
-#[path = "cases/symbol_mv_corpus.rs"]
-mod symbol_mv_corpus;
-#[path = "cases/symbol_mv_internal_coverage.rs"]
-mod symbol_mv_internal_coverage;
-#[path = "cases/symbol_mv_matrix.rs"]
-mod symbol_mv_matrix;
-#[path = "cases/symbol_mv_metamorphic.rs"]
-mod symbol_mv_metamorphic;
-#[path = "cases/symbol_mv_regressions.rs"]
-mod symbol_mv_regressions;
-#[path = "cases/symbol_mv_regressions_10.rs"]
-mod symbol_mv_regressions_10;
-#[path = "cases/symbol_mv_regressions_11.rs"]
-mod symbol_mv_regressions_11;
-#[path = "cases/symbol_mv_regressions_12.rs"]
-mod symbol_mv_regressions_12;
-#[path = "cases/symbol_mv_regressions_13.rs"]
-mod symbol_mv_regressions_13;
-#[path = "cases/symbol_mv_regressions_14.rs"]
-mod symbol_mv_regressions_14;
-#[path = "cases/symbol_mv_regressions_2.rs"]
-mod symbol_mv_regressions_2;
-#[path = "cases/symbol_mv_regressions_3.rs"]
-mod symbol_mv_regressions_3;
-#[path = "cases/symbol_mv_regressions_4.rs"]
-mod symbol_mv_regressions_4;
-#[path = "cases/symbol_mv_regressions_5.rs"]
-mod symbol_mv_regressions_5;
-#[path = "cases/symbol_mv_regressions_6.rs"]
-mod symbol_mv_regressions_6;
-#[path = "cases/symbol_mv_regressions_7.rs"]
-mod symbol_mv_regressions_7;
-#[path = "cases/symbol_mv_regressions_8.rs"]
-mod symbol_mv_regressions_8;
-#[path = "cases/symbol_mv_regressions_9.rs"]
-mod symbol_mv_regressions_9;
 #[path = "cases/sync_stats_check.rs"]
 mod sync_stats_check;
 #[path = "cases/watch_client.rs"]
