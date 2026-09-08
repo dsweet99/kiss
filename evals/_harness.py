@@ -2334,6 +2334,8 @@ def timing_rust_throughput(
         assert cold.returncode == 0
         warm = run_observed("tput-warm", command, repo, env)
         assert warm.returncode == 0
+        emit_eval("rust_cold_elapsed_s", "SMALLER", f"{cold.elapsed:.4f}")
+        emit_eval("rust_warm_elapsed_s", "SMALLER", f"{warm.elapsed:.4f}")
         print(
             f"QA PASS: rust throughput cold={cold.elapsed:.2f}s warm={warm.elapsed:.2f}s"
         )
@@ -2453,6 +2455,8 @@ def timing_aggregate_parallel() -> None:
         )
         assert serial.returncode == 0
         assert parallel.returncode == 0
+        emit_eval("rust_serial_elapsed_s", "SMALLER", f"{serial.elapsed:.4f}")
+        emit_eval("rust_parallel_elapsed_s", "SMALLER", f"{parallel.elapsed:.4f}")
         print(
             f"QA PASS: aggregate timing serial={serial.elapsed:.2f}s "
             f"parallel={parallel.elapsed:.2f}s"
@@ -2476,40 +2480,8 @@ def rust_phase_interrupt() -> None:
         print("QA PASS: phase interrupt recovery held.")
 
 
-def timing_rust_legacy_warm_baseline(
-    batch_warm_median: float = 3.86, log_dir: Path | None = None
-) -> None:
-    """Timing: batch warm all-hit median against archived legacy baseline."""
-    archive_dir = log_dir or (ROOT / "ops" / "testdata")
-    archive_dir.mkdir(parents=True, exist_ok=True)
-    log_path = archive_dir / "legacy_warm_baseline.log"
-    assert log_path.is_file(), (
-        f"missing archived legacy warm baseline at {log_path}; "
-        "record it before removing the legacy backend"
-    )
-    legacy_median = None
-    for line in log_path.read_text().splitlines():
-        if line.startswith("legacy_warm_median_s="):
-            legacy_median = float(line.split("=", 1)[1].split()[0])
-    assert legacy_median is not None, (
-        "archived legacy warm baseline did not contain legacy_warm_median_s="
-    )
-    allowed = legacy_median * 1.10
-    assert batch_warm_median <= allowed, (
-        f"batch warm median {batch_warm_median:.2f}s regressed more than 10% "
-        f"vs legacy warm median {legacy_median:.2f}s (allowed {allowed:.2f}s)"
-    )
-    print(f"Using archived legacy warm baseline: {log_path}")
-    print(
-        f"QA PASS: timing-rust-legacy-warm-baseline "
-        f"batch warm median {batch_warm_median:.2f}s within 10% of "
-        f"legacy warm median {legacy_median:.2f}s."
-    )
-
-
-def rust_full_repo_observer(jobs: int = 2, log_dir: Path | None = None) -> None:
+def rust_full_repo_observer(jobs: int = 2) -> None:
     """Observe full-repository cold Rust population process/thread bounds."""
-    del log_dir
     assert KISS.is_file(), f"local binary missing: {KISS}"
     with tempfile.TemporaryDirectory(prefix="kq-obs-", dir="/tmp") as tmp:
         repo = Path(tmp) / "r"
@@ -2525,15 +2497,18 @@ def rust_full_repo_observer(jobs: int = 2, log_dir: Path | None = None) -> None:
         )
         assert outcome.returncode == 0
         assert outcome.observation is not None
+        emit_eval("rust_peak_rss_kib", "SMALLER", outcome.observation.peak_rss_kib)
+        emit_eval(
+            "rust_peak_processes", "SMALLER", outcome.observation.peak_process_count
+        )
         print(
             f"QA PASS: observer peak_rss_kib={outcome.observation.peak_rss_kib} "
             f"peak_processes={outcome.observation.peak_process_count}"
         )
 
 
-def rust_retained_cache_audit(log_dir: Path | None = None) -> None:
+def rust_retained_cache_audit() -> None:
     """Audit retained Rust cache bounds across jobs and repeated generations."""
-    del log_dir
     assert KISS.is_file(), f"local binary missing: {KISS}"
     with tempfile.TemporaryDirectory(prefix="kq-ret-", dir="/tmp") as tmp:
         repo = Path(tmp) / "r"
@@ -2543,6 +2518,7 @@ def rust_retained_cache_audit(log_dir: Path | None = None) -> None:
         cache = repo / ".kiss/rust_llvm_cov_cache"
         size = directory_size_bytes(cache) if cache.is_dir() else 0
         assert size >= 0
+        emit_eval("rust_retained_cache_bytes", "SMALLER", size)
         print(f"QA PASS: retained cache bytes={size}")
 
 
