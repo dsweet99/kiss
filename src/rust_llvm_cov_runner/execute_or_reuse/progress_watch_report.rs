@@ -44,13 +44,20 @@ pub(crate) fn strip_ansi_prefix(message: &str) -> &str {
     rest
 }
 
+pub fn transcript_from_lines(lines: &[String]) -> Option<String> {
+    if lines.is_empty() {
+        return None;
+    }
+    let full = lines.join("\n");
+    if full.len() <= WATCH_REPORT_BUDGET {
+        Some(full)
+    } else {
+        Some(compact_watch_report(lines))
+    }
+}
+
 fn is_watch_report_line(message: &str) -> bool {
-    let line = strip_ansi_prefix(message.trim());
-    line.starts_with("PASS")
-        || line.starts_with("FAIL")
-        || line.starts_with("TIMEOUT")
-        || line.contains("VIOLATION:test_coverage")
-        || line.contains(" passed · ")
+    !strip_ansi_prefix(message.trim()).is_empty()
 }
 
 const WATCH_REPORT_BUDGET: usize = 200 * 1024;
@@ -96,9 +103,12 @@ mod tests {
         assert!(report.contains("PASS: tests/a.py::t"));
         assert!(report.contains("TIMEOUT: tests/b.py::t"));
         assert!(report.contains("passed ·"));
-        assert!(!report.contains("Planning"));
-        assert!(!report.contains("Starting"));
-        assert!(!report.contains("request"));
+        assert!(
+            report.contains("Planning"),
+            "client transcript must keep the standalone progress lines; report={report:?}"
+        );
+        assert!(report.contains("Starting"));
+        assert!(report.contains("request"));
         assert!(take_watch_report_capture().is_none());
     }
 }

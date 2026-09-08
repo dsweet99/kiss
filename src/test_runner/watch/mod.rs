@@ -1,5 +1,6 @@
 #[cfg(unix)]
 pub(crate) mod control;
+mod nudge_kind;
 mod coverage;
 mod event_source;
 mod filter;

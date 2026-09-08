@@ -1,19 +1,19 @@
 #![cfg(unix)]
 
 use super::super::*;
-use super::{NudgeScript, commit_a_py, py_dry_args, timeout_steps};
+use super::{commit_a_py, py_dry_args, timeout_steps, NudgeScript};
 use crate::bin_cli::args::TestInvocation;
-use crate::test_runner::RunTestOnceOutcome;
 use crate::test_runner::capture_stdout::capture_stdout;
 use crate::test_runner::run_test;
 use crate::test_runner::test_mode_fixtures::{git_in, init_git};
 use crate::test_runner::watch::control::NudgeRequestMsg;
 use crate::test_runner::watch::event_source::{NormalizedWatchEvent, RecvTimeout};
+use crate::test_runner::RunTestOnceOutcome;
 use std::collections::VecDeque;
 use std::env;
 use std::fs;
 use std::path::Path;
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
 fn send_nudge_after(
@@ -292,6 +292,36 @@ fn unscoped_force_nudge_keeps_running_watcher_invocation() {
 }
 
 #[test]
+fn commit_nudge_overrides_watcher_all_invocation() {
+    use crate::test_runner::watch::control::{NudgeInvocation, NudgeRequestMsg as Msg};
+    let (tx, rx) = mpsc::channel::<NudgeRequest>();
+    let (reply, _wait) = mpsc::sync_channel(1);
+    tx.send(NudgeRequest {
+        msg: Msg {
+            invocation: NudgeInvocation::Commit,
+            ..Default::default()
+        },
+        reply,
+    })
+    .unwrap();
+    let mut queued = None;
+    coalesce_nudges(Some(&rx), &mut queued);
+    assert!(
+        queued.as_ref().is_some_and(|q| !q.invocation.is_all()),
+        "commit must request a new cycle"
+    );
+    let mut base = py_dry_args();
+    base.invocation = TestInvocation::All;
+    let live = live_from_args_disabled(base, Duration::from_secs(1), Path::new("."));
+    let (cycle, _) = take_queued_cycle_args(&live, &mut queued);
+    assert_eq!(
+        cycle.invocation,
+        TestInvocation::Commit,
+        "commit must run through the shared processor, not the watcher's All recap"
+    );
+}
+
+#[test]
 fn retry_bad_targets_override_watcher_all_invocation() {
     use crate::test_runner::watch::control::NudgeRequestMsg as Msg;
     let selected = "tests/fast/app_server/test_transact_grid.py::test_assign_method_follows_grid_queue_after_rebind";
@@ -441,20 +471,16 @@ fn retry_bad_nudge_reruns_only_selected_fake_python_test_on_tmp_repo() {
         "def test_first():\n    assert True\n\ndef test_second():\n    assert True\n",
     )
     .unwrap();
-    assert!(
-        git_in(tmp.path())
-            .args(["add", "-A"])
-            .status()
-            .unwrap()
-            .success()
-    );
-    assert!(
-        git_in(tmp.path())
-            .args(["commit", "-m", "init"])
-            .status()
-            .unwrap()
-            .success()
-    );
+    assert!(git_in(tmp.path())
+        .args(["add", "-A"])
+        .status()
+        .unwrap()
+        .success());
+    assert!(git_in(tmp.path())
+        .args(["commit", "-m", "init"])
+        .status()
+        .unwrap()
+        .success());
 
     let selected = "tests/test_pair.py::test_first";
     let (tx, rx) = mpsc::channel::<NudgeRequest>();
@@ -551,20 +577,16 @@ fn targeted_force_nudge_reruns_only_selected_fake_python_test() {
         "def test_first():\n    assert True\n\ndef test_second():\n    assert True\n",
     )
     .unwrap();
-    assert!(
-        git_in(tmp.path())
-            .args(["add", "-A"])
-            .status()
-            .unwrap()
-            .success()
-    );
-    assert!(
-        git_in(tmp.path())
-            .args(["commit", "-m", "init"])
-            .status()
-            .unwrap()
-            .success()
-    );
+    assert!(git_in(tmp.path())
+        .args(["add", "-A"])
+        .status()
+        .unwrap()
+        .success());
+    assert!(git_in(tmp.path())
+        .args(["commit", "-m", "init"])
+        .status()
+        .unwrap()
+        .success());
 
     let selected = "tests/test_pair.py::test_first";
     let (tx, rx) = mpsc::channel::<NudgeRequest>();
@@ -660,20 +682,16 @@ fn targeted_force_nudge_reruns_two_selected_fake_python_tests() {
         "def test_first():\n    assert True\n\ndef test_second():\n    assert True\n\ndef test_third():\n    assert True\n",
     )
     .unwrap();
-    assert!(
-        git_in(tmp.path())
-            .args(["add", "-A"])
-            .status()
-            .unwrap()
-            .success()
-    );
-    assert!(
-        git_in(tmp.path())
-            .args(["commit", "-m", "init"])
-            .status()
-            .unwrap()
-            .success()
-    );
+    assert!(git_in(tmp.path())
+        .args(["add", "-A"])
+        .status()
+        .unwrap()
+        .success());
+    assert!(git_in(tmp.path())
+        .args(["commit", "-m", "init"])
+        .status()
+        .unwrap()
+        .success());
 
     let selected = vec![
         "tests/test_trio.py::test_first".to_string(),

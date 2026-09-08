@@ -57,11 +57,9 @@ fn maybe_reload_updates_threshold_and_settle() {
         &TestInvocation::All,
     );
 
-    assert!(
-        !live
-            .maybe_reload(tmp.path(), &mut machine, &mut filter)
-            .unwrap()
-    );
+    assert!(!live
+        .maybe_reload(tmp.path(), &mut machine, &mut filter)
+        .unwrap());
 
     std::fs::write(
         &cfg_path,
@@ -69,10 +67,9 @@ fn maybe_reload_updates_threshold_and_settle() {
     )
     .unwrap();
 
-    assert!(
-        live.maybe_reload(tmp.path(), &mut machine, &mut filter)
-            .unwrap()
-    );
+    assert!(live
+        .maybe_reload(tmp.path(), &mut machine, &mut filter)
+        .unwrap());
     assert_eq!(live.gate_config.test_coverage_threshold, 90);
     assert!((live.settle.as_secs_f64() - 2.5).abs() < f64::EPSILON);
     assert_eq!(live.jobs, 8);
@@ -111,10 +108,9 @@ fn maybe_reload_picks_up_equal_length_same_mtime_edit() {
 
     live.kissconfig_sig = PathSignature::from_path(&cfg_path);
     assert_ne!(file_digest(&cfg_path), live.kissconfig_digest);
-    assert!(
-        live.maybe_reload(tmp.path(), &mut machine, &mut filter)
-            .unwrap()
-    );
+    assert!(live
+        .maybe_reload(tmp.path(), &mut machine, &mut filter)
+        .unwrap());
     assert_eq!(live.gate_config.test_coverage_threshold, 90);
 }
 
@@ -136,11 +132,9 @@ fn maybe_reload_disabled_is_noop() {
     let mut machine = SettleMachine::new(Duration::from_secs(1));
     let mut filter = WatchPathFilter::build(tmp.path(), &[], None, &TestInvocation::All);
     std::fs::write(&cfg_path, "[test]\ntest_coverage_threshold = 99\n").unwrap();
-    assert!(
-        !live
-            .maybe_reload(tmp.path(), &mut machine, &mut filter)
-            .unwrap()
-    );
+    assert!(!live
+        .maybe_reload(tmp.path(), &mut machine, &mut filter)
+        .unwrap());
     assert_eq!(live.gate_config.test_coverage_threshold, 7);
 }
 
@@ -185,10 +179,9 @@ fn maybe_reload_does_not_leak_cwd_num_jobs_into_watched_file() {
         "[test]\ntest_coverage_threshold = 12\nwatch_settle_seconds = 1.5\n",
     )
     .unwrap();
-    assert!(
-        live.maybe_reload(tmp.path(), &mut machine, &mut filter)
-            .unwrap()
-    );
+    assert!(live
+        .maybe_reload(tmp.path(), &mut machine, &mut filter)
+        .unwrap());
     assert_eq!(live.gate_config.test_coverage_threshold, 12);
     assert_ne!(
         live.jobs, host_jobs,
@@ -235,10 +228,9 @@ fn maybe_reload_deleted_file_resets_to_defaults() {
         Some(Language::Python),
         &TestInvocation::All,
     );
-    assert!(
-        live.maybe_reload(tmp.path(), &mut machine, &mut filter)
-            .unwrap()
-    );
+    assert!(live
+        .maybe_reload(tmp.path(), &mut machine, &mut filter)
+        .unwrap());
     assert_eq!(
         live.gate_config.test_coverage_threshold,
         GateConfig::default().test_coverage_threshold

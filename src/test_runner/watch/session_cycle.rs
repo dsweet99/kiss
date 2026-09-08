@@ -8,7 +8,7 @@ use super::coverage::WatchCoverageResult;
 use super::event_source::WatchEventSource;
 use super::filter::WatchPathFilter;
 use super::reload::{CycleForceFlags, WatchLiveConfig};
-use super::session_idle::{QueuedCycle, drain_into_machine};
+use super::session_idle::{drain_into_machine, QueuedCycle};
 use super::settle::SettleMachine;
 use crate::bin_cli::args::TestInvocation;
 use crate::test_runner::{RunTestCmdArgs, RunTestOnceOutcome};
@@ -39,59 +39,40 @@ where
     F: FnMut(RunTestCmdArgs<'_>) -> RunTestOnceOutcome,
     C: FnMut(&RunTestCmdArgs<'_>, &WatchLiveConfig) -> WatchCoverageResult,
 {
-    kiss::rust_llvm_cov_runner::begin_watch_report_capture();
-    let (cycle_args, replies) = take_queued_cycle_args(ctx.live, ctx.queued);
-    let scoped = matches!(&cycle_args.invocation, TestInvocation::Targets(t) if !t.is_empty());
     crate::test_runner::emit_test_progress("kiss test: Starting");
-    let test_outcome = (ctx.run_cycle)(clone_args(&cycle_args));
-    let test_exit = match test_outcome {
-        RunTestOnceOutcome::Interrupted => {
-            *ctx.last_reply = Some(reply_all(
-                &replies,
-                EXIT_INTERRUPTED,
-                None,
-                take_suite_report(ctx.suite, false).recap,
-            ));
-            return CycleOutcome::Interrupted;
-        }
-        RunTestOnceOutcome::Code(code) => code,
-    };
-    match run_cov_step_after_tests(CovStepOpts {
-        test_exit,
-        dry_run: cycle_args.dry_run,
-        run_cov: &mut *ctx.run_cov,
-        cycle_args: &cycle_args,
-        live: ctx.live,
-    }) {
-        CovStep::Interrupted => {
-            *ctx.last_reply = Some(reply_all(
-                &replies,
-                EXIT_INTERRUPTED,
-                None,
-                take_suite_report(ctx.suite, false).recap,
-            ));
-            return CycleOutcome::Interrupted;
-        }
-        CovStep::Done { exit_code, error } => {
-            let outputs = take_suite_report(ctx.suite, scoped);
-            reply_all(
-                &replies,
-                kiss::rust_llvm_cov_runner::merge_watch_exit(exit_code, outputs.client_exit),
-                error.clone(),
-                outputs.client,
-            );
-            if !scoped || ctx.last_reply.is_none() {
-                *ctx.last_reply = Some(NudgeReplyMsg {
-                    exit_code: kiss::rust_llvm_cov_runner::merge_watch_exit(
-                        exit_code,
-                        ctx.suite.test_exit_code(),
-                    ),
-                    pid: std::process::id(),
-                    error,
-                    output: outputs.recap,
-                });
-            }
-        }
+    let (cycle_args, replies) = take_queued_cycle_args(ctx.live, ctx.queued);
+    let scoped = !matches!(cycle_args.invocation, TestInvocation::All);
+    let report = crate::test_runner::run_kiss_test_report(
+        crate::test_runner::clone_run_args(&cycle_args),
+        &mut *ctx.run_cycle,
+        |args| (ctx.run_cov)(args, ctx.live),
+    );
+    ctx.suite.merge_lines(&report.lines);
+    if report.interrupted {
+        *ctx.last_reply = Some(reply_all(
+            &replies,
+            EXIT_INTERRUPTED,
+            None,
+            nonempty_report(ctx.suite.format()),
+        ));
+        return CycleOutcome::Interrupted;
+    }
+    reply_all(
+        &replies,
+        report.exit_code,
+        report.error.clone(),
+        report.output,
+    );
+    if !scoped || ctx.last_reply.is_none() {
+        *ctx.last_reply = Some(NudgeReplyMsg {
+            exit_code: kiss::rust_llvm_cov_runner::merge_watch_exit(
+                report.exit_code,
+                ctx.suite.test_exit_code(),
+            ),
+            pid: std::process::id(),
+            error: report.error,
+            output: nonempty_report(ctx.suite.format()),
+        });
     }
     if let Some(msg) = drain_into_machine(
         ctx.source,
@@ -106,43 +87,6 @@ where
     CycleOutcome::Continue
 }
 
-enum CovStep {
-    Interrupted,
-    Done {
-        exit_code: i32,
-        error: Option<String>,
-    },
-}
-
-struct CovStepOpts<'a, C> {
-    test_exit: i32,
-    dry_run: bool,
-    run_cov: &'a mut C,
-    cycle_args: &'a RunTestCmdArgs<'a>,
-    live: &'a WatchLiveConfig,
-}
-
-fn run_cov_step_after_tests<C>(opts: CovStepOpts<'_, C>) -> CovStep
-where
-    C: FnMut(&RunTestCmdArgs<'_>, &WatchLiveConfig) -> WatchCoverageResult,
-{
-    if opts.test_exit != 0 || opts.dry_run {
-        return CovStep::Done {
-            exit_code: opts.test_exit,
-            error: None,
-        };
-    }
-    let cov = (opts.run_cov)(opts.cycle_args, opts.live);
-    if cov.interrupted {
-        CovStep::Interrupted
-    } else {
-        CovStep::Done {
-            exit_code: cov.exit_code,
-            error: cov.error,
-        }
-    }
-}
-
 pub(crate) fn take_queued_cycle_args<'a>(
     live: &'a WatchLiveConfig,
     queued: &mut Option<QueuedCycle>,
@@ -155,54 +99,18 @@ pub(crate) fn take_queued_cycle_args<'a>(
         force.metrics = q.metrics;
         if !q.unscoped_force {
             force.targets = q.targets;
+            force.invocation = q.invocation;
         }
         replies = q.replies;
     }
     (live.cycle_args(force), replies)
 }
 
-struct SuiteReportOutputs {
-    client: Option<String>,
-    recap: Option<String>,
-    client_exit: i32,
-}
-
 fn nonempty_report(text: String) -> Option<String> {
-    if text.is_empty() { None } else { Some(text) }
-}
-
-fn take_suite_report(
-    suite: &mut kiss::rust_llvm_cov_runner::WatchSuiteReport,
-    scoped: bool,
-) -> SuiteReportOutputs {
-    let cycle_lines = kiss::rust_llvm_cov_runner::take_watch_report_lines();
-    let cycle = cycle_lines.as_ref().map(|lines| {
-        let mut report = kiss::rust_llvm_cov_runner::WatchSuiteReport::default();
-        report.merge_lines(lines);
-        report
-    });
-    if let Some(lines) = cycle_lines.as_ref() {
-        suite.merge_lines(lines);
-    }
-    let recap = nonempty_report(suite.format());
-    let (client, client_exit) = if scoped {
-        (
-            cycle
-                .as_ref()
-                .map(kiss::rust_llvm_cov_runner::WatchSuiteReport::format)
-                .and_then(nonempty_report),
-            cycle.as_ref().map_or(
-                0,
-                kiss::rust_llvm_cov_runner::WatchSuiteReport::test_exit_code,
-            ),
-        )
+    if text.is_empty() {
+        None
     } else {
-        (recap.clone(), suite.test_exit_code())
-    };
-    SuiteReportOutputs {
-        client,
-        recap,
-        client_exit,
+        Some(text)
     }
 }
 
@@ -225,25 +133,6 @@ fn reply_all(
     msg
 }
 
-fn clone_args<'a>(args: &RunTestCmdArgs<'a>) -> RunTestCmdArgs<'a> {
-    RunTestCmdArgs {
-        invocation: args.invocation.clone(),
-        main_branch_cli: args.main_branch_cli,
-        base_branch_cli: args.base_branch_cli,
-        dry_run: args.dry_run,
-        force_rerun: args.force_rerun,
-        force_bad: args.force_bad,
-        metrics: args.metrics,
-        jobs: args.jobs,
-        extra: args.extra,
-        python_extra: args.python_extra,
-        ignore: args.ignore,
-        lang_filter: args.lang_filter,
-        config_main_branch: args.config_main_branch,
-        gate_config: args.gate_config.clone(),
-    }
-}
-
 #[cfg(not(unix))]
 use nudge_stub::*;
 #[cfg(not(unix))]
@@ -264,6 +153,7 @@ mod nudge_stub {
         pub force: bool,
         pub force_bad: bool,
         pub metrics: bool,
+        pub invocation: crate::test_runner::watch::nudge_kind::NudgeInvocation,
         pub targets: Vec<String>,
     }
 

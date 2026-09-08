@@ -131,7 +131,7 @@ fn finish_with_coverage_returns_test_exit_when_threshold_zero() {
 }
 
 #[test]
-fn evaluate_watch_coverage_threshold_zero_returns_ok() {
+fn evaluate_watch_coverage_threshold_zero_fails_closed_without_snapshot() {
     let _repo = isolated_python_repo();
     let py = kiss::Config::python_defaults();
     let rs = kiss::Config::rust_defaults();
@@ -163,7 +163,8 @@ fn evaluate_watch_coverage_threshold_zero_returns_ok() {
         language_tables: kiss::LanguageTablesPresent::both(),
     };
     let result = evaluate_watch_coverage(&cycle, &cov);
-    assert_eq!(result.exit_code, 0);
+    assert_eq!(result.exit_code, 1);
+    assert_eq!(result.error.as_deref(), Some("coverage gate failed"));
 }
 
 fn isolated_python_repo() -> IsolatedPythonRepo {
@@ -234,7 +235,7 @@ fn evaluate_watch_coverage_fails_when_language_table_missing() {
 }
 
 #[test]
-fn evaluate_watch_coverage_uses_params_tables_when_cwd_has_no_kissconfig() {
+fn evaluate_watch_coverage_fails_closed_without_snapshot_even_with_tables() {
     let _repo = isolated_python_repo();
     let py = kiss::Config::python_defaults();
     let rs = kiss::Config::rust_defaults();
@@ -266,7 +267,8 @@ fn evaluate_watch_coverage_uses_params_tables_when_cwd_has_no_kissconfig() {
         language_tables: kiss::LanguageTablesPresent::both(),
     };
     let result = evaluate_watch_coverage(&cycle, &cov);
-    assert_eq!(result.exit_code, 0);
+    assert_eq!(result.exit_code, 1);
+    assert_eq!(result.error.as_deref(), Some("coverage gate failed"));
 }
 
 #[test]

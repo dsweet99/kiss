@@ -67,6 +67,7 @@ pub use execute_or_reuse::progress::{
 };
 pub use execute_or_reuse::progress_watch_report::{
     begin_watch_report_capture, take_watch_report_capture, take_watch_report_lines,
+    transcript_from_lines,
 };
 pub use execute_or_reuse::progress_watch_suite::{WatchSuiteReport, merge_watch_exit};
 pub(crate) use execute_or_reuse::worker;

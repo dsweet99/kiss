@@ -3,7 +3,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use super::*;
-use crate::test_runner::watch::lock::{WatchLockGuard, watch_lock_path};
+use crate::test_runner::watch::lock::{watch_lock_path, WatchLockGuard};
 
 #[test]
 fn nudge_request_progress_line_includes_fields() {
@@ -17,6 +17,7 @@ fn nudge_request_progress_line_includes_fields() {
             force_bad: true,
             metrics: true,
             targets: vec!["a.rs".into(), "b.py".into()],
+            ..Default::default()
         }
         .progress_line(),
         "kiss test: request force=true force_bad=true metrics=true targets=a.rs b.py"
@@ -51,6 +52,7 @@ fn handle_client_logs_received_request() {
                 force_bad: true,
                 metrics: true,
                 targets: vec!["src/lib.rs".into()],
+                ..Default::default()
             },
         )
         .unwrap()
@@ -59,7 +61,9 @@ fn handle_client_logs_received_request() {
     });
     server.join().unwrap();
     assert!(
-        out.contains("kiss test: request force=false force_bad=true metrics=true targets=src/lib.rs"),
+        out.contains(
+            "kiss test: request force=false force_bad=true metrics=true targets=src/lib.rs"
+        ),
         "watcher must log the received kiss test request; stdout={out:?}"
     );
 }

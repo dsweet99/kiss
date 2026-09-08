@@ -46,6 +46,7 @@ pub(crate) struct CycleForceFlags {
     pub force_bad: bool,
     pub metrics: bool,
     pub targets: Vec<String>,
+    pub invocation: super::nudge_kind::NudgeInvocation,
 }
 
 impl WatchLiveConfig {
@@ -83,6 +84,8 @@ impl WatchLiveConfig {
     pub(crate) fn cycle_args(&self, force: CycleForceFlags) -> RunTestCmdArgs<'_> {
         let invocation = if !force.targets.is_empty() {
             TestInvocation::Targets(force.targets)
+        } else if let Some(invocation) = force.invocation.to_test() {
+            invocation
         } else {
             self.invocation.clone()
         };

@@ -7,7 +7,8 @@ use kiss::TestSectionConfig;
 use crate::bin_cli::args::TestInvocation;
 use crate::bin_cli::cov_cmd::{CovCommandArgs, run_cov_command_impl};
 use crate::test_runner::{
-    RunTestCmdArgs, WatchCoverageParams, WatchCoverageResult, run_test, run_test_watch,
+    RunTestCmdArgs, RunTestOnceOutcome, WatchCoverageParams, WatchCoverageResult,
+    KISS_TEST_ALLOW_REFRESH, run_kiss_test_report, run_test, run_test_watch,
 };
 
 pub struct TestCommandArgs<'a> {
@@ -147,11 +148,13 @@ fn run_local_tests_after_client(
     if let Err(code) = reject_test_universe_languages(args) {
         return code;
     }
-    let code = run_local(run_args);
-    if code != 0 {
-        return code;
-    }
-    finish_with_coverage(args, code)
+    let mut run_local = Some(run_local);
+    let report = run_kiss_test_report(
+        run_args,
+        |a| RunTestOnceOutcome::Code(run_local.take().expect("kiss test runner")(a)),
+        |_| coverage_after_kiss_test(args),
+    );
+    report.exit_code
 }
 
 fn wait_out_live_watcher(args: &TestCommandArgs<'_>) -> Option<i32> {
@@ -178,6 +181,7 @@ fn nudge_request_from_test_args(args: &TestCommandArgs<'_>) -> crate::test_runne
         force: false,
         force_bad: args.retry_bad,
         metrics: args.metrics,
+        invocation: crate::test_runner::NudgeInvocation::from_test(&args.invocation),
         targets: match &args.invocation {
             TestInvocation::Targets(targets) => targets.clone(),
             _ => Vec::new(),
@@ -278,10 +282,32 @@ pub(crate) fn evaluate_watch_coverage(
         rs_config: cov.rs_config,
         coverage_all: cov.coverage_all,
         jobs: cycle.jobs,
-        allow_refresh: true,
+        allow_refresh: KISS_TEST_ALLOW_REFRESH,
         pytest_args: cycle.python_extra,
         language_tables: cov.language_tables,
     });
+    coverage_result_from_exit(cov_code)
+}
+
+fn coverage_after_kiss_test(args: &TestCommandArgs<'_>) -> WatchCoverageResult {
+    let python_extra =
+        kiss::effective_python_pytest_args(&args.test_cfg.pytest_plugins, args.extra);
+    coverage_result_from_exit(run_after_test_coverage(AfterTestCoverage {
+        invocation: &args.invocation,
+        lang_filter: args.lang_filter,
+        ignore: args.ignore,
+        gate_config: args.gate_config,
+        py_config: args.py_config,
+        rs_config: args.rs_config,
+        coverage_all: args.coverage_all,
+        jobs: args.jobs,
+        allow_refresh: KISS_TEST_ALLOW_REFRESH,
+        pytest_args: &python_extra,
+        language_tables: args.language_tables,
+    }))
+}
+
+fn coverage_result_from_exit(cov_code: i32) -> WatchCoverageResult {
     if crate::test_runner::consume_rust_batch_interrupted() {
         return WatchCoverageResult::interrupted();
     }
@@ -292,6 +318,7 @@ pub(crate) fn evaluate_watch_coverage(
     }
 }
 
+#[cfg(test)]
 pub(crate) fn finish_with_coverage(args: &TestCommandArgs<'_>, test_exit: i32) -> i32 {
     let python_extra =
         kiss::effective_python_pytest_args(&args.test_cfg.pytest_plugins, args.extra);
@@ -304,7 +331,7 @@ pub(crate) fn finish_with_coverage(args: &TestCommandArgs<'_>, test_exit: i32) -
         rs_config: args.rs_config,
         coverage_all: args.coverage_all,
         jobs: args.jobs,
-        allow_refresh: false,
+        allow_refresh: KISS_TEST_ALLOW_REFRESH,
         pytest_args: &python_extra,
         language_tables: args.language_tables,
     });
@@ -493,7 +520,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn nudge_request_commit_base_main_are_unscoped() {
+    fn nudge_request_commit_base_main_are_forwarded() {
         let test_cfg = TestSectionConfig::default();
         let py = kiss::Config::python_defaults();
         let rs = kiss::Config::rust_defaults();
@@ -532,6 +559,11 @@ mod tests {
                 msg.targets.is_empty(),
                 "reserved actions must not invent path targets; invocation={:?}",
                 args.invocation
+            );
+            assert_eq!(
+                msg.invocation,
+                crate::test_runner::NudgeInvocation::from_test(&args.invocation),
+                "commit/base/main must be forwarded to the watcher"
             );
         }
     }

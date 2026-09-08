@@ -3,15 +3,15 @@ use std::hash::{Hash, Hasher};
 use std::io::{self, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
-use super::lock::{WatchLockGuard, watch_dir, watch_lock_path};
+use super::lock::{watch_dir, watch_lock_path, WatchLockGuard};
 
 pub(crate) const WATCH_SOCKET_TMP_DIR: &str = "/tmp/.kiss-watch";
 
@@ -20,6 +20,8 @@ const MAX_FRAME_LEN: u32 = 256 * 1024;
 const CLIENT_SESSION_RETRY: Duration = Duration::from_millis(500);
 const CLIENT_SESSION_SLEEP: Duration = Duration::from_millis(10);
 const REPLY_IMMEDIATE_WAIT: Duration = Duration::from_millis(250);
+
+pub(crate) use super::nudge_kind::NudgeInvocation;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub(crate) struct NudgeRequestMsg {
@@ -30,6 +32,8 @@ pub(crate) struct NudgeRequestMsg {
     #[serde(default)]
     pub metrics: bool,
     #[serde(default)]
+    pub invocation: NudgeInvocation,
+    #[serde(default)]
     pub targets: Vec<String>,
 }
 
@@ -39,6 +43,10 @@ impl NudgeRequestMsg {
             "kiss test: request force={} force_bad={} metrics={}",
             self.force, self.force_bad, self.metrics
         );
+        if !self.invocation.is_all() {
+            line.push_str(" invocation=");
+            line.push_str(self.invocation.as_str());
+        }
         if !self.targets.is_empty() {
             line.push_str(" targets=");
             line.push_str(&self.targets.join(" "));

@@ -32,6 +32,7 @@ mod status_labels;
 mod targets;
 pub(crate) mod tests_remaining;
 pub(crate) mod unit_test_timing;
+mod kiss_test_report;
 mod watch;
 #[cfg(test)]
 pub(crate) use planned_selectors::should_force_cold_initialization;
@@ -41,6 +42,7 @@ pub(crate) use planned_selectors::{
     apply_cold_initialization_population, apply_force_all_population,
 };
 pub(crate) use rust_batch_interrupt::consume_rust_batch_interrupted;
+pub(crate) use kiss_test_report::{clone_run_args, run_kiss_test_report, KISS_TEST_ALLOW_REFRESH};
 
 pub(crate) use lang_rust::llvm_cov as rust_llvm_cov;
 
@@ -144,8 +146,10 @@ pub(crate) fn run_test_once(a: RunTestCmdArgs<'_>) -> RunTestOnceOutcome {
 
 #[cfg(unix)]
 pub(crate) use watch::control::{
-    NudgeRequestMsg, nudge_watcher_with_retry_on_wait, probe_live_watcher,
+    NudgeInvocation, NudgeRequestMsg, nudge_watcher_with_retry_on_wait, probe_live_watcher,
 };
+#[cfg(not(unix))]
+pub(crate) use watch::nudge_kind::NudgeInvocation;
 pub(crate) use watch::{WatchCoverageParams, WatchCoverageResult, WatchReloadSeed, run_test_watch};
 
 #[cfg(test)]

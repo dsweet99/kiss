@@ -24,10 +24,6 @@ fn write_kissconfig(root: &Path, settle: f64) {
 
 fn assert_watcher_oneshot_report(stdout: &str) {
     assert!(
-        !stdout.contains("kiss test: Planning"),
-        "oneshot must echo the watcher instead of planning locally; stdout={stdout:?}"
-    );
-    assert!(
         !stdout.contains("watcher cycle complete"),
         "stdout={stdout:?}"
     );

@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 use super::control::{NudgeReplyMsg, NudgeRequest};
 use super::event_source::WatchEventSource;
 use super::filter::WatchPathFilter;
+use super::nudge_kind::NudgeInvocation;
 use super::settle::{PathSignature, SettleMachine, SettlePoll};
 use super::{apply_normalized_event, print_cycle_summary};
 
@@ -16,13 +17,18 @@ pub(super) struct QueuedCycle {
     pub force: bool,
     pub force_bad: bool,
     pub metrics: bool,
+    pub invocation: NudgeInvocation,
     pub targets: Vec<String>,
     pub unscoped_force: bool,
 }
 
 impl QueuedCycle {
     fn wants_new_cycle(&self) -> bool {
-        self.force || self.force_bad || self.metrics || !self.targets.is_empty()
+        self.force
+            || self.force_bad
+            || self.metrics
+            || !self.targets.is_empty()
+            || !self.invocation.is_all()
     }
 }
 
@@ -123,6 +129,9 @@ pub(super) fn coalesce_nudges(
                 q.force |= req.msg.force;
                 q.force_bad |= req.msg.force_bad;
                 q.metrics |= req.msg.metrics;
+                if q.invocation.is_all() && req.msg.targets.is_empty() {
+                    q.invocation = req.msg.invocation;
+                }
                 merge_nudge_targets(q, req.msg.force, &req.msg.targets);
                 q.replies.push(req.reply);
             }
@@ -132,7 +141,10 @@ pub(super) fn coalesce_nudges(
                     force: req.msg.force,
                     force_bad: req.msg.force_bad,
                     metrics: req.msg.metrics,
-                    unscoped_force: req.msg.force && req.msg.targets.is_empty(),
+                    invocation: req.msg.invocation,
+                    unscoped_force: req.msg.force
+                        && req.msg.targets.is_empty()
+                        && req.msg.invocation.is_all(),
                     targets: req.msg.targets,
                 });
             }

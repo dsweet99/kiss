@@ -56,10 +56,6 @@ fn assert_local_oneshot_ok(stdout: &str, stderr: &str, status_ok: bool) {
 fn assert_watcher_oneshot_ok(stdout: &str, stderr: &str, status_ok: bool) {
     assert_oneshot_clean(stdout, stderr, status_ok);
     assert!(
-        !stdout.contains("kiss test: Planning"),
-        "oneshot must echo the watcher instead of planning locally; stdout={stdout:?}"
-    );
-    assert!(
         stdout.contains("PASS") || stdout.contains("passed"),
         "oneshot must echo watcher pass/fail/timeout results; stdout={stdout:?}"
     );
