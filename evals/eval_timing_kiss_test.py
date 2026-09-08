@@ -162,10 +162,6 @@ def timing_kiss_test() -> None:
         warm = _run_kiss_test("kiss-test-complex-warm", repo, env)
         emit_eval("kiss_test_cold_elapsed_s", "SMALLER", f"{cold.elapsed:.4f}")
         emit_eval("kiss_test_warm_elapsed_s", "SMALLER", f"{warm.elapsed:.4f}")
-        print(
-            "QA PASS: kiss test on complex tmp repo "
-            f"cold={cold.elapsed:.2f}s warm={warm.elapsed:.2f}s"
-        )
 
 
 def eval_timing_kiss_test() -> None:

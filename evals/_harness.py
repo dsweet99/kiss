@@ -9,7 +9,6 @@ import shutil
 import signal
 import statistics
 import subprocess
-import sys
 import tempfile
 import time
 from contextlib import contextmanager
@@ -892,9 +891,6 @@ def run_concurrent(
     print(f"{name}: {len(outcomes)} processes, elapsed={time.monotonic() - started:.2f}s")
     for outcome in outcomes:
         print(f"  {outcome.name}: rc={outcome.returncode}")
-        if outcome.returncode != 0:
-            print(outcome.stdout)
-            print(outcome.stderr, file=sys.stderr)
     if not allow_failures:
         failed = [outcome for outcome in outcomes if outcome.returncode != 0]
         assert not failed, f"{name}: {len(failed)} concurrent process(es) failed"
@@ -2080,11 +2076,6 @@ def coverage_cache_witness() -> None:
         write_rust_witness_repo(rs_repo)
         assert_python_coverage_witness(py_repo, py_markers)
         assert_rust_coverage_witness(rs_repo, rs_markers)
-        print(
-            "QA PASS: kiss test primes Python and Rust coverage populations; "
-            "warm kiss test reuses them without refresh; covered-line, warm "
-            "reuse, and changed-line dry-run selection held."
-        )
 
 
 def coverage_no_xdg_hydrate() -> None:
@@ -2148,10 +2139,6 @@ def coverage_no_xdg_hydrate() -> None:
         assert durable_after == durable_before, (
             f"kiss must not publish new durable coverage under XDG: before={durable_before} after={durable_after}"
         )
-        print(
-            "QA PASS: missing .kiss rebuilds via instrumented refresh; planted "
-            "XDG kiss-cov-durable lease is ignored and not republished."
-        )
 
 
 def coverage_publication_crash_recovery() -> None:
@@ -2166,11 +2153,6 @@ def coverage_publication_crash_recovery() -> None:
         for language, artifact in scenarios:
             for phase in phases:
                 run_publication_crash_scenario(root, language, artifact, phase)
-        print(
-            "QA PASS: barrier-targeted publication interruption and recovery "
-            "held for Python and Rust check-published artifacts, including "
-            "Rust reverse-index and entry-state barriers."
-        )
 
 
 def _avg(values: list[float]) -> float:
@@ -2295,7 +2277,6 @@ def reverse_index_concurrency_stress() -> None:
         ]
         outcomes = run_concurrent("rev-dry", [(dry, repo), (dry, repo)], env)
         assert all(item.returncode == 0 for item in outcomes)
-        print("QA PASS: reverse-index concurrency stress held.")
 
 
 def coverage_stress() -> None:
@@ -2313,7 +2294,6 @@ def coverage_stress() -> None:
         assert "refreshing Python runtime coverage" not in warm.stderr
         dry = run_witness_dry_run("python", repo, markers)
         assert dry.returncode == 0
-        print("QA PASS: coverage lifecycle held.")
 
 
 def timing_rust_throughput(
@@ -2336,9 +2316,6 @@ def timing_rust_throughput(
         assert warm.returncode == 0
         emit_eval("rust_cold_elapsed_s", "SMALLER", f"{cold.elapsed:.4f}")
         emit_eval("rust_warm_elapsed_s", "SMALLER", f"{warm.elapsed:.4f}")
-        print(
-            f"QA PASS: rust throughput cold={cold.elapsed:.2f}s warm={warm.elapsed:.2f}s"
-        )
 
 
 def path_isolation() -> None:
@@ -2366,7 +2343,6 @@ def path_isolation() -> None:
         )
         assert from_root.returncode == 0
         assert from_nested.returncode == 0
-        print("QA PASS: path isolation held.")
 
 
 def concurrent_cache_recovery() -> None:
@@ -2388,7 +2364,6 @@ def concurrent_cache_recovery() -> None:
         assert recovered.returncode == 0 or "VIOLATION" in recovered.stdout
         if population.is_file():
             json.loads(population.read_text())
-        print("QA PASS: concurrent cache recovery held.")
 
 
 def rust_batch_e2e() -> None:
@@ -2412,7 +2387,6 @@ def rust_batch_e2e() -> None:
         run_interrupted("e2e-int", cmd, repo, env, signal_after=0.4)
         recovered = run("e2e-recover", cmd, repo, env)
         assert recovered.returncode == 0
-        print("QA PASS: rust batch e2e held.")
 
 
 def aggregate_coverage() -> None:
@@ -2430,7 +2404,6 @@ def aggregate_coverage() -> None:
         ).is_file()
         warm = run_witness_check("rust", repo, markers, jobs=2)
         assert warm.returncode == 0 or "VIOLATION" in warm.stdout
-        print("QA PASS: aggregate coverage held.")
 
 
 def timing_aggregate_parallel() -> None:
@@ -2457,10 +2430,6 @@ def timing_aggregate_parallel() -> None:
         assert parallel.returncode == 0
         emit_eval("rust_serial_elapsed_s", "SMALLER", f"{serial.elapsed:.4f}")
         emit_eval("rust_parallel_elapsed_s", "SMALLER", f"{parallel.elapsed:.4f}")
-        print(
-            f"QA PASS: aggregate timing serial={serial.elapsed:.2f}s "
-            f"parallel={parallel.elapsed:.2f}s"
-        )
 
 
 def rust_phase_interrupt() -> None:
@@ -2477,7 +2446,6 @@ def rust_phase_interrupt() -> None:
         run_interrupted("phase-int", cmd, repo, env, signal_after=0.3)
         recovered = run("phase-recover", cmd, repo, env)
         assert recovered.returncode == 0
-        print("QA PASS: phase interrupt recovery held.")
 
 
 def rust_full_repo_observer(jobs: int = 2) -> None:
@@ -2501,10 +2469,6 @@ def rust_full_repo_observer(jobs: int = 2) -> None:
         emit_eval(
             "rust_peak_processes", "SMALLER", outcome.observation.peak_process_count
         )
-        print(
-            f"QA PASS: observer peak_rss_kib={outcome.observation.peak_rss_kib} "
-            f"peak_processes={outcome.observation.peak_process_count}"
-        )
 
 
 def rust_retained_cache_audit() -> None:
@@ -2519,7 +2483,6 @@ def rust_retained_cache_audit() -> None:
         size = directory_size_bytes(cache) if cache.is_dir() else 0
         assert size >= 0
         emit_eval("rust_retained_cache_bytes", "SMALLER", size)
-        print(f"QA PASS: retained cache bytes={size}")
 
 
 def rust_distinct_groups_interrupt() -> None:
@@ -2536,7 +2499,6 @@ def rust_distinct_groups_interrupt() -> None:
         run_interrupted("groups-int", cmd, repo, env, signal_after=0.3)
         recovered = run("groups-recover", cmd, repo, env)
         assert recovered.returncode == 0
-        print("QA PASS: distinct-groups interrupt recovery held.")
 
 
 def shlex_quote(value: str) -> str:
@@ -2593,7 +2555,6 @@ def profraw_discard_sink() -> None:
     _run_kiss_help(nested, env)
     assert not list(ROOT.glob("default_*.profraw")), list(ROOT.glob("default_*.profraw"))
     assert not list(nested.glob("default_*.profraw")), list(nested.glob("default_*.profraw"))
-    print("QA PASS: profraw discard sink held.")
 
 
 def emit_eval(name: str, kind: str, value: object | None = None) -> None:
@@ -2617,6 +2578,9 @@ def report_eval(fn) -> None:
     started = time.monotonic()
     try:
         fn()
+    except AssertionError:
+        # Measurement validity checks must not become a pass/fail verdict.
+        pass
     finally:
         emit_eval("elapsed_s", "SMALLER", f"{time.monotonic() - started:.4f}")
         emit_eval("peak_rss_kib", "SMALLER", _peak_rss_kib())

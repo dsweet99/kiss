@@ -50,7 +50,6 @@ def timing_kiss_check() -> None:
             f"stdout:\n{outcome.stdout}\nstderr:\n{outcome.stderr}"
         )
         emit_eval("kiss_check_elapsed_s", "SMALLER", f"{outcome.elapsed:.4f}")
-        print(f"QA PASS: kiss check on complex tmp repo elapsed={outcome.elapsed:.2f}s")
 
 
 def eval_timing_kiss_check() -> None:
