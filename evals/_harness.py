@@ -219,8 +219,8 @@ class LinuxProcessObserver:
         self.observation = ProcessObservation()
 
     def sample(self) -> None:
-        snapshot = read_proc_snapshot()
-        pids = descendant_pids(snapshot, self.root_pid)
+        snapshot = read_proc_tree(self.root_pid)
+        pids = set(snapshot)
         if not pids:
             return
         self.observation.samples += 1
@@ -287,6 +287,70 @@ class ThroughputSample:
     cache_bytes: int
 
 
+def _read_proc_pid(pid: int) -> ProcessInfo | None:
+    pid_path = Path("/proc") / str(pid)
+    try:
+        stat = (pid_path / "stat").read_text()
+        status = (pid_path / "status").read_text()
+        cmdline = (pid_path / "cmdline").read_bytes()
+    except OSError:
+        return None
+    right_paren = stat.rfind(")")
+    if right_paren < 0:
+        return None
+    fields = stat[right_paren + 2 :].split()
+    if len(fields) < 13:
+        return None
+    threads = 0
+    rss_kib = 0
+    for line in status.splitlines():
+        if line.startswith("Threads:"):
+            threads = int(line.split()[1])
+        elif line.startswith("VmRSS:"):
+            rss_kib = int(line.split()[1])
+    command = " ".join(part.decode(errors="replace") for part in cmdline.split(b"\0") if part)
+    return ProcessInfo(
+        ppid=int(fields[1]),
+        threads=threads,
+        rss_kib=rss_kib,
+        cpu_ticks=int(fields[11]) + int(fields[12]),
+        command=command,
+    )
+
+
+def _child_pids(pid: int) -> list[int]:
+    children: list[int] = []
+    task_root = Path("/proc") / str(pid) / "task"
+    try:
+        tasks = list(task_root.iterdir())
+    except OSError:
+        return children
+    for task in tasks:
+        try:
+            text = (task / "children").read_text()
+        except OSError:
+            continue
+        children.extend(int(part) for part in text.split() if part.isdecimal())
+    return children
+
+
+def read_proc_tree(root_pid: int) -> dict[int, ProcessInfo]:
+    result: dict[int, ProcessInfo] = {}
+    pending = [root_pid]
+    seen: set[int] = set()
+    while pending:
+        pid = pending.pop()
+        if pid in seen:
+            continue
+        seen.add(pid)
+        info = _read_proc_pid(pid)
+        if info is None:
+            continue
+        result[pid] = info
+        pending.extend(_child_pids(pid))
+    return result
+
+
 def read_proc_snapshot() -> dict[int, ProcessInfo]:
     result: dict[int, ProcessInfo] = {}
     proc = Path("/proc")
@@ -295,34 +359,9 @@ def read_proc_snapshot() -> dict[int, ProcessInfo]:
     for pid_path in proc.iterdir():
         if not pid_path.name.isdecimal():
             continue
-        pid = int(pid_path.name)
-        try:
-            stat = (pid_path / "stat").read_text()
-            status = (pid_path / "status").read_text()
-            cmdline = (pid_path / "cmdline").read_bytes()
-        except OSError:
-            continue
-        right_paren = stat.rfind(")")
-        if right_paren < 0:
-            continue
-        fields = stat[right_paren + 2 :].split()
-        if len(fields) < 13:
-            continue
-        threads = 0
-        rss_kib = 0
-        for line in status.splitlines():
-            if line.startswith("Threads:"):
-                threads = int(line.split()[1])
-            elif line.startswith("VmRSS:"):
-                rss_kib = int(line.split()[1])
-        command = " ".join(part.decode(errors="replace") for part in cmdline.split(b"\0") if part)
-        result[pid] = ProcessInfo(
-            ppid=int(fields[1]),
-            threads=threads,
-            rss_kib=rss_kib,
-            cpu_ticks=int(fields[11]) + int(fields[12]),
-            command=command,
-        )
+        info = _read_proc_pid(int(pid_path.name))
+        if info is not None:
+            result[int(pid_path.name)] = info
     return result
 
 
@@ -447,7 +486,10 @@ def run_observed(
                 process.kill()
                 process.wait()
                 raise subprocess.TimeoutExpired(argv, timeout)
-            time.sleep(sample_interval)
+            try:
+                process.wait(timeout=sample_interval)
+            except subprocess.TimeoutExpired:
+                continue
         observer.sample()
         stdout_file.seek(0)
         stderr_file.seek(0)

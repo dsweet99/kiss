@@ -28,7 +28,10 @@ def _sample_until(
             process.kill()
             process.wait()
             raise subprocess.TimeoutExpired(process.args, timeout)
-        time.sleep(sample_interval)
+        try:
+            process.wait(timeout=sample_interval)
+        except subprocess.TimeoutExpired:
+            continue
     for observer in observers:
         observer.sample()
     return time.monotonic() - started
