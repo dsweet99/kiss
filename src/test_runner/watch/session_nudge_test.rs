@@ -1,19 +1,19 @@
 #![cfg(unix)]
 
 use super::super::*;
-use super::{NudgeScript, commit_a_py, py_dry_args, timeout_steps};
+use super::{commit_a_py, py_dry_args, timeout_steps, NudgeScript};
 use crate::bin_cli::args::TestInvocation;
-use crate::test_runner::RunTestOnceOutcome;
 use crate::test_runner::capture_stdout::capture_stdout;
 use crate::test_runner::run_test;
 use crate::test_runner::test_mode_fixtures::{git_in, init_git};
 use crate::test_runner::watch::control::NudgeRequestMsg;
 use crate::test_runner::watch::event_source::{NormalizedWatchEvent, RecvTimeout};
+use crate::test_runner::RunTestOnceOutcome;
 use std::collections::VecDeque;
 use std::env;
 use std::fs;
 use std::path::Path;
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
 fn send_nudge_after(
@@ -441,20 +441,16 @@ fn retry_bad_nudge_reruns_only_selected_fake_python_test_on_tmp_repo() {
         "def test_first():\n    assert True\n\ndef test_second():\n    assert True\n",
     )
     .unwrap();
-    assert!(
-        git_in(tmp.path())
-            .args(["add", "-A"])
-            .status()
-            .unwrap()
-            .success()
-    );
-    assert!(
-        git_in(tmp.path())
-            .args(["commit", "-m", "init"])
-            .status()
-            .unwrap()
-            .success()
-    );
+    assert!(git_in(tmp.path())
+        .args(["add", "-A"])
+        .status()
+        .unwrap()
+        .success());
+    assert!(git_in(tmp.path())
+        .args(["commit", "-m", "init"])
+        .status()
+        .unwrap()
+        .success());
 
     let selected = "tests/test_pair.py::test_first";
     let (tx, rx) = mpsc::channel::<NudgeRequest>();
@@ -551,20 +547,16 @@ fn targeted_force_nudge_reruns_only_selected_fake_python_test() {
         "def test_first():\n    assert True\n\ndef test_second():\n    assert True\n",
     )
     .unwrap();
-    assert!(
-        git_in(tmp.path())
-            .args(["add", "-A"])
-            .status()
-            .unwrap()
-            .success()
-    );
-    assert!(
-        git_in(tmp.path())
-            .args(["commit", "-m", "init"])
-            .status()
-            .unwrap()
-            .success()
-    );
+    assert!(git_in(tmp.path())
+        .args(["add", "-A"])
+        .status()
+        .unwrap()
+        .success());
+    assert!(git_in(tmp.path())
+        .args(["commit", "-m", "init"])
+        .status()
+        .unwrap()
+        .success());
 
     let selected = "tests/test_pair.py::test_first";
     let (tx, rx) = mpsc::channel::<NudgeRequest>();
@@ -660,20 +652,16 @@ fn targeted_force_nudge_reruns_two_selected_fake_python_tests() {
         "def test_first():\n    assert True\n\ndef test_second():\n    assert True\n\ndef test_third():\n    assert True\n",
     )
     .unwrap();
-    assert!(
-        git_in(tmp.path())
-            .args(["add", "-A"])
-            .status()
-            .unwrap()
-            .success()
-    );
-    assert!(
-        git_in(tmp.path())
-            .args(["commit", "-m", "init"])
-            .status()
-            .unwrap()
-            .success()
-    );
+    assert!(git_in(tmp.path())
+        .args(["add", "-A"])
+        .status()
+        .unwrap()
+        .success());
+    assert!(git_in(tmp.path())
+        .args(["commit", "-m", "init"])
+        .status()
+        .unwrap()
+        .success());
 
     let selected = vec![
         "tests/test_trio.py::test_first".to_string(),
@@ -882,6 +870,87 @@ fn idle_nudge_without_file_events_must_not_start_another_cycle() {
         covs.load(std::sync::atomic::Ordering::SeqCst),
         1,
         "idle nudge with no file events must not run another coverage cycle"
+    );
+}
+
+#[test]
+fn idle_nudge_recaps_all_known_pass_fail_timeouts() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_git(&tmp);
+    let file = commit_a_py(&tmp);
+
+    let (tx, rx) = mpsc::channel::<NudgeRequest>();
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    let tests = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let tests_nudge = std::sync::Arc::clone(&tests);
+    let sender = std::thread::spawn(move || {
+        while tests_nudge.load(std::sync::atomic::Ordering::SeqCst) < 2 {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        std::thread::sleep(Duration::from_millis(20));
+        tx.send(NudgeRequest {
+            msg: NudgeRequestMsg::default(),
+            reply: reply_tx,
+        })
+        .unwrap();
+        reply_rx.recv_timeout(Duration::from_secs(5)).unwrap()
+    });
+
+    let tests_run = std::sync::Arc::clone(&tests);
+    let mut steps = VecDeque::new();
+    steps.push_back(Err(RecvTimeout::Timeout));
+    steps.push_back(Ok(vec![NormalizedWatchEvent::Paths(vec![file])]));
+    steps.extend(timeout_steps(16));
+    let mut src = NudgeScript { steps };
+    let mut args = py_dry_args();
+    args.dry_run = false;
+    args.invocation = TestInvocation::All;
+    let code = run_watch_loop_with(
+        args,
+        Duration::from_millis(1),
+        tmp.path(),
+        &mut src,
+        Some(&rx),
+        move |_args| {
+            let n = tests_run.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if n == 0 {
+                kiss::rust_llvm_cov_runner::emit_progress("PASS: tests/a.py::test_a (0.01s)");
+                kiss::rust_llvm_cov_runner::emit_progress("PASS: tests/b.py::test_b (0.01s)");
+                kiss::rust_llvm_cov_runner::emit_progress("FAIL: tests/c.py::test_c (0.01s)");
+                kiss::rust_llvm_cov_runner::emit_progress(
+                    "✗ 2 passed · 1 failed · 0 timed out · 1s total · 0s max pass",
+                );
+                kiss::rust_llvm_cov_runner::emit_progress("FAIL tests/c.py::test_c");
+                RunTestOnceOutcome::Code(1)
+            } else {
+                kiss::rust_llvm_cov_runner::emit_progress(
+                    "PASS (cached): tests/slow/test_ops_hogneato_sim_tuner_smoke_rust.py::test_ops_hogneato_sim_tuner_smoke_rust (0.46s)",
+                );
+                kiss::rust_llvm_cov_runner::emit_progress(
+                    "✓ 1 passed · 0 failed · 0 timed out · 0.46s total · 0s max pass",
+                );
+                RunTestOnceOutcome::Code(0)
+            }
+        },
+        |_args| WatchCoverageResult::ok(0),
+    );
+    let reply = sender.join().unwrap();
+    assert_eq!(code, 1);
+    assert_eq!(
+        tests.load(std::sync::atomic::Ordering::SeqCst),
+        2,
+        "file change runs a second cycle; idle nudge must not start a third"
+    );
+    let out = reply.output.clone().unwrap_or_default();
+    assert!(
+        out.contains("1 failed")
+            && (out.contains("2 passed") || out.contains("3 passed"))
+            && out.contains("tests/c.py::test_c"),
+        "idle oneshot must recap all known results, not the last cycle only; out={out:?}"
+    );
+    assert_ne!(
+        reply.exit_code, 0,
+        "suite still has a failure; reply={reply:?}"
     );
 }
 

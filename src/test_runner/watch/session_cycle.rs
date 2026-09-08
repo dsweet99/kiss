@@ -8,7 +8,7 @@ use super::coverage::WatchCoverageResult;
 use super::event_source::WatchEventSource;
 use super::filter::WatchPathFilter;
 use super::reload::{CycleForceFlags, WatchLiveConfig};
-use super::session_idle::{QueuedCycle, drain_into_machine};
+use super::session_idle::{drain_into_machine, QueuedCycle};
 use super::settle::SettleMachine;
 use crate::test_runner::{RunTestCmdArgs, RunTestOnceOutcome};
 
@@ -28,6 +28,7 @@ pub(crate) struct WatchCycleCtx<'a, F, C> {
     pub machine: &'a mut SettleMachine,
     pub repo_root: &'a Path,
     pub last_reply: &'a mut Option<NudgeReplyMsg>,
+    pub suite: &'a mut kiss::rust_llvm_cov_runner::WatchSuiteReport,
     pub run_cycle: &'a mut F,
     pub run_cov: &'a mut C,
 }
@@ -47,7 +48,7 @@ where
                 &replies,
                 EXIT_INTERRUPTED,
                 None,
-                kiss::rust_llvm_cov_runner::take_watch_report_capture(),
+                take_suite_report(ctx.suite),
             ));
             return CycleOutcome::Interrupted;
         }
@@ -65,16 +66,17 @@ where
                 &replies,
                 EXIT_INTERRUPTED,
                 None,
-                kiss::rust_llvm_cov_runner::take_watch_report_capture(),
+                take_suite_report(ctx.suite),
             ));
             return CycleOutcome::Interrupted;
         }
         CovStep::Done { exit_code, error } => {
+            let output = take_suite_report(ctx.suite);
             *ctx.last_reply = Some(reply_all(
                 &replies,
-                exit_code,
+                kiss::rust_llvm_cov_runner::merge_watch_exit(exit_code, ctx.suite.test_exit_code()),
                 error,
-                kiss::rust_llvm_cov_runner::take_watch_report_capture(),
+                output,
             ));
         }
     }
@@ -146,6 +148,18 @@ pub(crate) fn take_queued_cycle_args<'a>(
     (live.cycle_args(force), replies)
 }
 
+fn take_suite_report(suite: &mut kiss::rust_llvm_cov_runner::WatchSuiteReport) -> Option<String> {
+    if let Some(lines) = kiss::rust_llvm_cov_runner::take_watch_report_lines() {
+        suite.merge_lines(&lines);
+    }
+    let recap = suite.format();
+    if recap.is_empty() {
+        None
+    } else {
+        Some(recap)
+    }
+}
+
 fn reply_all(
     replies: &[SyncSender<NudgeReplyMsg>],
     exit_code: i32,
@@ -185,9 +199,9 @@ fn clone_args<'a>(args: &RunTestCmdArgs<'a>) -> RunTestCmdArgs<'a> {
 }
 
 #[cfg(not(unix))]
-pub(crate) use nudge_stub::{NudgeReplyMsg, NudgeRequest};
-#[cfg(not(unix))]
 use nudge_stub::*;
+#[cfg(not(unix))]
+pub(crate) use nudge_stub::{NudgeReplyMsg, NudgeRequest};
 #[cfg(not(unix))]
 mod nudge_stub {
     use std::sync::mpsc::SyncSender;

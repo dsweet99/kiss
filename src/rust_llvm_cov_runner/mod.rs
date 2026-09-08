@@ -66,8 +66,9 @@ pub use execute_or_reuse::progress::{
     mark_live_rust_printed, set_live_rust_error, take_live_rust_error,
 };
 pub use execute_or_reuse::progress_watch_report::{
-    begin_watch_report_capture, take_watch_report_capture,
+    begin_watch_report_capture, take_watch_report_capture, take_watch_report_lines,
 };
+pub use execute_or_reuse::progress_watch_suite::{WatchSuiteReport, merge_watch_exit};
 pub(crate) use execute_or_reuse::worker;
 #[cfg(test)]
 pub(crate) use execute_or_reuse::worker_cleanup_test;

@@ -48,6 +48,7 @@ pub(crate) mod batch_process_tree;
 
 pub(crate) mod progress;
 pub(crate) mod progress_watch_report;
+pub(crate) mod progress_watch_suite;
 
 pub(crate) mod batch_result;
 

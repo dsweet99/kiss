@@ -7,16 +7,23 @@ use super::coverage::WatchCoverageResult;
 use super::event_source::WatchEventSource;
 use super::filter::WatchPathFilter;
 use super::reload::{WatchLiveConfig, WatchReloadSeed};
+use super::session_cycle::{run_one_watch_cycle, CycleOutcome, WatchCycleCtx, EXIT_INTERRUPTED};
 #[cfg(not(unix))]
 use super::session_cycle::{NudgeReplyMsg, NudgeRequest};
-use super::session_cycle::{CycleOutcome, EXIT_INTERRUPTED, WatchCycleCtx, run_one_watch_cycle};
 use super::session_idle::{
-    QueuedCycle, coalesce_nudges, force_ready_if_pending, reply_all_queued, try_reply_idle_nudge,
-    wait_until_next_cycle,
+    coalesce_nudges, force_ready_if_pending, reply_all_queued, try_reply_idle_nudge,
+    wait_until_next_cycle, QueuedCycle,
 };
 use super::settle::SettleMachine;
 use crate::test_runner::runners::clear_python_collect_memo;
-use crate::test_runner::{RunTestCmdArgs, RunTestOnceOutcome, run_test_once};
+use crate::test_runner::{run_test_once, RunTestCmdArgs, RunTestOnceOutcome};
+
+#[cfg(test)]
+fn watch_loop_serial() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
 
 #[allow(unused_imports)]
 pub(super) use super::session_cycle::take_queued_cycle_args;
@@ -101,6 +108,8 @@ where
     F: FnMut(RunTestCmdArgs<'_>) -> RunTestOnceOutcome,
     C: FnMut(&RunTestCmdArgs<'_>, &WatchLiveConfig) -> WatchCoverageResult,
 {
+    #[cfg(test)]
+    let _serial = watch_loop_serial();
     let mut filter = WatchPathFilter::build_with_config(
         repo_root,
         &live.ignore,
@@ -111,6 +120,7 @@ where
     let mut machine = SettleMachine::new(live.settle);
     let mut queued: Option<QueuedCycle> = None;
     let mut last_reply = None;
+    let mut suite = kiss::rust_llvm_cov_runner::WatchSuiteReport::default();
     let mut initial = true;
     loop {
         if !initial {
@@ -129,6 +139,7 @@ where
             machine: &mut machine,
             repo_root,
             last_reply: &mut last_reply,
+            suite: &mut suite,
             run_cycle: &mut run_cycle,
             run_cov: &mut run_cov,
         }) {

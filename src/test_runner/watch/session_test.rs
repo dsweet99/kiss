@@ -38,20 +38,16 @@ fn settle_cycle_then_disconnect() {
     let _ = std::process::Command::new("touch")
         .args(["-d", "1970-01-01 00:00:01", file.to_str().unwrap()])
         .status();
-    assert!(
-        git_in(tmp.path())
-            .args(["add", "a.py"])
-            .status()
-            .unwrap()
-            .success()
-    );
-    assert!(
-        git_in(tmp.path())
-            .args(["commit", "-m", "init"])
-            .status()
-            .unwrap()
-            .success()
-    );
+    assert!(git_in(tmp.path())
+        .args(["add", "a.py"])
+        .status()
+        .unwrap()
+        .success());
+    assert!(git_in(tmp.path())
+        .args(["commit", "-m", "init"])
+        .status()
+        .unwrap()
+        .success());
     let orig = env::current_dir().unwrap();
     env::set_current_dir(tmp.path()).unwrap();
     let mut steps = VecDeque::new();
@@ -88,20 +84,16 @@ fn watch_cycle_logs_starting() {
     let tmp = tempfile::tempdir().unwrap();
     init_git(&tmp);
     std::fs::write(tmp.path().join("a.py"), "x=1\n").unwrap();
-    assert!(
-        git_in(tmp.path())
-            .args(["add", "a.py"])
-            .status()
-            .unwrap()
-            .success()
-    );
-    assert!(
-        git_in(tmp.path())
-            .args(["commit", "-m", "init"])
-            .status()
-            .unwrap()
-            .success()
-    );
+    assert!(git_in(tmp.path())
+        .args(["add", "a.py"])
+        .status()
+        .unwrap()
+        .success());
+    assert!(git_in(tmp.path())
+        .args(["commit", "-m", "init"])
+        .status()
+        .unwrap()
+        .success());
     let orig = env::current_dir().unwrap();
     env::set_current_dir(tmp.path()).unwrap();
     let mut src = FakeWatchEventSource {
@@ -140,20 +132,16 @@ fn fake_disconnect_after_first_cycle() {
     let tmp = tempfile::tempdir().unwrap();
     init_git(&tmp);
     std::fs::write(tmp.path().join("a.py"), "x=1\n").unwrap();
-    assert!(
-        git_in(tmp.path())
-            .args(["add", "a.py"])
-            .status()
-            .unwrap()
-            .success()
-    );
-    assert!(
-        git_in(tmp.path())
-            .args(["commit", "-m", "init"])
-            .status()
-            .unwrap()
-            .success()
-    );
+    assert!(git_in(tmp.path())
+        .args(["add", "a.py"])
+        .status()
+        .unwrap()
+        .success());
+    assert!(git_in(tmp.path())
+        .args(["commit", "-m", "init"])
+        .status()
+        .unwrap()
+        .success());
     let orig = env::current_dir().unwrap();
     env::set_current_dir(tmp.path()).unwrap();
     let mut src = FakeWatchEventSource {

@@ -12,12 +12,16 @@ pub fn begin_watch_report_capture() {
 }
 
 #[must_use]
-pub fn take_watch_report_capture() -> Option<String> {
-    let lines = watch_report_lines()
+pub fn take_watch_report_lines() -> Option<Vec<String>> {
+    watch_report_lines()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .take()?;
-    Some(compact_watch_report(&lines))
+        .take()
+}
+
+#[must_use]
+pub fn take_watch_report_capture() -> Option<String> {
+    Some(compact_watch_report(&take_watch_report_lines()?))
 }
 
 pub(crate) fn record_watch_report_line(message: &str) {
@@ -32,7 +36,7 @@ pub(crate) fn record_watch_report_line(message: &str) {
     }
 }
 
-fn strip_ansi_prefix(message: &str) -> &str {
+pub(crate) fn strip_ansi_prefix(message: &str) -> &str {
     let mut rest = message;
     while let Some(stripped) = rest.strip_prefix("\x1b[") {
         rest = stripped.split_once('m').map_or(rest, |(_, tail)| tail);

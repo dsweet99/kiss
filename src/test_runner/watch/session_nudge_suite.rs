@@ -52,20 +52,16 @@ pub(super) fn py_dry_args() -> RunTestCmdArgs<'static> {
 pub(super) fn commit_a_py(tmp: &tempfile::TempDir) -> PathBuf {
     let file = tmp.path().join("a.py");
     std::fs::write(&file, "x=1\n").unwrap();
-    assert!(
-        git_in(tmp.path())
-            .args(["add", "a.py"])
-            .status()
-            .unwrap()
-            .success()
-    );
-    assert!(
-        git_in(tmp.path())
-            .args(["commit", "-m", "init"])
-            .status()
-            .unwrap()
-            .success()
-    );
+    assert!(git_in(tmp.path())
+        .args(["add", "a.py"])
+        .status()
+        .unwrap()
+        .success());
+    assert!(git_in(tmp.path())
+        .args(["commit", "-m", "init"])
+        .status()
+        .unwrap()
+        .success());
     file
 }
 

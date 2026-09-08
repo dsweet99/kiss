@@ -1,11 +1,11 @@
 #![cfg(unix)]
 
 use super::super::*;
-use super::{NudgeScript, commit_a_py, py_dry_args, timeout_steps};
-use crate::test_runner::RunTestOnceOutcome;
+use super::{commit_a_py, py_dry_args, timeout_steps, NudgeScript};
 use crate::test_runner::test_mode_fixtures::init_git;
 use crate::test_runner::watch::control::NudgeRequestMsg;
-use std::sync::{Arc, mpsc};
+use crate::test_runner::RunTestOnceOutcome;
+use std::sync::{mpsc, Arc};
 use std::time::Duration;
 
 #[test]
