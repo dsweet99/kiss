@@ -10,6 +10,10 @@ use crate::bin_cli::cov_sibling_gates::{
     SiblingGateResult, apply_time_gate_eval, evaluate_max_num_tests_gate,
     evaluate_time_gate_for_cov, finish_sibling_gates,
 };
+
+#[path = "cov_zero.rs"]
+mod cov_zero;
+use cov_zero::finish_zero_threshold_cov;
 use crate::bin_cli::util::{merge_check_ignore_prefixes, validate_paths};
 use crate::test_runner::check_line_coverage::{
     RequiredCoverageLanguages, ensure_check_runtime_coverage, load_check_runtime_coverage,
@@ -229,42 +233,7 @@ pub(crate) fn run_cov_command_impl(args: &CovCommandArgs<'_>, print_empty: bool)
     let threshold = args.gate_config.test_coverage_threshold;
 
     if threshold == 0 && !args.bypass_gate {
-        let repo_root = repository_root_for_universe(universe_root);
-        let required = RequiredCoverageLanguages {
-            python: !files.py_files.is_empty(),
-            rust: !files.rs_files.is_empty(),
-        };
-
-        let validated = load_or_refresh_snapshot(
-            &repo_root,
-            required,
-            &ignore,
-            args.jobs,
-            args.allow_refresh,
-            args.gate_config,
-            args.pytest_args,
-        );
-        let orphan_failed = match validated {
-            Ok(inputs) => analyze::evaluate_orphan_unit_gate(
-                &repo_root,
-                &files.py_files,
-                &files.rs_files,
-                &inputs.snapshot,
-                args.gate_config,
-                args.bypass_gate,
-            ),
-            Err(_) => args.gate_config.orphan_detection && !args.bypass_gate,
-        };
-        let time_eval = evaluate_time_gate_for_cov(args, universe_root, &files, &ignore);
-        let time_failed = apply_time_gate_eval(&time_eval);
-        let max_num_tests_failed =
-            evaluate_max_num_tests_gate(args, universe_root, &files, &ignore);
-        return finish_sibling_gates(SiblingGateResult {
-            coverage_failed: false,
-            time_failed,
-            max_num_tests_failed,
-            orphan_failed,
-        });
+        return finish_zero_threshold_cov(args, universe_root, &files, &ignore);
     }
     evaluate_gathered_cov(EvaluateGatheredCov {
         args,

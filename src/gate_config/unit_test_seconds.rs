@@ -39,6 +39,10 @@ pub fn limit_for_selector(rules: &[(String, f64)], selector: &str) -> f64 {
         .unwrap_or_else(defaults_max)
 }
 
+pub fn time_gate_uses_path_prefixes(rules: &[(String, f64)]) -> bool {
+    rules.iter().any(|(pattern, _)| pattern != "*")
+}
+
 pub fn catch_all_limit(rules: &[(String, f64)]) -> Option<f64> {
     rules.iter().rev().find(|(p, _)| p == "*").map(|(_, s)| *s)
 }

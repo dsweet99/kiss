@@ -335,10 +335,11 @@ pub(crate) fn try_warm_rust_cached_summary(
         .map(String::as_str)
         .zip(witness.statuses.iter().copied())
         .collect();
-    if planned.len() > 64
-        && planned.iter().all(|selector| {
-            status_by_selector.get(selector.as_str()) == Some(&WitnessStatus::Passed)
-        })
+    if !rust_time_gate_needs_report_ids(gate)
+        || (planned.len() > 64
+            && planned.iter().all(|selector| {
+                status_by_selector.get(selector.as_str()) == Some(&WitnessStatus::Passed)
+            }))
     {
         return Some(summary_from_accepted_witness(
             &planned,
@@ -354,7 +355,14 @@ pub(crate) fn try_warm_rust_cached_summary(
     ))
 }
 
-fn rust_time_gate_selectors(repo_root: &Path, selectors: &[String]) -> Vec<String> {
+fn rust_time_gate_needs_report_ids(gate: &GateConfig) -> bool {
+    kiss::time_gate_uses_path_prefixes(&gate.max_unit_test_seconds)
+}
+
+fn rust_time_gate_selectors(repo_root: &Path, selectors: &[String], gate: &GateConfig) -> Vec<String> {
+    if !rust_time_gate_needs_report_ids(gate) {
+        return selectors.to_vec();
+    }
     let report_ids = rust_logical_to_kiss_test_ids_cached(repo_root, &[]).unwrap_or_default();
     selectors
         .iter()
@@ -370,7 +378,7 @@ fn reclassify_rust_witness_with_report_ids(
     if witness.raw_statuses.len() != witness.statuses.len() {
         witness.raw_statuses = witness.statuses.clone();
     }
-    let gate_selectors = rust_time_gate_selectors(repo_root, &witness.selectors);
+    let gate_selectors = rust_time_gate_selectors(repo_root, &witness.selectors, gate);
     witness.statuses = reclassify_statuses_with_gate(
         &gate_selectors,
         &witness.raw_statuses,

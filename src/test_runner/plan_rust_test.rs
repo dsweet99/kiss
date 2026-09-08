@@ -61,6 +61,34 @@ fn rust_population_current_unreadable_population_without_witness_is_not_current(
 }
 
 #[test]
+fn rust_plan_selectors_does_not_require_population_when_manifest_matches() {
+    let tmp = tempfile::tempdir().unwrap();
+    demo_lib(&tmp);
+    crate::test_runner::rust_coverage_index::write_rust_population_manifest_for_args(
+        tmp.path(),
+        &["a".into()],
+        &[],
+    )
+    .unwrap();
+    let plan = rust_plan_selectors(tmp.path(), vec!["a".into()], &GateConfig::default());
+    assert!(!plan.population_required);
+}
+
+#[test]
+fn rust_plan_selectors_requires_population_when_manifest_selectors_differ() {
+    let tmp = tempfile::tempdir().unwrap();
+    demo_lib(&tmp);
+    crate::test_runner::rust_coverage_index::write_rust_population_manifest_for_args(
+        tmp.path(),
+        &["a".into()],
+        &[],
+    )
+    .unwrap();
+    let plan = rust_plan_selectors(tmp.path(), vec!["a".into(), "b".into()], &GateConfig::default());
+    assert!(plan.population_required);
+}
+
+#[test]
 fn rust_population_current_when_published_population_matches() {
     let tmp = tempfile::tempdir().unwrap();
     demo_lib(&tmp);

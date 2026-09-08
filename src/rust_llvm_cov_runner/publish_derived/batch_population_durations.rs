@@ -132,7 +132,7 @@ pub fn load_current_population_durations(
     Some(out)
 }
 
-fn try_load_durations_from_manifest_sidecar(
+pub(crate) fn try_load_durations_from_manifest_sidecar(
     cache_root: &Path,
     identity: &RustCoverageBatchIdentity,
     selectors: Option<&[String]>,

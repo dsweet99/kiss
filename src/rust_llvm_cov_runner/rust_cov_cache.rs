@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::rust_llvm_cov_runner::{CACHE_SCHEMA_VERSION, RustLineCoverage, RustLlvmCovOutcome};
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 struct TestBinaryStamp {
     path: PathBuf,
     len: u64,
@@ -19,6 +19,48 @@ struct TestBinaryStamp {
     dev: u64,
     ino: u64,
     sample_hash: u64,
+}
+
+const BINARY_DIGEST_MEMO_FILE: &str = "binary_digest_memo.json";
+
+fn rust_cache_root_from_binary(path: &Path) -> Option<PathBuf> {
+    let mut cursor = path.parent()?;
+    loop {
+        let cache = cursor.join(".kiss").join("rust_llvm_cov_cache");
+        if cache.is_dir() {
+            return Some(cache);
+        }
+        cursor = cursor.parent()?;
+    }
+}
+
+fn load_persisted_binary_digest(stamp: &TestBinaryStamp) -> Option<String> {
+    let cache = rust_cache_root_from_binary(&stamp.path)?;
+    let bytes = fs::read(cache.join(BINARY_DIGEST_MEMO_FILE)).ok()?;
+    let entries: Vec<(TestBinaryStamp, String)> = serde_json::from_slice(&bytes).ok()?;
+    entries
+        .into_iter()
+        .find(|(stored, _)| stored == stamp)
+        .map(|(_, digest)| digest)
+}
+
+fn persist_binary_digest(stamp: &TestBinaryStamp, digest: &str) {
+    let Some(cache) = rust_cache_root_from_binary(&stamp.path) else {
+        return;
+    };
+    let path = cache.join(BINARY_DIGEST_MEMO_FILE);
+    let mut entries: Vec<(TestBinaryStamp, String)> = fs::read(&path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default();
+    if let Some((_, stored)) = entries.iter_mut().find(|(stored, _)| stored == stamp) {
+        *stored = digest.to_string();
+    } else {
+        entries.push((stamp.clone(), digest.to_string()));
+    }
+    if let Ok(bytes) = serde_json::to_vec(&entries) {
+        let _ = fs::write(path, bytes);
+    }
 }
 
 fn test_binary_digest_memo() -> &'static Mutex<HashMap<TestBinaryStamp, String>> {
@@ -305,6 +347,12 @@ pub(crate) fn digest_test_binary(
     {
         return Ok(digest.clone());
     }
+    if let Some(digest) = load_persisted_binary_digest(&stamp) {
+        if let Ok(mut memo) = test_binary_digest_memo().lock() {
+            memo.insert(stamp, digest.clone());
+        }
+        return Ok(digest);
+    }
     let bytes = std::fs::read(path).map_err(|err| {
         crate::rust_llvm_cov_runner::RustLlvmCovError::Io(std::io::Error::new(
             err.kind(),
@@ -314,8 +362,9 @@ pub(crate) fn digest_test_binary(
     let h = rust_cov_fnv1a64(0xcbf2_9ce4_8422_2325, &bytes);
     let digest = format!("{h:016x}");
     if let Ok(mut memo) = test_binary_digest_memo().lock() {
-        memo.insert(stamp, digest.clone());
+        memo.insert(stamp.clone(), digest.clone());
     }
+    persist_binary_digest(&stamp, &digest);
     Ok(digest)
 }
 

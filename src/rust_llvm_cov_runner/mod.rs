@@ -111,6 +111,7 @@ pub(crate) use publish_derived::batch_derived_prune;
 pub(crate) use publish_derived::batch_derived_snapshot;
 pub(crate) use publish_derived::batch_entry_state;
 pub(crate) use publish_derived::batch_population_durations;
+pub(crate) use publish_derived::batch_population_durations_sealed;
 pub(crate) use publish_derived::batch_publication_tmp;
 pub(crate) use publish_derived::batch_reverse_build;
 pub(crate) use publish_derived::batch_reverse_line_index;
@@ -148,7 +149,10 @@ pub use batch_derived_incremental::{
 };
 pub use batch_derived_index::{
     RustGenerationCoverageSnapshot, RustPopulationState, RustSnapshotDelta,
-    current_population_manifest_test_binaries_match, current_test_binaries_match,
+    current_population_manifest_matches_identity, current_population_manifest_matches_universe,
+    current_population_manifest_state,
+    current_population_manifest_test_binaries_match,
+    current_test_binaries_match,
     is_check_aggregate_population, load_current_generation_coverage_from_passing_entries,
     load_current_generation_coverage_snapshot, load_current_generation_line_index,
     load_current_population_state, load_reusable_prior_population_state, reusable_snapshot_delta,
@@ -200,6 +204,7 @@ pub use batch_population_durations::{
     load_current_population_durations, population_entries_all_pass, population_nonpassed_selectors,
     try_load_population_durations,
 };
+pub use batch_population_durations_sealed::try_load_sealed_population_durations;
 pub use batch_result::{RustCoverageBatchCounters, RustCoverageBatchResult};
 pub use batch_reverse_line_index::{
     REVERSE_LINE_INDEX_SCHEMA, ReversePublishInfo, prune_unreferenced_snapshots,

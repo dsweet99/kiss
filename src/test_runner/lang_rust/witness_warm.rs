@@ -19,12 +19,18 @@ pub(crate) fn rust_source_delta_misses(
         repo_root, test_args,
     )?;
     let cache_root = rust_coverage_cache_root(repo_root);
-    let population = kiss::rust_llvm_cov_runner::load_current_population_state(
+    let population = kiss::rust_llvm_cov_runner::current_population_manifest_state(
         &cache_root,
-        repo_root,
         &identity,
-        None,
-    );
+    )
+    .or_else(|| {
+        kiss::rust_llvm_cov_runner::load_current_population_state(
+            &cache_root,
+            repo_root,
+            &identity,
+            None,
+        )
+    });
     let binaries_are_current = population.as_ref().map_or_else(
         || {
             kiss::rust_llvm_cov_runner::current_population_manifest_test_binaries_match(

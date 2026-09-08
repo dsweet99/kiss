@@ -24,6 +24,8 @@ pub(crate) mod batch_derived_manifest;
 
 pub(crate) mod batch_population_durations;
 
+pub(crate) mod batch_population_durations_sealed;
+
 pub(crate) mod batch_derived_prune;
 
 pub(crate) mod batch_entry_state;

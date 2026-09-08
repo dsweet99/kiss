@@ -234,7 +234,10 @@ fn selectors_for_time_gate_fails_closed_without_report_ids() {
         force: false,
         force_selectors: Vec::new(),
         jobs: 1,
-        gate: kiss::GateConfig::default(),
+        gate: kiss::GateConfig {
+            max_unit_test_seconds: vec![("tests/".into(), 2.0)],
+            ..kiss::GateConfig::default()
+        },
         extras: crate::test_runner::language_keyed::LanguageKeyed {
             python: vec![],
             rust: vec![],
@@ -291,7 +294,10 @@ fn time_gate_report_ids(ignore: &[String]) -> Result<Vec<String>, String> {
         force: false,
         force_selectors: Vec::new(),
         jobs: 1,
-        gate: kiss::GateConfig::default(),
+        gate: kiss::GateConfig {
+            max_unit_test_seconds: vec![("src/".into(), 2.0)],
+            ..kiss::GateConfig::default()
+        },
         extras: crate::test_runner::language_keyed::LanguageKeyed {
             python: vec![],
             rust: vec![],

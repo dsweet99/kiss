@@ -84,6 +84,7 @@ pub use duplication::{
 };
 pub use gate_config::{
     GateConfig, MatchedUnitTestSecondsRule, TestCoverageScope, catch_all_limit, exceeds_limit,
+    time_gate_uses_path_prefixes,
     format_nested_toml_table, limit_for_selector, matched_rule_for_selector,
 };
 pub use graph::{

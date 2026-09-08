@@ -109,6 +109,15 @@ fn rust_all_mode_population_required(repo_root: &Path, planned: &[String]) -> bo
     let Some(identity) = identity.as_ref() else {
         return true;
     };
+    if let Some(current) =
+        kiss::rust_llvm_cov_runner::current_population_manifest_matches_universe(
+            cache_root.as_path(),
+            identity,
+            planned,
+        )
+    {
+        return !current;
+    }
     if let Some(state) = kiss::rust_llvm_cov_runner::load_current_population_state(
         cache_root.as_path(),
         repo_root,
