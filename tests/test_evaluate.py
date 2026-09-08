@@ -15,15 +15,20 @@ def test_evaluation_names_include_qa_commands() -> None:
     assert "timing_rust_throughput" in names
     assert "timing_kiss_check" in names
     assert "timing_kiss_test" in names
+    assert "timing_kiss_test_watch" in names
     assert "kiss_test_watch" not in names
     assert all(" " not in name for name in names)
     assert all(not name.startswith("kiss_test_") for name in names)
 
 
-def test_evaluate_list_prints_names(capsys) -> None:
+def test_evaluate_list_and_run_all(capsys, monkeypatch) -> None:
     main(["list"])
     printed = capsys.readouterr().out.splitlines()
     assert printed == evaluation_names()
+    called: list[str] = []
+    monkeypatch.setattr("ops.evaluate.run_evaluation", called.append)
+    main(["run-all"])
+    assert called == evaluation_names()
 
 
 def test_evaluate_run_unknown_exits() -> None:

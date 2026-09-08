@@ -27,16 +27,25 @@ def run_evaluation(name: str) -> None:
     getattr(module, f"eval_{name}")()
 
 
+def run_all_evaluations() -> None:
+    for name in evaluation_names():
+        run_evaluation(name)
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Run kiss evaluations")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("list", help="List all evaluation NAMEs")
     run_parser = sub.add_parser("run", help="Run an evaluation")
     run_parser.add_argument("NAME")
+    sub.add_parser("run-all", help="Run all evaluations")
     args = parser.parse_args(argv)
     if args.command == "list":
         for name in evaluation_names():
             print(name)
+        return
+    if args.command == "run-all":
+        run_all_evaluations()
         return
     run_evaluation(args.NAME)
 
