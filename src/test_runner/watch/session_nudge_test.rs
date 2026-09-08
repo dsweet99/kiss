@@ -1,19 +1,19 @@
 #![cfg(unix)]
 
 use super::super::*;
-use super::{commit_a_py, py_dry_args, timeout_steps, NudgeScript};
+use super::{NudgeScript, commit_a_py, py_dry_args, timeout_steps};
 use crate::bin_cli::args::TestInvocation;
+use crate::test_runner::RunTestOnceOutcome;
 use crate::test_runner::capture_stdout::capture_stdout;
 use crate::test_runner::run_test;
 use crate::test_runner::test_mode_fixtures::{git_in, init_git};
 use crate::test_runner::watch::control::NudgeRequestMsg;
 use crate::test_runner::watch::event_source::{NormalizedWatchEvent, RecvTimeout};
-use crate::test_runner::RunTestOnceOutcome;
 use std::collections::VecDeque;
 use std::env;
 use std::fs;
 use std::path::Path;
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
 fn send_nudge_after(
@@ -441,16 +441,20 @@ fn retry_bad_nudge_reruns_only_selected_fake_python_test_on_tmp_repo() {
         "def test_first():\n    assert True\n\ndef test_second():\n    assert True\n",
     )
     .unwrap();
-    assert!(git_in(tmp.path())
-        .args(["add", "-A"])
-        .status()
-        .unwrap()
-        .success());
-    assert!(git_in(tmp.path())
-        .args(["commit", "-m", "init"])
-        .status()
-        .unwrap()
-        .success());
+    assert!(
+        git_in(tmp.path())
+            .args(["add", "-A"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        git_in(tmp.path())
+            .args(["commit", "-m", "init"])
+            .status()
+            .unwrap()
+            .success()
+    );
 
     let selected = "tests/test_pair.py::test_first";
     let (tx, rx) = mpsc::channel::<NudgeRequest>();
@@ -547,16 +551,20 @@ fn targeted_force_nudge_reruns_only_selected_fake_python_test() {
         "def test_first():\n    assert True\n\ndef test_second():\n    assert True\n",
     )
     .unwrap();
-    assert!(git_in(tmp.path())
-        .args(["add", "-A"])
-        .status()
-        .unwrap()
-        .success());
-    assert!(git_in(tmp.path())
-        .args(["commit", "-m", "init"])
-        .status()
-        .unwrap()
-        .success());
+    assert!(
+        git_in(tmp.path())
+            .args(["add", "-A"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        git_in(tmp.path())
+            .args(["commit", "-m", "init"])
+            .status()
+            .unwrap()
+            .success()
+    );
 
     let selected = "tests/test_pair.py::test_first";
     let (tx, rx) = mpsc::channel::<NudgeRequest>();
@@ -652,16 +660,20 @@ fn targeted_force_nudge_reruns_two_selected_fake_python_tests() {
         "def test_first():\n    assert True\n\ndef test_second():\n    assert True\n\ndef test_third():\n    assert True\n",
     )
     .unwrap();
-    assert!(git_in(tmp.path())
-        .args(["add", "-A"])
-        .status()
-        .unwrap()
-        .success());
-    assert!(git_in(tmp.path())
-        .args(["commit", "-m", "init"])
-        .status()
-        .unwrap()
-        .success());
+    assert!(
+        git_in(tmp.path())
+            .args(["add", "-A"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        git_in(tmp.path())
+            .args(["commit", "-m", "init"])
+            .status()
+            .unwrap()
+            .success()
+    );
 
     let selected = vec![
         "tests/test_trio.py::test_first".to_string(),
@@ -870,6 +882,175 @@ fn idle_nudge_without_file_events_must_not_start_another_cycle() {
         covs.load(std::sync::atomic::Ordering::SeqCst),
         1,
         "idle nudge with no file events must not run another coverage cycle"
+    );
+}
+
+#[test]
+fn idle_target_nudge_runs_scoped_cycle_and_replies_cycle_summary() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_git(&tmp);
+    commit_a_py(&tmp);
+
+    let (tx, rx) = mpsc::channel::<NudgeRequest>();
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    let tests = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let seen = Arc::new(Mutex::new(Vec::<TestInvocation>::new()));
+    let tests_nudge = std::sync::Arc::clone(&tests);
+    let sender = std::thread::spawn(move || {
+        while tests_nudge.load(std::sync::atomic::Ordering::SeqCst) < 1 {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        std::thread::sleep(Duration::from_millis(20));
+        tx.send(NudgeRequest {
+            msg: NudgeRequestMsg {
+                targets: vec!["tests/a.py::test_a".into()],
+                ..Default::default()
+            },
+            reply: reply_tx,
+        })
+        .unwrap();
+        reply_rx.recv_timeout(Duration::from_secs(5)).unwrap()
+    });
+
+    let tests_run = std::sync::Arc::clone(&tests);
+    let seen_run = Arc::clone(&seen);
+    let mut src = NudgeScript {
+        steps: timeout_steps(12),
+    };
+    let mut args = py_dry_args();
+    args.dry_run = false;
+    args.invocation = TestInvocation::All;
+    let code = run_watch_loop_with(
+        args,
+        Duration::from_secs(3600),
+        tmp.path(),
+        &mut src,
+        Some(&rx),
+        move |cycle_args| {
+            let n = tests_run.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            seen_run.lock().unwrap().push(cycle_args.invocation.clone());
+            if n == 0 {
+                kiss::rust_llvm_cov_runner::emit_progress("PASS: tests/a.py::test_a (0.01s)");
+                kiss::rust_llvm_cov_runner::emit_progress("PASS: tests/b.py::test_b (0.01s)");
+                kiss::rust_llvm_cov_runner::emit_progress(
+                    "✓ 2 passed · 0 failed · 0 timed out · 1s total · 0s max pass",
+                );
+            } else {
+                kiss::rust_llvm_cov_runner::emit_progress("PASS: tests/a.py::test_a (0.01s)");
+                kiss::rust_llvm_cov_runner::emit_progress(
+                    "✓ 1 passed · 0 failed · 0 timed out · 0.01s total · 0s max pass",
+                );
+            }
+            RunTestOnceOutcome::Code(0)
+        },
+        |_args| WatchCoverageResult::ok(0),
+    );
+    let reply = sender.join().unwrap();
+    assert_eq!(code, 1);
+    let seen = seen.lock().unwrap().clone();
+    assert_eq!(
+        seen,
+        vec![
+            TestInvocation::All,
+            TestInvocation::Targets(vec!["tests/a.py::test_a".into()]),
+        ],
+        "TARGET-only idle nudge must start a scoped cycle"
+    );
+    let out = reply.output.clone().unwrap_or_default();
+    assert!(
+        out.contains("1 passed") && !out.contains("2 passed"),
+        "targeted waiter must see this cycle, not the merged suite; out={out:?}"
+    );
+    assert!(
+        !out.contains("tests/b.py::test_b"),
+        "targeted recap must not list sibling selectors; out={out:?}"
+    );
+}
+
+#[test]
+fn unscoped_idle_nudge_after_target_still_recaps_full_suite() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_git(&tmp);
+    commit_a_py(&tmp);
+
+    let (tx, rx) = mpsc::channel::<NudgeRequest>();
+    let (reply_target_tx, reply_target_rx) = mpsc::sync_channel(1);
+    let (reply_idle_tx, reply_idle_rx) = mpsc::sync_channel(1);
+    let tests = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let tests_nudge = std::sync::Arc::clone(&tests);
+    let sender = std::thread::spawn(move || {
+        while tests_nudge.load(std::sync::atomic::Ordering::SeqCst) < 1 {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        std::thread::sleep(Duration::from_millis(20));
+        tx.send(NudgeRequest {
+            msg: NudgeRequestMsg {
+                targets: vec!["tests/a.py::test_a".into()],
+                ..Default::default()
+            },
+            reply: reply_target_tx,
+        })
+        .unwrap();
+        let targeted = reply_target_rx
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap();
+        tx.send(NudgeRequest {
+            msg: NudgeRequestMsg::default(),
+            reply: reply_idle_tx,
+        })
+        .unwrap();
+        let idle = reply_idle_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        (targeted, idle)
+    });
+
+    let tests_run = std::sync::Arc::clone(&tests);
+    let mut src = NudgeScript {
+        steps: timeout_steps(16),
+    };
+    let mut args = py_dry_args();
+    args.dry_run = false;
+    args.invocation = TestInvocation::All;
+    let code = run_watch_loop_with(
+        args,
+        Duration::from_secs(3600),
+        tmp.path(),
+        &mut src,
+        Some(&rx),
+        move |cycle_args| {
+            let n = tests_run.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if n == 0 {
+                kiss::rust_llvm_cov_runner::emit_progress("PASS: tests/a.py::test_a (0.01s)");
+                kiss::rust_llvm_cov_runner::emit_progress("PASS: tests/b.py::test_b (0.01s)");
+                kiss::rust_llvm_cov_runner::emit_progress(
+                    "✓ 2 passed · 0 failed · 0 timed out · 1s total · 0s max pass",
+                );
+            } else {
+                kiss::rust_llvm_cov_runner::emit_progress("PASS: tests/a.py::test_a (0.01s)");
+                kiss::rust_llvm_cov_runner::emit_progress(
+                    "✓ 1 passed · 0 failed · 0 timed out · 0.01s total · 0s max pass",
+                );
+            }
+            let _ = cycle_args;
+            RunTestOnceOutcome::Code(0)
+        },
+        |_args| WatchCoverageResult::ok(0),
+    );
+    let (targeted, idle) = sender.join().unwrap();
+    assert_eq!(code, 1);
+    let targeted_out = targeted.output.clone().unwrap_or_default();
+    let idle_out = idle.output.clone().unwrap_or_default();
+    assert!(
+        targeted_out.contains("1 passed") && !targeted_out.contains("2 passed"),
+        "TARGET waiter={targeted_out:?}"
+    );
+    assert!(
+        idle_out.contains("2 passed") && idle_out.contains("tests/b.py::test_b"),
+        "unscoped idle recap must keep the last full cycle; idle={idle_out:?}"
+    );
+    assert_eq!(
+        tests.load(std::sync::atomic::Ordering::SeqCst),
+        2,
+        "unscoped idle after TARGET must not start a third cycle"
     );
 }
 

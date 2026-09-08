@@ -189,7 +189,12 @@ fn try_evaluate_records_with_orphan_state(
     }))
 }
 
+#[allow(dead_code)]
 pub fn run_cov_command(args: &CovCommandArgs<'_>) -> i32 {
+    run_cov_command_impl(args, true)
+}
+
+pub(crate) fn run_cov_command_impl(args: &CovCommandArgs<'_>, print_empty: bool) -> i32 {
     crate::test_runner::python_coverage_index::clear_python_generation_warm_memo();
     let _ = (args.py_config, args.rs_config);
     let ignore = merge_check_ignore_prefixes(args.ignore);
@@ -203,7 +208,9 @@ pub fn run_cov_command(args: &CovCommandArgs<'_>) -> i32 {
     let universe_root = Path::new(universe);
     let t_gather = Instant::now();
     let Some(files) = gather_cov_files(universe_root, args.lang_filter, &ignore) else {
-        print_no_files_message(args.lang_filter, universe_root);
+        if print_empty {
+            print_no_files_message(args.lang_filter, universe_root);
+        }
         return 0;
     };
     if let Err(code) = crate::bin_cli::util::reject_unconfigured_languages(

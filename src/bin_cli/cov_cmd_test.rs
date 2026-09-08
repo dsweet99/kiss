@@ -131,6 +131,52 @@ fn run_cov_command_test_directory_without_population_succeeds() {
 }
 
 #[test]
+fn after_test_cov_score_is_silent_when_universe_is_tests_only() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    std::fs::create_dir_all(repo.join(".git")).unwrap();
+    std::fs::create_dir_all(repo.join("tests/fast")).unwrap();
+    std::fs::write(repo.join("app.py"), "VALUE = 1\n").unwrap();
+    std::fs::write(
+        repo.join("tests/fast/test_a.py"),
+        "def test_a():\n    assert True\n",
+    )
+    .unwrap();
+    let _ = gather_cov_files(repo, None, &[]);
+
+    let py = Config::python_defaults();
+    let rs = Config::rust_defaults();
+    let gate = GateConfig {
+        test_coverage_threshold: 75,
+        orphan_detection: false,
+        max_unit_test_seconds: vec![("*".into(), 5.0)],
+        ..GateConfig::default()
+    };
+    let path = repo.join("tests/fast").to_string_lossy().into_owned();
+    let args = CovCommandArgs {
+        paths: std::slice::from_ref(&path),
+        lang_filter: None,
+        py_config: &py,
+        rs_config: &rs,
+        gate_config: &gate,
+        bypass_gate: false,
+        ignore: &[],
+        timing: false,
+        jobs: 1,
+        allow_refresh: false,
+        pytest_args: &[],
+        language_tables: Default::default(),
+    };
+    let out = crate::test_runner::capture_stdout::capture_stdout(|| {
+        assert_eq!(run_cov_command_impl(&args, false), 0);
+    });
+    assert!(
+        !out.contains("No files"),
+        "after-test cov_score must not print empty-discovery; stdout={out:?}"
+    );
+}
+
+#[test]
 fn both_gates_disabled_short_circuits() {
     let py = Config::python_defaults();
     let rs = Config::rust_defaults();

@@ -8,8 +8,9 @@ use super::coverage::WatchCoverageResult;
 use super::event_source::WatchEventSource;
 use super::filter::WatchPathFilter;
 use super::reload::{CycleForceFlags, WatchLiveConfig};
-use super::session_idle::{drain_into_machine, QueuedCycle};
+use super::session_idle::{QueuedCycle, drain_into_machine};
 use super::settle::SettleMachine;
+use crate::bin_cli::args::TestInvocation;
 use crate::test_runner::{RunTestCmdArgs, RunTestOnceOutcome};
 
 pub(crate) const EXIT_INTERRUPTED: i32 = 130;
@@ -40,6 +41,7 @@ where
 {
     kiss::rust_llvm_cov_runner::begin_watch_report_capture();
     let (cycle_args, replies) = take_queued_cycle_args(ctx.live, ctx.queued);
+    let scoped = matches!(&cycle_args.invocation, TestInvocation::Targets(t) if !t.is_empty());
     crate::test_runner::emit_test_progress("kiss test: Starting");
     let test_outcome = (ctx.run_cycle)(clone_args(&cycle_args));
     let test_exit = match test_outcome {
@@ -48,7 +50,7 @@ where
                 &replies,
                 EXIT_INTERRUPTED,
                 None,
-                take_suite_report(ctx.suite),
+                take_suite_report(ctx.suite, false).recap,
             ));
             return CycleOutcome::Interrupted;
         }
@@ -66,18 +68,29 @@ where
                 &replies,
                 EXIT_INTERRUPTED,
                 None,
-                take_suite_report(ctx.suite),
+                take_suite_report(ctx.suite, false).recap,
             ));
             return CycleOutcome::Interrupted;
         }
         CovStep::Done { exit_code, error } => {
-            let output = take_suite_report(ctx.suite);
-            *ctx.last_reply = Some(reply_all(
+            let outputs = take_suite_report(ctx.suite, scoped);
+            reply_all(
                 &replies,
-                kiss::rust_llvm_cov_runner::merge_watch_exit(exit_code, ctx.suite.test_exit_code()),
-                error,
-                output,
-            ));
+                kiss::rust_llvm_cov_runner::merge_watch_exit(exit_code, outputs.client_exit),
+                error.clone(),
+                outputs.client,
+            );
+            if !scoped || ctx.last_reply.is_none() {
+                *ctx.last_reply = Some(NudgeReplyMsg {
+                    exit_code: kiss::rust_llvm_cov_runner::merge_watch_exit(
+                        exit_code,
+                        ctx.suite.test_exit_code(),
+                    ),
+                    pid: std::process::id(),
+                    error,
+                    output: outputs.recap,
+                });
+            }
         }
     }
     if let Some(msg) = drain_into_machine(
@@ -148,15 +161,48 @@ pub(crate) fn take_queued_cycle_args<'a>(
     (live.cycle_args(force), replies)
 }
 
-fn take_suite_report(suite: &mut kiss::rust_llvm_cov_runner::WatchSuiteReport) -> Option<String> {
-    if let Some(lines) = kiss::rust_llvm_cov_runner::take_watch_report_lines() {
-        suite.merge_lines(&lines);
+struct SuiteReportOutputs {
+    client: Option<String>,
+    recap: Option<String>,
+    client_exit: i32,
+}
+
+fn nonempty_report(text: String) -> Option<String> {
+    if text.is_empty() { None } else { Some(text) }
+}
+
+fn take_suite_report(
+    suite: &mut kiss::rust_llvm_cov_runner::WatchSuiteReport,
+    scoped: bool,
+) -> SuiteReportOutputs {
+    let cycle_lines = kiss::rust_llvm_cov_runner::take_watch_report_lines();
+    let cycle = cycle_lines.as_ref().map(|lines| {
+        let mut report = kiss::rust_llvm_cov_runner::WatchSuiteReport::default();
+        report.merge_lines(lines);
+        report
+    });
+    if let Some(lines) = cycle_lines.as_ref() {
+        suite.merge_lines(lines);
     }
-    let recap = suite.format();
-    if recap.is_empty() {
-        None
+    let recap = nonempty_report(suite.format());
+    let (client, client_exit) = if scoped {
+        (
+            cycle
+                .as_ref()
+                .map(kiss::rust_llvm_cov_runner::WatchSuiteReport::format)
+                .and_then(nonempty_report),
+            cycle.as_ref().map_or(
+                0,
+                kiss::rust_llvm_cov_runner::WatchSuiteReport::test_exit_code,
+            ),
+        )
     } else {
-        Some(recap)
+        (recap.clone(), suite.test_exit_code())
+    };
+    SuiteReportOutputs {
+        client,
+        recap,
+        client_exit,
     }
 }
 

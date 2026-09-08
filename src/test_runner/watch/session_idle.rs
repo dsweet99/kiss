@@ -22,7 +22,7 @@ pub(super) struct QueuedCycle {
 
 impl QueuedCycle {
     fn wants_new_cycle(&self) -> bool {
-        self.force || self.force_bad || self.metrics
+        self.force || self.force_bad || self.metrics || !self.targets.is_empty()
     }
 }
 

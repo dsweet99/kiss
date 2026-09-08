@@ -5,7 +5,7 @@ use std::time::Duration;
 use kiss::TestSectionConfig;
 
 use crate::bin_cli::args::TestInvocation;
-use crate::bin_cli::cov_cmd::{CovCommandArgs, run_cov_command};
+use crate::bin_cli::cov_cmd::{CovCommandArgs, run_cov_command_impl};
 use crate::test_runner::{
     RunTestCmdArgs, WatchCoverageParams, WatchCoverageResult, run_test, run_test_watch,
 };
@@ -244,20 +244,23 @@ fn run_after_test_coverage(p: AfterTestCoverage<'_>) -> i32 {
     let universe_s = universe.to_string_lossy().into_owned();
     let paths = [universe_s];
     let started = std::time::Instant::now();
-    let code = run_cov_command(&CovCommandArgs {
-        paths: &paths,
-        lang_filter: p.lang_filter,
-        py_config: p.py_config,
-        rs_config: p.rs_config,
-        gate_config: p.gate_config,
-        bypass_gate: p.coverage_all,
-        ignore: p.ignore,
-        timing: false,
-        jobs: p.jobs,
-        allow_refresh: p.allow_refresh,
-        pytest_args: p.pytest_args,
-        language_tables: p.language_tables,
-    });
+    let code = run_cov_command_impl(
+        &CovCommandArgs {
+            paths: &paths,
+            lang_filter: p.lang_filter,
+            py_config: p.py_config,
+            rs_config: p.rs_config,
+            gate_config: p.gate_config,
+            bypass_gate: p.coverage_all,
+            ignore: p.ignore,
+            timing: false,
+            jobs: p.jobs,
+            allow_refresh: p.allow_refresh,
+            pytest_args: p.pytest_args,
+            language_tables: p.language_tables,
+        },
+        false,
+    );
     crate::test_runner::emit_stage_time("cov_score", started.elapsed());
     code
 }
