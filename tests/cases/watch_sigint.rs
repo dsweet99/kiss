@@ -252,6 +252,10 @@ fn watch_foreground_logs_planning_and_pass() {
         Duration::from_secs(90),
     );
     assert!(
+        stdout.contains("kiss test: Starting"),
+        "foreground --watch must log when it starts a test; stdout={stdout:?}"
+    );
+    assert!(
         stdout.contains("kiss test: Planning ..."),
         "foreground --watch must log planning; stdout={stdout:?}"
     );

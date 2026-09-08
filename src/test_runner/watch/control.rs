@@ -33,6 +33,20 @@ pub(crate) struct NudgeRequestMsg {
     pub targets: Vec<String>,
 }
 
+impl NudgeRequestMsg {
+    pub(crate) fn progress_line(&self) -> String {
+        let mut line = format!(
+            "kiss test: request force={} force_bad={} metrics={}",
+            self.force, self.force_bad, self.metrics
+        );
+        if !self.targets.is_empty() {
+            line.push_str(" targets=");
+            line.push_str(&self.targets.join(" "));
+        }
+        line
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct NudgeReplyMsg {
     pub exit_code: i32,
@@ -318,6 +332,7 @@ fn accept_loop(listener: UnixListener, nudge_tx: Sender<NudgeRequest>, shutdown:
 
 fn handle_client(mut stream: UnixStream, nudge_tx: Sender<NudgeRequest>) -> Result<(), String> {
     let msg: NudgeRequestMsg = read_framed_json(&mut stream).map_err(|e| e.to_string())?;
+    crate::test_runner::emit_test_progress(&msg.progress_line());
     let (reply_tx, reply_rx) = mpsc::sync_channel::<NudgeReplyMsg>(1);
     nudge_tx
         .send(NudgeRequest {

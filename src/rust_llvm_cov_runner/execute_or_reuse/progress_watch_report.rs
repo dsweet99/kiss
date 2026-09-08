@@ -82,6 +82,8 @@ mod tests {
     #[test]
     fn watch_report_capture_keeps_status_and_summary() {
         begin_watch_report_capture();
+        record_watch_report_line("kiss test: Starting");
+        record_watch_report_line("kiss test: request force=false force_bad=false metrics=false");
         record_watch_report_line("kiss test: Planning ...");
         record_watch_report_line("PASS: tests/a.py::t (0.01s)");
         record_watch_report_line("TIMEOUT: tests/b.py::t (5.00s)");
@@ -91,6 +93,8 @@ mod tests {
         assert!(report.contains("TIMEOUT: tests/b.py::t"));
         assert!(report.contains("passed ·"));
         assert!(!report.contains("Planning"));
+        assert!(!report.contains("Starting"));
+        assert!(!report.contains("request"));
         assert!(take_watch_report_capture().is_none());
     }
 }

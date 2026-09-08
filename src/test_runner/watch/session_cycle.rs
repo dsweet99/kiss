@@ -39,6 +39,7 @@ where
 {
     kiss::rust_llvm_cov_runner::begin_watch_report_capture();
     let (cycle_args, replies) = take_queued_cycle_args(ctx.live, ctx.queued);
+    crate::test_runner::emit_test_progress("kiss test: Starting");
     let test_outcome = (ctx.run_cycle)(clone_args(&cycle_args));
     let test_exit = match test_outcome {
         RunTestOnceOutcome::Interrupted => {

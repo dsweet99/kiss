@@ -6,6 +6,65 @@ use super::*;
 use crate::test_runner::watch::lock::{WatchLockGuard, watch_lock_path};
 
 #[test]
+fn nudge_request_progress_line_includes_fields() {
+    assert_eq!(
+        NudgeRequestMsg::default().progress_line(),
+        "kiss test: request force=false force_bad=false metrics=false"
+    );
+    assert_eq!(
+        NudgeRequestMsg {
+            force: true,
+            force_bad: true,
+            metrics: true,
+            targets: vec!["a.rs".into(), "b.py".into()],
+        }
+        .progress_line(),
+        "kiss test: request force=true force_bad=true metrics=true targets=a.rs b.py"
+    );
+}
+
+#[test]
+fn handle_client_logs_received_request() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path().to_path_buf();
+    let lock_path = watch_lock_path(&repo);
+    let _lock = WatchLockGuard::lock(&lock_path).unwrap();
+    let control = WatchControlServer::start(&repo).unwrap();
+    let server = thread::spawn(move || {
+        let req = control
+            .nudge_rx
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap();
+        let _ = req.reply.send(NudgeReplyMsg {
+            exit_code: 0,
+            pid: std::process::id(),
+            error: None,
+            output: None,
+        });
+        drop(control);
+    });
+    let out = crate::test_runner::capture_stdout::capture_stdout(|| {
+        let reply = try_client_nudge(
+            &repo,
+            &NudgeRequestMsg {
+                force: false,
+                force_bad: true,
+                metrics: true,
+                targets: vec!["src/lib.rs".into()],
+            },
+        )
+        .unwrap()
+        .expect("client");
+        assert_eq!(reply.exit_code, 0);
+    });
+    server.join().unwrap();
+    assert!(
+        out.contains("kiss test: request force=false force_bad=true metrics=true targets=src/lib.rs"),
+        "watcher must log the received kiss test request; stdout={out:?}"
+    );
+}
+
+#[test]
 fn protocol_round_trip_on_socket() {
     let tmp = tempfile::tempdir().unwrap();
     let sock = tmp.path().join("c.sock");
