@@ -125,6 +125,28 @@ fn run_batch_subprocess_runs_echo_with_env_dirs() {
 }
 
 #[test]
+fn run_batch_subprocess_aborts_before_spawn_when_llvm_cov_nextest_budget_is_gone() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut req = RustCoverageBatchRequest::witness();
+    req.cwd = tmp.path().to_path_buf();
+    req.source_root = tmp.path().to_path_buf();
+    req.generated_config = tmp.path().join("runs/run-a/nextest.toml");
+    let mut plan = crate::rust_llvm_cov_runner::build_rust_coverage_batch_plan(&req).unwrap();
+    plan.argv = vec!["/bin/echo".to_string(), "hello".to_string()];
+    plan.env.clear();
+    let cap = crate::rust_llvm_cov_runner::execute_or_reuse::llvm_cov_process_budget::llvm_cov_nextest_process_cap();
+    let _live =
+        crate::rust_llvm_cov_runner::execute_or_reuse::llvm_cov_process_budget::ProcessCountOverrideGuard::enter(
+            Some(cap + 1),
+        );
+    let err = run_batch_subprocess(tmp.path(), &plan).unwrap_err();
+    assert!(matches!(
+        err,
+        BatchSubprocessRunError::ProcessBudget { live, cap: got } if live == cap + 1 && got == cap
+    ));
+}
+
+#[test]
 fn run_batch_subprocess_aborts_before_spawn_when_mem_available_is_gone() {
     let tmp = tempfile::tempdir().unwrap();
     let mut req = RustCoverageBatchRequest::witness();
@@ -165,6 +187,14 @@ fn batch_subprocess_error_converts_to_rust_llvm_cov_error() {
     .into();
     assert!(
         matches!(floor, RustLlvmCovError::InvalidRequest(message) if message.contains("MemAvailable 10 KiB") && message.contains("100 KiB floor") && !message.contains("clamp"))
+    );
+    let budget: RustLlvmCovError = BatchSubprocessRunError::ProcessBudget {
+        live: 40,
+        cap: 9,
+    }
+    .into();
+    assert!(
+        matches!(budget, RustLlvmCovError::InvalidRequest(message) if message.contains("40 cargo-llvm-cov nextest") && message.contains("cap 9") && !message.contains("clamp"))
     );
 }
 

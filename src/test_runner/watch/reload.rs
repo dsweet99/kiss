@@ -38,6 +38,15 @@ pub(crate) struct WatchLiveConfig {
     seed: WatchReloadSeed,
     kissconfig_sig: PathSignature,
     kissconfig_digest: u64,
+    cycle_filters: Option<CycleFilterOverride>,
+}
+
+#[derive(Debug, Clone)]
+struct CycleFilterOverride {
+    lang_filter: Option<Language>,
+    ignore: Vec<String>,
+    extra: Vec<String>,
+    python_extra: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -78,7 +87,31 @@ impl WatchLiveConfig {
             kissconfig_sig: PathSignature::from_path(config_path),
             kissconfig_digest: file_digest(config_path),
             seed,
+            cycle_filters: None,
         }
+    }
+
+    pub(crate) fn apply_nudge_filters(
+        &mut self,
+        lang_filter: Option<Language>,
+        ignore: Vec<String>,
+        extra: Vec<String>,
+        python_extra: Vec<String>,
+    ) {
+        if lang_filter.is_none() && ignore.is_empty() && extra.is_empty() {
+            self.cycle_filters = None;
+            return;
+        }
+        self.cycle_filters = Some(CycleFilterOverride {
+            lang_filter,
+            ignore,
+            extra,
+            python_extra,
+        });
+    }
+
+    pub(crate) fn clear_nudge_filters(&mut self) {
+        self.cycle_filters = None;
     }
 
     pub(crate) fn cycle_args(&self, force: CycleForceFlags) -> RunTestCmdArgs<'_> {
@@ -89,6 +122,32 @@ impl WatchLiveConfig {
         } else {
             self.invocation.clone()
         };
+        let (lang_filter, extra, python_extra, ignore) = match &self.cycle_filters {
+            Some(over) => (
+                over.lang_filter.or(self.lang_filter),
+                if over.extra.is_empty() {
+                    self.extra.as_slice()
+                } else {
+                    over.extra.as_slice()
+                },
+                if over.python_extra.is_empty() {
+                    self.python_extra.as_slice()
+                } else {
+                    over.python_extra.as_slice()
+                },
+                if over.ignore.is_empty() {
+                    self.ignore.as_slice()
+                } else {
+                    over.ignore.as_slice()
+                },
+            ),
+            None => (
+                self.lang_filter,
+                self.extra.as_slice(),
+                self.python_extra.as_slice(),
+                self.ignore.as_slice(),
+            ),
+        };
         RunTestCmdArgs {
             invocation,
             main_branch_cli: self.main_branch_cli.as_deref(),
@@ -98,10 +157,10 @@ impl WatchLiveConfig {
             force_bad: force.force_bad,
             metrics: force.metrics,
             jobs: self.jobs,
-            extra: &self.extra,
-            python_extra: &self.python_extra,
-            ignore: &self.ignore,
-            lang_filter: self.lang_filter,
+            extra,
+            python_extra,
+            ignore,
+            lang_filter,
             config_main_branch: self.config_main_branch.as_deref(),
             gate_config: self.gate_config.clone(),
         }

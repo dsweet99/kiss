@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::rust_llvm_cov_runner::RustLlvmCovError;
+use crate::rust_llvm_cov_runner::execute_or_reuse::llvm_cov_process_budget::ProcessBudgetBreach;
 use crate::rust_llvm_cov_runner::execute_or_reuse::mem_available::MemoryFloorBreach;
 use crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchPlan;
 
@@ -46,6 +47,7 @@ pub enum BatchSubprocessRunError {
     Spawn { program: String, message: String },
     Interrupted,
     MemoryFloor { available_kib: u64, floor_kib: u64 },
+    ProcessBudget { live: usize, cap: usize },
 }
 
 impl From<MemoryFloorBreach> for BatchSubprocessRunError {
@@ -53,6 +55,15 @@ impl From<MemoryFloorBreach> for BatchSubprocessRunError {
         Self::MemoryFloor {
             available_kib: value.available_kib,
             floor_kib: value.floor_kib,
+        }
+    }
+}
+
+impl From<ProcessBudgetBreach> for BatchSubprocessRunError {
+    fn from(value: ProcessBudgetBreach) -> Self {
+        Self::ProcessBudget {
+            live: value.live,
+            cap: value.cap,
         }
     }
 }
@@ -69,6 +80,9 @@ impl From<BatchSubprocessRunError> for RustLlvmCovError {
                 floor_kib,
             } => Self::InvalidRequest(format!(
                 "MemAvailable {available_kib} KiB is below the {floor_kib} KiB floor; aborting instrumented nextest"
+            )),
+            BatchSubprocessRunError::ProcessBudget { live, cap } => Self::InvalidRequest(format!(
+                "{live} cargo-llvm-cov nextest processes live (cap {cap}); aborting instrumented nextest"
             )),
         }
     }

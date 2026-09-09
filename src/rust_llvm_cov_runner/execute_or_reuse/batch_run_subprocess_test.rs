@@ -255,6 +255,41 @@ fn wait_child_with_interruption_fails_when_interrupted() {
 }
 
 #[test]
+fn wait_child_aborts_when_llvm_cov_nextest_budget_is_crossed() {
+    let _serial =
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::signal_test_guard();
+    let cap = crate::rust_llvm_cov_runner::execute_or_reuse::llvm_cov_process_budget::llvm_cov_nextest_process_cap();
+    let _live =
+        crate::rust_llvm_cov_runner::execute_or_reuse::llvm_cov_process_budget::ProcessCountOverrideGuard::enter(
+            Some(cap + 1),
+        );
+    let guard = BatchProcessTreeGuard::install().expect("install guard");
+    let mut command = Command::new("/bin/sh");
+    command.arg("-c").arg("sleep 2");
+    command.stdin(Stdio::null());
+    command.stdout(Stdio::null());
+    command.stderr(Stdio::null());
+    let mut child = guard
+        .spawn_batch_command(&mut command)
+        .expect("spawn child");
+    record_child_process_group(guard.registry().as_ref(), &child);
+    let mut seen = HashSet::new();
+    let err = wait_child_with_interruption(
+        &mut child,
+        &guard,
+        std::path::Path::new("/nonexistent"),
+        &mut seen,
+    )
+    .expect_err("process budget must abort the batch");
+    assert!(matches!(
+        err,
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_run::BatchSubprocessRunError::ProcessBudget {
+            ..
+        }
+    ));
+}
+
+#[test]
 fn wait_child_aborts_when_mem_available_crosses_floor() {
     let _serial =
         crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::signal_test_guard();

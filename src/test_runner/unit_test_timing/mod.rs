@@ -232,23 +232,10 @@ pub(crate) fn evaluate_runtime_gate(
 }
 
 pub(crate) fn runtime_gate_failure_lines(viols: &[RuntimeGateViolation]) -> Vec<String> {
-    let mut ordered: Vec<&RuntimeGateViolation> = viols.iter().collect();
-    ordered
-        .sort_by(|a, b| (a.language, a.selector.as_str()).cmp(&(b.language, b.selector.as_str())));
-    let mut lines = vec![format!(
+    vec![format!(
         "VIOLATION:max_unit_test_seconds: {} test(s) exceeded path-pattern time limits",
-        ordered.len()
-    )];
-    for v in ordered {
-        lines.push(format!(
-            "  [{}] {}: {:.2}s (limit {:.2}s)",
-            v.language.label(),
-            v.selector,
-            v.seconds,
-            v.limit_seconds
-        ));
-    }
-    lines
+        viols.len()
+    )]
 }
 
 pub(crate) fn collect_available_unit_test_timings(

@@ -139,9 +139,9 @@ impl WatchSuiteReport {
         if lines.is_empty() && self.violations.is_empty() {
             return String::new();
         }
-        lines.push(summary_line(self));
         lines.extend(failure_footers(self));
         lines.extend(self.violations.iter().cloned());
+        lines.push(summary_line(self));
         lines.join("\n")
     }
 }
@@ -197,12 +197,44 @@ fn summary_line(suite: &WatchSuiteReport) -> String {
     } else {
         suite.max_pass_label.as_str()
     };
-    format!(
+    let mut line = format!(
         "{icon} {} passed · {} failed · {} timed out · {total} total · {max_pass} max pass",
         suite.passed(),
         suite.failed(),
         suite.timed_out()
-    )
+    );
+    append_violation_counts(&mut line, &suite.violations);
+    line
+}
+
+fn append_violation_counts(line: &mut String, violations: &[String]) {
+    let mut counts: Vec<(String, usize)> = Vec::new();
+    for text in violations {
+        let Some(rest) = text.strip_prefix("VIOLATION:") else {
+            continue;
+        };
+        let Some((kind, after)) = rest.split_once(':') else {
+            continue;
+        };
+        let trimmed = after.trim_start();
+        let n = trimmed
+            .split_once(' ')
+            .and_then(|(num, rest)| {
+                let parsed = num.parse::<usize>().ok()?;
+                (rest.starts_with("test(s)") || rest.starts_with("file(s)")).then_some(parsed)
+            })
+            .unwrap_or(1);
+        if let Some((_, total)) = counts.iter_mut().find(|(name, _)| name == kind) {
+            *total += n;
+        } else {
+            counts.push((kind.to_string(), n));
+        }
+    }
+    for (kind, n) in counts {
+        if n > 0 {
+            line.push_str(&format!(" · {n} {kind}"));
+        }
+    }
 }
 
 fn failure_footers(suite: &WatchSuiteReport) -> Vec<String> {
@@ -245,7 +277,7 @@ enum ParsedWatchLine {
 
 fn parse_watch_line(message: &str) -> ParsedWatchLine {
     let line = strip_ansi_prefix(message.trim());
-    if line.contains("VIOLATION:test_coverage") {
+    if line.contains("VIOLATION:") {
         return ParsedWatchLine::Violation(line.to_string());
     }
     parse_summary_line(line).unwrap_or_else(|| parse_status_line(line).unwrap_or(ParsedWatchLine::Ignore))
@@ -357,6 +389,9 @@ mod tests {
         );
         assert!(recap.contains("tests/c.py::test_c"), "{recap}");
         assert_eq!(suite.test_exit_code(), 1);
+        let recap_at = recap.rfind("✗ 3 passed").expect("recap");
+        let fail_at = recap.find("FAIL tests/c.py::test_c").expect("fail footer");
+        assert!(fail_at < recap_at, "recap must be last:\n{recap}");
     }
 
     #[test]

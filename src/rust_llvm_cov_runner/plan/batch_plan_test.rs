@@ -45,6 +45,10 @@ fn batch_plan_uses_one_shared_build_target_and_bounded_nextest_jobs() {
     assert_eq!(plan.env["CARGO_LLVM_COV_TARGET_DIR"], build_target);
     assert_eq!(plan.env["CARGO_LLVM_COV_BUILD_DIR"], build_target);
     assert_eq!(plan.env["CARGO_INCREMENTAL"], "0");
+    assert_eq!(
+        plan.env[crate::rust_llvm_cov_runner::plan::llvm_cov_active::KISS_LLVM_COV_ACTIVE_ENV],
+        "1"
+    );
     assert_eq!(plan.env["NEXTEST_EXPERIMENTAL_LIBTEST_JSON"], "1");
     assert_eq!(plan.env["KEEP_ME"], "1");
     assert!(

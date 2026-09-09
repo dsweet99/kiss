@@ -22,13 +22,7 @@ fn write_kissconfig(root: &Path, settle: f64) {
     write_kissconfig_with_threshold(root, settle, 0);
 }
 
-fn assert_reports_missing_target(
-    ok: bool,
-    stdout: &str,
-    stderr: &str,
-    target: &str,
-    needle: &str,
-) {
+fn assert_reports_missing_target(ok: bool, stdout: &str, stderr: &str, target: &str, needle: &str) {
     assert!(
         !ok,
         "missing target must fail; stdout={stdout:?} stderr={stderr:?}"
@@ -54,16 +48,28 @@ fn seeded_python_repo() -> tempfile::TempDir {
 }
 
 fn oneshot_target(dir: &Path, target: &str) -> (bool, String, String) {
+    oneshot_args(dir, &["test", target])
+}
+
+fn oneshot_args(dir: &Path, args: &[&str]) -> (bool, String, String) {
     let output = Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .args(["test", target])
+        .args(args)
         .current_dir(dir)
         .output()
-        .expect("oneshot target");
+        .expect("oneshot");
     (
         output.status.success(),
         String::from_utf8_lossy(&output.stdout).into_owned(),
         String::from_utf8_lossy(&output.stderr).into_owned(),
     )
+}
+
+fn assert_reports_lang_mismatch(ok: bool, stdout: &str, stderr: &str, target: &str) {
+    assert_reports_missing_target(ok, stdout, stderr, target, "--lang selects only rust");
+}
+
+fn assert_reports_ignore(ok: bool, stdout: &str, stderr: &str, target: &str) {
+    assert_reports_missing_target(ok, stdout, stderr, target, "--ignore prefix");
 }
 
 #[test]
@@ -117,6 +123,124 @@ fn oneshot_reports_missing_rs_file_with_watcher() {
     let target = "bad_path.rs";
     let (ok, stdout, stderr) = oneshot_target(tmp.path(), target);
     assert_reports_missing_target(ok, &stdout, &stderr, target, "file not found");
+}
+
+#[test]
+fn oneshot_reports_lang_mismatch_without_watcher() {
+    if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
+        return;
+    }
+    let tmp = seeded_python_repo();
+    let target = "test_lib.py";
+    let (ok, stdout, stderr) = oneshot_args(tmp.path(), &["test", "--lang", "rust", target]);
+    assert_reports_lang_mismatch(ok, &stdout, &stderr, target);
+}
+
+#[test]
+fn oneshot_reports_lang_mismatch_with_watcher() {
+    if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
+        return;
+    }
+    let tmp = seeded_python_repo();
+    let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
+    wait_watch_idle_cycle(tmp.path());
+    let target = "test_lib.py";
+    let (ok, stdout, stderr) = oneshot_args(tmp.path(), &["test", "--lang", "rust", target]);
+    assert_reports_lang_mismatch(ok, &stdout, &stderr, target);
+}
+
+#[test]
+fn oneshot_reports_ignore_without_watcher() {
+    if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
+        return;
+    }
+    let tmp = seeded_python_repo();
+    let target = "test_lib.py";
+    let (ok, stdout, stderr) = oneshot_args(
+        tmp.path(),
+        &["test", "--lang", "python", "--ignore", "test_", target],
+    );
+    assert_reports_ignore(ok, &stdout, &stderr, target);
+}
+
+#[test]
+fn oneshot_reports_ignore_with_watcher() {
+    if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
+        return;
+    }
+    let tmp = seeded_python_repo();
+    let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
+    wait_watch_idle_cycle(tmp.path());
+    let target = "test_lib.py";
+    let (ok, stdout, stderr) = oneshot_args(
+        tmp.path(),
+        &["test", "--lang", "python", "--ignore", "test_", target],
+    );
+    assert_reports_ignore(ok, &stdout, &stderr, target);
+}
+
+#[test]
+fn oneshot_extra_k_filter_without_watcher() {
+    if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
+        return;
+    }
+    let tmp = seeded_python_repo();
+    let (ok, stdout, stderr) = oneshot_args(
+        tmp.path(),
+        &[
+            "test",
+            "--lang",
+            "python",
+            ".",
+            "--",
+            "-k",
+            "does_not_match",
+        ],
+    );
+    assert!(
+        !ok,
+        "empty -k selection must fail; stdout={stdout:?} stderr={stderr:?}"
+    );
+    let combined = format!("{stdout}{stderr}");
+    assert!(
+        combined.contains("NO COVERING TESTS") || combined.contains("incomplete"),
+        "must not recap a passing suite; stdout={stdout:?} stderr={stderr:?}"
+    );
+}
+
+#[test]
+fn oneshot_extra_k_filter_with_watcher() {
+    if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
+        return;
+    }
+    let tmp = seeded_python_repo();
+    let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
+    wait_watch_idle_cycle(tmp.path());
+    let (ok, stdout, stderr) = oneshot_args(
+        tmp.path(),
+        &[
+            "test",
+            "--lang",
+            "python",
+            ".",
+            "--",
+            "-k",
+            "does_not_match",
+        ],
+    );
+    assert!(
+        !ok,
+        "empty -k selection must fail with watcher; stdout={stdout:?} stderr={stderr:?}"
+    );
+    let combined = format!("{stdout}{stderr}");
+    assert!(
+        !combined.contains("1 passed") && !combined.contains("✓ 1 passed"),
+        "must not recap the last passing suite; stdout={stdout:?} stderr={stderr:?}"
+    );
+    assert!(
+        combined.contains("NO COVERING TESTS") || combined.contains("incomplete"),
+        "must apply extra -k; stdout={stdout:?} stderr={stderr:?}"
+    );
 }
 
 fn assert_watcher_oneshot_report(stdout: &str) {
@@ -416,6 +540,7 @@ fn watcher_reloads_kissconfig_threshold_change() {
 
     write_kissconfig_with_threshold(tmp.path(), 1.0, 90);
     std::thread::sleep(Duration::from_secs(4));
+    wait_watch_idle_cycle(tmp.path());
 
     let output = Command::new(env!("CARGO_BIN_EXE_kiss"))
         .args(["test", "--lang", "python", "."])

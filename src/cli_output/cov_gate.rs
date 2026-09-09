@@ -1,6 +1,4 @@
-use super::{
-    coverage_unit_name, extra_coverable_lines_to_reach, format_unreferenced_unit_coverage_message,
-};
+use super::{coverage_unit_name, format_unreferenced_unit_coverage_message};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -64,27 +62,7 @@ pub fn codebase_coverage_gate_failure_lines(
 #[allow(clippy::implicit_hasher)]
 pub fn coverage_gate_failure_lines(ctx: &CoverageGateFailureCtx<'_>) -> Vec<String> {
     let threshold = ctx.threshold;
-    let mut failing: Vec<_> = ctx
-        .file_stats
-        .iter()
-        .filter(|(_, stat)| stat.percent < threshold)
-        .map(|(f, s)| (f.clone(), s))
-        .collect();
-    failing.sort_by(|a, b| a.0.cmp(&b.0));
-    let mut lines = vec![format!(
-        "VIOLATION:test_coverage: {n} file(s) below {threshold}% threshold (per-file enforcement)",
-        n = failing.len()
-    )];
-    for (file, stat) in &failing {
-        let need = extra_coverable_lines_to_reach(stat.covered_lines, stat.total_lines, threshold);
-        lines.push(format!(
-            "  {}: {}% ({}/{}; need {need} more to reach {threshold}%)",
-            file.display(),
-            stat.percent,
-            stat.covered_lines,
-            stat.total_lines
-        ));
-    }
+    let mut lines = Vec::new();
     for (file, name, line) in ctx.unreferenced {
         let Some(stat) = ctx.file_stats.get(file) else {
             continue;
@@ -134,12 +112,12 @@ mod tests {
             "diagnostic lines omit final status so sibling gates can print once: {stdout}"
         );
         assert!(
-            stdout.contains("VIOLATION:test_coverage:"),
-            "expected coverage violation in stdout: {stdout}"
+            stdout.contains("VIOLATION:test_coverage:foo.py:10:foo:"),
+            "expected one VIOLATION line per file: {stdout}"
         );
         assert!(
-            stdout.contains("per-file enforcement"),
-            "expected per-file enforcement in stdout: {stdout}"
+            !stdout.contains("per-file enforcement") && !stdout.contains("file(s) below"),
+            "grouped coverage block must be omitted: {stdout}"
         );
         assert!(
             stdout.contains("1/2"),

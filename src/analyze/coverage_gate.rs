@@ -57,11 +57,13 @@ fn evaluate_by_file(
             )
         })
         .collect::<Vec<_>>();
-    for line in coverage_gate_failure_lines(&CoverageGateFailureCtx {
+    let lines = coverage_gate_failure_lines(&CoverageGateFailureCtx {
         threshold,
         unreferenced: &unreferenced,
         file_stats: &file_stats,
-    }) {
+    });
+    crate::test_runner::final_summary::note_violation_kind("test_coverage", lines.len());
+    for line in lines {
         kiss::rust_llvm_cov_runner::emit_progress(&line);
     }
     Some(crate::analyze::options::AnalyzeResult { success: false })
@@ -103,11 +105,13 @@ fn evaluate_codebase(
         })
         .collect();
     diagnostics.sort_by(|a, b| a.0.cmp(&b.0));
-    for line in codebase_coverage_gate_failure_lines(&CodebaseCoverageGateFailureCtx {
+    let lines = codebase_coverage_gate_failure_lines(&CodebaseCoverageGateFailureCtx {
         percent,
         threshold,
         diagnostics: &diagnostics,
-    }) {
+    });
+    crate::test_runner::final_summary::note_violation_kind("test_coverage", lines.len());
+    for line in lines {
         kiss::rust_llvm_cov_runner::emit_progress(&line);
     }
     Some(crate::analyze::options::AnalyzeResult { success: false })

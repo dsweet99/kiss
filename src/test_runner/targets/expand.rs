@@ -22,7 +22,7 @@ pub(crate) fn expand_target_operands(
 
     for raw in targets {
         if is_file_or_symbol_operand(raw) {
-            reject_missing_source_file(repo_root, raw)?;
+            reject_missing_source_file(repo_root, raw, ignore, lang_filter)?;
             file_operands.push(raw.clone());
             continue;
         }
@@ -69,16 +69,58 @@ fn is_file_or_symbol_operand(raw: &str) -> bool {
         .is_some_and(|ext| ext.eq_ignore_ascii_case("py") || ext.eq_ignore_ascii_case("rs"))
 }
 
-fn reject_missing_source_file(repo_root: &Path, raw: &str) -> Result<(), String> {
+fn reject_missing_source_file(
+    repo_root: &Path,
+    raw: &str,
+    ignore: &[String],
+    lang_filter: Option<Language>,
+) -> Result<(), String> {
     let path_part = raw.split_once("::").map_or(raw, |(path, _)| path);
     let candidate = resolve_candidate(repo_root, path_part);
     match candidate.canonicalize() {
-        Ok(abs) if abs.is_file() => Ok(()),
+        Ok(abs) if abs.is_file() => {
+            reject_file_operand_filters(repo_root, raw, path_part, &abs, ignore, lang_filter)
+        }
         _ => Err(format!(
             "target '{raw}': file not found at {}",
             candidate.display()
         )),
     }
+}
+
+fn reject_file_operand_filters(
+    repo_root: &Path,
+    raw: &str,
+    path_part: &str,
+    abs: &Path,
+    ignore: &[String],
+    lang_filter: Option<Language>,
+) -> Result<(), String> {
+    if let Some((filter, language)) = lang_mismatch(path_part, lang_filter) {
+        return Err(format!(
+            "target '{raw}' is {} but --lang selects only {}",
+            language.label(),
+            filter.label()
+        ));
+    }
+    let root = repo_root
+        .canonicalize()
+        .unwrap_or_else(|_| repo_root.to_path_buf());
+    let rel = abs.strip_prefix(&root).unwrap_or(Path::new(path_part));
+    if kiss::path_ignored_by_prefixes(&rel.to_string_lossy(), ignore)
+        || kiss::path_ignored_by_prefixes(path_part, ignore)
+    {
+        return Err(format!(
+            "target '{raw}' is covered by --ignore prefix and cannot be requested"
+        ));
+    }
+    Ok(())
+}
+
+fn lang_mismatch(path_part: &str, lang_filter: Option<Language>) -> Option<(Language, Language)> {
+    let filter = lang_filter?;
+    let language = Language::from_path(Path::new(path_part))?;
+    (language != filter).then_some((filter, language))
 }
 
 fn resolve_candidate(repo_root: &Path, raw: &str) -> PathBuf {

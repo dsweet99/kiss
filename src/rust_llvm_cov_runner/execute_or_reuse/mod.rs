@@ -56,6 +56,10 @@ pub(crate) mod batch_run;
 
 pub(crate) mod mem_available;
 
+pub(crate) mod llvm_cov_nested;
+
+pub(crate) mod llvm_cov_process_budget;
+
 pub(crate) mod batch_warm_hit_seal;
 
 pub(crate) mod batch_shim;

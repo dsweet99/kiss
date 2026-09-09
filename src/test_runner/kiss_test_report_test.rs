@@ -62,3 +62,39 @@ fn shared_report_skips_coverage_on_test_failure() {
     assert_eq!(covs.load(std::sync::atomic::Ordering::SeqCst), 0);
 }
 
+#[test]
+fn shared_report_puts_recap_after_coverage_violations() {
+    let mut args = dry_args();
+    args.dry_run = false;
+    let report = run_kiss_test_report(
+        args,
+        |_a| {
+            crate::test_runner::final_summary::print_final_test_summary(
+                &crate::test_runner::final_summary::FinalTestSummary {
+                    passed: 1,
+                    failed: 0,
+                    ..crate::test_runner::final_summary::FinalTestSummary::default()
+                },
+                std::time::Duration::from_millis(10),
+            );
+            RunTestOnceOutcome::Code(0)
+        },
+        |_a| {
+            crate::test_runner::final_summary::note_violation_kind("test_coverage", 2);
+            crate::test_runner::emit_test_progress(
+                "VIOLATION:test_coverage:foo.py:1:foo: 0% covered (0/4). Need 3 more lines to reach 75%.",
+            );
+            WatchCoverageResult::failed(1, "coverage gate failed")
+        },
+    );
+    let out = report.output.unwrap_or_default();
+    let viol_at = out.find("VIOLATION:test_coverage:").expect("violation");
+    let recap_at = out.find("✓ 1 passed").expect("recap");
+    assert!(viol_at < recap_at, "recap after violations:\n{out}");
+    assert!(
+        out.contains("· 2 test_coverage"),
+        "recap must summarize violation types:\n{out}"
+    );
+    assert_eq!(report.exit_code, 1);
+}
+

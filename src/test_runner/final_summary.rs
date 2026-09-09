@@ -1,8 +1,92 @@
+use std::cell::{Cell, RefCell};
 use std::io::IsTerminal;
 use std::time::Duration;
 
 use super::duration::format_test_duration;
 use super::runners::SelectorExecutionSummary;
+
+thread_local! {
+    static DEFER_RECAP: Cell<bool> = const { Cell::new(false) };
+    static PENDING_RECAP: RefCell<Option<(FinalTestSummary, Duration)>> = const { RefCell::new(None) };
+    static VIOLATION_COUNTS: RefCell<Vec<(String, usize)>> = const { RefCell::new(Vec::new()) };
+}
+
+pub(crate) struct RecapDeferGuard;
+
+impl RecapDeferGuard {
+    pub(crate) fn enter() -> Self {
+        DEFER_RECAP.set(true);
+        PENDING_RECAP.with(|slot| *slot.borrow_mut() = None);
+        VIOLATION_COUNTS.with(|slot| slot.borrow_mut().clear());
+        Self
+    }
+}
+
+impl Drop for RecapDeferGuard {
+    fn drop(&mut self) {
+        flush_final_test_summary();
+    }
+}
+
+pub(crate) fn note_violation_kind(kind: &str, n: usize) {
+    if !DEFER_RECAP.get() || n == 0 {
+        return;
+    }
+    VIOLATION_COUNTS.with(|slot| {
+        let mut counts = slot.borrow_mut();
+        if let Some((_, total)) = counts.iter_mut().find(|(name, _)| name == kind) {
+            *total += n;
+        } else {
+            counts.push((kind.to_string(), n));
+        }
+    });
+}
+
+fn take_violation_counts() -> Vec<(String, usize)> {
+    VIOLATION_COUNTS.with(|slot| std::mem::take(&mut *slot.borrow_mut()))
+}
+
+fn violation_count_suffix(counts: &[(String, usize)]) -> String {
+    let mut suffix = String::new();
+    for (kind, n) in counts {
+        if *n > 0 {
+            suffix.push_str(&format!(" · {n} {kind}"));
+        }
+    }
+    suffix
+}
+
+fn recap_with_violations(
+    summary: &FinalTestSummary,
+    total_duration: Duration,
+    color: bool,
+    counts: &[(String, usize)],
+) -> String {
+    let text = format_final_test_summary(summary, total_duration, color);
+    let suffix = violation_count_suffix(counts);
+    if suffix.is_empty() {
+        return text;
+    }
+    match text.split_once('\n') {
+        Some((first, rest)) => format!("{first}{suffix}\n{rest}"),
+        None => format!("{text}{suffix}"),
+    }
+}
+
+fn flush_final_test_summary() {
+    DEFER_RECAP.set(false);
+    let Some((summary, total_duration)) = PENDING_RECAP.with(|slot| slot.borrow_mut().take()) else {
+        return;
+    };
+    let counts = take_violation_counts();
+    let text = recap_with_violations(
+        &summary,
+        total_duration,
+        stdout_color_enabled(),
+        &counts,
+    );
+    crate::test_runner::emit_test_progress(&text);
+}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct FinalTestSummary {
@@ -104,6 +188,12 @@ pub(crate) fn coverage_skip_for_failures_message(
 pub(crate) fn print_final_test_summary(summary: &FinalTestSummary, total_duration: Duration) {
     if let Some(msg) = coverage_skip_for_failures_message(summary) {
         crate::test_runner::emit_test_progress(msg);
+    }
+    if DEFER_RECAP.get() {
+        PENDING_RECAP.with(|slot| {
+            *slot.borrow_mut() = Some((summary.clone(), total_duration));
+        });
+        return;
     }
     let text = format_final_test_summary(summary, total_duration, stdout_color_enabled());
     crate::test_runner::emit_test_progress(&text);

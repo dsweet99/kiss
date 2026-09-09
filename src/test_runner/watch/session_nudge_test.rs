@@ -127,13 +127,52 @@ fn forwarded_force_applies_to_queued_cycle_then_clears() {
     let base = py_dry_args();
     assert!(!base.force_rerun && !base.force_bad && !base.metrics);
     let live = live_from_args_disabled(base, Duration::from_secs(1), Path::new("."));
-    let (cycle1, replies) = take_queued_cycle_args(&live, &mut queued);
-    assert!(queued.is_none(), "queue consumed");
-    assert!(cycle1.force_rerun && cycle1.force_bad && cycle1.metrics);
-    assert_eq!(replies.len(), 2);
+    let replies_len;
+    {
+        let (cycle1, replies) = take_queued_cycle_args(&live, &mut queued);
+        assert!(queued.is_none(), "queue consumed");
+        assert!(cycle1.force_rerun && cycle1.force_bad && cycle1.metrics);
+        replies_len = replies.len();
+    }
+    assert_eq!(replies_len, 2);
     let (cycle2, replies2) = take_queued_cycle_args(&live, &mut queued);
     assert!(!cycle2.force_rerun && !cycle2.force_bad && !cycle2.metrics);
     assert!(replies2.is_empty());
+}
+
+#[test]
+fn forwarded_extra_overrides_watcher_and_starts_new_cycle() {
+    use crate::test_runner::watch::control::NudgeRequestMsg as Msg;
+    let (tx, rx) = mpsc::channel::<NudgeRequest>();
+    let (reply_tx, _reply_rx) = mpsc::sync_channel(1);
+    tx.send(NudgeRequest {
+        msg: Msg {
+            extra: vec!["-k".into(), "does_not_match".into()],
+            python_extra: vec!["-k".into(), "does_not_match".into()],
+            ..Default::default()
+        },
+        reply: reply_tx,
+    })
+    .unwrap();
+    let mut queued = None;
+    coalesce_nudges(Some(&rx), &mut queued);
+    let base = py_dry_args();
+    let mut live = live_from_args_disabled(base, Duration::from_secs(1), Path::new("."));
+    queued
+        .as_mut()
+        .expect("queued")
+        .stamp_filter_override(&live);
+    assert!(queued.as_ref().expect("queued").wants_new_cycle());
+    apply_queued_filters(&mut live, &queued);
+    let (cycle, _) = take_queued_cycle_args(&live, &mut queued);
+    assert_eq!(
+        cycle.extra,
+        &["-k".to_string(), "does_not_match".to_string()]
+    );
+    assert_eq!(
+        cycle.python_extra,
+        &["-k".to_string(), "does_not_match".to_string()]
+    );
 }
 
 fn watcher_running_invocations() -> Vec<TestInvocation> {

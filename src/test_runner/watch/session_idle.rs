@@ -7,6 +7,7 @@ use super::control::{NudgeReplyMsg, NudgeRequest};
 use super::event_source::WatchEventSource;
 use super::filter::WatchPathFilter;
 use super::nudge_kind::NudgeInvocation;
+use super::reload::WatchLiveConfig;
 use super::settle::{PathSignature, SettleMachine, SettlePoll};
 use super::{apply_normalized_event, print_cycle_summary};
 
@@ -20,15 +21,27 @@ pub(super) struct QueuedCycle {
     pub invocation: NudgeInvocation,
     pub targets: Vec<String>,
     pub unscoped_force: bool,
+    pub lang_filter: Option<kiss::Language>,
+    pub ignore: Vec<String>,
+    pub extra: Vec<String>,
+    pub python_extra: Vec<String>,
+    pub filter_override: bool,
 }
 
 impl QueuedCycle {
-    fn wants_new_cycle(&self) -> bool {
+    pub(super) fn stamp_filter_override(&mut self, live: &WatchLiveConfig) {
+        self.filter_override = (self.lang_filter.is_some() && self.lang_filter != live.lang_filter)
+            || (!self.extra.is_empty() && self.extra != live.extra)
+            || (!self.ignore.is_empty() && self.ignore != live.ignore);
+    }
+
+    pub(super) fn wants_new_cycle(&self) -> bool {
         self.force
             || self.force_bad
             || self.metrics
             || !self.targets.is_empty()
             || !self.invocation.is_all()
+            || self.filter_override
     }
 }
 
@@ -38,6 +51,7 @@ pub(super) enum WaitOutcome {
     Continue,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn wait_until_next_cycle(
     source: &mut dyn WatchEventSource,
     filter: &mut WatchPathFilter,
@@ -46,10 +60,14 @@ pub(super) fn wait_until_next_cycle(
     nudge_rx: Option<&std::sync::mpsc::Receiver<NudgeRequest>>,
     queued: &mut Option<QueuedCycle>,
     last_reply: Option<&NudgeReplyMsg>,
+    live: &WatchLiveConfig,
 ) -> Option<i32> {
     crate::test_runner::emit_test_progress("kiss test: Waiting");
     loop {
         coalesce_nudges(nudge_rx, queued);
+        if let Some(q) = queued.as_mut() {
+            q.stamp_filter_override(live);
+        }
         if try_reply_idle_nudge(queued, last_reply, machine.has_pending_work()) {
             continue;
         }
@@ -116,6 +134,25 @@ fn merge_nudge_targets(q: &mut QueuedCycle, force: bool, targets: &[String]) {
     q.targets.dedup();
 }
 
+fn merge_nudge_filters(
+    q: &mut QueuedCycle,
+    lang_filter: Option<kiss::Language>,
+    ignore: &[String],
+    extra: &[String],
+    python_extra: &[String],
+) {
+    if lang_filter.is_some() {
+        q.lang_filter = lang_filter;
+    }
+    if !ignore.is_empty() {
+        q.ignore = ignore.to_vec();
+    }
+    if !extra.is_empty() {
+        q.extra = extra.to_vec();
+        q.python_extra = python_extra.to_vec();
+    }
+}
+
 pub(super) fn coalesce_nudges(
     nudge_rx: Option<&std::sync::mpsc::Receiver<NudgeRequest>>,
     queued: &mut Option<QueuedCycle>,
@@ -133,9 +170,17 @@ pub(super) fn coalesce_nudges(
                     q.invocation = req.msg.invocation;
                 }
                 merge_nudge_targets(q, req.msg.force, &req.msg.targets);
+                merge_nudge_filters(
+                    q,
+                    req.msg.lang_filter(),
+                    &req.msg.ignore,
+                    &req.msg.extra,
+                    &req.msg.python_extra,
+                );
                 q.replies.push(req.reply);
             }
             None => {
+                let lang_filter = req.msg.lang_filter();
                 *queued = Some(QueuedCycle {
                     replies: vec![req.reply],
                     force: req.msg.force,
@@ -146,6 +191,11 @@ pub(super) fn coalesce_nudges(
                         && req.msg.targets.is_empty()
                         && req.msg.invocation.is_all(),
                     targets: req.msg.targets,
+                    lang_filter,
+                    ignore: req.msg.ignore,
+                    extra: req.msg.extra,
+                    python_extra: req.msg.python_extra,
+                    filter_override: false,
                 });
             }
         }

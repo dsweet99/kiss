@@ -33,6 +33,8 @@ pub(crate) mod cargo_workspace_metadata;
 
 pub(crate) mod execution_identity;
 
+pub(crate) mod llvm_cov_active;
+
 pub(crate) mod shared_input;
 
 #[cfg(test)]

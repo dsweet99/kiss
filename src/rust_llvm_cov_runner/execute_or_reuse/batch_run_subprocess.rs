@@ -56,6 +56,10 @@ pub(crate) fn run_batch_subprocess(
 ) -> Result<BatchSubprocessRunOutcome, BatchSubprocessRunError> {
     ensure_batch_env_dirs(plan)?;
     crate::rust_llvm_cov_runner::execute_or_reuse::mem_available::check_host_mem_available()?;
+    crate::rust_llvm_cov_runner::execute_or_reuse::llvm_cov_process_budget::check_llvm_cov_nextest_budget()?;
+    let _nested_lock =
+        crate::rust_llvm_cov_runner::execute_or_reuse::llvm_cov_nested::NestedLlvmCovLock::acquire()
+            .map_err(|err| spawn_component_error("nested-llvm-cov", err.to_string()))?;
     let run_root = batch_run_root(plan)?;
     let (output_server, env) = start_output_channel_for_batch(run_root, plan)?;
     let output_server = OutputChannelShutdown::new(output_server);
@@ -170,7 +174,10 @@ fn spawn_tracked_batch_child(
     process_tree: &BatchProcessTreeGuard,
     program: &str,
 ) -> Result<std::process::Child, BatchSubprocessRunError> {
-    let argv = &plan.argv;
+    let mut argv = plan.argv.clone();
+    crate::rust_llvm_cov_runner::execute_or_reuse::llvm_cov_nested::apply_nested_llvm_cov_argv(
+        &mut argv,
+    );
     let mut command = Command::new(program);
     command
         .args(&argv[1..])

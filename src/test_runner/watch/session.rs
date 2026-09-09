@@ -26,7 +26,7 @@ fn watch_loop_serial() -> std::sync::MutexGuard<'static, ()> {
 }
 
 #[allow(unused_imports)]
-pub(super) use super::session_cycle::take_queued_cycle_args;
+pub(super) use super::session_cycle::{apply_queued_filters, take_queued_cycle_args};
 
 #[allow(dead_code)]
 pub(crate) fn run_watch_loop(
@@ -132,7 +132,7 @@ where
             return 1;
         }
         match run_one_watch_cycle(WatchCycleCtx {
-            live: &live,
+            live: &mut live,
             queued: &mut queued,
             source,
             filter: &mut filter,
@@ -158,6 +158,9 @@ where
             CycleOutcome::Continue => {}
         }
         coalesce_nudges(nudge_rx, &mut queued);
+        if let Some(q) = queued.as_mut() {
+            q.stamp_filter_override(&live);
+        }
         if !try_reply_idle_nudge(&mut queued, last_reply.as_ref(), machine.has_pending_work())
             && queued.is_some()
         {
@@ -172,6 +175,7 @@ where
             nudge_rx,
             &mut queued,
             last_reply.as_ref(),
+            &live,
         ) {
             return code;
         }

@@ -35,9 +35,25 @@ pub(crate) struct NudgeRequestMsg {
     pub invocation: NudgeInvocation,
     #[serde(default)]
     pub targets: Vec<String>,
+    #[serde(default)]
+    pub lang: Option<String>,
+    #[serde(default)]
+    pub ignore: Vec<String>,
+    #[serde(default)]
+    pub extra: Vec<String>,
+    #[serde(default)]
+    pub python_extra: Vec<String>,
 }
 
 impl NudgeRequestMsg {
+    pub(crate) fn lang_filter(&self) -> Option<kiss::Language> {
+        match self.lang.as_deref() {
+            Some("python" | "py") => Some(kiss::Language::Python),
+            Some("rust" | "rs") => Some(kiss::Language::Rust),
+            _ => None,
+        }
+    }
+
     pub(crate) fn progress_line(&self) -> String {
         let mut line = format!(
             "kiss test: request force={} force_bad={} metrics={}",
@@ -50,6 +66,18 @@ impl NudgeRequestMsg {
         if !self.targets.is_empty() {
             line.push_str(" targets=");
             line.push_str(&self.targets.join(" "));
+        }
+        if let Some(lang) = &self.lang {
+            line.push_str(" lang=");
+            line.push_str(lang);
+        }
+        if !self.ignore.is_empty() {
+            line.push_str(" ignore=");
+            line.push_str(&self.ignore.join(","));
+        }
+        if !self.extra.is_empty() {
+            line.push_str(" extra=");
+            line.push_str(&self.extra.join(" "));
         }
         line
     }

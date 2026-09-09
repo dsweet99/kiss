@@ -190,3 +190,55 @@ fn print_emits_skip_message_immediately_before_summary() {
         "all-pass must still check coverage:\n{pass_out}"
     );
 }
+
+#[test]
+fn recap_appends_nonzero_violation_counts() {
+    let summary = FinalTestSummary {
+        passed: 3,
+        failed: 0,
+        ..FinalTestSummary::default()
+    };
+    let text = super::recap_with_violations(
+        &summary,
+        Duration::from_secs_f64(0.74),
+        false,
+        &[
+            ("test_coverage".into(), 113),
+            ("max_unit_test_seconds".into(), 2455),
+        ],
+    );
+    assert_eq!(
+        text,
+        "✓ 3 passed · 0 failed · 0 timed out · 0.74s total · 0s max pass · 113 test_coverage · 2455 max_unit_test_seconds"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn deferred_recap_prints_after_violations_with_counts() {
+    let summary = FinalTestSummary {
+        passed: 2,
+        failed: 0,
+        ..FinalTestSummary::default()
+    };
+    let out = crate::test_runner::capture_stdout::capture_stdout(|| {
+        let _guard = RecapDeferGuard::enter();
+        print_final_test_summary(&summary, Duration::from_secs_f64(0.5));
+        crate::test_runner::emit_test_progress(
+            "VIOLATION:test_coverage:foo.py:1:foo: 0% covered (0/4). Need 3 more lines to reach 75%.",
+        );
+        note_violation_kind("test_coverage", 2);
+        note_violation_kind("max_unit_test_seconds", 4);
+    });
+    let viol_at = out.find("VIOLATION:test_coverage:").expect("violation");
+    let recap_at = out.find("✓ 2 passed").expect("recap");
+    assert!(viol_at < recap_at, "recap must follow violations:\n{out}");
+    assert!(
+        out.contains("· 2 test_coverage · 4 max_unit_test_seconds"),
+        "recap must count violation types:\n{out}"
+    );
+    assert!(
+        out.trim_end().ends_with("· 2 test_coverage · 4 max_unit_test_seconds"),
+        "recap must be last:\n{out}"
+    );
+}

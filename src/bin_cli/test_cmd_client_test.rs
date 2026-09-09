@@ -181,13 +181,11 @@ fn isolated_python_repo_with_git(init_git: bool) -> IsolatedPythonRepo {
     let tmp = tempfile::tempdir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
     if init_git {
-        assert!(
-            kiss::scrubbed_git_command(tmp.path())
-                .arg("init")
-                .status()
-                .unwrap()
-                .success()
-        );
+        assert!(kiss::scrubbed_git_command(tmp.path())
+            .arg("init")
+            .status()
+            .unwrap()
+            .success());
     } else {
         std::fs::create_dir_all(tmp.path().join(".git")).unwrap();
     }
@@ -229,6 +227,59 @@ fn rustc_style_missing_path_is_rejected_even_if_watcher_says_ok() {
         );
         assert_eq!(calls.load(Ordering::SeqCst), 0, "{raw}");
     }
+}
+
+#[cfg(unix)]
+#[test]
+fn lang_mismatch_is_rejected_even_if_watcher_says_ok() {
+    let _repo = isolated_inited_python_repo();
+    let test_cfg = TestSectionConfig::default();
+    let py = kiss::Config::python_defaults();
+    let rs = kiss::Config::rust_defaults();
+    let gate = kiss::GateConfig::default();
+    let mut args = python_oneshot_args(&test_cfg, &py, &rs, &gate);
+    args.invocation = TestInvocation::Targets(vec!["app.py".into()]);
+    args.lang_filter = Some(kiss::Language::Rust);
+    args.language_tables = kiss::LanguageTablesPresent::both();
+    set_client_result_override_for_test(Some(Ok(Some(0))));
+    let calls = AtomicUsize::new(0);
+    let code = run_test_command_with(args, |_a| {
+        calls.fetch_add(1, Ordering::SeqCst);
+        0
+    });
+    set_client_result_override_for_test(None);
+    assert_eq!(
+        code, 1,
+        "lang mismatch must fail even when a watcher recap is success"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
+
+#[cfg(unix)]
+#[test]
+fn ignore_prefix_is_rejected_even_if_watcher_says_ok() {
+    let _repo = isolated_inited_python_repo();
+    let test_cfg = TestSectionConfig::default();
+    let py = kiss::Config::python_defaults();
+    let rs = kiss::Config::rust_defaults();
+    let gate = kiss::GateConfig::default();
+    let ignore = ["app".to_string()];
+    let mut args = python_oneshot_args(&test_cfg, &py, &rs, &gate);
+    args.invocation = TestInvocation::Targets(vec!["app.py".into()]);
+    args.ignore = &ignore;
+    args.language_tables = kiss::LanguageTablesPresent::both();
+    set_client_result_override_for_test(Some(Ok(Some(0))));
+    let calls = AtomicUsize::new(0);
+    let code = run_test_command_with(args, |_a| {
+        calls.fetch_add(1, Ordering::SeqCst);
+        0
+    });
+    set_client_result_override_for_test(None);
+    assert_eq!(
+        code, 1,
+        "ignore prefix must fail even when a watcher recap is success"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
 }
 
 #[test]

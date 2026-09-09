@@ -51,6 +51,10 @@ pub(crate) fn apply_time_gate_eval(eval: &RuntimeGateEval) -> bool {
     match eval {
         RuntimeGateEval::Disabled | RuntimeGateEval::Passed => false,
         RuntimeGateEval::Failed(viols) => {
+            crate::test_runner::final_summary::note_violation_kind(
+                "max_unit_test_seconds",
+                viols.len(),
+            );
             for line in runtime_gate_failure_lines(viols) {
                 println!("{line}");
             }
@@ -89,6 +93,7 @@ pub(crate) fn evaluate_max_num_tests_gate(
     };
     let limit = args.gate_config.max_num_tests;
     if count > limit {
+        crate::test_runner::final_summary::note_violation_kind("max_num_tests", count);
         println!("VIOLATION:max_num_tests: {count} test(s) exceeds max_num_tests={limit}");
         true
     } else {

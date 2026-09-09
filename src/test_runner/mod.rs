@@ -12,7 +12,7 @@ mod execution_generation;
 pub(crate) mod execution_witness;
 pub(crate) mod force_bad;
 pub(crate) use force_bad::apply_force_bad;
-mod final_summary;
+pub(crate) mod final_summary;
 pub(crate) mod lang_iface;
 pub(crate) mod lang_python;
 pub(crate) mod lang_rust;

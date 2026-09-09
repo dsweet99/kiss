@@ -23,18 +23,26 @@ where
     C: FnMut(&RunTestCmdArgs<'_>) -> WatchCoverageResult,
 {
     kiss::rust_llvm_cov_runner::begin_watch_report_capture();
-    let test_exit = match run_tests(clone_run_args(&args)) {
-        RunTestOnceOutcome::Interrupted => return interrupted_report(),
-        RunTestOnceOutcome::Code(code) => code,
+    let (exit_code, error, interrupted) = {
+        let _defer = crate::test_runner::final_summary::RecapDeferGuard::enter();
+        match run_tests(clone_run_args(&args)) {
+            RunTestOnceOutcome::Interrupted => (EXIT_INTERRUPTED, None, true),
+            RunTestOnceOutcome::Code(code) if code != 0 || args.dry_run => (code, None, false),
+            RunTestOnceOutcome::Code(_) => {
+                let cov = run_cov(&args);
+                if cov.interrupted {
+                    (EXIT_INTERRUPTED, None, true)
+                } else {
+                    (cov.exit_code, cov.error, false)
+                }
+            }
+        }
     };
-    if test_exit != 0 || args.dry_run {
-        return finish_report(test_exit, None);
+    if interrupted {
+        interrupted_report()
+    } else {
+        finish_report(exit_code, error)
     }
-    let cov = run_cov(&args);
-    if cov.interrupted {
-        return interrupted_report();
-    }
-    finish_report(cov.exit_code, cov.error)
 }
 
 fn interrupted_report() -> KissTestReport {

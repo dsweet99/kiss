@@ -134,3 +134,26 @@ fn expand_sole_repo_root_is_all_and_mix_errors() {
         expand_target_operands(tmp.path(), &[root_s, "lib.rs".into()], &[], None).unwrap_err();
     assert!(mix_err.contains("mixed"), "{mix_err}");
 }
+
+#[test]
+fn expand_rejects_lang_mismatch_on_existing_file() {
+    let tmp = tempdir().unwrap();
+    init_git_repo(tmp.path());
+    fs::write(tmp.path().join("lib.py"), "x = 1\n").unwrap();
+    let err = expand_target_operands(tmp.path(), &["lib.py".into()], &[], Some(Language::Rust))
+        .unwrap_err();
+    assert!(err.contains("is python"), "{err}");
+    assert!(err.contains("--lang selects only rust"), "{err}");
+    assert!(err.contains("lib.py"), "{err}");
+}
+
+#[test]
+fn expand_rejects_ignore_prefix_on_existing_file() {
+    let tmp = tempdir().unwrap();
+    init_git_repo(tmp.path());
+    fs::write(tmp.path().join("test_lib.py"), "x = 1\n").unwrap();
+    let err = expand_target_operands(tmp.path(), &["test_lib.py".into()], &["test_".into()], None)
+        .unwrap_err();
+    assert!(err.contains("--ignore prefix"), "{err}");
+    assert!(err.contains("test_lib.py"), "{err}");
+}

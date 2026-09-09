@@ -209,6 +209,13 @@ fn nudge_request_from_test_args(args: &TestCommandArgs<'_>) -> crate::test_runne
             TestInvocation::Targets(targets) => targets.clone(),
             _ => Vec::new(),
         },
+        lang: args.lang_filter.map(|lang| lang.label().to_string()),
+        ignore: args.ignore.to_vec(),
+        extra: args.extra.to_vec(),
+        python_extra: kiss::effective_python_pytest_args(
+            &args.test_cfg.pytest_plugins,
+            args.extra,
+        ),
     }
 }
 
@@ -449,6 +456,9 @@ mod tests {
         let msg = nudge_request_from_test_args(&args);
         assert!(!msg.force);
         assert!(!msg.force_bad);
+        assert!(msg.lang.is_none());
+        assert!(msg.ignore.is_empty());
+        assert!(msg.extra.is_empty());
         assert_eq!(
             msg.targets,
             vec!["tests/fast/analysis/test_gantt.py::test_one".to_string()]
@@ -460,6 +470,45 @@ mod tests {
         let all_msg = nudge_request_from_test_args(&all_args);
         assert!(!all_msg.force);
         assert!(all_msg.targets.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn nudge_request_forwards_lang_ignore_and_extra() {
+        let test_cfg = TestSectionConfig::default();
+        let py = kiss::Config::python_defaults();
+        let rs = kiss::Config::rust_defaults();
+        let gate = kiss::GateConfig::default();
+        let ignore = ["test_".to_string()];
+        let extra = ["-k".to_string(), "does_not_match".to_string()];
+        let args = TestCommandArgs {
+            invocation: TestInvocation::All,
+            main_branch: None,
+            base_branch: None,
+            dry_run: false,
+            retry_bad: false,
+            metrics: false,
+            coverage_all: false,
+            watch: false,
+            jobs: 1,
+            jobs_cli: Some(1),
+            ignore: &ignore,
+            cli_ignore: &ignore,
+            extra: &extra,
+            lang_filter: Some(kiss::Language::Rust),
+            test_cfg: &test_cfg,
+            py_config: &py,
+            rs_config: &rs,
+            gate_config: &gate,
+            reload_kissconfig: false,
+            config_path: None,
+            language_tables: Default::default(),
+        };
+        let msg = nudge_request_from_test_args(&args);
+        assert_eq!(msg.lang.as_deref(), Some("rust"));
+        assert_eq!(msg.ignore, ignore);
+        assert_eq!(msg.extra, extra);
+        assert_eq!(msg.python_extra, extra);
     }
 
     #[cfg(unix)]

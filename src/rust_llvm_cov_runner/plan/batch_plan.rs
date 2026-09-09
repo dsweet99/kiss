@@ -176,6 +176,7 @@ pub(crate) fn effective_coverage_environment(
     let mut env = normalized_request_environment(&req.env);
     ensure_coverage_link_build_id(&mut env);
     crate::rust_llvm_cov_runner::kiss_profraw::ensure_kiss_profraw_env(&mut env, &req.source_root);
+    crate::rust_llvm_cov_runner::plan::llvm_cov_active::mark_llvm_cov_active(&mut env);
     env.remove("KISS_RUST_COVERAGE_PROFILE_POOL");
 
     let build_target = req.cache_root.join("build").join("target");

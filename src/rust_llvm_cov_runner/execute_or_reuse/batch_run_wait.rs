@@ -21,9 +21,12 @@ pub(crate) fn wait_child_with_interruption(
             seen_shim_metadata,
         );
         if let Err(err) = check_host_mem_available() {
-            let _ = process_tree.terminate_descendants(Duration::ZERO);
-            let _ = child.kill();
-            let _ = child.wait();
+            abort_batch_child(child, process_tree);
+            return Err(err.into());
+        }
+        if let Err(err) = crate::rust_llvm_cov_runner::execute_or_reuse::llvm_cov_process_budget::check_llvm_cov_nextest_budget()
+        {
+            abort_batch_child(child, process_tree);
             return Err(err.into());
         }
         match child.try_wait() {
@@ -50,6 +53,12 @@ pub(crate) fn wait_child_with_interruption(
         }
         std::thread::sleep(Duration::from_millis(25));
     }
+}
+
+fn abort_batch_child(child: &mut std::process::Child, process_tree: &BatchProcessTreeGuard) {
+    let _ = process_tree.terminate_descendants(Duration::ZERO);
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 fn completed_or_interrupted_status(

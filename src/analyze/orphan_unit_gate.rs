@@ -32,6 +32,7 @@ pub(crate) fn evaluate_orphan_unit_gate(
         eprintln!("error: kiss test: failed to parse sources for orphan units");
         return true;
     };
+    crate::test_runner::final_summary::note_violation_kind("orphan", viols.len());
     kiss::cli_output::print_violations(&viols);
     !viols.is_empty()
 }

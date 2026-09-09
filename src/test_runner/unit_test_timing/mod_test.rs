@@ -50,7 +50,7 @@ fn incomplete_population_fail_closed_when_enabled() {
 }
 
 #[test]
-fn runtime_gate_failure_lines_are_sorted_and_labeled() {
+fn runtime_gate_failure_lines_count_only() {
     let lines = runtime_gate_failure_lines(&[
         RuntimeGateViolation {
             language: Language::Rust,
@@ -66,14 +66,9 @@ fn runtime_gate_failure_lines_are_sorted_and_labeled() {
         },
     ]);
     assert_eq!(
-        lines[0],
-        "VIOLATION:max_unit_test_seconds: 2 test(s) exceeded path-pattern time limits"
+        lines,
+        ["VIOLATION:max_unit_test_seconds: 2 test(s) exceeded path-pattern time limits"]
     );
-    assert_eq!(
-        lines[1],
-        "  [python] tests/test_x.py::test_y: 2.41s (limit 2.00s)"
-    );
-    assert_eq!(lines[2], "  [rust] crate::b: 3.00s (limit 2.00s)");
 }
 
 #[test]

@@ -22,7 +22,7 @@ pub(crate) enum CycleOutcome {
 }
 
 pub(crate) struct WatchCycleCtx<'a, F, C> {
-    pub live: &'a WatchLiveConfig,
+    pub live: &'a mut WatchLiveConfig,
     pub queued: &'a mut Option<QueuedCycle>,
     pub source: &'a mut dyn WatchEventSource,
     pub filter: &'a mut WatchPathFilter,
@@ -40,12 +40,14 @@ where
     C: FnMut(&RunTestCmdArgs<'_>, &WatchLiveConfig) -> WatchCoverageResult,
 {
     crate::test_runner::emit_test_progress("kiss test: Starting");
-    let (cycle_args, replies) = take_queued_cycle_args(ctx.live, ctx.queued);
+    apply_queued_filters(ctx.live, ctx.queued);
+    let live = &*ctx.live;
+    let (cycle_args, replies) = take_queued_cycle_args(live, ctx.queued);
     let scoped = !matches!(cycle_args.invocation, TestInvocation::All);
     let report = crate::test_runner::run_kiss_test_report(
         crate::test_runner::clone_run_args(&cycle_args),
         &mut *ctx.run_cycle,
-        |args| (ctx.run_cov)(args, ctx.live),
+        |args| (ctx.run_cov)(args, live),
     );
     ctx.suite.merge_lines(&report.lines);
     if report.interrupted {
@@ -85,6 +87,18 @@ where
         return CycleOutcome::Error;
     }
     CycleOutcome::Continue
+}
+
+pub(crate) fn apply_queued_filters(live: &mut WatchLiveConfig, queued: &Option<QueuedCycle>) {
+    match queued {
+        Some(q) => live.apply_nudge_filters(
+            q.lang_filter,
+            q.ignore.clone(),
+            q.extra.clone(),
+            q.python_extra.clone(),
+        ),
+        None => live.clear_nudge_filters(),
+    }
 }
 
 pub(crate) fn take_queued_cycle_args<'a>(
@@ -155,6 +169,16 @@ mod nudge_stub {
         pub metrics: bool,
         pub invocation: crate::test_runner::watch::nudge_kind::NudgeInvocation,
         pub targets: Vec<String>,
+        pub lang: Option<String>,
+        pub ignore: Vec<String>,
+        pub extra: Vec<String>,
+        pub python_extra: Vec<String>,
+    }
+
+    impl NudgeRequestMsg {
+        pub(crate) fn lang_filter(&self) -> Option<kiss::Language> {
+            None
+        }
     }
 
     pub(crate) struct NudgeRequest {
