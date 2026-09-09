@@ -22,6 +22,7 @@ pub(crate) fn expand_target_operands(
 
     for raw in targets {
         if is_file_or_symbol_operand(raw) {
+            reject_missing_source_file(repo_root, raw)?;
             file_operands.push(raw.clone());
             continue;
         }
@@ -66,6 +67,18 @@ fn is_file_or_symbol_operand(raw: &str) -> bool {
         .extension()
         .and_then(|ext| ext.to_str())
         .is_some_and(|ext| ext.eq_ignore_ascii_case("py") || ext.eq_ignore_ascii_case("rs"))
+}
+
+fn reject_missing_source_file(repo_root: &Path, raw: &str) -> Result<(), String> {
+    let path_part = raw.split_once("::").map_or(raw, |(path, _)| path);
+    let candidate = resolve_candidate(repo_root, path_part);
+    match candidate.canonicalize() {
+        Ok(abs) if abs.is_file() => Ok(()),
+        _ => Err(format!(
+            "target '{raw}': file not found at {}",
+            candidate.display()
+        )),
+    }
 }
 
 fn resolve_candidate(repo_root: &Path, raw: &str) -> PathBuf {

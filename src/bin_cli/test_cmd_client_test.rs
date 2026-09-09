@@ -210,6 +210,7 @@ fn rustc_style_missing_path_is_rejected_even_if_watcher_says_ok() {
     for raw in [
         "python_nested_observed.rs:51:python_nested_observed",
         "python_nested_observed.rs:51:python_nested_observed:",
+        "bad_path.rs",
     ] {
         let mut args = python_oneshot_args(&test_cfg, &py, &rs, &gate);
         args.invocation = TestInvocation::Targets(vec![raw.into()]);
@@ -224,7 +225,7 @@ fn rustc_style_missing_path_is_rejected_even_if_watcher_says_ok() {
         set_client_result_override_for_test(None);
         assert_eq!(
             code, 1,
-            "{raw}: missing rustc-style path must fail even when a watcher recap is success"
+            "{raw}: missing path must fail even when a watcher recap is success"
         );
         assert_eq!(calls.load(Ordering::SeqCst), 0, "{raw}");
     }

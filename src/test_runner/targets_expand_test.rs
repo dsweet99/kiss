@@ -109,6 +109,15 @@ fn expand_rejects_rustc_style_missing_path() {
 }
 
 #[test]
+fn expand_rejects_missing_rs_file() {
+    let tmp = tempdir().unwrap();
+    init_git_repo(tmp.path());
+    let err = expand_target_operands(tmp.path(), &["bad_path.rs".into()], &[], None).unwrap_err();
+    assert!(err.contains("file not found"), "{err}");
+    assert!(err.contains("bad_path.rs"), "{err}");
+}
+
+#[test]
 fn expand_sole_repo_root_is_all_and_mix_errors() {
     let tmp = tempdir().unwrap();
     init_git_repo(tmp.path());

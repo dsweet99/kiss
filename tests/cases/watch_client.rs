@@ -22,16 +22,35 @@ fn write_kissconfig(root: &Path, settle: f64) {
     write_kissconfig_with_threshold(root, settle, 0);
 }
 
-fn assert_reports_missing_rustc_path(ok: bool, stdout: &str, stderr: &str, target: &str) {
+fn assert_reports_missing_target(
+    ok: bool,
+    stdout: &str,
+    stderr: &str,
+    target: &str,
+    needle: &str,
+) {
     assert!(
         !ok,
-        "missing rustc-style path must fail; stdout={stdout:?} stderr={stderr:?}"
+        "missing target must fail; stdout={stdout:?} stderr={stderr:?}"
     );
     let combined = format!("{stdout}{stderr}");
     assert!(
-        combined.contains("path not found") && combined.contains(target),
+        combined.contains(needle) && combined.contains(target),
         "must report the bad path; stdout={stdout:?} stderr={stderr:?}"
     );
+}
+
+fn assert_reports_missing_rustc_path(ok: bool, stdout: &str, stderr: &str, target: &str) {
+    assert_reports_missing_target(ok, stdout, stderr, target, "path not found");
+}
+
+fn seeded_python_repo() -> tempfile::TempDir {
+    let tmp = tempfile::TempDir::new().unwrap();
+    init_git_repo(tmp.path());
+    write_python_fixture(tmp.path());
+    write_kissconfig(tmp.path(), 1.0);
+    commit_all(tmp.path(), "init");
+    tmp
 }
 
 fn oneshot_target(dir: &Path, target: &str) -> (bool, String, String) {
@@ -52,12 +71,7 @@ fn oneshot_reports_missing_rustc_path_without_watcher() {
     if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
         return;
     }
-    let tmp = tempfile::TempDir::new().unwrap();
-    init_git_repo(tmp.path());
-    write_python_fixture(tmp.path());
-    write_kissconfig(tmp.path(), 1.0);
-    commit_all(tmp.path(), "init");
-
+    let tmp = seeded_python_repo();
     let target = "python_nested_observed.rs:51:python_nested_observed";
     let (ok, stdout, stderr) = oneshot_target(tmp.path(), target);
     assert_reports_missing_rustc_path(ok, &stdout, &stderr, target);
@@ -68,12 +82,7 @@ fn oneshot_reports_missing_rustc_path_with_watcher() {
     if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
         return;
     }
-    let tmp = tempfile::TempDir::new().unwrap();
-    init_git_repo(tmp.path());
-    write_python_fixture(tmp.path());
-    write_kissconfig(tmp.path(), 1.0);
-    commit_all(tmp.path(), "init");
-
+    let tmp = seeded_python_repo();
     let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
     wait_watch_idle_cycle(tmp.path());
 
@@ -84,6 +93,30 @@ fn oneshot_reports_missing_rustc_path_with_watcher() {
         let (ok, stdout, stderr) = oneshot_target(tmp.path(), target);
         assert_reports_missing_rustc_path(ok, &stdout, &stderr, target);
     }
+}
+
+#[test]
+fn oneshot_reports_missing_rs_file_without_watcher() {
+    if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
+        return;
+    }
+    let tmp = seeded_python_repo();
+    let target = "bad_path.rs";
+    let (ok, stdout, stderr) = oneshot_target(tmp.path(), target);
+    assert_reports_missing_target(ok, &stdout, &stderr, target, "file not found");
+}
+
+#[test]
+fn oneshot_reports_missing_rs_file_with_watcher() {
+    if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
+        return;
+    }
+    let tmp = seeded_python_repo();
+    let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
+    wait_watch_idle_cycle(tmp.path());
+    let target = "bad_path.rs";
+    let (ok, stdout, stderr) = oneshot_target(tmp.path(), target);
+    assert_reports_missing_target(ok, &stdout, &stderr, target, "file not found");
 }
 
 fn assert_watcher_oneshot_report(stdout: &str) {
