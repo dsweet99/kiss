@@ -142,6 +142,9 @@ fn run_local_tests_after_client(
     run_args: RunTestCmdArgs<'_>,
     run_local: impl FnOnce(RunTestCmdArgs<'_>) -> i32,
 ) -> i32 {
+    if let Err(code) = reject_unresolved_targets(args) {
+        return code;
+    }
     if let Some(code) = wait_out_live_watcher(args) {
         return code;
     }
@@ -155,6 +158,26 @@ fn run_local_tests_after_client(
         |_| coverage_after_kiss_test(args),
     );
     report.exit_code
+}
+
+fn reject_unresolved_targets(args: &TestCommandArgs<'_>) -> Result<(), i32> {
+    let TestInvocation::Targets(targets) = &args.invocation else {
+        return Ok(());
+    };
+    let cwd = std::env::current_dir().map_err(|e| {
+        eprintln!("error: kiss test: {e}");
+        1
+    })?;
+    let repo_root = crate::test_git::require_git_repo_root(&cwd).map_err(|e| {
+        eprintln!("error: kiss test: {e}");
+        1
+    })?;
+    crate::test_runner::expand_target_operands(&repo_root, targets, args.ignore, args.lang_filter)
+        .map_err(|e| {
+            eprintln!("error: kiss test: {e}");
+            1
+        })?;
+    Ok(())
 }
 
 fn wait_out_live_watcher(args: &TestCommandArgs<'_>) -> Option<i32> {

@@ -168,16 +168,65 @@ fn evaluate_watch_coverage_threshold_zero_fails_closed_without_snapshot() {
 }
 
 fn isolated_python_repo() -> IsolatedPythonRepo {
+    isolated_python_repo_with_git(false)
+}
+
+fn isolated_inited_python_repo() -> IsolatedPythonRepo {
+    isolated_python_repo_with_git(true)
+}
+
+fn isolated_python_repo_with_git(init_git: bool) -> IsolatedPythonRepo {
     let cwd = crate::cwd_test_lock::lock();
     let restore = std::env::current_dir().unwrap();
     let tmp = tempfile::tempdir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
-    std::fs::create_dir_all(tmp.path().join(".git")).unwrap();
+    if init_git {
+        assert!(
+            kiss::scrubbed_git_command(tmp.path())
+                .arg("init")
+                .status()
+                .unwrap()
+                .success()
+        );
+    } else {
+        std::fs::create_dir_all(tmp.path().join(".git")).unwrap();
+    }
     std::fs::write(tmp.path().join("app.py"), "x = 1\n").unwrap();
     IsolatedPythonRepo {
         restore,
         _tmp: tmp,
         _cwd: cwd,
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn rustc_style_missing_path_is_rejected_even_if_watcher_says_ok() {
+    let _repo = isolated_inited_python_repo();
+    let test_cfg = TestSectionConfig::default();
+    let py = kiss::Config::python_defaults();
+    let rs = kiss::Config::rust_defaults();
+    let gate = kiss::GateConfig::default();
+    for raw in [
+        "python_nested_observed.rs:51:python_nested_observed",
+        "python_nested_observed.rs:51:python_nested_observed:",
+    ] {
+        let mut args = python_oneshot_args(&test_cfg, &py, &rs, &gate);
+        args.invocation = TestInvocation::Targets(vec![raw.into()]);
+        args.lang_filter = None;
+        args.language_tables = kiss::LanguageTablesPresent::both();
+        set_client_result_override_for_test(Some(Ok(Some(0))));
+        let calls = AtomicUsize::new(0);
+        let code = run_test_command_with(args, |_a| {
+            calls.fetch_add(1, Ordering::SeqCst);
+            0
+        });
+        set_client_result_override_for_test(None);
+        assert_eq!(
+            code, 1,
+            "{raw}: missing rustc-style path must fail even when a watcher recap is success"
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 0, "{raw}");
     }
 }
 

@@ -22,6 +22,70 @@ fn write_kissconfig(root: &Path, settle: f64) {
     write_kissconfig_with_threshold(root, settle, 0);
 }
 
+fn assert_reports_missing_rustc_path(ok: bool, stdout: &str, stderr: &str, target: &str) {
+    assert!(
+        !ok,
+        "missing rustc-style path must fail; stdout={stdout:?} stderr={stderr:?}"
+    );
+    let combined = format!("{stdout}{stderr}");
+    assert!(
+        combined.contains("path not found") && combined.contains(target),
+        "must report the bad path; stdout={stdout:?} stderr={stderr:?}"
+    );
+}
+
+fn oneshot_target(dir: &Path, target: &str) -> (bool, String, String) {
+    let output = Command::new(env!("CARGO_BIN_EXE_kiss"))
+        .args(["test", target])
+        .current_dir(dir)
+        .output()
+        .expect("oneshot target");
+    (
+        output.status.success(),
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+    )
+}
+
+#[test]
+fn oneshot_reports_missing_rustc_path_without_watcher() {
+    if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
+        return;
+    }
+    let tmp = tempfile::TempDir::new().unwrap();
+    init_git_repo(tmp.path());
+    write_python_fixture(tmp.path());
+    write_kissconfig(tmp.path(), 1.0);
+    commit_all(tmp.path(), "init");
+
+    let target = "python_nested_observed.rs:51:python_nested_observed";
+    let (ok, stdout, stderr) = oneshot_target(tmp.path(), target);
+    assert_reports_missing_rustc_path(ok, &stdout, &stderr, target);
+}
+
+#[test]
+fn oneshot_reports_missing_rustc_path_with_watcher() {
+    if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
+        return;
+    }
+    let tmp = tempfile::TempDir::new().unwrap();
+    init_git_repo(tmp.path());
+    write_python_fixture(tmp.path());
+    write_kissconfig(tmp.path(), 1.0);
+    commit_all(tmp.path(), "init");
+
+    let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
+    wait_watch_idle_cycle(tmp.path());
+
+    for target in [
+        "python_nested_observed.rs:51:python_nested_observed:",
+        "python_nested_observed.rs:51:python_nested_observed",
+    ] {
+        let (ok, stdout, stderr) = oneshot_target(tmp.path(), target);
+        assert_reports_missing_rustc_path(ok, &stdout, &stderr, target);
+    }
+}
+
 fn assert_watcher_oneshot_report(stdout: &str) {
     assert!(
         !stdout.contains("watcher cycle complete"),

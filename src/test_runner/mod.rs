@@ -30,6 +30,7 @@ mod rust_report_id_cache;
 mod selector_ids;
 mod status_labels;
 mod targets;
+pub(crate) use targets::expand_target_operands;
 pub(crate) mod tests_remaining;
 pub(crate) mod unit_test_timing;
 mod kiss_test_report;

@@ -95,6 +95,20 @@ fn expand_empty_and_missing_fail_fast() {
 }
 
 #[test]
+fn expand_rejects_rustc_style_missing_path() {
+    let tmp = tempdir().unwrap();
+    init_git_repo(tmp.path());
+    for raw in [
+        "python_nested_observed.rs:51:python_nested_observed",
+        "python_nested_observed.rs:51:python_nested_observed:",
+    ] {
+        let err = expand_target_operands(tmp.path(), &[raw.into()], &[], None).unwrap_err();
+        assert!(err.contains("path not found"), "{raw}: {err}");
+        assert!(err.contains(raw), "{err}");
+    }
+}
+
+#[test]
 fn expand_sole_repo_root_is_all_and_mix_errors() {
     let tmp = tempdir().unwrap();
     init_git_repo(tmp.path());
