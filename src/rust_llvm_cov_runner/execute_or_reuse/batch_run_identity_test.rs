@@ -2,7 +2,6 @@ use super::*;
 use crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest;
 use crate::rust_llvm_cov_runner::test_support::witness_batch_tools;
 use std::fs;
-use std::process::Command;
 
 struct IdentityHarness {
     req: RustCoverageBatchRequest,
@@ -55,20 +54,22 @@ fn write_cargo_fixture(root: &std::path::Path) {
 }
 
 fn run_llvm_cov_and_read_fresh(root: &std::path::Path, plan: &RustCoverageBatchPlan) -> Vec<bool> {
-    let output = Command::new("cargo")
-        .args([
-            "llvm-cov",
-            "nextest",
-            "--no-report",
-            "--cargo-message-format",
-            "json",
-            "--test-threads",
-            "1",
-        ])
-        .current_dir(root)
-        .envs(&plan.env)
-        .output()
-        .unwrap();
+    let output = crate::rust_llvm_cov_runner::execute_or_reuse::llvm_cov_nested::run_fixture_cargo_llvm_cov(
+        vec![
+            "cargo".to_string(),
+            "llvm-cov".to_string(),
+            "nextest".to_string(),
+            "--no-report".to_string(),
+            "--cargo-message-format".to_string(),
+            "json".to_string(),
+            "--test-threads".to_string(),
+            "1".to_string(),
+        ],
+        |command| {
+            command.current_dir(root).envs(&plan.env);
+        },
+    )
+    .unwrap();
     assert!(
         output.status.success(),
         "cargo llvm-cov failed: {}",

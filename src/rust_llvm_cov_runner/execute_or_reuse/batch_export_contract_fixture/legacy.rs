@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::Instant;
 
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_events::BatchCompilerArtifact;
@@ -142,29 +141,29 @@ fn run_per_selector_cargo_llvm_cov_oracle(
     }
 
     let cargo = oracle_cargo_program();
-    let mut command = Command::new(&cargo);
-    command
-        .arg("llvm-cov")
-        .arg("test")
-        .arg("--json")
-        .arg("--output-path")
-        .arg(&artifact_path)
-        .arg("--no-clean");
-    for arg in fixture_cargo_args() {
-        command.arg(arg);
-    }
-    command.arg(selector).arg("--");
-    for arg in test_args {
-        command.arg(arg);
-    }
-    command
-        .current_dir(FIXTURE_ROOT)
-        .env(HELPER_BIN_ENV, helper_bin)
-        .env("CARGO_TARGET_DIR", &target_dir);
-
-    let output = command
-        .output()
-        .unwrap_or_else(|err| panic!("cargo llvm-cov oracle selector `{selector}` failed: {err}"));
+    let mut argv = vec![
+        cargo.to_string_lossy().to_string(),
+        "llvm-cov".to_string(),
+        "test".to_string(),
+        "--json".to_string(),
+        "--output-path".to_string(),
+        artifact_path.to_string_lossy().to_string(),
+        "--no-clean".to_string(),
+    ];
+    argv.extend(fixture_cargo_args());
+    argv.push(selector.to_string());
+    argv.push("--".to_string());
+    argv.extend(test_args.iter().cloned());
+    let output = crate::rust_llvm_cov_runner::execute_or_reuse::llvm_cov_nested::run_fixture_cargo_llvm_cov(
+        argv,
+        |command| {
+            command
+                .current_dir(FIXTURE_ROOT)
+                .env(HELPER_BIN_ENV, helper_bin)
+                .env("CARGO_TARGET_DIR", &target_dir);
+        },
+    )
+    .unwrap_or_else(|err| panic!("cargo llvm-cov oracle selector `{selector}` failed: {err}"));
     let status = crate::rpytest_runner::TestStatus::from_exit_status(output.status);
     let exit_code = output.status.code();
     let source_root = PathBuf::from(FIXTURE_ROOT).join("runner");

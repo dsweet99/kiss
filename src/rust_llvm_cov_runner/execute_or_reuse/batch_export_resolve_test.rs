@@ -262,27 +262,30 @@ fn run_export_contract_fixture(target: &Path) {
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/export_contract"
     ));
-    let mut command = std::process::Command::new("cargo");
-    scrub_enclosing_coverage_environment(&mut command);
-    command
-        .args([
-            "llvm-cov",
-            "test",
-            "-p",
-            "export-contract-runner",
-            "--manifest-path",
-            &fixture.join("Cargo.toml").to_string_lossy(),
-            "--",
-            "--test-threads=1",
-            "invokes_helper_in_process",
-        ])
-        .env("CARGO_TARGET_DIR", target)
-        .env(
-            "RUSTFLAGS",
-            "-Cinstrument-coverage -Clink-arg=-Wl,--build-id=sha1",
-        )
-        .current_dir(fixture);
-    let output = command.output().expect("cargo llvm-cov test");
+    let output = crate::rust_llvm_cov_runner::execute_or_reuse::llvm_cov_nested::run_fixture_cargo_llvm_cov(
+        vec![
+            "cargo".to_string(),
+            "llvm-cov".to_string(),
+            "test".to_string(),
+            "-p".to_string(),
+            "export-contract-runner".to_string(),
+            "--manifest-path".to_string(),
+            fixture.join("Cargo.toml").to_string_lossy().to_string(),
+            "--".to_string(),
+            "--test-threads=1".to_string(),
+            "invokes_helper_in_process".to_string(),
+        ],
+        |command| {
+            command
+                .env("CARGO_TARGET_DIR", target)
+                .env(
+                    "RUSTFLAGS",
+                    "-Cinstrument-coverage -Clink-arg=-Wl,--build-id=sha1",
+                )
+                .current_dir(fixture);
+        },
+    )
+    .expect("cargo llvm-cov test");
     assert!(
         output.status.success(),
         "fixture coverage run failed: {}",

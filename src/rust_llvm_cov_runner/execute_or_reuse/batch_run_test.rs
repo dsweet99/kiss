@@ -194,7 +194,7 @@ fn batch_subprocess_error_converts_to_rust_llvm_cov_error() {
     }
     .into();
     assert!(
-        matches!(budget, RustLlvmCovError::InvalidRequest(message) if message.contains("40 cargo-llvm-cov nextest") && message.contains("cap 9") && !message.contains("clamp"))
+        matches!(budget, RustLlvmCovError::InvalidRequest(message) if message.contains("40 cargo-llvm-cov processes") && message.contains("cap 9") && !message.contains("clamp"))
     );
 }
 

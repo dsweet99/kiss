@@ -82,7 +82,7 @@ impl From<BatchSubprocessRunError> for RustLlvmCovError {
                 "MemAvailable {available_kib} KiB is below the {floor_kib} KiB floor; aborting instrumented nextest"
             )),
             BatchSubprocessRunError::ProcessBudget { live, cap } => Self::InvalidRequest(format!(
-                "{live} cargo-llvm-cov nextest processes live (cap {cap}); aborting instrumented nextest"
+                "{live} cargo-llvm-cov processes live (cap {cap}); aborting instrumented nextest"
             )),
         }
     }

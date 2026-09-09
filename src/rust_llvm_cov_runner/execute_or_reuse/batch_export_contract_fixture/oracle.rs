@@ -120,23 +120,27 @@ pub(crate) fn real_tool_identity(cwd: &Path) -> RustCoverageToolIdentity {
 
 pub(crate) fn run_cargo_llvm_cov_json(target_dir: &Path) -> Vec<u8> {
     build_helper_bin(target_dir);
-    let output = Command::new("cargo")
-        .args([
-            "llvm-cov",
-            "test",
-            "-p",
-            "export-contract-runner",
-            "--manifest-path",
-            &fixture_manifest().to_string_lossy(),
-            "--json",
-            "--",
-            "--test-threads=1",
-            "spawns_instrumented_helper_binary",
-        ])
-        .env("CARGO_TARGET_DIR", target_dir)
-        .current_dir(FIXTURE_ROOT)
-        .output()
-        .expect("cargo llvm-cov test");
+    let output = crate::rust_llvm_cov_runner::execute_or_reuse::llvm_cov_nested::run_fixture_cargo_llvm_cov(
+        vec![
+            "cargo".to_string(),
+            "llvm-cov".to_string(),
+            "test".to_string(),
+            "-p".to_string(),
+            "export-contract-runner".to_string(),
+            "--manifest-path".to_string(),
+            fixture_manifest().to_string_lossy().to_string(),
+            "--json".to_string(),
+            "--".to_string(),
+            "--test-threads=1".to_string(),
+            "spawns_instrumented_helper_binary".to_string(),
+        ],
+        |command| {
+            command
+                .env("CARGO_TARGET_DIR", target_dir)
+                .current_dir(FIXTURE_ROOT);
+        },
+    )
+    .expect("cargo llvm-cov test");
     assert!(
         output.status.success(),
         "cargo llvm-cov test failed: {}",
