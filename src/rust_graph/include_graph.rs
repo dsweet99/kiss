@@ -1,7 +1,9 @@
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use crate::rust_parsing::{ParsedRustFile, parse_rust_file};
+use rayon::prelude::*;
+
+use crate::rust_parsing::ParsedRustFile;
 
 use super::extract_rust_imports;
 
@@ -57,31 +59,75 @@ pub fn build_include_graph(parsed_files: &[&ParsedRustFile]) -> IncludeGraph {
     IncludeGraph { direct }
 }
 
+fn is_ident_continue(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_'
+}
+
+pub(crate) fn source_may_have_include_macro(source: &str) -> bool {
+    let bytes = source.as_bytes();
+    let mut i = 0;
+    while i + 7 <= bytes.len() {
+        if &bytes[i..i + 7] != b"include" {
+            i += 1;
+            continue;
+        }
+        if i > 0 && is_ident_continue(bytes[i - 1]) {
+            i += 7;
+            continue;
+        }
+        let mut j = i + 7;
+        while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+            j += 1;
+        }
+        if j < bytes.len() && bytes[j] == b'!' {
+            return true;
+        }
+        i += 7;
+    }
+    false
+}
+
+fn include_targets_from_path(path: &Path) -> Vec<PathBuf> {
+    let Ok(source) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    if !source_may_have_include_macro(&source) {
+        return Vec::new();
+    }
+    let Ok(ast) = syn::parse_file(&source) else {
+        return Vec::new();
+    };
+    extract_rust_imports(&ast)
+        .include_literals
+        .into_iter()
+        .filter_map(|lit| {
+            let inc = crate::rust_include::resolve_include_path(path, &lit);
+            inc.is_file()
+                .then(|| crate::rust_include::canonical_path(&inc))
+        })
+        .collect()
+}
+
 #[must_use]
-pub fn expand_rust_files(files: Vec<std::path::PathBuf>) -> Vec<std::path::PathBuf> {
+pub fn expand_rust_files(files: Vec<PathBuf>) -> Vec<PathBuf> {
     const MAX: usize = 10_000;
-    let mut set: HashSet<std::path::PathBuf> = files
+    let mut set: HashSet<PathBuf> = files
         .into_iter()
         .map(|p| crate::rust_include::canonical_path(&p))
         .collect();
     loop {
         let snapshot: Vec<_> = set.iter().cloned().collect();
+        let found: Vec<PathBuf> = snapshot
+            .par_iter()
+            .flat_map(|path| include_targets_from_path(path))
+            .collect();
         let mut changed = false;
-        for path in snapshot {
+        for child in found {
             if set.len() >= MAX {
                 break;
             }
-            let Ok(parsed) = parse_rust_file(&path) else {
-                continue;
-            };
-            for lit in extract_rust_imports(&parsed.ast).include_literals {
-                let inc = crate::rust_include::resolve_include_path(&path, &lit);
-                if inc.is_file() {
-                    let c = crate::rust_include::canonical_path(&inc);
-                    if set.insert(c) {
-                        changed = true;
-                    }
-                }
+            if set.insert(child) {
+                changed = true;
             }
         }
         if !changed || set.len() >= MAX {
@@ -135,6 +181,32 @@ mod include_graph_tests {
         assert_eq!(
             expand_rust_files(vec![missing.clone()]),
             vec![crate::rust_include::canonical_path(&missing)]
+        );
+    }
+
+    #[test]
+    fn source_may_have_include_macro_accepts_include_bang() {
+        assert!(source_may_have_include_macro("include!(\"child.rs\");"));
+        assert!(source_may_have_include_macro("include ! (\"child.rs\");"));
+        assert!(source_may_have_include_macro("::core::include!(\"child.rs\");"));
+    }
+
+    #[test]
+    fn source_may_have_include_macro_rejects_other_include_forms() {
+        assert!(!source_may_have_include_macro("include_str!(\"x.txt\");"));
+        assert!(!source_may_have_include_macro("include_bytes!(\"x.bin\");"));
+        assert!(!source_may_have_include_macro("fn include() {}"));
+        assert!(!source_may_have_include_macro("let xinclude = 1;"));
+    }
+
+    #[test]
+    fn expand_rust_files_keeps_sources_without_include() {
+        let tmp = tempfile::tempdir().unwrap();
+        let plain = tmp.path().join("plain.rs");
+        std::fs::write(&plain, "pub fn f() {}\n").unwrap();
+        assert_eq!(
+            expand_rust_files(vec![plain.clone()]),
+            vec![crate::rust_include::canonical_path(&plain)]
         );
     }
 

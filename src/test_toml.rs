@@ -8,6 +8,7 @@ const TEST_SECTION_KEYS: &[&str] = &[
     "main_branch",
     "num_jobs",
     "num_jobs_pytest",
+    "num_jobs_llvm_cov",
     "watch_settle_seconds",
     "pytest_plugins",
     "ignore",
@@ -205,6 +206,9 @@ fn apply_strict_runtime(
     if let Some(v) = table.get("num_jobs_pytest") {
         config.num_jobs_pytest = parse_positive_usize(v, "num_jobs_pytest")?;
     }
+    if let Some(v) = table.get("num_jobs_llvm_cov") {
+        config.num_jobs_llvm_cov = parse_positive_usize(v, "num_jobs_llvm_cov")?;
+    }
     if let Some(v) = table.get("watch_settle_seconds") {
         config.watch_settle_seconds = parse_positive_f64(v, "watch_settle_seconds")?;
     }
@@ -278,6 +282,7 @@ fn apply_lenient_runtime(
     }
     apply_lenient_positive_usize(table, "num_jobs", &mut config.num_jobs);
     apply_lenient_positive_usize(table, "num_jobs_pytest", &mut config.num_jobs_pytest);
+    apply_lenient_positive_usize(table, "num_jobs_llvm_cov", &mut config.num_jobs_llvm_cov);
     if let Some(v) = table.get("watch_settle_seconds") {
         match parse_positive_f64(v, "watch_settle_seconds") {
             Ok(n) => config.watch_settle_seconds = n,
@@ -318,6 +323,7 @@ mod tests {
         assert!(TEST_SECTION_KEYS.contains(&"orphan_detection"));
         assert!(TEST_SECTION_KEYS.contains(&"num_jobs"));
         assert!(TEST_SECTION_KEYS.contains(&"num_jobs_pytest"));
+        assert!(TEST_SECTION_KEYS.contains(&"num_jobs_llvm_cov"));
         assert!(TEST_SECTION_KEYS.contains(&"max_unit_test_seconds"));
         assert!(TEST_SECTION_KEYS.contains(&"cache"));
     }

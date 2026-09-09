@@ -37,7 +37,9 @@ pub(crate) fn nextest_test_threads(req: &RustCoverageBatchRequest) -> String {
     } else if std::env::var_os("KISS_COVERAGE_RUNTIME_REFRESH_ACTIVE").is_some() {
         req.jobs.min(MAX_REFRESH_NEXTEST_THREADS).to_string()
     } else {
-        req.jobs.to_string()
+        crate::test_section_config::TestSectionConfig::load()
+            .num_jobs_llvm_cov
+            .to_string()
     }
 }
 
@@ -308,5 +310,30 @@ mod tests {
             crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
         req.test_args = vec!["--nocapture".to_string()];
         assert_eq!(nextest_test_threads(&req), "1");
+    }
+
+    #[test]
+    fn ordinary_nextest_threads_use_num_jobs_llvm_cov() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(tmp.path(), "[test]\nnum_jobs_llvm_cov = 3\n").unwrap();
+        let _guard = crate::config::ConfigPathOverrideGuard::enter(Some(tmp.path()));
+        let mut req =
+            crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
+        req.jobs = 32;
+        assert_eq!(nextest_test_threads(&req), "3");
+    }
+
+    #[test]
+    fn ordinary_nextest_threads_default_to_refresh_cap() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(tmp.path(), "[test]\nnum_jobs = 32\n").unwrap();
+        let _guard = crate::config::ConfigPathOverrideGuard::enter(Some(tmp.path()));
+        let mut req =
+            crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
+        req.jobs = 32;
+        assert_eq!(
+            nextest_test_threads(&req),
+            crate::defaults::gate::NUM_JOBS_LLVM_COV.to_string()
+        );
     }
 }

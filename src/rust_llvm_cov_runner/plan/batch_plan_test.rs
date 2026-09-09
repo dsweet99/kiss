@@ -84,6 +84,28 @@ fn batch_plan_ignores_inherited_values_for_plan_owned_environment() {
 }
 
 #[test]
+fn batch_plan_keeps_build_jobs_at_num_jobs() {
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(tmp.path(), "[test]\nnum_jobs_llvm_cov = 3\n").unwrap();
+    let _guard = crate::config::ConfigPathOverrideGuard::enter(Some(tmp.path()));
+    let mut req = request();
+    req.jobs = 32;
+
+    let plan = build_rust_coverage_batch_plan(&req).unwrap();
+
+    assert!(
+        plan.argv
+            .windows(2)
+            .any(|args| args == ["--build-jobs", "32"])
+    );
+    assert!(
+        plan.argv
+            .windows(2)
+            .any(|args| args == ["--test-threads", "3"])
+    );
+}
+
+#[test]
 fn batch_plan_uses_serial_nextest_threads_when_nocapture_is_requested() {
     for no_capture_arg in ["--nocapture", "--no-capture"] {
         let mut req = request();

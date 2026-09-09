@@ -337,7 +337,7 @@ fn rust_coverage_batch_dry_run_lines_render_one_nextest_batch() {
     assert_eq!(lines[0], "RUST BATCH selectors=2 jobs=8");
     assert!(lines[1].starts_with("cargo llvm-cov nextest"));
     assert!(lines[1].contains("'--build-jobs' 8"));
-    assert!(lines[1].contains("'--test-threads' 8"));
+    assert!(lines[1].contains("'--test-threads' 4"));
     assert!(lines[1].contains("'--message-format-version' 0.1"));
     assert!(!lines[1].contains("llvm-cov test"));
     assert!(!lines[1].contains("--no-clean"));

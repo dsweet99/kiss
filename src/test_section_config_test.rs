@@ -78,6 +78,37 @@ fn test_section_config_reads_positive_num_jobs_pytest() {
 }
 
 #[test]
+fn test_section_config_defaults_num_jobs_llvm_cov_to_four() {
+    assert_eq!(
+        TestSectionConfig::default().num_jobs_llvm_cov,
+        crate::defaults::gate::NUM_JOBS_LLVM_COV
+    );
+}
+
+#[test]
+fn test_section_config_reads_positive_num_jobs_llvm_cov() {
+    let cwd = tempfile::TempDir::new().unwrap();
+    let _cwd_guard = CwdGuard::enter(cwd.path());
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(tmp.path(), "[test]\nnum_jobs_llvm_cov = 3\n").unwrap();
+    assert_eq!(
+        TestSectionConfig::try_load_from(tmp.path())
+            .unwrap()
+            .num_jobs_llvm_cov,
+        3
+    );
+}
+
+#[test]
+fn test_section_config_rejects_nonpositive_num_jobs_llvm_cov() {
+    let cwd = tempfile::TempDir::new().unwrap();
+    let _cwd_guard = CwdGuard::enter(cwd.path());
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(tmp.path(), "[test]\nnum_jobs_llvm_cov = 0\n").unwrap();
+    assert!(TestSectionConfig::try_load_from(tmp.path()).is_err());
+}
+
+#[test]
 fn test_section_config_rejects_nonpositive_num_jobs_pytest() {
     let cwd = tempfile::TempDir::new().unwrap();
     let _cwd_guard = CwdGuard::enter(cwd.path());

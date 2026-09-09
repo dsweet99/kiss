@@ -12,12 +12,12 @@ use crate::rust_llvm_cov_runner::execute_or_reuse::batch_output_channel::{
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::{
     BatchProcessTreeGuard, record_child_process_group,
 };
-use crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim::load_live_shim_process_identities;
 use crate::rust_llvm_cov_runner::execute_or_reuse::progress::{
     CargoNextestProgress, FinishCargoNextestProgress,
 };
 use crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchPlan;
 
+use super::batch_run_wait::{ingest_live_shim_identities, wait_child_with_interruption};
 use super::{BatchSubprocessRunError, BatchSubprocessRunOutcome};
 
 struct OutputChannelShutdown {
@@ -55,6 +55,7 @@ pub(crate) fn run_batch_subprocess(
     plan: &RustCoverageBatchPlan,
 ) -> Result<BatchSubprocessRunOutcome, BatchSubprocessRunError> {
     ensure_batch_env_dirs(plan)?;
+    crate::rust_llvm_cov_runner::execute_or_reuse::mem_available::check_host_mem_available()?;
     let run_root = batch_run_root(plan)?;
     let (output_server, env) = start_output_channel_for_batch(run_root, plan)?;
     let output_server = OutputChannelShutdown::new(output_server);
@@ -154,13 +155,7 @@ fn run_tracked_batch_command(
     );
     let stdout = join_pipe_reader(stdout_handle, &program, "stdout")?;
     let stderr = join_pipe_reader(stderr_handle, &program, "stderr")?;
-    let status = match wait_result {
-        Ok(status) => status,
-        Err(err) if err.kind() == io::ErrorKind::Interrupted => {
-            return Err(BatchSubprocessRunError::Interrupted);
-        }
-        Err(err) => return Err(spawn_component_error(&program, err.to_string())),
-    };
+    let status = wait_result?;
     Ok(std::process::Output {
         status,
         stdout,
@@ -232,72 +227,6 @@ fn spawn_batch_pipe_readers(
         std::thread::spawn(move || read_stdout_tracking_progress(stdout_pipe, stdout_progress));
     let stderr_handle = std::thread::spawn(move || read_pipe_to_end(stderr_pipe));
     Ok((stdout_handle, stderr_handle))
-}
-
-fn batch_status_was_killed(status: &std::process::ExitStatus) -> bool {
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::ExitStatusExt;
-        status.signal().is_some() || status.code() == Some(130)
-    }
-    #[cfg(not(unix))]
-    {
-        status.code() == Some(130)
-    }
-}
-
-fn wait_child_with_interruption(
-    child: &mut std::process::Child,
-    process_tree: &BatchProcessTreeGuard,
-    output_dir: &Path,
-    seen_shim_metadata: &mut HashSet<String>,
-) -> io::Result<std::process::ExitStatus> {
-    loop {
-        ingest_live_shim_identities(
-            process_tree.registry().as_ref(),
-            output_dir,
-            seen_shim_metadata,
-        );
-        if let Some(status) = child.try_wait()? {
-            if process_tree.interrupted() && batch_status_was_killed(&status) {
-                return Err(io::Error::new(
-                    io::ErrorKind::Interrupted,
-                    "batch interrupted",
-                ));
-            }
-            return Ok(status);
-        }
-        if process_tree.interrupted() {
-            ingest_live_shim_identities(
-                process_tree.registry().as_ref(),
-                output_dir,
-                seen_shim_metadata,
-            );
-            let _ = process_tree.terminate_descendants(Duration::from_millis(250));
-            let _ = child.wait();
-            return Err(io::Error::new(
-                io::ErrorKind::Interrupted,
-                "batch interrupted",
-            ));
-        }
-        std::thread::sleep(Duration::from_millis(25));
-    }
-}
-
-fn ingest_live_shim_identities(
-    registry: &crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::ProcessTreeRegistry,
-    output_dir: &Path,
-    seen: &mut HashSet<String>,
-) {
-    let Ok(identities) = load_live_shim_process_identities(output_dir) else {
-        return;
-    };
-    for identity in identities {
-        let key = format!("{}:{}", identity.pid, identity.pgid);
-        if seen.insert(key) {
-            registry.record(identity);
-        }
-    }
 }
 
 fn join_pipe_reader(

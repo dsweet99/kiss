@@ -37,6 +37,7 @@ fn cli_init_writes_default_config_in_current_directory() {
             && config.contains("[test]")
             && config.contains("num_jobs = 4")
             && config.contains("num_jobs_pytest = 16")
+            && config.contains("num_jobs_llvm_cov = 4")
             && config.contains("duplication_enabled = false")
             && config.contains("orphan_detection = false")
             && !config.contains("orphan_module_enabled")

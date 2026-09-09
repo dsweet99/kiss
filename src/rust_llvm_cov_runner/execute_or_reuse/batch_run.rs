@@ -7,12 +7,15 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::rust_llvm_cov_runner::RustLlvmCovError;
+use crate::rust_llvm_cov_runner::execute_or_reuse::mem_available::MemoryFloorBreach;
 use crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchPlan;
 
 #[path = "batch_run_cleanup.rs"]
 mod batch_run_cleanup;
 #[path = "batch_run_identity.rs"]
 mod batch_run_identity;
+#[path = "batch_run_wait.rs"]
+mod batch_run_wait;
 #[path = "batch_run_subprocess.rs"]
 mod batch_run_subprocess;
 
@@ -42,6 +45,16 @@ pub struct BatchSubprocessRunOutcome {
 pub enum BatchSubprocessRunError {
     Spawn { program: String, message: String },
     Interrupted,
+    MemoryFloor { available_kib: u64, floor_kib: u64 },
+}
+
+impl From<MemoryFloorBreach> for BatchSubprocessRunError {
+    fn from(value: MemoryFloorBreach) -> Self {
+        Self::MemoryFloor {
+            available_kib: value.available_kib,
+            floor_kib: value.floor_kib,
+        }
+    }
 }
 
 impl From<BatchSubprocessRunError> for RustLlvmCovError {
@@ -51,6 +64,12 @@ impl From<BatchSubprocessRunError> for RustLlvmCovError {
             BatchSubprocessRunError::Spawn { program, message } => {
                 Self::InvalidRequest(format!("failed to spawn `{program}`: {message}"))
             }
+            BatchSubprocessRunError::MemoryFloor {
+                available_kib,
+                floor_kib,
+            } => Self::InvalidRequest(format!(
+                "MemAvailable {available_kib} KiB is below the {floor_kib} KiB floor; aborting instrumented nextest"
+            )),
         }
     }
 }

@@ -164,6 +164,10 @@ mod tests {
             "created .kissconfig must set num_jobs_pytest = 16:\n{created}"
         );
         assert!(
+            created.contains("num_jobs_llvm_cov = 4"),
+            "created .kissconfig must set num_jobs_llvm_cov = 4:\n{created}"
+        );
+        assert!(
             created.contains("pytest_plugins = []"),
             "created .kissconfig must set pytest_plugins = []:\n{created}"
         );

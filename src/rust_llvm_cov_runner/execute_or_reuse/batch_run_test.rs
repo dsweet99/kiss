@@ -125,6 +125,30 @@ fn run_batch_subprocess_runs_echo_with_env_dirs() {
 }
 
 #[test]
+fn run_batch_subprocess_aborts_before_spawn_when_mem_available_is_gone() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut req = RustCoverageBatchRequest::witness();
+    req.cwd = tmp.path().to_path_buf();
+    req.source_root = tmp.path().to_path_buf();
+    req.generated_config = tmp.path().join("runs/run-a/nextest.toml");
+    let mut plan = crate::rust_llvm_cov_runner::build_rust_coverage_batch_plan(&req).unwrap();
+    plan.argv = vec!["/bin/echo".to_string(), "hello".to_string()];
+    plan.env.clear();
+    let _mem =
+        crate::rust_llvm_cov_runner::execute_or_reuse::mem_available::MemAvailableOverrideGuard::enter(
+            Some(1),
+        );
+    let err = run_batch_subprocess(tmp.path(), &plan).unwrap_err();
+    assert!(matches!(
+        err,
+        BatchSubprocessRunError::MemoryFloor {
+            available_kib: 1,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn batch_subprocess_error_converts_to_rust_llvm_cov_error() {
     let err: RustLlvmCovError = BatchSubprocessRunError::Spawn {
         program: "cargo".to_string(),
@@ -134,6 +158,14 @@ fn batch_subprocess_error_converts_to_rust_llvm_cov_error() {
     assert!(matches!(err, RustLlvmCovError::InvalidRequest(message) if message.contains("boom")));
     let interrupted: RustLlvmCovError = BatchSubprocessRunError::Interrupted.into();
     assert!(matches!(interrupted, RustLlvmCovError::Interrupted));
+    let floor: RustLlvmCovError = BatchSubprocessRunError::MemoryFloor {
+        available_kib: 10,
+        floor_kib: 100,
+    }
+    .into();
+    assert!(
+        matches!(floor, RustLlvmCovError::InvalidRequest(message) if message.contains("MemAvailable 10 KiB") && message.contains("100 KiB floor") && !message.contains("clamp"))
+    );
 }
 
 #[test]

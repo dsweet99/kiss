@@ -54,6 +54,8 @@ pub(crate) mod batch_result;
 
 pub(crate) mod batch_run;
 
+pub(crate) mod mem_available;
+
 pub(crate) mod batch_warm_hit_seal;
 
 pub(crate) mod batch_shim;
