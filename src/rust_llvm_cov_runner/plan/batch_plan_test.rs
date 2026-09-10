@@ -4,6 +4,7 @@ use crate::rust_llvm_cov_runner::{
     RustCoverageBatchPlan, RustCoverageBatchRequest, build_rust_coverage_batch_plan,
     publish_generated_nextest_config,
 };
+use crate::rust_llvm_cov_runner::plan::batch_plan_env::effective_coverage_build_jobs;
 
 fn request() -> RustCoverageBatchRequest {
     RustCoverageBatchRequest::witness()
@@ -55,10 +56,11 @@ fn batch_plan_uses_one_shared_build_target_and_bounded_nextest_jobs() {
         plan.target_runner_cargo_config_toml
             .contains("__rust-llvm-cov-target-runner")
     );
+    let expected_build = effective_coverage_build_jobs(4).to_string();
     assert!(
         plan.argv
             .windows(2)
-            .any(|args| args == ["--build-jobs", "4"])
+            .any(|args| args == ["--build-jobs", expected_build.as_str()])
     );
     assert!(
         plan.argv
@@ -88,7 +90,7 @@ fn batch_plan_ignores_inherited_values_for_plan_owned_environment() {
 }
 
 #[test]
-fn batch_plan_keeps_build_jobs_at_num_jobs() {
+fn batch_plan_keeps_build_jobs_at_least_num_jobs() {
     let tmp = tempfile::NamedTempFile::new().unwrap();
     std::fs::write(tmp.path(), "[test]\nnum_jobs_llvm_cov = 3\n").unwrap();
     let _guard = crate::config::ConfigPathOverrideGuard::enter(Some(tmp.path()));
@@ -96,16 +98,21 @@ fn batch_plan_keeps_build_jobs_at_num_jobs() {
     req.jobs = 32;
 
     let plan = build_rust_coverage_batch_plan(&req).unwrap();
+    let expected_build = effective_coverage_build_jobs(32).to_string();
 
     assert!(
         plan.argv
             .windows(2)
-            .any(|args| args == ["--build-jobs", "32"])
+            .any(|args| args == ["--build-jobs", expected_build.as_str()])
     );
     assert!(
         plan.argv
             .windows(2)
             .any(|args| args == ["--test-threads", "3"])
+    );
+    assert!(
+        expected_build.parse::<usize>().unwrap() >= 32,
+        "configured jobs must remain a lower bound for --build-jobs"
     );
 }
 
@@ -116,11 +123,12 @@ fn batch_plan_uses_serial_nextest_threads_when_nocapture_is_requested() {
         req.test_args = vec![no_capture_arg.to_string()];
 
         let plan = build_rust_coverage_batch_plan(&req).unwrap();
+        let expected_build = effective_coverage_build_jobs(4).to_string();
 
         assert!(
             plan.argv
                 .windows(2)
-                .any(|args| args == ["--build-jobs", "4"])
+                .any(|args| args == ["--build-jobs", expected_build.as_str()])
         );
         assert!(
             plan.argv

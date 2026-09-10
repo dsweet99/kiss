@@ -129,14 +129,21 @@ fn load_rust_timings(repo_root: &Path) -> Option<Vec<UnitTestTiming>> {
 }
 
 fn map_rust_timing_pairs(
-    _repo_root: &Path,
+    repo_root: &Path,
     pairs: Vec<(String, std::time::Duration)>,
 ) -> Vec<UnitTestTiming> {
+    let selectors: Vec<String> = pairs.iter().map(|(selector, _)| selector.clone()).collect();
+    let report_ids =
+        crate::test_runner::runners::rust_report_ids_for_selectors(repo_root, &selectors)
+            .unwrap_or_default();
     pairs
         .into_iter()
         .map(|(selector, duration)| UnitTestTiming {
             language: Language::Rust,
-            selector,
+            selector: report_ids
+                .get(&selector)
+                .cloned()
+                .unwrap_or(selector),
             duration,
         })
         .collect()
@@ -163,19 +170,13 @@ fn load_rust_timings_from_witness(
     {
         return None;
     }
-    witness
+    let pairs: Option<Vec<(String, Duration)>> = witness
         .selectors
         .iter()
         .zip(witness.durations_ns.iter())
-        .map(|(selector, &ns)| {
-            let duration = Duration::from_nanos(ns?);
-            Some(UnitTestTiming {
-                language: Language::Rust,
-                selector: selector.clone(),
-                duration,
-            })
-        })
-        .collect::<Option<Vec<_>>>()
+        .map(|(selector, &ns)| Some((selector.clone(), Duration::from_nanos(ns?))))
+        .collect();
+    Some(map_rust_timing_pairs(repo_root, pairs?))
 }
 
 #[derive(Clone, Debug, PartialEq)]

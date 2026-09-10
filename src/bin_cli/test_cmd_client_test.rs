@@ -411,3 +411,83 @@ fn watch_flag_runs_watch_setup_when_languages_configured() {
     let code = run_test_command_with(args, |_a| 0);
     assert_eq!(code, 1);
 }
+
+#[cfg(unix)]
+#[test]
+fn oneshot_without_watcher_runs_local_runner_then_coverage() {
+    let _repo = isolated_inited_python_repo();
+    let test_cfg = TestSectionConfig::default();
+    let py = kiss::Config::python_defaults();
+    let rs = kiss::Config::rust_defaults();
+    let gate = kiss::GateConfig {
+        test_coverage_threshold: 0,
+        max_unit_test_seconds: Vec::new(),
+        max_num_tests: 999999,
+        ..kiss::GateConfig::default()
+    };
+    let mut args = python_oneshot_args(&test_cfg, &py, &rs, &gate);
+    args.language_tables = kiss::LanguageTablesPresent::both();
+    set_client_result_override_for_test(Some(Ok(None)));
+    let calls = AtomicUsize::new(0);
+    let code = run_test_command_with(args, |_a| {
+        calls.fetch_add(1, Ordering::SeqCst);
+        0
+    });
+    set_client_result_override_for_test(None);
+    assert_eq!(calls.load(Ordering::SeqCst), 1, "local runner must run");
+    // Coverage may still fail closed without a population snapshot; the goal is
+    // exercising the no-watcher local+coverage path (not a green cov score).
+    assert!(
+        code == 0 || code == 1,
+        "local path must finish with a coverage decision, got {code}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn injected_client_error_prints_and_exits_one() {
+    let _repo = isolated_inited_python_repo();
+    let test_cfg = TestSectionConfig::default();
+    let py = kiss::Config::python_defaults();
+    let rs = kiss::Config::rust_defaults();
+    let gate = kiss::GateConfig::default();
+    let mut args = python_oneshot_args(&test_cfg, &py, &rs, &gate);
+    args.language_tables = kiss::LanguageTablesPresent::both();
+    set_client_result_override_for_test(Some(Err("watcher unavailable".into())));
+    let calls = AtomicUsize::new(0);
+    let code = run_test_command_with(args, |_a| {
+        calls.fetch_add(1, Ordering::SeqCst);
+        0
+    });
+    set_client_result_override_for_test(None);
+    assert_eq!(code, 1);
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
+
+#[cfg(unix)]
+#[test]
+fn oneshot_existing_target_without_watcher_accepts_resolve() {
+    let _repo = isolated_inited_python_repo();
+    std::fs::write("test_thing.py", "def test_ok():\n    assert True\n").unwrap();
+    let test_cfg = TestSectionConfig::default();
+    let py = kiss::Config::python_defaults();
+    let rs = kiss::Config::rust_defaults();
+    let gate = kiss::GateConfig {
+        test_coverage_threshold: 0,
+        max_unit_test_seconds: Vec::new(),
+        max_num_tests: 999999,
+        ..kiss::GateConfig::default()
+    };
+    let mut args = python_oneshot_args(&test_cfg, &py, &rs, &gate);
+    args.invocation = TestInvocation::Targets(vec!["test_thing.py".into()]);
+    args.language_tables = kiss::LanguageTablesPresent::both();
+    set_client_result_override_for_test(Some(Ok(None)));
+    let calls = AtomicUsize::new(0);
+    let code = run_test_command_with(args, |_a| {
+        calls.fetch_add(1, Ordering::SeqCst);
+        0
+    });
+    set_client_result_override_for_test(None);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert!(code == 0 || code == 1, "got {code}");
+}

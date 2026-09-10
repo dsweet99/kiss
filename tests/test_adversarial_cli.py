@@ -34,7 +34,8 @@ def test_main_lazy_loads_subcommand_help() -> None:
         check=False,
     )
     assert result.returncode == 0
-    assert "calibration manifest" in result.stdout
+    help_text = " ".join(result.stdout.split())
+    assert "calibration manifest" in help_text
 
 
 def test_repo_root_points_at_kiss() -> None:

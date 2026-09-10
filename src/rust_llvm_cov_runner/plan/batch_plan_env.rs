@@ -3,6 +3,7 @@ use std::fs;
 use std::path::Path;
 
 pub(crate) const COVERAGE_LINK_BUILD_ID_FLAG: &str = "-Clink-arg=-Wl,--build-id=sha1";
+pub(crate) const COVERAGE_DEBUGINFO_FLAG: &str = "-Cdebuginfo=line-tables-only";
 
 pub(crate) fn normalize_path_env(env: &mut BTreeMap<String, String>) {
     let Some(path) = env.get_mut("PATH") else {
@@ -115,10 +116,37 @@ fn is_executable(meta: &fs::Metadata) -> bool {
     }
 }
 
+pub(crate) const COVERAGE_BUILD_JOBS_HOST_CAP: usize = 16;
+pub(crate) const COVERAGE_CODEGEN_UNITS_FLAG: &str = "-Ccodegen-units=16";
+
+pub fn effective_coverage_build_jobs(configured_jobs: usize) -> usize {
+    let configured = configured_jobs.max(1);
+    let host = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(configured);
+    configured.max(host.min(COVERAGE_BUILD_JOBS_HOST_CAP))
+}
+
 pub(crate) fn ensure_coverage_link_build_id(env: &mut BTreeMap<String, String>) {
+    append_rustflag_unless_present(env, "build-id", COVERAGE_LINK_BUILD_ID_FLAG);
+}
+
+pub(crate) fn ensure_coverage_line_tables_only(env: &mut BTreeMap<String, String>) {
+    append_rustflag_unless_present(env, "debuginfo", COVERAGE_DEBUGINFO_FLAG);
+}
+
+pub(crate) fn ensure_coverage_codegen_units(env: &mut BTreeMap<String, String>) {
+    append_rustflag_unless_present(env, "codegen-units", COVERAGE_CODEGEN_UNITS_FLAG);
+}
+
+fn append_rustflag_unless_present(
+    env: &mut BTreeMap<String, String>,
+    marker: &str,
+    flag: &str,
+) {
     if env
         .get("RUSTFLAGS")
-        .is_some_and(|flags| flags.contains("build-id"))
+        .is_some_and(|flags| flags.contains(marker))
     {
         return;
     }
@@ -127,13 +155,10 @@ pub(crate) fn ensure_coverage_link_build_id(env: &mut BTreeMap<String, String>) 
             if !flags.is_empty() {
                 flags.push(' ');
             }
-            flags.push_str(COVERAGE_LINK_BUILD_ID_FLAG);
+            flags.push_str(flag);
         }
         None => {
-            env.insert(
-                "RUSTFLAGS".to_string(),
-                COVERAGE_LINK_BUILD_ID_FLAG.to_string(),
-            );
+            env.insert("RUSTFLAGS".to_string(), flag.to_string());
         }
     }
 }
@@ -193,6 +218,28 @@ mod tests {
         assert!(env["RUSTFLAGS"].contains(COVERAGE_LINK_BUILD_ID_FLAG));
         let before = env["RUSTFLAGS"].clone();
         ensure_coverage_link_build_id(&mut env);
+        assert_eq!(env["RUSTFLAGS"], before);
+    }
+
+    #[test]
+    fn ensure_coverage_line_tables_only_appends_once() {
+        let mut env =
+            BTreeMap::from([("RUSTFLAGS".to_string(), "-Cinstrument-coverage".to_string())]);
+        ensure_coverage_line_tables_only(&mut env);
+        assert!(env["RUSTFLAGS"].contains(COVERAGE_DEBUGINFO_FLAG));
+        let before = env["RUSTFLAGS"].clone();
+        ensure_coverage_line_tables_only(&mut env);
+        assert_eq!(env["RUSTFLAGS"], before);
+    }
+
+    #[test]
+    fn ensure_coverage_codegen_units_appends_once() {
+        let mut env =
+            BTreeMap::from([("RUSTFLAGS".to_string(), "-Cinstrument-coverage".to_string())]);
+        ensure_coverage_codegen_units(&mut env);
+        assert!(env["RUSTFLAGS"].contains(COVERAGE_CODEGEN_UNITS_FLAG));
+        let before = env["RUSTFLAGS"].clone();
+        ensure_coverage_codegen_units(&mut env);
         assert_eq!(env["RUSTFLAGS"], before);
     }
 

@@ -1625,7 +1625,13 @@ def force_publication_target(repo: Path, language: str, artifact: str) -> None:
     if language == "python":
         cache = python_rslip_cache_root(repo)
         if artifact == "rslip_selector_entry":
+            # Per-entry files alone are not enough: a warm generation/population
+            # still yields PASS (cached) and never republishes rslip_selector_entry,
+            # so the crash-recovery barrier waiter hangs forever.
             shutil.rmtree(cache / "entries", ignore_errors=True)
+            shutil.rmtree(cache / "generations", ignore_errors=True)
+            shutil.rmtree(cache / "testmon", ignore_errors=True)
+            (cache / "population.json").unlink(missing_ok=True)
         elif artifact == "python_population_pointer":
             # Generation publish rewrites the v2 population pointer atomically.
             (cache / "population.json").unlink(missing_ok=True)
@@ -2047,9 +2053,9 @@ def assert_rust_observer_strictness(outcome: Outcome, jobs: int) -> None:
     # already assert rust_concurrency_budget == jobs. When we do sample it, it
     # must match.
     if observation.observed_build_jobs is not None:
-        assert observation.observed_build_jobs == jobs, (
-            "cargo llvm-cov nextest --build-jobs mismatch: "
-            f"expected {jobs}, observed {observation.observed_build_jobs}"
+        assert observation.observed_build_jobs >= jobs, (
+            "cargo llvm-cov nextest --build-jobs below configured jobs: "
+            f"expected >= {jobs}, observed {observation.observed_build_jobs}"
         )
 
 

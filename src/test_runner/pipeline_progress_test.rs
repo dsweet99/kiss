@@ -37,7 +37,11 @@ fn spawn_language_jobs_honors_configured_jobs() {
     );
     assert!(
         share.contains("split_jobs(self.total, self.both)"),
-        "covering and execution jobs must stay on the process cap"
+        "covering jobs may split when both languages plan concurrently"
+    );
+    assert!(
+        share.contains("jobs: self.total"),
+        "execute must use the full configured job budget per language"
     );
     assert!(
         !share.contains("while self.peer_executing"),

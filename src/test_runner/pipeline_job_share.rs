@@ -28,8 +28,9 @@ impl JobShare {
     }
 
     pub(super) fn acquire_execute(&self, language: Language) -> ExecuteTurn {
+        let _ = language;
         ExecuteTurn {
-            jobs: self.covering(language),
+            jobs: self.total,
         }
     }
 }
@@ -41,17 +42,19 @@ mod tests {
     use std::sync::Barrier;
 
     #[test]
-    fn both_languages_execute_concurrently_with_half_budget() {
+    fn both_languages_execute_concurrently_with_full_budget() {
         let share = JobShare::new(4, true);
         let barrier = Barrier::new(2);
         std::thread::scope(|scope| {
             let rust = scope.spawn(|| {
                 let turn = share.acquire_execute(Language::Rust);
-                assert_eq!(turn.jobs, 2);
+                assert_eq!(turn.jobs, 4);
+                assert_eq!(share.covering(Language::Rust), 2);
                 barrier.wait();
             });
             let python = share.acquire_execute(Language::Python);
-            assert_eq!(python.jobs, 2);
+            assert_eq!(python.jobs, 4);
+            assert_eq!(share.covering(Language::Python), 2);
             barrier.wait();
             rust.join().unwrap();
         });

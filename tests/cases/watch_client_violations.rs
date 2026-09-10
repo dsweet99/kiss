@@ -1,10 +1,9 @@
 #![cfg(unix)]
 
 use std::process::Command;
-use std::time::Duration;
 
 use crate::support::git::{commit_all, init_git_repo};
-use crate::support::watch_proc::{start_watch, write_kissconfig_with_threshold};
+use crate::support::watch_proc::{start_watch, wait_watch_idle_cycle, write_kissconfig_with_threshold};
 
 #[test]
 fn oneshot_surfaces_watcher_coverage_violations() {
@@ -27,7 +26,7 @@ fn oneshot_surfaces_watcher_coverage_violations() {
     commit_all(tmp.path(), "init");
 
     let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
-    std::thread::sleep(Duration::from_secs(8));
+    wait_watch_idle_cycle(tmp.path());
 
     let output = Command::new(env!("CARGO_BIN_EXE_kiss"))
         .args(["test", "--lang", "python", "."])

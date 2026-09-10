@@ -413,4 +413,37 @@ mod tests {
         assert_eq!(suite.failed(), 1);
         assert_eq!(suite.test_exit_code(), 1);
     }
+
+    #[test]
+    fn suite_merges_timeout_collapsed_and_violation_counts() {
+        let mut suite = WatchSuiteReport::default();
+        suite.merge_lines(&[
+            "TIMEOUT (cached): 2 selectors".into(),
+            "VIOLATION:max_unit_test_seconds: 3 test(s) exceeded path-pattern time limits".into(),
+            "VIOLATION:test_coverage:foo.py:1:foo: 0% covered".into(),
+            "✗ 0 passed · 0 failed · 2 timed out · 3s total · 1s max pass".into(),
+        ]);
+        assert_eq!(suite.timed_out(), 2);
+        let recap = suite.format();
+        assert!(recap.contains("TIMEOUT (cached): 2 selectors"), "{recap}");
+        assert!(recap.contains("· 3 max_unit_test_seconds"), "{recap}");
+        assert!(recap.contains("· 1 test_coverage"), "{recap}");
+        assert_eq!(suite.test_exit_code(), 1);
+        assert_eq!(merge_watch_exit(0, 1), 1);
+        assert_eq!(merge_watch_exit(130, 1), 130);
+    }
+
+    #[test]
+    fn suite_format_uses_default_labels_when_summary_missing() {
+        let mut suite = WatchSuiteReport::default();
+        suite.merge_lines(&[
+            "PASS (cached): 70 selectors".into(),
+            "FAIL (cached): 1 selectors".into(),
+            "TIMEOUT (cached): 1 selectors".into(),
+        ]);
+        let recap = suite.format();
+        assert!(recap.contains("0s total"), "{recap}");
+        assert!(recap.contains("0s max pass"), "{recap}");
+        assert!(recap.contains("PASS (cached): 70 selectors"), "{recap}");
+    }
 }

@@ -13,7 +13,20 @@ pub(crate) fn apply_nested_llvm_cov_argv(argv: &mut Vec<String>) {
     if !llvm_cov_batch_already_active() {
         return;
     }
+    if !argv_is_cargo_llvm_cov_or_nextest(argv) {
+        return;
+    }
     force_serial_llvm_cov_width(argv);
+}
+
+fn argv_is_cargo_llvm_cov_or_nextest(argv: &[String]) -> bool {
+    let stop = argv.iter().position(|arg| arg == "--").unwrap_or(argv.len());
+    argv[..stop].iter().any(|arg| {
+        arg == "llvm-cov"
+            || arg == "nextest"
+            || arg.ends_with("cargo-llvm-cov")
+            || arg.ends_with("cargo-nextest")
+    })
 }
 
 pub(crate) fn force_serial_llvm_cov_width(argv: &mut Vec<String>) {
@@ -119,6 +132,14 @@ fn scrub_fixture_env(command: &mut Command) {
             command,
         );
     }
+    for key in [
+        "NEXTEST_PROFILE",
+        "NEXTEST_CONFIG",
+        "NEXTEST_CONF",
+        "CARGO_NEXTEST_CONFIG",
+    ] {
+        command.env_remove(key);
+    }
     #[cfg(not(unix))]
     {
         let _ = command;
@@ -153,6 +174,14 @@ mod tests {
         apply_nested_llvm_cov_argv(&mut argv);
         assert_eq!(argv[4], "1");
         assert_eq!(argv[6], "1");
+    }
+
+    #[test]
+    fn nested_env_does_not_mutate_non_llvm_cov_argv() {
+        let mut argv = vec!["/bin/echo".to_string(), "hello".to_string()];
+        let _guard = LlvmCovActiveEnvGuard::enter();
+        apply_nested_llvm_cov_argv(&mut argv);
+        assert_eq!(argv, ["/bin/echo", "hello"]);
     }
 
     #[test]
@@ -223,5 +252,16 @@ mod tests {
             .find(|(key, _)| *key == "RUSTC_WRAPPER")
             .map(|(_, value)| value);
         assert_eq!(wrapper, Some(None));
+    }
+
+    #[test]
+    fn fixture_env_scrub_removes_nextest_profile() {
+        let mut command = Command::new("cargo");
+        scrub_fixture_env(&mut command);
+        let profile = command
+            .get_envs()
+            .find(|(key, _)| *key == "NEXTEST_PROFILE")
+            .map(|(_, value)| value);
+        assert_eq!(profile, Some(None));
     }
 }

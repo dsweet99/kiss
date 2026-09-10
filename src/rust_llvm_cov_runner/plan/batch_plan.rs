@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use crate::rust_llvm_cov_runner::RustTestBinaryIdentity;
 use crate::rust_llvm_cov_runner::plan::batch_plan_env::{
+    effective_coverage_build_jobs, ensure_coverage_codegen_units, ensure_coverage_line_tables_only,
     ensure_coverage_link_build_id, normalized_request_environment,
 };
 use crate::rust_llvm_cov_runner::plan::batch_plan_nextest_config::build_nextest_config_toml;
@@ -106,7 +107,7 @@ pub fn build_rust_coverage_batch_plan(
             &runner_map_path,
         );
 
-    let jobs = req.jobs.to_string();
+    let build_jobs = effective_coverage_build_jobs(req.jobs).to_string();
     let test_threads = super::batch_plan_nextest_config::nextest_test_threads(req);
     let mut argv = vec![
         req.cargo.to_string_lossy().to_string(),
@@ -114,7 +115,7 @@ pub fn build_rust_coverage_batch_plan(
         "nextest".to_string(),
         "--no-report".to_string(),
         "--build-jobs".to_string(),
-        jobs.clone(),
+        build_jobs,
         "--test-threads".to_string(),
         test_threads,
         "--no-fail-fast".to_string(),
@@ -175,6 +176,8 @@ pub(crate) fn effective_coverage_environment(
 ) -> BTreeMap<String, String> {
     let mut env = normalized_request_environment(&req.env);
     ensure_coverage_link_build_id(&mut env);
+    ensure_coverage_line_tables_only(&mut env);
+    ensure_coverage_codegen_units(&mut env);
     crate::rust_llvm_cov_runner::kiss_profraw::ensure_kiss_profraw_env(&mut env, &req.source_root);
     crate::rust_llvm_cov_runner::plan::llvm_cov_active::mark_llvm_cov_active(&mut env);
     env.remove("KISS_RUST_COVERAGE_PROFILE_POOL");

@@ -111,4 +111,27 @@ mod tests {
         assert!(report.contains("request"));
         assert!(take_watch_report_capture().is_none());
     }
+
+    #[test]
+    fn compact_watch_report_drops_pass_lines_then_truncates_over_budget() {
+        let bulky = "Z".repeat(4096);
+        let mut lines = Vec::new();
+        for i in 0..80 {
+            lines.push(format!("PASS: tests/p{i}.py::t (0.01s)"));
+            lines.push(format!("TIMEOUT: tests/t{i}.py::t ({bulky})"));
+        }
+        let compact = compact_watch_report(&lines);
+        assert!(
+            compact.len() <= WATCH_REPORT_BUDGET,
+            "compact len {}",
+            compact.len()
+        );
+        assert!(
+            !compact.contains("PASS:"),
+            "over-budget compact must drop PASS lines first"
+        );
+        assert!(compact.contains("TIMEOUT:"));
+        let via_transcript = transcript_from_lines(&lines).expect("transcript");
+        assert!(via_transcript.len() <= WATCH_REPORT_BUDGET);
+    }
 }

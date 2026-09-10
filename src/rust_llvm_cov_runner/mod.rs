@@ -198,6 +198,7 @@ pub use batch_plan::{
     CheckAggregateRepairPublication, CoverageOutputMode, RustCoverageBatchPlan,
     RustCoverageBatchRequest, build_rust_coverage_batch_plan, validate_supported_rust_cargo_args,
 };
+pub use batch_plan_env::effective_coverage_build_jobs;
 pub use batch_plan_publish::publish_generated_nextest_config;
 pub use batch_plan_test_args::{identity_relevant_test_args, validate_supported_rust_test_args};
 pub use batch_population_durations::{

@@ -388,6 +388,68 @@ mod tests {
     use super::*;
 
     #[test]
+    fn coverage_result_from_exit_success_failure_and_interrupt() {
+        let _ = crate::test_runner::consume_rust_batch_interrupted();
+        let ok = coverage_result_from_exit(0);
+        assert_eq!(ok.exit_code, 0);
+        assert!(ok.error.is_none());
+        assert!(!ok.interrupted);
+
+        let bad = coverage_result_from_exit(4);
+        assert_eq!(bad.exit_code, 4);
+        assert_eq!(bad.error.as_deref(), Some("coverage gate failed"));
+
+        crate::test_runner::note_rust_batch_interrupted();
+        let interrupted = coverage_result_from_exit(0);
+        assert_eq!(interrupted.exit_code, 130);
+        assert!(interrupted.interrupted);
+        assert!(interrupted.error.is_none());
+    }
+
+    #[test]
+    fn reject_unresolved_targets_ok_for_non_path_invocations() {
+        let test_cfg = TestSectionConfig::default();
+        let py = kiss::Config::python_defaults();
+        let rs = kiss::Config::rust_defaults();
+        let gate = kiss::GateConfig::default();
+        for invocation in [
+            TestInvocation::All,
+            TestInvocation::Commit,
+            TestInvocation::Base,
+            TestInvocation::Main,
+        ] {
+            let args = TestCommandArgs {
+                invocation,
+                main_branch: None,
+                base_branch: None,
+                dry_run: false,
+                retry_bad: false,
+                metrics: false,
+                coverage_all: false,
+                watch: false,
+                jobs: 1,
+                jobs_cli: Some(1),
+                ignore: &[],
+                cli_ignore: &[],
+                extra: &[],
+                lang_filter: None,
+                test_cfg: &test_cfg,
+                py_config: &py,
+                rs_config: &rs,
+                gate_config: &gate,
+                reload_kissconfig: false,
+                config_path: None,
+                language_tables: Default::default(),
+            };
+            assert!(
+                reject_unresolved_targets(&args).is_ok(),
+                "invocation={:?}",
+                args.invocation
+            );
+        }
+    }
+
+    #[test]
     fn universe_root_defaults_to_dot_for_all_modes() {
         assert_eq!(
             universe_root_for_test_invocation(&TestInvocation::All),

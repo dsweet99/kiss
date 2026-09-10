@@ -273,6 +273,40 @@ fn resolve_rust_test_file_path_is_direct_only() {
 }
 
 #[test]
+fn resolve_rust_test_helper_without_tests_flushes_workspace_universe() {
+    let tmp = tempdir().unwrap();
+    init_git_repo(tmp.path());
+    fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    let src = tmp.path().join("src");
+    fs::create_dir_all(&src).unwrap();
+    fs::write(src.join("lib.rs"), "pub fn prod() {}\n").unwrap();
+    let tests = tmp.path().join("tests");
+    fs::create_dir_all(&tests).unwrap();
+    fs::write(tests.join("helpers.rs"), "pub fn helper() {}\n").unwrap();
+    fs::write(tests.join("smoke.rs"), "#[test]\nfn case_one() {}\n").unwrap();
+    let query = resolve_target_operands(
+        tmp.path(),
+        &["tests/helpers.rs".into()],
+        Some(Language::Rust),
+        &[],
+        &[],
+    )
+    .unwrap();
+    assert!(
+        query
+            .direct_rust
+            .iter()
+            .any(|selector| selector.contains("case_one")),
+        "helper-only rust test file must flush the workspace universe, got {:?}",
+        query.direct_rust
+    );
+}
+
+#[test]
 fn resolve_mixed_file_test_only_helper_is_not_coverage_target() {
     let tmp = tempdir().unwrap();
     init_git_repo(tmp.path());
