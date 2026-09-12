@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 from evals._harness import KISS, LinuxProcessObserver, emit_eval, report_eval
-from evals.eval_timing_kiss_test import write_complex_test_repo
+from evals.short.eval_timing_kiss_test import write_complex_test_repo
 
 
 def _sample_until(

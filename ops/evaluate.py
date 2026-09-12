@@ -12,19 +12,47 @@ ROOT = Path(__file__).resolve().parents[1]
 EVALS_DIR = ROOT / "evals"
 
 
+def _sub_dir_evaluations(sub_dir: Path) -> list[str]:
+    if not sub_dir.is_dir() or sub_dir.name.startswith(("_", ".")):
+        return []
+    return [
+        f"{sub_dir.name}/{path.stem[len('eval_') :]}"
+        for path in sorted(sub_dir.glob("eval_*.py"))
+    ]
+
+
 def evaluation_names() -> list[str]:
-    names = [path.stem[len("eval_") :] for path in EVALS_DIR.glob("eval_*.py")]
+    if not EVALS_DIR.is_dir():
+        return []
+    names: list[str] = []
+    for sub_dir in sorted(EVALS_DIR.iterdir()):
+        names.extend(_sub_dir_evaluations(sub_dir))
     return sorted(names)
+
+
+def _resolve_evaluation_name(name: str, available: list[str]) -> tuple[str, str]:
+    if name in available:
+        group, eval_name = name.split("/", 1)
+        return group, eval_name
+    if "/" in name:
+        raise SystemExit(f"unknown evaluation: {name}")
+    matches = [item for item in available if item.endswith(f"/{name}")]
+    if len(matches) == 1:
+        group, eval_name = matches[0].split("/", 1)
+        return group, eval_name
+    if len(matches) > 1:
+        joined = ", ".join(matches)
+        raise SystemExit(f"ambiguous evaluation: {name} (matches: {joined})")
+    raise SystemExit(f"unknown evaluation: {name}")
 
 
 def run_evaluation(name: str) -> None:
     available = evaluation_names()
-    if name not in available:
-        raise SystemExit(f"unknown evaluation: {name}")
+    group, eval_name = _resolve_evaluation_name(name, available)
     if str(ROOT) not in sys.path:
         sys.path.insert(0, str(ROOT))
-    module = importlib.import_module(f"evals.eval_{name}")
-    getattr(module, f"eval_{name}")()
+    module = importlib.import_module(f"evals.{group}.eval_{eval_name}")
+    getattr(module, f"eval_{eval_name}")()
 
 
 def run_all_evaluations() -> None:

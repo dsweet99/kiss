@@ -11,17 +11,17 @@ from ops.evaluate import evaluation_names, main, run_evaluation
 def test_evaluation_names_include_qa_commands() -> None:
     assert python.__name__ == "python"
     names = evaluation_names()
-    assert "coverage_cache_witness" in names
-    assert "timing_rust_throughput" in names
-    assert "timing_kiss_check" in names
-    assert "timing_kiss_test" in names
-    assert "timing_kiss_test_watch" in names
-    assert "timing_kiss_test_watch_cache_hit" in names
-    assert "timing_kiss_test_sigint_restart" in names
-    assert "timing_kiss_test_progress_cpu" in names
-    assert "kiss_test_watch" not in names
+    assert "short/coverage_cache_witness" in names
+    assert "short/timing_rust_throughput" in names
+    assert "short/timing_kiss_check" in names
+    assert "short/timing_kiss_test" in names
+    assert "short/timing_kiss_test_watch" in names
+    assert "short/timing_kiss_test_watch_cache_hit" in names
+    assert "short/timing_kiss_test_sigint_restart" in names
+    assert "short/timing_kiss_test_progress_cpu" in names
+    assert "short/kiss_test_watch" not in names
     assert all(" " not in name for name in names)
-    assert all(not name.startswith("kiss_test_") for name in names)
+    assert all(not name.split("/", 1)[-1].startswith("kiss_test_") for name in names)
 
 
 def test_evaluate_list_and_run_all(capsys, monkeypatch) -> None:
@@ -52,8 +52,10 @@ def test_run_evaluation_invokes_wrapper(monkeypatch) -> None:
             called.append("ran")
 
     monkeypatch.setattr("importlib.import_module", lambda name: Fake())
-    run_evaluation("coverage_cache_witness")
+    run_evaluation("short/coverage_cache_witness")
     assert called == ["ran"]
+    run_evaluation("coverage_cache_witness")
+    assert called == ["ran", "ran"]
 
 
 def test_emit_eval_rejects_pass_fail_kinds() -> None:

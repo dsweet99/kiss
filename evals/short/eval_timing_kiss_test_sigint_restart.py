@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 from evals._harness import KISS, emit_eval, report_eval, run
-from evals.eval_timing_kiss_test import write_complex_test_repo
+from evals.short.eval_timing_kiss_test import write_complex_test_repo
 
 
 def _interrupt_and_measure_exit(
