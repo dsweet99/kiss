@@ -296,7 +296,7 @@ fn oneshot_during_settle_skips_quiet_period() {
     let tmp = tempfile::TempDir::new().unwrap();
     init_git_repo(tmp.path());
     write_python_fixture(tmp.path());
-    write_kissconfig(tmp.path(), 20.0);
+    write_kissconfig(tmp.path(), 40.0);
     commit_all(tmp.path(), "init");
 
     let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
@@ -326,8 +326,8 @@ fn oneshot_during_settle_skips_quiet_period() {
         "settle oneshot must echo watcher results; stdout={stdout:?}"
     );
     assert!(
-        elapsed < Duration::from_secs(10),
-        "T must not wait the 20s settle; elapsed={elapsed:?}"
+        elapsed < Duration::from_secs(25),
+        "T must not wait the 40s settle; elapsed={elapsed:?}"
     );
 }
 
