@@ -131,6 +131,7 @@ impl LanguageRuntime for RustRuntime {
                     miss_set,
                     &request.extras.rust,
                     request.jobs,
+                    publication_universe.clone(),
                     None,
                     None,
                     &request.gate,

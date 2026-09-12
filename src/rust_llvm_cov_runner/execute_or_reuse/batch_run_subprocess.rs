@@ -157,9 +157,9 @@ fn run_tracked_batch_command(
         &output_dir,
         &mut seen_shim_metadata,
     );
+    let status = wait_result?;
     let stdout = join_pipe_reader(stdout_handle, &program, "stdout")?;
     let stderr = join_pipe_reader(stderr_handle, &program, "stderr")?;
-    let status = wait_result?;
     Ok(std::process::Output {
         status,
         stdout,

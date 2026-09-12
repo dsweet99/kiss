@@ -23,7 +23,9 @@ mod witness;
 pub(crate) use finish::{
     cached_summary_from_check_aggregate_population, finish_rust_coverage_batch_result,
 };
-use live_status::install_live_rust_status_hook;
+use live_status::{
+    clear_live_rust_witness, flush_live_rust_witness, install_live_rust_status_hook,
+};
 use witness::publish_rust_witness_after_batch;
 
 pub(crate) fn validate_rust_extra_args(extra: &[String]) -> Result<(), String> {
@@ -78,11 +80,13 @@ pub(crate) fn run_rust_llvm_cov_check_aggregate_selectors(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn run_rust_llvm_cov_check_aggregate_selectors_with_gate(
     repo_root: &Path,
     selectors: &[String],
     extra: &[String],
     jobs: usize,
+    population_publication_selectors: Option<Vec<String>>,
     publication_binary_ids: Option<std::collections::BTreeSet<String>>,
     repair_publication: Option<CheckAggregateRepairPublication>,
     gate: &kiss::GateConfig,
@@ -92,7 +96,7 @@ pub(crate) fn run_rust_llvm_cov_check_aggregate_selectors_with_gate(
         selectors,
         extra,
         jobs,
-        None,
+        population_publication_selectors,
         publication_binary_ids,
         repair_publication,
         gate.clone(),
@@ -270,10 +274,28 @@ where
         options.extra,
         &batch_req.runner_map_fingerprint,
     );
-    install_live_rust_status_hook(repo_root, selectors, &options.gate, &identity)?;
+    let batch_identity =
+        crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(
+            repo_root,
+            &batch_req.test_args,
+        )?;
+    install_live_rust_status_hook(
+        repo_root,
+        selectors,
+        &options.gate,
+        &identity,
+        Some(&batch_identity),
+        batch_req.population_publication_selectors.as_deref(),
+        options.jobs,
+    )?;
     let result = execute_batch(&batch_req, &versions);
     let live_err = kiss::rust_llvm_cov_runner::take_live_rust_error();
     kiss::rust_llvm_cov_runner::clear_live_rust_test_hook();
+    if result.is_err() {
+        flush_live_rust_witness();
+    } else {
+        clear_live_rust_witness();
+    }
     if let Some(err) = live_err {
         eprintln!("{err}");
     }

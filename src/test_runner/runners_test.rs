@@ -340,7 +340,7 @@ fn rust_coverage_batch_dry_run_lines_render_one_nextest_batch() {
     assert!(
         lines[1].contains(&format!("'--build-jobs' {expected_build_jobs}"))
     );
-    assert!(lines[1].contains("'--test-threads' 4"));
+    assert!(lines[1].contains("'--test-threads' 8"));
     assert!(lines[1].contains("'--message-format-version' 0.1"));
     assert!(!lines[1].contains("llvm-cov test"));
     assert!(!lines[1].contains("--no-clean"));

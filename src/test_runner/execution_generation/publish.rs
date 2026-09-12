@@ -107,25 +107,43 @@ fn commit_generation_under_lock(
 }
 
 fn write_evidence_blobs(dir: &Path, generation: &FullExecutionGeneration) -> Result<(), String> {
+    use rayon::prelude::*;
     let evidence_dir = dir.join("evidence");
     fs::create_dir_all(&evidence_dir)
         .map_err(|err| format!("error: kiss: create evidence dir: {err}"))?;
-    for record in &generation.selector_evidence {
-        if record.entry_content_digest.is_empty() {
-            return Err("error: kiss: missing entry_content_digest".into());
-        }
-        let path = evidence_dir.join(format!("{}.json", record.entry_content_digest));
-        if path.exists() {
-            continue;
-        }
-        let mut bytes = serde_json::to_vec(record)
-            .map_err(|err| format!("error: kiss: serialize evidence blob: {err}"))?;
-        bytes.push(b'\n');
-        match write_create_new_bytes(&path, &bytes) {
-            Ok(()) => {}
-            Err(_) if path.exists() => {}
-            Err(err) => return Err(err),
-        }
-    }
+    generation
+        .selector_evidence
+        .par_iter()
+        .try_for_each(|record| -> Result<(), String> {
+            if record.entry_content_digest.is_empty() {
+                return Err("error: kiss: missing entry_content_digest".into());
+            }
+            let path = evidence_dir.join(format!("{}.json", record.entry_content_digest));
+            if path.exists() {
+                return Ok(());
+            }
+            let mut bytes = serde_json::to_vec(record)
+                .map_err(|err| format!("error: kiss: serialize evidence blob: {err}"))?;
+            bytes.push(b'\n');
+            match write_evidence_file(&path, &bytes) {
+                Ok(()) => Ok(()),
+                Err(_) if path.exists() => Ok(()),
+                Err(err) => Err(err),
+            }
+        })?;
+    sync_dir(&evidence_dir)?;
+    Ok(())
+}
+
+fn write_evidence_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    use std::fs::OpenOptions;
+    use std::io::Write;
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|err| format!("error: kiss: create_new {}: {err}", path.display()))?;
+    file.write_all(bytes)
+        .map_err(|err| format!("error: kiss: write {}: {err}", path.display()))?;
     Ok(())
 }

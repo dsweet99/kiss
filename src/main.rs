@@ -33,6 +33,7 @@ fn run_kiss_main() -> i32 {
     } else {
         let _ = redirect_this_process(&repo_root);
         let _ = sweep_kiss_profraw_dir(&repo_root);
+        let _ = kiss::rust_llvm_cov_runner::sweep_orphan_default_profraw(&repo_root);
         Some(KissProfrawProcessGuard::for_current_process(&repo_root))
     };
     let exit_code = run();

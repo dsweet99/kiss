@@ -31,29 +31,34 @@ pub(crate) fn rust_source_delta_misses(
             None,
         )
     });
-    let binaries_are_current = population.as_ref().map_or_else(
-        || {
-            kiss::rust_llvm_cov_runner::current_population_manifest_test_binaries_match(
+    let invalidation = match population.as_ref() {
+        Some(pop) => {
+            if kiss::rust_llvm_cov_runner::current_test_binaries_match(repo_root, pop) {
+                classify_ordinary_source_delta(&cache_root, repo_root, &identity)
+            } else {
+                OrdinarySourceInvalidation::All
+            }
+        }
+        None => {
+            match kiss::rust_llvm_cov_runner::current_population_manifest_test_binaries_match(
                 &cache_root,
                 repo_root,
                 &identity,
-            )
-            .unwrap_or(false)
-        },
-        |population| kiss::rust_llvm_cov_runner::current_test_binaries_match(repo_root, population),
-    );
-    let invalidation = if binaries_are_current {
-        classify_ordinary_source_delta(&cache_root, repo_root, &identity)
-    } else {
-        OrdinarySourceInvalidation::All
+            ) {
+                Some(false) => OrdinarySourceInvalidation::All,
+                Some(true) | None => {
+                    classify_ordinary_source_delta(&cache_root, repo_root, &identity)
+                }
+            }
+        }
     };
     let mut misses = planned_misses_for(planned_selectors, invalidation);
-    if let Some(population) = population
-        && binaries_are_current
+    if let Some(population) = population.as_ref()
+        && kiss::rust_llvm_cov_runner::current_test_binaries_match(repo_root, population)
     {
         let planned: BTreeSet<_> = planned_selectors.iter().map(String::as_str).collect();
         misses.extend(
-            kiss::rust_llvm_cov_runner::population_nonpassed_selectors(&cache_root, &population)
+            kiss::rust_llvm_cov_runner::population_nonpassed_selectors(&cache_root, population)
                 .into_iter()
                 .filter(|selector| planned.contains(selector.as_str())),
         );

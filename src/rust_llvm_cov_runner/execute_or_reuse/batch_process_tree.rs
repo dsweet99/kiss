@@ -95,14 +95,11 @@ pub fn cancel_active_batch_scope() {
     interrupted.store(true, Ordering::SeqCst);
     let identities = registry.identities();
     for identity in &identities {
-        signal_validated_process_group(identity, libc::SIGTERM);
-    }
-    if !identities.is_empty() {
-        std::thread::sleep(Duration::from_millis(100));
-    }
-    for identity in &identities {
         signal_validated_process_group(identity, libc::SIGKILL);
     }
+    #[cfg(target_os = "linux")]
+    batch_process_tree_reap::kill_reparented_children();
+    batch_process_tree_reap::reap_zombies();
 }
 
 impl BatchProcessTreeGuard {
@@ -155,6 +152,16 @@ impl BatchProcessTreeGuard {
         if self.owns_sigint_handler {
             self.interrupted.store(true, Ordering::SeqCst);
         }
+        if self.interrupted.load(Ordering::SeqCst) || grace == Duration::ZERO {
+            let identities = self.registry.identities();
+            for identity in &identities {
+                signal_validated_process_group(identity, libc::SIGKILL);
+            }
+            #[cfg(target_os = "linux")]
+            batch_process_tree_reap::kill_reparented_children();
+            batch_process_tree_reap::reap_zombies();
+            return self.registry.residual_count();
+        }
         self.reap_lingering_descendants(grace)
     }
 
@@ -183,7 +190,12 @@ impl Drop for BatchProcessTreeGuard {
         if self.owns_sigint_handler {
             clear_sigint_handler();
         }
-        let _ = self.terminate_descendants(Duration::from_millis(250));
+        let grace = if self.interrupted() {
+            Duration::ZERO
+        } else {
+            Duration::from_millis(250)
+        };
+        let _ = self.terminate_descendants(grace);
     }
 }
 

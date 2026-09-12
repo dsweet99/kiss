@@ -47,7 +47,8 @@ pub(crate) fn wait_child_with_interruption(
                 output_dir,
                 seen_shim_metadata,
             );
-            let _ = process_tree.terminate_descendants(Duration::from_millis(250));
+            let _ = process_tree.terminate_descendants(Duration::ZERO);
+            let _ = child.kill();
             let _ = child.wait();
             return Err(BatchSubprocessRunError::Interrupted);
         }

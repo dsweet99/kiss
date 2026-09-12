@@ -176,7 +176,9 @@ impl KissProfrawProcessGuard {
 
 impl Drop for KissProfrawProcessGuard {
     fn drop(&mut self) {
-        let _ = cleanup_kiss_profraw_for_pid(&self.kiss_profraw, self.pid);
+        if !crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::batch_scope_interrupted() {
+            let _ = cleanup_kiss_profraw_for_pid(&self.kiss_profraw, self.pid);
+        }
     }
 }
 
@@ -211,7 +213,7 @@ pub(crate) fn cleanup_kiss_profraw(kiss_profraw: &Path) -> io::Result<()> {
     ignore_absent_or_nonempty(fs::remove_dir(kiss_profraw))
 }
 
-pub(crate) fn sweep_orphan_default_profraw(repo_root: &Path) -> io::Result<()> {
+pub fn sweep_orphan_default_profraw(repo_root: &Path) -> io::Result<()> {
     delete_default_profraw_in_dir(repo_root)?;
     let crates_dir = repo_root.join("crates");
     match fs::read_dir(&crates_dir) {

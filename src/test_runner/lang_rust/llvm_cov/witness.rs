@@ -68,7 +68,7 @@ pub(super) fn publish_rust_witness_after_batch(
     Ok(())
 }
 
-fn load_matching_full_witness(
+pub(super) fn load_matching_full_witness(
     repo_root: &Path,
     batch_identity: &RustCoverageBatchIdentity,
 ) -> Option<ExecutionWitness> {

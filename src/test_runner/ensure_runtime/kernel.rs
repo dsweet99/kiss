@@ -246,6 +246,16 @@ fn run_misses_and_maybe_publish(
     witness: Option<crate::test_runner::lang_iface::ExecutionWitness>,
     misses: &[String],
 ) -> Result<LanguageEnsureResult, String> {
+    let cached_selectors: Vec<String> = planned
+        .iter()
+        .filter(|s| !misses.contains(s))
+        .cloned()
+        .collect();
+    if !cached_selectors.is_empty()
+        && let Some(w) = witness.as_ref()
+    {
+        let _ = module.cached_witness_summary(request, &cached_selectors, w);
+    }
     let batch = module.run_selectors(request, misses)?;
 
     let publication_universe = batch.publication_universe.clone().or_else(|| {

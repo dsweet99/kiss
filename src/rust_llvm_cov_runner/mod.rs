@@ -230,6 +230,7 @@ pub use batch_shim::run_target_runner_shim;
 pub use cargo_workspace_metadata::workspace_test_target_sources;
 pub use kiss_profraw::{
     KissProfrawProcessGuard, discover_repo_root, redirect_this_process, sweep_kiss_profraw_dir,
+    sweep_orphan_default_profraw,
 };
 pub use ordinary_source_snapshot::{
     OrdinarySourceInvalidation, classify_ordinary_source_delta, load_ordinary_source_line_hashes,

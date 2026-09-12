@@ -67,6 +67,9 @@ impl CurrentRunLifecycleGuard {
             return None;
         }
         self.cleaned.set(true);
+        if crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::batch_scope_interrupted() {
+            return None;
+        }
         let run_err = self.cleanup.remove(&self.cache_root, &self.run_root).err();
         let kiss_profraw = crate::rust_llvm_cov_runner::kiss_profraw::kiss_profraw_from_cache_root(
             &self.cache_root,
@@ -152,7 +155,13 @@ impl FreshBatchRunScope {
     }
 
     pub fn finish<T>(self, outcome: Result<T, RustLlvmCovError>) -> Result<T, RustLlvmCovError> {
-        let current_cleanup_error = self.lifecycle.cleanup();
+        let is_interrupted = crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::batch_scope_interrupted()
+            || matches!(&outcome, Err(RustLlvmCovError::Interrupted));
+        let current_cleanup_error = if is_interrupted {
+            None
+        } else {
+            self.lifecycle.cleanup()
+        };
         match outcome {
             Ok(value) => {
                 if let Some(err) =
@@ -174,7 +183,12 @@ impl FreshBatchRunScope {
         self,
         result: RustCoverageBatchResult,
     ) -> Result<RustCoverageBatchResult, RustLlvmCovError> {
-        let current_cleanup_error = self.lifecycle.cleanup();
+        let is_interrupted = crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::batch_scope_interrupted();
+        let current_cleanup_error = if is_interrupted {
+            None
+        } else {
+            self.lifecycle.cleanup()
+        };
         finalize_batch_result(result, self.stale_cleanup_error, current_cleanup_error)
     }
 }

@@ -61,7 +61,6 @@ pub(super) fn publish_current_witness_generation(
             state.complete,
         ),
     )?;
-    let _ = reclaim_unreferenced(&cache_root);
     Ok(generation_id)
 }
 

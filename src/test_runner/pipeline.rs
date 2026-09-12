@@ -44,6 +44,9 @@ pub(crate) fn run_overlapped_test(
     let cwd = std::env::current_dir().map_err(|e| format!("error: kiss test: {e}"))?;
     let session_root = crate::test_git::require_git_repo_root(&cwd)
         .map_err(|e| format!("error: kiss test requires a git repository ({e})"))?;
+    let rust_cache_root =
+        crate::test_runner::rust_coverage_index::rust_coverage_cache_root(&session_root);
+    let _ = crate::test_runner::execution_generation::reclaim_unreferenced(&rust_cache_root);
     let _inventory_session =
         super::workspace_selector_cache::begin_inventory_session(&session_root);
     let prefix = run_workspace_prefix(a, &session_root)?;

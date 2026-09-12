@@ -207,7 +207,9 @@ fn apply_strict_runtime(
         config.num_jobs_pytest = parse_positive_usize(v, "num_jobs_pytest")?;
     }
     if let Some(v) = table.get("num_jobs_llvm_cov") {
-        config.num_jobs_llvm_cov = parse_positive_usize(v, "num_jobs_llvm_cov")?;
+        let val = parse_positive_usize(v, "num_jobs_llvm_cov")?;
+        config.num_jobs_llvm_cov = val;
+        config.num_jobs_llvm_cov_explicit = Some(val);
     }
     if let Some(v) = table.get("watch_settle_seconds") {
         config.watch_settle_seconds = parse_positive_f64(v, "watch_settle_seconds")?;
@@ -283,6 +285,9 @@ fn apply_lenient_runtime(
     apply_lenient_positive_usize(table, "num_jobs", &mut config.num_jobs);
     apply_lenient_positive_usize(table, "num_jobs_pytest", &mut config.num_jobs_pytest);
     apply_lenient_positive_usize(table, "num_jobs_llvm_cov", &mut config.num_jobs_llvm_cov);
+    if table.contains_key("num_jobs_llvm_cov") {
+        config.num_jobs_llvm_cov_explicit = Some(config.num_jobs_llvm_cov);
+    }
     if let Some(v) = table.get("watch_settle_seconds") {
         match parse_positive_f64(v, "watch_settle_seconds") {
             Ok(n) => config.watch_settle_seconds = n,
