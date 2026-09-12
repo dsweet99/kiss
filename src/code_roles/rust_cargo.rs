@@ -3,12 +3,12 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::error::RoleBuildError;
 use super::types::CodeContextSet;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CargoRoot {
     pub src_path: PathBuf,
     pub allow_production: bool,
@@ -42,11 +42,16 @@ pub fn cargo_roots_for_files(
 ) -> Result<(Vec<CargoRoot>, HashMap<PathBuf, PathBuf>), RoleBuildError> {
     let mut workspace_memo: HashMap<PathBuf, PathBuf> = HashMap::new();
     let mut metadata_memo: HashMap<PathBuf, Vec<CargoRoot>> = HashMap::new();
+    let mut dir_manifest_memo: HashMap<PathBuf, Option<PathBuf>> = HashMap::new();
     let mut roots = Vec::new();
     let mut file_workspace = HashMap::new();
     let mut needed_manifests = HashSet::new();
     for file in files {
-        let Some(manifest) = nearest_manifest(file) else {
+        let parent = file.parent().unwrap_or(file);
+        let manifest = dir_manifest_memo
+            .entry(parent.to_path_buf())
+            .or_insert_with(|| nearest_manifest(file));
+        let Some(manifest) = manifest.clone() else {
             continue;
         };
         needed_manifests.insert(canonical_manifest(&manifest));
@@ -131,6 +136,28 @@ fn metadata_memo() -> &'static Mutex<HashMap<PathBuf, Vec<CargoRoot>>> {
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+fn manifest_cache_key(workspace_manifest: &Path) -> Option<u64> {
+    let mut h = 0xcbf2_9ce4_8422_2325_u64;
+    let meta = std::fs::metadata(workspace_manifest).ok()?;
+    let modified = meta.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_nanos();
+    h ^= meta.len();
+    h = h.wrapping_mul(0x0100_0000_01b3);
+    h ^= modified as u64;
+    h = h.wrapping_mul(0x0100_0000_01b3);
+    let lock_path = workspace_manifest.parent()?.join("Cargo.lock");
+    if let Ok(lock_meta) = std::fs::metadata(&lock_path) {
+        h ^= lock_meta.len();
+        h = h.wrapping_mul(0x0100_0000_01b3);
+        if let Ok(lock_mod) = lock_meta.modified()
+            && let Ok(d) = lock_mod.duration_since(std::time::UNIX_EPOCH)
+        {
+            h ^= d.as_nanos() as u64;
+            h = h.wrapping_mul(0x0100_0000_01b3);
+        }
+    }
+    Some(h)
+}
+
 fn load_workspace_roots(workspace_manifest: &Path) -> Result<Vec<CargoRoot>, RoleBuildError> {
     let key = crate::rust_include::canonical_path(workspace_manifest);
     if let Some(hit) = metadata_memo()
@@ -141,7 +168,28 @@ fn load_workspace_roots(workspace_manifest: &Path) -> Result<Vec<CargoRoot>, Rol
     {
         return Ok(hit);
     }
+    let parent = workspace_manifest.parent().unwrap_or(workspace_manifest);
+    let disk_cache_path = manifest_cache_key(workspace_manifest).map(|hash| {
+        let kiss_dir = parent.join(".kiss");
+        let _ = std::fs::create_dir_all(&kiss_dir);
+        kiss_dir.join(format!("cargo_roots_{hash:016x}.bin"))
+    });
+    if let Some(ref path) = disk_cache_path
+        && let Ok(bytes) = std::fs::read(path)
+        && let Ok(roots) = bincode::deserialize::<Vec<CargoRoot>>(&bytes)
+    {
+        metadata_memo()
+            .lock()
+            .expect("cargo metadata cache")
+            .insert(key, roots.clone());
+        return Ok(roots);
+    }
     let roots = load_workspace_roots_uncached(workspace_manifest)?;
+    if let Some(ref path) = disk_cache_path
+        && let Ok(bytes) = bincode::serialize(&roots)
+    {
+        let _ = std::fs::write(path, bytes);
+    }
     metadata_memo()
         .lock()
         .expect("cargo metadata cache")

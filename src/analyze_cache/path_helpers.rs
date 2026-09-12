@@ -20,22 +20,34 @@ pub(super) fn same_cached_paths(
     if cache.py_paths.len() != current_py.len() || cache.rs_paths.len() != current_rs.len() {
         return false;
     }
-    let mut cache_py = cache.py_paths.clone();
-    let mut cache_rs = cache.rs_paths.clone();
-    let mut current_py: Vec<String> = current_py
+    let fast_py_match = cache
+        .py_paths
         .iter()
-        .map(|p| p.to_string_lossy().to_string())
-        .collect();
-    let mut current_rs: Vec<String> = current_rs
+        .zip(current_py)
+        .all(|(c, p)| c == p.to_string_lossy().as_ref());
+    let fast_rs_match = cache
+        .rs_paths
         .iter()
-        .map(|p| p.to_string_lossy().to_string())
-        .collect();
-    cache_py.sort();
-    cache_rs.sort();
-    current_py.sort();
-    current_rs.sort();
-    if cache_py != current_py || cache_rs != current_rs {
-        return false;
+        .zip(current_rs)
+        .all(|(c, p)| c == p.to_string_lossy().as_ref());
+    if !fast_py_match || !fast_rs_match {
+        let mut cache_py = cache.py_paths.clone();
+        let mut cache_rs = cache.rs_paths.clone();
+        let mut current_py: Vec<String> = current_py
+            .iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect();
+        let mut current_rs: Vec<String> = current_rs
+            .iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect();
+        cache_py.sort();
+        cache_rs.sort();
+        current_py.sort();
+        current_rs.sort();
+        if cache_py != current_py || cache_rs != current_rs {
+            return false;
+        }
     }
 
     if cache.focus_restrict != focus.is_active() {

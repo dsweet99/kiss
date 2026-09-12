@@ -22,9 +22,54 @@ pub struct CheckCommandArgs<'a> {
 pub fn run_check_command(args: &CheckCommandArgs<'_>) -> i32 {
     #[cfg(not(test))]
     if args.lang_filter.is_none() && std::env::var_os("KISS_CHECK_WORKER").is_none() {
+        if let Some(code) = try_run_cached_check(args) {
+            return code;
+        }
         return run_split_check(args);
     }
     run_check_in_process(args)
+}
+
+#[cfg(not(test))]
+fn try_run_cached_check(args: &CheckCommandArgs<'_>) -> Option<i32> {
+    if args.timing {
+        return None;
+    }
+    let ignore = merge_check_ignore_prefixes(args.ignore);
+    validate_paths(args.paths);
+    let universe = &args.paths[0];
+    let focus = if args.paths.len() > 1 {
+        &args.paths[1..]
+    } else {
+        args.paths
+    };
+    let opts = analyze::AnalyzeOptions {
+        universe,
+        focus_paths: focus,
+        py_config: args.py_config,
+        rs_config: args.rs_config,
+        lang_filter: args.lang_filter,
+        bypass_gate: false,
+        gate_config: args.gate_config,
+        ignore_prefixes: &ignore,
+        show_timing: args.timing,
+        suppress_final_status: false,
+        language_tables: args.language_tables,
+    };
+    let universe_root = Path::new(opts.universe);
+    let (py_files, rs_files) =
+        analyze::gather_files(universe_root, opts.lang_filter, opts.ignore_prefixes);
+    if py_files.is_empty() && rs_files.is_empty() {
+        return None;
+    }
+    let focus_filter = analyze::build_focus_filter(
+        opts.focus_paths,
+        opts.universe,
+        opts.lang_filter,
+        opts.ignore_prefixes,
+    );
+    let ok = crate::analyze_cache::try_run_cached_all(&opts, &py_files, &rs_files, &focus_filter)?;
+    Some(i32::from(!ok))
 }
 
 fn run_check_in_process(args: &CheckCommandArgs<'_>) -> i32 {

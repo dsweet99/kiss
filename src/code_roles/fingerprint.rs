@@ -64,9 +64,15 @@ fn mix_manifests(
     roots: &[super::rust_cargo::CargoRoot],
 ) -> String {
     let mut manifests = Vec::new();
+    let mut dir_manifest_memo: std::collections::HashMap<std::path::PathBuf, Option<std::path::PathBuf>> =
+        std::collections::HashMap::new();
     for file in rs_files {
-        if let Some(manifest) = nearest_manifest(file) {
-            manifests.push(crate::rust_include::canonical_path(&manifest));
+        let parent = file.parent().unwrap_or(file);
+        let manifest = dir_manifest_memo
+            .entry(parent.to_path_buf())
+            .or_insert_with(|| nearest_manifest(file));
+        if let Some(manifest) = manifest {
+            manifests.push(crate::rust_include::canonical_path(manifest));
         }
     }
     for root in roots {

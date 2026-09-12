@@ -1,4 +1,5 @@
 use kiss::check_universe_cache::FullCheckCache;
+use rayon::prelude::*;
 use std::path::PathBuf;
 
 use super::fnv1a64;
@@ -38,7 +39,7 @@ pub(crate) fn verify_content_digests(
         .iter()
         .map(|(path, digest)| (path.as_str(), *digest))
         .collect();
-    for p in all_paths {
+    all_paths.into_par_iter().all(|p| {
         let key = p.to_string_lossy();
         let Some(stored_digest) = stored_map.get(key.as_ref()) else {
             return false;
@@ -46,11 +47,8 @@ pub(crate) fn verify_content_digests(
         let Ok(bytes) = std::fs::read(p) else {
             return false;
         };
-        if content_digest(&bytes) != *stored_digest {
-            return false;
-        }
-    }
-    true
+        content_digest(&bytes) == *stored_digest
+    })
 }
 
 pub(crate) fn load_verified_full_cache(

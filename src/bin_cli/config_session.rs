@@ -66,6 +66,9 @@ fn ignore_for_collect(config_path: &Path, cli_ignore: &[String]) -> Vec<String> 
 
 fn needs_language_tables(config_path: &Path, roots: &[String], ignore: &[String]) -> bool {
     let tables = LanguageTablesPresent::from_path(config_path);
+    if tables.python && tables.rust {
+        return false;
+    }
     let (py_files, rs_files) = gather_files_by_lang(roots, None, ignore);
     tables.missing_language(&py_files, &rs_files).is_some()
 }
