@@ -194,25 +194,6 @@ mod graph_for_path_extension_tests {
 }
 
 #[cfg(test)]
-mod coverage_witness {
-    use super::{AnalyzeGraphsIn, GraphConfigs};
-
-    impl GraphConfigs<'_> {
-        fn witness() {}
-    }
-
-    impl AnalyzeGraphsIn<'_> {
-        fn witness() {}
-    }
-
-    #[test]
-    fn witness_graph_api_types() {
-        GraphConfigs::witness();
-        AnalyzeGraphsIn::witness();
-    }
-}
-
-#[cfg(test)]
 mod parse_fail_closed {
     use super::{build_py_graph_from_files, build_rs_graph_from_files};
 
