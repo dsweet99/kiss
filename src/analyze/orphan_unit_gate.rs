@@ -11,16 +11,16 @@ use crate::analyze::line_coverage::{
 };
 use crate::analyze_parse::parse_classified;
 
-pub(crate) fn evaluate_orphan_unit_gate(
+pub(crate) fn evaluate_orphan_unit_gate_with_viols(
     repo_root: &Path,
     py_files: &[PathBuf],
     rs_files: &[PathBuf],
     snapshot: &RuntimeCoverageSnapshot,
     gate: &kiss::GateConfig,
     bypass: bool,
-) -> bool {
+) -> (bool, Vec<kiss::Violation>) {
     if bypass || !gate.orphan_detection {
-        return false;
+        return (false, Vec::new());
     }
     let Ok(viols) = collect_orphan_unit_violations(
         repo_root,
@@ -30,11 +30,25 @@ pub(crate) fn evaluate_orphan_unit_gate(
         &gate.orphan_allowed,
     ) else {
         eprintln!("error: kiss test: failed to parse sources for orphan units");
-        return true;
+        return (true, Vec::new());
     };
     crate::test_runner::final_summary::note_violation_kind("orphan", viols.len());
     kiss::cli_output::print_violations(&viols);
-    !viols.is_empty()
+    (!viols.is_empty(), viols)
+}
+
+pub(crate) fn evaluate_orphan_unit_gate(
+    repo_root: &Path,
+    py_files: &[PathBuf],
+    rs_files: &[PathBuf],
+    snapshot: &RuntimeCoverageSnapshot,
+    gate: &kiss::GateConfig,
+    bypass: bool,
+) -> bool {
+    evaluate_orphan_unit_gate_with_viols(
+        repo_root, py_files, rs_files, snapshot, gate, bypass,
+    )
+    .0
 }
 
 pub(crate) fn collect_orphan_unit_violations(

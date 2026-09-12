@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use fs2::FileExt;
+use kiss::check_cache::CachedViolation;
 use kiss::check_universe_cache::CachedLineCoverageRecord;
 use serde::{Deserialize, Serialize};
 
@@ -13,7 +14,7 @@ use crate::analyze::line_coverage::{
 use crate::analyze_cache::fnv1a64;
 use crate::test_runner::check_line_coverage::RequiredCoverageLanguages;
 
-const SCHEMA_VERSION: &str = "kiss-cov-records-v10";
+const SCHEMA_VERSION: &str = "kiss-cov-records-v11";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct CovRecordsCache {
@@ -24,6 +25,8 @@ struct CovRecordsCache {
     orphan_clean_policy: String,
     #[serde(default)]
     orphan_clean_records_digest: String,
+    #[serde(default)]
+    orphan_violations: Option<Vec<CachedViolation>>,
 }
 
 #[derive(Clone, Debug)]
@@ -45,22 +48,55 @@ pub(crate) fn try_load_cov_records(
     try_load_cov_records_with_orphan_state(key).map(|(records, _)| records)
 }
 
-pub(crate) fn try_load_cov_records_with_orphan_state(
+pub(crate) fn try_load_cov_records_with_orphan_violations(
     key: &CovRecordsCacheKey<'_>,
-) -> Option<(Vec<LineCoverageRecord>, String)> {
+) -> Option<(Vec<LineCoverageRecord>, String, Option<Vec<kiss::Violation>>)> {
     let fingerprint = cov_records_fingerprint(key)?;
     let raw = fs::read(cache_path(key.repo_root)).ok()?;
     let cache: CovRecordsCache = serde_json::from_slice(&raw).ok()?;
     if cache.schema_version != SCHEMA_VERSION || cache.fingerprint != fingerprint {
         return None;
     }
-    let orphan_clean_policy = if cache.orphan_clean_records_digest == records_digest(&cache.records)
+    let (orphan_clean_policy, orphan_violations) = if cache.orphan_clean_records_digest
+        == records_digest(&cache.records)
     {
-        cache.orphan_clean_policy
+        let viols = cache
+            .orphan_violations
+            .map(|viols| {
+                viols
+                    .into_iter()
+                    .map(CachedViolation::into_violation)
+                    .collect()
+            })
+            .or_else(|| {
+                if !cache.orphan_clean_policy.is_empty() {
+                    Some(Vec::new())
+                } else {
+                    None
+                }
+            });
+        (cache.orphan_clean_policy, viols)
     } else {
-        String::default()
+        (String::default(), None)
     };
-    Some((line_records_from_cache(&cache.records), orphan_clean_policy))
+    Some((
+        line_records_from_cache(&cache.records),
+        orphan_clean_policy,
+        orphan_violations,
+    ))
+}
+
+pub(crate) fn try_load_cov_records_with_orphan_state(
+    key: &CovRecordsCacheKey<'_>,
+) -> Option<(Vec<LineCoverageRecord>, String)> {
+    try_load_cov_records_with_orphan_violations(key).map(|(records, policy, viols)| {
+        let clean_policy = if viols.as_ref().is_some_and(|v| v.is_empty()) {
+            policy
+        } else {
+            String::default()
+        };
+        (records, clean_policy)
+    })
 }
 
 pub(crate) fn store_cov_records(key: &CovRecordsCacheKey<'_>, records: &[LineCoverageRecord]) {
@@ -88,8 +124,10 @@ pub(crate) fn store_cov_records(key: &CovRecordsCacheKey<'_>, records: &[LineCov
             .map(|cache| cache.orphan_clean_policy.clone())
             .unwrap_or_default(),
         orphan_clean_records_digest: preserved
-            .map(|cache| cache.orphan_clean_records_digest)
+            .as_ref()
+            .map(|cache| cache.orphan_clean_records_digest.clone())
             .unwrap_or_default(),
+        orphan_violations: preserved.and_then(|cache| cache.orphan_violations),
     };
     let Ok(bytes) = serde_json::to_vec(&cache) else {
         return;
@@ -97,7 +135,11 @@ pub(crate) fn store_cov_records(key: &CovRecordsCacheKey<'_>, records: &[LineCov
     publish_cache_bytes(&path, &bytes);
 }
 
-pub(crate) fn mark_cached_records_orphan_clean(key: &CovRecordsCacheKey<'_>, policy: &str) {
+pub(crate) fn mark_cached_records_orphan_result(
+    key: &CovRecordsCacheKey<'_>,
+    policy: &str,
+    violations: &[kiss::Violation],
+) {
     let Some(fingerprint) = cov_records_fingerprint(key) else {
         return;
     };
@@ -113,10 +155,16 @@ pub(crate) fn mark_cached_records_orphan_clean(key: &CovRecordsCacheKey<'_>, pol
     }
     cache.orphan_clean_policy = policy.to_string();
     cache.orphan_clean_records_digest = records_digest(&cache.records);
+    cache.orphan_violations = Some(violations.iter().map(CachedViolation::from).collect());
     let Ok(bytes) = serde_json::to_vec(&cache) else {
         return;
     };
     publish_cache_bytes(&path, &bytes);
+}
+
+#[allow(dead_code)]
+pub(crate) fn mark_cached_records_orphan_clean(key: &CovRecordsCacheKey<'_>, policy: &str) {
+    mark_cached_records_orphan_result(key, policy, &[]);
 }
 
 fn lock_cache(repo_root: &Path) -> Option<fs::File> {

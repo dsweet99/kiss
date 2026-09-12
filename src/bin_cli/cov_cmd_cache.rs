@@ -113,3 +113,40 @@ pub(crate) fn compute_and_store_records(
     store_cov_records(cache_key, &records);
     Ok(records)
 }
+
+pub(crate) fn load_or_refresh_snapshot(
+    repo_root: &Path,
+    required: crate::test_runner::check_line_coverage::RequiredCoverageLanguages,
+    ignore: &[String],
+    jobs: usize,
+    allow_refresh: bool,
+    gate: &kiss::GateConfig,
+    pytest_args: &[String],
+) -> Result<crate::test_runner::check_line_coverage::ValidatedCovInputs, i32> {
+    use crate::test_runner::check_line_coverage::{
+        ValidatedCovInputs, ensure_check_runtime_coverage, load_check_runtime_coverage,
+    };
+    let snapshot =
+        match load_check_runtime_coverage(repo_root, required, ignore, gate, pytest_args) {
+            Ok(snapshot) => snapshot,
+            Err(load_err) => {
+                if !allow_refresh {
+                    eprintln!("{load_err}");
+                    return Err(1);
+                }
+                ensure_check_runtime_coverage(repo_root, required, ignore, jobs, pytest_args, gate)
+                    .map_err(|err| {
+                        eprintln!("{err}");
+                        1
+                    })?;
+                load_check_runtime_coverage(repo_root, required, ignore, gate, pytest_args)
+                    .map_err(|err| {
+                        eprintln!("{err}");
+                        1
+                    })?
+            }
+        };
+    Ok(ValidatedCovInputs::from_snapshot(
+        required, snapshot, repo_root,
+    ))
+}

@@ -1,7 +1,8 @@
 use crate::analyze;
 use crate::analyze::build_focus_filter;
 use crate::analyze::cov_records_cache::{
-    CovRecordsCacheKey, mark_cached_records_orphan_clean, try_load_cov_records_with_orphan_state,
+    CovRecordsCacheKey, mark_cached_records_orphan_result,
+    try_load_cov_records_with_orphan_violations,
 };
 use crate::bin_cli::cov_cmd_cache::{
     compute_and_store_records, gather_cov_files, lang_filter_cache_label,
@@ -16,8 +17,7 @@ mod cov_zero;
 use cov_zero::finish_zero_threshold_cov;
 use crate::bin_cli::util::{merge_check_ignore_prefixes, validate_paths};
 use crate::test_runner::check_line_coverage::{
-    RequiredCoverageLanguages, ensure_check_runtime_coverage, load_check_runtime_coverage,
-    repository_root_for_universe,
+    RequiredCoverageLanguages, repository_root_for_universe,
 };
 use crate::test_runner::unit_test_timing::RuntimeGateEval;
 use kiss::Language;
@@ -26,6 +26,7 @@ use std::path::Path;
 use std::time::Instant;
 
 pub(crate) use crate::bin_cli::cov_cmd_cache::CovFileSets;
+pub(crate) use crate::bin_cli::cov_cmd_cache::load_or_refresh_snapshot;
 
 pub struct CovCommandArgs<'a> {
     pub paths: &'a [String],
@@ -40,41 +41,6 @@ pub struct CovCommandArgs<'a> {
     pub allow_refresh: bool,
     pub pytest_args: &'a [String],
     pub language_tables: kiss::LanguageTablesPresent,
-}
-
-fn load_or_refresh_snapshot(
-    repo_root: &Path,
-    required: RequiredCoverageLanguages,
-    ignore: &[String],
-    jobs: usize,
-    allow_refresh: bool,
-    gate: &kiss::GateConfig,
-    pytest_args: &[String],
-) -> Result<crate::test_runner::check_line_coverage::ValidatedCovInputs, i32> {
-    use crate::test_runner::check_line_coverage::ValidatedCovInputs;
-    let snapshot =
-        match load_check_runtime_coverage(repo_root, required, ignore, gate, pytest_args) {
-            Ok(snapshot) => snapshot,
-            Err(load_err) => {
-                if !allow_refresh {
-                    eprintln!("{load_err}");
-                    return Err(1);
-                }
-                ensure_check_runtime_coverage(repo_root, required, ignore, jobs, pytest_args, gate)
-                    .map_err(|err| {
-                        eprintln!("{err}");
-                        1
-                    })?;
-                load_check_runtime_coverage(repo_root, required, ignore, gate, pytest_args)
-                    .map_err(|err| {
-                        eprintln!("{err}");
-                        1
-                    })?
-            }
-        };
-    Ok(ValidatedCovInputs::from_snapshot(
-        required, snapshot, repo_root,
-    ))
 }
 
 fn evaluate_coverage_gate(
@@ -105,15 +71,15 @@ struct RecordsEvalCtx<'a> {
     ignore: &'a [String],
 }
 
-fn orphan_gate_failed(
+fn orphan_gate_failed_with_violations(
     ctx: &RecordsEvalCtx<'_>,
     snapshot: Option<&analyze::line_coverage::RuntimeCoverageSnapshot>,
-) -> bool {
+) -> (bool, Vec<kiss::Violation>) {
     let Some(snapshot) = snapshot else {
-        return false;
+        return (false, Vec::new());
     };
     let repo_root = repository_root_for_universe(ctx.universe_root);
-    analyze::evaluate_orphan_unit_gate(
+    analyze::evaluate_orphan_unit_gate_with_viols(
         &repo_root,
         &ctx.files.py_files,
         &ctx.files.rs_files,
@@ -123,12 +89,11 @@ fn orphan_gate_failed(
     )
 }
 
-fn evaluate_records_with_time(
+fn evaluate_records_with_time_and_orphan(
     records: &[analyze::line_coverage::LineCoverageRecord],
     ctx: &RecordsEvalCtx<'_>,
-    snapshot: Option<&analyze::line_coverage::RuntimeCoverageSnapshot>,
+    orphan_failed: bool,
 ) -> i32 {
-    let orphan_failed = orphan_gate_failed(ctx, snapshot);
     let coverage_failed = evaluate_coverage_gate(
         records,
         ctx.focus,
@@ -149,6 +114,16 @@ fn evaluate_records_with_time(
 }
 
 #[cfg(test)]
+fn evaluate_records_with_time(
+    records: &[analyze::line_coverage::LineCoverageRecord],
+    ctx: &RecordsEvalCtx<'_>,
+    snapshot: Option<&analyze::line_coverage::RuntimeCoverageSnapshot>,
+) -> i32 {
+    let (orphan_failed, _) = orphan_gate_failed_with_violations(ctx, snapshot);
+    evaluate_records_with_time_and_orphan(records, ctx, orphan_failed)
+}
+
+#[cfg(test)]
 fn try_evaluate_records_with_time(
     records: &[analyze::line_coverage::LineCoverageRecord],
     ctx: &RecordsEvalCtx<'_>,
@@ -156,14 +131,11 @@ fn try_evaluate_records_with_time(
     try_evaluate_records_with_orphan_state(records, ctx, false)
 }
 
-fn try_evaluate_records_with_orphan_state(
+fn try_evaluate_records_with_cached_orphans(
     records: &[analyze::line_coverage::LineCoverageRecord],
     ctx: &RecordsEvalCtx<'_>,
-    orphan_clean: bool,
+    orphan_viols: &[kiss::Violation],
 ) -> Option<i32> {
-    if ctx.args.gate_config.orphan_detection && !ctx.args.bypass_gate && !orphan_clean {
-        return None;
-    }
     let t_time = std::time::Instant::now();
     let time_eval = evaluate_time_gate_for_cov(ctx.args, ctx.universe_root, ctx.files, ctx.ignore);
     if ctx.args.timing {
@@ -182,6 +154,19 @@ fn try_evaluate_records_with_orphan_state(
 
         return None;
     }
+
+    let orphan_failed = if ctx.args.gate_config.orphan_detection && !ctx.args.bypass_gate {
+        if !orphan_viols.is_empty() {
+            crate::test_runner::final_summary::note_violation_kind("orphan", orphan_viols.len());
+            kiss::cli_output::print_violations(orphan_viols);
+            true
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
     let t_cov = std::time::Instant::now();
     let coverage_failed = evaluate_coverage_gate(
         records,
@@ -210,8 +195,20 @@ fn try_evaluate_records_with_orphan_state(
         coverage_failed,
         time_failed,
         max_num_tests_failed,
-        orphan_failed: false,
+        orphan_failed,
     }))
+}
+
+#[cfg(test)]
+fn try_evaluate_records_with_orphan_state(
+    records: &[analyze::line_coverage::LineCoverageRecord],
+    ctx: &RecordsEvalCtx<'_>,
+    orphan_clean: bool,
+) -> Option<i32> {
+    if ctx.args.gate_config.orphan_detection && !ctx.args.bypass_gate && !orphan_clean {
+        return None;
+    }
+    try_evaluate_records_with_cached_orphans(records, ctx, &[])
 }
 
 #[allow(dead_code)]
@@ -278,6 +275,34 @@ struct EvaluateGatheredCov<'a> {
     threshold: usize,
 }
 
+fn try_evaluate_from_cache(
+    cache_key: &CovRecordsCacheKey<'_>,
+    eval_ctx: &RecordsEvalCtx<'_>,
+    repo_root: &Path,
+    required: RequiredCoverageLanguages,
+    t0: &Instant,
+) -> Option<i32> {
+    let (records, cached_orphan_policy, cached_orphan_viols) =
+        try_load_cov_records_with_orphan_violations(cache_key)?;
+    let bypass_or_disabled =
+        !eval_ctx.args.gate_config.orphan_detection || eval_ctx.args.bypass_gate;
+    let policy_matches =
+        cached_orphan_policy == orphan_policy(&eval_ctx.args.gate_config.orphan_allowed);
+    if eval_ctx.args.timing {
+        eprintln!(
+            "TIMING:coverage_records_cache_hit_ms:{}",
+            t0.elapsed().as_millis()
+        );
+    }
+    if bypass_or_disabled {
+        return try_evaluate_records_with_cached_orphans(&records, eval_ctx, &[]);
+    }
+    if policy_matches && let Some(orphan_viols) = cached_orphan_viols {
+        return try_evaluate_records_with_cached_orphans(&records, eval_ctx, &orphan_viols);
+    }
+    evaluate_cached_records_for_orphan(&records, eval_ctx, repo_root, required, cache_key, t0)
+}
+
 fn evaluate_gathered_cov(p: EvaluateGatheredCov<'_>) -> i32 {
     let scope = p.args.gate_config.test_coverage_scope;
     let repo_root = repository_root_for_universe(p.universe_root);
@@ -307,27 +332,10 @@ fn evaluate_gathered_cov(p: EvaluateGatheredCov<'_>) -> i32 {
         files: p.files,
         ignore: p.ignore,
     };
-    if let Some((records, cached_orphan_policy)) =
-        try_load_cov_records_with_orphan_state(&cache_key)
+    if let Some(code) =
+        try_evaluate_from_cache(&cache_key, &eval_ctx, &repo_root, required, &t0)
     {
-        let orphan_clean =
-            cached_orphan_policy == orphan_policy(&p.args.gate_config.orphan_allowed);
-        if p.args.timing {
-            eprintln!(
-                "TIMING:coverage_records_cache_hit_ms:{}",
-                t0.elapsed().as_millis()
-            );
-        }
-        if let Some(code) =
-            try_evaluate_records_with_orphan_state(&records, &eval_ctx, orphan_clean)
-        {
-            return code;
-        }
-        if let Some(code) = evaluate_cached_records_for_orphan(
-            &records, &eval_ctx, &repo_root, required, &cache_key, &t0,
-        ) {
-            return code;
-        }
+        return code;
     }
     let validated = match load_or_refresh_snapshot(
         &repo_root,
@@ -360,7 +368,14 @@ fn evaluate_gathered_cov(p: EvaluateGatheredCov<'_>) -> i32 {
             return 1;
         }
     };
-    evaluate_records_with_time(&records, &eval_ctx, Some(&validated.snapshot))
+    let (orphan_failed, viols) =
+        orphan_gate_failed_with_violations(&eval_ctx, Some(&validated.snapshot));
+    mark_cached_records_orphan_result(
+        &cache_key,
+        &orphan_policy(&eval_ctx.args.gate_config.orphan_allowed),
+        &viols,
+    );
+    evaluate_records_with_time_and_orphan(&records, &eval_ctx, orphan_failed)
 }
 
 fn evaluate_cached_records_for_orphan(
@@ -406,17 +421,17 @@ fn evaluate_cached_records_for_orphan(
             t0.elapsed().as_millis()
         );
     }
-    let orphan_failed = orphan_gate_failed(eval_ctx, Some(&validated.snapshot));
-    if !orphan_failed {
-        mark_cached_records_orphan_clean(
-            cache_key,
-            &orphan_policy(&eval_ctx.args.gate_config.orphan_allowed),
-        );
-    }
-    Some(evaluate_records_with_time(
+    let (orphan_failed, viols) =
+        orphan_gate_failed_with_violations(eval_ctx, Some(&validated.snapshot));
+    mark_cached_records_orphan_result(
+        cache_key,
+        &orphan_policy(&eval_ctx.args.gate_config.orphan_allowed),
+        &viols,
+    );
+    Some(evaluate_records_with_time_and_orphan(
         records,
         eval_ctx,
-        Some(&validated.snapshot),
+        orphan_failed,
     ))
 }
 
