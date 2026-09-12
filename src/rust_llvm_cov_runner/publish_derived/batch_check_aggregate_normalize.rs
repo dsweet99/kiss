@@ -28,3 +28,7 @@ pub(super) fn normalize_coverage_map(
 pub(super) fn is_sorted_unique_nonempty(values: &[String]) -> bool {
     !values.is_empty() && values.windows(2).all(|window| window[0] < window[1])
 }
+
+pub(super) fn is_sorted_unique(values: &[String]) -> bool {
+    values.windows(2).all(|window| window[0] < window[1])
+}

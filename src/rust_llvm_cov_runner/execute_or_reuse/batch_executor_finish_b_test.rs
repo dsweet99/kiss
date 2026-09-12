@@ -3,6 +3,7 @@ use super::{
     FreshCheckAggregateExport, build_instance_export_requests, build_instance_results,
     finish_fresh_check_aggregate_after_export,
 };
+use crate::rpytest_runner::TestStatus;
 use crate::rust_llvm_cov_runner::RustLineCoverage;
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_events::BatchTestTerminal;
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export::ExportCounters;
@@ -80,6 +81,74 @@ fn finish_fresh_check_aggregate_publishes_successful_outcomes() {
             );
         }
     }
+}
+
+#[test]
+fn finish_fresh_check_aggregate_tolerates_unmatched_selectors_when_instances_present() {
+    let repo = batch_executor_fixture_repo();
+    std::fs::create_dir_all(repo.path().join("target")).unwrap();
+    let binary_path = repo.path().join("target").join("bin-a");
+    std::fs::write(&binary_path, "binary-a").unwrap();
+    let mut req = batch_executor_request(repo.path());
+    req.logical_selectors = vec!["alpha".to_string(), "ignored_test".to_string()];
+    req.coverage_output_mode = CoverageOutputMode::CheckAggregate {
+        publication_binary_ids: None,
+        repair_publication: None,
+    };
+    let tools = witness_batch_tools();
+    let identity = batch_identity(&req, &tools).unwrap();
+    let coverage = RustLineCoverage {
+        files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
+    };
+    let instances = vec![
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_aggregate::InstanceResult {
+            full_name: "pkg::bin$alpha".to_string(),
+            test_binary_id: "bin-a".to_string(),
+            passed: true,
+            timed_out: false,
+            exit_code: Some(0),
+            duration: Duration::from_millis(1),
+            stdout: None,
+            stderr: None,
+            coverage: coverage.clone(),
+        },
+    ];
+    let finish = super::FreshBatchFinishContext {
+        export_started: std::time::Instant::now(),
+        build_target_baseline_bytes: 42,
+        process_residual_count: 0,
+        test_binaries: vec![crate::rust_llvm_cov_runner::RustTestBinaryIdentity {
+            id: "bin-a".to_string(),
+            executable: binary_path.to_string_lossy().to_string(),
+            digest: crate::rust_llvm_cov_runner::rust_cov_cache::digest_test_binary(&binary_path)
+                .unwrap(),
+        }],
+        repair_publication: None,
+    };
+    let result = finish_fresh_check_aggregate_after_export(
+        &req,
+        &tools,
+        &identity,
+        FreshCheckAggregateExport {
+            exact: false,
+            instances,
+            exported: BTreeMap::from([("bin-a".to_string(), coverage)]),
+            counters: ExportCounters {
+                export_jobs: 1,
+                max_active_exports: 1,
+                max_objects_per_export: 1,
+            },
+        },
+        finish,
+    )
+    .expect("finish should succeed without batch error");
+
+    assert!(result.batch_error.is_none());
+    assert_eq!(result.completed.len(), 2);
+    assert_eq!(result.completed[0].status, TestStatus::Passed);
+    assert_eq!(result.completed[1].status, TestStatus::Passed);
+    assert_eq!(result.counters.unmatched_selectors, 0);
+    assert!(req.cache_root.join("check_aggregate.json").is_file());
 }
 
 #[test]

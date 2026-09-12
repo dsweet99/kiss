@@ -204,7 +204,7 @@ fn selector_population_is_valid(raw: &OnDiskCheckAggregate, selectors: Option<&[
         && raw
             .selector_binary_ids
             .values()
-            .all(|binary_ids| is_sorted_unique_nonempty(binary_ids))
+            .all(|binary_ids| is_sorted_unique(binary_ids))
 }
 
 fn requested_selectors_match(stored: &[String], selectors: Option<&[String]>) -> bool {
@@ -406,7 +406,7 @@ pub fn reusable_check_aggregate_delta(
 
 #[path = "batch_check_aggregate_normalize.rs"]
 mod normalize;
-use normalize::{is_sorted_unique_nonempty, normalize_coverage_map};
+use normalize::{is_sorted_unique, is_sorted_unique_nonempty, normalize_coverage_map};
 
 #[cfg(test)]
 #[path = "batch_check_aggregate_test.rs"]

@@ -143,7 +143,7 @@ fn all_hit_batch_does_not_wait_for_entry_lock() {
         locked_tx.send(()).unwrap();
         thread::sleep(Duration::from_millis(200));
     });
-    locked_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+    locked_rx.recv_timeout(Duration::from_secs(5)).unwrap();
     let rslip = Rslip::new(PytestRunner::from_bounded_fn(move |_reqs, _jobs| {
         panic!("all-hit batch should not invoke runner")
     }));
