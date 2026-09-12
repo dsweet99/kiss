@@ -1,5 +1,6 @@
 pub mod args;
 mod check_cmd;
+pub(crate) mod check_shards;
 mod config_session;
 mod cov_cmd;
 mod cov_cmd_cache;

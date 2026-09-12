@@ -166,23 +166,38 @@ fn dynamic_rust_selectors(
             &request, &tools, &identity, &plan,
         )
         .map_err(|err| format!("error: kiss test: failed to list generated Rust tests: {err:?}"))?;
+    let target_index = target_source_index(&target_sources);
+    let mapped: Vec<(PathBuf, String)> = listed_tests
+        .into_par_iter()
+        .filter_map(|listed| {
+            let source = source_for_listed_test(
+                Path::new(&listed.executable),
+                &listed.logical_name,
+                candidate_sources,
+                &target_index,
+            );
+            let rel = source
+                .strip_prefix(repo_root)
+                .map(|path| path.to_string_lossy().replace('\\', "/"))
+                .unwrap_or_default();
+            if kiss::path_ignored_by_prefixes(&rel, ignore) {
+                None
+            } else {
+                Some((source, listed.logical_name))
+            }
+        })
+        .collect();
     let mut selectors = BTreeSet::new();
-    for listed in listed_tests {
-        let source = source_for_listed_test(
-            Path::new(&listed.executable),
-            &listed.logical_name,
-            candidate_sources,
-            &target_sources,
-        );
-        let rel = source
-            .strip_prefix(repo_root)
-            .map(|path| path.to_string_lossy().replace('\\', "/"))
-            .unwrap_or_default();
-        if !kiss::path_ignored_by_prefixes(&rel, ignore) {
-            selectors.insert((source, listed.logical_name));
-        }
-    }
+    selectors.extend(mapped);
     Ok(selectors.into_iter().collect())
+}
+
+fn target_source_index(target_sources: &[(String, PathBuf)]) -> HashMap<String, Vec<PathBuf>> {
+    let mut index = HashMap::<String, Vec<PathBuf>>::new();
+    for (name, source) in target_sources {
+        index.entry(name.clone()).or_default().push(source.clone());
+    }
+    index
 }
 
 fn rust_dynamic_listing_jobs(repo_root: &Path) -> Result<usize, String> {
@@ -195,7 +210,7 @@ fn source_for_listed_test(
     executable: &Path,
     selector: &str,
     candidate_sources: &[PathBuf],
-    target_sources: &[(String, PathBuf)],
+    target_index: &HashMap<String, Vec<PathBuf>>,
 ) -> PathBuf {
     let executable_stem = executable
         .file_stem()
@@ -211,11 +226,11 @@ fn source_for_listed_test(
             },
             |(stem, _)| stem,
         );
-    let matching_targets = target_sources
-        .iter()
-        .filter(|(name, _)| name == executable_stem)
-        .map(|(_, source)| source);
-    if let Some(source) = matching_targets.clone().find(|source| {
+    let matching_targets = target_index
+        .get(executable_stem)
+        .map(|sources| sources.as_slice())
+        .unwrap_or(&[]);
+    if let Some(source) = matching_targets.iter().find(|source| {
         !matches!(
             source.file_name().and_then(|value| value.to_str()),
             Some("lib.rs" | "main.rs")
@@ -224,6 +239,7 @@ fn source_for_listed_test(
         return source.clone();
     }
     matching_targets
+        .iter()
         .chain(candidate_sources.iter().filter(|source| {
             source
                 .file_name()

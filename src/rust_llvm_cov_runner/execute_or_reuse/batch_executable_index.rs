@@ -1,6 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::process::{Command, Stdio};
 
+use rayon::prelude::*;
+
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_events::selector_matches_test;
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_executor_finish::{
     digest_test_binary, test_binary_id_for_path,
@@ -128,21 +130,25 @@ fn executable_index_and_listed_tests(
     }
     let kiss_profraw =
         crate::rust_llvm_cov_runner::kiss_profraw::kiss_profraw_dir(&req.source_root);
+    let resolved: Result<Vec<_>, RustLlvmCovError> = list_metadata
+        .into_par_iter()
+        .map(|item| resolve_listed_executable(req, exact, &kiss_profraw, item))
+        .collect();
+    let resolved = resolved?;
     let mut binary_by_id = BTreeMap::new();
     let mut selector_binary_ids = BTreeMap::<String, BTreeSet<String>>::new();
     let mut listed_tests = BTreeSet::new();
-    for item in list_metadata {
-        accumulate_listed_executable(
-            req,
-            exact,
-            &kiss_profraw,
-            item,
-            &mut ListedIndexAcc {
-                binary_by_id: &mut binary_by_id,
-                selector_binary_ids: &mut selector_binary_ids,
-                listed_tests: &mut listed_tests,
-            },
-        )?;
+    for item in resolved {
+        binary_by_id.insert(item.binary.id.clone(), item.binary);
+        for (executable, logical_name) in item.listed_tests {
+            listed_tests.insert((executable, logical_name));
+        }
+        for (selector, id) in item.selector_hits {
+            selector_binary_ids
+                .entry(selector)
+                .or_default()
+                .insert(id);
+        }
     }
     let selector_binary_ids = selector_binary_ids
         .into_iter()
@@ -164,65 +170,110 @@ fn executable_index_and_listed_tests(
     ))
 }
 
-struct ListedIndexAcc<'a> {
-    binary_by_id: &'a mut BTreeMap<String, RustTestBinaryIdentity>,
-    selector_binary_ids: &'a mut BTreeMap<String, BTreeSet<String>>,
-    listed_tests: &'a mut BTreeSet<(String, String)>,
+struct ResolvedListedExecutable {
+    binary: RustTestBinaryIdentity,
+    listed_tests: Vec<(String, String)>,
+    selector_hits: Vec<(String, String)>,
 }
 
-fn accumulate_listed_executable(
+fn resolve_listed_executable(
     req: &RustCoverageBatchRequest,
     exact: bool,
     kiss_profraw: &std::path::Path,
     item: crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim::BatchShimListMetadata,
-    acc: &mut ListedIndexAcc<'_>,
-) -> Result<(), RustLlvmCovError> {
+) -> Result<ResolvedListedExecutable, RustLlvmCovError> {
     let executable = item
         .argv
         .first()
-        .ok_or_else(|| RustLlvmCovError::InvalidRequest("missing list executable".into()))?;
-    let path = std::path::Path::new(executable);
+        .ok_or_else(|| RustLlvmCovError::InvalidRequest("missing list executable".into()))?
+        .clone();
+    let path = std::path::Path::new(&executable);
     let id = test_binary_id_for_path(path);
     let digest = digest_test_binary(path)?;
-    acc.binary_by_id.insert(
-        id.clone(),
-        RustTestBinaryIdentity {
-            id: id.clone(),
-            executable: executable.clone(),
-            digest,
-        },
-    );
-    let test_names = list_test_names_from_executable(path, &id, kiss_profraw)?;
+    let test_names = resolve_listed_test_names(req, kiss_profraw, &item, path, &id)?;
     let prefix = format!("{id}$");
+    let mut listed_tests = Vec::new();
     for test_name in &test_names {
         if let Some(logical_name) = test_name.strip_prefix(&prefix) {
-            acc.listed_tests
-                .insert((executable.clone(), logical_name.to_string()));
+            listed_tests.push((executable.clone(), logical_name.to_string()));
         }
     }
+    let mut selector_hits = Vec::new();
     for selector in &req.logical_selectors {
         if test_names
             .iter()
             .any(|test_name| selector_matches_test(test_name, selector, exact))
         {
-            acc.selector_binary_ids
-                .entry(selector.clone())
-                .or_default()
-                .insert(id.clone());
+            selector_hits.push((selector.clone(), id.clone()));
         }
     }
-    Ok(())
+    Ok(ResolvedListedExecutable {
+        binary: RustTestBinaryIdentity {
+            id,
+            executable,
+            digest,
+        },
+        listed_tests,
+        selector_hits,
+    })
+}
+
+fn resolve_listed_test_names(
+    req: &RustCoverageBatchRequest,
+    kiss_profraw: &std::path::Path,
+    item: &crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim::BatchShimListMetadata,
+    path: &std::path::Path,
+    path_id: &str,
+) -> Result<Vec<String>, RustLlvmCovError> {
+    if let Some(names) = remap_list_metadata_test_names(item, path_id) {
+        return Ok(names);
+    }
+    let list_cwd = if !item.cwd.as_os_str().is_empty() {
+        Some(item.cwd.as_path())
+    } else if !req.cwd.as_os_str().is_empty() && req.cwd.exists() {
+        Some(req.cwd.as_path())
+    } else {
+        None
+    };
+    list_test_names_from_executable(path, path_id, kiss_profraw, list_cwd)
+}
+
+fn remap_list_metadata_test_names(
+    item: &crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim::BatchShimListMetadata,
+    path_id: &str,
+) -> Option<Vec<String>> {
+    if item.test_names.is_empty() {
+        return None;
+    }
+    let prefix = format!("{}$", item.binary_id);
+    let remapped: Vec<String> = item
+        .test_names
+        .iter()
+        .filter_map(|name| {
+            let logical = name.strip_prefix(&prefix)?;
+            Some(format!("{path_id}${logical}"))
+        })
+        .collect();
+    if remapped.is_empty() {
+        None
+    } else {
+        Some(remapped)
+    }
 }
 
 fn list_test_names_from_executable(
     path: &std::path::Path,
     binary_id: &str,
     kiss_profraw: &std::path::Path,
+    cwd: Option<&std::path::Path>,
 ) -> Result<Vec<String>, RustLlvmCovError> {
     crate::rust_llvm_cov_runner::kiss_profraw::ensure_kiss_profraw(kiss_profraw)
         .map_err(RustLlvmCovError::Io)?;
     let mut command = Command::new(path);
     command.arg("--list");
+    if let Some(cwd) = cwd {
+        command.current_dir(cwd);
+    }
     crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim_delegated::scrub_coverage_build_env(
         &mut command,
     );
@@ -319,6 +370,7 @@ mod tests {
             binary_id: "unused-by-index".to_string(),
             argv: Vec::new(),
             test_names: Vec::new(),
+            cwd: Default::default(),
         };
         std::fs::write(
             target_runner_output_dir.join("list-a.list.json"),
@@ -356,6 +408,7 @@ mod tests {
             binary_id: "unused-by-index".to_string(),
             argv: vec![bin.to_string_lossy().to_string()],
             test_names: Vec::new(),
+            cwd: Default::default(),
         };
         std::fs::write(
             target_runner_output_dir.join("list-a.list.json"),
@@ -396,8 +449,13 @@ mod tests {
         std::fs::set_permissions(&bin, permissions).unwrap();
 
         let kiss_profraw = tmp.path().join(".kiss").join("profraw");
-        let err =
-            super::list_test_names_from_executable(&bin, "bin-id", &kiss_profraw).unwrap_err();
+        let err = super::list_test_names_from_executable(
+            &bin,
+            "bin-id",
+            &kiss_profraw,
+            Some(tmp.path()),
+        )
+        .unwrap_err();
 
         assert!(format!("{err:?}").contains("test binary list failed"));
         assert!(format!("{err:?}").contains("bad"));
@@ -418,9 +476,95 @@ mod tests {
         permissions.set_mode(0o755);
         std::fs::set_permissions(&bin, permissions).unwrap();
 
-        let names = super::list_test_names_from_executable(&bin, "bin-id", &kiss_profraw).unwrap();
+        let names = super::list_test_names_from_executable(
+            &bin,
+            "bin-id",
+            &kiss_profraw,
+            Some(tmp.path()),
+        )
+        .unwrap();
         assert_eq!(names, vec!["bin-id$alpha::passes".to_string()]);
         assert!(kiss_profraw.is_dir());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn list_test_names_uses_package_cwd_for_relative_resource_lookup() {
+        let tmp = tempfile::tempdir().unwrap();
+        let package = tmp.path().join("crate_a");
+        std::fs::create_dir_all(package.join("resources")).unwrap();
+        std::fs::write(package.join("resources").join("marker"), b"ok").unwrap();
+        let kiss_profraw = tmp.path().join(".kiss").join("profraw");
+        let bin = tmp.path().join("fixtures-bin");
+        std::fs::write(
+            &bin,
+            "#!/bin/sh\nif [ ! -f resources/marker ]; then echo missing >&2; exit 11; fi\nprintf 'datatest::case: test\\n'\n",
+        )
+        .unwrap();
+        let mut permissions = std::fs::metadata(&bin).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&bin, permissions).unwrap();
+
+        let err = super::list_test_names_from_executable(
+            &bin,
+            "bin-id",
+            &kiss_profraw,
+            Some(tmp.path()),
+        )
+        .unwrap_err();
+        assert!(format!("{err:?}").contains("test binary list failed"));
+
+        let names =
+            super::list_test_names_from_executable(&bin, "bin-id", &kiss_profraw, Some(&package))
+                .unwrap();
+        assert_eq!(names, vec!["bin-id$datatest::case".to_string()]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn prefers_list_metadata_test_names_without_relisting_binary() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bin = tmp.path().join("test-bin");
+        std::fs::write(&bin, "#!/bin/sh\necho should-not-run >&2\nexit 9\n").unwrap();
+        let mut permissions = std::fs::metadata(&bin).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&bin, permissions).unwrap();
+
+        let target_runner_output_dir = tmp.path().join("instances");
+        std::fs::create_dir(&target_runner_output_dir).unwrap();
+        let binary_id =
+            crate::rust_llvm_cov_runner::execute_or_reuse::batch_executor_finish::test_binary_id_for_path(
+                &bin,
+            );
+        let metadata = BatchShimListMetadata {
+            schema_version: SHIM_LIST_SCHEMA.to_string(),
+            id: "list-a".to_string(),
+            binary_id: "pkg::fixtures".to_string(),
+            argv: vec![bin.to_string_lossy().to_string()],
+            test_names: vec!["pkg::fixtures$alpha::passes".to_string()],
+            cwd: package_cwd_unused(tmp.path()),
+        };
+        std::fs::write(
+            target_runner_output_dir.join("list-a.list.json"),
+            serde_json::to_vec(&metadata).unwrap(),
+        )
+        .unwrap();
+
+        let mut req = crate::rust_llvm_cov_runner::RustCoverageBatchRequest::witness();
+        req.source_root = tmp.path().to_path_buf();
+        req.logical_selectors = vec!["alpha::passes".to_string()];
+        let mut plan = crate::rust_llvm_cov_runner::RustCoverageBatchPlan::witness();
+        plan.target_runner_output_dir = target_runner_output_dir;
+
+        let index = super::executable_index_from_list_metadata(&req, &plan).unwrap();
+        assert_eq!(
+            index.selector_binary_ids.get("alpha::passes"),
+            Some(&vec![binary_id])
+        );
+    }
+
+    fn package_cwd_unused(root: &std::path::Path) -> std::path::PathBuf {
+        root.join("unused-cwd")
     }
 
     #[test]

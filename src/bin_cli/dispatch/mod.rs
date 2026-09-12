@@ -24,35 +24,41 @@ fn dispatch_analyze(
     config: Option<std::path::PathBuf>,
     command: Commands,
     cfg: &TriConfig<'_>,
-    _test_section: &TestSectionConfig,
+    test_section: &TestSectionConfig,
 ) -> i32 {
     match command {
         Commands::Check {
             paths,
             ignore,
             timing,
-        } => dispatch_check(CheckDispatchOptions {
-            lang,
-            paths,
-            ignore,
-            timing,
-            config,
-            cfg,
-        }),
+        } => {
+            let ignore = test_section.merged_ignore(&ignore);
+            dispatch_check(CheckDispatchOptions {
+                lang,
+                paths,
+                ignore,
+                timing,
+                config,
+                cfg,
+            })
+        }
         Commands::Stats {
             paths,
             all,
             table,
             ignore,
-        } => dispatch_stats(StatsDispatchOptions {
-            lang,
-            paths,
-            all,
-            table,
-            ignore,
-            cfg,
-            config,
-        }),
+        } => {
+            let ignore = test_section.merged_ignore(&ignore);
+            dispatch_stats(StatsDispatchOptions {
+                lang,
+                paths,
+                all,
+                table,
+                ignore,
+                cfg,
+                config,
+            })
+        }
         _ => 2,
     }
 }

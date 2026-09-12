@@ -4,9 +4,11 @@ use std::time::Duration;
 use kiss::Language;
 
 use crate::test_runner::check_line_coverage::repository_root_for_universe;
-use crate::test_runner::rust_coverage_index::{
-    resolved_rust_batch_request_parts, rust_coverage_cache_root,
-};
+
+mod rust_durations;
+pub(crate) use rust_durations::clear_rust_duration_pairs_memo;
+pub(super) use rust_durations::load_rust_population_max_duration;
+use rust_durations::load_rust_duration_pairs;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct UnitTestTiming {
@@ -91,41 +93,7 @@ fn load_python_timings(repo_root: &Path, pytest_args: &[String]) -> Option<Vec<U
 }
 
 fn load_rust_timings(repo_root: &Path) -> Option<Vec<UnitTestTiming>> {
-    let cache_root = rust_coverage_cache_root(repo_root);
-    if let Some(pairs) =
-        kiss::rust_llvm_cov_runner::try_load_sealed_population_durations(&cache_root, repo_root)
-        && !pairs.is_empty()
-    {
-        return Some(map_rust_timing_pairs(repo_root, pairs));
-    }
-    let (req, tools) = resolved_rust_batch_request_parts(repo_root, &[]).ok()?;
-    let identity = match kiss::rust_llvm_cov_runner::try_source_matched_seal_identity(
-        &cache_root,
-        repo_root,
-    ) {
-        Some(sealed)
-            if kiss::rust_llvm_cov_runner::current_population_manifest_matches_identity(
-                &cache_root,
-                &sealed,
-            )
-            .unwrap_or(false) =>
-        {
-            sealed
-        }
-        _ => kiss::rust_llvm_cov_runner::batch_identity(&req, &tools).ok()?,
-    };
-    if let Some(pairs) = kiss::rust_llvm_cov_runner::load_current_population_durations(
-        &cache_root,
-        repo_root,
-        &identity,
-        &req,
-        &tools,
-        None,
-    ) && !pairs.is_empty()
-    {
-        return Some(map_rust_timing_pairs(repo_root, pairs));
-    }
-    load_rust_timings_from_witness(repo_root, &identity)
+    Some(map_rust_timing_pairs(repo_root, load_rust_duration_pairs(repo_root)?))
 }
 
 fn map_rust_timing_pairs(
@@ -149,35 +117,6 @@ fn map_rust_timing_pairs(
         .collect()
 }
 
-fn load_rust_timings_from_witness(
-    repo_root: &Path,
-    identity: &kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity,
-) -> Option<Vec<UnitTestTiming>> {
-    use crate::test_runner::execution_witness::{
-        rust_identity_digest_from_batch, try_load_rust_execution_witness,
-    };
-    use crate::test_runner::lang_iface::identity_covers;
-    let witness = try_load_rust_execution_witness(repo_root).ok()?;
-    if !identity_covers(
-        &witness.identity_digest,
-        &rust_identity_digest_from_batch(identity),
-    ) {
-        return None;
-    }
-    if !witness.complete
-        || witness.selectors.is_empty()
-        || witness.durations_ns.len() != witness.selectors.len()
-    {
-        return None;
-    }
-    let pairs: Option<Vec<(String, Duration)>> = witness
-        .selectors
-        .iter()
-        .zip(witness.durations_ns.iter())
-        .map(|(selector, &ns)| Some((selector.clone(), Duration::from_nanos(ns?))))
-        .collect();
-    Some(map_rust_timing_pairs(repo_root, pairs?))
-}
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct RuntimeGateViolation {
@@ -289,6 +228,10 @@ pub(crate) fn codebase_test_count_for_cov(
     {
         return Some(n);
     }
+    if let Some(n) = timing_artifact_test_count(universe, lang_filter, include, ignore, pytest_args)
+    {
+        return Some(n);
+    }
     match collect_current_unit_test_timings(TimingCollectOpts {
         universe,
         lang_filter,
@@ -299,6 +242,38 @@ pub(crate) fn codebase_test_count_for_cov(
         TimingPopulation::Complete(entries) => Some(entries.len()),
         TimingPopulation::Incomplete => None,
     }
+}
+
+fn timing_artifact_test_count(
+    universe: &Path,
+    lang_filter: Option<Language>,
+    include: TimingLangInclude,
+    ignore: &[String],
+    pytest_args: &[String],
+) -> Option<usize> {
+    let repo_root = repository_root_for_universe(universe);
+    let want_python = include.python && matches!(lang_filter, None | Some(Language::Python));
+    let want_rust = include.rust && matches!(lang_filter, None | Some(Language::Rust));
+    let mut count = 0usize;
+    if want_python {
+        let pairs =
+            crate::test_runner::python_coverage_index::load_current_python_population_durations(
+                &repo_root,
+                pytest_args,
+            )?;
+        count += pairs
+            .into_iter()
+            .filter(|(selector, _)| !selector_matches_ignore_prefix(selector, ignore))
+            .count();
+    }
+    if want_rust {
+        let pairs = load_rust_duration_pairs(&repo_root)?;
+        count += pairs
+            .into_iter()
+            .filter(|(selector, _)| !selector_matches_ignore_prefix(selector, ignore))
+            .count();
+    }
+    Some(count)
 }
 
 pub(crate) fn unit_test_runtime_sec_report_for_universe(

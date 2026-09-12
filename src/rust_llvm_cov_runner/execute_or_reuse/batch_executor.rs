@@ -153,7 +153,13 @@ where
     {
         match try_all_hit_fast_path(req, tools, &identity)? {
             FastPathProbe::Hit(result) => {
-                return Ok(with_process_reverse_query_counters(*result));
+                let mut result = *result;
+                super::batch_executor_sealed::write_seal_after_complete_pass(
+                    req, &identity, &result,
+                );
+                result.counters.legacy_cleanup_deferred =
+                    cleanup_legacy_worker_data_nonblocking(&req.cache_root)?.deferred;
+                return Ok(with_process_reverse_query_counters(result));
             }
             FastPathProbe::Miss(probed) => prepared = probed,
         }

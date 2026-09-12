@@ -61,6 +61,7 @@ fn write_list_metadata(output_dir: &Path, command: &[OsString], stdout: &[u8]) -
             .map(|arg| arg.to_string_lossy().to_string())
             .collect(),
         test_names,
+        cwd: std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf()),
     };
     write_shim_list_metadata(output_dir, &id, &metadata)
 }

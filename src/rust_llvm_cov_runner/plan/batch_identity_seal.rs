@@ -225,7 +225,10 @@ pub fn try_source_matched_seal_identity(
     {
         return None;
     }
-    let current = collect_file_meta(source_root).ok()?;
+    let current = match try_reuse_seal_file_meta(source_root, &seal.files) {
+        Some(meta) => meta,
+        None => collect_file_meta(source_root).ok()?,
+    };
     if !ordinary_source_digests_match(&current, &seal.ordinary_source_digests) {
         return None;
     }
@@ -235,4 +238,26 @@ pub fn try_source_matched_seal_identity(
         selection_context_fingerprint: seal.selection_context_fingerprint,
         ordinary_source_digests: seal.ordinary_source_digests,
     })
+}
+
+fn try_reuse_seal_file_meta(
+    source_root: &Path,
+    expected: &[SealFileMeta],
+) -> Option<Vec<SealFileMeta>> {
+    let root = source_root
+        .canonicalize()
+        .unwrap_or_else(|_| source_root.to_path_buf());
+    let mut out = Vec::with_capacity(expected.len());
+    for file in expected {
+        let path = root.join(&file.path);
+        let meta = fs::metadata(&path).ok()?;
+        if meta.len() != file.len
+            || mtime_ns(&meta).unwrap_or(0) != file.mtime_ns
+            || ctime_ns(&meta) != file.ctime_ns
+        {
+            return None;
+        }
+        out.push(file.clone());
+    }
+    Some(out)
 }

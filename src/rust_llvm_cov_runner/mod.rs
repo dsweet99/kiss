@@ -7,6 +7,7 @@ mod execute_or_reuse;
 mod plan;
 mod publish_derived;
 
+mod build_depot;
 mod file_lock;
 mod kiss_profraw;
 mod ordinary_source_snapshot;
@@ -92,6 +93,7 @@ pub(crate) use plan::batch_platform;
 pub(crate) use plan::batch_runner_resolve;
 pub(crate) use plan::cargo_workspace_metadata;
 pub(crate) use plan::shared_input;
+pub use build_depot::{SemanticClearReport, build_depot_target, clear_semantic_evidence};
 #[cfg(test)]
 pub(crate) use plan::shared_input_test;
 pub(crate) use publish_derived::batch_check_aggregate;

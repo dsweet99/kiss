@@ -25,6 +25,12 @@ struct WorkItem {
     kind: IncludeKind,
 }
 
+#[derive(Clone, Copy)]
+enum WalkMode {
+    Full,
+    ShardLocal,
+}
+
 pub fn classify_rust(
     parsed: &[&ParsedRustFile],
     discovered: &[PathBuf],
@@ -42,14 +48,32 @@ pub fn classify_rust(
     let mut atoms = AtomInterner::new();
     let mut acc: HashMap<PathBuf, Vec<RoleRange>> = HashMap::new();
     let mut base: HashMap<PathBuf, CodeContextSet> = HashMap::new();
-    let mut queue = seed_queue(&cargo_roots, &paths);
+    let shard_local = std::env::var_os("KISS_CHECK_GATHER_ROOTS").is_some();
+    let mut queue = if shard_local {
+        seed_queue_sharded(&paths)
+    } else {
+        seed_queue(&cargo_roots, &paths)
+    };
+    let walk_mode = if shard_local {
+        WalkMode::ShardLocal
+    } else {
+        WalkMode::Full
+    };
     let mut seen: HashSet<String> = HashSet::new();
     while let Some(item) = queue.pop_front() {
         let key = work_key(&item);
         if !seen.insert(key) {
             continue;
         }
-        process_work_item(item, &by_path, &mut atoms, &mut acc, &mut base, &mut queue)?;
+        process_work_item(
+            item,
+            &by_path,
+            &mut atoms,
+            &mut acc,
+            &mut base,
+            &mut queue,
+            walk_mode,
+        )?;
     }
     Ok(finish_rust_index(&paths, acc, base))
 }
@@ -143,6 +167,31 @@ fn seed_queue(cargo_roots: &[CargoRoot], paths: &[PathBuf]) -> VecDeque<WorkItem
     queue
 }
 
+fn seed_queue_sharded(paths: &[PathBuf]) -> VecDeque<WorkItem> {
+    let mut queue = VecDeque::new();
+    for path in paths {
+        queue.push_back(WorkItem {
+            path: path.clone(),
+            pred: CfgPred::True,
+            allow_production: !path_components_suggest_test(path),
+            kind: IncludeKind::Items,
+        });
+    }
+    queue
+}
+
+fn path_components_suggest_test(path: &Path) -> bool {
+    path.components().any(|c| {
+        let Some(name) = c.as_os_str().to_str() else {
+            return false;
+        };
+        matches!(name, "tests" | "test" | "benches" | "examples")
+            || name.ends_with("_tests")
+            || name.ends_with("_test")
+            || name.starts_with("test_")
+    })
+}
+
 fn loose_seed_paths(paths: &[PathBuf]) -> Vec<PathBuf> {
     let roots: Vec<PathBuf> = paths
         .iter()
@@ -183,6 +232,7 @@ fn process_work_item(
     acc: &mut HashMap<PathBuf, Vec<RoleRange>>,
     base: &mut HashMap<PathBuf, CodeContextSet>,
     queue: &mut VecDeque<WorkItem>,
+    walk_mode: WalkMode,
 ) -> Result<(), RoleBuildError> {
     let path = canonical_path(&item.path);
     let walked = walk_path(
@@ -192,6 +242,7 @@ fn process_work_item(
         item.allow_production,
         by_path,
         atoms,
+        walk_mode,
     )?;
     let ctx = super::cfg_sat::contexts_for_pred(&item.pred, item.allow_production);
     let entry = base
@@ -210,9 +261,20 @@ fn walk_path(
     allow_production: bool,
     by_path: &HashMap<PathBuf, &ParsedRustFile>,
     atoms: &mut AtomInterner,
+    walk_mode: WalkMode,
 ) -> Result<WalkOutput, RoleBuildError> {
     if let Some(parsed) = by_path.get(path) {
         return walk_file(path, &parsed.ast, pred, allow_production, atoms);
+    }
+    match walk_mode {
+        WalkMode::ShardLocal => {
+            return Ok(WalkOutput {
+                ranges: Vec::new(),
+                mods: Vec::new(),
+                includes: Vec::new(),
+            });
+        }
+        WalkMode::Full => {}
     }
     if !path.is_file() {
         return Err(missing_source(path, kind));

@@ -164,7 +164,14 @@ fn try_evaluate_records_with_orphan_state(
     if ctx.args.gate_config.orphan_detection && !ctx.args.bypass_gate && !orphan_clean {
         return None;
     }
+    let t_time = std::time::Instant::now();
     let time_eval = evaluate_time_gate_for_cov(ctx.args, ctx.universe_root, ctx.files, ctx.ignore);
+    if ctx.args.timing {
+        eprintln!(
+            "TIMING:coverage_sibling_time_gate_ms:{}",
+            t_time.elapsed().as_millis()
+        );
+    }
     if matches!(time_eval, RuntimeGateEval::Incomplete) {
         if !ctx.args.allow_refresh {
             eprintln!(
@@ -175,6 +182,7 @@ fn try_evaluate_records_with_orphan_state(
 
         return None;
     }
+    let t_cov = std::time::Instant::now();
     let coverage_failed = evaluate_coverage_gate(
         records,
         ctx.focus,
@@ -182,9 +190,22 @@ fn try_evaluate_records_with_orphan_state(
         ctx.scope,
         ctx.args.bypass_gate,
     );
+    if ctx.args.timing {
+        eprintln!(
+            "TIMING:coverage_sibling_coverage_gate_ms:{}",
+            t_cov.elapsed().as_millis()
+        );
+    }
     let time_failed = apply_time_gate_eval(&time_eval);
+    let t_max = std::time::Instant::now();
     let max_num_tests_failed =
         evaluate_max_num_tests_gate(ctx.args, ctx.universe_root, ctx.files, ctx.ignore);
+    if ctx.args.timing {
+        eprintln!(
+            "TIMING:coverage_sibling_max_num_tests_ms:{}",
+            t_max.elapsed().as_millis()
+        );
+    }
     Some(finish_sibling_gates(SiblingGateResult {
         coverage_failed,
         time_failed,
@@ -200,6 +221,7 @@ pub fn run_cov_command(args: &CovCommandArgs<'_>) -> i32 {
 
 pub(crate) fn run_cov_command_impl(args: &CovCommandArgs<'_>, print_empty: bool) -> i32 {
     crate::test_runner::python_coverage_index::clear_python_generation_warm_memo();
+    crate::test_runner::unit_test_timing::clear_rust_duration_pairs_memo();
     let _ = (args.py_config, args.rs_config);
     let ignore = merge_check_ignore_prefixes(args.ignore);
     validate_paths(args.paths);

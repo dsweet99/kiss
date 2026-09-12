@@ -5,7 +5,8 @@ use kiss::Language;
 
 use super::{
     RuntimeGateEval, RuntimeGateViolation, TimingCollectOpts, TimingLangInclude, TimingPopulation,
-    collect_current_unit_test_timings, evaluate_runtime_gate, selector_matches_ignore_prefix,
+    collect_current_unit_test_timings, evaluate_runtime_gate, load_rust_population_max_duration,
+    selector_matches_ignore_prefix,
 };
 use crate::test_runner::check_line_coverage::repository_root_for_universe;
 
@@ -153,22 +154,9 @@ fn evaluate_sole_star_time_gate(opts: CovTimeGateOpts<'_>, limit_seconds: f64) -
         max = max.max(py_max);
     }
     if want_rust {
-        match collect_current_unit_test_timings(TimingCollectOpts {
-            universe: opts.universe,
-            lang_filter: Some(Language::Rust),
-            include: TimingLangInclude {
-                python: false,
-                rust: true,
-            },
-            ignore: opts.ignore,
-            pytest_args: opts.pytest_args,
-        }) {
-            TimingPopulation::Complete(rust) => {
-                for t in &rust {
-                    max = max.max(t.duration);
-                }
-            }
-            TimingPopulation::Incomplete => {
+        match load_rust_population_max_duration(&repo_root, opts.ignore) {
+            Some(rs_max) => max = max.max(rs_max),
+            None => {
                 emit_timings_ms(opts.timing, t_timings);
                 return RuntimeGateEval::Incomplete;
             }

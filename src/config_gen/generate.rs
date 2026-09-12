@@ -14,6 +14,7 @@ pub struct GenerateConfigParams<'a> {
     pub py_graph: GraphKeyMaxima,
     pub rs_graph: GraphKeyMaxima,
     pub gate: &'a GateConfig,
+    pub ignore: &'a [String],
 }
 
 const GRAPH_METRIC_IDS: &[&str] = &["cycle_size", "indirect_dependencies", "dependency_depth"];
@@ -32,6 +33,21 @@ pub fn auto_created_gate_config() -> GateConfig {
         max_unit_test_seconds: vec![("*".to_string(), 99999.0)],
         ..GateConfig::default()
     }
+}
+
+pub fn generate_gate_stub_toml(ignore: &[String]) -> String {
+    let gate = auto_created_gate_config();
+    let empty = MetricStats::default();
+    generate_config_toml_by_language(&GenerateConfigParams {
+        py: &empty,
+        rs: &empty,
+        py_n: 0,
+        rs_n: 0,
+        py_graph: GraphKeyMaxima::default(),
+        rs_graph: GraphKeyMaxima::default(),
+        gate: &gate,
+        ignore,
+    })
 }
 
 pub fn generate_config_toml_by_language(p: &GenerateConfigParams<'_>) -> String {
@@ -79,7 +95,7 @@ pub fn generate_config_toml_by_language(p: &GenerateConfigParams<'_>) -> String 
         crate::defaults::gate::WATCH_SETTLE_SECONDS
     );
     let _ = writeln!(out, "pytest_plugins = []");
-    let _ = writeln!(out, "ignore = []");
+    write_toml_string_list(&mut out, "ignore", p.ignore);
     let _ = write!(
         out,
         "\n{}",
@@ -186,6 +202,7 @@ mod coverage_witness {
             py_graph: GraphKeyMaxima::default(),
             rs_graph: GraphKeyMaxima::default(),
             gate: &gate,
+            ignore: &[],
         });
         assert!(
             toml.contains("duplication_enabled = false"),
@@ -235,6 +252,7 @@ mod coverage_witness {
             py_graph: GraphKeyMaxima::default(),
             rs_graph: GraphKeyMaxima::default(),
             gate: &gate,
+            ignore: &[],
         };
         let toml = generate_config_toml_by_language(&p);
         assert!(toml.contains("[global]"));

@@ -65,10 +65,10 @@ pub(super) fn load_merge_tables(path: &Path, new: &str) -> Option<(toml::Table, 
 }
 
 pub(super) fn merge_global(merged: &mut toml::Table, ex: &toml::Table, nw: &toml::Table) {
-    if let Some(v) = nw
+    if let Some(v) = ex
         .get("global")
         .cloned()
-        .or_else(|| ex.get("global").cloned())
+        .or_else(|| nw.get("global").cloned())
     {
         merged.insert("global".to_string(), v);
     }

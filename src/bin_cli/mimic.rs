@@ -49,6 +49,7 @@ fn mimic_generate(
         py_graph: py.graph_max,
         rs_graph: rs.graph_max,
         gate: &gate,
+        ignore: &[],
     });
     write_mimic_toml(out, &toml, py.file_count, rs.file_count, quiet)
 }

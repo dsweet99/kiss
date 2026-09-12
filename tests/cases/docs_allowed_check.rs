@@ -135,6 +135,7 @@ fn library_emits_docs_allowed_in_generated_config() {
             py_graph: kiss::GraphKeyMaxima::default(),
             rs_graph: kiss::GraphKeyMaxima::default(),
             gate: &gate,
+            ignore: &[],
         },
     );
     assert!(toml.contains("docs_allowed = [\"docs\"]"), "toml:\n{toml}");

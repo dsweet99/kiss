@@ -44,11 +44,18 @@ pub(super) fn try_sealed_all_hit(
             .then_some((selector.clone(), entry))
         })
         .collect::<Option<BTreeMap<_, _>>>()?;
-    let pairs =
-        crate::rust_llvm_cov_runner::publish_derived::batch_population_durations::try_load_population_durations(
+    let pairs = crate::rust_llvm_cov_runner::publish_derived::batch_population_durations::try_load_population_durations(
             &req.cache_root,
             &population,
-        )?;
+        )
+        .or_else(|| {
+            crate::rust_llvm_cov_runner::publish_derived::batch_population_durations::
+                try_load_durations_from_manifest_sidecar(
+                &req.cache_root,
+                identity,
+                Some(&req.logical_selectors),
+            )
+        })?;
     let durations: BTreeMap<_, _> = pairs.into_iter().collect();
     let completed = req
         .logical_selectors
@@ -95,5 +102,55 @@ pub(super) fn write_seal_after_complete_pass(
     });
     if all_passed {
         let _ = super::batch_warm_hit_seal::write_warm_all_hit_seal(req, identity);
+        publish_durations_from_completed(req, identity, result);
     }
+}
+
+fn publish_durations_from_completed(
+    req: &RustCoverageBatchRequest,
+    identity: &RustCoverageBatchIdentity,
+    result: &RustCoverageBatchResult,
+) {
+    let Some(population) = crate::rust_llvm_cov_runner::publish_derived::batch_derived_index::
+        load_current_population_state(
+        &req.cache_root,
+        &req.source_root,
+        identity,
+        Some(&req.logical_selectors),
+    ) else {
+        return;
+    };
+    if crate::rust_llvm_cov_runner::publish_derived::batch_population_durations::try_load_population_durations(
+        &req.cache_root,
+        &population,
+    )
+    .is_some()
+    {
+        return;
+    }
+    let pairs: Vec<(String, std::time::Duration)> = result
+        .completed
+        .iter()
+        .map(|outcome| (outcome.selector.clone(), outcome.duration))
+        .collect();
+    if pairs.len() != population.selectors.len() {
+        return;
+    }
+    if crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::read_entry_state(
+        &req.cache_root,
+    )
+    .is_none()
+    {
+        let _ = crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::publish_next_entry_state(
+            &req.cache_root,
+            &population.generation_fingerprint,
+            &population.entries_fingerprint,
+        );
+    }
+    let _ = crate::rust_llvm_cov_runner::publish_derived::batch_population_durations::
+        write_population_durations_for_warm(
+        &req.cache_root,
+        &population,
+        &pairs,
+    );
 }

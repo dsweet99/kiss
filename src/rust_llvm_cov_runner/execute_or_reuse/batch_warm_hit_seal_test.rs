@@ -78,9 +78,13 @@ fn write_and_try_warm_all_hit_seal_positive_round_trip() {
 }
 
 #[test]
-fn write_warm_all_hit_seal_errors_without_entry_state() {
+fn write_warm_all_hit_seal_errors_without_population_or_entry_state() {
     let tmp = tempfile::tempdir().unwrap();
     let req = request(tmp.path().to_path_buf(), &["a::t"]);
     let err = write_warm_all_hit_seal(&req, &identity("gen1")).unwrap_err();
-    assert!(err.to_string().contains("entry_state"));
+    let msg = err.to_string();
+    assert!(
+        msg.contains("population") || msg.contains("entry_state"),
+        "unexpected error: {msg}"
+    );
 }

@@ -149,6 +149,7 @@ fn library_collects_comments_and_emits_config_flag() {
             py_graph: kiss::GraphKeyMaxima::default(),
             rs_graph: kiss::GraphKeyMaxima::default(),
             gate: &gate,
+            ignore: &[],
         },
     );
     assert!(toml.contains("comment_removal_enabled = true"));

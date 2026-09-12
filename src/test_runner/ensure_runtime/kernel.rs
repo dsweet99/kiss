@@ -41,19 +41,40 @@ fn ensure_one_language(
     if let Some(empty) = try_publish_empty_all(request, module, &planned)? {
         return Ok(empty);
     }
-    let identity_started = std::time::Instant::now();
+    let identity = timed_current_identity(request, module)?;
+    let loaded = timed_load_witness(request, module);
+    let mut witness = loaded.clone();
+    timed_reclassify_witness(request, module, gate, &mut witness)?;
+    let misses = timed_compute_misses(request, module, &planned, &identity, &witness)?;
+    timed_accept_or_run(request, module, &planned, witness, &misses)
+}
+
+fn emit_rust_stage(language: Language, name: &str, started: std::time::Instant) {
+    if language == Language::Rust {
+        crate::test_runner::emit_stage_time(name, started.elapsed());
+    }
+}
+
+fn timed_current_identity(
+    request: &EnsureRequest,
+    module: &dyn LanguageRuntime,
+) -> Result<String, String> {
+    let started = std::time::Instant::now();
     let identity = module.current_identity(request)?;
     match module.language() {
-        Language::Rust => {
-            crate::test_runner::emit_stage_time("rust_identity", identity_started.elapsed());
-        }
+        Language::Rust => emit_rust_stage(Language::Rust, "rust_identity", started),
         Language::Python => {
-            crate::test_runner::emit_stage_time(
-                "python_source_fingerprint",
-                identity_started.elapsed(),
-            );
+            crate::test_runner::emit_stage_time("python_source_fingerprint", started.elapsed());
         }
     }
+    Ok(identity)
+}
+
+fn timed_load_witness(
+    request: &EnsureRequest,
+    module: &dyn LanguageRuntime,
+) -> Option<crate::test_runner::lang_iface::ExecutionWitness> {
+    let started = std::time::Instant::now();
     let loaded = match module.load_full_witness(&request.repo_root) {
         Ok(witness) => Some(witness),
         Err(err) => {
@@ -63,27 +84,62 @@ fn ensure_one_language(
             None
         }
     };
-    let mut witness = loaded.clone();
-    reclassify_loaded_witness(request, module, gate, &mut witness)?;
+    emit_rust_stage(module.language(), "rust_witness_load", started);
+    loaded
+}
+
+fn timed_reclassify_witness(
+    request: &EnsureRequest,
+    module: &dyn LanguageRuntime,
+    gate: &GateConfig,
+    witness: &mut Option<crate::test_runner::lang_iface::ExecutionWitness>,
+) -> Result<(), String> {
+    let started = std::time::Instant::now();
+    reclassify_loaded_witness(request, module, gate, witness)?;
+    emit_rust_stage(module.language(), "rust_reclassify", started);
+    Ok(())
+}
+
+fn timed_compute_misses(
+    request: &EnsureRequest,
+    module: &dyn LanguageRuntime,
+    planned: &[String],
+    identity: &str,
+    witness: &Option<crate::test_runner::lang_iface::ExecutionWitness>,
+) -> Result<Vec<String>, String> {
+    let started = std::time::Instant::now();
     let mut misses = miss_selectors_for_repair(
         request.mode,
-        &planned,
-        &identity,
+        planned,
+        identity,
         witness.as_ref(),
         request.force,
     );
     crate::test_runner::lang_iface::union_force_selectors_into_misses(
-        &planned,
+        planned,
         &mut misses,
         &request.force_selectors,
     );
-    union_source_delta_misses(request, module, &planned, &mut misses)?;
-    union_incomparable_timing_misses(request, module, &planned, &witness, &mut misses);
-    if let Some(accepted) = try_accept_or_warm_report(request, module, &planned, &witness, &misses)?
-    {
+    union_source_delta_misses(request, module, planned, &mut misses)?;
+    union_incomparable_timing_misses(request, module, planned, witness, &mut misses);
+    emit_rust_stage(module.language(), "rust_miss_select", started);
+    Ok(misses)
+}
+
+fn timed_accept_or_run(
+    request: &EnsureRequest,
+    module: &dyn LanguageRuntime,
+    planned: &[String],
+    witness: Option<crate::test_runner::lang_iface::ExecutionWitness>,
+    misses: &[String],
+) -> Result<LanguageEnsureResult, String> {
+    let started = std::time::Instant::now();
+    if let Some(accepted) = try_accept_or_warm_report(request, module, planned, &witness, misses)? {
+        emit_rust_stage(module.language(), "rust_accept", started);
         return Ok(accepted);
     }
-    run_misses_and_maybe_publish(request, module, &planned, witness, &misses)
+    emit_rust_stage(module.language(), "rust_accept", started);
+    run_misses_and_maybe_publish(request, module, planned, witness, misses)
 }
 
 fn union_source_delta_misses(

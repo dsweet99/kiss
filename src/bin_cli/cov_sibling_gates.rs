@@ -4,8 +4,8 @@ use kiss::cli_output::print_final_status;
 
 use crate::bin_cli::cov_cmd::{CovCommandArgs, CovFileSets};
 use crate::test_runner::unit_test_timing::{
-    CovTimeGateOpts, RuntimeGateEval, TimingLangInclude, evaluate_cov_time_gate,
-    runtime_gate_failure_lines,
+    CovTimeGateOpts, RuntimeGateEval, TimingLangInclude, codebase_test_count_for_cov,
+    evaluate_cov_time_gate, runtime_gate_failure_lines,
 };
 
 pub(crate) struct SiblingGateResult {
@@ -78,16 +78,30 @@ pub(crate) fn evaluate_max_num_tests_gate(
     if args.bypass_gate {
         return false;
     }
-    let Some(count) = crate::test_runner::unit_test_timing::codebase_test_count_for_cov(
+    let include = TimingLangInclude {
+        python: !files.py_files.is_empty(),
+        rust: !files.rs_files.is_empty(),
+    };
+    let Some(count) = codebase_test_count_for_cov(
         universe_root,
         args.lang_filter,
-        TimingLangInclude {
-            python: !files.py_files.is_empty(),
-            rust: !files.rs_files.is_empty(),
-        },
+        include,
         ignore,
         args.pytest_args,
-    ) else {
+    )
+    .or_else(|| {
+        if args.ignore == ignore {
+            None
+        } else {
+            codebase_test_count_for_cov(
+                universe_root,
+                args.lang_filter,
+                include,
+                args.ignore,
+                args.pytest_args,
+            )
+        }
+    }) else {
         eprintln!("error: kiss test: unit-test population count is unavailable for max_num_tests");
         return true;
     };

@@ -44,10 +44,12 @@ pub fn cargo_roots_for_files(
     let mut metadata_memo: HashMap<PathBuf, Vec<CargoRoot>> = HashMap::new();
     let mut roots = Vec::new();
     let mut file_workspace = HashMap::new();
+    let mut needed_manifests = HashSet::new();
     for file in files {
         let Some(manifest) = nearest_manifest(file) else {
             continue;
         };
+        needed_manifests.insert(canonical_manifest(&manifest));
         let workspace = locate_workspace(&manifest, &mut workspace_memo)?;
         file_workspace.insert(file.clone(), workspace.clone());
         if let Some(existing) = metadata_memo.get(&workspace)
@@ -65,9 +67,17 @@ pub fn cargo_roots_for_files(
         }
     }
     for ws_roots in metadata_memo.into_values() {
-        roots.extend(ws_roots);
+        for root in ws_roots {
+            if needed_manifests.contains(&canonical_manifest(&root.manifest_path)) {
+                roots.push(root);
+            }
+        }
     }
     Ok((roots, file_workspace))
+}
+
+fn canonical_manifest(path: &Path) -> PathBuf {
+    crate::rust_include::canonical_path(path)
 }
 
 fn nearest_manifest(path: &Path) -> Option<PathBuf> {

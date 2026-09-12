@@ -128,6 +128,15 @@ pub fn load_current_population_durations(
         return Some(cached);
     }
     let out = load_durations_from_entries(cache_root, &population, identity, req, tools)?;
+    if crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::read_entry_state(cache_root)
+        .is_none()
+    {
+        let _ = crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::publish_next_entry_state(
+            cache_root,
+            &population.generation_fingerprint,
+            &population.entries_fingerprint,
+        );
+    }
     let _ = write_population_durations_under_lock(cache_root, &population, &out);
     Some(out)
 }
@@ -196,6 +205,25 @@ pub fn try_load_population_durations(
 
 #[cfg(test)]
 pub(crate) fn write_population_durations(
+    cache_root: &Path,
+    population: &RustPopulationState,
+    pairs: &[(String, Duration)],
+) -> io::Result<()> {
+    if crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::read_entry_state(cache_root)
+        .is_none()
+    {
+        crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::publish_next_entry_state(
+            cache_root,
+            &population.generation_fingerprint,
+            &population.entries_fingerprint,
+        )
+        .map_err(|err| io::Error::other(format!("{err:?}")))?;
+    }
+    let _guard = population_durations_lock(cache_root)?;
+    write_population_durations_under_lock(cache_root, population, pairs)
+}
+
+pub(crate) fn write_population_durations_for_warm(
     cache_root: &Path,
     population: &RustPopulationState,
     pairs: &[(String, Duration)],

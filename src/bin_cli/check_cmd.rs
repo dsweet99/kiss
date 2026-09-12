@@ -6,6 +6,7 @@ use crate::analyze::run_analyze;
 use crate::bin_cli::util::{merge_check_ignore_prefixes, validate_paths};
 use kiss::Language;
 
+
 pub struct CheckCommandArgs<'a> {
     pub paths: &'a [String],
     pub lang_filter: Option<Language>,
@@ -52,11 +53,21 @@ fn run_check_in_process(args: &CheckCommandArgs<'_>) -> i32 {
 }
 
 #[cfg(not(test))]
+pub(crate) fn run_check_in_process_pub(args: &CheckCommandArgs<'_>) -> i32 {
+    run_check_in_process(args)
+}
+
+#[cfg(not(test))]
 fn run_split_check(args: &CheckCommandArgs<'_>) -> i32 {
     let Ok(exe) = std::env::current_exe() else {
         return run_check_in_process(args);
     };
-    run_split_check_with_exe(&exe, args)
+    crate::bin_cli::check_shards::run_split_check_sharded(&exe, args)
+}
+
+#[cfg(not(test))]
+pub(crate) fn run_split_check_with_exe_legacy(exe: &Path, args: &CheckCommandArgs<'_>) -> i32 {
+    run_split_check_with_exe(exe, args)
 }
 
 fn run_split_check_with_exe(exe: &Path, args: &CheckCommandArgs<'_>) -> i32 {
@@ -135,6 +146,11 @@ fn forward_worker_stderr(bytes: &[u8]) {
     }
 }
 
+#[cfg(not(test))]
+pub(crate) fn forward_worker_stderr_pub(bytes: &[u8]) {
+    forward_worker_stderr(bytes);
+}
+
 fn analyzed_add(mut totals: [usize; 5], line: &str) -> Option<[usize; 5]> {
     let rest = line.strip_prefix("Analyzed: ")?;
     let nums: Vec<usize> = rest
@@ -148,6 +164,11 @@ fn analyzed_add(mut totals: [usize; 5], line: &str) -> Option<[usize; 5]> {
         *slot += n;
     }
     Some(totals)
+}
+
+#[cfg(not(test))]
+pub(crate) fn analyzed_add_pub(totals: [usize; 5], line: &str) -> Option<[usize; 5]> {
+    analyzed_add(totals, line)
 }
 
 #[cfg(test)]
