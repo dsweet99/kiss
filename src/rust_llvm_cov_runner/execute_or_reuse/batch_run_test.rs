@@ -20,8 +20,16 @@ fn terminate_stale_cache_processes_kills_cmdline_match_and_skips_self() {
         .spawn()
         .unwrap();
     let pid = child.id();
+    let mut killed = 0usize;
+    for _ in 0..50 {
+        killed = terminate_stale_cache_processes(&cache_root);
+        if killed >= 1 {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
     assert!(
-        terminate_stale_cache_processes(&cache_root) >= 1,
+        killed >= 1,
         "must kill the process whose cmdline contains the cache root"
     );
     let _ = child.wait();

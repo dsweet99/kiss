@@ -19,7 +19,5 @@ pub(super) fn gate_violation_from_raw_pass(witness: &ExecutionWitness, i: usize)
 
 pub(crate) fn miss_is_warm_skippable(witness: &ExecutionWitness, i: usize) -> bool {
     let _ = (witness, i);
-    // No miss is warm-skippable: gate-derived timeouts (raw Passed, effective TimedOut)
-    // previously were, which made EXIT 124 sticky and blocked `kiss test --retry-bad`.
     false
 }

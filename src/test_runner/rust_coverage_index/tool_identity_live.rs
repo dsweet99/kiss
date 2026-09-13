@@ -1,16 +1,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use kiss::rust_llvm_cov_runner::RustCoverageToolIdentity;
 
 use crate::test_runner::runners::command_stdout;
 
-fn system_time_to_nanos(ts: SystemTime) -> Option<u64> {
-    ts.duration_since(UNIX_EPOCH)
-        .ok()
-        .map(|d| u64::try_from(d.as_nanos()).unwrap_or(u64::MAX))
-}
+use super::system_time_to_nanos;
 
 fn version_with_meta_tag(version: String, program: &Path) -> String {
     let resolved = if program.is_absolute() {
@@ -108,7 +103,7 @@ pub(super) fn detect_live_rust_coverage_tool_identity(
 mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
-    use std::time::Duration;
+    use std::time::{Duration, UNIX_EPOCH};
 
     #[test]
     fn meta_tag_is_stable_for_unchanged_file() {

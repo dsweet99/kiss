@@ -53,6 +53,8 @@ VIOLATION:duplication:src/users.py:10:create_user: 80% similar, 2 copies: [src/u
 - Parallelization, to speed up test running
 - Separate interpreters for each Python test, to reduce test flakiness and failures of the test runner
 - Timeouts with feedback for your agent so that it will write faster tests
+- `kiss test --watch`: keep a long-lived watcher; a later `kiss test` can ask it for results (immediate reuse when nothing changed, otherwise a cache-aware rerun)
+- `kiss test --retry-bad TARGET`: rerun only the FAIL and TIMEOUT tests in that TARGET subset
 
 
 ---

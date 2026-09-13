@@ -63,7 +63,7 @@ fn rust_tool_versions_cache_path(repo_root: &Path) -> PathBuf {
     repo_root.join(".kiss").join("rust_tool_versions.json")
 }
 
-fn system_time_to_nanos(ts: SystemTime) -> Option<u64> {
+pub(super) fn system_time_to_nanos(ts: SystemTime) -> Option<u64> {
     ts.duration_since(UNIX_EPOCH)
         .ok()
         .map(|d| u64::try_from(d.as_nanos()).unwrap_or(u64::MAX))

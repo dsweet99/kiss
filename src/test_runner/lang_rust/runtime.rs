@@ -131,10 +131,12 @@ impl LanguageRuntime for RustRuntime {
                     miss_set,
                     &request.extras.rust,
                     request.jobs,
-                    publication_universe.clone(),
-                    None,
-                    None,
-                    &request.force_selectors,
+                    crate::test_runner::rust_llvm_cov::CheckAggregatePublicationOpts {
+                        population_publication_selectors: publication_universe.clone(),
+                        publication_binary_ids: None,
+                        repair_publication: None,
+                        force_rerun_selectors: &request.force_selectors,
+                    },
                     &request.gate,
                 )?
             }

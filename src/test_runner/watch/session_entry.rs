@@ -220,8 +220,12 @@ mod tests {
 
     #[test]
     fn run_prepared_loop_exits_on_disconnect() {
+        let _cwd = crate::cwd_test_lock::lock();
         let tmp = tempfile::tempdir().unwrap();
         init_git(&tmp);
+        std::fs::write(tmp.path().join("a.py"), "x=1\n").unwrap();
+        let orig = env::current_dir().unwrap();
+        env::set_current_dir(tmp.path()).unwrap();
         let seed = WatchReloadSeed {
             cli_ignore: Vec::new(),
             jobs_cli: Some(1),
@@ -244,6 +248,7 @@ mod tests {
         };
         let mut cov = |_a: &RunTestCmdArgs<'_>, _l: &WatchLiveConfig| WatchCoverageResult::ok(0);
         let code = run_prepared_loop(tmp.path(), &mut fake, None, live, &mut cov);
+        env::set_current_dir(orig).unwrap();
         assert_eq!(code, 1);
     }
 

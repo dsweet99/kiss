@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -7,181 +7,83 @@ use std::time::Duration;
 use kiss::rpytest_runner::TestStatus;
 use kiss::rust_llvm_cov_runner::{RustCoverageBatchIdentity, RustLlvmCovOutcome};
 
-use crate::test_runner::execution_witness::{
-    PublishRustWitness, WitnessScope, WitnessStatus, publish_rust_execution_witness,
-};
+use crate::test_runner::execution_witness::WitnessStatus;
 use crate::test_runner::last_status::{LastStatusIdentity, record_statuses};
 
+pub(super) use super::live_witness::{clear_live_rust_witness, flush_live_rust_witness};
+use super::live_witness::{
+    LiveWitnessCache, record_live_rust_non_pass, record_live_rust_pass, seed_live_witness_cache,
+};
+
 static LIVE_REMAINING: AtomicUsize = AtomicUsize::new(0);
-static LIVE_WITNESS: Mutex<Option<LiveWitnessCache>> = Mutex::new(None);
 
-pub(crate) struct LiveWitnessCache {
+struct LiveHookShared {
+    report_ids: BTreeMap<String, String>,
+    gate: kiss::GateConfig,
     repo_root: PathBuf,
-    identity: RustCoverageBatchIdentity,
-    selectors: Vec<String>,
-    statuses: Vec<WitnessStatus>,
-    durations_ns: Vec<Option<u64>>,
-    covered_lines: BTreeMap<String, BTreeSet<u32>>,
-    selector_indices: BTreeMap<String, usize>,
-    dirty: bool,
-    jobs: usize,
+    identity: LastStatusIdentity,
+    seen: std::sync::Arc<Mutex<HashSet<String>>>,
+    remaining: std::sync::Arc<Mutex<usize>>,
 }
 
-impl LiveWitnessCache {
-    pub(crate) fn new(
-        repo_root: &Path,
-        batch_identity: &RustCoverageBatchIdentity,
-        population_selectors: Option<&[String]>,
-        fallback_selectors: &[String],
-        jobs: usize,
-    ) -> Self {
-        let existing = super::witness::load_matching_full_witness(repo_root, batch_identity);
-        let mut universe: Vec<String> = match population_selectors {
-            Some(pop) => pop.to_vec(),
-            None => fallback_selectors.to_vec(),
-        };
-        if let Some(existing) = existing.as_ref() {
-            for sel in &existing.selectors {
-                if !universe.contains(sel) {
-                    universe.push(sel.clone());
-                }
-            }
-        }
-        for sel in fallback_selectors {
-            if !universe.contains(sel) {
-                universe.push(sel.clone());
-            }
-        }
-        universe.sort();
-        universe.dedup();
-
-        let mut statuses = vec![WitnessStatus::Unresolved; universe.len()];
-        let mut durations_ns = vec![None; universe.len()];
-        let mut covered_lines = BTreeMap::new();
-
-        if let Some(existing) = existing.as_ref() {
-            let existing_idx: BTreeMap<&str, usize> = existing
-                .selectors
-                .iter()
-                .enumerate()
-                .map(|(i, s)| (s.as_str(), i))
-                .collect();
-            for (i, sel) in universe.iter().enumerate() {
-                if let Some(&ei) = existing_idx.get(sel.as_str()) {
-                    statuses[i] = existing.statuses[ei];
-                    durations_ns[i] = existing.durations_ns[ei];
-                }
-            }
-            for (path, lines) in &existing.covered_lines {
-                covered_lines.insert(path.clone(), lines.iter().copied().collect());
-            }
-        }
-
-        let selector_indices: BTreeMap<String, usize> = universe
-            .iter()
-            .enumerate()
-            .map(|(i, s)| (s.clone(), i))
-            .collect();
-
-        Self {
-            repo_root: repo_root.to_path_buf(),
-            identity: batch_identity.clone(),
-            selectors: universe,
-            statuses,
-            durations_ns,
-            covered_lines,
-            selector_indices,
-            dirty: false,
-            jobs,
-        }
-    }
-
-    pub(crate) fn record_pass(&mut self, logical: &str, report: &str, duration: Duration) {
-        let idx = self
-            .selector_indices
-            .get(logical)
-            .or_else(|| self.selector_indices.get(report))
-            .copied()
-            .unwrap_or_else(|| {
-                let i = self.selectors.len();
-                self.selectors.push(logical.to_string());
-                self.statuses.push(WitnessStatus::Unresolved);
-                self.durations_ns.push(None);
-                self.selector_indices.insert(logical.to_string(), i);
-                i
-            });
-        self.statuses[idx] = WitnessStatus::Passed;
-        self.durations_ns[idx] = Some(duration.as_nanos() as u64);
-        self.dirty = true;
-    }
-
-    pub(crate) fn record_non_pass(&mut self, logical: &str, report: &str, status: WitnessStatus) {
-        let idx = self
-            .selector_indices
-            .get(logical)
-            .or_else(|| self.selector_indices.get(report))
-            .copied()
-            .unwrap_or_else(|| {
-                let i = self.selectors.len();
-                self.selectors.push(logical.to_string());
-                self.statuses.push(WitnessStatus::Unresolved);
-                self.durations_ns.push(None);
-                self.selector_indices.insert(logical.to_string(), i);
-                i
-            });
-        self.statuses[idx] = status;
-        self.dirty = true;
-    }
-
-    pub(crate) fn persist(&mut self) {
-        if !self.dirty {
+fn install_live_test_event_hook(shared: LiveHookShared) {
+    let LiveHookShared {
+        report_ids,
+        gate,
+        repo_root,
+        identity,
+        seen,
+        remaining,
+    } = shared;
+    kiss::rust_llvm_cov_runner::install_live_rust_test_hook(move |name, event, exec_time| {
+        let Ok(mut remaining_guard) = remaining.lock() else {
             return;
-        }
-        let _ = publish_rust_execution_witness(PublishRustWitness {
-            repo_root: &self.repo_root,
-            identity: &self.identity,
-            scope: WitnessScope::Full,
-            selectors: &self.selectors,
-            statuses: &self.statuses,
-            durations_ns: &self.durations_ns,
-            covered_lines: &self.covered_lines,
-            complete: false,
-            jobs: self.jobs,
-        });
-        self.dirty = false;
-    }
+        };
+        let Ok(mut seen_guard) = seen.lock() else {
+            return;
+        };
+        emit_one_live_status(
+            &report_ids,
+            &gate,
+            &mut LiveEmitState {
+                remaining: &mut remaining_guard,
+                seen: &mut seen_guard,
+                persist: Some((repo_root.as_path(), &identity)),
+            },
+            name,
+            event,
+            exec_time,
+        );
+    });
 }
 
-pub(super) fn record_live_rust_pass(logical: &str, report: &str, duration: Duration) {
-    if let Ok(mut guard) = LIVE_WITNESS.lock()
-        && let Some(cache) = guard.as_mut()
-    {
-        cache.record_pass(logical, report, duration);
-        cache.persist();
-    }
-}
-
-pub(super) fn record_live_rust_non_pass(logical: &str, report: &str, status: WitnessStatus) {
-    if let Ok(mut guard) = LIVE_WITNESS.lock()
-        && let Some(cache) = guard.as_mut()
-    {
-        cache.record_non_pass(logical, report, status);
-        cache.persist();
-    }
-}
-
-pub(super) fn flush_live_rust_witness() {
-    if let Ok(mut guard) = LIVE_WITNESS.lock()
-        && let Some(mut cache) = guard.take()
-    {
-        cache.persist();
-    }
-}
-
-pub(super) fn clear_live_rust_witness() {
-    if let Ok(mut guard) = LIVE_WITNESS.lock() {
-        *guard = None;
-    }
+fn install_prepared_cache_hits_hook(shared: LiveHookShared) {
+    let LiveHookShared {
+        report_ids,
+        gate,
+        repo_root,
+        identity,
+        seen,
+        remaining,
+    } = shared;
+    kiss::rust_llvm_cov_runner::install_prepared_rust_cache_hits_hook(move |outcomes| {
+        let Ok(mut remaining_guard) = remaining.lock() else {
+            return;
+        };
+        let Ok(mut seen_guard) = seen.lock() else {
+            return;
+        };
+        emit_prepared_cache_hit_statuses(
+            &report_ids,
+            &gate,
+            &mut LiveEmitState {
+                remaining: &mut remaining_guard,
+                seen: &mut seen_guard,
+                persist: Some((repo_root.as_path(), &identity)),
+            },
+            outcomes,
+        );
+    });
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -196,10 +98,13 @@ pub(super) fn install_live_rust_status_hook(
     selector_timeout_millis: &BTreeMap<String, u64>,
 ) -> Result<(), String> {
     if let Some(batch_id) = batch_identity {
-        let cache = LiveWitnessCache::new(repo_root, batch_id, population_selectors, selectors, jobs);
-        if let Ok(mut guard) = LIVE_WITNESS.lock() {
-            *guard = Some(cache);
-        }
+        seed_live_witness_cache(LiveWitnessCache::new(
+            repo_root,
+            batch_id,
+            population_selectors,
+            selectors,
+            jobs,
+        ));
     }
     let report_ids =
         crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
@@ -210,67 +115,27 @@ pub(super) fn install_live_rust_status_hook(
         .iter()
         .filter(|selector| selector_timeout_millis.get(*selector) == Some(&0))
         .count();
-    let gate = gate.clone();
-    let repo_root_buf = repo_root.to_path_buf();
-    let identity_owned = identity.clone();
-    let report_ids_for_hook = report_ids.clone();
     let remaining = selectors.len().saturating_sub(banned_count);
     LIVE_REMAINING.store(remaining, Ordering::SeqCst);
     let seen = std::sync::Arc::new(Mutex::new(HashSet::new()));
     let remaining_slot = std::sync::Arc::new(Mutex::new(remaining));
-    // install clears the live-printed set; persist bans after so finish skips re-print.
-    let report_ids_live = report_ids_for_hook.clone();
-    let gate_live = gate.clone();
-    let repo_live = repo_root_buf.clone();
-    let identity_live = identity_owned.clone();
-    let seen_live = std::sync::Arc::clone(&seen);
-    let remaining_live = std::sync::Arc::clone(&remaining_slot);
-    kiss::rust_llvm_cov_runner::install_live_rust_test_hook(move |name, event, exec_time| {
-        let Ok(mut remaining_guard) = remaining_live.lock() else {
-            return;
-        };
-        let Ok(mut seen_guard) = seen_live.lock() else {
-            return;
-        };
-        emit_one_live_status(
-            &report_ids_live,
-            &gate_live,
-            &mut LiveEmitState {
-                remaining: &mut remaining_guard,
-                seen: &mut seen_guard,
-                persist: Some((repo_live.as_path(), &identity_live)),
-            },
-            name,
-            event,
-            exec_time,
-        );
+    let shared = LiveHookShared {
+        report_ids: report_ids.clone(),
+        gate: gate.clone(),
+        repo_root: repo_root.to_path_buf(),
+        identity: identity.clone(),
+        seen: std::sync::Arc::clone(&seen),
+        remaining: std::sync::Arc::clone(&remaining_slot),
+    };
+    install_live_test_event_hook(LiveHookShared {
+        report_ids: shared.report_ids.clone(),
+        gate: shared.gate.clone(),
+        repo_root: shared.repo_root.clone(),
+        identity: shared.identity.clone(),
+        seen: std::sync::Arc::clone(&shared.seen),
+        remaining: std::sync::Arc::clone(&shared.remaining),
     });
-    let report_ids_hits = report_ids_for_hook;
-    let gate_hits = gate;
-    let repo_hits = repo_root_buf;
-    let identity_hits = identity_owned;
-    let seen_hits = std::sync::Arc::clone(&seen);
-    let remaining_hits = std::sync::Arc::clone(&remaining_slot);
-    kiss::rust_llvm_cov_runner::install_prepared_rust_cache_hits_hook(move |outcomes| {
-        let Ok(mut remaining_guard) = remaining_hits.lock() else {
-            return;
-        };
-        let Ok(mut seen_guard) = seen_hits.lock() else {
-            return;
-        };
-        emit_prepared_cache_hit_statuses(
-            &report_ids_hits,
-            &gate_hits,
-            &mut LiveEmitState {
-                remaining: &mut remaining_guard,
-                seen: &mut seen_guard,
-                persist: Some((repo_hits.as_path(), &identity_hits)),
-            },
-            outcomes,
-        );
-    });
-    // Persist before the coverage batch so CTRL-C / interrupt still leaves zero-SLA
-    // TIMEOUTs in the FAIL/TIMEOUT set for kiss test --retry-bad (Python parity).
+    install_prepared_cache_hits_hook(shared);
     let banned = persist_zero_sla_rust_timeouts_before_batch(
         repo_root,
         identity,
@@ -287,8 +152,7 @@ pub(super) fn install_live_rust_status_hook(
     Ok(())
 }
 
-/// Record zero-SLA (timeout_millis == 0) bans into last-status / live witness before the
-/// long-running coverage batch, matching Python `record_immediate_timeout`.
+
 fn persist_zero_sla_rust_timeouts_before_batch(
     repo_root: &Path,
     identity: &LastStatusIdentity,
@@ -383,9 +247,6 @@ fn emit_prepared_cache_hit_statuses(
             record_live_rust_non_pass(logical, &report, st);
         }
         if let Some((repo_root, identity)) = state.persist {
-            // Persist before miss execution so CTRL-C mid-batch still leaves time-gated
-            // cache-hit TIMEOUTs in the FAIL/TIMEOUT set for kiss test --retry-bad
-            // (Python CachedStatusDump parity).
             let _ = record_statuses(
                 repo_root,
                 kiss::Language::Rust,
@@ -443,8 +304,6 @@ fn emit_one_live_status(
     }
 
     if let Some((repo_root, identity)) = state.persist {
-        // Persist Passed too so a mid-run fix clears a prior FAIL/TIMEOUT before
-        // final batch record (CTRL-C / interrupt durability for --retry-bad).
         let _ = record_statuses(
             repo_root,
             kiss::Language::Rust,
@@ -598,7 +457,6 @@ mod live_status_test {
         assert_eq!(kiss_id_for_libtest(&ids, "pkg::bin$ace"), None);
         assert_eq!(kiss_id_for_libtest(&ids, "pkg::bin$dup"), None);
 
-        // Nextest qualified prefix resolution
         ids.insert(
             "tests::test_cache".into(),
             "src/check_cache.rs::test_cache".into(),
@@ -608,7 +466,6 @@ mod live_status_test {
             Some("src/check_cache.rs::test_cache")
         );
 
-        // Disambiguate by key length / specificity
         ids.insert("run".into(), "src/alpha.rs::run".into());
         ids.insert("extra::run".into(), "src/beta.rs::run".into());
         assert_eq!(
@@ -616,7 +473,6 @@ mod live_status_test {
             Some("src/beta.rs::run")
         );
 
-        // Disambiguate by source file path
         let mut by_path = BTreeMap::new();
         by_path.insert("sub::test_x".into(), "src/foo.rs::test_x".into());
         by_path.insert("sub::test_y".into(), "src/bar.rs::test_y".into());

@@ -18,9 +18,13 @@ def test_evaluation_names_include_qa_commands() -> None:
     assert "short/timing_kiss_test_watch" in names
     assert "short/timing_kiss_test_watch_cache_hit" in names
     assert "short/timing_kiss_test_sigint_restart" in names
+    assert "short/timing_kiss_test_sigint_work_reuse" in names
+    assert "short/timing_kiss_test_retry_bad" in names
+    assert "short/timing_kiss_test_watch_dirty" in names
     assert "short/timing_kiss_test_progress_cpu" in names
     assert "long/timing_kiss_test" in names
     assert "long/timing_kiss_test_sympy" in names
+    assert "long/timing_kiss_test_anydoc" in names
     assert "short/kiss_test_watch" not in names
     assert all(" " not in name for name in names)
     assert all(not name.split("/", 1)[-1].startswith("kiss_test_") for name in names)

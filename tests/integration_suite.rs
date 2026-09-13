@@ -127,6 +127,8 @@ mod watch_client;
 mod watch_client_violations;
 #[path = "cases/watch_paths.rs"]
 mod watch_paths;
+#[path = "cases/regression_test_retry_bad.rs"]
+mod regression_test_retry_bad;
 #[path = "cases/regression_test_sigint_caching.rs"]
 mod regression_test_sigint_caching;
 #[path = "cases/watch_sigint.rs"]

@@ -13,7 +13,15 @@ use crate::test_runner::runners::SelectorExecutionSummary;
 use crate::test_runner::runners::{python_backer, rust_backer};
 
 fn planned() -> PlannedSelectors {
-    crate::test_runner::test_mode_fixtures::empty_planned_selectors(PathBuf::from("."))
+    use std::sync::OnceLock;
+    static ROOT: OnceLock<PathBuf> = OnceLock::new();
+    let root = ROOT.get_or_init(|| {
+        let dir = tempfile::tempdir().expect("planned() tempdir");
+        let path = dir.path().to_path_buf();
+        std::mem::forget(dir);
+        path
+    });
+    crate::test_runner::test_mode_fixtures::empty_planned_selectors(root.clone())
 }
 
 fn options(force_rerun: bool) -> SelectorRunOptions<'static> {

@@ -245,51 +245,10 @@ pub(super) fn run_rust_selectors_for_module(
     }
 
     let force_rerun = ctx.options.force_rerun;
-    if !force_rerun
-        && let Ok(identity) =
-            crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(
-                &ctx.planned.repo_root,
-                ctx.options.extras.rust,
-            )
+    if let Some(summary) =
+        try_run_warm_or_forced_rust_selectors(selectors, ctx, force_rerun, &population_publication_selectors)?
     {
-        maybe_bootstrap_rust_witness(&ctx.planned.repo_root, selectors, &identity);
-        let warm = rust_warm_or_miss_selectors(
-            &ctx.planned.repo_root,
-            selectors,
-            &identity,
-            &ctx.options.gate,
-        );
-        let mut run_only: Option<Vec<String>> = match warm {
-            RustWarmDecision::Warm(summary) => {
-                let forced = prior_force_selectors_in_planned(
-                    selectors,
-                    &ctx.planned.prior_failure_selectors.rust,
-                );
-                if forced.is_empty() {
-                    return Ok(*summary);
-                }
-                Some(forced)
-            }
-            RustWarmDecision::RunMisses(misses) => Some(misses),
-            RustWarmDecision::Miss => None,
-        };
-        if let Some(ref mut misses) = run_only {
-            crate::test_runner::lang_iface::union_force_selectors_into_misses(
-                selectors,
-                misses,
-                &ctx.planned.prior_failure_selectors.rust,
-            );
-            return runners::run_rust_llvm_cov_selectors(
-                &ctx.planned.repo_root,
-                misses,
-                ctx.options.extras.rust,
-                force_rerun,
-                &ctx.planned.prior_failure_selectors.rust,
-                ctx.options.jobs,
-                population_publication_selectors.clone(),
-                &ctx.options.gate,
-            );
-        }
+        return Ok(summary);
     }
     if let Some(population_selectors) = population_publication_selectors {
         return runners::run_rust_llvm_cov_selectors(
@@ -303,34 +262,8 @@ pub(super) fn run_rust_selectors_for_module(
             &ctx.options.gate,
         );
     }
-    if should_try_cached_rust_check_aggregate(force_rerun, &None)
-        && let Some(summary) = runners::cached_rust_check_aggregate_selectors(
-            &ctx.planned.repo_root,
-            selectors,
-            ctx.options.extras.rust,
-            &ctx.options.gate,
-        )?
-    {
-        // Match warm-path --retry-bad handling: a check-aggregate / witness
-        // cache hit must not absorb FAIL/TIMEOUT selectors that prior_failure
-        // marked for force re-run (batch-wide force_rerun stays false).
-        let forced = prior_force_selectors_in_planned(
-            selectors,
-            &ctx.planned.prior_failure_selectors.rust,
-        );
-        if forced.is_empty() {
-            return Ok(summary);
-        }
-        return runners::run_rust_llvm_cov_selectors(
-            &ctx.planned.repo_root,
-            &forced,
-            ctx.options.extras.rust,
-            force_rerun,
-            &ctx.planned.prior_failure_selectors.rust,
-            ctx.options.jobs,
-            None,
-            &ctx.options.gate,
-        );
+    if let Some(summary) = try_cached_check_aggregate_or_forced(selectors, ctx, force_rerun)? {
+        return Ok(summary);
     }
     runners::run_rust_llvm_cov_selectors(
         &ctx.planned.repo_root,
@@ -342,6 +275,100 @@ pub(super) fn run_rust_selectors_for_module(
         None,
         &ctx.options.gate,
     )
+}
+
+fn try_run_warm_or_forced_rust_selectors(
+    selectors: &[String],
+    ctx: &RunContext<'_, '_>,
+    force_rerun: bool,
+    population_publication_selectors: &Option<Vec<String>>,
+) -> Result<Option<SelectorExecutionSummary>, String> {
+    if force_rerun {
+        return Ok(None);
+    }
+    let Ok(identity) =
+        crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(
+            &ctx.planned.repo_root,
+            ctx.options.extras.rust,
+        )
+    else {
+        return Ok(None);
+    };
+    maybe_bootstrap_rust_witness(&ctx.planned.repo_root, selectors, &identity);
+    let warm = rust_warm_or_miss_selectors(
+        &ctx.planned.repo_root,
+        selectors,
+        &identity,
+        &ctx.options.gate,
+    );
+    let mut run_only: Option<Vec<String>> = match warm {
+        RustWarmDecision::Warm(summary) => {
+            let forced = prior_force_selectors_in_planned(
+                selectors,
+                &ctx.planned.prior_failure_selectors.rust,
+            );
+            if forced.is_empty() {
+                return Ok(Some(*summary));
+            }
+            Some(forced)
+        }
+        RustWarmDecision::RunMisses(misses) => Some(misses),
+        RustWarmDecision::Miss => None,
+    };
+    let Some(ref mut misses) = run_only else {
+        return Ok(None);
+    };
+    crate::test_runner::lang_iface::union_force_selectors_into_misses(
+        selectors,
+        misses,
+        &ctx.planned.prior_failure_selectors.rust,
+    );
+    Ok(Some(runners::run_rust_llvm_cov_selectors(
+        &ctx.planned.repo_root,
+        misses,
+        ctx.options.extras.rust,
+        force_rerun,
+        &ctx.planned.prior_failure_selectors.rust,
+        ctx.options.jobs,
+        population_publication_selectors.clone(),
+        &ctx.options.gate,
+    )?))
+}
+
+fn try_cached_check_aggregate_or_forced(
+    selectors: &[String],
+    ctx: &RunContext<'_, '_>,
+    force_rerun: bool,
+) -> Result<Option<SelectorExecutionSummary>, String> {
+    if !should_try_cached_rust_check_aggregate(force_rerun, &None) {
+        return Ok(None);
+    }
+    let Some(summary) = runners::cached_rust_check_aggregate_selectors(
+        &ctx.planned.repo_root,
+        selectors,
+        ctx.options.extras.rust,
+        &ctx.options.gate,
+    )?
+    else {
+        return Ok(None);
+    };
+    let forced = prior_force_selectors_in_planned(
+        selectors,
+        &ctx.planned.prior_failure_selectors.rust,
+    );
+    if forced.is_empty() {
+        return Ok(Some(summary));
+    }
+    Ok(Some(runners::run_rust_llvm_cov_selectors(
+        &ctx.planned.repo_root,
+        &forced,
+        ctx.options.extras.rust,
+        force_rerun,
+        &ctx.planned.prior_failure_selectors.rust,
+        ctx.options.jobs,
+        None,
+        &ctx.options.gate,
+    )?))
 }
 
 fn prior_force_selectors_in_planned(

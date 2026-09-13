@@ -332,6 +332,39 @@ fn oneshot_during_settle_skips_quiet_period() {
 }
 
 #[test]
+fn oneshot_after_dirty_source_echoes_fail_and_exit() {
+    if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
+        return;
+    }
+    let tmp = tempfile::TempDir::new().unwrap();
+    init_git_repo(tmp.path());
+    write_python_fixture(tmp.path());
+    write_kissconfig(tmp.path(), 0.1);
+    commit_all(tmp.path(), "init");
+
+    let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
+    wait_watch_idle_cycle(tmp.path());
+
+    std::fs::write(tmp.path().join("lib.py"), "def f():\n    return 1\n").unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_kiss"))
+        .args(["test", "--lang", "python", "."])
+        .current_dir(tmp.path())
+        .output()
+        .expect("oneshot after dirty source");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success(),
+        "dirty fail must yield non-zero exit; stdout={stdout:?} stderr={stderr:?}"
+    );
+    assert_watcher_oneshot_report(&stdout);
+    assert!(
+        stdout.contains("FAIL:") || stdout.contains("failed"),
+        "dirty watch path must echo FAIL summary; stdout={stdout:?}"
+    );
+}
+
+#[test]
 fn no_watcher_oneshot_still_runs_tests() {
     if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
         return;

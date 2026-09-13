@@ -18,6 +18,7 @@ mod timeout;
 use timeout::selector_timeout_millis_for_batch;
 
 mod finish;
+mod live_witness;
 mod live_status;
 mod witness;
 pub(crate) use finish::{
@@ -60,6 +61,13 @@ pub(crate) fn run_rust_llvm_cov_selectors(
     )
 }
 
+pub(crate) struct CheckAggregatePublicationOpts<'a> {
+    pub population_publication_selectors: Option<Vec<String>>,
+    pub publication_binary_ids: Option<std::collections::BTreeSet<String>>,
+    pub repair_publication: Option<CheckAggregateRepairPublication>,
+    pub force_rerun_selectors: &'a [String],
+}
+
 pub(crate) fn run_rust_llvm_cov_check_aggregate_selectors(
     repo_root: &Path,
     selectors: &[String],
@@ -68,29 +76,28 @@ pub(crate) fn run_rust_llvm_cov_check_aggregate_selectors(
     publication_binary_ids: Option<std::collections::BTreeSet<String>>,
     repair_publication: Option<CheckAggregateRepairPublication>,
 ) -> Result<SelectorExecutionSummary, String> {
+    let no_force_selectors: &[String] = &[];
     run_rust_llvm_cov_check_aggregate_selectors_with_publication(
         repo_root,
         selectors,
         extra,
         jobs,
-        None,
-        publication_binary_ids,
-        repair_publication,
-        &[],
+        CheckAggregatePublicationOpts {
+            population_publication_selectors: None,
+            publication_binary_ids,
+            repair_publication,
+            force_rerun_selectors: no_force_selectors,
+        },
         kiss::GateConfig::load_for_repo(repo_root),
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn run_rust_llvm_cov_check_aggregate_selectors_with_gate(
     repo_root: &Path,
     selectors: &[String],
     extra: &[String],
     jobs: usize,
-    population_publication_selectors: Option<Vec<String>>,
-    publication_binary_ids: Option<std::collections::BTreeSet<String>>,
-    repair_publication: Option<CheckAggregateRepairPublication>,
-    force_rerun_selectors: &[String],
+    opts: CheckAggregatePublicationOpts<'_>,
     gate: &kiss::GateConfig,
 ) -> Result<SelectorExecutionSummary, String> {
     run_rust_llvm_cov_check_aggregate_selectors_with_publication(
@@ -98,10 +105,7 @@ pub(crate) fn run_rust_llvm_cov_check_aggregate_selectors_with_gate(
         selectors,
         extra,
         jobs,
-        population_publication_selectors,
-        publication_binary_ids,
-        repair_publication,
-        force_rerun_selectors,
+        opts,
         gate.clone(),
     )
 }
@@ -159,16 +163,12 @@ pub(crate) fn cached_rust_check_aggregate_selectors(
     cached_summary_from_check_aggregate_population(repo_root, selectors, &population, gate)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn run_rust_llvm_cov_check_aggregate_selectors_with_publication(
     repo_root: &Path,
     selectors: &[String],
     extra: &[String],
     jobs: usize,
-    population_publication_selectors: Option<Vec<String>>,
-    publication_binary_ids: Option<std::collections::BTreeSet<String>>,
-    repair_publication: Option<CheckAggregateRepairPublication>,
-    force_rerun_selectors: &[String],
+    opts: CheckAggregatePublicationOpts<'_>,
     gate: kiss::GateConfig,
 ) -> Result<SelectorExecutionSummary, String> {
     run_rust_llvm_cov_selectors_with_deps(
@@ -177,13 +177,14 @@ fn run_rust_llvm_cov_check_aggregate_selectors_with_publication(
         RustCoverageRunOptions {
             extra,
             force_rerun: false,
-            force_rerun_selectors,
+            force_rerun_selectors: opts.force_rerun_selectors,
             jobs,
-            population_publication_selectors: population_publication_selectors
+            population_publication_selectors: opts
+                .population_publication_selectors
                 .or_else(|| Some(selectors.to_vec())),
             coverage_output_mode: CoverageOutputMode::CheckAggregate {
-                publication_binary_ids,
-                repair_publication,
+                publication_binary_ids: opts.publication_binary_ids,
+                repair_publication: opts.repair_publication,
             },
             gate,
         },

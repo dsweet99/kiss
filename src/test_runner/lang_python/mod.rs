@@ -2,6 +2,7 @@ pub(crate) mod backer;
 pub(crate) mod collect;
 pub(crate) mod generation;
 pub(crate) mod rslip;
+mod rslip_emit;
 pub(crate) mod rslip_request;
 mod runtime;
 mod witness_view;
