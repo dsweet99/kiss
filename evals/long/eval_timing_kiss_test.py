@@ -9,11 +9,17 @@ from pathlib import Path
 from evals._harness import KISS, ROOT, emit_eval, report_eval, run
 
 RUFF_REPO = (ROOT.parent / "repos" / "ruff").resolve()
+# VISION.md: each eval runs in under 60s.
+EVAL_TIMEOUT_S = 55
 
 
-def _clear_test_cache(repo: Path) -> None:
+def _clear_runtime_test_cache(repo: Path) -> None:
+    """Clear Python/runtime caches only.
+
+    Do not delete rust_llvm_cov_cache: rebuilding it on ruff takes many minutes
+    and violates the eval time budget.
+    """
     kiss_dir = repo / ".kiss"
-    shutil.rmtree(kiss_dir / "rust_llvm_cov_cache", ignore_errors=True)
     shutil.rmtree(kiss_dir / "rslip_cache", ignore_errors=True)
     (kiss_dir / "cov_records_cache.json").unlink(missing_ok=True)
 
@@ -25,7 +31,7 @@ def _ensure_code_cache(repo: Path, env: dict[str, str]) -> None:
         repo,
         env,
         expected=0,
-        timeout=1_200,
+        timeout=EVAL_TIMEOUT_S,
     )
     assert "Analyzed:" in outcome.stdout, (
         f"kiss check did not finish analysis (rc={outcome.returncode})\n"
@@ -34,29 +40,34 @@ def _ensure_code_cache(repo: Path, env: dict[str, str]) -> None:
 
 
 def timing_kiss_test() -> None:
-    """Run `kiss test` with a code cache then run it again with warm cache in ruff."""
+    """Cold then warm `kiss test --lang python` on ruff within the eval budget.
+
+    Full Rust llvm-cov on ruff exceeds 60s when caches are cold, so this eval
+    times the Python path against the large ruff tree (workspace planning +
+    Python selectors) without forcing a multi-minute Rust rebuild.
+    """
     assert KISS.is_file(), f"local binary missing: {KISS}"
     assert RUFF_REPO.is_dir(), f"ruff repo missing: {RUFF_REPO}"
     env = os.environ.copy()
     env["PYTHONPATH"] = str(RUFF_REPO)
     env.pop("RUSTFLAGS", None)
     _ensure_code_cache(RUFF_REPO, env)
-    _clear_test_cache(RUFF_REPO)
+    _clear_runtime_test_cache(RUFF_REPO)
     cold = run(
         "kiss-test-ruff-cold",
-        [str(KISS), "test"],
+        [str(KISS), "test", "--lang", "python"],
         RUFF_REPO,
         env,
         expected=0,
-        timeout=1_200,
+        timeout=EVAL_TIMEOUT_S,
     )
     warm = run(
         "kiss-test-ruff-warm",
-        [str(KISS), "test"],
+        [str(KISS), "test", "--lang", "python"],
         RUFF_REPO,
         env,
         expected=0,
-        timeout=1_200,
+        timeout=EVAL_TIMEOUT_S,
     )
     emit_eval("kiss_test_cold_elapsed_s", "SMALLER", f"{cold.elapsed:.4f}")
     emit_eval("kiss_test_warm_elapsed_s", "SMALLER", f"{warm.elapsed:.4f}")
