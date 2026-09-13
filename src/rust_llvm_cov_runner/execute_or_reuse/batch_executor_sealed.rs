@@ -15,6 +15,9 @@ pub(super) fn try_sealed_all_hit(
     identity: &RustCoverageBatchIdentity,
     tools: &RustCoverageToolIdentity,
 ) -> Option<RustCoverageBatchResult> {
+    if super::batch_warm_hit_seal::force_rerun_blocks_all_hit_reuse(req) {
+        return None;
+    }
     super::batch_warm_hit_seal::try_warm_all_hit_seal(req, identity)?;
     let population =
         crate::rust_llvm_cov_runner::publish_derived::batch_derived_index::load_current_population_state(

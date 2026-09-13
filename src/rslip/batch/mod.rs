@@ -21,9 +21,10 @@ mod lock_chunk;
 mod miss_run;
 mod pycache;
 mod warm_hit_seal;
-use cached_status::{emit_prepare_resolved_progress, format_cached_status_dump};
+use cached_status::emit_prepare_resolved_progress;
 use finalize::clone_rslip_error;
 use miss_run::run_rslip_misses;
+pub use cached_status::format_cached_status_dump;
 pub use warm_hit_seal::warm_hit_seal_exists;
 
 pub(crate) struct RslipCacheCandidate {
@@ -60,7 +61,7 @@ pub enum RslipBatchProgress {
         outcomes: Vec<(usize, Result<RslipOutcome, RslipError>)>,
     },
     CachedStatusDump {
-        body: String,
+        outcomes: Vec<RslipOutcome>,
     },
     TestsRemaining {
         remaining: usize,
@@ -92,7 +93,7 @@ impl Rslip {
                 elapsed: prepare_started.elapsed(),
             });
             on_progress(RslipBatchProgress::CachedStatusDump {
-                body: format_cached_status_dump(&sealed),
+                outcomes: sealed.clone(),
             });
             let out: Vec<Option<Result<RslipOutcome, RslipError>>> = sealed
                 .into_iter()

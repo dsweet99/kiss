@@ -47,6 +47,7 @@ pub fn clear_live_rust_test_hook() {
     *live_hook()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    super::progress_prepared_hits::clear_prepared_rust_cache_hits_hook();
 }
 
 pub fn set_live_rust_error(message: String) {

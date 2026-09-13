@@ -35,6 +35,17 @@ pub(crate) fn selectors_fingerprint(selectors: &[String]) -> String {
     format!("{h:016x}")
 }
 
+pub(crate) fn force_rerun_blocks_all_hit_reuse(req: &RustCoverageBatchRequest) -> bool {
+    if req.force_rerun {
+        return true;
+    }
+    req.force_rerun_selectors.iter().any(|forced| {
+        req.logical_selectors
+            .iter()
+            .any(|selector| selector == forced)
+    })
+}
+
 pub(crate) fn try_warm_all_hit_seal(
     req: &RustCoverageBatchRequest,
     identity: &RustCoverageBatchIdentity,

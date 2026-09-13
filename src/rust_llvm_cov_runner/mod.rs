@@ -66,6 +66,9 @@ pub use execute_or_reuse::progress::{
     clear_live_rust_test_hook, emit_progress, install_live_rust_test_hook, live_rust_was_printed,
     mark_live_rust_printed, set_live_rust_error, take_live_rust_error,
 };
+pub use execute_or_reuse::progress_prepared_hits::{
+    emit_prepared_rust_cache_hits, install_prepared_rust_cache_hits_hook,
+};
 pub use execute_or_reuse::progress_watch_report::{
     begin_watch_report_capture, take_watch_report_capture, take_watch_report_lines,
     transcript_from_lines,

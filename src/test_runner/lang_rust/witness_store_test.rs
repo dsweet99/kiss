@@ -331,12 +331,12 @@ fn warm_helpers_use_caller_gate_not_cwd_defaults() {
         "loose session gate must warm-accept"
     );
     assert!(
-        try_warm_rust_cached_summary(tmp.path(), &selectors, &identity, &tight).is_some(),
-        "tight session gate reports a cached violation without rerunning"
+        try_warm_rust_cached_summary(tmp.path(), &selectors, &identity, &tight).is_none(),
+        "tight session gate must not warm-accept a time-gate violation"
     );
     assert_eq!(
         rust_miss_selectors(tmp.path(), &selectors, &identity, &tight),
-        Some(Vec::<String>::new())
+        Some(vec!["a".to_string()])
     );
 }
 

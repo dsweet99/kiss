@@ -269,6 +269,21 @@ fn cached_rust_check_aggregate_is_only_for_non_forced_selective_runs() {
 }
 
 #[test]
+fn cached_check_aggregate_retry_bad_force_selectors_must_rerun() {
+    // --retry-bad leaves batch-wide force_rerun false and lists FAIL/TIMEOUT
+    // in prior_failure_selectors. A warm check-aggregate shortcut must not
+    // accept those selectors as PASS; intersecting priors become the rerun set.
+    let planned = vec!["tests::ok".to_string(), "tests::bad".to_string()];
+    let prior = vec!["tests::bad".to_string(), "tests::other".to_string()];
+    assert!(should_try_cached_rust_check_aggregate(false, &None));
+    assert_eq!(
+        prior_force_selectors_in_planned(&planned, &prior),
+        vec!["tests::bad".to_string()]
+    );
+    assert!(prior_force_selectors_in_planned(&planned, &[]).is_empty());
+}
+
+#[test]
 fn rust_population_phase_uses_selector_entries_not_check_aggregate() {
     use crate::test_runner::rust_llvm_cov::RustCoverageToolVersions;
     use kiss::rust_llvm_cov_runner::{

@@ -261,14 +261,10 @@ pub(super) fn run_rust_selectors_for_module(
         );
         let mut run_only: Option<Vec<String>> = match warm {
             RustWarmDecision::Warm(summary) => {
-                let forced: Vec<String> = ctx
-                    .planned
-                    .prior_failure_selectors
-                    .rust
-                    .iter()
-                    .filter(|sel| selectors.iter().any(|s| s == *sel))
-                    .cloned()
-                    .collect();
+                let forced = prior_force_selectors_in_planned(
+                    selectors,
+                    &ctx.planned.prior_failure_selectors.rust,
+                );
                 if forced.is_empty() {
                     return Ok(*summary);
                 }
@@ -312,9 +308,29 @@ pub(super) fn run_rust_selectors_for_module(
             &ctx.planned.repo_root,
             selectors,
             ctx.options.extras.rust,
+            &ctx.options.gate,
         )?
     {
-        return Ok(summary);
+        // Match warm-path --retry-bad handling: a check-aggregate / witness
+        // cache hit must not absorb FAIL/TIMEOUT selectors that prior_failure
+        // marked for force re-run (batch-wide force_rerun stays false).
+        let forced = prior_force_selectors_in_planned(
+            selectors,
+            &ctx.planned.prior_failure_selectors.rust,
+        );
+        if forced.is_empty() {
+            return Ok(summary);
+        }
+        return runners::run_rust_llvm_cov_selectors(
+            &ctx.planned.repo_root,
+            &forced,
+            ctx.options.extras.rust,
+            force_rerun,
+            &ctx.planned.prior_failure_selectors.rust,
+            ctx.options.jobs,
+            None,
+            &ctx.options.gate,
+        );
     }
     runners::run_rust_llvm_cov_selectors(
         &ctx.planned.repo_root,
@@ -326,6 +342,17 @@ pub(super) fn run_rust_selectors_for_module(
         None,
         &ctx.options.gate,
     )
+}
+
+fn prior_force_selectors_in_planned(
+    planned_selectors: &[String],
+    prior_failure_selectors: &[String],
+) -> Vec<String> {
+    prior_failure_selectors
+        .iter()
+        .filter(|sel| planned_selectors.iter().any(|s| s == *sel))
+        .cloned()
+        .collect()
 }
 
 fn should_try_cached_rust_check_aggregate(

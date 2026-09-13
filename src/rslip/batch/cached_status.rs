@@ -4,7 +4,7 @@ use crate::rslip::{RslipError, RslipOutcome};
 
 use super::RslipBatchProgress;
 
-pub(super) fn format_cached_status_dump(outcomes: &[RslipOutcome]) -> String {
+pub fn format_cached_status_dump(outcomes: &[RslipOutcome]) -> String {
     if outcomes.len() > 32 {
         return format_cached_status_totals(outcomes);
     }
@@ -84,9 +84,7 @@ pub(super) fn emit_prepare_resolved_progress(
         return;
     }
 
-    on_progress(RslipBatchProgress::CachedStatusDump {
-        body: format_cached_status_dump(&hits),
-    });
+    on_progress(RslipBatchProgress::CachedStatusDump { outcomes: hits });
 }
 
 #[cfg(test)]
@@ -157,8 +155,9 @@ mod tests {
         emit_prepare_resolved_progress(&slots, &mut |ev| events.push(ev));
         assert_eq!(events.len(), 1);
         match &events[0] {
-            RslipBatchProgress::CachedStatusDump { body } => {
-                assert!(body.contains("PASS (cached): hit::1"));
+            RslipBatchProgress::CachedStatusDump { outcomes } => {
+                assert_eq!(outcomes.len(), 1);
+                assert_eq!(outcomes[0].nodeid, "hit::1");
             }
             other => panic!("unexpected event: {other:?}"),
         }

@@ -149,17 +149,11 @@ where
     if matches!(
         req.coverage_output_mode,
         CoverageOutputMode::SelectorEntries
-    ) && !req.force_rerun
+    ) && !super::batch_warm_hit_seal::force_rerun_blocks_all_hit_reuse(req)
     {
         match try_all_hit_fast_path(req, tools, &identity)? {
             FastPathProbe::Hit(result) => {
-                let mut result = *result;
-                super::batch_executor_sealed::write_seal_after_complete_pass(
-                    req, &identity, &result,
-                );
-                result.counters.legacy_cleanup_deferred =
-                    cleanup_legacy_worker_data_nonblocking(&req.cache_root)?.deferred;
-                return Ok(with_process_reverse_query_counters(result));
+                return finalize_all_hit_fast_path(req, &identity, *result);
             }
             FastPathProbe::Miss(probed) => prepared = probed,
         }
@@ -228,16 +222,15 @@ where
         None => prepare_rust_batch(req, tools, identity)?,
     };
     if prepared.misses_empty() {
-        return maybe_publish_derived_after_all_hit(
-            req,
-            tools,
-            identity,
-            prepared.hit_result(&req.logical_selectors),
-        )
-        .map(|mut result| {
-            result.counters.legacy_cleanup_deferred = deferred;
-            with_process_reverse_query_counters(result)
-        });
+        let result = prepared.hit_result(&req.logical_selectors);
+        let hits: Vec<_> = prepared.hits_by_selector.values().cloned().collect();
+        super::progress_prepared_hits::emit_prepared_rust_cache_hits(&hits);
+        return maybe_publish_derived_after_all_hit(req, tools, identity, result).map(
+            |mut result| {
+                result.counters.legacy_cleanup_deferred = deferred;
+                with_process_reverse_query_counters(result)
+            },
+        );
     }
     let mut miss_req = req.clone();
     miss_req.logical_selectors = prepared.misses.clone();
@@ -249,6 +242,8 @@ where
             })
         },
     )?;
+    let hits: Vec<_> = prepared.hits_by_selector.values().cloned().collect();
+    super::progress_prepared_hits::emit_prepared_rust_cache_hits(&hits);
     fresh(&miss_req, tools, identity, &miss_plan).and_then(|fresh_result| {
         let mut result = merge_prepared(&prepared, &req.logical_selectors, Some(fresh_result));
         finalize_after_fresh_batch(req, tools, identity, deferred, &mut result)?;
@@ -333,6 +328,18 @@ fn apply_population_derived_publication(
 enum FastPathProbe {
     Hit(Box<RustCoverageBatchResult>),
     Miss(Option<PreparedRustBatch>),
+}
+
+fn finalize_all_hit_fast_path(
+    req: &RustCoverageBatchRequest,
+    identity: &RustCoverageBatchIdentity,
+    mut result: RustCoverageBatchResult,
+) -> Result<RustCoverageBatchResult, RustLlvmCovError> {
+    super::progress_prepared_hits::emit_prepared_rust_cache_hits(&result.completed);
+    super::batch_executor_sealed::write_seal_after_complete_pass(req, identity, &result);
+    result.counters.legacy_cleanup_deferred =
+        cleanup_legacy_worker_data_nonblocking(&req.cache_root)?.deferred;
+    Ok(with_process_reverse_query_counters(result))
 }
 
 fn try_all_hit_fast_path(

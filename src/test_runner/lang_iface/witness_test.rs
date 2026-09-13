@@ -238,7 +238,11 @@ fn time_limit_reclassify_forces_miss_on_affected_selector() {
     w.raw_statuses = vec![WitnessStatus::Passed, WitnessStatus::Passed];
     assert_eq!(
         accept_witness(AcceptMode::All, &["a".into(), "b".into()], "id", &w),
-        AcceptDecision::Accept
+        AcceptDecision::Miss("non_passed")
+    );
+    assert_eq!(
+        miss_selectors_for_repair(AcceptMode::All, &["a".into(), "b".into()], "id", Some(&w), false),
+        vec!["a".to_string(), "b".to_string()]
     );
 }
 
@@ -427,7 +431,7 @@ fn raw_timeout_is_not_warm_skippable() {
 }
 
 #[test]
-fn gate_derived_timeout_from_raw_pass_is_warm_skippable() {
+fn gate_derived_timeout_from_raw_pass_is_not_warm_skippable() {
     let mut w = witness(
         WitnessScope::Full,
         "id",
@@ -436,7 +440,23 @@ fn gate_derived_timeout_from_raw_pass_is_warm_skippable() {
         false,
     );
     w.raw_statuses = vec![WitnessStatus::Passed];
-    assert!(all_misses_warm_skippable(&w, &["a".into()]));
+    assert!(!all_misses_warm_skippable(&w, &["a".into()]));
+}
+
+#[test]
+fn gate_derived_timeout_is_repair_miss_like_raw_timeout() {
+    let mut w = witness(
+        WitnessScope::Full,
+        "id",
+        &["a", "b"],
+        &[WitnessStatus::TimedOut, WitnessStatus::Passed],
+        true,
+    );
+    w.raw_statuses = vec![WitnessStatus::Passed, WitnessStatus::Passed];
+    assert_eq!(
+        miss_selectors_for_repair(AcceptMode::All, &["a".into(), "b".into()], "id", Some(&w), false),
+        vec!["a".to_string()]
+    );
 }
 
 #[test]

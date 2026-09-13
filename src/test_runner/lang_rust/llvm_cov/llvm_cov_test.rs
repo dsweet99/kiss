@@ -408,8 +408,9 @@ fn check_aggregate_population_can_return_cached_summary() {
     )
     .unwrap();
 
+    let gate = kiss::GateConfig::default();
     let summary =
-        cached_summary_from_check_aggregate_population(tmp.path(), &selectors, &population)
+        cached_summary_from_check_aggregate_population(tmp.path(), &selectors, &population, &gate)
             .unwrap()
             .expect("check-aggregate population must reconstruct a cached summary");
 
@@ -427,6 +428,7 @@ fn check_aggregate_population_can_return_cached_summary() {
             tmp.path(),
             &incomplete_mapping,
             &population,
+            &gate,
         )
         .unwrap()
         .is_none(),
@@ -434,9 +436,14 @@ fn check_aggregate_population_can_return_cached_summary() {
     );
     std::fs::write(&binary_path, b"binary-b").unwrap();
     assert!(
-        cached_summary_from_check_aggregate_population(tmp.path(), &selectors, &population)
-            .unwrap()
-            .is_none()
+        cached_summary_from_check_aggregate_population(
+            tmp.path(),
+            &selectors,
+            &population,
+            &gate,
+        )
+        .unwrap()
+        .is_none()
     );
     std::fs::write(&binary_path, b"binary-a").unwrap();
     let failed = kiss::rust_llvm_cov_runner::RustCovCacheEntry::from_outcome(
@@ -460,17 +467,130 @@ fn check_aggregate_population_can_return_cached_summary() {
     )
     .unwrap();
     assert!(
-        cached_summary_from_check_aggregate_population(tmp.path(), &selectors, &population)
-            .unwrap()
-            .is_none()
+        cached_summary_from_check_aggregate_population(
+            tmp.path(),
+            &selectors,
+            &population,
+            &gate,
+        )
+        .unwrap()
+        .is_none()
     );
 
     let mut entry_backed = population;
     entry_backed.entries_fingerprint = "entry-fingerprint".to_string();
     assert!(
-        cached_summary_from_check_aggregate_population(tmp.path(), &selectors, &entry_backed)
-            .unwrap()
-            .is_none()
+        cached_summary_from_check_aggregate_population(
+            tmp.path(),
+            &selectors,
+            &entry_backed,
+            &gate,
+        )
+        .unwrap()
+        .is_none()
+    );
+}
+
+#[test]
+fn check_aggregate_cached_summary_refuses_time_gate_violations() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_rust_test_crate(tmp.path(), &["case", "other"]);
+    std::fs::create_dir_all(tmp.path().join("target")).unwrap();
+    let binary_path = tmp.path().join("target/test-bin");
+    std::fs::write(&binary_path, b"binary-a").unwrap();
+    let selectors = vec!["tests::case".to_string(), "tests::other".to_string()];
+    let population = kiss::rust_llvm_cov_runner::RustPopulationState {
+        input_fingerprint: "input".to_string(),
+        generation_fingerprint: "generation".to_string(),
+        selection_context_fingerprint: "selection".to_string(),
+        entries_fingerprint: "check-aggregate:abc".to_string(),
+        selectors: selectors.clone(),
+        line_index: BTreeMap::new(),
+        ordinary_source_digests: BTreeMap::new(),
+        test_binaries: BTreeMap::from([(
+            "test-bin".to_string(),
+            kiss::rust_llvm_cov_runner::RustTestBinaryIdentity {
+                id: "test-bin".to_string(),
+                executable: binary_path.to_string_lossy().to_string(),
+                digest: format!(
+                    "{:016x}",
+                    b"binary-a"
+                        .iter()
+                        .fold(0xcbf2_9ce4_8422_2325u64, |hash, byte| (hash
+                            ^ u64::from(*byte))
+                        .wrapping_mul(0x0100_0000_01b3))
+                ),
+            },
+        )]),
+    };
+    let cache_root = tmp.path().join(".kiss").join("rust_llvm_cov_cache");
+    std::fs::create_dir_all(&cache_root).unwrap();
+    for (index, selector) in selectors.iter().enumerate() {
+        let entry = kiss::rust_llvm_cov_runner::RustCovCacheEntry::from_outcome(
+            &RustLlvmCovOutcome {
+                selector: selector.clone(),
+                status: kiss::rpytest_runner::TestStatus::Passed,
+                exit_code: Some(0),
+                duration: Duration::from_millis(1),
+                coverage: RustLineCoverage::default(),
+                test_binary_ids: Vec::new(),
+                cache_status: RustCovCacheStatus::Hit,
+                stdout: None,
+                stderr: None,
+            },
+            "generation",
+        );
+        kiss::rust_llvm_cov_runner::store_rust_cov_cache_entry(
+            &cache_root,
+            &format!("status-{index}"),
+            &entry,
+        )
+        .unwrap();
+    }
+    std::fs::remove_dir_all(cache_root.join("entries")).unwrap();
+    let revision = kiss::rust_llvm_cov_runner::publish_next_entry_state(
+        &cache_root,
+        "generation",
+        "check-aggregate:abc",
+    )
+    .unwrap();
+    // 5.0s cached duration exceeds the default 2.0s unit-test SLA.
+    std::fs::write(
+        cache_root.join("population_durations.json"),
+        format!(
+            r#"{{"schema_version":"rust-population-durations-v2","cache_schema_version":"{}","generation_fingerprint":"generation","input_fingerprint":"input","entries_fingerprint":"check-aggregate:abc","entry_state_revision":{},"entries_stamp":null,"durations":{{"tests::case":5000000000,"tests::other":34000000}}}}"#,
+            kiss::rust_llvm_cov_runner::CACHE_SCHEMA_VERSION,
+            revision,
+        ),
+    )
+    .unwrap();
+
+    let gate = kiss::GateConfig::default();
+    assert!(
+        cached_summary_from_check_aggregate_population(
+            tmp.path(),
+            &selectors,
+            &population,
+            &gate,
+        )
+        .unwrap()
+        .is_none(),
+        "over-limit check-aggregate durations must not warm-reuse as PASS"
+    );
+    let loose = kiss::GateConfig {
+        max_unit_test_seconds: vec![("*".into(), 3600.0)],
+        ..kiss::GateConfig::default()
+    };
+    assert!(
+        cached_summary_from_check_aggregate_population(
+            tmp.path(),
+            &selectors,
+            &population,
+            &loose,
+        )
+        .unwrap()
+        .is_some(),
+        "loose gate must still warm-reuse under-limit aggregate durations"
     );
 }
 
@@ -485,9 +605,13 @@ fn cached_check_aggregate_selectors_returns_none_without_population() {
     .unwrap();
     std::fs::write(tmp.path().join("src").join("lib.rs"), "pub fn value() {}\n").unwrap();
 
-    let cached =
-        cached_rust_check_aggregate_selectors(tmp.path(), &["tests::case".to_string()], &[])
-            .unwrap();
+    let cached = cached_rust_check_aggregate_selectors(
+        tmp.path(),
+        &["tests::case".to_string()],
+        &[],
+        &kiss::GateConfig::default(),
+    )
+    .unwrap();
 
     assert!(cached.is_none());
 }

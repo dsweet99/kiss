@@ -9,6 +9,7 @@ mod outcomes_load;
 mod runtime;
 
 pub use batch::RslipBatchProgress;
+pub use batch::format_cached_status_dump;
 pub use batch::warm_hit_seal_exists;
 pub(crate) use outcomes_load::rslip_outcome_from_cache;
 pub use outcomes_load::{load_cached_outcomes_many, load_cached_outcomes_many_trusting_population};

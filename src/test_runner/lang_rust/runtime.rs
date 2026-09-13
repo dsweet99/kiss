@@ -134,6 +134,7 @@ impl LanguageRuntime for RustRuntime {
                     publication_universe.clone(),
                     None,
                     None,
+                    &request.force_selectors,
                     &request.gate,
                 )?
             }

@@ -76,6 +76,7 @@ pub(crate) fn run_rust_llvm_cov_check_aggregate_selectors(
         None,
         publication_binary_ids,
         repair_publication,
+        &[],
         kiss::GateConfig::load_for_repo(repo_root),
     )
 }
@@ -89,6 +90,7 @@ pub(crate) fn run_rust_llvm_cov_check_aggregate_selectors_with_gate(
     population_publication_selectors: Option<Vec<String>>,
     publication_binary_ids: Option<std::collections::BTreeSet<String>>,
     repair_publication: Option<CheckAggregateRepairPublication>,
+    force_rerun_selectors: &[String],
     gate: &kiss::GateConfig,
 ) -> Result<SelectorExecutionSummary, String> {
     run_rust_llvm_cov_check_aggregate_selectors_with_publication(
@@ -99,15 +101,16 @@ pub(crate) fn run_rust_llvm_cov_check_aggregate_selectors_with_gate(
         population_publication_selectors,
         publication_binary_ids,
         repair_publication,
+        force_rerun_selectors,
         gate.clone(),
     )
 }
 
-#[allow(dead_code)]
 pub(crate) fn cached_rust_check_aggregate_selectors(
     repo_root: &Path,
     selectors: &[String],
     extra: &[String],
+    gate: &kiss::GateConfig,
 ) -> Result<Option<SelectorExecutionSummary>, String> {
     let cache_root = repo_root.join(".kiss").join("rust_llvm_cov_cache");
 
@@ -132,7 +135,7 @@ pub(crate) fn cached_rust_check_aggregate_selectors(
                     repo_root,
                     selectors,
                     &identity,
-                    &kiss::GateConfig::load_for_repo(repo_root),
+                    gate,
                 )
         {
             return Ok(Some(summary));
@@ -153,7 +156,7 @@ pub(crate) fn cached_rust_check_aggregate_selectors(
     ) else {
         return Ok(None);
     };
-    cached_summary_from_check_aggregate_population(repo_root, selectors, &population)
+    cached_summary_from_check_aggregate_population(repo_root, selectors, &population, gate)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -165,6 +168,7 @@ fn run_rust_llvm_cov_check_aggregate_selectors_with_publication(
     population_publication_selectors: Option<Vec<String>>,
     publication_binary_ids: Option<std::collections::BTreeSet<String>>,
     repair_publication: Option<CheckAggregateRepairPublication>,
+    force_rerun_selectors: &[String],
     gate: kiss::GateConfig,
 ) -> Result<SelectorExecutionSummary, String> {
     run_rust_llvm_cov_selectors_with_deps(
@@ -173,7 +177,7 @@ fn run_rust_llvm_cov_check_aggregate_selectors_with_publication(
         RustCoverageRunOptions {
             extra,
             force_rerun: false,
-            force_rerun_selectors: &[],
+            force_rerun_selectors,
             jobs,
             population_publication_selectors: population_publication_selectors
                 .or_else(|| Some(selectors.to_vec())),
@@ -267,6 +271,7 @@ where
         Some(&batch_identity),
         batch_req.population_publication_selectors.as_deref(),
         options.jobs,
+        &batch_req.selector_timeout_millis,
     )?;
     let result = execute_batch(&batch_req, &versions);
     let live_err = kiss::rust_llvm_cov_runner::take_live_rust_error();
