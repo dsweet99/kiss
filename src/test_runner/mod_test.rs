@@ -30,21 +30,26 @@ fn run_test_returns_nonzero_when_planning_fails_outside_git_repo() {
 
 #[test]
 fn run_test_dry_run_commit_in_workspace_completes() {
-    let code = crate::test_runner::run_test(crate::test_runner::RunTestCmdArgs {
-        invocation: crate::bin_cli::args::TestInvocation::Commit,
-        main_branch_cli: None,
-        base_branch_cli: None,
-        dry_run: true,
-        force_rerun: false,
-        force_bad: false,
-        metrics: false,
-        jobs: 1,
-        extra: &[],
-        python_extra: &[],
-        ignore: &[],
-        lang_filter: Some(Language::Rust),
-        config_main_branch: None,
-        gate_config: kiss::GateConfig::default(),
+    let _cwd = crate::cwd_test_lock::lock();
+    let tmp = tempfile::tempdir().unwrap();
+    crate::test_runner::test_mode_fixtures::init_git(&tmp);
+    let code = crate::test_runner::test_mode_fixtures::with_cwd(tmp.path(), || {
+        crate::test_runner::run_test(crate::test_runner::RunTestCmdArgs {
+            invocation: crate::bin_cli::args::TestInvocation::Commit,
+            main_branch_cli: None,
+            base_branch_cli: None,
+            dry_run: true,
+            force_rerun: false,
+            force_bad: false,
+            metrics: false,
+            jobs: 1,
+            extra: &[],
+            python_extra: &[],
+            ignore: &[],
+            lang_filter: Some(Language::Rust),
+            config_main_branch: None,
+            gate_config: kiss::GateConfig::default(),
+        })
     });
     assert!(
         code == 0 || code == 1,
@@ -54,22 +59,27 @@ fn run_test_dry_run_commit_in_workspace_completes() {
 
 #[test]
 fn run_test_reports_run_selectors_error_for_unsupported_rust_extra() {
+    let _cwd = crate::cwd_test_lock::lock();
+    let tmp = tempfile::tempdir().unwrap();
+    crate::test_runner::test_mode_fixtures::init_git(&tmp);
     let extra = ["--format".to_string()];
-    let code = crate::test_runner::run_test(crate::test_runner::RunTestCmdArgs {
-        invocation: crate::bin_cli::args::TestInvocation::Commit,
-        main_branch_cli: None,
-        base_branch_cli: None,
-        dry_run: true,
-        force_rerun: false,
-        force_bad: false,
-        metrics: false,
-        jobs: 1,
-        extra: &extra,
-        python_extra: &[],
-        ignore: &[],
-        lang_filter: Some(Language::Rust),
-        config_main_branch: None,
-        gate_config: kiss::GateConfig::default(),
+    let code = crate::test_runner::test_mode_fixtures::with_cwd(tmp.path(), || {
+        crate::test_runner::run_test(crate::test_runner::RunTestCmdArgs {
+            invocation: crate::bin_cli::args::TestInvocation::All,
+            main_branch_cli: None,
+            base_branch_cli: None,
+            dry_run: true,
+            force_rerun: false,
+            force_bad: false,
+            metrics: false,
+            jobs: 1,
+            extra: &extra,
+            python_extra: &[],
+            ignore: &[],
+            lang_filter: Some(Language::Rust),
+            config_main_branch: None,
+            gate_config: kiss::GateConfig::default(),
+        })
     });
     assert_eq!(code, 1);
 }

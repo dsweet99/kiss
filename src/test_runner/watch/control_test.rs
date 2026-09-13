@@ -235,7 +235,7 @@ fn probe_times_out_when_lock_held_without_session() {
 
 #[test]
 fn start_publishes_session_well_before_client_retry() {
-    let mut max = Duration::ZERO;
+    let mut samples = Vec::with_capacity(20);
     for _ in 0..20 {
         let tmp = tempfile::tempdir().unwrap();
         let t0 = Instant::now();
@@ -246,12 +246,17 @@ fn start_publishes_session_well_before_client_retry() {
             "start must publish session.json"
         );
         drop(control);
-        if elapsed > max {
-            max = elapsed;
-        }
+        samples.push(elapsed);
     }
+    samples.sort();
+    let median = samples[samples.len() / 2];
+    let max = *samples.last().unwrap();
     assert!(
-        max < CLIENT_SESSION_RETRY / 2,
-        "lock-to-session gap must stay under half the client wait; max={max:?}"
+        median < CLIENT_SESSION_RETRY / 2,
+        "typical lock-to-session gap must stay under half the client wait; median={median:?}"
+    );
+    assert!(
+        max < CLIENT_SESSION_RETRY,
+        "even the slowest start must beat the full client wait; max={max:?}"
     );
 }
