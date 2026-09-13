@@ -6,9 +6,12 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use kiss::rust_llvm_cov_runner::RustCoverageToolIdentity;
 
-use crate::test_runner::runners::command_stdout;
+const TOOL_VERSIONS_SCHEMA: &str = "rust-tool-versions-v4";
 
-const TOOL_VERSIONS_SCHEMA: &str = "rust-tool-versions-v3";
+#[path = "tool_identity_host_cache.rs"]
+mod host_cache;
+#[path = "tool_identity_live.rs"]
+mod live;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 struct RustToolVersionsCache {
@@ -28,7 +31,7 @@ struct PersistedFileMeta {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
-struct PersistedToolIdentityCacheKey {
+pub(super) struct PersistedToolIdentityCacheKey {
     cargo: PathBuf,
     rustc: PathBuf,
     cargo_meta: Option<(u64, Option<u64>)>,
@@ -39,7 +42,7 @@ struct PersistedToolIdentityCacheKey {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct ToolIdentityCacheKey {
+pub(super) struct ToolIdentityCacheKey {
     cargo: PathBuf,
     rustc: PathBuf,
     cargo_meta: Option<(u64, Option<SystemTime>)>,
@@ -103,7 +106,7 @@ fn restore_path_metas(metas: &[PersistedFileMeta]) -> Vec<(PathBuf, u64, Option<
 }
 
 impl ToolIdentityCacheKey {
-    fn to_persisted(&self) -> PersistedToolIdentityCacheKey {
+    pub(super) fn to_persisted(&self) -> PersistedToolIdentityCacheKey {
         PersistedToolIdentityCacheKey {
             cargo: self.cargo.clone(),
             rustc: self.rustc.clone(),
@@ -178,31 +181,6 @@ fn write_cached_rust_tool_identity(
     })
 }
 
-fn version_with_content_tag(version: String, program: &Path) -> String {
-    let resolved = if program.is_absolute() {
-        program.to_path_buf()
-    } else {
-        resolve_on_path(program).unwrap_or_else(|| program.to_path_buf())
-    };
-    let Ok(bytes) = fs::read(&resolved) else {
-        return version;
-    };
-    let digest = crate::analyze_cache::fnv1a64(0xcbf2_9ce4_8422_2325, &bytes);
-    format!("{version}#{digest:016x}")
-}
-
-fn resolve_on_path(program: &Path) -> Option<PathBuf> {
-    std::env::var_os("PATH").and_then(|paths| {
-        for dir in std::env::split_paths(&paths) {
-            let candidate = dir.join(program);
-            if candidate.is_file() {
-                return Some(candidate);
-            }
-        }
-        None
-    })
-}
-
 fn file_meta(path: &Path) -> Option<(u64, Option<SystemTime>)> {
     let meta = fs::metadata(path).ok()?;
     Some((meta.len(), meta.modified().ok()))
@@ -266,31 +244,6 @@ fn which_meta(program: &Path) -> Option<(u64, Option<SystemTime>)> {
     })
 }
 
-fn detect_live_rust_coverage_tool_identity(
-    repo_root: &Path,
-) -> Result<RustCoverageToolIdentity, String> {
-    let cargo = PathBuf::from("cargo");
-    let rustc = PathBuf::from("rustc");
-    Ok(RustCoverageToolIdentity {
-        cargo_version: version_with_content_tag(
-            command_stdout(&cargo, &["--version"], repo_root)?,
-            &cargo,
-        ),
-        llvm_cov_version: version_with_content_tag(
-            command_stdout(&cargo, &["llvm-cov", "--version"], repo_root)?,
-            Path::new("cargo-llvm-cov"),
-        ),
-        rustc_version: version_with_content_tag(
-            command_stdout(&rustc, &["-Vv"], repo_root)?,
-            &rustc,
-        ),
-        cargo_nextest_version: version_with_content_tag(
-            command_stdout(&cargo, &["nextest", "--version"], repo_root)?,
-            Path::new("cargo-nextest"),
-        ),
-    })
-}
-
 fn detect_rust_coverage_tool_identity(
     repo_root: &Path,
     key: &ToolIdentityCacheKey,
@@ -300,8 +253,13 @@ fn detect_rust_coverage_tool_identity(
     {
         return Ok(tools);
     }
-    let live = detect_live_rust_coverage_tool_identity(repo_root)?;
+    if let Some(tools) = host_cache::read_host_cached_rust_tool_identity(key) {
+        let _ = write_cached_rust_tool_identity(repo_root, key, &tools);
+        return Ok(tools);
+    }
+    let live = live::detect_live_rust_coverage_tool_identity(repo_root)?;
     let _ = write_cached_rust_tool_identity(repo_root, key, &live);
+    let _ = host_cache::write_host_cached_rust_tool_identity(key, &live);
     Ok(live)
 }
 

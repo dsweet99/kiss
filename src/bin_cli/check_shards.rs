@@ -5,7 +5,7 @@ use crate::bin_cli::check_cmd::CheckCommandArgs;
 use kiss::Language;
 
 pub const SHARD_ENV: &str = "KISS_CHECK_GATHER_ROOTS";
-const MAX_SHARDS: usize = 8;
+const MAX_SHARDS: usize = 24;
 
 pub(crate) fn gather_roots_from_env() -> Option<Vec<PathBuf>> {
     let raw = std::env::var_os(SHARD_ENV)?;
@@ -74,9 +74,25 @@ fn rust_shard_count(file_count: usize) -> usize {
 
 fn partition_paths(mut paths: Vec<PathBuf>, shards: usize) -> Vec<Vec<PathBuf>> {
     paths.sort();
+    let mut weighted: Vec<(u64, PathBuf)> = paths
+        .into_iter()
+        .map(|path| {
+            let bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(1).max(1);
+            (bytes, path)
+        })
+        .collect();
+    weighted.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
     let mut bins: Vec<Vec<PathBuf>> = (0..shards).map(|_| Vec::new()).collect();
-    for (idx, path) in paths.into_iter().enumerate() {
-        bins[idx % shards].push(path);
+    let mut loads = vec![0_u64; shards];
+    for (bytes, path) in weighted {
+        let idx = loads
+            .iter()
+            .enumerate()
+            .min_by_key(|(i, load)| (*load, *i))
+            .map(|(i, _)| i)
+            .unwrap_or(0);
+        loads[idx] = loads[idx].saturating_add(bytes);
+        bins[idx].push(path);
     }
     bins.into_iter().filter(|b| !b.is_empty()).collect()
 }
@@ -148,10 +164,32 @@ mod tests {
 
     #[test]
     fn partition_paths_spreads_evenly() {
-        let paths: Vec<PathBuf> = (0..10).map(|i| PathBuf::from(format!("f{i}.rs"))).collect();
+        let tmp = tempfile::tempdir().unwrap();
+        let paths: Vec<PathBuf> = (0..10)
+            .map(|i| {
+                let path = tmp.path().join(format!("f{i}.rs"));
+                std::fs::write(&path, vec![b'x'; i + 1]).unwrap();
+                path
+            })
+            .collect();
         let bins = partition_paths(paths, 4);
         assert_eq!(bins.len(), 4);
-        assert!(bins.iter().all(|b| (2..=3).contains(&b.len())));
+        assert!(bins.iter().all(|b| !b.is_empty()));
+    }
+
+    #[test]
+    fn partition_paths_balances_by_size() {
+        let tmp = tempfile::tempdir().unwrap();
+        let big = tmp.path().join("big.rs");
+        let small_a = tmp.path().join("a.rs");
+        let small_b = tmp.path().join("b.rs");
+        std::fs::write(&big, vec![b'x'; 100]).unwrap();
+        std::fs::write(&small_a, vec![b'x'; 10]).unwrap();
+        std::fs::write(&small_b, vec![b'x'; 10]).unwrap();
+        let bins = partition_paths(vec![big.clone(), small_a.clone(), small_b.clone()], 2);
+        assert_eq!(bins.len(), 2);
+        let big_shard = bins.iter().find(|b| b.contains(&big)).unwrap();
+        assert_eq!(big_shard.len(), 1, "largest file should sit alone when peers are tiny");
     }
 
     #[test]

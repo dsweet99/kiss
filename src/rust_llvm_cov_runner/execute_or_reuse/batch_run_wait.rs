@@ -50,7 +50,7 @@ pub(crate) fn wait_child_with_interruption(
             let _ = process_tree.terminate_descendants(Duration::ZERO);
             let _ = child.kill();
             let _ = child.wait();
-            return Err(BatchSubprocessRunError::Interrupted);
+            return exit_interrupted();
         }
         std::thread::sleep(Duration::from_millis(25));
     }
@@ -67,9 +67,20 @@ fn completed_or_interrupted_status(
     process_tree: &BatchProcessTreeGuard,
 ) -> Result<std::process::ExitStatus, BatchSubprocessRunError> {
     if process_tree.interrupted() && batch_status_was_killed(&status) {
-        return Err(BatchSubprocessRunError::Interrupted);
+        return exit_interrupted();
     }
     Ok(status)
+}
+
+fn exit_interrupted() -> Result<std::process::ExitStatus, BatchSubprocessRunError> {
+    #[cfg(not(test))]
+    {
+        std::process::exit(130);
+    }
+    #[cfg(test)]
+    {
+        Err(BatchSubprocessRunError::Interrupted)
+    }
 }
 
 fn batch_status_was_killed(status: &std::process::ExitStatus) -> bool {
