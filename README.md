@@ -48,7 +48,7 @@ VIOLATION:duplication:src/users.py:10:create_user: 80% similar, 2 copies: [src/u
 
 ## `kiss test`
 
-`kiss test` runs your unit tests, then enforces line-level code coverage, and limites running time of unit tests. `kiss test` is designed to be an efficient and robust unit test runner for both Python and Rust. It supports
+`kiss test` runs your unit tests, then enforces line-level code coverage, and limits running time of unit tests. `kiss test` is designed to be an efficient and robust unit test runner for both Python and Rust. It supports
 - Caching, to avoid reruns of working tests
 - Parallelization, to speed up test running
 - Separate interpreters for each Python test, to reduce test flakiness and failures of the test runner
@@ -73,7 +73,7 @@ Analyzed from: .
 Config: defaults + ./.kissconfig (found)
 
 Analyzed: N files, N code_units, N statements, N graph_nodes, N graph_edges
-Violations: 0 duplicate, 0 orphan, 0 comment, 0 doc
+Violations: 0 duplicate, 0 comment, 0 doc
 
 === Rust (N files) ===
 metric_id                        N   p50   p90   p95   p99   max
