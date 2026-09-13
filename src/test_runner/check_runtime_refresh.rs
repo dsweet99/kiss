@@ -362,41 +362,6 @@ fn ensure_rust_runtime_coverage_with_stats_labeled(
     finalize_population_summary_labeled(repo_root, ignore, &summary, true, caller_label)
 }
 
-#[allow(dead_code)]
-pub(crate) fn ensure_rust_runtime_coverage_shared(
-    repo_root: &Path,
-    ignore: &[String],
-    jobs: usize,
-    caller_label: &str,
-    gate: &kiss::GateConfig,
-) -> Result<crate::test_runner::runners::SelectorExecutionSummary, CoverageRefreshError> {
-    if load_rust_runtime_coverage(repo_root, ignore, gate).is_ok() {
-        let rust_batch_cache_hits =
-            crate::test_runner::runners::enumerate_workspace_rust_selectors(repo_root, ignore)
-                .unwrap_or_default()
-                .len();
-        return Ok(crate::test_runner::runners::SelectorExecutionSummary {
-            total: rust_batch_cache_hits,
-            cache_hits: rust_batch_cache_hits,
-            rust_batch_cache_hits,
-            ..Default::default()
-        });
-    }
-    let stats = ensure_rust_runtime_coverage_with_stats_labeled(
-        repo_root,
-        ignore,
-        jobs,
-        caller_label,
-        gate,
-    )?;
-    Ok(crate::test_runner::runners::SelectorExecutionSummary {
-        rust_test_instances: stats.by_language.rust.test_instances,
-        rust_aggregate_binaries: stats.by_language.rust.aggregate_binaries,
-        rust_aggregate_exports: stats.by_language.rust.aggregate_exports,
-        ..Default::default()
-    })
-}
-
 #[cfg(test)]
 pub(crate) fn try_repair_rust_check_aggregate(
     repo_root: &Path,

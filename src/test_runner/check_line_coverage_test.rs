@@ -442,3 +442,12 @@ fn load_rust_runtime_coverage_and_timings_from_seeded_cache() {
         "{timings:?}"
     );
 }
+
+#[test]
+fn format_python_coverage_env_formatting() {
+    let mut env = BTreeMap::new();
+    assert_eq!(format_python_coverage_env(&env), "PYTHONPATH unset");
+    env.insert("PYTHONPATH".to_string(), "/path/to/repo".to_string());
+    assert_eq!(format_python_coverage_env(&env), "PYTHONPATH=\"/path/to/repo\"");
+}
+

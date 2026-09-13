@@ -589,3 +589,70 @@ fn run_cov_command_orphan_uses_cached_records() {
     let code = run_cov_command(&args);
     assert!(code == 0 || code == 1, "code={code}");
 }
+
+#[test]
+fn try_evaluate_records_with_cached_orphans_evaluates_correctly() {
+    let py = Config::python_defaults();
+    let rs = Config::rust_defaults();
+    let gate = GateConfig {
+        orphan_detection: true,
+        max_unit_test_seconds: Vec::new(),
+        ..GateConfig::default()
+    };
+    let args = CovCommandArgs {
+        paths: &[],
+        lang_filter: None,
+        py_config: &py,
+        rs_config: &rs,
+        gate_config: &gate,
+        bypass_gate: false,
+        ignore: &[],
+        timing: true,
+        jobs: 1,
+        allow_refresh: true,
+        pytest_args: &[],
+        language_tables: Default::default(),
+    };
+    let records = [analyze::line_coverage::LineCoverageRecord {
+        file: PathBuf::from("src/ok.rs"),
+        total_lines: 10,
+        covered_lines: 10,
+        percent: 100,
+        first_uncovered_line: None,
+    }];
+    let files = CovFileSets {
+        py_files: vec![],
+        rs_files: vec![],
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let focus = FocusFilter::unrestricted();
+    let ctx = RecordsEvalCtx {
+        focus: &focus,
+        threshold: 75,
+        scope: TestCoverageScope::ByFile,
+        args: &args,
+        universe_root: tmp.path(),
+        files: &files,
+        ignore: &[],
+    };
+    let res = try_evaluate_records_with_cached_orphans(&records, &ctx, &[]);
+    assert_eq!(res, Some(0));
+
+    let viol = kiss::Violation::builder("src/orphan.rs")
+        .metric("orphan")
+        .message("orphan function")
+        .build();
+    let res = try_evaluate_records_with_cached_orphans(&records, &ctx, std::slice::from_ref(&viol));
+    assert_eq!(res, Some(1));
+
+    let args_bypass = CovCommandArgs {
+        bypass_gate: true,
+        ..args
+    };
+    let ctx_bypass = RecordsEvalCtx {
+        args: &args_bypass,
+        ..ctx
+    };
+    let res = try_evaluate_records_with_cached_orphans(&records, &ctx_bypass, std::slice::from_ref(&viol));
+    assert_eq!(res, Some(0));
+}

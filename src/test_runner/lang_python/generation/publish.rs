@@ -5,7 +5,7 @@ use kiss::kiss_publication_barrier::publish_atomically;
 
 use super::evidence::PopulationEvidence;
 use super::paths::{
-    create_staging_dir, generation_dir, generations_dir, pointer_path, sha256_hex, sync_dir,
+    create_staging_dir, generation_dir, generations_dir, pointer_path, sync_dir,
     write_json_artifact,
 };
 use super::types::{
@@ -212,11 +212,6 @@ fn prune_old_generations(cache_root: &Path, keep_id: &str) -> Result<(), String>
     }
     sync_dir(&root)?;
     Ok(())
-}
-
-#[allow(dead_code)]
-pub(crate) fn pointer_digest_for_tests(generation_id: &str, manifest_sha: &str) -> String {
-    sha256_hex(format!("{generation_id}:{manifest_sha}").as_bytes())
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]

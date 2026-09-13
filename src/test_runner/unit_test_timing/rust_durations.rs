@@ -135,3 +135,93 @@ fn load_rust_duration_pairs_from_witness(
         .map(|(selector, &ns)| Some((selector.clone(), Duration::from_nanos(ns?))))
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rust_durations_memo_and_ignore_filtering() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path();
+
+        clear_rust_duration_pairs_memo();
+        assert!(load_rust_duration_pairs(path).is_none());
+
+        RUST_DURATION_PAIRS_MEMO.with(|memo| {
+            *memo.borrow_mut() = Some((
+                path.to_path_buf(),
+                vec![
+                    ("tests/ignored/t.rs::test_x".to_string(), Duration::from_secs(10)),
+                    ("tests/kept/t.rs::test_y".to_string(), Duration::from_secs(2)),
+                ],
+            ));
+        });
+
+        let pairs = load_rust_duration_pairs(path).unwrap();
+        assert_eq!(pairs.len(), 2);
+
+        let max = load_rust_population_max_duration(path, &["tests/ignored".to_string()]);
+        assert_eq!(max, Some(Duration::from_secs(2)));
+
+        let none = load_rust_population_max_duration(path, &["tests/".to_string()]);
+        assert_eq!(none, None);
+
+        clear_rust_duration_pairs_memo();
+        RUST_DURATION_PAIRS_MEMO.with(|memo| {
+            assert!(memo.borrow().is_none());
+        });
+    }
+
+    #[test]
+    fn load_rust_duration_pairs_from_witness_absent_returns_none() {
+        let tmp = tempfile::tempdir().unwrap();
+        let identity = kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity {
+            input_digest: "digest".to_string(),
+            generation_fingerprint: "fingerprint".to_string(),
+            selection_context_fingerprint: "sel".to_string(),
+            ordinary_source_digests: std::collections::BTreeMap::new(),
+        };
+        assert!(load_rust_duration_pairs_from_witness(tmp.path(), &identity).is_none());
+    }
+
+    #[test]
+    fn load_rust_duration_pairs_from_witness_present_returns_pairs() {
+        use crate::test_runner::execution_witness::{WitnessScope, WitnessStatus};
+        use crate::test_runner::lang_rust::{
+            PublishRustWitness, publish_rust_execution_witness,
+        };
+
+        let tmp = tempfile::tempdir().unwrap();
+        let identity = kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity {
+            input_digest: "digest".to_string(),
+            generation_fingerprint: "fingerprint".to_string(),
+            selection_context_fingerprint: "sel".to_string(),
+            ordinary_source_digests: std::collections::BTreeMap::new(),
+        };
+
+        let selectors = vec!["tests/a.rs::test_1".to_string()];
+        let statuses = vec![WitnessStatus::Passed];
+        let durations_ns = vec![Some(2_000_000_000)];
+        let covered_lines = std::collections::BTreeMap::new();
+
+        publish_rust_execution_witness(PublishRustWitness {
+            repo_root: tmp.path(),
+            identity: &identity,
+            scope: WitnessScope::Full,
+            selectors: &selectors,
+            statuses: &statuses,
+            durations_ns: &durations_ns,
+            covered_lines: &covered_lines,
+            complete: true,
+            jobs: 1,
+        })
+        .unwrap();
+
+        let pairs = load_rust_duration_pairs_from_witness(tmp.path(), &identity).unwrap();
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0].0, "tests/a.rs::test_1");
+        assert_eq!(pairs[0].1, Duration::from_secs(2));
+    }
+}
+

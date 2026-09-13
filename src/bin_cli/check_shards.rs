@@ -1,13 +1,7 @@
-use std::path::PathBuf;
-
-#[cfg(not(test))]
-use std::path::Path;
-#[cfg(not(test))]
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
-#[cfg(not(test))]
 use crate::bin_cli::check_cmd::CheckCommandArgs;
-#[cfg(not(test))]
 use kiss::Language;
 
 pub const SHARD_ENV: &str = "KISS_CHECK_GATHER_ROOTS";
@@ -29,7 +23,6 @@ pub(crate) fn gather_roots_from_env() -> Option<Vec<PathBuf>> {
     }
 }
 
-#[cfg(not(test))]
 pub(crate) fn run_split_check_sharded(exe: &Path, args: &CheckCommandArgs<'_>) -> i32 {
     let ignore = crate::bin_cli::util::merge_check_ignore_prefixes(args.ignore);
     let universe = Path::new(&args.paths[0]);
@@ -88,7 +81,6 @@ fn partition_paths(mut paths: Vec<PathBuf>, shards: usize) -> Vec<Vec<PathBuf>> 
     bins.into_iter().filter(|b| !b.is_empty()).collect()
 }
 
-#[cfg(not(test))]
 fn spawn_lang(
     exe: &Path,
     args: &CheckCommandArgs<'_>,
@@ -121,7 +113,6 @@ fn spawn_lang(
     cmd.spawn()
 }
 
-#[cfg(not(test))]
 fn publish_sharded_outputs(python: &Output, rust_outs: &[Output]) -> i32 {
     crate::bin_cli::check_cmd::forward_worker_stderr_pub(&python.stderr);
     for rust in rust_outs {
@@ -167,5 +158,96 @@ mod tests {
     fn rust_shard_count_clamps() {
         assert_eq!(rust_shard_count(0), 1);
         assert!(rust_shard_count(10_000) <= MAX_SHARDS);
+    }
+
+    use std::os::unix::process::ExitStatusExt;
+    use std::process::ExitStatus;
+
+    fn sample_args(path: &String) -> CheckCommandArgs<'_> {
+        CheckCommandArgs {
+            paths: std::slice::from_ref(path),
+            lang_filter: None,
+            py_config: Box::leak(Box::new(kiss::Config::python_defaults())),
+            rs_config: Box::leak(Box::new(kiss::Config::rust_defaults())),
+            gate_config: Box::leak(Box::new(kiss::GateConfig::default())),
+            ignore: &[],
+            timing: true,
+            config: Some(Path::new("/tmp/kiss-extra.toml")),
+            language_tables: kiss::LanguageTablesPresent::both(),
+        }
+    }
+
+    fn output(ok: bool, stdout: &str, stderr: &str) -> Output {
+        Output {
+            status: ExitStatus::from_raw(if ok { 0 } else { 1 << 8 }),
+            stdout: stdout.as_bytes().to_vec(),
+            stderr: stderr.as_bytes().to_vec(),
+        }
+    }
+
+    #[test]
+    fn gather_roots_from_env_parses_properly() {
+        let old = std::env::var_os(SHARD_ENV);
+
+        unsafe {
+            std::env::remove_var(SHARD_ENV);
+        }
+        assert_eq!(gather_roots_from_env(), None);
+
+        unsafe {
+            std::env::set_var(SHARD_ENV, "   \n  \n");
+        }
+        assert_eq!(gather_roots_from_env(), None);
+
+        unsafe {
+            std::env::set_var(SHARD_ENV, "foo/a.rs\nbar/b.rs\n");
+        }
+        assert_eq!(
+            gather_roots_from_env(),
+            Some(vec![PathBuf::from("foo/a.rs"), PathBuf::from("bar/b.rs")])
+        );
+
+        match old {
+            Some(val) => unsafe { std::env::set_var(SHARD_ENV, val) },
+            None => unsafe { std::env::remove_var(SHARD_ENV) },
+        }
+    }
+
+    #[test]
+    fn publish_sharded_outputs_reports_totals_and_status() {
+        let py = output(
+            true,
+            "Analyzed: 1 files, 2 code_units, 3 statements, 4 graph_nodes, 5 graph_edges\nNO VIOLATIONS\n",
+            "",
+        );
+        let rs = output(
+            true,
+            "Analyzed: 2 files, 3 code_units, 4 statements, 5 graph_nodes, 6 graph_edges\nNO VIOLATIONS\n",
+            "",
+        );
+        assert_eq!(publish_sharded_outputs(&py, &[rs]), 0);
+
+        let py_fail = output(false, "warn: fail\n", "err text\n");
+        assert_eq!(publish_sharded_outputs(&py_fail, &[]), 1);
+    }
+
+    #[test]
+    fn run_split_check_sharded_executes_with_mock_exes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().to_string_lossy().to_string();
+        let args = sample_args(&path);
+
+        assert_eq!(run_split_check_sharded(Path::new("/bin/true"), &args), 0);
+
+        for i in 0..65 {
+            std::fs::write(tmp.path().join(format!("file_{i}.rs")), "fn f() {}").unwrap();
+        }
+
+        assert_eq!(run_split_check_sharded(Path::new("/bin/true"), &args), 0);
+        assert_eq!(run_split_check_sharded(Path::new("/bin/false"), &args), 1);
+        assert_eq!(
+            run_split_check_sharded(Path::new("/no/such/kiss-binary"), &args),
+            0
+        );
     }
 }

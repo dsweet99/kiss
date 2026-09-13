@@ -104,26 +104,6 @@ pub(crate) fn run_rust_llvm_cov_check_aggregate_selectors_with_gate(
 }
 
 #[allow(dead_code)]
-pub(crate) fn run_rust_llvm_cov_check_aggregate_population_selectors(
-    repo_root: &Path,
-    selectors: &[String],
-    extra: &[String],
-    jobs: usize,
-    population_publication_selectors: Vec<String>,
-) -> Result<SelectorExecutionSummary, String> {
-    run_rust_llvm_cov_check_aggregate_selectors_with_publication(
-        repo_root,
-        selectors,
-        extra,
-        jobs,
-        Some(population_publication_selectors),
-        None,
-        None,
-        kiss::GateConfig::load_for_repo(repo_root),
-    )
-}
-
-#[allow(dead_code)]
 pub(crate) fn cached_rust_check_aggregate_selectors(
     repo_root: &Path,
     selectors: &[String],

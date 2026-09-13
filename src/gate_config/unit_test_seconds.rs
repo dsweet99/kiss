@@ -88,19 +88,6 @@ pub fn parse_max_unit_test_seconds(value: &Value) -> Result<Vec<(String, f64)>, 
     }
 }
 
-#[allow(dead_code)]
-pub fn format_toml_rules(rules: &[(String, f64)]) -> String {
-    if rules.len() == 1 && rules[0].0 == "*" {
-        return format!("{}", rules[0].1);
-    }
-    let mut out = String::from("\n");
-    for (pattern, secs) in rules {
-        out.push_str(&format!("\"{pattern}\" = {secs}\n"));
-    }
-
-    out
-}
-
 pub fn format_nested_toml_table(rules: &[(String, f64)]) -> String {
     let mut out = String::from("[test.max_unit_test_seconds]\n");
     for (pattern, secs) in rules {
