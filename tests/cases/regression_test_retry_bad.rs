@@ -37,21 +37,18 @@ fn write_retry_bad_fixture(dir: &Path) {
 }
 
 fn kiss_test(dir: &Path, args: &[&str]) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .args(args)
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
+    crate::common::scrub_parent_coverage_env(&mut cmd);
+    cmd.args(args)
         .current_dir(dir)
         .env("PYTHONPATH", dir)
         .env("NO_COLOR", "1")
-        .env_remove("RUSTFLAGS")
         .output()
         .expect("kiss test")
 }
 
 #[test]
 fn retry_bad_reruns_only_prior_fail_after_fix() {
-    if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
-        return;
-    }
     let tmp = tempfile::TempDir::new().unwrap();
     init_git_repo(tmp.path());
     write_retry_bad_fixture(tmp.path());

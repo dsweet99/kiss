@@ -62,6 +62,29 @@ pub fn generate_lockfile(repo: &Path) {
     );
 }
 
+/// Strip parent `kiss test` / llvm-cov env so nested cargo work is not inflated under suite load.
+pub fn scrub_parent_coverage_env(cmd: &mut Command) {
+    const KEYS: &[&str] = &[
+        "LLVM_PROFILE_FILE",
+        "LLVM_PROFILE_FILE_NAME",
+        "RUSTC_WRAPPER",
+        "RUSTC_WORKSPACE_WRAPPER",
+        "RUSTFLAGS",
+        "CARGO_ENCODED_RUSTFLAGS",
+        "RUSTDOCFLAGS",
+        "CARGO_TARGET_DIR",
+        "CARGO_LLVM_COV_TARGET_DIR",
+        "CARGO_LLVM_COV_BUILD_DIR",
+        "KISS_COVERAGE_RUNTIME_REFRESH_ACTIVE",
+        "KISS_RUST_COVERAGE_PROFILE_POOL",
+    ];
+    for key in KEYS {
+        cmd.env_remove(key);
+    }
+    // Cap nested cargo parallelism so suite-load contention is less likely to breach the 60s SLA.
+    cmd.env("CARGO_BUILD_JOBS", "1");
+}
+
 pub type PythonRuntimeCoverageSeed<'a> = (&'a str, Vec<(&'a str, Vec<u32>)>);
 pub type RustRuntimeCoverageSeed<'a> = (&'a str, Vec<(&'a str, Vec<u32>)>);
 
@@ -181,7 +204,8 @@ fn write_seeded_rslip_entry(
 pub fn seed_rust_runtime_coverage(repo: &Path, entries: &[RustRuntimeCoverageSeed<'_>]) {
     let repo = repo.canonicalize().unwrap();
     let selectors = sorted_unique_selectors(entries.iter().map(|(selector, _)| *selector));
-    let req = rust_runtime_coverage_request(&repo, &selectors);
+    let mut req = rust_runtime_coverage_request(&repo, &selectors);
+    kiss::rust_llvm_cov_runner::resolve_batch_request_runners(&mut req).unwrap();
     let tools = rust_runtime_coverage_tool_identity(&repo);
     let identity = kiss::rust_llvm_cov_runner::batch_identity(&req, &tools).unwrap();
     for (selector, coverage_files) in entries {
@@ -230,8 +254,7 @@ fn rust_runtime_coverage_request(
     repo: &Path,
     selectors: &[String],
 ) -> kiss::rust_llvm_cov_runner::RustCoverageBatchRequest {
-    let (delegated_runners, runner_map_fingerprint, host_platform) =
-        kiss::rust_llvm_cov_runner::placeholder_delegated_runner_fields();
+    // Match live `rust_coverage_batch_request_from_parts`: empty runners, then resolve.
     kiss::rust_llvm_cov_runner::RustCoverageBatchRequest {
         cwd: repo.to_path_buf(),
         source_root: repo.to_path_buf(),
@@ -251,9 +274,9 @@ fn rust_runtime_coverage_request(
             .join("test-seed")
             .join("nextest.toml"),
         population_publication_selectors: Some(selectors.to_vec()),
-        delegated_runners,
-        runner_map_fingerprint,
-        host_platform,
+        delegated_runners: std::collections::BTreeMap::new(),
+        runner_map_fingerprint: String::new(),
+        host_platform: String::new(),
         coverage_output_mode: kiss::rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
         selector_timeout_millis: std::collections::BTreeMap::new(),
         cache_policy: kiss::test_cache_policy::TestCachePolicy::default(),
@@ -272,12 +295,44 @@ fn rust_runtime_coverage_tool_identity(
 }
 
 fn relevant_rust_env() -> BTreeMap<String, String> {
-    kiss::env_map_from_allowlist(&[
-        "RUSTFLAGS",
-        "RUSTDOCFLAGS",
-        "CARGO_TARGET_DIR",
-        "LLVM_PROFILE_FILE",
-    ])
+    // Mirror live `relevant_rust_batch_env`, but omit coverage-instrumentation keys that
+    // `scrub_parent_coverage_env` strips from nested kiss. Empty env was wrong: generation
+    // fingerprints hash `resolved_identity_tools(req.env)` which needs PATH, so seeds
+    // never matched and `--coverage-all` cold-ran llvm-cov (~60s+ TIMEOUT under suite load).
+    const CHILD_KEYS: &[&str] = &[
+        "PATH",
+        "HOME",
+        "USER",
+        "LOGNAME",
+        "SHELL",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "RUSTUP_TOOLCHAIN",
+        "LANG",
+        "LC_ALL",
+        "LC_CTYPE",
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR",
+        "LD_LIBRARY_PATH",
+        "CC",
+        "CXX",
+        "CONDA_PREFIX",
+        "PKG_CONFIG_PATH",
+    ];
+    const SURVIVING_COVERAGE_KEYS: &[&str] =
+        &["KISS_RUST_LLVM_COV_HOLD_BEFORE_GO_MS", "CMAKE_PREFIX_PATH"];
+    let mut env = kiss::env_map_from_allowlist(CHILD_KEYS);
+    env.extend(kiss::env_map_from_allowlist(SURVIVING_COVERAGE_KEYS));
+    env.extend(kiss::cargo_target_linker_env());
+    if !env.contains_key("CMAKE_PREFIX_PATH")
+        && let Some(conda) = env.get("CONDA_PREFIX").cloned()
+    {
+        env.insert("CMAKE_PREFIX_PATH".to_string(), conda);
+    }
+    env
 }
 
 fn command_output(repo: &Path, program: &str, args: &[&str]) -> String {

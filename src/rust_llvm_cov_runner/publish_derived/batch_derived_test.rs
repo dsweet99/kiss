@@ -401,3 +401,17 @@ fn prune_skips_entry_missing_after_readdir() {
     let pruned = prune_non_current_generations(&cache_root, "current-gen").unwrap();
     assert_eq!(pruned, 0);
 }
+
+#[test]
+fn prune_removes_unreferenced_generation_dirs_but_keeps_current() {
+    let repo = tempfile::tempdir().unwrap();
+    let cache_root = repo.path().join(".kiss/rust_llvm_cov_cache");
+    let generations = cache_root.join("generations");
+    std::fs::create_dir_all(generations.join("current-gen")).unwrap();
+    std::fs::create_dir_all(generations.join("obsolete-gen")).unwrap();
+    std::fs::write(generations.join("obsolete-gen").join("marker"), b"x").unwrap();
+    let pruned = prune_non_current_generations(&cache_root, "current-gen").unwrap();
+    assert_eq!(pruned, 1);
+    assert!(generations.join("current-gen").is_dir());
+    assert!(!generations.join("obsolete-gen").exists());
+}

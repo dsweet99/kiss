@@ -2,7 +2,8 @@ use std::collections::BTreeMap;
 use std::fs;
 
 use super::shared_input_snapshot::{
-    RustInputSnapshot, digest_input_file_snapshot, rust_input_snapshot,
+    RustInputSnapshot, digest_input_file_snapshot, format_skipped_non_member_coverage_warning,
+    rust_input_snapshot,
 };
 
 #[test]
@@ -144,6 +145,14 @@ fn rust_input_snapshot_excludes_nested_non_member_crate_sources() {
         !snapshot
             .ordinary_source_digests
             .contains_key("nested/src/lib.rs")
+    );
+    let mut skipped = std::collections::BTreeSet::new();
+    skipped.insert("nested".to_string());
+    let warning = format_skipped_non_member_coverage_warning(&skipped);
+    assert!(
+        warning.contains("skipping coverage scoring for nested non-member")
+            && warning.contains("nested"),
+        "warning={warning}"
     );
 }
 

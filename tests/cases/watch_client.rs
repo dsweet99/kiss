@@ -52,7 +52,9 @@ fn oneshot_target(dir: &Path, target: &str) -> (bool, String, String) {
 }
 
 fn oneshot_args(dir: &Path, args: &[&str]) -> (bool, String, String) {
-    let output = Command::new(env!("CARGO_BIN_EXE_kiss"))
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
+    crate::common::scrub_parent_coverage_env(&mut cmd);
+    let output = cmd
         .args(args)
         .current_dir(dir)
         .output()
@@ -333,9 +335,6 @@ fn oneshot_during_settle_skips_quiet_period() {
 
 #[test]
 fn oneshot_after_dirty_source_echoes_fail_and_exit() {
-    if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
-        return;
-    }
     let tmp = tempfile::TempDir::new().unwrap();
     init_git_repo(tmp.path());
     write_python_fixture(tmp.path());
@@ -346,7 +345,9 @@ fn oneshot_after_dirty_source_echoes_fail_and_exit() {
     wait_watch_idle_cycle(tmp.path());
 
     std::fs::write(tmp.path().join("lib.py"), "def f():\n    return 1\n").unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_kiss"))
+    let mut oneshot = Command::new(env!("CARGO_BIN_EXE_kiss"));
+    crate::common::scrub_parent_coverage_env(&mut oneshot);
+    let output = oneshot
         .args(["test", "--lang", "python", "."])
         .current_dir(tmp.path())
         .output()

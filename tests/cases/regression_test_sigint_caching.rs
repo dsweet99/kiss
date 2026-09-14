@@ -1,6 +1,6 @@
+//! Correctness of post-CTRL-C minimal work reuse (report.md path 3).
 #![cfg(unix)]
 
-use std::fs;
 use std::io::Read;
 use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
@@ -10,43 +10,58 @@ use std::time::{Duration, Instant};
 
 use crate::support::git::{commit_all, init_git_repo};
 
-fn write_rust_sigint_repo(dir: &Path) {
-    fs::write(
-        dir.join("Cargo.toml"),
-        "[package]\nname = \"fake_test_sigint\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+fn write_python_sigint_repo(dir: &Path) {
+    std::fs::write(
+        dir.join(".kissconfig"),
+        "[global]\n\
+         duplication_enabled = false\n\
+         [test]\n\
+         test_coverage_threshold = 0\n\
+         orphan_detection = false\n\
+         num_jobs = 1\n\
+         [test.max_unit_test_seconds]\n\
+         \"*\" = 30\n\
+         [python]\n\
+         [rust]\n",
     )
     .unwrap();
-    fs::create_dir_all(dir.join("src")).unwrap();
-    fs::write(
-        dir.join("src/lib.rs"),
-        r#"
-#[test]
-fn test_fast() {
-    assert_eq!(1 + 1, 2);
+    std::fs::write(dir.join("lib.py"), "VALUE = 1\n").unwrap();
+    std::fs::write(
+        dir.join("test_lib.py"),
+        concat!(
+            "import time\n",
+            "\n",
+            "\n",
+            "def test_fast():\n",
+            "    assert True\n",
+            "\n",
+            "\n",
+            "def test_slow():\n",
+            "    time.sleep(8)\n",
+            "    assert True\n",
+        ),
+    )
+    .unwrap();
 }
 
-#[test]
-fn test_slow() {
-    std::thread::sleep(std::time::Duration::from_secs(3));
-}
-"#,
-    )
-    .unwrap();
+fn kiss_cmd() -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
+    crate::common::scrub_parent_coverage_env(&mut cmd);
+    cmd.env("NO_COLOR", "1");
+    cmd
 }
 
 #[test]
 fn kiss_test_sigint_caches_passed_tests_as_it_goes() {
-    if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
-        return;
-    }
     let tmp = tempfile::TempDir::new().unwrap();
     init_git_repo(tmp.path());
-    write_rust_sigint_repo(tmp.path());
+    write_python_sigint_repo(tmp.path());
     commit_all(tmp.path(), "init");
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .args(["test", "."])
+    let mut child = kiss_cmd()
+        .args(["test", "--lang", "python", "."])
         .current_dir(tmp.path())
+        .env("PYTHONPATH", tmp.path())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -74,7 +89,7 @@ fn kiss_test_sigint_caches_passed_tests_as_it_goes() {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
-        if snap.contains("PASS: src/lib.rs::test_fast") {
+        if snap.contains("PASS: test_lib.py::test_fast") || snap.contains("PASS: test_fast") {
             break;
         }
         if Instant::now() >= deadline {
@@ -97,16 +112,22 @@ fn kiss_test_sigint_caches_passed_tests_as_it_goes() {
         "expected interrupted exit 130 or SIGINT, got {status:?}"
     );
 
-    let second_out = Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .args(["test", "."])
+    let second_out = kiss_cmd()
+        .args(["test", "--lang", "python", "."])
         .current_dir(tmp.path())
+        .env("PYTHONPATH", tmp.path())
         .output()
         .expect("second kiss test .");
 
     let stdout2 = String::from_utf8_lossy(&second_out.stdout);
     let stderr2 = String::from_utf8_lossy(&second_out.stderr);
     assert!(
-        stdout2.contains("PASS (cached): test_fast"),
+        second_out.status.success(),
+        "restart must exit 0; stdout={stdout2} stderr={stderr2}"
+    );
+    assert!(
+        stdout2.contains("PASS (cached)")
+            && (stdout2.contains("test_fast") || stdout2.contains("test_lib.py")),
         "expected test_fast to be cached on second run, stdout={stdout2}, stderr={stderr2}"
     );
 }

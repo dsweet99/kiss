@@ -44,8 +44,14 @@ impl WatchProc {
 }
 
 #[allow(clippy::zombie_processes)]
+fn kiss_cmd() -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
+    crate::common::scrub_parent_coverage_env(&mut cmd);
+    cmd
+}
+
 pub fn spawn_watch(dir: &Path, args: &[&str]) -> WatchProc {
-    let child = Command::new(env!("CARGO_BIN_EXE_kiss"))
+    let child = kiss_cmd()
         .args(args)
         .current_dir(dir)
         .stdout(Stdio::null())
@@ -66,7 +72,7 @@ pub fn start_watch(dir: &Path, args: &[&str]) -> WatchProc {
 pub fn start_watch_logged(dir: &Path, args: &[&str], log_path: &Path) -> WatchProc {
     let stdout = std::fs::File::create(log_path).expect("create watcher test log");
     let stderr = stdout.try_clone().expect("clone watcher test log");
-    let child = Command::new(env!("CARGO_BIN_EXE_kiss"))
+    let child = kiss_cmd()
         .args(args)
         .current_dir(dir)
         .stdout(Stdio::from(stdout))

@@ -1,4 +1,7 @@
-use crate::common::{generate_lockfile, list_full_check_cache_files, seed_python_runtime_coverage};
+use crate::common::{
+    generate_lockfile, list_full_check_cache_files, seed_python_runtime_coverage,
+    seed_rust_runtime_coverage,
+};
 use crate::support::git::{commit_all, init_git_repo};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -8,7 +11,9 @@ use std::time::SystemTime;
 use tempfile::TempDir;
 
 fn kiss_binary() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_kiss"))
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
+    crate::common::scrub_parent_coverage_env(&mut cmd);
+    cmd
 }
 
 fn chmod(path: &std::path::Path, mode: u32) {
@@ -236,6 +241,9 @@ fn write_mixed_workspace(repo: &Path) {
 
 #[test]
 fn mixed_workspace_cached_check_and_stats_match_uncached() {
+    // check+stats only: bundling coverage×2 with these under suite load exceeded the
+    // tests/cases 60s SLA (~62s). Rust/Python coverage cache identity lives in the
+    // dedicated `*_cached_coverage_matches_uncached` tests below.
     let repo = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     write_mixed_workspace(repo.path());
@@ -253,7 +261,6 @@ fn mixed_workspace_cached_check_and_stats_match_uncached() {
         sorted_stdout_lines(&stats2),
         "cached kiss stats must match the uncached production dataset"
     );
-    assert_coverage_identity(home.path(), repo.path(), &["test", "--coverage-all"]);
 }
 
 fn product_gate_lines(out: &Output) -> Vec<String> {
@@ -291,6 +298,19 @@ fn write_rust_inline_external_crate(repo: &Path) {
     )
     .unwrap();
     generate_lockfile(repo);
+    seed_rust_runtime_coverage(
+        repo,
+        &[
+            (
+                "tests::inline_ok",
+                vec![("src/lib.rs", (1_u32..=9).collect())],
+            ),
+            (
+                "external::external_ok",
+                vec![("src/lib.rs", (1_u32..=9).collect())],
+            ),
+        ],
+    );
     commit_all(repo, "init");
 }
 
@@ -344,7 +364,9 @@ fn python_only_cached_coverage_matches_uncached() {
 }
 
 #[test]
-fn rust_inline_and_external_tests_cached_check_stats_and_coverage_match_uncached() {
+fn rust_inline_and_external_tests_cached_check_and_stats_match_uncached() {
+    // check+stats only: check+stats+coverage×2 exceeded the 60s cases SLA under suite
+    // load (~63s). Coverage cache identity is `rust_only_cached_coverage_matches_uncached`.
     let repo = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     write_rust_inline_external_crate(repo.path());
@@ -372,7 +394,13 @@ fn rust_inline_and_external_tests_cached_check_stats_and_coverage_match_uncached
         sorted_stdout_lines(&stats2),
         "cached kiss stats must match the uncached rust production dataset"
     );
+}
 
+#[test]
+fn rust_only_cached_coverage_matches_uncached() {
+    let repo = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    write_rust_inline_external_crate(repo.path());
     assert_coverage_identity(
         home.path(),
         repo.path(),

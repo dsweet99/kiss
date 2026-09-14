@@ -84,8 +84,9 @@ fn write_mixed_runtime_repo(repo: &TempDir) {
 }
 
 fn run_kiss_cov_all(home: &TempDir, repo: &TempDir) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .current_dir(repo.path())
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
+    crate::common::scrub_parent_coverage_env(&mut cmd);
+    cmd.current_dir(repo.path())
         .arg("test")
         .arg("--coverage-all")
         .arg(".")
