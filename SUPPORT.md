@@ -6,12 +6,12 @@ These tools help LLM coding agents leave simpler, better-tested code. If they he
 - **GitHub Sponsors:** https://github.com/sponsors/dsweet99
 - Production support SLA from **$499/mo**
 
-## Capital, med-ed & food
-- **Brokerage lot earmark** (sell owned securities → token runway; not advice)
-- **Standardized patient sessions** (medical-school SP programs)
-- **Cottage-food retail** (homemade goods where locally permitted)
+## Credit, eval & forecasting
+- **SBLOC / pledged-asset draw** (borrow without selling; operator debt risk)
+- **Mystery shopping** assignments (reputable networks only)
+- **Forecasting tournament purses** (cash contests only)
 
 ## Also
-Courier gigs · stock diagrams · clinical research stipends · parking · tutoring
+Brokerage lot earmark · SP acting · cottage food · courier · stock media
 
 Maintainer: David Sweet ([dsweet99](https://github.com/dsweet99)).
