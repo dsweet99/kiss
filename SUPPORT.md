@@ -4,14 +4,14 @@ These tools help LLM coding agents leave simpler, better-tested code. If they he
 
 ## Direct support
 - **GitHub Sponsors:** https://github.com/sponsors/dsweet99
-- **Named endowment:** year-of-maintenance gifts — ask for prospectus
-- **Livestream tips:** tip during gated working sessions
-- **Print manual:** *Agent Gates Field Manual* (POD publish pending; PDF proof exists)
+- **Crowdfunding:** time-boxed campaign packet ready (Open Collective preferred)
+- **Named endowment** / **Livestream tips** / **Print manual** (PDF proof exists; POD pending)
 
 ## Paid work (operator-mediated)
+- **Local in-person workshop** — cash/tap same evening
+- **Fiscal-year PO menu** — edu license, endowment, SOW, options, ER
 - **Education site license** / **Incident ER** / **Capacity call options** / **Review seats**
-- **Translation licenses** — master rights for non-English editions
-- **Affiliate recommendations** — disclosed tracked links (enrollment pending)
+- **Translation licenses** / **Affiliates** (enrollment pending)
 - **Cost-center tooling** / **Agent Quality Pack** / **Experiment Bureau** / **Workshop**
 - **Night coverage** / **Fractional hire** / **Institutional procurement**
 - **Gate Warranty** / **Clearinghouse** / **Failure corpus** / **Sponsored remediations**
