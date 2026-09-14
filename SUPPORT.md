@@ -6,15 +6,12 @@ These tools help LLM coding agents leave simpler, better-tested code. If they he
 - **GitHub Sponsors:** https://github.com/sponsors/dsweet99
 - Production support SLA from **$499/mo**
 
-## New channels
-- **Security bounty participation** (legitimate VDP programs only)
-- **Official platform credit grants** (no grey-market transfers)
-- **VC/PE technical diligence** (flat memo fee; not % of deal)
+## Labor & panels
+- **Coding-eval / annotation contractor** (piecework platforms)
+- **Paid UX research participant** (vendor studies)
+- **Escrow merge-referee** ($400 flat gate-release opinion; we do not hold funds)
 
-## Documentation & labor
-R&D tax workpapers · staffing-agency pass-through · sponsored postmortems
-
-## Compliance & research
-GRC control pack · SBIR-class research subcontract
+## Also
+Security bounty (scoped VDPs) · platform credit grants · VC diligence · R&D tax docs · staffing pass-through
 
 Maintainer: David Sweet ([dsweet99](https://github.com/dsweet99)).
