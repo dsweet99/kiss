@@ -18,6 +18,7 @@ fn allow_refresh_true_invokes_refresh_on_identity_mismatch() {
     use crate::test_runner::python_coverage_index::{
         GenerationReason, clear_python_generation_warm_memo,
     };
+    use crate::test_runner::python_coverage_index::storage::python_selector_definition_digest;
     use kiss::rpytest_runner::TestStatus;
     use std::collections::BTreeMap;
     use std::fs;
@@ -51,6 +52,11 @@ fn allow_refresh_true_invokes_refresh_on_identity_mismatch() {
         reason: None,
         coverage: BTreeMap::from([("app.py".into(), [1u32].into_iter().collect())]),
     });
+    // Stale definition digests refuse load-time restamp; allow_refresh must
+    // re-run to repair. Fingerprint-only drift is restamped during load.
+    for row in &mut evidence.timings {
+        row.test_definition_digest = "stale-definition-digest".into();
+    }
     publish_python_population_generation(repo, &plan, &evidence, GenerationReason::Complete)
         .unwrap();
     clear_python_generation_warm_memo();
@@ -72,8 +78,62 @@ fn allow_refresh_true_invokes_refresh_on_identity_mismatch() {
             ),
             Err(1)
         ),
-        "allow_refresh false must fail closed on identity mismatch"
+        "allow_refresh false must fail closed when digests are stale"
     );
+
+    // Matching digests + fingerprint drift: load-time restamp succeeds without refresh.
+    let mut plan = population_plan_for_selectors(repo, &selectors, &[]).unwrap();
+    plan.base_identity.input_fingerprint = "stale-fingerprint".into();
+    let mut evidence = PopulationEvidence::from_ordered_selectors(&plan.selectors);
+    evidence.absorb_selector(SelectorEvidence {
+        selector: "test_app.py::test_ok".into(),
+        raw_status: TestStatus::Passed,
+        effective_status: TestStatus::Passed,
+        duration: Some(Duration::from_millis(1)),
+        cache_disposition: TimingCacheDisposition::MissStored,
+        reason: None,
+        coverage: BTreeMap::from([("app.py".into(), [1u32].into_iter().collect())]),
+    });
+    for row in &mut evidence.timings {
+        row.test_definition_digest =
+            python_selector_definition_digest(repo, &row.selector);
+    }
+    publish_python_population_generation(repo, &plan, &evidence, GenerationReason::Complete)
+        .unwrap();
+    clear_python_generation_warm_memo();
+    assert!(
+        load_or_refresh_snapshot(
+            repo,
+            required,
+            &[],
+            1,
+            false,
+            &kiss::GateConfig::default(),
+            &[],
+        )
+        .is_ok(),
+        "fingerprint-only drift must restamp during load without allow_refresh"
+    );
+
+    // Digest-stale again: allow_refresh true must invoke refresh and repair.
+    let mut plan = population_plan_for_selectors(repo, &selectors, &[]).unwrap();
+    plan.base_identity.input_fingerprint = "stale-fingerprint".into();
+    let mut evidence = PopulationEvidence::from_ordered_selectors(&plan.selectors);
+    evidence.absorb_selector(SelectorEvidence {
+        selector: "test_app.py::test_ok".into(),
+        raw_status: TestStatus::Passed,
+        effective_status: TestStatus::Passed,
+        duration: Some(Duration::from_millis(1)),
+        cache_disposition: TimingCacheDisposition::MissStored,
+        reason: None,
+        coverage: BTreeMap::from([("app.py".into(), [1u32].into_iter().collect())]),
+    });
+    for row in &mut evidence.timings {
+        row.test_definition_digest = "stale-definition-digest".into();
+    }
+    publish_python_population_generation(repo, &plan, &evidence, GenerationReason::Complete)
+        .unwrap();
+    clear_python_generation_warm_memo();
 
     let refreshed = load_or_refresh_snapshot(
         repo,

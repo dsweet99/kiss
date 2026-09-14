@@ -7,8 +7,7 @@ use super::publish::{
     publish_python_population_generation, publish_python_population_generation_reusing,
 };
 use super::types::{
-    GenerationReason, PinnedPythonGeneration, PythonExecutionIdentity, PythonPopulationPlan,
-    SelectorTimingRecord,
+    GenerationReason, PinnedPythonGeneration, PythonPopulationPlan, SelectorTimingRecord,
 };
 
 pub(crate) fn repair_python_population_generation(
@@ -126,8 +125,11 @@ pub(crate) fn try_restamp_matching_pinned_universe(
     if pinned.plan.selectors != expected {
         return Ok(false);
     }
-    let current = super::identity::current_python_execution_identity(repo_root, test_args)?;
-    if !restamp_is_safe(repo_root, &pinned, &current, run_misses) {
+    // Fingerprint/env drift is allowed here: restamp rewrites the pin onto the
+    // current identity while keeping evidence. Digest mismatches still refuse
+    // (unless listed in run_misses). Blocking on full identity equality made
+    // cov_score hard-fail after long kiss test runs with a warm Python cache.
+    if !restamp_is_safe(repo_root, &pinned, run_misses) {
         return Ok(false);
     }
     let refresh = selectors_to_refresh(&pinned, run_misses);
@@ -165,12 +167,8 @@ fn is_problem_status(status: &str) -> bool {
 fn restamp_is_safe(
     repo_root: &Path,
     pinned: &PinnedPythonGeneration,
-    current: &PythonExecutionIdentity,
     run_misses: Option<&[String]>,
 ) -> bool {
-    if pinned.plan.base_identity != *current {
-        return false;
-    }
     pinned.timings.iter().all(|row| {
         row.test_definition_digest
             == crate::test_runner::python_coverage_index::storage::python_selector_definition_digest(
@@ -279,12 +277,13 @@ fn evidence_from_pinned(
 
 #[cfg(test)]
 mod refresh_tests {
-    use super::super::types::{
-        PythonExecutionIdentity, PythonPopulationPlan, TimingCacheDisposition,
-    };
     use super::{
         PinnedPythonGeneration, SelectorTimingRecord, restamp_complete_pinned_from_cache,
         restamp_is_safe, selectors_to_refresh,
+    };
+    use crate::test_runner::python_coverage_index::storage::python_selector_definition_digest;
+    use super::super::types::{
+        PythonExecutionIdentity, PythonPopulationPlan, TimingCacheDisposition,
     };
 
     fn pin(
@@ -390,13 +389,28 @@ mod refresh_tests {
             vec![timing("t.py::test_a", "passed")],
         );
         pinned.timings[0].test_definition_digest = "stale".into();
-        let current = pinned.plan.base_identity.clone();
-        assert!(!restamp_is_safe(tmp.path(), &pinned, &current, None));
+        assert!(!restamp_is_safe(tmp.path(), &pinned, None));
         assert!(restamp_is_safe(
             tmp.path(),
             &pinned,
-            &current,
             Some(&["t.py::test_a".into()])
         ));
+    }
+
+    #[test]
+    fn restamp_allows_identity_fingerprint_drift_when_digests_match() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("t.py"), "def test_a():\n    pass\n").unwrap();
+        let mut pinned = pin(
+            true,
+            &["t.py::test_a"],
+            vec![timing("t.py::test_a", "passed")],
+        );
+        pinned.timings[0].test_definition_digest =
+            python_selector_definition_digest(tmp.path(), "t.py::test_a");
+        assert!(
+            restamp_is_safe(tmp.path(), &pinned, None),
+            "fingerprint drift must not block restamp when digests still match"
+        );
     }
 }

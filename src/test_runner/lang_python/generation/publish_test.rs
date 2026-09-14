@@ -58,7 +58,7 @@ fn assert_legacy_line_index_interns_without_name_blowup() {
     );
 }
 
-fn assert_restamp_rewrites_stale_kissconfig_and_refuses_fingerprint(repo: &Path) {
+fn assert_restamp_rewrites_stale_kissconfig_and_fingerprint(repo: &Path) {
     let pinned = super::load::try_load_pinned_python_generation(repo).unwrap();
     let mut stale_kc = pinned.plan.clone();
     stale_kc.base_identity.kissconfig_test_digest = "stale-kissconfig".into();
@@ -104,7 +104,9 @@ fn assert_restamp_rewrites_stale_kissconfig_and_refuses_fingerprint(repo: &Path)
         GenerationReason::Complete,
     )
     .unwrap();
-    let refused = super::repair::try_restamp_matching_pinned_universe(
+    // Matching definition digests: fingerprint-only drift restamps without
+    // requiring an explicit run-miss list (cov_score / warm load path).
+    let restamped = super::repair::try_restamp_matching_pinned_universe(
         repo,
         &stale_fp.selectors,
         &[],
@@ -114,10 +116,10 @@ fn assert_restamp_rewrites_stale_kissconfig_and_refuses_fingerprint(repo: &Path)
     )
     .unwrap();
     assert!(
-        !refused,
-        "unknown run-miss set must rematerialize fingerprint drift"
+        restamped,
+        "fingerprint-only drift must restamp when definition digests match"
     );
-    assert_eq!(
+    assert_ne!(
         try_load_pinned_python_generation_warm(repo)
             .unwrap()
             .plan
@@ -125,18 +127,39 @@ fn assert_restamp_rewrites_stale_kissconfig_and_refuses_fingerprint(repo: &Path)
             .input_fingerprint,
         "stale-fingerprint"
     );
-    let restamped = super::repair::try_restamp_matching_pinned_universe(
+
+    // Digest mismatch still refuses restamp.
+    let after_fp = try_load_pinned_python_generation_warm(repo).unwrap();
+    let mut stale_digest_plan = after_fp.plan.clone();
+    stale_digest_plan.base_identity.input_fingerprint = "stale-fingerprint".into();
+    let mut digest_evidence = PopulationEvidence::from_ordered_selectors(&stale_digest_plan.selectors);
+    digest_evidence.coverage = after_fp.coverage.clone();
+    digest_evidence.selector_coverage = after_fp.selector_coverage.clone();
+    digest_evidence.timings = after_fp.timings.clone();
+    for row in &mut digest_evidence.timings {
+        row.test_definition_digest = "stale-definition-digest".into();
+    }
+    digest_evidence.complete = after_fp.complete;
+    digest_evidence.rebuild_line_index();
+    super::publish::publish_python_population_generation(
         repo,
-        &stale_fp.selectors,
+        &stale_digest_plan,
+        &digest_evidence,
+        GenerationReason::Complete,
+    )
+    .unwrap();
+    let refused = super::repair::try_restamp_matching_pinned_universe(
+        repo,
+        &stale_digest_plan.selectors,
         &[],
         &|_, _| true,
         &kiss::GateConfig::default(),
-        Some(&[]),
+        None,
     )
     .unwrap();
     assert!(
-        !restamped,
-        "fingerprint drift must not restamp from a source-only selector match"
+        !refused,
+        "stale definition digests must refuse restamp"
     );
     assert_eq!(
         try_load_pinned_python_generation_warm(repo)
@@ -202,7 +225,7 @@ fn publish_then_warm_load_reads_coverage_and_timings() {
     assert_published_interned_line_index(repo);
     assert_legacy_line_index_interns_without_name_blowup();
     cover_exact_identity_restamp_and_closed_misses(repo, &plan.selectors);
-    assert_restamp_rewrites_stale_kissconfig_and_refuses_fingerprint(repo);
+    assert_restamp_rewrites_stale_kissconfig_and_fingerprint(repo);
 }
 
 fn cover_exact_identity_restamp_and_closed_misses(repo: &Path, selectors: &[String]) {
