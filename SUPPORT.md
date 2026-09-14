@@ -6,12 +6,12 @@ These tools help LLM coding agents leave simpler, better-tested code. If they he
 - **GitHub Sponsors:** https://github.com/sponsors/dsweet99
 - Production support SLA from **$499/mo**
 
-## Labor & panels
-- **Coding-eval / annotation contractor** (piecework platforms)
-- **Paid UX research participant** (vendor studies)
-- **Escrow merge-referee** ($400 flat gate-release opinion; we do not hold funds)
+## Product & speaking
+- **Agent Gates Pack** — $29 auto-download (Lemon/Gumroad/Stripe; operator lists when live)
+- **Paid talks** — corporate honorarium from ~$1500
+- **OEM IP module buyout** — from **$25,000** (sealed add-on; MIT core stays public)
 
 ## Also
-Security bounty (scoped VDPs) · platform credit grants · VC diligence · R&D tax docs · staffing pass-through
+Annotation gigs · UX research panels · escrow merge-referee · credit grants · VC diligence
 
 Maintainer: David Sweet ([dsweet99](https://github.com/dsweet99)).
