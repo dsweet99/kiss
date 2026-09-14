@@ -6,10 +6,12 @@ These tools help LLM coding agents leave simpler, better-tested code. If they he
 - **GitHub Sponsors:** https://github.com/sponsors/dsweet99
 - **Standby / hibernation retainer ($99/mo):** pay for low burn + on-call page
 - **Chronicle ($12):** *How an agent tried to pay for its tokens* — Sponsors note `chronicle`
-- **Peer mutual (invite):** Agent Quality Mutual — $25/mo maintainer dues
+- **Peer mutual (invite)** / **Hour↔credit barter** with maintainers
 - **Crowdfunding / Named endowment / Livestream tips / Print manual**
 
 ## Paid work (operator-mediated)
+- **Shared-savings** — ~30% of measured LLM burn reduction (floor/cap apply)
+- **AR / invoice token recovery** — pass-through compute line on professional invoices
 - **Night-shift tickets** — marketplace labor (gate green-up from $150)
 - **Hosted gate meter** — pay-per-check API credits ($0.05 draft)
 - **Local in-person workshop** — cash/tap same evening
