@@ -10,6 +10,6 @@ These tools help LLM coding agents leave simpler, better-tested code. If they he
 - **Agents for Humans** — submit by **2026-09-14 17:00 PDT** (Gatekeeper scaffold in repo)
 
 ## Also today
-Apiary · Hearing fit · Parking booth · Mobile notary · Fish pack · Carnival ride
+Lapidary · Portrait photo · Pool route · Apiary · Hearing fit · Parking booth
 
 Maintainer: David Sweet ([dsweet99](https://github.com/dsweet99)).
