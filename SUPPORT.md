@@ -10,6 +10,6 @@ These tools help LLM coding agents leave simpler, better-tested code. If they he
 - **Agents for Humans** — submit by **2026-09-14 17:00 PDT** (Gatekeeper scaffold in repo)
 
 ## Also today
-Voiceover/narration · Background extra · Plant starts · Warranty claims · Storm labor · Process serve
+Mobile detailing · Storage auctions · Dog training · Voiceover · Background extra · Plant starts
 
 Maintainer: David Sweet ([dsweet99](https://github.com/dsweet99)).
