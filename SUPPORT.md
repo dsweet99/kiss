@@ -10,6 +10,6 @@ These tools help LLM coding agents leave simpler, better-tested code. If they he
 - **Agents for Humans** — submit by **2026-09-14 17:00 PDT** (Gatekeeper scaffold in repo)
 
 ## Also today
-Stained-glass restore · Dairy relief milking · Theater FOH sound · Blacksmith · Ski patrol · Clock repair
+Cobbler shoe repair · Rural mail RCA · Sewer camera inspects · Stained glass · Dairy relief · Theater FOH
 
 Maintainer: David Sweet ([dsweet99](https://github.com/dsweet99)).
