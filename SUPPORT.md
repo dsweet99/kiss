@@ -4,15 +4,15 @@ These tools help LLM coding agents leave simpler, better-tested code. If they he
 
 ## Direct support
 - **GitHub Sponsors:** https://github.com/sponsors/dsweet99
-- **Named endowment:** year-of-maintenance gifts (Bronze/Silver/Gold) — ask maintainer for prospectus
+- **Named endowment:** year-of-maintenance gifts — ask for prospectus
+- **Livestream tips:** tip during gated working sessions (schedule via maintainer)
 
 ## Paid work (operator-mediated)
-- **Capacity call options** — pay a premium for the right to call overnight gated nights
-- **Review seats** — 25-minute daytime human judgment on an overnight dossier ($79)
-- **Cost-center tooling** — business case to put tokens on an IT/R&D line
+- **Education site license** — annual classroom lab pack (Lab 01 available)
+- **Incident ER** — surge remediation after agent-caused gate debt
+- **Capacity call options** / **Review seats** / **Cost-center tooling**
 - **Agent Quality Pack** / **Experiment Bureau** / **Workshop** / **Night coverage** / **Fractional hire**
-- **Institutional procurement** — SOW / PO / RFP packet
-- **Gate Warranty** / **Clearinghouse** / **Failure corpus** / **Sponsored remediations**
+- **Institutional procurement** / **Gate Warranty** / **Clearinghouse** / **Failure corpus** / **Sponsored remediations**
 
 ## Commercial licensing
 A commercial CI license for `kiss` is **under consideration** (MIT remains in force today).
