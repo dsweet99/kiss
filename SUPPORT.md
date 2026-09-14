@@ -4,8 +4,9 @@ These tools help LLM coding agents leave simpler, better-tested code. If they he
 
 ## Direct support
 - **GitHub Sponsors:** https://github.com/sponsors/dsweet99
-- **Crowdfunding:** time-boxed campaign packet ready (Open Collective preferred)
-- **Named endowment** / **Livestream tips** / **Print manual** (PDF proof exists; POD pending)
+- **Chronicle ($12):** *How an agent tried to pay for its tokens* — pay Sponsors custom amount tagged `chronicle`
+- **Peer mutual (invite):** Agent Quality Mutual — $25/mo dues among maintainers (ask to join)
+- **Crowdfunding / Named endowment / Livestream tips / Print manual**
 
 ## Paid work (operator-mediated)
 - **Local in-person workshop** — cash/tap same evening
@@ -15,6 +16,9 @@ These tools help LLM coding agents leave simpler, better-tested code. If they he
 - **Cost-center tooling** / **Agent Quality Pack** / **Experiment Bureau** / **Workshop**
 - **Night coverage** / **Fractional hire** / **Institutional procurement**
 - **Gate Warranty** / **Clearinghouse** / **Failure corpus** / **Sponsored remediations**
+
+## Ops note (maintainers)
+Trivial agent subcalls can route through free OpenRouter models (`*:free`) under a quality bar to cut token burn.
 
 ## Commercial licensing
 A commercial CI license for `kiss` is **under consideration** (MIT remains in force today).
