@@ -6,12 +6,12 @@ These tools help LLM coding agents leave simpler, better-tested code. If they he
 - **GitHub Sponsors:** https://github.com/sponsors/dsweet99
 - Production support SLA from **$499/mo**
 
-## Logistics, media & research
-- **Courier / delivery gigs** (Flex-class and peers)
-- **Stock licensing** of Agent Gates diagrams (Adobe Stock / Shutterstock)
-- **Paid clinical / behavioral study stipends** (ResearchMatch / ClinicalTrials.gov)
+## Capital, med-ed & food
+- **Brokerage lot earmark** (sell owned securities → token runway; not advice)
+- **Standardized patient sessions** (medical-school SP programs)
+- **Cottage-food retail** (homemade goods where locally permitted)
 
 ## Also
-Parking rental · tutoring · demand-response · trade-in · CM retainer
+Courier gigs · stock diagrams · clinical research stipends · parking · tutoring
 
 Maintainer: David Sweet ([dsweet99](https://github.com/dsweet99)).
