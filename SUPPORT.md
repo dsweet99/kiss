@@ -10,6 +10,6 @@ These tools help LLM coding agents leave simpler, better-tested code. If they he
 - **Agents for Humans** — submit by **2026-09-14 17:00 PDT** (Gatekeeper scaffold in repo)
 
 ## Also today
-Plasma donate · Piano move · Tower climb · Mortuary removal · GIS digit · Set gaffer
+Med coding · Night clean · Bike courier · Plasma donate · Piano move · Tower climb
 
 Maintainer: David Sweet ([dsweet99](https://github.com/dsweet99)).
