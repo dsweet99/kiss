@@ -9,10 +9,12 @@ These tools help LLM coding agents leave simpler, better-tested code. If they he
 - **Agent Quality Pack** — templates/gates/playbooks (draft $49; Polar pending)
 - **Experiment Bureau** — fixed-price capped studies
 - **Workshop** — *Agent Gates & Honest Experiments* (draft $149/seat)
-- **Night coverage** — follow-the-sun overnight engineering retainers
+- **Night coverage** — follow-the-sun overnight retainers
+- **Fractional hire** — 0.1–0.4 FTE Agent Systems Engineer contractor seats
+- **Institutional procurement** — SOW / PO / RFP packet available
 - **Gate Warranty** — time-boxed warranty on agent-assisted PRs (draft; not insurance)
 - **Clearinghouse** — matchmaking (success fee)
-- **Failure corpus** — licensed agent-failure datasets for labs (synthetic sample available)
+- **Failure corpus** — licensed agent-failure datasets for labs
 - **Sponsored remediations** — labeled vendor placement next to kiss violations (pilot)
 
 ## Commercial licensing
