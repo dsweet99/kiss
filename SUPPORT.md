@@ -7,6 +7,11 @@ These tools help LLM coding agents leave simpler, better-tested code. If they he
 - **Overnight slot auction** — bid for the next gated capacity window (reserve from $600)
 - **1/1 mecenate auction** / **Gate Fixture Sprint** / **Chronicle** / **Research archive**
 
+## Liquidity & catalog (new)
+- **Receivable factoring** — convert already-issued B2B invoices to cash for compute (operator-mediated)
+- **Agent Gates course** — self-serve listing on Udemy/Teachable-class platforms (platform remits)
+- **Merge success fee** — pay only when agreed gated PRs merge (escrow preferred)
+
 ## Commercial embedding
 If you ship kiss / sequential gates inside a **paid product or SaaS**, ask about a simple **ARR royalty** addendum (MIT remains for ordinary use).
 
