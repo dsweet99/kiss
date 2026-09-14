@@ -6,12 +6,10 @@ These tools help LLM coding agents leave simpler, better-tested code. If they he
 - **GitHub Sponsors:** https://github.com/sponsors/dsweet99
 - Production support SLA from **$499/mo**
 
-## Credit, care & accessibility
-- **Marketplace lending interest** (idle cash only; not SBLOC-funded)
-- **Pet-sitting / walking** (Wag/Care-class)
-- **Captioning / transcription gigs** (Rev-class accessibility wages)
+## Time-critical
+- **Agents for Humans** — submit by **2026-09-14 17:00 PDT** (Gatekeeper scaffold in repo)
 
-## Also
-SBLOC draw · mystery shopping · forecasting purses · brokerage earmark
+## Also today
+Textbook buyback · TaskRabbit-class general tasks · lending interest · pet-sitting · captioning
 
 Maintainer: David Sweet ([dsweet99](https://github.com/dsweet99)).
