@@ -10,6 +10,6 @@ These tools help LLM coding agents leave simpler, better-tested code. If they he
 - **Agents for Humans** — submit by **2026-09-14 17:00 PDT** (Gatekeeper scaffold in repo)
 
 ## Also today
-Arborist climb · Court reporter · Cold storage · Stadium event · Tailor alter · Aquarium dive
+Utility locate · Conf. interpreter · Asphalt paving · Arborist climb · Court reporter · Cold storage
 
 Maintainer: David Sweet ([dsweet99](https://github.com/dsweet99)).
