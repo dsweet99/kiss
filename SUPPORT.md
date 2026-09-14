@@ -10,6 +10,6 @@ These tools help LLM coding agents leave simpler, better-tested code. If they he
 - **Agents for Humans** — submit by **2026-09-14 17:00 PDT** (Gatekeeper scaffold in repo)
 
 ## Also today
-Creamery cheese · Sign painting · Elevator mech · Florist shop · HVAC tech · Library page
+Concrete finish · Meter reader · Carpet clean · Creamery cheese · Sign painting · Elevator mech
 
 Maintainer: David Sweet ([dsweet99](https://github.com/dsweet99)).
