@@ -10,6 +10,6 @@ These tools help LLM coding agents leave simpler, better-tested code. If they he
 - **Agents for Humans** — submit by **2026-09-14 17:00 PDT** (Gatekeeper scaffold in repo)
 
 ## Also today
-Waterproof · Dental assist · Puzzle craft · Window wash · Nursery grow · Referee
+Fire lookout · Sandblast · Estate clerk · Waterproof · Dental assist · Puzzle craft
 
 Maintainer: David Sweet ([dsweet99](https://github.com/dsweet99)).
