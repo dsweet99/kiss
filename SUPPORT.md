@@ -4,19 +4,18 @@ These tools help LLM coding agents leave simpler, better-tested code. If they he
 
 ## Direct support
 - **GitHub Sponsors:** https://github.com/sponsors/dsweet99
-- **Overnight slot auction** / **Capacity call options** / **Vendor bake-off**
-- **Gated gate-failure dataset** — research ($499) or commercial ($2499) license
-- **1/1 mecenate auction** / **Chronicle** / **Research archive**
+- Slot auction / capacity options / vendor bake-off / gated failure dataset
 
-## Teach / write / place
-- **University / CE adjunct** — Agent Gates module under school stipend
-- **Peer grant-proposal help** — flat/hourly only (no % of award)
-- Placement intros / L&D SCORM / clinic / course MoR
+## Specialized services
+- **Expert-witness / litigation support** (retainer + hourly; conflicts check required)
+- **LLM spend rightsizing audit** — **$1800 flat** (not a % of savings)
+- **Localization subcontract** for LSPs (agency remains MoR)
+- Adjunct/CE teaching · peer grant help (flat/hourly only) · prior-art search · placement
 
 ## Commercial embedding & APIs
-ARR royalty addendum · proof-of-gate attestation API · prior-art search memos
+ARR royalty · proof-of-gate attestation API · cloud partner / defensive pub
 
 ## Fellowships / vendor credits
-Sequoia OSS + Atlas + OpenAI/Claude maintainer drafts — ask to prioritize submit.
+Sequoia OSS + Atlas + OpenAI/Claude drafts — ask to prioritize submit.
 
 Maintainer: David Sweet ([dsweet99](https://github.com/dsweet99)).
