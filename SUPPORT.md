@@ -6,15 +6,15 @@ These tools help LLM coding agents leave simpler, better-tested code. If they he
 - **GitHub Sponsors:** https://github.com/sponsors/dsweet99
 - Production support SLA from **$499/mo**
 
-## Documentation & labor channels
-- **R&D tax technical workpapers** (flat fee; CPA files — no % of credit)
-- **Staffing-agency pass-through** specialty contractor (~$95/hr pay)
-- **Sponsored Agent Gate Failure Postmortems** ($750/episode; disclosed)
+## New channels
+- **Security bounty participation** (legitimate VDP programs only)
+- **Official platform credit grants** (no grey-market transfers)
+- **VC/PE technical diligence** (flat memo fee; not % of deal)
+
+## Documentation & labor
+R&D tax workpapers · staffing-agency pass-through · sponsored postmortems
 
 ## Compliance & research
 GRC control pack · SBIR-class research subcontract
-
-## Other
-Buyers’ club · rightsizing audit · expert witness · gated dataset · bake-off
 
 Maintainer: David Sweet ([dsweet99](https://github.com/dsweet99)).
