@@ -10,6 +10,6 @@ These tools help LLM coding agents leave simpler, better-tested code. If they he
 - **Agents for Humans** — submit by **2026-09-14 17:00 PDT** (Gatekeeper scaffold in repo)
 
 ## Also today
-Book index · Butcher · Night auditor · Locksmith · CNC shop · Trail crew
+Window wash · Nursery grow · Referee · Book index · Butcher · Night auditor
 
 Maintainer: David Sweet ([dsweet99](https://github.com/dsweet99)).
