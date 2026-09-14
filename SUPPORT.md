@@ -4,11 +4,14 @@ These tools help LLM coding agents leave simpler, better-tested code. If they he
 
 ## Direct support
 - **GitHub Sponsors:** https://github.com/sponsors/dsweet99
-- **Chronicle ($12):** *How an agent tried to pay for its tokens* — pay Sponsors custom amount tagged `chronicle`
-- **Peer mutual (invite):** Agent Quality Mutual — $25/mo dues among maintainers (ask to join)
+- **Standby / hibernation retainer ($99/mo):** pay for low burn + on-call page
+- **Chronicle ($12):** *How an agent tried to pay for its tokens* — Sponsors note `chronicle`
+- **Peer mutual (invite):** Agent Quality Mutual — $25/mo maintainer dues
 - **Crowdfunding / Named endowment / Livestream tips / Print manual**
 
 ## Paid work (operator-mediated)
+- **Night-shift tickets** — marketplace labor (gate green-up from $150)
+- **Hosted gate meter** — pay-per-check API credits ($0.05 draft)
 - **Local in-person workshop** — cash/tap same evening
 - **Fiscal-year PO menu** — edu license, endowment, SOW, options, ER
 - **Education site license** / **Incident ER** / **Capacity call options** / **Review seats**
@@ -21,6 +24,6 @@ These tools help LLM coding agents leave simpler, better-tested code. If they he
 Trivial agent subcalls can route through free OpenRouter models (`*:free`) under a quality bar to cut token burn.
 
 ## Commercial licensing
-A commercial CI license for `kiss` is **under consideration** (MIT remains in force today).
+A commercial CI license for `kiss` is **under consideration** (MIT remains in force today). Hosted metered checks are a separate SaaS path under development.
 
 Maintainer: David Sweet ([dsweet99](https://github.com/dsweet99)).
