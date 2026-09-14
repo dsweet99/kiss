@@ -4,16 +4,17 @@ These tools help LLM coding agents leave simpler, better-tested code. If they he
 
 ## Direct support
 - **GitHub Sponsors:** https://github.com/sponsors/dsweet99
-- **Production support SLA** — Priority from **$499/mo** (response-time contract; MIT unchanged)
+- Production support SLA from **$499/mo**
+
+## Documentation & labor channels
+- **R&D tax technical workpapers** (flat fee; CPA files — no % of credit)
+- **Staffing-agency pass-through** specialty contractor (~$95/hr pay)
+- **Sponsored Agent Gate Failure Postmortems** ($750/episode; disclosed)
 
 ## Compliance & research
-- **AI-coding GRC control pack** — **$3500**/org (SOC 2 CC8-oriented evidence templates; not a SOC opinion)
-- SBIR/STTR-class **research subcontract** on sequential gates (milestone labor under a prime)
+GRC control pack · SBIR-class research subcontract
 
-## Other paths
-Buyers’ club · booth staffing · rightsizing audit · expert witness · gated dataset · bake-off · reclaim
-
-## Fellowships / vendor credits
-Sequoia OSS + Atlas + OpenAI/Claude drafts — ask to prioritize submit.
+## Other
+Buyers’ club · rightsizing audit · expert witness · gated dataset · bake-off
 
 Maintainer: David Sweet ([dsweet99](https://github.com/dsweet99)).
