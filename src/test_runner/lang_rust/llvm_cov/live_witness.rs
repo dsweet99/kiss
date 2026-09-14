@@ -133,6 +133,10 @@ impl LiveWitnessCache {
         if !self.dirty {
             return;
         }
+        let complete = self
+            .statuses
+            .iter()
+            .all(|status| *status == WitnessStatus::Passed);
         let _ = publish_rust_execution_witness(PublishRustWitness {
             repo_root: &self.repo_root,
             identity: &self.identity,
@@ -141,7 +145,7 @@ impl LiveWitnessCache {
             statuses: &self.statuses,
             durations_ns: &self.durations_ns,
             covered_lines: &self.covered_lines,
-            complete: false,
+            complete,
             jobs: self.jobs,
         });
         self.dirty = false;

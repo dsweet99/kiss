@@ -3,7 +3,7 @@ use std::path::Path;
 
 use crate::test_runner::execution_generation::{
     FullExecutionGeneration, SelectorEvidenceRecord, load_current_generation,
-    publish_full_generation, reclaim_unreferenced,
+    publish_full_generation,
 };
 use crate::test_runner::lang_iface::{ExecutionWitness, WitnessScope, WitnessStatus};
 use crate::test_runner::rust_coverage_index::rust_coverage_cache_root;
@@ -18,7 +18,7 @@ pub(super) fn publish_complete_full_generation(
     covered_lines: &BTreeMap<String, Vec<u32>>,
 ) -> Result<String, String> {
     let cache_root = rust_coverage_cache_root(repo_root);
-    let generation_id = publish_full_generation(
+    publish_full_generation(
         &cache_root,
         rust_generation(
             identity_digest,
@@ -29,9 +29,7 @@ pub(super) fn publish_complete_full_generation(
             covered_lines,
             true,
         ),
-    )?;
-    let _ = reclaim_unreferenced(&cache_root);
-    Ok(generation_id)
+    )
 }
 
 pub(super) struct WitnessGenerationState<'a> {

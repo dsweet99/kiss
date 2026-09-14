@@ -3,7 +3,7 @@ use std::fs;
 use super::pin::acquire_reader_pin;
 use super::{
     FullExecutionGeneration, SelectorEvidenceRecord, load_current_generation,
-    publish_full_generation, reclaim_unreferenced,
+    publish_full_generation, publish_witness_generation, reclaim_unreferenced,
 };
 
 fn passed_record(selector: &str) -> SelectorEvidenceRecord {
@@ -153,4 +153,36 @@ fn publish_writes_content_addressed_evidence_blobs() {
             .join(format!("{digest}.json"))
             .is_file()
     );
+}
+
+#[test]
+fn successive_witness_publishes_reclaim_obsolete_generation_dirs() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut ids = Vec::new();
+    for i in 0..5 {
+        let mut payload = generation(&["a"]);
+        payload.selector_evidence[0].entry_content_digest = format!("blob-a-{i}");
+        payload.functional_summary_all_pass = false;
+        payload.selector_evidence[0].raw_status = "passed".into();
+        ids.push(publish_witness_generation(tmp.path(), payload).unwrap());
+    }
+    let gens = tmp.path().join("generations");
+    let kept: Vec<_> = fs::read_dir(&gens)
+        .unwrap()
+        .flatten()
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| !name.starts_with('.'))
+        .collect();
+    assert!(
+        kept.len() <= 2,
+        "expected at most current+parent after witness publishes, got {kept:?}"
+    );
+    assert!(kept.contains(ids.last().unwrap()));
+    assert!(kept.contains(&ids[ids.len() - 2]));
+    for stale in &ids[..ids.len() - 2] {
+        assert!(
+            !gens.join(stale).exists(),
+            "obsolete witness generation {stale} should be reclaimed"
+        );
+    }
 }

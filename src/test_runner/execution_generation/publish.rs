@@ -24,13 +24,16 @@ pub(crate) fn publish_full_generation(
         .as_ref()
         .map(|pointer| pointer.generation_id.clone())
         .unwrap_or_default();
-    match commit_generation_under_lock(cache_root, generation.clone(), &parent_id) {
-        Ok(generation_id) => Ok(generation_id),
-        Err(err) if err.contains("stale generation writer") => {
-            rebase_stale_writer(cache_root, &generation)
-        }
-        Err(err) => Err(err),
-    }
+    let generation_id =
+        match commit_generation_under_lock(cache_root, generation.clone(), &parent_id) {
+            Ok(generation_id) => generation_id,
+            Err(err) if err.contains("stale generation writer") => {
+                rebase_stale_writer(cache_root, &generation)?
+            }
+            Err(err) => return Err(err),
+        };
+    super::gc::reclaim_unreferenced(cache_root)?;
+    Ok(generation_id)
 }
 
 pub(crate) fn publish_witness_generation(
@@ -52,7 +55,9 @@ pub(crate) fn publish_witness_generation(
         .as_ref()
         .map(|pointer| pointer.generation_id.as_str())
         .unwrap_or_default();
-    commit_generation_under_lock(cache_root, generation, parent_id)
+    let generation_id = commit_generation_under_lock(cache_root, generation, parent_id)?;
+    super::gc::reclaim_unreferenced(cache_root)?;
+    Ok(generation_id)
 }
 
 fn rebase_stale_writer(

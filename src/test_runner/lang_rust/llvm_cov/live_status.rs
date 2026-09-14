@@ -849,6 +849,42 @@ mod live_status_test {
     }
 
     #[test]
+    fn live_witness_persist_marks_complete_when_all_statuses_passed() {
+        let _serial = begin_live_status_serial();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let identity = kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity {
+            input_digest: "inp-all-pass".into(),
+            generation_fingerprint: "gen-all-pass".into(),
+            selection_context_fingerprint: "ctx-all-pass".into(),
+            ordinary_source_digests: BTreeMap::new(),
+        };
+        let mut cache = LiveWitnessCache::new(
+            tmp.path(),
+            &identity,
+            None,
+            &["a".into(), "b".into()],
+            2,
+        );
+        cache.record_pass("a", "a", Duration::from_millis(1));
+        cache.record_pass("b", "b", Duration::from_millis(2));
+        cache.persist();
+
+        let loaded =
+            crate::test_runner::lang_rust::generation_publish::load_full_generation_witness(
+                tmp.path(),
+            )
+            .expect("load full generation witness");
+        assert!(
+            loaded.complete,
+            "all-Passed live persist must publish a complete witness"
+        );
+        assert_eq!(
+            loaded.statuses,
+            vec![WitnessStatus::Passed, WitnessStatus::Passed]
+        );
+    }
+
+    #[test]
     fn install_live_hook_and_record_live_rust_pass_flow() {
         let _serial = begin_live_status_serial();
         let tmp = tempfile::TempDir::new().unwrap();
