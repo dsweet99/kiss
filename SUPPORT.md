@@ -4,14 +4,16 @@ These tools help LLM coding agents leave simpler, better-tested code. If they he
 
 ## Direct support
 - **GitHub Sponsors:** https://github.com/sponsors/dsweet99
-- **Gate Fixture Sprint** (hosted challenge) / **Chronicle** / **Mutual or barter**
+- **Gate Fixture Sprint** / **Chronicle** / **Mutual or barter**
+
+## Commercial embedding
+If you ship kiss / sequential gates inside a **paid product or SaaS**, ask about a simple **ARR royalty** addendum (MIT remains for ordinary use).
 
 ## Paid work (operator-mediated)
-- **Agent-harm forensics** — technical memo for counsel/insurers (from $1,200)
-- **kiss-certified** — annual attestation mark (Team $2,500 / Company $8,000)
-- **Prepaid credit broker** — ToS-safe bid/ask matching (listing $15)
-- **Sequential Gates Action** / **Cleanup retainer** / **Exclusive SGL license** / **Clinic**
-- **Shared-savings / AR recovery / Tickets / Hosted meter / Workshop / Fiscal PO / Edu / ER / Options / Review seats**
+- **Guest lecture ↔ compute credits** for universities / RCC
+- **Forensics / kiss-certified / credit broker**
+- **Cleanup retainer / Exclusive SGL / Clinic / Action / Challenge**
+- **Shared-savings / AR recovery / Tickets / Hosted meter / Workshop / Fiscal PO**
 - **Pack / Bureau / Warranty / Clearinghouse / Corpus / Ads / Night coverage / Fractional / Procurement**
 
 ## Vendor credits
