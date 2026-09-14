@@ -8,20 +8,18 @@ These tools help LLM coding agents leave simpler, better-tested code. If they he
 - **1/1 mecenate auction** / **Gate Fixture Sprint** / **Chronicle** / **Research archive**
 
 ## Liquidity & catalog
-- **Receivable factoring** / **Agent Gates course** / **Merge success fee**
-- **Infra referrals** / **Civic library office hours**
-- **Vendor MDF co-marketing** (benchmark + webinar SOWs)
-- **Legal credit paths only** — own balances, official promos, authorized resellers (no grey-market transfers)
-- **Exam / standards item writing** — SME workshops and item banks
+- **Enterprise L&D SCORM license** — seat or site package for corporate LMS
+- **Prior-art search memos** for IP counsel (not a legal opinion)
+- Factoring / course MoR / merge success fee / infra referrals / civic PO
+- Vendor MDF / legal credit paths / exam SME writing
 
 ## Commercial embedding
 If you ship kiss / sequential gates inside a **paid product or SaaS**, ask about a simple **ARR royalty** addendum (MIT remains for ordinary use).
 
 ## Paid work (operator-mediated)
-- **Cloud partner subcontract** / **Defensive publication** / **Exclusive insurer feed**
-- **White-label** / **Book: Agent Gates** / **Public-sector pilot** / **Clinic** / **Workshop**
+- Cloud partner subcontract / Defensive publication / Clinic / Workshop / Book
 
 ## Fellowships / vendor credits
-Sequoia OSS Fellowship + Atlas Cloud OSS + OpenAI/Claude maintainer drafts — ask to prioritize submit.
+Sequoia OSS + Atlas + OpenAI/Claude maintainer drafts — ask to prioritize submit.
 
 Maintainer: David Sweet ([dsweet99](https://github.com/dsweet99)).
