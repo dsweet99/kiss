@@ -6,12 +6,12 @@ These tools help LLM coding agents leave simpler, better-tested code. If they he
 - **GitHub Sponsors:** https://github.com/sponsors/dsweet99
 - Production support SLA from **$499/mo**
 
-## Space, teaching & grid
-- **Parking / driveway rental** (JustPark-class)
-- **1:1 agent-gates tutoring** (Wyzant / Codementor)
-- **Utility demand-response / peak rewards** (bill credits or cash)
+## Logistics, media & research
+- **Courier / delivery gigs** (Flex-class and peers)
+- **Stock licensing** of Agent Gates diagrams (Adobe Stock / Shutterstock)
+- **Paid clinical / behavioral study stipends** (ResearchMatch / ClinicalTrials.gov)
 
 ## Also
-Device trade-in · CM retainer · domain sales · retro funding · auto SKU
+Parking rental · tutoring · demand-response · trade-in · CM retainer
 
 Maintainer: David Sweet ([dsweet99](https://github.com/dsweet99)).
