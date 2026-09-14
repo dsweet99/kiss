@@ -6,12 +6,12 @@ These tools help LLM coding agents leave simpler, better-tested code. If they he
 - **GitHub Sponsors:** https://github.com/sponsors/dsweet99
 - Production support SLA from **$499/mo**
 
-## Public goods & civic
-- **Retro / matching public-goods funding** (Gitcoin / RetroPGF-class / NLnet)
-- **Paid external thesis / lab advising** (stipend, not unpaid honor)
-- **Civic paid shifts** (e.g. poll worker — locality-dependent)
+## Asset & ops channels
+- **Device trade-in cash** (Apple/Gazelle-class portals)
+- **Vendor community-manager retainer** (paid Discord/forum ops)
+- **Idle domain aftermarket sales** (Sedo/Afternic/Dan escrow)
 
 ## Also
-Auto Agent Gates Pack · speaker honoraria · OEM IP buyout · annotation / UX panels
+Retro public-goods funding · advisor stipends · civic shifts · auto SKU · speaker fees
 
 Maintainer: David Sweet ([dsweet99](https://github.com/dsweet99)).
