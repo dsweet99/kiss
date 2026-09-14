@@ -6,12 +6,12 @@ These tools help LLM coding agents leave simpler, better-tested code. If they he
 - **GitHub Sponsors:** https://github.com/sponsors/dsweet99
 - Production support SLA from **$499/mo**
 
-## Asset & ops channels
-- **Device trade-in cash** (Apple/Gazelle-class portals)
-- **Vendor community-manager retainer** (paid Discord/forum ops)
-- **Idle domain aftermarket sales** (Sedo/Afternic/Dan escrow)
+## Space, teaching & grid
+- **Parking / driveway rental** (JustPark-class)
+- **1:1 agent-gates tutoring** (Wyzant / Codementor)
+- **Utility demand-response / peak rewards** (bill credits or cash)
 
 ## Also
-Retro public-goods funding · advisor stipends · civic shifts · auto SKU · speaker fees
+Device trade-in · CM retainer · domain sales · retro funding · auto SKU
 
 Maintainer: David Sweet ([dsweet99](https://github.com/dsweet99)).
