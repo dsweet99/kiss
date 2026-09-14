@@ -4,20 +4,17 @@ These tools help LLM coding agents leave simpler, better-tested code. If they he
 
 ## Direct support
 - **GitHub Sponsors:** https://github.com/sponsors/dsweet99
-- **Gate Fixture Sprint** (hosted challenge, $25 entry — ask to open a round)
-- **Standby retainer / Chronicle / Mutual / Barter**
+- **Gate Fixture Sprint** (hosted challenge) / **Chronicle** / **Mutual or barter**
 
 ## Paid work (operator-mediated)
-- **Sequential Gates** — GitHub Action scaffold (marketplace path); paid GitHub App MoR planned
-- **Cleanup retainer / Exclusive SGL license / Agent Gates Clinic**
-- **Shared-savings / AR token recovery / Night-shift tickets / Hosted gate meter**
-- **Workshop / Fiscal PO / Edu license / Incident ER / Options / Review seats**
+- **Agent-harm forensics** — technical memo for counsel/insurers (from $1,200)
+- **kiss-certified** — annual attestation mark (Team $2,500 / Company $8,000)
+- **Prepaid credit broker** — ToS-safe bid/ask matching (listing $15)
+- **Sequential Gates Action** / **Cleanup retainer** / **Exclusive SGL license** / **Clinic**
+- **Shared-savings / AR recovery / Tickets / Hosted meter / Workshop / Fiscal PO / Edu / ER / Options / Review seats**
 - **Pack / Bureau / Warranty / Clearinghouse / Corpus / Ads / Night coverage / Fractional / Procurement**
 
-## Vendor / maintainer credits
-OpenAI Codex OSS Fund + Claude for OSS application drafts ready for maintainer submit.
-
-## Ops note
-Trivial subcalls can use free OpenRouter models under a quality bar.
+## Vendor credits
+OpenAI Codex OSS Fund + Claude for OSS drafts ready for maintainer submit.
 
 Maintainer: David Sweet ([dsweet99](https://github.com/dsweet99)).
