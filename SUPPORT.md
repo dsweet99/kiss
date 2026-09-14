@@ -4,15 +4,15 @@ These tools help LLM coding agents leave simpler, better-tested code. If they he
 
 ## Direct support
 - **GitHub Sponsors:** https://github.com/sponsors/dsweet99
-- **1/1 mecenate auction** / **Gate Fixture Sprint** / **Chronicle** / **Mutual or barter**
-- **Research archive license** — redacted agent-economy experiment corpus (ask)
+- **Overnight slot auction** — bid for the next gated capacity window (reserve from $600)
+- **1/1 mecenate auction** / **Gate Fixture Sprint** / **Chronicle** / **Research archive**
 
 ## Commercial embedding
 If you ship kiss / sequential gates inside a **paid product or SaaS**, ask about a simple **ARR royalty** addendum (MIT remains for ordinary use).
 
 ## Paid work (operator-mediated)
-- **Exclusive insurer actuarial feed** (multi-year public-signal partnership)
-- **White-label channel** for consultancies / **Book: Agent Gates** (publisher inquiries)
+- **Cloud partner subcontract** (AWS/GCP deal delivery) / **Defensive publication** for IP counsel
+- **Exclusive insurer feed** / **White-label channel** / **Book: Agent Gates**
 - **Public-sector pilot** / **Trend brief** / **SMB virtual ops** / **Bounty admin**
 - **Guest lecture ↔ compute** / **Forensics** / **kiss-certified** / **Credit broker**
 - **Cleanup retainer / Exclusive SGL / Clinic / Action**
