@@ -4,17 +4,17 @@ These tools help LLM coding agents leave simpler, better-tested code. If they he
 
 ## Direct support
 - **GitHub Sponsors:** https://github.com/sponsors/dsweet99
+- **1/1 mecenate auction** (signed manual + private session) — ask to open bidding
 - **Gate Fixture Sprint** / **Chronicle** / **Mutual or barter**
 
 ## Commercial embedding
 If you ship kiss / sequential gates inside a **paid product or SaaS**, ask about a simple **ARR royalty** addendum (MIT remains for ordinary use).
 
 ## Paid work (operator-mediated)
-- **Agent trend brief** — public-signal weekly digest / API
-- **SMB virtual ops retainer** — overnight chores for non-tech businesses
-- **Sponsored bounty admin** — we run your purse for an 18% fee
+- **Public-sector agent-risk pilot** (research SOW)
+- **Trend brief / SMB virtual ops / Sponsored bounty admin**
 - **Guest lecture ↔ compute** / **Forensics** / **kiss-certified** / **Credit broker**
-- **Cleanup retainer / Exclusive SGL / Clinic / Action / Challenge**
+- **Cleanup retainer / Exclusive SGL / Clinic / Action**
 - **Shared-savings / AR recovery / Tickets / Hosted meter / Workshop / Fiscal PO**
 - **Pack / Bureau / Warranty / Clearinghouse / Corpus / Ads / Night coverage / Fractional / Procurement**
 
