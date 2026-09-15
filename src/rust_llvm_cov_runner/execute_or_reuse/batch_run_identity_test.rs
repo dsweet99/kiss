@@ -54,9 +54,11 @@ fn write_cargo_fixture(root: &std::path::Path) {
 }
 
 fn persistent_restart_reuse_target() -> std::path::PathBuf {
-    let dir = std::env::temp_dir()
-        .join("kiss-test-targets")
-        .join("restart-reuse-llvm-cov");
+    let label = std::thread::current()
+        .name()
+        .unwrap_or("restart-reuse-llvm-cov")
+        .replace(':', "_");
+    let dir = std::env::temp_dir().join("kiss-test-targets").join(label);
     fs::create_dir_all(&dir).unwrap();
     dir
 }

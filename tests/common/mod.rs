@@ -459,6 +459,15 @@ pub fn fresh_python_coverage_gap_repo() -> tempfile::TempDir {
     tmp
 }
 
+fn write_seeded_python_watch_sources(root: &Path) {
+    fs::write(root.join("lib.py"), "def f():\n    return 0\n").unwrap();
+    fs::write(
+        root.join("test_lib.py"),
+        "from lib import f\n\ndef test_f():\n    assert f() == 0\n",
+    )
+    .unwrap();
+}
+
 pub fn persistent_seeded_python_watch_repo() -> PathBuf {
     ensure_tmpfs();
     use std::sync::OnceLock;
@@ -466,6 +475,7 @@ pub fn persistent_seeded_python_watch_repo() -> PathBuf {
     REPO.get_or_init(|| {
         let root = std::env::temp_dir().join("kiss-seeded-python-watch-fixture-v2");
         if root.join(".git").join("HEAD").is_file() {
+            write_seeded_python_watch_sources(&root);
             return root;
         }
         fs::create_dir_all(&root).expect("seeded python watch fixture root");
@@ -480,12 +490,7 @@ pub fn persistent_seeded_python_watch_repo() -> PathBuf {
                 .status()
                 .expect("git config");
         }
-        fs::write(root.join("lib.py"), "def f():\n    return 0\n").unwrap();
-        fs::write(
-            root.join("test_lib.py"),
-            "from lib import f\n\ndef test_f():\n    assert f() == 0\n",
-        )
-        .unwrap();
+        write_seeded_python_watch_sources(&root);
         fs::write(
             root.join(".kissconfig"),
             "[global]\n\
@@ -529,7 +534,7 @@ pub fn fresh_seeded_python_watch_repo() -> tempfile::TempDir {
 }
 
 pub struct LockedSeededPythonWatchRepo {
-    _lock: std::sync::MutexGuard<'static, ()>,
+    _tmp: tempfile::TempDir,
     path: PathBuf,
 }
 
@@ -539,20 +544,11 @@ impl LockedSeededPythonWatchRepo {
     }
 }
 
-/// In-process seeded python watch fixture (avoids per-test `cp -a` clone).
+/// Isolated clone of the seeded python watch fixture.
 pub fn locked_seeded_python_watch_repo() -> LockedSeededPythonWatchRepo {
-    use std::sync::{Mutex, OnceLock};
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    let lock = LOCK
-        .get_or_init(|| Mutex::new(()))
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let path = persistent_seeded_python_watch_repo();
-    let _ = fs::remove_dir_all(path.join(".kiss").join("watch"));
-    LockedSeededPythonWatchRepo {
-        _lock: lock,
-        path,
-    }
+    let tmp = fresh_seeded_python_watch_repo();
+    let path = tmp.path().to_path_buf();
+    LockedSeededPythonWatchRepo { _tmp: tmp, path }
 }
 
 pub fn seed_python_runtime_coverage(repo: &Path, entries: &[PythonRuntimeCoverageSeed<'_>]) {

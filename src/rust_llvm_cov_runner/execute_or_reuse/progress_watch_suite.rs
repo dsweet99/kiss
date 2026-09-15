@@ -18,6 +18,7 @@ pub struct WatchSuiteReport {
     total_label: String,
     max_pass_label: String,
     violations: Vec<String>,
+    gates_clean: bool,
 }
 
 impl WatchSuiteReport {
@@ -43,9 +44,14 @@ impl WatchSuiteReport {
                     summary = Some((passed, failed, timed_out, total, max_pass));
                 }
                 ParsedWatchLine::Violation(text) => {
+                    self.gates_clean = false;
                     if !self.violations.iter().any(|v| v == &text) {
                         self.violations.push(text);
                     }
+                }
+                ParsedWatchLine::NoViolations => {
+                    self.gates_clean = true;
+                    self.violations.clear();
                 }
                 ParsedWatchLine::Ignore => {}
             }
@@ -81,14 +87,10 @@ impl WatchSuiteReport {
         collapsed: [usize; 3],
         summary_passed: Option<usize>,
     ) {
-        if cycle_named.values().any(|o| *o == SuiteOutcome::Pass) {
-            return;
-        }
         let pass = collapsed[0].max(summary_passed.unwrap_or(0));
+        let target = pass.max(self.passed());
         let already = self.named_count(SuiteOutcome::Pass);
-        if pass > already {
-            self.anonymous_passed = pass - already;
-        }
+        self.anonymous_passed = target.saturating_sub(already);
         self.take_collapsed_if_new(cycle_named, SuiteOutcome::Fail, collapsed[1]);
         self.take_collapsed_if_new(cycle_named, SuiteOutcome::Timeout, collapsed[2]);
     }
@@ -136,10 +138,13 @@ impl WatchSuiteReport {
 
     pub fn format(&self) -> String {
         let mut lines = status_lines(self);
-        if lines.is_empty() && self.violations.is_empty() {
+        if lines.is_empty() && self.violations.is_empty() && !self.gates_clean {
             return String::new();
         }
         lines.extend(failure_footers(self));
+        if self.gates_clean && self.violations.is_empty() {
+            lines.push("NO VIOLATIONS".into());
+        }
         lines.extend(self.violations.iter().cloned());
         lines.push(summary_line(self));
         lines.join("\n")
@@ -272,6 +277,7 @@ enum ParsedWatchLine {
         max_pass: String,
     },
     Violation(String),
+    NoViolations,
     Ignore,
 }
 
@@ -279,6 +285,9 @@ fn parse_watch_line(message: &str) -> ParsedWatchLine {
     let line = strip_ansi_prefix(message.trim());
     if line.contains("VIOLATION:") {
         return ParsedWatchLine::Violation(line.to_string());
+    }
+    if line == "NO VIOLATIONS" {
+        return ParsedWatchLine::NoViolations;
     }
     parse_summary_line(line)
         .unwrap_or_else(|| parse_status_line(line).unwrap_or(ParsedWatchLine::Ignore))
@@ -413,6 +422,42 @@ mod tests {
         assert_eq!(suite.passed(), 4);
         assert_eq!(suite.failed(), 1);
         assert_eq!(suite.test_exit_code(), 1);
+    }
+
+    #[test]
+    fn suite_mixed_named_and_collapsed_uses_summary_total() {
+        let mut suite = WatchSuiteReport::default();
+        suite.merge_lines(&[
+            "PASS (cached): tests/a.py::test_a (0.01s)".into(),
+            "PASS (cached): tests/b.py::test_b (0.01s)".into(),
+            "PASS (cached): 3156 selectors".into(),
+            "✓ 3345 passed · 0 failed · 0 timed out · 0.76s total · 0s max pass".into(),
+        ]);
+        assert_eq!(suite.passed(), 3345);
+        assert_eq!(suite.failed(), 0);
+        let recap = suite.format();
+        assert!(
+            recap.contains("3345 passed") && recap.contains("0 failed"),
+            "{recap}"
+        );
+    }
+
+    #[test]
+    fn suite_format_includes_no_violations_when_gates_clean() {
+        let mut suite = WatchSuiteReport::default();
+        suite.merge_lines(&[
+            "PASS (cached): 3 selectors".into(),
+            "NO VIOLATIONS".into(),
+            "✓ 3 passed · 0 failed · 0 timed out · 0.1s total · 0s max pass".into(),
+        ]);
+        let recap = suite.format();
+        assert!(
+            recap.contains("NO VIOLATIONS") && recap.contains("3 passed"),
+            "{recap}"
+        );
+        let clean_at = recap.find("NO VIOLATIONS").expect("clean");
+        let summary_at = recap.find("✓ 3 passed").expect("summary");
+        assert!(clean_at < summary_at, "{recap}");
     }
 
     #[test]

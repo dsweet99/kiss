@@ -146,12 +146,14 @@ fn prune_removed_rust_witness_selectors_drops_stale_entries() {
         selectors: vec![
             "tests::case".into(),
             "force_miss_batch_writes_warm_hit_seal_for_later_hit".into(),
+            "cwd_test_lock::guard_restores_current_directory_during_unwind".into(),
         ],
         statuses: vec![
             crate::test_runner::lang_iface::WitnessStatus::Passed,
             crate::test_runner::lang_iface::WitnessStatus::Passed,
+            crate::test_runner::lang_iface::WitnessStatus::Passed,
         ],
-        durations_ns: vec![Some(1), Some(1)],
+        durations_ns: vec![Some(1), Some(1), Some(1)],
         covered_lines: Default::default(),
         complete: true,
         generation_id: "gen".into(),

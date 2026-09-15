@@ -870,7 +870,7 @@ mod live_status_test {
     }
 
     #[test]
-    fn live_witness_new_merges_existing_disk_witness_and_unknown_selector() {
+    fn live_witness_new_keeps_universe_closed_to_unknown_selectors() {
         let _serial = begin_live_status_serial();
         let tmp = tempfile::TempDir::new().unwrap();
         let identity = kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity {
@@ -879,7 +879,6 @@ mod live_status_test {
             selection_context_fingerprint: "ctx_merge".into(),
             ordinary_source_digests: BTreeMap::new(),
         };
-        // Seed a full witness on disk with an extra selector.
         let _ = crate::test_runner::execution_witness::publish_rust_execution_witness(
             crate::test_runner::execution_witness::PublishRustWitness {
                 repo_root: tmp.path(),
@@ -903,13 +902,12 @@ mod live_status_test {
             &["seeded".into()],
             1,
         );
-        assert!(cache.selectors.iter().any(|s| s == "extra"));
+        assert_eq!(cache.selectors, vec!["seeded".to_string()]);
         assert!(cache.covered_lines.contains_key("src/lib.rs"));
-        // Unknown logical name inserts a new selector slot.
+        assert_eq!(cache.statuses[0], WitnessStatus::Passed);
         cache.record_pass("brand_new", "brand_new", Duration::from_millis(3));
-        assert!(cache.selectors.iter().any(|s| s == "brand_new"));
         cache.record_non_pass("another_new", "another_new", WitnessStatus::Failed);
-        assert!(cache.selectors.iter().any(|s| s == "another_new"));
+        assert_eq!(cache.selectors, vec!["seeded".to_string()]);
         cache.persist();
     }
 

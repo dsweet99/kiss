@@ -120,6 +120,7 @@ impl WatchControlServer {
             std::fs::create_dir_all(parent)
                 .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
         }
+        reclaim_stale_watch_sockets(Some(&socket_path));
         if socket_path.exists() {
             let _ = std::fs::remove_file(&socket_path);
         }
@@ -342,6 +343,10 @@ pub(crate) fn watch_socket_path(repo_root: &Path) -> Result<PathBuf, String> {
         "{WATCH_SOCKET_TMP_DIR}/{digest:016x}.sock"
     )))
 }
+
+#[path = "control_reclaim.rs"]
+mod control_reclaim;
+pub(crate) use control_reclaim::reclaim_stale_watch_sockets;
 
 fn accept_loop(listener: UnixListener, nudge_tx: Sender<NudgeRequest>, shutdown: Arc<AtomicBool>) {
     while !shutdown.load(Ordering::SeqCst) {
