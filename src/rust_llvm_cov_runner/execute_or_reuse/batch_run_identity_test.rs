@@ -63,27 +63,28 @@ fn persistent_restart_reuse_target() -> std::path::PathBuf {
 
 fn run_llvm_cov_and_read_fresh(root: &std::path::Path, plan: &RustCoverageBatchPlan) -> Vec<bool> {
     let persistent_target = persistent_restart_reuse_target();
-    let output = crate::rust_llvm_cov_runner::execute_or_reuse::llvm_cov_nested::run_fixture_cargo_llvm_cov(
-        vec![
-            "cargo".to_string(),
-            "llvm-cov".to_string(),
-            "nextest".to_string(),
-            "--no-report".to_string(),
-            "--cargo-message-format".to_string(),
-            "json".to_string(),
-            "--test-threads".to_string(),
-            "1".to_string(),
-        ],
-        |command| {
-            command
-                .current_dir(root)
-                .envs(&plan.env)
-                .env("CARGO_TARGET_DIR", &persistent_target)
-                .env("CARGO_LLVM_COV_TARGET_DIR", &persistent_target)
-                .env("CARGO_LLVM_COV_BUILD_DIR", &persistent_target);
-        },
-    )
-    .unwrap();
+    let output =
+        crate::rust_llvm_cov_runner::execute_or_reuse::llvm_cov_nested::run_fixture_cargo_llvm_cov(
+            vec![
+                "cargo".to_string(),
+                "llvm-cov".to_string(),
+                "nextest".to_string(),
+                "--no-report".to_string(),
+                "--cargo-message-format".to_string(),
+                "json".to_string(),
+                "--test-threads".to_string(),
+                "1".to_string(),
+            ],
+            |command| {
+                command
+                    .current_dir(root)
+                    .envs(&plan.env)
+                    .env("CARGO_TARGET_DIR", &persistent_target)
+                    .env("CARGO_LLVM_COV_TARGET_DIR", &persistent_target)
+                    .env("CARGO_LLVM_COV_BUILD_DIR", &persistent_target);
+            },
+        )
+        .unwrap();
     assert!(
         output.status.success(),
         "cargo llvm-cov failed: {}",

@@ -139,11 +139,7 @@ pub(crate) fn ensure_coverage_codegen_units(env: &mut BTreeMap<String, String>) 
     append_rustflag_unless_present(env, "codegen-units", COVERAGE_CODEGEN_UNITS_FLAG);
 }
 
-fn append_rustflag_unless_present(
-    env: &mut BTreeMap<String, String>,
-    marker: &str,
-    flag: &str,
-) {
+fn append_rustflag_unless_present(env: &mut BTreeMap<String, String>, marker: &str, flag: &str) {
     if env
         .get("RUSTFLAGS")
         .is_some_and(|flags| flags.contains(marker))

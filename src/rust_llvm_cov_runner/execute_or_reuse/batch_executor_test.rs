@@ -128,10 +128,8 @@ fn sealed_all_hit_refuses_force_rerun_selectors_for_retry_bad() {
         "force_rerun_selectors must block sealed all-hit reuse"
     );
     let mut fresh_called = false;
-    let result = execute_rust_coverage_batch_with_fresh(
-        &req,
-        &tools,
-        |req, _tools, _identity, _plan| {
+    let result =
+        execute_rust_coverage_batch_with_fresh(&req, &tools, |req, _tools, _identity, _plan| {
             fresh_called = true;
             Ok(RustCoverageBatchResult {
                 completed: req
@@ -158,9 +156,8 @@ fn sealed_all_hit_refuses_force_rerun_selectors_for_retry_bad() {
                 counters: RustCoverageBatchCounters::default(),
                 test_binaries: Vec::new(),
             })
-        },
-    )
-    .unwrap();
+        })
+        .unwrap();
     assert!(
         fresh_called,
         "retry-bad forced selectors must not take sealed all-hit; prepare/fresh must run"
@@ -560,16 +557,11 @@ fn check_aggregate_hit_refuses_force_rerun_selectors_for_retry_bad() {
         "force_rerun_selectors must block check-aggregate all-hit reuse"
     );
     let mut fresh_called = false;
-    let _ = execute_rust_coverage_batch_with_fresh(
-        &req,
-        &tools,
-        |_req, _tools, _identity, _plan| {
+    let _ =
+        execute_rust_coverage_batch_with_fresh(&req, &tools, |_req, _tools, _identity, _plan| {
             fresh_called = true;
-            Err(RustLlvmCovError::InvalidRequest(
-                "forced-fresh".to_string(),
-            ))
-        },
-    );
+            Err(RustLlvmCovError::InvalidRequest("forced-fresh".to_string()))
+        });
     assert!(
         fresh_called,
         "retry-bad must reach fresh check-aggregate execution instead of population hit"

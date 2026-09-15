@@ -96,6 +96,24 @@ fn register_batch_scope_sigint_and_clear_batch_scope_sigint_direct() {
 fn install_child_subreaper_direct() {
     let _serial = signal_test_guard();
     super::install_child_subreaper().expect("install child subreaper");
+    super::clear_child_subreaper();
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn process_tree_guard_clears_child_subreaper_on_drop() {
+    let _serial = signal_test_guard();
+    {
+        let _guard = BatchProcessTreeGuard::install().expect("install guard");
+        assert!(
+            super::child_subreaper_is_set(),
+            "guard must set the child-subreaper bit"
+        );
+    }
+    assert!(
+        !super::child_subreaper_is_set(),
+        "guard drop must clear the child-subreaper bit"
+    );
 }
 
 #[cfg(unix)]

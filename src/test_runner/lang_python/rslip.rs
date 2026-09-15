@@ -13,20 +13,27 @@ use crate::test_runner::runners::{
 };
 
 #[cfg(test)]
+pub(super) use super::rslip_emit::{
+    emit_finalized_outcomes, emit_progress_lines, format_rslip_error, print_rslip_outcome,
+    rslip_protocol_is_quiet_timeout,
+};
+use super::rslip_emit::{handle_rslip_batch_progress, status_for_rslip_error};
+#[cfg(test)]
 use super::rslip_request::python_version_supports_rslip;
 #[cfg(test)]
 pub(crate) use super::rslip_request::timeout_for_selector;
 use super::rslip_request::timeout_for_selector_with_gate;
 pub(crate) use super::rslip_request::{detect_rslip_versions, rslip_request_from_parts};
-use super::rslip_emit::{handle_rslip_batch_progress, status_for_rslip_error};
-#[cfg(test)]
-pub(super) use super::rslip_emit::{
-    emit_finalized_outcomes, emit_progress_lines, format_rslip_error, print_rslip_outcome,
-    rslip_protocol_is_quiet_timeout,
-};
 
-fn rslip_worker_cap() -> usize {
-    kiss::TestSectionConfig::load().num_jobs_pytest.max(1)
+fn rslip_worker_cap() -> Option<usize> {
+    kiss::TestSectionConfig::load().num_jobs_pytest_explicit
+}
+
+fn clamp_rslip_jobs(requested: usize) -> usize {
+    match rslip_worker_cap() {
+        Some(cap) => requested.clamp(1, cap.max(1)),
+        None => requested,
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -71,7 +78,7 @@ fn run_rslip_selectors_with_runner(
     runner: PytestRunner,
 ) -> Result<SelectorExecutionSummary, String> {
     assert!(args.jobs > 0, "jobs must be greater than zero");
-    let jobs = args.jobs.clamp(1, rslip_worker_cap());
+    let jobs = clamp_rslip_jobs(args.jobs);
     if jobs < args.jobs {
         crate::test_runner::emit_test_progress(&format!(
             "kiss test: rslip workers={jobs} (capped from {})",
@@ -155,13 +162,7 @@ fn partition_rslip_requests(
         let timeout = timeout_for_selector_with_gate(input.gate, selector);
 
         if timeout.is_zero() {
-            record_immediate_timeout(
-                input.repo_root,
-                input.identity,
-                selector,
-                summary,
-                statuses,
-            );
+            record_immediate_timeout(input.repo_root, input.identity, selector, summary, statuses);
             continue;
         }
         let mut req = input.template.clone();

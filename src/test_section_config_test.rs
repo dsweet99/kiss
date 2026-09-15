@@ -38,6 +38,11 @@ fn test_section_config_defaults_num_jobs_pytest_to_sixteen() {
         TestSectionConfig::default().num_jobs_pytest,
         crate::defaults::gate::NUM_JOBS_PYTEST
     );
+    assert_eq!(TestSectionConfig::default().num_jobs_pytest_explicit, None);
+    assert_eq!(
+        TestSectionConfig::default().python_parallel_cap(),
+        crate::defaults::gate::NUM_JOBS
+    );
 }
 
 #[test]
@@ -69,12 +74,31 @@ fn test_section_config_reads_positive_num_jobs_pytest() {
     let _cwd_guard = CwdGuard::enter(cwd.path());
     let tmp = tempfile::NamedTempFile::new().unwrap();
     std::fs::write(tmp.path(), "[test]\nnum_jobs_pytest = 5\n").unwrap();
-    assert_eq!(
-        TestSectionConfig::try_load_from(tmp.path())
-            .unwrap()
-            .num_jobs_pytest,
-        5
-    );
+    let cfg = TestSectionConfig::try_load_from(tmp.path()).unwrap();
+    assert_eq!(cfg.num_jobs_pytest, 5);
+    assert_eq!(cfg.num_jobs_pytest_explicit, Some(5));
+}
+
+#[test]
+fn test_section_config_num_jobs_pytest_stays_implicit_when_absent() {
+    let cwd = tempfile::TempDir::new().unwrap();
+    let _cwd_guard = CwdGuard::enter(cwd.path());
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(tmp.path(), "[test]\nnum_jobs = 32\n").unwrap();
+    let cfg = TestSectionConfig::try_load_from(tmp.path()).unwrap();
+    assert_eq!(cfg.num_jobs, 32);
+    assert_eq!(cfg.num_jobs_pytest_explicit, None);
+    assert_eq!(cfg.python_parallel_cap(), 32);
+}
+
+#[test]
+fn test_section_config_python_parallel_cap_uses_explicit_pytest() {
+    let cwd = tempfile::TempDir::new().unwrap();
+    let _cwd_guard = CwdGuard::enter(cwd.path());
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(tmp.path(), "[test]\nnum_jobs = 32\nnum_jobs_pytest = 8\n").unwrap();
+    let cfg = TestSectionConfig::try_load_from(tmp.path()).unwrap();
+    assert_eq!(cfg.python_parallel_cap(), 8);
 }
 
 #[test]

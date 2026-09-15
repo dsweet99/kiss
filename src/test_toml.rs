@@ -204,7 +204,9 @@ fn apply_strict_runtime(
         config.num_jobs = parse_positive_usize(v, "num_jobs")?;
     }
     if let Some(v) = table.get("num_jobs_pytest") {
-        config.num_jobs_pytest = parse_positive_usize(v, "num_jobs_pytest")?;
+        let val = parse_positive_usize(v, "num_jobs_pytest")?;
+        config.num_jobs_pytest = val;
+        config.num_jobs_pytest_explicit = Some(val);
     }
     if let Some(v) = table.get("num_jobs_llvm_cov") {
         let val = parse_positive_usize(v, "num_jobs_llvm_cov")?;
@@ -285,6 +287,9 @@ fn apply_lenient_runtime(
     apply_lenient_positive_usize(table, "num_jobs", &mut config.num_jobs);
     apply_lenient_positive_usize(table, "num_jobs_pytest", &mut config.num_jobs_pytest);
     apply_lenient_positive_usize(table, "num_jobs_llvm_cov", &mut config.num_jobs_llvm_cov);
+    if table.contains_key("num_jobs_pytest") {
+        config.num_jobs_pytest_explicit = Some(config.num_jobs_pytest);
+    }
     if table.contains_key("num_jobs_llvm_cov") {
         config.num_jobs_llvm_cov_explicit = Some(config.num_jobs_llvm_cov);
     }

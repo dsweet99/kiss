@@ -119,7 +119,10 @@ pub(crate) fn collect_python_nodeids(
 const COLLECT_SHARD_PATH_THRESHOLD: usize = 64;
 
 fn collect_shard_count(path_count: usize) -> usize {
-    collect_shard_count_for_cap(path_count, kiss::TestSectionConfig::load().num_jobs_pytest)
+    collect_shard_count_for_cap(
+        path_count,
+        kiss::TestSectionConfig::load().python_parallel_cap(),
+    )
 }
 
 fn collect_shard_count_for_cap(path_count: usize, cap: usize) -> usize {

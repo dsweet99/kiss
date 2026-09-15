@@ -24,6 +24,7 @@ mod structure_regression_test;
 #[cfg(test)]
 mod test_support;
 
+pub use build_depot::{SemanticClearReport, build_depot_target, clear_semantic_evidence};
 pub(crate) use execute_or_reuse::batch_aggregate;
 pub(crate) use execute_or_reuse::batch_check_aggregate_export;
 pub(crate) use execute_or_reuse::batch_events;
@@ -50,7 +51,7 @@ pub(crate) use execute_or_reuse::batch_output_channel;
 pub(crate) use execute_or_reuse::batch_output_channel_frame;
 pub(crate) use execute_or_reuse::batch_output_channel_token;
 pub(crate) use execute_or_reuse::batch_process_tree;
-pub use execute_or_reuse::batch_process_tree::cancel_active_batch_scope;
+pub use execute_or_reuse::batch_process_tree::{cancel_active_batch_scope, reap_orphaned_zombies};
 pub(crate) use execute_or_reuse::batch_result;
 pub(crate) use execute_or_reuse::batch_run;
 pub(crate) use execute_or_reuse::batch_shim;
@@ -96,7 +97,6 @@ pub(crate) use plan::batch_platform;
 pub(crate) use plan::batch_runner_resolve;
 pub(crate) use plan::cargo_workspace_metadata;
 pub(crate) use plan::shared_input;
-pub use build_depot::{SemanticClearReport, build_depot_target, clear_semantic_evidence};
 #[cfg(test)]
 pub(crate) use plan::shared_input_test;
 pub(crate) use publish_derived::batch_check_aggregate;
@@ -155,10 +155,9 @@ pub use batch_derived_incremental::{
 pub use batch_derived_index::{
     RustGenerationCoverageSnapshot, RustPopulationState, RustSnapshotDelta,
     current_population_manifest_matches_identity, current_population_manifest_matches_universe,
-    current_population_manifest_state,
-    current_population_manifest_test_binaries_match,
-    current_test_binaries_match,
-    is_check_aggregate_population, load_current_generation_coverage_from_passing_entries,
+    current_population_manifest_state, current_population_manifest_test_binaries_match,
+    current_test_binaries_match, is_check_aggregate_population,
+    load_current_generation_coverage_from_passing_entries,
     load_current_generation_coverage_snapshot, load_current_generation_line_index,
     load_current_population_state, load_reusable_prior_population_state, reusable_snapshot_delta,
 };

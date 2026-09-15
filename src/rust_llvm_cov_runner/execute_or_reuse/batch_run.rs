@@ -15,10 +15,10 @@ use crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchPlan;
 mod batch_run_cleanup;
 #[path = "batch_run_identity.rs"]
 mod batch_run_identity;
-#[path = "batch_run_wait.rs"]
-mod batch_run_wait;
 #[path = "batch_run_subprocess.rs"]
 mod batch_run_subprocess;
+#[path = "batch_run_wait.rs"]
+mod batch_run_wait;
 
 pub(crate) use crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::batch_scope_interrupted;
 #[cfg(test)]

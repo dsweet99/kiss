@@ -4,7 +4,7 @@ use std::time::Duration;
 use super::*;
 use crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest;
 use crate::rust_llvm_cov_runner::{
-    RustLlvmCovError, BATCH_EXECUTION_POLICY_VERSION, CACHE_SCHEMA_VERSION,
+    BATCH_EXECUTION_POLICY_VERSION, CACHE_SCHEMA_VERSION, RustLlvmCovError,
 };
 
 #[test]
@@ -196,11 +196,8 @@ fn batch_subprocess_error_converts_to_rust_llvm_cov_error() {
     assert!(
         matches!(floor, RustLlvmCovError::InvalidRequest(message) if message.contains("MemAvailable 10 KiB") && message.contains("100 KiB floor") && !message.contains("clamp"))
     );
-    let budget: RustLlvmCovError = BatchSubprocessRunError::ProcessBudget {
-        live: 40,
-        cap: 9,
-    }
-    .into();
+    let budget: RustLlvmCovError =
+        BatchSubprocessRunError::ProcessBudget { live: 40, cap: 9 }.into();
     assert!(
         matches!(budget, RustLlvmCovError::InvalidRequest(message) if message.contains("40 cargo-llvm-cov processes") && message.contains("cap 9") && !message.contains("clamp"))
     );
@@ -260,9 +257,11 @@ fn build_identity_helpers_are_executable_witnesses() {
         path_size_bytes(&plan.build_target.join("missing")).unwrap(),
         0
     );
-    assert!(build_identity_path(&req.cache_root)
-        .to_string_lossy()
-        .ends_with("identity.json"));
+    assert!(
+        build_identity_path(&req.cache_root)
+            .to_string_lossy()
+            .ends_with("identity.json")
+    );
 
     update_build_target_baseline(&req, &tools, &plan, 0).unwrap();
     let prep = prepare_build_target_for_identity(&req, &tools, &plan).unwrap();

@@ -354,11 +354,8 @@ mod tests {
 
     #[test]
     fn check_aggregate_empty_instances_rejects_unmatched() {
-        let (outcomes, counters) = aggregate_logical_selectors_check_aggregate(
-            &["alpha".to_string()],
-            false,
-            &[],
-        );
+        let (outcomes, counters) =
+            aggregate_logical_selectors_check_aggregate(&["alpha".to_string()], false, &[]);
         assert_eq!(outcomes.len(), 1);
         assert_eq!(outcomes[0].status, TestStatus::Failed);
         assert_eq!(counters.unmatched_selectors, 1);

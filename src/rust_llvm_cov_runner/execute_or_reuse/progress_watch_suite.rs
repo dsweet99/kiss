@@ -280,7 +280,8 @@ fn parse_watch_line(message: &str) -> ParsedWatchLine {
     if line.contains("VIOLATION:") {
         return ParsedWatchLine::Violation(line.to_string());
     }
-    parse_summary_line(line).unwrap_or_else(|| parse_status_line(line).unwrap_or(ParsedWatchLine::Ignore))
+    parse_summary_line(line)
+        .unwrap_or_else(|| parse_status_line(line).unwrap_or(ParsedWatchLine::Ignore))
 }
 
 fn parse_summary_line(line: &str) -> Option<ParsedWatchLine> {

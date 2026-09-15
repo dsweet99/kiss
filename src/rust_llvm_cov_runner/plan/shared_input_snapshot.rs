@@ -55,9 +55,7 @@ pub(crate) fn rust_input_snapshot(
     Ok(snapshot)
 }
 
-pub(crate) fn format_skipped_non_member_coverage_warning(
-    crate_roots: &BTreeSet<String>,
-) -> String {
+pub(crate) fn format_skipped_non_member_coverage_warning(crate_roots: &BTreeSet<String>) -> String {
     let list = crate_roots.iter().cloned().collect::<Vec<_>>().join(", ");
     format!("kiss: skipping coverage scoring for nested non-member Cargo crate(s): {list}")
 }
@@ -74,7 +72,10 @@ fn warn_skipped_non_member_coverage_crates(root: &Path, crate_roots: &BTreeSet<S
     if !warned.insert(root_key) {
         return;
     }
-    eprintln!("{}", format_skipped_non_member_coverage_warning(crate_roots));
+    eprintln!(
+        "{}",
+        format_skipped_non_member_coverage_warning(crate_roots)
+    );
 }
 
 fn is_default_ordinary_rust_source(file: &Path) -> bool {

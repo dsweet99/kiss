@@ -7,16 +7,16 @@ use super::coverage::WatchCoverageResult;
 use super::event_source::WatchEventSource;
 use super::filter::WatchPathFilter;
 use super::reload::{WatchLiveConfig, WatchReloadSeed};
-use super::session_cycle::{run_one_watch_cycle, CycleOutcome, WatchCycleCtx, EXIT_INTERRUPTED};
+use super::session_cycle::{CycleOutcome, EXIT_INTERRUPTED, WatchCycleCtx, run_one_watch_cycle};
 #[cfg(not(unix))]
 use super::session_cycle::{NudgeReplyMsg, NudgeRequest};
 use super::session_idle::{
-    coalesce_nudges, force_ready_if_pending, reply_all_queued, try_reply_idle_nudge,
-    wait_until_next_cycle, QueuedCycle,
+    QueuedCycle, coalesce_nudges, force_ready_if_pending, reply_all_queued, try_reply_idle_nudge,
+    wait_until_next_cycle,
 };
 use super::settle::SettleMachine;
 use crate::test_runner::runners::clear_python_collect_memo;
-use crate::test_runner::{run_test_once, RunTestCmdArgs, RunTestOnceOutcome};
+use crate::test_runner::{RunTestCmdArgs, RunTestOnceOutcome, run_test_once};
 
 #[cfg(test)]
 fn watch_loop_serial() -> std::sync::MutexGuard<'static, ()> {
@@ -157,6 +157,7 @@ where
             CycleOutcome::Error => return 1,
             CycleOutcome::Continue => {}
         }
+        kiss::rust_llvm_cov_runner::reap_orphaned_zombies();
         coalesce_nudges(nudge_rx, &mut queued);
         if let Some(q) = queued.as_mut() {
             q.stamp_filter_override(&live);

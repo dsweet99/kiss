@@ -391,11 +391,11 @@ pub use generation::load_current_generation_coverage_from_passing_entries;
 
 #[path = "batch_derived_index_manifest_match.rs"]
 mod manifest_match;
+pub(crate) use manifest_match::read_population_generation;
 pub use manifest_match::{
     current_population_manifest_matches_identity, current_population_manifest_matches_universe,
     current_population_manifest_state, current_population_manifest_test_binaries_match,
 };
-pub(crate) use manifest_match::read_population_generation;
 
 #[cfg(test)]
 #[path = "batch_derived_index_check_aggregate_test.rs"]

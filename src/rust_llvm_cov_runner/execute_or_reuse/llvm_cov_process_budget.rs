@@ -135,13 +135,7 @@ mod tests {
         let cap = llvm_cov_nextest_process_cap();
         let _live = ProcessCountOverrideGuard::enter(Some(cap + 1));
         let err = check_llvm_cov_nextest_budget().unwrap_err();
-        assert_eq!(
-            err,
-            ProcessBudgetBreach {
-                live: cap + 1,
-                cap
-            }
-        );
+        assert_eq!(err, ProcessBudgetBreach { live: cap + 1, cap });
     }
 
     #[test]

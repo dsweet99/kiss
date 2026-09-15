@@ -181,8 +181,9 @@ fn subprocess_exporter_wrapper_propagates_pre_export_failures() {
         None,
     );
 
-    let err = execute_fresh_batch_with_exporter(&req, &tools, &identity, &plan, &runner, Some(exporter))
-        .unwrap_err();
+    let err =
+        execute_fresh_batch_with_exporter(&req, &tools, &identity, &plan, &runner, Some(exporter))
+            .unwrap_err();
 
     assert!(
         matches!(err, RustLlvmCovError::InvalidRequest(message) if message.contains("without terminal test events"))

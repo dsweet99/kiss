@@ -269,3 +269,17 @@ fn run_test_watch_requires_git() {
     std::env::set_current_dir(orig).unwrap();
     assert_eq!(code, 1);
 }
+
+#[test]
+fn watch_loop_reaps_orphaned_zombies() {
+    let session = include_str!("session.rs");
+    let idle = include_str!("session_idle.rs");
+    assert!(
+        session.contains("reap_orphaned_zombies()"),
+        "each watch cycle must reap orphans"
+    );
+    assert!(
+        idle.contains("reap_orphaned_zombies()"),
+        "the wait loop must reap orphans"
+    );
+}

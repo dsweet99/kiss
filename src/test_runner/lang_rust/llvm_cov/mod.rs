@@ -275,8 +275,6 @@ where
     let result = execute_batch(&batch_req, &versions);
     let live_err = kiss::rust_llvm_cov_runner::take_live_rust_error();
     kiss::rust_llvm_cov_runner::clear_live_rust_test_hook();
-    // Always flush dirty live witness: success still benefits crash windows before
-    // publish_rust_witness_after_batch; avoid discarding thousands of in-memory passes.
     flush_live_rust_witness();
     if let Some(err) = live_err {
         eprintln!("{err}");

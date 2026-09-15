@@ -64,6 +64,7 @@ pub(super) fn wait_until_next_cycle(
 ) -> Option<i32> {
     crate::test_runner::emit_test_progress("kiss test: Waiting");
     loop {
+        kiss::rust_llvm_cov_runner::reap_orphaned_zombies();
         coalesce_nudges(nudge_rx, queued);
         if let Some(q) = queued.as_mut() {
             q.stamp_filter_override(live);

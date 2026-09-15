@@ -26,7 +26,6 @@ struct LiveHookShared {
     identity: LastStatusIdentity,
     seen: std::sync::Arc<Mutex<HashSet<String>>>,
     remaining: std::sync::Arc<Mutex<usize>>,
-    /// Known retry-bad selectors; PASS only touches disk when clearing one of these.
     pending_failures: std::sync::Arc<Mutex<HashSet<String>>>,
 }
 

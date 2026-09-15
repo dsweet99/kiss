@@ -99,6 +99,7 @@ fn record_current_process_group_records_this_process() {
 #[test]
 fn reap_zombies_is_idempotent_when_no_children_are_waiting() {
     let _serial = super::signal_test_guard();
+    super::reap_orphaned_zombies();
     super::batch_process_tree_reap::reap_zombies();
     super::batch_process_tree_reap::reap_zombies();
     assert_eq!(super::batch_process_tree_reap::reap_zombies_count(), 0);

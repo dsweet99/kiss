@@ -7,6 +7,7 @@ pub struct TestSectionConfig {
     pub main_branch: Option<String>,
     pub num_jobs: usize,
     pub num_jobs_pytest: usize,
+    pub num_jobs_pytest_explicit: Option<usize>,
     pub num_jobs_llvm_cov: usize,
     pub num_jobs_llvm_cov_explicit: Option<usize>,
     pub watch_settle_seconds: f64,
@@ -21,6 +22,7 @@ impl Default for TestSectionConfig {
             main_branch: None,
             num_jobs: crate::defaults::gate::NUM_JOBS,
             num_jobs_pytest: crate::defaults::gate::NUM_JOBS_PYTEST,
+            num_jobs_pytest_explicit: None,
             num_jobs_llvm_cov: crate::defaults::gate::NUM_JOBS_LLVM_COV,
             num_jobs_llvm_cov_explicit: None,
             watch_settle_seconds: crate::defaults::gate::WATCH_SETTLE_SECONDS,
@@ -53,6 +55,13 @@ pub fn effective_python_pytest_args(plugins: &[String], extra: &[String]) -> Vec
 impl TestSectionConfig {
     pub fn pytest_plugin_cli_args(&self) -> Vec<String> {
         pytest_plugin_cli_args(&self.pytest_plugins)
+    }
+
+    #[must_use]
+    pub fn python_parallel_cap(&self) -> usize {
+        self.num_jobs_pytest_explicit
+            .unwrap_or(self.num_jobs)
+            .max(1)
     }
 
     #[must_use]

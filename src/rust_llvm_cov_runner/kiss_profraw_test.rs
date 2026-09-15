@@ -213,4 +213,3 @@ fn kiss_profraw_process_guard_for_current_process() {
     assert_eq!(guard.pid, std::process::id());
     assert_eq!(guard.kiss_profraw, tmp.path().join(".kiss").join("profraw"));
 }
-

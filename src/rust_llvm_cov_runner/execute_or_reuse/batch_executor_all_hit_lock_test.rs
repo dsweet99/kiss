@@ -111,8 +111,8 @@ fn changed_test_binary_rejects_seal_and_selector_hits() {
     let executable = fixture.repo.path().join("target/test-bin");
     std::fs::create_dir_all(executable.parent().unwrap()).unwrap();
     std::fs::write(&executable, b"original test binary").unwrap();
-    let digest = crate::rust_llvm_cov_runner::rust_cov_cache::digest_test_binary(&executable)
-        .unwrap();
+    let digest =
+        crate::rust_llvm_cov_runner::rust_cov_cache::digest_test_binary(&executable).unwrap();
     let manifest_path = req.cache_root.join("population.json");
     let mut value: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&manifest_path).unwrap()).unwrap();

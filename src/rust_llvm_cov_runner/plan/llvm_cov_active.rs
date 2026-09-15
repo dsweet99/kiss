@@ -60,7 +60,10 @@ mod tests {
     fn mark_llvm_cov_active_sets_child_env() {
         let mut env = BTreeMap::new();
         mark_llvm_cov_active(&mut env);
-        assert_eq!(env.get(KISS_LLVM_COV_ACTIVE_ENV).map(String::as_str), Some("1"));
+        assert_eq!(
+            env.get(KISS_LLVM_COV_ACTIVE_ENV).map(String::as_str),
+            Some("1")
+        );
     }
 
     #[test]

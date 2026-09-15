@@ -16,8 +16,7 @@ pub(crate) fn memory_floor_kib(mem_total_kib: Option<u64>) -> u64 {
     let Some(total) = mem_total_kib else {
         return absolute;
     };
-    let from_percent =
-        total.saturating_mul(crate::defaults::gate::MIN_MEMAVAILABLE_PERCENT) / 100;
+    let from_percent = total.saturating_mul(crate::defaults::gate::MIN_MEMAVAILABLE_PERCENT) / 100;
     absolute.max(from_percent)
 }
 

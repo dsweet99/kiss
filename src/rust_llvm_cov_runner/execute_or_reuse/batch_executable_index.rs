@@ -151,10 +151,7 @@ fn executable_index_and_listed_tests(
             listed_tests.insert((executable, logical_name));
         }
         for (selector, id) in item.selector_hits {
-            selector_binary_ids
-                .entry(selector)
-                .or_default()
-                .insert(id);
+            selector_binary_ids.entry(selector).or_default().insert(id);
         }
     }
     let selector_binary_ids = selector_binary_ids
@@ -456,13 +453,9 @@ mod tests {
         std::fs::set_permissions(&bin, permissions).unwrap();
 
         let kiss_profraw = tmp.path().join(".kiss").join("profraw");
-        let err = super::list_test_names_from_executable(
-            &bin,
-            "bin-id",
-            &kiss_profraw,
-            Some(tmp.path()),
-        )
-        .unwrap_err();
+        let err =
+            super::list_test_names_from_executable(&bin, "bin-id", &kiss_profraw, Some(tmp.path()))
+                .unwrap_err();
 
         assert!(format!("{err:?}").contains("test binary list failed"));
         assert!(format!("{err:?}").contains("bad"));
@@ -483,13 +476,9 @@ mod tests {
         permissions.set_mode(0o755);
         std::fs::set_permissions(&bin, permissions).unwrap();
 
-        let names = super::list_test_names_from_executable(
-            &bin,
-            "bin-id",
-            &kiss_profraw,
-            Some(tmp.path()),
-        )
-        .unwrap();
+        let names =
+            super::list_test_names_from_executable(&bin, "bin-id", &kiss_profraw, Some(tmp.path()))
+                .unwrap();
         assert_eq!(names, vec!["bin-id$alpha::passes".to_string()]);
         assert!(kiss_profraw.is_dir());
     }
@@ -512,13 +501,9 @@ mod tests {
         permissions.set_mode(0o755);
         std::fs::set_permissions(&bin, permissions).unwrap();
 
-        let err = super::list_test_names_from_executable(
-            &bin,
-            "bin-id",
-            &kiss_profraw,
-            Some(tmp.path()),
-        )
-        .unwrap_err();
+        let err =
+            super::list_test_names_from_executable(&bin, "bin-id", &kiss_profraw, Some(tmp.path()))
+                .unwrap_err();
         assert!(format!("{err:?}").contains("test binary list failed"));
 
         let names =

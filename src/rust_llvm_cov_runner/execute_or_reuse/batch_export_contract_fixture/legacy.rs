@@ -154,16 +154,17 @@ fn run_per_selector_cargo_llvm_cov_oracle(
     argv.push(selector.to_string());
     argv.push("--".to_string());
     argv.extend(test_args.iter().cloned());
-    let output = crate::rust_llvm_cov_runner::execute_or_reuse::llvm_cov_nested::run_fixture_cargo_llvm_cov(
-        argv,
-        |command| {
-            command
-                .current_dir(FIXTURE_ROOT)
-                .env(HELPER_BIN_ENV, helper_bin)
-                .env("CARGO_TARGET_DIR", &target_dir);
-        },
-    )
-    .unwrap_or_else(|err| panic!("cargo llvm-cov oracle selector `{selector}` failed: {err}"));
+    let output =
+        crate::rust_llvm_cov_runner::execute_or_reuse::llvm_cov_nested::run_fixture_cargo_llvm_cov(
+            argv,
+            |command| {
+                command
+                    .current_dir(FIXTURE_ROOT)
+                    .env(HELPER_BIN_ENV, helper_bin)
+                    .env("CARGO_TARGET_DIR", &target_dir);
+            },
+        )
+        .unwrap_or_else(|err| panic!("cargo llvm-cov oracle selector `{selector}` failed: {err}"));
     let status = crate::rpytest_runner::TestStatus::from_exit_status(output.status);
     let exit_code = output.status.code();
     let source_root = PathBuf::from(FIXTURE_ROOT).join("runner");

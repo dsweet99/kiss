@@ -2,12 +2,21 @@
 mod batch_process_tree_groups;
 #[path = "batch_process_tree_reap.rs"]
 mod batch_process_tree_reap;
+#[path = "batch_process_tree_subreaper.rs"]
+mod batch_process_tree_subreaper;
 
 #[allow(unused_imports)]
 pub(crate) use batch_process_tree_groups::signal_process_group;
 pub(crate) use batch_process_tree_groups::{
     identity_still_valid, process_group_alive, signal_validated_process_group,
 };
+#[cfg(all(test, target_os = "linux"))]
+pub(super) use batch_process_tree_subreaper::child_subreaper_is_set;
+pub(super) use batch_process_tree_subreaper::{clear_child_subreaper, install_child_subreaper};
+
+pub fn reap_orphaned_zombies() {
+    batch_process_tree_reap::reap_zombies();
+}
 
 use std::io;
 use std::process::{Child, Command};
@@ -196,6 +205,7 @@ impl Drop for BatchProcessTreeGuard {
             Duration::from_millis(250)
         };
         let _ = self.terminate_descendants(grace);
+        clear_child_subreaper();
     }
 }
 
@@ -237,17 +247,6 @@ fn clear_batch_scope_sigint() {
     {
         *state = None;
     }
-}
-
-fn install_child_subreaper() -> io::Result<()> {
-    #[cfg(target_os = "linux")]
-    {
-        let rc = unsafe { libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) };
-        if rc != 0 {
-            return Err(io::Error::last_os_error());
-        }
-    }
-    Ok(())
 }
 
 #[cfg(unix)]

@@ -169,8 +169,7 @@ pub(crate) fn build_identity_input(
         cargo_args: req.cargo_args.clone(),
         env,
         resolved_tools: crate::rust_llvm_cov_runner::plan::batch_plan_env::resolved_identity_tools(
-            &req.env,
-            &req.cwd,
+            &req.env, &req.cwd,
         ),
     }
 }

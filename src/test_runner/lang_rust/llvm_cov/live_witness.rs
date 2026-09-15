@@ -11,8 +11,6 @@ use crate::test_runner::execution_witness::{
 
 static LIVE_WITNESS: Mutex<Option<LiveWitnessCache>> = Mutex::new(None);
 
-/// Cap mid-run witness fsyncs: full-suite per-PASS publish was O(n²) disk and
-/// backpressured nextest stdout (~8× slower than bare `cargo nextest run`).
 const PERSIST_EVERY_N: usize = 64;
 const PERSIST_EVERY: Duration = Duration::from_secs(2);
 

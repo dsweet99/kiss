@@ -20,7 +20,10 @@ pub(crate) fn apply_nested_llvm_cov_argv(argv: &mut Vec<String>) {
 }
 
 fn argv_is_cargo_llvm_cov_or_nextest(argv: &[String]) -> bool {
-    let stop = argv.iter().position(|arg| arg == "--").unwrap_or(argv.len());
+    let stop = argv
+        .iter()
+        .position(|arg| arg == "--")
+        .unwrap_or(argv.len());
     argv[..stop].iter().any(|arg| {
         arg == "llvm-cov"
             || arg == "nextest"
@@ -39,12 +42,18 @@ pub(crate) fn force_serial_llvm_cov_width(argv: &mut Vec<String>) {
 }
 
 fn argv_has_token(argv: &[String], token: &str) -> bool {
-    let stop = argv.iter().position(|arg| arg == "--").unwrap_or(argv.len());
+    let stop = argv
+        .iter()
+        .position(|arg| arg == "--")
+        .unwrap_or(argv.len());
     argv[..stop].iter().any(|arg| arg == token)
 }
 
 fn ensure_flag_value(argv: &mut Vec<String>, flag: &str, value: &str) {
-    let stop = argv.iter().position(|arg| arg == "--").unwrap_or(argv.len());
+    let stop = argv
+        .iter()
+        .position(|arg| arg == "--")
+        .unwrap_or(argv.len());
     let mut index = 0;
     let mut found = false;
     while index + 1 < stop {
@@ -149,7 +158,8 @@ fn scrub_fixture_env(command: &mut Command) {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_nested_llvm_cov_argv, ensure_flag_value, force_serial_llvm_cov_width, scrub_fixture_env,
+        apply_nested_llvm_cov_argv, ensure_flag_value, force_serial_llvm_cov_width,
+        scrub_fixture_env,
     };
     use crate::rust_llvm_cov_runner::plan::llvm_cov_active::LlvmCovActiveEnvGuard;
     use std::process::Command;

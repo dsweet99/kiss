@@ -76,3 +76,18 @@ fn run_rslip_selectors_keeps_requested_jobs_at_or_below_num_jobs_pytest() {
 
     assert_eq!(observe_rslip_jobs(tmp.path(), 8), 8);
 }
+
+#[test]
+fn run_rslip_selectors_uses_requested_jobs_when_num_jobs_pytest_is_absent() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::write(
+        tmp.path().join("test_sample.py"),
+        "def test_a():\n    assert True\n",
+    )
+    .unwrap();
+    let cfg = tmp.path().join(".kissconfig");
+    fs::write(&cfg, "[test]\nnum_jobs = 32\n").unwrap();
+    let _override = kiss::ConfigPathOverrideGuard::enter(Some(&cfg));
+
+    assert_eq!(observe_rslip_jobs(tmp.path(), 32), 32);
+}

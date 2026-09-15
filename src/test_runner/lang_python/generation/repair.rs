@@ -125,10 +125,6 @@ pub(crate) fn try_restamp_matching_pinned_universe(
     if pinned.plan.selectors != expected {
         return Ok(false);
     }
-    // Fingerprint/env drift is allowed here: restamp rewrites the pin onto the
-    // current identity while keeping evidence. Digest mismatches still refuse
-    // (unless listed in run_misses). Blocking on full identity equality made
-    // cov_score hard-fail after long kiss test runs with a warm Python cache.
     if !restamp_is_safe(repo_root, &pinned, run_misses) {
         return Ok(false);
     }
