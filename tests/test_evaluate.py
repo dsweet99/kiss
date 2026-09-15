@@ -35,9 +35,28 @@ def test_evaluate_list_and_run_all(capsys, monkeypatch) -> None:
     printed = capsys.readouterr().out.splitlines()
     assert printed == evaluation_names()
     called: list[str] = []
-    monkeypatch.setattr("ops.evaluate.run_evaluation", called.append)
+    monkeypatch.setattr(
+        "ops.evaluate._run_evaluation_subprocess",
+        lambda name: called.append(name) or 0,
+    )
     main(["run-all"])
     assert called == evaluation_names()
+
+    names = evaluation_names()
+    assert len(names) >= 2
+    monkeypatch.setattr(
+        "ops.evaluate._run_evaluation_subprocess",
+        lambda name: 1 if name == names[0] else 0,
+    )
+    try:
+        main(["run-all"])
+    except SystemExit as exc:
+        assert exc.code == 1
+    else:
+        raise AssertionError("expected SystemExit(1) when an eval fails")
+    out = capsys.readouterr().out
+    assert f"FAILED: {names[0]}" in out
+    assert f"run-all: 1 failed: {names[0]}" in out
 
 
 def test_evaluate_run_unknown_exits() -> None:

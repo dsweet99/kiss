@@ -5,11 +5,13 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 EVALS_DIR = ROOT / "evals"
+_EVALUATE_SCRIPT = Path(__file__).resolve()
 
 
 def _sub_dir_evaluations(sub_dir: Path) -> list[str]:
@@ -55,9 +57,28 @@ def run_evaluation(name: str) -> None:
     getattr(module, f"eval_{eval_name}")()
 
 
+def _run_evaluation_subprocess(name: str) -> int:
+    """Run one eval in a fresh process so RSS/metrics do not leak across evals."""
+    print(f"=== {name} ===", flush=True)
+    completed = subprocess.run(
+        [sys.executable, str(_EVALUATE_SCRIPT), "run", name],
+        cwd=ROOT,
+        check=False,
+    )
+    return int(completed.returncode)
+
+
 def run_all_evaluations() -> None:
+    """Run every eval; continue after failures; exit non-zero if any failed."""
+    failures: list[str] = []
     for name in evaluation_names():
-        run_evaluation(name)
+        if _run_evaluation_subprocess(name) != 0:
+            failures.append(name)
+            print(f"FAILED: {name}", flush=True)
+    if failures:
+        joined = ", ".join(failures)
+        print(f"run-all: {len(failures)} failed: {joined}", flush=True)
+        raise SystemExit(1)
 
 
 def main(argv: list[str] | None = None) -> None:
