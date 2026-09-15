@@ -66,6 +66,7 @@ fn fresh_build_identity_helpers_track_build_compatible_inputs() {
     };
     let prep = BuildIdentityPreparation {
         previous_baseline_bytes: 12,
+        reused_existing_target: true,
     };
 
     assert_eq!(base, build_identity_input(&same_build, &tools));
@@ -180,7 +181,7 @@ fn subprocess_exporter_wrapper_propagates_pre_export_failures() {
         None,
     );
 
-    let err = execute_fresh_batch_with_exporter(&req, &tools, &identity, &plan, &runner, exporter)
+    let err = execute_fresh_batch_with_exporter(&req, &tools, &identity, &plan, &runner, Some(exporter))
         .unwrap_err();
 
     assert!(
@@ -227,7 +228,7 @@ fn subprocess_exporter_wrapper_handles_failed_test_without_export_jobs() {
     );
 
     let result =
-        execute_fresh_batch_with_exporter(&req, &tools, &identity, &plan, &runner, exporter)
+        execute_fresh_batch_with_exporter(&req, &tools, &identity, &plan, &runner, Some(exporter))
             .unwrap();
 
     assert_eq!(result.counters.export_jobs, 0);

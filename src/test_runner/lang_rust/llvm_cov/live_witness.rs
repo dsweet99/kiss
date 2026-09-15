@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity;
 
@@ -10,6 +10,11 @@ use crate::test_runner::execution_witness::{
 };
 
 static LIVE_WITNESS: Mutex<Option<LiveWitnessCache>> = Mutex::new(None);
+
+/// Cap mid-run witness fsyncs: full-suite per-PASS publish was O(n²) disk and
+/// backpressured nextest stdout (~8× slower than bare `cargo nextest run`).
+const PERSIST_EVERY_N: usize = 64;
+const PERSIST_EVERY: Duration = Duration::from_secs(2);
 
 pub(crate) struct LiveWitnessCache {
     pub(crate) repo_root: PathBuf,
@@ -21,6 +26,8 @@ pub(crate) struct LiveWitnessCache {
     pub(crate) selector_indices: BTreeMap<String, usize>,
     pub(crate) dirty: bool,
     pub(crate) jobs: usize,
+    dirty_events: usize,
+    last_persist: Instant,
 }
 
 impl LiveWitnessCache {
@@ -89,6 +96,8 @@ impl LiveWitnessCache {
             selector_indices,
             dirty: false,
             jobs,
+            dirty_events: 0,
+            last_persist: Instant::now(),
         }
     }
 
@@ -108,7 +117,7 @@ impl LiveWitnessCache {
             });
         self.statuses[idx] = WitnessStatus::Passed;
         self.durations_ns[idx] = Some(duration.as_nanos() as u64);
-        self.dirty = true;
+        self.mark_dirty();
     }
 
     pub(crate) fn record_non_pass(&mut self, logical: &str, report: &str, status: WitnessStatus) {
@@ -126,7 +135,15 @@ impl LiveWitnessCache {
                 i
             });
         self.statuses[idx] = status;
+        self.mark_dirty();
+    }
+
+    fn mark_dirty(&mut self) {
         self.dirty = true;
+        self.dirty_events = self.dirty_events.saturating_add(1);
+        if self.dirty_events >= PERSIST_EVERY_N || self.last_persist.elapsed() >= PERSIST_EVERY {
+            self.persist();
+        }
     }
 
     pub(crate) fn persist(&mut self) {
@@ -149,6 +166,8 @@ impl LiveWitnessCache {
             jobs: self.jobs,
         });
         self.dirty = false;
+        self.dirty_events = 0;
+        self.last_persist = Instant::now();
     }
 }
 
@@ -157,7 +176,6 @@ pub(super) fn record_live_rust_pass(logical: &str, report: &str, duration: Durat
         && let Some(cache) = guard.as_mut()
     {
         cache.record_pass(logical, report, duration);
-        cache.persist();
     }
 }
 
@@ -166,7 +184,6 @@ pub(super) fn record_live_rust_non_pass(logical: &str, report: &str, status: Wit
         && let Some(cache) = guard.as_mut()
     {
         cache.record_non_pass(logical, report, status);
-        cache.persist();
     }
 }
 
@@ -178,6 +195,7 @@ pub(super) fn flush_live_rust_witness() {
     }
 }
 
+#[cfg(test)]
 pub(super) fn clear_live_rust_witness() {
     if let Ok(mut guard) = LIVE_WITNESS.lock() {
         *guard = None;
@@ -189,4 +207,3 @@ pub(super) fn seed_live_witness_cache(cache: LiveWitnessCache) {
         *guard = Some(cache);
     }
 }
-

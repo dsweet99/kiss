@@ -62,6 +62,13 @@ pub fn build_rust_test_executable_index_with_tests(
             plan, req,
         )?;
         let mut list_plan = plan.clone();
+        if build_identity.reused_existing_target
+            && batch_run::instrumented_depot_likely_fresh(&req.source_root, &plan.build_target)
+        {
+            crate::rust_llvm_cov_runner::plan::batch_plan::rewrite_plan_argv_skip_llvm_cov_wrapper(
+                &mut list_plan,
+            );
+        }
         select_no_tests(&mut list_plan);
         let run = batch_run::default_batch_subprocess_runner()
             .run(&req.cwd, &list_plan)

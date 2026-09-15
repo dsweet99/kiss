@@ -24,9 +24,7 @@ mod witness;
 pub(crate) use finish::{
     cached_summary_from_check_aggregate_population, finish_rust_coverage_batch_result,
 };
-use live_status::{
-    clear_live_rust_witness, flush_live_rust_witness, install_live_rust_status_hook,
-};
+use live_status::{flush_live_rust_witness, install_live_rust_status_hook};
 use witness::publish_rust_witness_after_batch;
 
 pub(crate) fn validate_rust_extra_args(extra: &[String]) -> Result<(), String> {
@@ -277,11 +275,9 @@ where
     let result = execute_batch(&batch_req, &versions);
     let live_err = kiss::rust_llvm_cov_runner::take_live_rust_error();
     kiss::rust_llvm_cov_runner::clear_live_rust_test_hook();
-    if result.is_err() {
-        flush_live_rust_witness();
-    } else {
-        clear_live_rust_witness();
-    }
+    // Always flush dirty live witness: success still benefits crash windows before
+    // publish_rust_witness_after_batch; avoid discarding thousands of in-memory passes.
+    flush_live_rust_witness();
     if let Some(err) = live_err {
         eprintln!("{err}");
     }

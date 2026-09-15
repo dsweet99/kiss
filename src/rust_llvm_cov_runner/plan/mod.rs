@@ -9,6 +9,8 @@ pub(crate) mod batch_identity_seal_test;
 
 pub(crate) mod batch_plan;
 
+pub(crate) mod batch_plan_skip_llvm;
+
 pub(crate) mod batch_plan_coverage_mode;
 
 pub(crate) mod batch_plan_env;

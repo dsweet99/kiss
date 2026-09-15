@@ -19,7 +19,11 @@ ANYDOC_RUST_TARGET = "tests/robustness.rs"
 # Mirrors src/rust_llvm_cov_runner/build_depot.rs::PRESERVED_CACHE_*.
 _PRESERVED_LLVM_DIRS = frozenset({"build", "locks"})
 _PRESERVED_LLVM_FILES = frozenset(
-    {"binary_digest_memo.json", "runner_resolve_cache.json"}
+    {
+        "binary_digest_memo.json",
+        "runner_resolve_cache.json",
+        "input_mtime_seal.json",
+    }
 )
 
 

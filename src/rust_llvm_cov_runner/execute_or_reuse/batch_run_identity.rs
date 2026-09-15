@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct BuildIdentityPreparation {
     pub(crate) previous_baseline_bytes: u64,
+    pub(crate) reused_existing_target: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -86,6 +87,7 @@ fn retain_matching_or_reset_if_grown(
     }
     Ok(BuildIdentityPreparation {
         previous_baseline_bytes: if cache_owned { baseline } else { 0 },
+        reused_existing_target: true,
     })
 }
 
@@ -101,6 +103,7 @@ fn reset_cache_owned_target_for_expected_context(
     }
     Ok(BuildIdentityPreparation {
         previous_baseline_bytes: 0,
+        reused_existing_target: false,
     })
 }
 
@@ -224,6 +227,50 @@ pub(crate) fn path_size_bytes(path: &Path) -> io::Result<u64> {
         });
     }
     Ok(0)
+}
+
+pub(crate) fn instrumented_depot_likely_fresh(source_root: &Path, build_target: &Path) -> bool {
+    let deps = build_target.join("debug").join("deps");
+    let Ok(entries) = fs::read_dir(&deps) else {
+        return false;
+    };
+    let mut newest_bin: Option<std::time::SystemTime> = None;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if name.contains('.') && !name.ends_with(".exe") {
+            continue;
+        }
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
+        if !meta.is_file() {
+            continue;
+        }
+        let Ok(modified) = meta.modified() else {
+            continue;
+        };
+        newest_bin = Some(match newest_bin {
+            Some(prev) => prev.max(modified),
+            None => modified,
+        });
+    }
+    let Some(newest_bin) = newest_bin else {
+        return false;
+    };
+    let Ok(inputs) =
+        crate::rust_llvm_cov_runner::plan::shared_input::rust_cov_input_files(source_root)
+    else {
+        return false;
+    };
+    inputs.iter().all(|input| {
+        fs::metadata(input)
+            .ok()
+            .and_then(|meta| meta.modified().ok())
+            .is_some_and(|modified| modified <= newest_bin)
+    })
 }
 
 #[cfg(test)]

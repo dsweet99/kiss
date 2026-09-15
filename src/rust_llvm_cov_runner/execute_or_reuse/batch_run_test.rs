@@ -250,6 +250,7 @@ fn build_identity_helpers_are_executable_witnesses() {
     };
     let _ = BuildIdentityPreparation {
         previous_baseline_bytes: 7,
+        reused_existing_target: true,
     };
 
     fs::create_dir_all(&plan.build_target).unwrap();

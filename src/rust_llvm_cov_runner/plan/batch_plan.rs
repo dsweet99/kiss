@@ -171,6 +171,8 @@ pub fn build_rust_coverage_batch_plan(
     })
 }
 
+pub(crate) use super::batch_plan_skip_llvm::rewrite_plan_argv_skip_llvm_cov_wrapper;
+
 pub(crate) fn effective_coverage_environment(
     req: &RustCoverageBatchRequest,
 ) -> BTreeMap<String, String> {

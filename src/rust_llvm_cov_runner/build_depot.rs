@@ -3,7 +3,11 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 pub const PRESERVED_CACHE_DIRS: &[&str] = &["build", "locks"];
-pub const PRESERVED_CACHE_FILES: &[&str] = &["binary_digest_memo.json", "runner_resolve_cache.json"];
+pub const PRESERVED_CACHE_FILES: &[&str] = &[
+    "binary_digest_memo.json",
+    "runner_resolve_cache.json",
+    "input_mtime_seal.json",
+];
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SemanticClearReport {
@@ -70,6 +74,7 @@ mod tests {
         fs::write(cache.join("build").join("identity.json"), b"{}").unwrap();
         fs::write(cache.join("binary_digest_memo.json"), b"[]").unwrap();
         fs::write(cache.join("runner_resolve_cache.json"), b"{}").unwrap();
+        fs::write(cache.join("input_mtime_seal.json"), b"{}").unwrap();
 
         let report = clear_semantic_evidence(&cache).unwrap();
 
@@ -81,6 +86,7 @@ mod tests {
         assert!(cache.join("locks").is_dir());
         assert!(cache.join("binary_digest_memo.json").is_file());
         assert!(cache.join("runner_resolve_cache.json").is_file());
+        assert!(cache.join("input_mtime_seal.json").is_file());
         assert!(!cache.join("entries").exists());
         assert!(!cache.join("generations").exists());
         assert!(!cache.join("index.json").exists());

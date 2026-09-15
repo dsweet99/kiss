@@ -4,6 +4,7 @@ use crate::rust_llvm_cov_runner::{
     RustCoverageBatchPlan, RustCoverageBatchRequest, build_rust_coverage_batch_plan,
     publish_generated_nextest_config,
 };
+use crate::rust_llvm_cov_runner::plan::batch_plan::rewrite_plan_argv_skip_llvm_cov_wrapper;
 use crate::rust_llvm_cov_runner::plan::batch_plan_env::effective_coverage_build_jobs;
 
 fn request() -> RustCoverageBatchRequest {
@@ -196,6 +197,38 @@ fn batch_plan_constructs_nextest_command_without_legacy_no_clean() {
         &plan.argv[plan.argv.len() - 3..],
         ["--workspace", "--", "--exact"]
     );
+}
+
+#[test]
+fn rewrite_plan_argv_skip_llvm_cov_wrapper_switches_to_nextest_run() {
+    let mut plan = build_rust_coverage_batch_plan(&request()).unwrap();
+    rewrite_plan_argv_skip_llvm_cov_wrapper(&mut plan);
+    assert_eq!(plan.argv[0..3], ["cargo", "nextest", "run"]);
+    assert!(!plan.argv.contains(&"--no-report".to_string()));
+    assert!(plan.argv.contains(&"--cargo-message-format".to_string()));
+    assert_eq!(
+        &plan.argv[plan.argv.len() - 3..],
+        ["--workspace", "--", "--exact"]
+    );
+}
+
+#[test]
+fn rewrite_plan_argv_skip_llvm_cov_wrapper_remaps_check_aggregate_profile_pool() {
+    let mut req = request();
+    req.coverage_output_mode =
+        crate::rust_llvm_cov_runner::plan::batch_plan::CoverageOutputMode::CheckAggregate {
+            publication_binary_ids: None,
+            repair_publication: None,
+        };
+    let mut plan = build_rust_coverage_batch_plan(&req).unwrap();
+    let name = plan.env["LLVM_PROFILE_FILE_NAME"].clone();
+    let rustflags_before = plan.env.get("RUSTFLAGS").cloned();
+    rewrite_plan_argv_skip_llvm_cov_wrapper(&mut plan);
+    assert_eq!(
+        plan.env["LLVM_PROFILE_FILE"],
+        plan.build_target.join(name).to_string_lossy()
+    );
+    assert_eq!(plan.env.get("RUSTFLAGS"), rustflags_before.as_ref());
 }
 
 #[test]

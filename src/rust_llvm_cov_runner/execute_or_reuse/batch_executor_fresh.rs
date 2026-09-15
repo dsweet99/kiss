@@ -26,26 +26,71 @@ pub(crate) fn execute_fresh_batch_with_exporter(
     identity: &RustCoverageBatchIdentity,
     plan: &RustCoverageBatchPlan,
     runner: &BatchSubprocessRunner,
-    exporter: SubprocessInstanceExporter,
+    exporter: Option<SubprocessInstanceExporter>,
 ) -> Result<RustCoverageBatchResult, RustLlvmCovError> {
-    execute_fresh_batch_with_cleanup(
-        req,
-        tools,
-        identity,
-        plan,
-        runner,
-        CurrentRunCleanup::default(),
-        |req, source_root, object_catalog, export_requests| {
-            let exporter = exporter.with_catalog_map(object_catalog, req.jobs)?;
-            export_instances_bounded(
-                req.jobs,
-                exporter,
-                source_root,
-                object_catalog,
-                export_requests,
+    match exporter {
+        Some(exporter) => execute_fresh_batch_with_cleanup(
+            req,
+            tools,
+            identity,
+            plan,
+            runner,
+            CurrentRunCleanup::default(),
+            |req, source_root, object_catalog, export_requests| {
+                let exporter = exporter.with_catalog_map(object_catalog, req.jobs)?;
+                export_instances_bounded(
+                    req.jobs,
+                    exporter,
+                    source_root,
+                    object_catalog,
+                    export_requests,
+                )
+            },
+        ),
+        None => {
+            crate::rust_llvm_cov_runner::execute_or_reuse::progress::emit_progress(
+                &crate::rust_llvm_cov_runner::execute_or_reuse::progress::running_line(
+                    "export-prep",
+                ),
+            );
+            let prep_started = std::time::Instant::now();
+            let prep_req = req.clone();
+            let prep_plan = plan.clone();
+            let handle = std::thread::spawn(move || {
+                crate::rust_llvm_cov_runner::execute_or_reuse::batch_executor::default_instance_exporter_for_parallel(
+                    &prep_req,
+                    &prep_plan,
+                )
+            });
+            execute_fresh_batch_with_cleanup(
+                req,
+                tools,
+                identity,
+                plan,
+                runner,
+                CurrentRunCleanup::default(),
+                |req, source_root, object_catalog, export_requests| {
+                    let exporter = handle.join().map_err(|_| {
+                        RustLlvmCovError::InvalidRequest("export-prep thread panicked".into())
+                    })??;
+                    crate::rust_llvm_cov_runner::execute_or_reuse::progress::emit_progress(
+                        &crate::rust_llvm_cov_runner::execute_or_reuse::progress::format_ran(
+                            "export-prep",
+                            prep_started.elapsed(),
+                        ),
+                    );
+                    let exporter = exporter.with_catalog_map(object_catalog, req.jobs)?;
+                    export_instances_bounded(
+                        req.jobs,
+                        exporter,
+                        source_root,
+                        object_catalog,
+                        export_requests,
+                    )
+                },
             )
-        },
-    )
+        }
+    }
 }
 
 #[cfg(test)]
@@ -262,7 +307,17 @@ fn prepare_fresh_batch_run(
     crate::rust_llvm_cov_runner::plan::batch_plan_publish::publish_generated_nextest_config(
         plan, req,
     )?;
-    let run = runner.run(&req.cwd, plan).map_err(RustLlvmCovError::from)?;
+    let mut run_plan = plan.clone();
+    let skipped_llvm_cov = build_identity.reused_existing_target
+        && instrumented_depot_likely_fresh(&req.source_root, &plan.build_target);
+    if skipped_llvm_cov {
+        crate::rust_llvm_cov_runner::plan::batch_plan::rewrite_plan_argv_skip_llvm_cov_wrapper(
+            &mut run_plan,
+        );
+    }
+    let run = runner
+        .run(&req.cwd, &run_plan)
+        .map_err(RustLlvmCovError::from)?;
     let parsed = crate::rust_llvm_cov_runner::execute_or_reuse::progress::log_named_step(
         "event-parse",
         || parse_batch_event_stream(&run.stdout),
@@ -337,6 +392,16 @@ fn reject_failed_build_without_tests(
     Err(RustLlvmCovError::InvalidRequest(format!(
         "nextest batch build failed before test execution: {detail}"
     )))
+}
+
+fn instrumented_depot_likely_fresh(
+    source_root: &std::path::Path,
+    build_target: &std::path::Path,
+) -> bool {
+    crate::rust_llvm_cov_runner::execute_or_reuse::batch_run::instrumented_depot_likely_fresh(
+        source_root,
+        build_target,
+    )
 }
 
 #[cfg(test)]

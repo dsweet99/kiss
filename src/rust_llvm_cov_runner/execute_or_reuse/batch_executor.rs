@@ -37,6 +37,13 @@ fn default_instance_exporter(
     ))
 }
 
+pub(crate) fn default_instance_exporter_for_parallel(
+    req: &RustCoverageBatchRequest,
+    plan: &RustCoverageBatchPlan,
+) -> Result<SubprocessInstanceExporter, RustLlvmCovError> {
+    default_instance_exporter(req, plan)
+}
+
 thread_local! {
     static HELD_LOCK: std::cell::RefCell<Option<FileLockGuard>> =
         const { std::cell::RefCell::new(None) };
@@ -101,17 +108,13 @@ pub(crate) fn execute_rust_coverage_batch_with_held_lock(
         install_held_batch_lock(guard);
     }
     execute_rust_coverage_batch_with_fresh(req, tools, |req, tools, identity, plan| {
-        let exporter = crate::rust_llvm_cov_runner::execute_or_reuse::progress::log_named_step(
-            "export-prep",
-            || default_instance_exporter(req, plan),
-        )?;
         execute_fresh_batch_with_exporter(
             req,
             tools,
             identity,
             plan,
             &default_batch_subprocess_runner(),
-            exporter,
+            None,
         )
     })
 }

@@ -28,8 +28,8 @@ pub(crate) use batch_run_cleanup::{CurrentRunCleanup, FreshBatchRunScope};
 #[allow(unused_imports)]
 pub(crate) use batch_run_identity::{
     BuildIdentityFile, BuildIdentityInput, BuildIdentityPreparation, build_identity_input,
-    build_identity_path, path_size_bytes, prepare_build_target_for_identity,
-    update_build_target_baseline,
+    build_identity_path, instrumented_depot_likely_fresh, path_size_bytes,
+    prepare_build_target_for_identity, update_build_target_baseline,
 };
 pub(crate) use batch_run_subprocess::run_batch_subprocess;
 
