@@ -63,9 +63,12 @@ where
         &replies,
         report.exit_code,
         report.error.clone(),
-        report.output,
+        ensure_green_gate_line(report.exit_code, report.output),
     );
     if !scoped || ctx.last_reply.is_none() {
+        if report.exit_code == 0 {
+            ctx.suite.merge_lines(&["NO VIOLATIONS".into()]);
+        }
         *ctx.last_reply = Some(NudgeReplyMsg {
             exit_code: kiss::rust_llvm_cov_runner::merge_watch_exit(
                 report.exit_code,
@@ -128,6 +131,25 @@ fn nonempty_report(text: String) -> Option<String> {
     }
 }
 
+fn ensure_green_gate_line(exit_code: i32, output: Option<String>) -> Option<String> {
+    let text = output.unwrap_or_default();
+    if exit_code != 0 {
+        return nonempty_report(text);
+    }
+    if text.contains("NO VIOLATIONS") || text.contains("VIOLATION:") {
+        return nonempty_report(text);
+    }
+    if let Some((head, summary)) = text.rsplit_once('\n')
+        && summary.contains(" passed · ")
+    {
+        return nonempty_report(format!("{head}\nNO VIOLATIONS\n{summary}"));
+    }
+    if text.is_empty() {
+        return Some("NO VIOLATIONS".into());
+    }
+    nonempty_report(format!("{text}\nNO VIOLATIONS"))
+}
+
 fn reply_all(
     replies: &[SyncSender<NudgeReplyMsg>],
     exit_code: i32,
@@ -145,6 +167,32 @@ fn reply_all(
         let _ = reply.send(msg.clone());
     }
     msg
+}
+
+#[cfg(test)]
+mod ensure_green_gate_line_tests {
+    use super::ensure_green_gate_line;
+
+    #[test]
+    fn inserts_no_violations_before_summary_on_green() {
+        let out = ensure_green_gate_line(
+            0,
+            Some("PASS (cached): 3 selectors\n✓ 3 passed · 0 failed · 0 timed out · 0.1s total · 0s max pass".into()),
+        )
+        .unwrap();
+        assert!(out.contains("NO VIOLATIONS"), "{out}");
+        let clean = out.find("NO VIOLATIONS").unwrap();
+        let summary = out.find("✓ 3 passed").unwrap();
+        assert!(clean < summary, "{out}");
+    }
+
+    #[test]
+    fn leaves_failing_output_unchanged() {
+        let raw = "✗ 0 passed · 1 failed · 0 timed out · 0.1s total · 0s max pass";
+        let out = ensure_green_gate_line(1, Some(raw.into())).unwrap();
+        assert_eq!(out, raw);
+        assert!(!out.contains("NO VIOLATIONS"));
+    }
 }
 
 #[cfg(not(unix))]

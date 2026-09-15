@@ -120,6 +120,7 @@ impl WatchControlServer {
             std::fs::create_dir_all(parent)
                 .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
         }
+        reclaim_stale_watch_sockets(Some(&socket_path));
         if socket_path.exists() {
             let _ = std::fs::remove_file(&socket_path);
         }
@@ -341,6 +342,40 @@ pub(crate) fn watch_socket_path(repo_root: &Path) -> Result<PathBuf, String> {
     Ok(PathBuf::from(format!(
         "{WATCH_SOCKET_TMP_DIR}/{digest:016x}.sock"
     )))
+}
+
+pub(crate) fn reclaim_stale_watch_sockets(keep: Option<&Path>) {
+    let Ok(entries) = std::fs::read_dir(WATCH_SOCKET_TMP_DIR) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("sock") {
+            continue;
+        }
+        if keep.is_some_and(|keep| keep == path.as_path()) {
+            continue;
+        }
+        if watch_socket_is_live(&path) {
+            continue;
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+}
+
+fn watch_socket_is_live(path: &Path) -> bool {
+    match UnixStream::connect(path) {
+        Ok(stream) => {
+            let _ = stream.shutdown(std::net::Shutdown::Both);
+            true
+        }
+        Err(err) => !matches!(
+            err.kind(),
+            io::ErrorKind::ConnectionRefused
+                | io::ErrorKind::NotFound
+                | io::ErrorKind::PermissionDenied
+        ),
+    }
 }
 
 fn accept_loop(listener: UnixListener, nudge_tx: Sender<NudgeRequest>, shutdown: Arc<AtomicBool>) {

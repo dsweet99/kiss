@@ -12,6 +12,7 @@ use super::settle::{PathSignature, SettleMachine, SettlePoll};
 use super::{apply_normalized_event, print_cycle_summary};
 
 pub(super) const NUDGE_POLL_SLICE: Duration = Duration::from_millis(100);
+pub(super) const NUDGE_IDLE_POLL_SLICE: Duration = Duration::from_millis(750);
 
 pub(super) struct QueuedCycle {
     pub replies: Vec<SyncSender<NudgeReplyMsg>>,
@@ -220,7 +221,12 @@ fn wait_for_settled_batch(
         .map(|deadline| deadline.saturating_duration_since(Instant::now()))
         .unwrap_or(Duration::from_secs(3600));
     let timeout = if nudge_rx.is_some() {
-        settle_timeout.min(NUDGE_POLL_SLICE)
+        let slice = if machine.has_pending_work() {
+            NUDGE_POLL_SLICE
+        } else {
+            NUDGE_IDLE_POLL_SLICE
+        };
+        settle_timeout.min(slice)
     } else {
         settle_timeout
     };

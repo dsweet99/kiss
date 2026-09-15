@@ -43,13 +43,6 @@ impl LiveWitnessCache {
             Some(pop) => pop.to_vec(),
             None => fallback_selectors.to_vec(),
         };
-        if let Some(existing) = existing.as_ref() {
-            for sel in &existing.selectors {
-                if !universe.contains(sel) {
-                    universe.push(sel.clone());
-                }
-            }
-        }
         for sel in fallback_selectors {
             if !universe.contains(sel) {
                 universe.push(sel.clone());
@@ -102,38 +95,28 @@ impl LiveWitnessCache {
     }
 
     pub(crate) fn record_pass(&mut self, logical: &str, report: &str, duration: Duration) {
-        let idx = self
+        let Some(idx) = self
             .selector_indices
             .get(logical)
             .or_else(|| self.selector_indices.get(report))
             .copied()
-            .unwrap_or_else(|| {
-                let i = self.selectors.len();
-                self.selectors.push(logical.to_string());
-                self.statuses.push(WitnessStatus::Unresolved);
-                self.durations_ns.push(None);
-                self.selector_indices.insert(logical.to_string(), i);
-                i
-            });
+        else {
+            return;
+        };
         self.statuses[idx] = WitnessStatus::Passed;
         self.durations_ns[idx] = Some(duration.as_nanos() as u64);
         self.mark_dirty();
     }
 
     pub(crate) fn record_non_pass(&mut self, logical: &str, report: &str, status: WitnessStatus) {
-        let idx = self
+        let Some(idx) = self
             .selector_indices
             .get(logical)
             .or_else(|| self.selector_indices.get(report))
             .copied()
-            .unwrap_or_else(|| {
-                let i = self.selectors.len();
-                self.selectors.push(logical.to_string());
-                self.statuses.push(WitnessStatus::Unresolved);
-                self.durations_ns.push(None);
-                self.selector_indices.insert(logical.to_string(), i);
-                i
-            });
+        else {
+            return;
+        };
         self.statuses[idx] = status;
         self.mark_dirty();
     }

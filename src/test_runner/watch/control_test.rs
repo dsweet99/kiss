@@ -260,3 +260,28 @@ fn start_publishes_session_well_before_client_retry() {
         "even the slowest start must beat the full client wait; max={max:?}"
     );
 }
+
+#[test]
+fn reclaim_stale_watch_sockets_removes_dead_socks_keeps_live() {
+    let _ = std::fs::create_dir_all(WATCH_SOCKET_TMP_DIR);
+    let dead = std::path::PathBuf::from(format!(
+        "{WATCH_SOCKET_TMP_DIR}/reclaim-dead-{}.sock",
+        std::process::id()
+    ));
+    let live = std::path::PathBuf::from(format!(
+        "{WATCH_SOCKET_TMP_DIR}/reclaim-live-{}.sock",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&dead);
+    let _ = std::fs::remove_file(&live);
+    {
+        let listener = UnixListener::bind(&dead).unwrap();
+        drop(listener);
+    }
+    let live_listener = UnixListener::bind(&live).unwrap();
+    reclaim_stale_watch_sockets(None);
+    assert!(!dead.exists(), "dead sock must be reclaimed");
+    assert!(live.exists(), "live sock must be kept");
+    drop(live_listener);
+    let _ = std::fs::remove_file(&live);
+}

@@ -145,21 +145,10 @@ fn order_witness_rows(
     )
 }
 
-fn stale_bare_rust_witness_selector(selector: &str) -> bool {
-    !selector.contains("::") && selector.len() > 30
-}
-
 pub(crate) fn prune_removed_rust_witness_selectors(
     repo_root: &Path,
     witness: &mut ExecutionWitness,
 ) -> Result<(), String> {
-    if !witness
-        .selectors
-        .iter()
-        .any(|selector| stale_bare_rust_witness_selector(selector))
-    {
-        return Ok(());
-    }
     let Some(known) = crate::test_runner::workspace_selector_cache::cached_rust_selectors_if_rust_fingerprint_current(
         repo_root,
     ) else {
@@ -172,9 +161,12 @@ pub(crate) fn prune_removed_rust_witness_selectors(
     let keep: BTreeSet<String> = witness
         .selectors
         .iter()
-        .filter(|selector| known.contains(*selector) || !stale_bare_rust_witness_selector(selector))
+        .filter(|selector| known.contains(*selector))
         .cloned()
         .collect();
+    if keep.len() == witness.selectors.len() {
+        return Ok(());
+    }
     if keep.is_empty() {
         return Ok(());
     }
