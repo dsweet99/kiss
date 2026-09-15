@@ -417,4 +417,21 @@ fn resolve_exact_partial_and_reusable_loader_outcomes() {
         reusable,
         ResolvedRustPopulation::ReusablePrior { .. }
     ));
+
+    // Key-set change (add ordinary source) → StructuralStale (covers selection.rs:167).
+    let extra = tmp.path().join("src").join("extra.rs");
+    std::fs::write(&extra, "pub fn extra() -> u32 { 1 }\n").unwrap();
+    let structural = resolve_rust_population_state(ResolveRustPopulationArgs {
+        repo_root: tmp.path(),
+        ignore: &[],
+        rust_source_paths: &[src.clone(), extra],
+        rust_changed_lines: &BTreeMap::from([(src, BTreeSet::from([1]))]),
+        expected_selectors: Some(&exact_expected),
+        test_args: &[],
+    })
+    .expect("structural");
+    assert!(matches!(
+        structural,
+        ResolvedRustPopulation::StructuralStale
+    ));
 }

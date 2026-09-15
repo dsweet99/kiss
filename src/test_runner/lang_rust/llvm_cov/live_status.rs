@@ -425,10 +425,10 @@ mod live_status_test {
         install_live_rust_status_hook, kiss_id_for_libtest, record_live_rust_pass,
         status_from_libtest_event,
     };
-    use crate::test_runner::lang_iface::WitnessStatus;
+    use crate::test_runner::lang_iface::{WitnessScope, WitnessStatus};
     use crate::test_runner::last_status::LastStatusIdentity;
     use kiss::rpytest_runner::TestStatus;
-    use std::collections::{BTreeMap, HashSet};
+    use std::collections::{BTreeMap, BTreeSet, HashSet};
     use std::path::Path;
     use std::sync::{Mutex, MutexGuard};
     use std::sync::atomic::Ordering;
@@ -867,6 +867,50 @@ mod live_status_test {
         assert_eq!(loaded.durations_ns[0], Some(42_000_000));
         assert_eq!(loaded.statuses[1], WitnessStatus::Unresolved);
         assert!(!loaded.complete);
+    }
+
+    #[test]
+    fn live_witness_new_merges_existing_disk_witness_and_unknown_selector() {
+        let _serial = begin_live_status_serial();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let identity = kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity {
+            input_digest: "inp_merge".into(),
+            generation_fingerprint: "gen_merge".into(),
+            selection_context_fingerprint: "ctx_merge".into(),
+            ordinary_source_digests: BTreeMap::new(),
+        };
+        // Seed a full witness on disk with an extra selector.
+        let _ = crate::test_runner::execution_witness::publish_rust_execution_witness(
+            crate::test_runner::execution_witness::PublishRustWitness {
+                repo_root: tmp.path(),
+                identity: &identity,
+                scope: WitnessScope::Full,
+                selectors: &["seeded".into(), "extra".into()],
+                statuses: &[WitnessStatus::Passed, WitnessStatus::Failed],
+                durations_ns: &[Some(1), Some(2)],
+                covered_lines: &BTreeMap::from([(
+                    "src/lib.rs".into(),
+                    BTreeSet::from([1u32]),
+                )]),
+                complete: false,
+                jobs: 1,
+            },
+        );
+        let mut cache = LiveWitnessCache::new(
+            tmp.path(),
+            &identity,
+            Some(&["seeded".into()]),
+            &["seeded".into()],
+            1,
+        );
+        assert!(cache.selectors.iter().any(|s| s == "extra"));
+        assert!(cache.covered_lines.contains_key("src/lib.rs"));
+        // Unknown logical name inserts a new selector slot.
+        cache.record_pass("brand_new", "brand_new", Duration::from_millis(3));
+        assert!(cache.selectors.iter().any(|s| s == "brand_new"));
+        cache.record_non_pass("another_new", "another_new", WitnessStatus::Failed);
+        assert!(cache.selectors.iter().any(|s| s == "another_new"));
+        cache.persist();
     }
 
     #[test]

@@ -1,8 +1,10 @@
 use std::collections::BTreeMap;
 use std::fs;
+use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
+use fs2::FileExt;
 use kiss::rpytest_runner::TestStatus;
 use kiss::rust_llvm_cov_runner::RustLineCoverage;
 use tempfile::TempDir;
@@ -16,6 +18,92 @@ use crate::test_runner::rust_coverage_index::{
 use super::git::{commit_all, ensure_main_branch, git_in, git_stdout, init_git, init_git_dir};
 
 pub(crate) const RS_COVERING_SELECTOR: &str = "tests::gets_value";
+
+/// True when seeded population selection-context matches the current batch identity.
+/// Persistent fixtures must not reuse a prior publish after allowlisted env drift
+/// (e.g. kiss llvm-cov `RUSTFLAGS=-C instrument-coverage`).
+pub(crate) fn seeded_population_matches_current_context(root: &Path) -> bool {
+    let population = root
+        .join(".kiss")
+        .join("rust_llvm_cov_cache")
+        .join("population.json");
+    let Ok(bytes) = fs::read(&population) else {
+        return false;
+    };
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+        return false;
+    };
+    let Some(stored) = value
+        .get("selection_context_fingerprint")
+        .and_then(|v| v.as_str())
+    else {
+        return false;
+    };
+    let Ok(identity) =
+        crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(root, &[])
+    else {
+        return false;
+    };
+    stored == identity.selection_context_fingerprint
+}
+
+struct FixtureLock {
+    _mutex: MutexGuard<'static, ()>,
+    _file: std::fs::File,
+}
+
+fn warm_demo_mutex() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
+fn warm_committed_mutex() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
+fn base_historical_mutex() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
+fn lock_fixture(mutex: &'static Mutex<()>, lock_name: &str) -> FixtureLock {
+    let _mutex = mutex
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let lock_path = std::env::temp_dir().join(lock_name);
+    let file = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .truncate(false)
+        .open(&lock_path)
+        .unwrap_or_else(|e| panic!("open {}: {e}", lock_path.display()));
+    file.lock_exclusive()
+        .unwrap_or_else(|e| panic!("lock {}: {e}", lock_path.display()));
+    FixtureLock {
+        _mutex,
+        _file: file,
+    }
+}
+
+fn population_json(root: &Path) -> PathBuf {
+    root.join(".kiss")
+        .join("rust_llvm_cov_cache")
+        .join("population.json")
+}
+
+fn warm_demo_path() -> PathBuf {
+    std::env::temp_dir().join("kiss-warm-demo-fixture")
+}
+
+fn warm_committed_path() -> PathBuf {
+    std::env::temp_dir().join("kiss-warm-committed-fixture")
+}
+
+fn base_historical_path() -> PathBuf {
+    std::env::temp_dir().join("kiss-base-historical-fixture")
+}
 
 fn persistent_cargo_target(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join("kiss-test-targets").join(name);
@@ -134,50 +222,34 @@ pub(crate) fn warm_committed_rust_demo(tmp: &TempDir) -> PathBuf {
     lib
 }
 
-pub(crate) fn persistent_warm_committed_repo() -> PathBuf {
-    use std::sync::OnceLock;
-    static REPO: OnceLock<PathBuf> = OnceLock::new();
-    REPO.get_or_init(|| {
-        let root = std::env::temp_dir().join("kiss-warm-committed-fixture");
-        let population = root
-            .join(".kiss")
-            .join("rust_llvm_cov_cache")
-            .join("population.json");
-        // Cheap stamp: avoid batch_identity on every nextest process start.
-        let stamp = root.join(".kiss").join("fixture_inplace_ok");
-        let usable = population.is_file()
-            && stamp.is_file()
-            && fs::read_to_string(&stamp).ok().as_deref() == Some(root.to_string_lossy().as_ref());
-        if usable {
-            return root;
-        }
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).expect("warm committed fixture root");
-        // Build in-place so seeded coverage stays reusable without retarget republish.
-        init_git_dir(&root);
-        ensure_main_branch(&root);
-        write_shared_cargo_target_config(&root, "warm-committed-demo");
-        let _lib = write_demo_crate(&root, 1);
-        publish_lib_population(&root);
-        commit_all(&root, "warm");
-        prebuild_cargo_tests(&root, "warm-committed-demo");
-        fs::create_dir_all(root.join(".kiss")).expect("kiss dir");
-        fs::write(&stamp, root.to_string_lossy().as_bytes()).expect("fixture stamp");
-        root
-    })
-    .clone()
+fn ensure_warm_committed_repo() -> PathBuf {
+    let root = warm_committed_path();
+    let stamp = root.join(".kiss").join("fixture_inplace_ok");
+    let usable = population_json(&root).is_file()
+        && stamp.is_file()
+        && fs::read_to_string(&stamp).ok().as_deref() == Some(root.to_string_lossy().as_ref())
+        && seeded_population_matches_current_context(&root);
+    if usable {
+        return root;
+    }
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("warm committed fixture root");
+    init_git_dir(&root);
+    ensure_main_branch(&root);
+    write_shared_cargo_target_config(&root, "warm-committed-demo");
+    let _lib = write_demo_crate(&root, 1);
+    publish_lib_population(&root);
+    commit_all(&root, "warm");
+    prebuild_cargo_tests(&root, "warm-committed-demo");
+    fs::create_dir_all(root.join(".kiss")).expect("kiss dir");
+    fs::write(&stamp, root.to_string_lossy().as_bytes()).expect("fixture stamp");
+    root
 }
 
 pub(crate) fn clone_warm_committed_repo(dst: &Path) -> PathBuf {
-    copy_repo_tree(&persistent_warm_committed_repo(), dst);
+    let _lock = lock_fixture(warm_committed_mutex(), "kiss-warm-committed-fixture.lock");
+    copy_repo_tree(&ensure_warm_committed_repo(), dst);
     dst.join("src").join("lib.rs")
-}
-
-fn warm_committed_repo_lock() -> MutexGuard<'static, ()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 struct RestoreLibSource {
@@ -195,8 +267,8 @@ impl Drop for RestoreLibSource {
 pub(crate) fn with_locked_warm_committed_repo<T>(
     f: impl FnOnce(&Path, PathBuf) -> T,
 ) -> T {
-    let _lock = warm_committed_repo_lock();
-    let repo = persistent_warm_committed_repo();
+    let _lock = lock_fixture(warm_committed_mutex(), "kiss-warm-committed-fixture.lock");
+    let repo = ensure_warm_committed_repo();
     let lib = repo.join("src").join("lib.rs");
     // Always restore to the committed baseline before capturing restore state.
     edit_rust_covered_source(&lib, 1);
@@ -208,55 +280,47 @@ pub(crate) fn with_locked_warm_committed_repo<T>(
     f(&repo, lib)
 }
 
-pub(crate) fn persistent_base_historical_repo() -> PathBuf {
-    use std::sync::OnceLock;
-    static REPO: OnceLock<PathBuf> = OnceLock::new();
-    REPO.get_or_init(|| {
-        let root = std::env::temp_dir().join("kiss-base-historical-fixture");
-        if root.join(".git").join("HEAD").is_file()
-            && root.join(".kiss").join("rust_llvm_cov_cache").join("population.json").is_file()
-        {
-            return root;
-        }
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).expect("base historical fixture root");
-        // Build in-place (no copy/retarget) so seeded coverage stays reusable.
-        init_git_dir(&root);
-        ensure_main_branch(&root);
-        write_shared_cargo_target_config(&root, "base-historical-demo");
-        let lib = write_demo_crate(&root, 1);
-        commit_all(&root, "baseline");
-        fs::write(
-            root.join("src").join("historical.rs"),
-            "pub fn historical() -> u32 { 1 }\n",
-        )
-        .unwrap();
-        assert!(
-            git_in(&root)
-                .args(["add", "src/historical.rs"])
-                .status()
-                .unwrap()
-                .success()
-        );
-        assert!(
-            git_in(&root)
-                .args(["commit", "-m", "historical"])
-                .status()
-                .unwrap()
-                .success()
-        );
-        publish_lib_population(&root);
-        edit_rust_covered_source(&lib, 2);
-        root
-    })
-    .clone()
+fn ensure_base_historical_repo() -> PathBuf {
+    let root = base_historical_path();
+    if root.join(".git").join("HEAD").is_file()
+        && population_json(&root).is_file()
+        && seeded_population_matches_current_context(&root)
+    {
+        return root;
+    }
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("base historical fixture root");
+    init_git_dir(&root);
+    ensure_main_branch(&root);
+    write_shared_cargo_target_config(&root, "base-historical-demo");
+    let lib = write_demo_crate(&root, 1);
+    commit_all(&root, "baseline");
+    fs::write(
+        root.join("src").join("historical.rs"),
+        "pub fn historical() -> u32 { 1 }\n",
+    )
+    .unwrap();
+    assert!(
+        git_in(&root)
+            .args(["add", "src/historical.rs"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        git_in(&root)
+            .args(["commit", "-m", "historical"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    publish_lib_population(&root);
+    edit_rust_covered_source(&lib, 2);
+    root
 }
 
-fn base_historical_repo_lock() -> MutexGuard<'static, ()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+fn base_historical_repo_lock() -> FixtureLock {
+    lock_fixture(base_historical_mutex(), "kiss-base-historical-fixture.lock")
 }
 
 /// Use the persistent base/historical fixture in-place (no clone).
@@ -264,7 +328,7 @@ pub(crate) fn with_locked_base_historical_repo<T>(
     f: impl FnOnce(&Path, String, PathBuf) -> T,
 ) -> T {
     let _lock = base_historical_repo_lock();
-    let repo = persistent_base_historical_repo();
+    let repo = ensure_base_historical_repo();
     let lib = repo.join("src").join("lib.rs");
     let baseline = git_stdout(&repo, &["rev-parse", "HEAD~1"]);
     // In-place fixture already has value=1 coverage + dirty value=2 tree.
@@ -274,50 +338,41 @@ pub(crate) fn with_locked_base_historical_repo<T>(
 
 #[allow(dead_code)]
 pub(crate) fn clone_base_historical_repo(dst: &Path) -> (String, PathBuf) {
-    copy_repo_tree(&persistent_base_historical_repo(), dst);
+    let _lock = base_historical_repo_lock();
+    copy_repo_tree(&ensure_base_historical_repo(), dst);
     let baseline = git_stdout(dst, &["rev-parse", "HEAD~1"]);
     let lib = dst.join("src").join("lib.rs");
     (baseline, lib)
 }
 
 pub(crate) fn clone_warm_demo_repo(dst: &Path) -> PathBuf {
-    copy_repo_tree(&persistent_warm_demo_repo(), dst);
+    let _lock = warm_demo_repo_lock();
+    copy_repo_tree(&ensure_warm_demo_repo(), dst);
     dst.join("src").join("lib.rs")
 }
 
-pub(crate) fn persistent_warm_demo_repo() -> PathBuf {
-    use std::sync::OnceLock;
-    static REPO: OnceLock<PathBuf> = OnceLock::new();
-    REPO.get_or_init(|| {
-        let root = std::env::temp_dir().join("kiss-warm-demo-fixture");
-        if root.join("Cargo.toml").is_file()
-            && root
-                .join(".kiss")
-                .join("rust_llvm_cov_cache")
-                .join("population.json")
-                .is_file()
-        {
-            return root;
-        }
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).expect("warm demo fixture root");
-        write_warm_demo_repo(&root);
-        root
-    })
-    .clone()
+fn warm_demo_repo_lock() -> FixtureLock {
+    lock_fixture(warm_demo_mutex(), "kiss-warm-demo-fixture.lock")
 }
 
-fn warm_demo_repo_lock() -> MutexGuard<'static, ()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+fn ensure_warm_demo_repo() -> PathBuf {
+    let root = warm_demo_path();
+    if root.join("Cargo.toml").is_file()
+        && population_json(&root).is_file()
+        && seeded_population_matches_current_context(&root)
+    {
+        return root;
+    }
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("warm demo fixture root");
+    write_warm_demo_repo(&root);
+    root
 }
 
 /// Use the persistent warm demo fixture in-place (no clone/republish).
 pub(crate) fn with_locked_warm_demo_repo<T>(f: impl FnOnce(&Path, PathBuf) -> T) -> T {
     let _lock = warm_demo_repo_lock();
-    let repo = persistent_warm_demo_repo();
+    let repo = ensure_warm_demo_repo();
     let lib = repo.join("src").join("lib.rs");
     let contents = fs::read_to_string(&lib).expect("warm demo lib.rs");
     let _restore = RestoreLibSource {
