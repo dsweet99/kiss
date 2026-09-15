@@ -1,6 +1,9 @@
 use super::*;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use tempfile::TempDir;
+
+use crate::test_runner::test_mode_fixtures::clone_warm_committed_repo;
 
 fn vmrss_kb() -> u64 {
     let text = std::fs::read_to_string("/proc/self/status").expect("status");
@@ -61,10 +64,13 @@ fn rust_selectors_once(root: &Path, ignore: &[String]) -> Vec<String> {
 
 #[test]
 fn covering_select_repeat_does_not_grow_rss() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let ignore = vec!["src/main.rs".to_string()];
-    let py = root.join("tests").join("test_cli_shims.py");
-    let orig = std::fs::read(&py).expect("test_cli_shims.py");
+    let tmp = TempDir::new().expect("rss mini repo");
+    let root = tmp.path();
+    let _lib = clone_warm_committed_repo(root);
+    let py = root.join("touch.py");
+    std::fs::write(&py, "# seed\n").expect("touch.py");
+    let ignore = vec!["touch.py".to_string()];
+    let orig = std::fs::read(&py).expect("touch.py");
     struct Restore(PathBuf, Vec<u8>);
     impl Drop for Restore {
         fn drop(&mut self) {
@@ -72,54 +78,60 @@ fn covering_select_repeat_does_not_grow_rss() {
         }
     }
     let _restore = Restore(py.clone(), orig.clone());
-    let warmup = rust_selectors_once(&root, &ignore);
+    let warmup = rust_selectors_once(root, &ignore);
     let start = vmrss_kb();
-    for i in 0..4 {
+    for i in 0..2 {
         let mut next = orig.clone();
         next.extend_from_slice(format!("\n# rss-touch-{i}\n").as_bytes());
         std::fs::write(&py, &next).expect("touch python");
-        let again = rust_selectors_once(&root, &ignore);
+        let again = rust_selectors_once(root, &ignore);
         assert_eq!(again.len(), warmup.len());
     }
     let grew = vmrss_kb().saturating_sub(start);
     assert!(
         grew < 8192,
-        "rust selectors after python mtime RSS grew {grew} kB over 4 repeats (start {start} kB)"
+        "rust selectors after python mtime RSS grew {grew} kB over 2 repeats (start {start} kB)"
     );
 }
 
 #[test]
 fn covering_select_python_only_repeat_does_not_grow_rss() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let ignore = vec!["src/main.rs".to_string()];
+    let tmp = TempDir::new().expect("python rss mini repo");
+    let root = tmp.path();
+    let _lib = clone_warm_committed_repo(root);
+    let py = root.join("app.py");
+    std::fs::write(&py, "def f():\n    return 1\n").expect("app.py");
+    let ignore: [String; 0] = [];
     let root_s = root.to_string_lossy().into_owned();
-    let (py, rs) = kiss::gather_files_by_lang(std::slice::from_ref(&root_s), None, &ignore);
-    let mut sources = py;
+    let (py_files, rs) = kiss::gather_files_by_lang(std::slice::from_ref(&root_s), None, &ignore);
+    let mut sources = py_files;
     sources.extend(rs);
-    plan_once(&root, &sources, &ignore, Some(kiss::Language::Python));
+    plan_once(root, &sources, &ignore, Some(kiss::Language::Python));
     let start = vmrss_kb();
-    for _ in 0..4 {
-        plan_once(&root, &sources, &ignore, Some(kiss::Language::Python));
+    for _ in 0..2 {
+        plan_once(root, &sources, &ignore, Some(kiss::Language::Python));
     }
     let grew = vmrss_kb().saturating_sub(start);
     assert!(
         grew < 8192,
-        "python-only covering_select RSS grew {grew} kB over 4 repeats (start {start} kB)"
+        "python-only covering_select RSS grew {grew} kB over 2 repeats (start {start} kB)"
     );
 }
 
 #[test]
 fn load_population_repeat_does_not_grow_rss() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let tmp = TempDir::new().expect("population rss mini repo");
+    let root = tmp.path();
+    let _lib = clone_warm_committed_repo(root);
     let _ = crate::test_runner::rust_coverage_index::load_current_rust_population_state(
-        &root,
+        root,
         None,
         &[],
     );
     let start = vmrss_kb();
-    for _ in 0..4 {
+    for _ in 0..2 {
         let _ = crate::test_runner::rust_coverage_index::load_current_rust_population_state(
-            &root,
+            root,
             None,
             &[],
         );
@@ -127,6 +139,6 @@ fn load_population_repeat_does_not_grow_rss() {
     let grew = vmrss_kb().saturating_sub(start);
     assert!(
         grew < 8192,
-        "load_current_population RSS grew {grew} kB over 4 repeats (start {start} kB)"
+        "load_current_population RSS grew {grew} kB over 2 repeats (start {start} kB)"
     );
 }

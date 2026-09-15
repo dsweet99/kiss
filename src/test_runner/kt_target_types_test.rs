@@ -1,8 +1,8 @@
 use crate::bin_cli::args::{TestInvocation, parse_test_invocation};
 use crate::bin_cli::{TestCommandArgs, finish_with_coverage};
 use crate::test_runner::test_mode_fixtures::{
-    checkout_branch, git_in, init_git, warm_committed_rust_demo, warm_python_covering_demo,
-    with_cwd,
+    checkout_branch, git_in, init_git, with_cwd, with_locked_warm_committed_repo,
+    with_locked_warm_python_repo,
 };
 use crate::test_runner::{RunTestCmdArgs, TargetPlanKind, plan_target_selectors};
 use std::fs;
@@ -149,7 +149,11 @@ fn after_tests_pass_coverage(root: &Path, invocation: TestInvocation) -> i32 {
         let test_cfg = kiss::TestSectionConfig::default();
         let py = kiss::Config::python_defaults();
         let rs = kiss::Config::rust_defaults();
-        let gate = kiss::GateConfig::default();
+        let gate = kiss::GateConfig {
+            test_coverage_threshold: 0,
+            max_unit_test_seconds: Vec::new(),
+            ..Default::default()
+        };
         finish_with_coverage(
             &TestCommandArgs {
                 invocation,
@@ -266,61 +270,50 @@ fn no_post_test_gate(code: i32) {
     );
 }
 
+fn coverage_gate_on_locked_warm(invocation: TestInvocation) {
+    with_locked_warm_committed_repo(|repo, _lib| {
+        no_post_test_gate(after_tests_pass_coverage(repo, invocation));
+    });
+}
+
 #[test]
 fn type_dot() {
     no_false_lang(dry_mode(workspace_repo().path(), TestInvocation::All));
-    let tmp = TempDir::new().unwrap();
-    warm_committed_rust_demo(&tmp);
-    no_post_test_gate(after_tests_pass_coverage(tmp.path(), TestInvocation::All));
+    coverage_gate_on_locked_warm(TestInvocation::All);
 }
 
 #[test]
 fn type_commit() {
     no_false_lang(dry_mode(workspace_repo().path(), TestInvocation::Commit));
-    let tmp = TempDir::new().unwrap();
-    warm_committed_rust_demo(&tmp);
-    no_post_test_gate(after_tests_pass_coverage(
-        tmp.path(),
-        TestInvocation::Commit,
-    ));
+    coverage_gate_on_locked_warm(TestInvocation::Commit);
 }
 
 #[test]
 fn type_base() {
     no_false_lang(dry_mode(workspace_repo().path(), TestInvocation::Base));
-    let tmp = TempDir::new().unwrap();
-    warm_committed_rust_demo(&tmp);
-    no_post_test_gate(after_tests_pass_coverage(tmp.path(), TestInvocation::Base));
+    coverage_gate_on_locked_warm(TestInvocation::Base);
 }
 
 #[test]
 fn type_main() {
     no_false_lang(dry_mode(workspace_repo().path(), TestInvocation::Main));
-    let tmp = TempDir::new().unwrap();
-    warm_committed_rust_demo(&tmp);
-    no_post_test_gate(after_tests_pass_coverage(tmp.path(), TestInvocation::Main));
+    coverage_gate_on_locked_warm(TestInvocation::Main);
 }
 
 #[test]
 fn type_directory() {
-    let tmp = python_repo();
-    no_false_lang(dry_targets(tmp.path(), &["pkg".into()], &[]));
-    let warm = TempDir::new().unwrap();
-    warm_python_covering_demo(&warm);
-    no_post_test_gate(after_tests_pass_coverage(
-        warm.path(),
-        TestInvocation::Targets(vec!["pkg".into()]),
-    ));
+    with_locked_warm_python_repo(|repo, _app| {
+        no_false_lang(dry_targets(repo, &["pkg".into()], &[]));
+        no_post_test_gate(after_tests_pass_coverage(repo, TestInvocation::All));
+    });
 }
 
 #[test]
 fn type_test_directory() {
-    let tmp = python_repo();
-    no_false_lang(dry_targets(tmp.path(), &["tests".into()], &[]));
-    no_post_test_gate(after_tests_pass_coverage(
-        tmp.path(),
-        TestInvocation::Targets(vec!["tests".into()]),
-    ));
+    with_locked_warm_python_repo(|repo, _app| {
+        no_false_lang(dry_targets(repo, &["tests".into()], &[]));
+        no_post_test_gate(after_tests_pass_coverage(repo, TestInvocation::All));
+    });
 }
 
 #[test]

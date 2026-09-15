@@ -148,6 +148,12 @@ pub(crate) fn load_cargo_metadata(
     cargo_args: &[String],
 ) -> Result<CargoMetadata, RustLlvmCovError> {
     let manifest_path = effective_manifest_path(cwd, cargo_args);
+    if !manifest_path.is_file() {
+        return Err(RustLlvmCovError::InvalidRequest(format!(
+            "cargo metadata skipped: missing manifest {}",
+            manifest_path.display()
+        )));
+    }
     let output = Command::new(cargo)
         .args(["metadata", "--format-version", "1", "--manifest-path"])
         .arg(&manifest_path)

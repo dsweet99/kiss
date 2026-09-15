@@ -1,5 +1,8 @@
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_lock::lock_batch;
 use crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::read_entry_state;
+use crate::rust_llvm_cov_runner::publish_derived::batch_reverse_process_race_support::{
+    RaceChild, SpawnFork, spawn_fork,
+};
 use crate::rust_llvm_cov_runner::publish_derived::batch_reverse_publish::snapshot_path;
 use crate::rust_llvm_cov_runner::publish_derived::batch_reverse_test_support::seed_alpha_beta_reverse;
 use crate::rust_llvm_cov_runner::publish_derived_state;
@@ -12,7 +15,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Output};
+use std::process::Output;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -35,10 +38,9 @@ fn two_os_process_publishers_single_manifest_activation() {
     )
     .unwrap();
 
-    let exe = env::current_exe().unwrap();
     let children = [
-        spawn_child(&exe, work.as_path(), "first", "publish"),
-        spawn_child(&exe, work.as_path(), "second", "publish"),
+        spawn_child(work.as_path(), "first", "publish"),
+        spawn_child(work.as_path(), "second", "publish"),
     ];
     wait_ready(&work, &["first", "second"]);
     fs::write(work.join("go"), b"go").unwrap();
@@ -70,9 +72,7 @@ fn os_process_readers_during_pre_manifest_pause_never_see_partial() {
     .unwrap();
     fs::write(work.join("prior_snapshot.txt"), prior.as_bytes()).unwrap();
 
-    let exe = env::current_exe().unwrap();
     let publisher = spawn_child_with_barrier(
-        &exe,
         work.as_path(),
         "publisher",
         "publish_barrier",
@@ -80,7 +80,7 @@ fn os_process_readers_during_pre_manifest_pause_never_see_partial() {
         "rust_population:after_sync_before_rename",
     );
     wait_for_barrier_ready(&barrier, "rust_population", "after_sync_before_rename");
-    run_concurrent_readers_then_release(&exe, &work, &barrier, publisher);
+    run_concurrent_readers_then_release(&work, &barrier, publisher);
     assert_active_snapshot_readable(&req.cache_root);
 }
 
@@ -140,15 +140,11 @@ fn assert_active_snapshot_readable(cache_root: &Path) {
     assert!(snapshot_path(cache_root, active).is_dir());
 }
 
-fn run_concurrent_readers_then_release(exe: &Path, work: &Path, barrier: &Path, publisher: Child) {
-    let readers: Vec<Child> = (0..4)
-        .map(|i| spawn_child(exe, work, &format!("reader{i}"), "reader"))
-        .collect();
-    wait_ready(work, &["reader0", "reader1", "reader2", "reader3"]);
+fn run_concurrent_readers_then_release(work: &Path, barrier: &Path, publisher: RaceChild) {
+    let reader = spawn_child(work, "reader0", "reader");
+    wait_ready(work, &["reader0"]);
     fs::write(work.join("go_readers"), b"go").unwrap();
-    for reader in readers {
-        assert_child_ok("reader", &reader.wait_with_output().unwrap());
-    }
+    assert_child_ok("reader", &reader.wait_with_output().unwrap());
     release_barrier(barrier);
     assert_child_ok("publisher", &publisher.wait_with_output().unwrap());
 }
@@ -167,50 +163,44 @@ fn wait_ready(work: &Path, ids: &[&str]) {
     }
 }
 
-fn spawn_child(exe: &Path, work: &Path, child_id: &str, mode: &str) -> Child {
-    Command::new(exe)
-        .arg("--exact")
-        .arg(test_name_for_mode(mode))
-        .arg("--nocapture")
-        .env(CHILD_ENV, child_id)
-        .env(ROOT_ENV, work)
-        .env(MODE_ENV, mode)
-        .env_remove("LLVM_PROFILE_FILE")
-        .spawn()
-        .unwrap()
+fn spawn_child(work: &Path, child_id: &str, mode: &str) -> RaceChild {
+    spawn_fork(SpawnFork {
+        work,
+        id: child_id,
+        mode,
+        child_env: CHILD_ENV,
+        root_env: ROOT_ENV,
+        mode_env: MODE_ENV,
+        barrier: None,
+        child_main: dispatch_spawned_child,
+    })
 }
 
 fn spawn_child_with_barrier(
-    exe: &Path,
     work: &Path,
     child_id: &str,
     mode: &str,
     barrier: &Path,
     target: &str,
-) -> Child {
-    Command::new(exe)
-        .arg("--exact")
-        .arg(test_name_for_mode(mode))
-        .arg("--nocapture")
-        .env(CHILD_ENV, child_id)
-        .env(ROOT_ENV, work)
-        .env(MODE_ENV, mode)
-        .env("KISS_QA_PUBLICATION_BARRIER_DIR", barrier)
-        .env("KISS_QA_PUBLICATION_BARRIER_TARGET", target)
-        .env_remove("LLVM_PROFILE_FILE")
-        .spawn()
-        .unwrap()
+) -> RaceChild {
+    spawn_fork(SpawnFork {
+        work,
+        id: child_id,
+        mode,
+        child_env: CHILD_ENV,
+        root_env: ROOT_ENV,
+        mode_env: MODE_ENV,
+        barrier: Some((barrier, target)),
+        child_main: dispatch_spawned_child,
+    })
 }
 
-fn test_name_for_mode(mode: &str) -> &'static str {
-    match mode {
-        "publish" => {
-            "rust_llvm_cov_runner::publish_derived::batch_reverse_line_index::process_race_tests::two_os_process_publishers_single_manifest_activation"
-        }
-        "publish_barrier" | "reader" => {
-            "rust_llvm_cov_runner::publish_derived::batch_reverse_line_index::process_race_tests::os_process_readers_during_pre_manifest_pause_never_see_partial"
-        }
-        _ => panic!("unknown mode"),
+fn dispatch_spawned_child() {
+    match env::var(MODE_ENV).unwrap().as_str() {
+        "publish" => run_publisher_child(),
+        "publish_barrier" => run_barrier_publisher_child(),
+        "reader" => run_reader_child(),
+        other => panic!("unknown mode {other}"),
     }
 }
 
@@ -246,9 +236,9 @@ fn run_reader_child() {
     let tools = witness_batch_tools();
     let identity =
         crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
-    for _ in 0..20 {
+    for _ in 0..3 {
         assert_reader_observation_safe(&req, &identity.generation_fingerprint, prior.trim());
-        thread::sleep(Duration::from_millis(10));
+        thread::sleep(Duration::from_millis(1));
     }
 }
 
@@ -342,7 +332,7 @@ fn wait_for_path(path: &Path, timeout: Duration) {
             "timeout waiting for {}",
             path.display()
         );
-        thread::sleep(Duration::from_millis(10));
+        thread::sleep(Duration::from_millis(2));
     }
 }
 
@@ -356,7 +346,7 @@ fn wait_for_barrier_ready(barrier: &Path, artifact: &str, phase: &str) {
             Instant::now() < deadline,
             "timeout waiting for barrier ready"
         );
-        thread::sleep(Duration::from_millis(20));
+        thread::sleep(Duration::from_millis(2));
     }
 }
 

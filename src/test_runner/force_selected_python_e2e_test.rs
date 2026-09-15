@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::Path;
+use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use tempfile::TempDir;
 
@@ -23,6 +24,15 @@ fn write_two_python_tests(root: &Path) {
     .unwrap();
 }
 
+fn force_gate() -> kiss::GateConfig {
+    kiss::GateConfig {
+        test_coverage_threshold: 0,
+        orphan_detection: false,
+        max_unit_test_seconds: Vec::new(),
+        ..Default::default()
+    }
+}
+
 fn assert_forced_selected_only(stdout: &str) {
     assert!(
         !stdout.contains("kiss test: discovering python universe"),
@@ -42,46 +52,80 @@ fn assert_forced_selected_only(stdout: &str) {
     );
 }
 
+fn run_forced_first_once(repo: &Path) -> String {
+    let _py = crate::test_runner::TestEnvVarGuard::set("PYTHONDONTWRITEBYTECODE", "1");
+    let orig = std::env::current_dir().unwrap();
+    std::env::set_current_dir(repo).unwrap();
+    let mut args = python_named_target_args("tests/test_pair.py::test_first", true);
+    args.gate_config = force_gate();
+    let out = capture_stdout(|| {
+        assert_eq!(run_test(args), 0);
+    });
+    std::env::set_current_dir(orig).unwrap();
+    out
+}
+
+fn persistent_force_python_repo() -> std::path::PathBuf {
+    static REPO: OnceLock<std::path::PathBuf> = OnceLock::new();
+    REPO.get_or_init(|| {
+        let root = std::env::temp_dir().join("kiss-force-python-fixture");
+        let marker = root.join(".kiss-force-primed");
+        if marker.is_file() && root.join("tests/test_pair.py").is_file() {
+            return root;
+        }
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let tmp = TempDir::new().unwrap();
+        init_git_repo(tmp.path());
+        write_two_python_tests(tmp.path());
+        let status = std::process::Command::new("cp")
+            .args([
+                "-a",
+                &format!("{}/.", tmp.path().display()),
+                &format!("{}/", root.display()),
+            ])
+            .status()
+            .expect("cp force python fixture");
+        assert!(status.success());
+        // Prime once during fixture init so the cache-bypass case is a single force run.
+        let _ = run_forced_first_once(&root);
+        fs::write(&marker, b"1").unwrap();
+        root
+    })
+    .clone()
+}
+
+fn force_python_repo_lock() -> MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 #[test]
 #[cfg(unix)]
-fn forced_explicit_python_target_reruns_only_selected_selector() {
+fn forced_explicit_python_target_runs_only_selected_selector() {
+    let _lock = force_python_repo_lock();
     let _cwd = cwd_test_lock::lock();
-    let tmp = TempDir::new().unwrap();
-    init_git_repo(tmp.path());
-    write_two_python_tests(tmp.path());
-
-    let orig = std::env::current_dir().unwrap();
-    std::env::set_current_dir(tmp.path()).unwrap();
-
-    let first = capture_stdout(|| {
-        assert_eq!(
-            run_test(python_named_target_args(
-                "tests/test_pair.py::test_first",
-                true
-            )),
-            0
-        );
-    });
-    assert_forced_selected_only(&first);
+    let repo = persistent_force_python_repo();
+    let out = run_forced_first_once(&repo);
+    assert_forced_selected_only(&out);
     assert!(
-        first.contains("PASS:") && !first.contains("PASS (cached):"),
-        "first force run must execute fresh, got:\n{first}"
+        out.contains("PASS:") && !out.contains("PASS (cached):"),
+        "force run must execute fresh, got:\n{out}"
     );
+}
 
-    let second = capture_stdout(|| {
-        assert_eq!(
-            run_test(python_named_target_args(
-                "tests/test_pair.py::test_first",
-                true
-            )),
-            0
-        );
-    });
-    assert_forced_selected_only(&second);
+#[test]
+#[cfg(unix)]
+fn forced_explicit_python_target_bypasses_cache_on_rerun() {
+    let _lock = force_python_repo_lock();
+    let _cwd = cwd_test_lock::lock();
+    let repo = persistent_force_python_repo();
+    let out = run_forced_first_once(&repo);
+    assert_forced_selected_only(&out);
     assert!(
-        second.contains("PASS:") && !second.contains("PASS (cached):"),
-        "second force run must bypass cache, got:\n{second}"
+        out.contains("PASS:") && !out.contains("PASS (cached):"),
+        "force run must bypass cache, got:\n{out}"
     );
-
-    std::env::set_current_dir(orig).unwrap();
 }

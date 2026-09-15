@@ -5,7 +5,10 @@ use std::process::Command;
 use tempfile::TempDir;
 
 fn kiss_binary() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_kiss"))
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
+    crate::common::scrub_parent_coverage_env(&mut cmd);
+    crate::common::preserve_toolchain_homes(&mut cmd);
+    cmd
 }
 
 fn write_violating_py(path: &std::path::Path) {
@@ -91,13 +94,13 @@ fn cli_check_requires_runtime_coverage_for_universe_languages_before_focus() {
     fs::create_dir_all(root.join("src")).unwrap();
     fs::write(root.join("app.py"), "def covered():\n    return 1\n").unwrap();
     fs::write(
-        root.join("test_app.py"),
-        "from app import covered\n\ndef test_app():\n    assert covered() == 1\n",
+        root.join("Cargo.toml"),
+        "[package]\nname = \"mixed_focus\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
     )
     .unwrap();
     fs::write(
-        root.join("Cargo.toml"),
-        "[package]\nname = \"mixed_focus\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
+        root.join("Cargo.lock"),
+        "version = 4\n\n[[package]]\nname = \"mixed_focus\"\nversion = \"0.1.0\"\n",
     )
     .unwrap();
     fs::write(
@@ -109,13 +112,23 @@ fn cli_check_requires_runtime_coverage_for_universe_languages_before_focus() {
         root,
         &[("test_app.py::test_app", vec![("app.py", vec![1, 2])])],
     );
+    fs::write(
+        root.join(".kissconfig"),
+        "[global]\n\
+         duplication_enabled = false\n\
+         [test]\n\
+         orphan_detection = false\n\
+         num_jobs = 1\n\
+         [python]\n\
+         [rust]\n",
+    )
+    .unwrap();
     commit_all(root, "init");
 
     let focused = kiss_binary()
         .current_dir(root)
-        .arg("test")
-        .arg("--coverage-all")
-        .arg(".")
+        .args(["test", "--coverage-all", "--jobs", "1", "."])
+        .env("PYTHONDONTWRITEBYTECODE", "1")
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&focused.stdout);

@@ -56,7 +56,7 @@ fn forkserver_shutdown_force_kills_unresponsive_controller() {
         "expected wait at least {SHUTDOWN_TIMEOUT:?}, got {elapsed:?}"
     );
     assert!(
-        elapsed < SHUTDOWN_TIMEOUT + Duration::from_secs(2),
+        elapsed < SHUTDOWN_TIMEOUT + Duration::from_millis(800),
         "force-kill took too long: {elapsed:?}"
     );
     assert!(

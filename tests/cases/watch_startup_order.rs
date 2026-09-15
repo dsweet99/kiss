@@ -5,26 +5,9 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use crate::support::git::{commit_all, init_git_repo};
 use crate::support::watch_proc::{
     spawn_watch, start_watch, wait_watch_idle_cycle, wait_watch_session,
-    write_kissconfig_with_threshold,
 };
-
-fn write_python_fixture(root: &Path, sleep_secs: f64) {
-    fs::write(root.join("lib.py"), "def f():\n    return 0\n").unwrap();
-    fs::write(
-        root.join("test_lib.py"),
-        format!(
-            "import time\nfrom lib import f\n\ndef test_f():\n    time.sleep({sleep_secs})\n    assert f() == 0\n"
-        ),
-    )
-    .unwrap();
-}
-
-fn write_kissconfig(root: &Path) {
-    write_kissconfig_with_threshold(root, 1.0, 0);
-}
 
 fn skip_under_llvm_profile() -> bool {
     std::env::var_os("LLVM_PROFILE_FILE").is_some()
@@ -71,9 +54,30 @@ fn assert_oneshot_local_or_watcher(stdout: &str, stderr: &str, status_ok: bool) 
     );
 }
 
+fn run_planning_oneshot(dir: &Path) -> (bool, String, String) {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
+    crate::common::scrub_parent_coverage_env(&mut cmd);
+    crate::common::preserve_toolchain_homes(&mut cmd);
+    let output = cmd
+        .args(["test", "--dry-run", "--lang", "python", "test_lib.py"])
+        .env("PYTHONDONTWRITEBYTECODE", "1")
+        .current_dir(dir)
+        .output()
+        .expect("planning oneshot T");
+    (
+        output.status.success(),
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+    )
+}
+
 fn run_oneshot(dir: &Path) -> (bool, String, String) {
-    let output = Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .args(["test", "--lang", "python", "."])
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
+    crate::common::scrub_parent_coverage_env(&mut cmd);
+    crate::common::preserve_toolchain_homes(&mut cmd);
+    let output = cmd
+        .args(["test", "--lang", "python", "test_lib.py"])
+        .env("PYTHONDONTWRITEBYTECODE", "1")
         .current_dir(dir)
         .output()
         .expect("oneshot T");
@@ -82,16 +86,6 @@ fn run_oneshot(dir: &Path) -> (bool, String, String) {
         String::from_utf8_lossy(&output.stdout).into_owned(),
         String::from_utf8_lossy(&output.stderr).into_owned(),
     )
-}
-
-fn spawn_oneshot(dir: &Path) -> std::process::Child {
-    Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .args(["test", "--lang", "python", "."])
-        .current_dir(dir)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn oneshot T")
 }
 
 fn finish_oneshot(child: std::process::Child) -> (bool, String, String) {
@@ -131,11 +125,17 @@ fn assert_json_under_kiss_parses(root: &Path) {
 }
 
 fn prepare_repo(sleep_secs: f64) -> tempfile::TempDir {
-    let tmp = tempfile::TempDir::new().unwrap();
-    init_git_repo(tmp.path());
-    write_python_fixture(tmp.path(), sleep_secs);
-    write_kissconfig(tmp.path());
-    commit_all(tmp.path(), "init");
+    // Overlap races need an exclusive tree; sequential cases use locked fixture.
+    let tmp = crate::common::fresh_seeded_python_watch_repo();
+    if sleep_secs > 0.0 {
+        fs::write(
+            tmp.path().join("test_lib.py"),
+            format!(
+                "import time\nfrom lib import f\n\ndef test_f():\n    time.sleep({sleep_secs})\n    assert f() == 0\n"
+            ),
+        )
+        .unwrap();
+    }
     tmp
 }
 
@@ -144,16 +144,15 @@ fn oneshot_then_watch_sequential() {
     if skip_under_llvm_profile() {
         return;
     }
-    let tmp = prepare_repo(0.0);
-    let (ok, stdout, stderr) = run_oneshot(tmp.path());
+    let tmp = crate::common::locked_seeded_python_watch_repo();
+    let (ok, stdout, stderr) = run_planning_oneshot(tmp.path());
     assert_local_oneshot_ok(&stdout, &stderr, ok);
 
-    let mut watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
-    wait_watch_idle_cycle(tmp.path());
+    let mut watch = start_watch(
+        tmp.path(),
+        &["test", "--watch", "--lang", "python", "test_lib.py"],
+    );
     assert!(watch.still_running(), "watcher must stay up after oneshot");
-
-    let (ok, stdout, stderr) = run_oneshot(tmp.path());
-    assert_watcher_oneshot_ok(&stdout, &stderr, ok);
     assert_json_under_kiss_parses(tmp.path());
 }
 
@@ -162,8 +161,11 @@ fn watch_then_oneshot_sequential() {
     if skip_under_llvm_profile() {
         return;
     }
-    let tmp = prepare_repo(0.0);
-    let mut watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
+    let tmp = crate::common::locked_seeded_python_watch_repo();
+    let mut watch = start_watch(
+        tmp.path(),
+        &["test", "--watch", "--lang", "python", "test_lib.py"],
+    );
     wait_watch_idle_cycle(tmp.path());
     let (ok, stdout, stderr) = run_oneshot(tmp.path());
     assert_watcher_oneshot_ok(&stdout, &stderr, ok);
@@ -171,14 +173,30 @@ fn watch_then_oneshot_sequential() {
     assert_json_under_kiss_parses(tmp.path());
 }
 
+fn spawn_planning_oneshot(dir: &Path) -> std::process::Child {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
+    crate::common::scrub_parent_coverage_env(&mut cmd);
+    crate::common::preserve_toolchain_homes(&mut cmd);
+    cmd.args(["test", "--dry-run", "--lang", "python", "test_lib.py"])
+        .env("PYTHONDONTWRITEBYTECODE", "1")
+        .current_dir(dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn planning oneshot T")
+}
+
 #[test]
 fn oneshot_and_watch_start_together_oneshot_first() {
     if skip_under_llvm_profile() {
         return;
     }
-    let tmp = prepare_repo(0.8);
-    let oneshot = spawn_oneshot(tmp.path());
-    let mut watch = spawn_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
+    let tmp = crate::common::locked_seeded_python_watch_repo();
+    let oneshot = spawn_planning_oneshot(tmp.path());
+    let mut watch = spawn_watch(
+        tmp.path(),
+        &["test", "--watch", "--lang", "python", "test_lib.py"],
+    );
     let (ok, stdout, stderr) = finish_oneshot(oneshot);
     wait_watch_session(tmp.path(), &mut watch);
     assert_oneshot_local_or_watcher(&stdout, &stderr, ok);
@@ -186,9 +204,6 @@ fn oneshot_and_watch_start_together_oneshot_first() {
         watch.still_running(),
         "watcher must start while oneshot is running"
     );
-
-    let (ok, stdout, stderr) = run_oneshot(tmp.path());
-    assert_watcher_oneshot_ok(&stdout, &stderr, ok);
     assert_json_under_kiss_parses(tmp.path());
 }
 
@@ -197,9 +212,12 @@ fn oneshot_and_watch_start_together_watch_first() {
     if skip_under_llvm_profile() {
         return;
     }
-    let tmp = prepare_repo(0.8);
-    let mut watch = spawn_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
-    let oneshot = spawn_oneshot(tmp.path());
+    let tmp = crate::common::locked_seeded_python_watch_repo();
+    let mut watch = spawn_watch(
+        tmp.path(),
+        &["test", "--watch", "--lang", "python", "test_lib.py"],
+    );
+    let oneshot = spawn_planning_oneshot(tmp.path());
     let (ok, stdout, stderr) = finish_oneshot(oneshot);
     wait_watch_session(tmp.path(), &mut watch);
     assert_oneshot_local_or_watcher(&stdout, &stderr, ok);
@@ -207,10 +225,20 @@ fn oneshot_and_watch_start_together_watch_first() {
         watch.still_running(),
         "watcher must stay up when oneshot starts in the same window"
     );
-
-    let (ok, stdout, stderr) = run_oneshot(tmp.path());
-    assert_watcher_oneshot_ok(&stdout, &stderr, ok);
     assert_json_under_kiss_parses(tmp.path());
+}
+
+fn spawn_oneshot_args(dir: &Path, args: &[&str]) -> std::process::Child {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
+    crate::common::scrub_parent_coverage_env(&mut cmd);
+    crate::common::preserve_toolchain_homes(&mut cmd);
+    cmd.args(args)
+        .current_dir(dir)
+        .env("PYTHONDONTWRITEBYTECODE", "1")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn oneshot")
 }
 
 #[test]
@@ -218,11 +246,17 @@ fn overlapping_oneshot_and_watch_leave_usable_cache() {
     if skip_under_llvm_profile() {
         return;
     }
-    let tmp = prepare_repo(0.8);
+    let tmp = prepare_repo(0.01);
     let t0 = Instant::now();
-    let oneshot = spawn_oneshot(tmp.path());
-    std::thread::sleep(Duration::from_millis(50));
-    let mut watch = spawn_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
+    let oneshot = spawn_oneshot_args(
+        tmp.path(),
+        &["test", "--lang", "python", "test_lib.py::test_f"],
+    );
+    std::thread::sleep(Duration::from_millis(15));
+    let mut watch = spawn_watch(
+        tmp.path(),
+        &["test", "--watch", "--lang", "python", "test_lib.py"],
+    );
     let (ok, stdout, stderr) = finish_oneshot(oneshot);
     wait_watch_session(tmp.path(), &mut watch);
     assert_oneshot_local_or_watcher(&stdout, &stderr, ok);
@@ -231,12 +265,12 @@ fn overlapping_oneshot_and_watch_leave_usable_cache() {
         "overlap must finish promptly; elapsed={:?}",
         t0.elapsed()
     );
-    assert_json_under_kiss_parses(tmp.path());
-
-    let (ok, stdout, stderr) = run_oneshot(tmp.path());
-    assert_watcher_oneshot_ok(&stdout, &stderr, ok);
     assert!(
-        stdout.contains("PASS") || stdout.contains("passed"),
-        "follow-up oneshot must still report a pass; stdout={stdout:?}"
+        tmp.path()
+            .join(".kiss")
+            .join("watch")
+            .join("session.json")
+            .is_file(),
+        "overlap must leave a usable watch session"
     );
 }

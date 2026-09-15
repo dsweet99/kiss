@@ -21,8 +21,9 @@ fn rust_runtime_language_and_dry_run_and_indexable() {
 #[test]
 fn accepted_summary_emits_cached_passes() {
     let rt = RustRuntime;
+    let tmp = tempfile::tempdir().unwrap();
     let req = EnsureRequest {
-        repo_root: PathBuf::from("."),
+        repo_root: tmp.path().to_path_buf(),
         mode: AcceptMode::Subset,
         lang_filter: Some(kiss::Language::Rust),
         ignore: vec![],
@@ -55,7 +56,6 @@ fn accepted_summary_emits_cached_passes() {
     assert_eq!(summary.total, 1);
     assert_eq!(summary.cache_hits, 1);
     assert!(!summary.rust_derived_repair);
-    let tmp = tempfile::tempdir().unwrap();
     let _ = rt.discover_universe(&req);
     let _ = rt.coverage_snapshot(tmp.path());
     let _ = rt.status_timing_snapshot(tmp.path());

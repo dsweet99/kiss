@@ -4,9 +4,9 @@ use tempfile::TempDir;
 
 use crate::test_git::TestChangeMode;
 use crate::test_runner::test_mode_fixtures::{
-    RS_COVERING_SELECTOR, assert_base_delta_plan, checkout_branch, edit_rust_covered_source,
-    ensure_main_branch, git_in, git_stdout, init_git, warm_base_demo_with_historical_source,
-    warm_committed_rust_demo, with_cwd,
+    RS_COVERING_SELECTOR, assert_base_delta_plan, checkout_branch, clone_warm_committed_repo,
+    edit_rust_covered_source, ensure_main_branch, git_in, git_stdout, init_git, with_cwd,
+    with_locked_base_historical_repo, with_locked_warm_committed_repo,
 };
 use crate::test_runner::{PlannedSelectors, RunTestCmdArgs, plan_selectors, run_test};
 
@@ -123,90 +123,86 @@ fn row_g_untracked_rust_source_commit_only() {
 #[test]
 fn row_h_base_and_main_use_snapshot_delta_not_historical_sources() {
     let _cwd_guard = crate::cwd_test_lock::lock();
-    let tmp = TempDir::new().unwrap();
-    let (baseline, lib) = warm_base_demo_with_historical_source(&tmp);
-    let base_planned = with_cwd(tmp.path(), || {
-        plan(
-            TestChangeMode::Base,
-            None,
-            Some(&baseline),
-            Some(kiss::Language::Rust),
-        )
-    })
-    .expect("base plan selectors");
-    let main_planned = with_cwd(tmp.path(), || {
-        plan(
-            TestChangeMode::Main,
-            Some(&baseline),
-            None,
-            Some(kiss::Language::Rust),
-        )
-    })
-    .expect("main plan selectors");
-    assert_base_delta_plan(&base_planned, &lib);
-    assert_base_delta_plan(&main_planned, &lib);
+    with_locked_base_historical_repo(|repo, baseline, lib| {
+        let base_planned = with_cwd(repo, || {
+            plan(
+                TestChangeMode::Base,
+                None,
+                Some(&baseline),
+                Some(kiss::Language::Rust),
+            )
+        })
+        .expect("base plan selectors");
+        let main_planned = with_cwd(repo, || {
+            plan(
+                TestChangeMode::Main,
+                Some(&baseline),
+                None,
+                Some(kiss::Language::Rust),
+            )
+        })
+        .expect("main plan selectors");
+        assert_base_delta_plan(&base_planned, &lib);
+        assert_base_delta_plan(&main_planned, &lib);
+    });
 }
 
 #[test]
 fn row_i_base_and_main_same_tree_yield_identical_selectors() {
     let _cwd_guard = crate::cwd_test_lock::lock();
-    let tmp = TempDir::new().unwrap();
-    let lib = warm_committed_rust_demo(&tmp);
-    let baseline = git_stdout(tmp.path(), &["rev-parse", "HEAD"]);
-    edit_rust_covered_source(&lib, 2);
-    let base_planned = with_cwd(tmp.path(), || {
-        plan(
-            TestChangeMode::Base,
-            None,
-            Some(&baseline),
-            Some(kiss::Language::Rust),
-        )
-    })
-    .expect("base same-tree");
-    let main_planned = with_cwd(tmp.path(), || {
-        plan(
-            TestChangeMode::Main,
-            Some(&baseline),
-            None,
-            Some(kiss::Language::Rust),
-        )
-    })
-    .expect("main same-tree");
-    assert_eq!(
-        base_planned.sel.rust, main_planned.sel.rust,
-        "base≡main same-tree: rs_sel must match"
-    );
-    assert_eq!(
-        base_planned.sel.python, main_planned.sel.python,
-        "base≡main same-tree: py_sel must match"
-    );
-    assert_eq!(
-        base_planned.population_required.rust, main_planned.population_required.rust,
-        "base≡main same-tree: rust_population_required must match"
-    );
-    assert_eq!(
-        base_planned.population_required.python, main_planned.population_required.python,
-        "base≡main same-tree: python_population_required must match"
-    );
-    assert_eq!(
-        base_planned.sel.rust,
-        vec![RS_COVERING_SELECTOR.to_string()]
-    );
+    with_locked_warm_committed_repo(|repo, lib| {
+        let baseline = git_stdout(repo, &["rev-parse", "HEAD"]);
+        edit_rust_covered_source(&lib, 2);
+        let base_planned = with_cwd(repo, || {
+            plan(
+                TestChangeMode::Base,
+                None,
+                Some(&baseline),
+                Some(kiss::Language::Rust),
+            )
+        })
+        .expect("base same-tree");
+        let main_planned = with_cwd(repo, || {
+            plan(
+                TestChangeMode::Main,
+                Some(&baseline),
+                None,
+                Some(kiss::Language::Rust),
+            )
+        })
+        .expect("main same-tree");
+        assert_eq!(
+            base_planned.sel.rust, main_planned.sel.rust,
+            "base≡main same-tree: rs_sel must match"
+        );
+        assert_eq!(
+            base_planned.sel.python, main_planned.sel.python,
+            "base≡main same-tree: py_sel must match"
+        );
+        assert_eq!(
+            base_planned.population_required.rust, main_planned.population_required.rust,
+            "base≡main same-tree: rust_population_required must match"
+        );
+        assert_eq!(
+            base_planned.population_required.python, main_planned.population_required.python,
+            "base≡main same-tree: python_population_required must match"
+        );
+        assert_eq!(
+            base_planned.sel.rust,
+            vec![RS_COVERING_SELECTOR.to_string()]
+        );
+    });
 }
 
 fn assert_run_test_dry_run(mode: TestChangeMode, main: Option<&str>, base: Option<&str>) {
     let tmp = TempDir::new().unwrap();
-    let lib = warm_committed_rust_demo(&tmp);
+    let lib = clone_warm_committed_repo(tmp.path());
     edit_rust_covered_source(&lib, 2);
-    let planned = with_cwd(tmp.path(), || {
-        plan(mode, main, base, Some(kiss::Language::Rust))
-    })
-    .unwrap_or_else(|e| panic!("{mode:?} plan: {e}"));
-    assert_eq!(
-        planned.sel.rust,
-        vec![RS_COVERING_SELECTOR.to_string()],
-        "{mode:?}: dry-run covering selector"
-    );
+    let gate = kiss::GateConfig {
+        test_coverage_threshold: 0,
+        orphan_detection: false,
+        ..Default::default()
+    };
     let code = with_cwd(tmp.path(), || {
         run_test(RunTestCmdArgs {
             invocation: match mode {
@@ -226,7 +222,7 @@ fn assert_run_test_dry_run(mode: TestChangeMode, main: Option<&str>, base: Optio
             ignore: &[],
             lang_filter: Some(kiss::Language::Rust),
             config_main_branch: None,
-            gate_config: kiss::GateConfig::default(),
+            gate_config: gate,
         })
     });
     assert_eq!(code, 0, "{mode:?}: run_test dry-run exit");

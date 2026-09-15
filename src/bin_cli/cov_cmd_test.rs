@@ -87,6 +87,13 @@ fn gather_cov_files_test_directory_is_none_even_with_repo_cache() {
             .iter()
             .any(|path| path.ends_with("pkg/app.py") || path.ends_with("app.py"))
     );
+    assert!(
+        root.py_files
+            .iter()
+            .all(|path| !kiss::is_python_test_module_path(path)),
+        "coverage file set must omit test modules: {:?}",
+        root.py_files
+    );
     assert!(gather_cov_files(&repo.join("tests/fast"), None, &[]).is_none());
 }
 
@@ -187,7 +194,16 @@ fn both_gates_disabled_short_circuits() {
         ..GateConfig::default()
     };
     let tmp = tempfile::tempdir().unwrap();
+    // Seed empty selector caches so max_num_tests uses the cheap count path
+    // instead of discovering/refreshing under allow_refresh.
+    std::fs::create_dir_all(tmp.path().join(".git")).unwrap();
     std::fs::write(tmp.path().join("a.py"), "x = 1\n").unwrap();
+    crate::test_runner::workspace_selector_cache::store_python_workspace_selectors(
+        tmp.path(),
+        &[],
+        &[],
+        &[],
+    );
     let path = tmp.path().to_string_lossy().to_string();
     let args = CovCommandArgs {
         paths: std::slice::from_ref(&path),
@@ -199,7 +215,7 @@ fn both_gates_disabled_short_circuits() {
         ignore: &[],
         timing: false,
         jobs: 1,
-        allow_refresh: true,
+        allow_refresh: false,
         pytest_args: &[],
         language_tables: Default::default(),
     };
@@ -355,11 +371,20 @@ fn time_only_gate_path_runs_when_coverage_threshold_zero() {
         ..GateConfig::default()
     };
     let tmp = tempfile::tempdir().unwrap();
-    std::fs::write(tmp.path().join("lib.rs"), "pub fn x() {}\n").unwrap();
+    std::fs::create_dir_all(tmp.path().join(".git")).unwrap();
+    std::fs::write(tmp.path().join("a.py"), "x = 1\n").unwrap();
+    // Python + empty selector cache: time gate fails closed on missing population
+    // without falling through to rust batch/cargo tool detection.
+    crate::test_runner::workspace_selector_cache::store_python_workspace_selectors(
+        tmp.path(),
+        &[],
+        &[],
+        &[],
+    );
     let path = tmp.path().to_string_lossy().to_string();
     let args = CovCommandArgs {
         paths: std::slice::from_ref(&path),
-        lang_filter: Some(Language::Rust),
+        lang_filter: Some(Language::Python),
         py_config: &py,
         rs_config: &rs,
         gate_config: &gate,
@@ -367,7 +392,7 @@ fn time_only_gate_path_runs_when_coverage_threshold_zero() {
         ignore: &[],
         timing: false,
         jobs: 1,
-        allow_refresh: true,
+        allow_refresh: false,
         pytest_args: &[],
         language_tables: Default::default(),
     };
@@ -655,4 +680,134 @@ fn try_evaluate_records_with_cached_orphans_evaluates_correctly() {
     };
     let res = try_evaluate_records_with_cached_orphans(&records, &ctx_bypass, std::slice::from_ref(&viol));
     assert_eq!(res, Some(0));
+}
+
+#[test]
+fn run_cov_command_ignores_python_test_module_paths() {
+    use std::fs;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    fs::create_dir_all(repo.join(".git")).unwrap();
+    fs::create_dir_all(repo.join("tests")).unwrap();
+    fs::write(repo.join("lib.py"), "def add(a, b):\n    return a + b\n").unwrap();
+    fs::write(
+        repo.join("tests/test_lib.py"),
+        "from lib import add\n\ndef test_add():\n    assert add(1, 2) == 3\n",
+    )
+    .unwrap();
+
+    let files = gather_cov_files(repo, Some(Language::Python), &[]).expect("production files");
+    assert!(
+        files
+            .py_files
+            .iter()
+            .any(|path| path.ends_with("lib.py") && !path.to_string_lossy().contains("test")),
+        "production lib.py must remain: {:?}",
+        files.py_files
+    );
+    assert!(
+        files
+            .py_files
+            .iter()
+            .all(|path| !kiss::is_python_test_module_path(path)),
+        "test modules must be omitted from cov files: {:?}",
+        files.py_files
+    );
+
+    // Gate evaluation over production-only records must not invent test-module paths.
+    let records = [analyze::line_coverage::LineCoverageRecord {
+        file: PathBuf::from("lib.py"),
+        total_lines: 2,
+        covered_lines: 2,
+        percent: 100,
+        first_uncovered_line: None,
+    }];
+    let focus = FocusFilter::unrestricted();
+    let out = crate::test_runner::capture_stdout::capture_stdout(|| {
+        assert!(!evaluate_coverage_gate(
+            &records,
+            &focus,
+            90,
+            TestCoverageScope::ByFile,
+            false,
+        ));
+    });
+    assert!(
+        !out
+            .lines()
+            .any(|line| line.contains("VIOLATION") && line.contains("tests/test_lib.py")),
+        "test modules must not appear in coverage violations: {out}"
+    );
+}
+
+#[test]
+fn run_cov_command_warm_seed_still_emits_production_coverage_violations() {
+    use crate::bin_cli::cov_warm::warm_cov_caches_after_tests;
+    use crate::test_runner::python_coverage_index::{
+        write_python_coverage_snapshot, write_python_population_manifest_for_args,
+    };
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::fs;
+
+    let _cwd = crate::cwd_test_lock::lock();
+    let orig_dir = std::env::current_dir().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    std::env::set_current_dir(repo).unwrap();
+    let _restore_cwd = RestoreCwd(orig_dir);
+    fs::create_dir_all(repo.join(".git")).unwrap();
+    fs::write(
+        repo.join("default.py"),
+        "def uncovered_function(x):\n    return x * 2\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.join("test_default.py"),
+        "def test_default():\n    assert True\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.join(".kissconfig"),
+        "[global]\nduplication_enabled = false\n[test]\ntest_coverage_threshold = 100\norphan_detection = false\n[python]\n[rust]\n",
+    )
+    .unwrap();
+    let selector = "test_default.py::test_default".to_string();
+    write_python_population_manifest_for_args(repo, std::slice::from_ref(&selector), &[]).unwrap();
+    // Cover only the test module lines — production default.py stays uncovered.
+    let mut covered = BTreeMap::new();
+    covered.insert("test_default.py".to_string(), BTreeSet::from([1u32, 2]));
+    write_python_coverage_snapshot(repo, &covered).unwrap();
+
+    let py = Config::python_defaults();
+    let rs = Config::rust_defaults();
+    let gate = GateConfig {
+        test_coverage_threshold: 100,
+        orphan_detection: false,
+        max_unit_test_seconds: Vec::new(),
+        ..GateConfig::default()
+    };
+    warm_cov_caches_after_tests(repo, Some(Language::Python), &[], &gate, &[]);
+    let path = ".".to_string();
+    let args = CovCommandArgs {
+        paths: std::slice::from_ref(&path),
+        lang_filter: Some(Language::Python),
+        py_config: &py,
+        rs_config: &rs,
+        gate_config: &gate,
+        bypass_gate: false,
+        ignore: &[],
+        timing: false,
+        jobs: 1,
+        allow_refresh: false,
+        pytest_args: &[],
+        language_tables: Default::default(),
+    };
+    let out = crate::test_runner::capture_stdout::capture_stdout(|| {
+        assert_eq!(run_cov_command(&args), 1);
+    });
+    assert!(
+        out.contains("VIOLATION:test_coverage:"),
+        "warm-hit incomplete production coverage must still violate: {out}"
+    );
 }

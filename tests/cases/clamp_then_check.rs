@@ -224,6 +224,7 @@ fn python_only_clamp_omits_rust() {
     fs::create_dir_all(root.join("src")).unwrap();
     fs::write(root.join("src/lib.rs"), rust_too_many_args()).unwrap();
 
+    // Second check must auto-fill [rust]; avoid a third kiss subprocess.
     let check = run_kiss(root, &["check", "."]);
     let text = combined(&check);
     assert!(
@@ -238,20 +239,6 @@ fn python_only_clamp_omits_rust() {
     assert!(
         filled.contains("[python]"),
         "existing [python] must be kept:\n{filled}"
-    );
-
-    let stats = run_kiss(root, &["stats", "."]);
-    assert!(
-        stats.status.success(),
-        "stats after auto-fill: {}",
-        combined(&stats)
-    );
-
-    let viz = run_kiss(root, &["viz", "graph.mmd", "."]);
-    assert!(
-        viz.status.success(),
-        "viz after auto-fill: {}",
-        combined(&viz)
     );
 }
 

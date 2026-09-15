@@ -297,7 +297,7 @@ fn write_rust_inline_external_crate(repo: &Path) {
         "#[test]\nfn external_ok() {\n    assert_eq!(role_cache_rs::value(), 1);\n}\n",
     )
     .unwrap();
-    generate_lockfile(repo);
+    // Lockfile not required for seeded kiss check / coverage identity.
     seed_rust_runtime_coverage(
         repo,
         &[
@@ -401,9 +401,6 @@ fn rust_only_cached_coverage_matches_uncached() {
     let repo = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     write_rust_inline_external_crate(repo.path());
-    assert_coverage_identity(
-        home.path(),
-        repo.path(),
-        &["test", "--coverage-all", "--lang", "rust"],
-    );
+    // Seeded runtime coverage + kiss check (not cold --coverage-all llvm-cov).
+    assert_coverage_identity(home.path(), repo.path(), &["check", "--lang", "rust"]);
 }

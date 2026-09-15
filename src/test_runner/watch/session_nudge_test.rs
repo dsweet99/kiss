@@ -81,12 +81,12 @@ fn nudge_while_waiting_skips_settle() {
     let mut steps = VecDeque::new();
     steps.push_back(Err(RecvTimeout::Timeout));
     steps.push_back(Ok(vec![NormalizedWatchEvent::Paths(vec![file])]));
-    steps.extend(timeout_steps(4));
+    steps.extend(timeout_steps(1));
     let mut src = NudgeScript { steps };
     let t0 = Instant::now();
     let code = run_watch_loop(
         py_dry_args(),
-        Duration::from_secs(30),
+        Duration::from_millis(100),
         tmp.path(),
         &mut src,
         Some(&rx),
@@ -264,10 +264,18 @@ fn forwarded_force_two_path_descriptors_override_watcher_modes() {
 
 #[test]
 fn unscoped_force_nudge_keeps_running_watcher_invocation() {
-    for invocation in watcher_running_invocations() {
-        let tmp = tempfile::tempdir().unwrap();
-        init_git(&tmp);
-        commit_a_py(&tmp);
+    // Coalesce coverage of every descriptor lives in
+    // `unscoped_force_keeps_watcher_commit_base_main_and_path_descriptors`.
+    // This live-loop check only needs a few representative running invocations.
+    let representative = [
+        TestInvocation::Commit,
+        TestInvocation::Targets(vec!["tests/test_app.py::test_value".into()]),
+        TestInvocation::Targets(vec!["src/lib.rs".into(), "tests/test_app.py".into()]),
+    ];
+    let tmp = tempfile::tempdir().unwrap();
+    init_git(&tmp);
+    commit_a_py(&tmp);
+    for invocation in representative {
         let (tx, rx) = mpsc::channel::<NudgeRequest>();
         let (reply_tx, reply_rx) = mpsc::sync_channel(1);
         let cycles = Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -275,9 +283,9 @@ fn unscoped_force_nudge_keeps_running_watcher_invocation() {
         let cycles_nudge = Arc::clone(&cycles);
         let sender = std::thread::spawn(move || {
             while cycles_nudge.load(std::sync::atomic::Ordering::SeqCst) < 1 {
-                std::thread::sleep(Duration::from_millis(5));
+                std::thread::sleep(Duration::from_millis(1));
             }
-            std::thread::sleep(Duration::from_millis(20));
+            std::thread::sleep(Duration::from_millis(5));
             tx.send(NudgeRequest {
                 msg: NudgeRequestMsg {
                     force: true,
@@ -297,7 +305,7 @@ fn unscoped_force_nudge_keeps_running_watcher_invocation() {
         let cycles_run = Arc::clone(&cycles);
         let seen_run = Arc::clone(&seen);
         let mut src = NudgeScript {
-            steps: timeout_steps(12),
+            steps: timeout_steps(4),
         };
         let mut args = py_dry_args();
         args.invocation = invocation.clone();

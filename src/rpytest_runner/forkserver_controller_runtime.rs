@@ -20,7 +20,7 @@ use crate::rpytest_runner::runner::validate_request;
 use crate::rpytest_runner::{PytestBootstrap, PytestRunError, PytestRunOutcome, PytestRunRequest};
 
 #[cfg(test)]
-pub(crate) const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
+pub(crate) const SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(400);
 
 pub(crate) struct ForkserverController {
     pub(crate) python: PathBuf,

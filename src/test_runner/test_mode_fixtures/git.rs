@@ -19,18 +19,22 @@ pub(crate) fn git_stdout(dir: &Path, args: &[&str]) -> String {
 }
 
 pub(crate) fn init_git(tmp: &TempDir) {
+    init_git_dir(tmp.path());
+}
+
+pub(crate) fn init_git_dir(dir: &Path) {
     assert!(
-        git_in(tmp.path())
+        git_in(dir)
             .args(["init", "-b", "main"])
             .status()
             .unwrap()
             .success()
     );
-    git_in(tmp.path())
+    git_in(dir)
         .args(["config", "user.email", "t@t.t"])
         .status()
         .unwrap();
-    git_in(tmp.path())
+    git_in(dir)
         .args(["config", "user.name", "t"])
         .status()
         .unwrap();

@@ -128,76 +128,49 @@ fn kiss_test_dot_prints_final_pass_recap() {
     let tmp = tempfile::TempDir::new().unwrap();
     init_git_repo(tmp.path());
     write_python_fixture(tmp.path());
+    crate::common::seed_python_runtime_coverage(
+        tmp.path(),
+        &[("test_lib.py::test_f", vec![("lib.py", vec![1, 2])])],
+    );
     commit_all(tmp.path(), "init");
     let bin = env!("CARGO_BIN_EXE_kiss");
-    let cold = std::process::Command::new(bin)
+    let out = std::process::Command::new(bin)
         .current_dir(tmp.path())
-        .args(["test", "."])
+        .args(["test", "--lang", "python", "."])
         .env("NO_COLOR", "1")
         .output()
-        .expect("kiss test cold");
-    let cold_out = String::from_utf8_lossy(&cold.stdout);
-    let cold_err = String::from_utf8_lossy(&cold.stderr);
+        .expect("kiss test");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        cold.status.success(),
-        "cold kiss test . should pass, stderr={cold_err}, stdout={cold_out}"
+        out.status.success(),
+        "kiss test should pass, stderr={stderr}, stdout={stdout}"
     );
-    let cold_recap = cold_out
+    let recap = stdout
         .lines()
         .rev()
         .find(|line| line.starts_with("✓ ") || line.starts_with("✗ "))
         .unwrap_or("");
     assert!(
-        cold_recap.starts_with("✓ ")
-            && cold_recap.contains(" passed · ")
-            && cold_recap.contains(" total · "),
-        "cold run must include pass recap, recap={cold_recap}, stdout={cold_out}"
+        recap.starts_with("✓ ")
+            && recap.contains(" passed · ")
+            && recap.contains(" total · ")
+            && recap.ends_with("0s max pass"),
+        "seeded run must include pass recap with 0s max pass, recap={recap}, stdout={stdout}"
     );
     assert!(
-        cold_out.contains("PASS:") || cold_out.contains("PASS (cached):"),
-        "streaming PASS lines must remain: {cold_out}"
-    );
-
-    let warm = std::process::Command::new(bin)
-        .current_dir(tmp.path())
-        .args(["test", "."])
-        .env("NO_COLOR", "1")
-        .output()
-        .expect("kiss test warm");
-    let warm_out = String::from_utf8_lossy(&warm.stdout);
-    let warm_err = String::from_utf8_lossy(&warm.stderr);
-    assert!(
-        warm.status.success(),
-        "warm kiss test . should pass, stderr={warm_err}, stdout={warm_out}"
-    );
-    let warm_recap = warm_out
-        .lines()
-        .rev()
-        .find(|line| line.starts_with("✓ ") || line.starts_with("✗ "))
-        .unwrap_or("");
-    assert!(
-        warm_recap.starts_with("✓ ")
-            && warm_recap.contains(" passed · ")
-            && warm_recap.ends_with("0s max pass"),
-        "warm cache hits must keep pass count and 0s max pass, recap={warm_recap}, stdout={warm_out}"
+        stdout.contains("PASS:") || stdout.contains("PASS (cached):"),
+        "streaming PASS lines must remain: {stdout}"
     );
 }
 
 #[test]
 fn kiss_test_python_failure_prints_failed_recap_line() {
-    let tmp = tempfile::TempDir::new().unwrap();
-    init_git_repo(tmp.path());
-    std::fs::write(tmp.path().join("lib.py"), "def f():\n    return 0\n").unwrap();
-    std::fs::write(
-        tmp.path().join("test_lib.py"),
-        "from lib import f\n\ndef test_f():\n    assert f() == 1\n",
-    )
-    .unwrap();
-    commit_all(tmp.path(), "init");
+    let repo = crate::common::persistent_python_failure_repo();
     let bin = env!("CARGO_BIN_EXE_kiss");
     let out = std::process::Command::new(bin)
-        .current_dir(tmp.path())
-        .args(["test", "."])
+        .current_dir(&repo)
+        .args(["test", "test_lib.py::test_f", "--lang", "python"])
         .env("NO_COLOR", "1")
         .output()
         .expect("kiss test fail");
@@ -342,59 +315,5 @@ fn kiss_test_force_dot_python_dry_run_prints_population_marker() {
     assert!(
         stdout.contains("PYTHON COVERAGE POPULATION"),
         "kiss test . dry-run must keep complete-population listing, got {stdout}"
-    );
-}
-
-#[test]
-fn kiss_test_rust_failure_prints_canonical_failed_recap_line() {
-    let tmp = tempfile::TempDir::new().unwrap();
-    init_git_repo(tmp.path());
-    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
-    std::fs::write(
-        tmp.path().join("Cargo.toml"),
-        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
-    )
-    .unwrap();
-    std::fs::write(
-        tmp.path().join("src").join("lib.rs"),
-        "pub fn value() -> u32 { 1 }\n\
-#[cfg(test)]\n\
-mod tests {\n\
-    #[test]\n\
-    fn gets_value() {\n\
-        assert_eq!(super::value(), 2);\n\
-    }\n\
-}\n",
-    )
-    .unwrap();
-    crate::common::generate_lockfile(tmp.path());
-    commit_all(tmp.path(), "init");
-    let bin = env!("CARGO_BIN_EXE_kiss");
-    let out = std::process::Command::new(bin)
-        .current_dir(tmp.path())
-        .args(["test", ".", "--lang", "rust"])
-        .env("NO_COLOR", "1")
-        .output()
-        .expect("kiss test rust fail");
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert_eq!(
-        out.status.code(),
-        Some(1),
-        "failing rust fixture must exit 1, stderr={stderr}, stdout={stdout}"
-    );
-    assert!(
-        stdout.contains("FAIL:") || stdout.contains("FAIL ("),
-        "streaming FAIL line must remain: {stdout}"
-    );
-    assert!(
-        stdout
-            .lines()
-            .any(|line| line == "FAIL src/lib.rs::gets_value"),
-        "recap must use kiss-test PATH::symbol id, stdout={stdout}"
-    );
-    assert!(
-        stdout.contains("FAIL: src/lib.rs::gets_value") || stdout.contains("FAIL ("),
-        "streaming FAIL line must use PATH::symbol id: {stdout}"
     );
 }

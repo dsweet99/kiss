@@ -27,6 +27,8 @@ pub fn write_kissconfig_with_threshold(root: &Path, settle: f64, threshold: u8) 
 [test]\n\
              test_coverage_threshold = {threshold}\n\
              watch_settle_seconds = {settle}\n\
+             orphan_detection = false\n\
+             num_jobs = 1\n\
              \n\
              [test.max_unit_test_seconds]\n\
              \"*\" = 60\n\
@@ -47,6 +49,8 @@ impl WatchProc {
 fn kiss_cmd() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
     crate::common::scrub_parent_coverage_env(&mut cmd);
+    crate::common::preserve_toolchain_homes(&mut cmd);
+    cmd.env("PYTHONDONTWRITEBYTECODE", "1");
     cmd
 }
 
@@ -101,7 +105,7 @@ pub fn wait_watch_session(dir: &Path, watch: &mut WatchProc) {
         if Instant::now() >= deadline {
             panic!("watch session not ready");
         }
-        std::thread::sleep(Duration::from_millis(50));
+        std::thread::sleep(Duration::from_millis(1));
     }
 }
 
@@ -117,7 +121,7 @@ pub fn wait_watch_idle_cycle(dir: &Path) {
         if Instant::now() >= deadline {
             panic!("watch idle cycle not ready");
         }
-        std::thread::sleep(Duration::from_millis(50));
+        std::thread::sleep(Duration::from_millis(1));
     }
 }
 

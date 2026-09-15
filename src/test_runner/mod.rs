@@ -267,6 +267,10 @@ mod mod_test;
 mod force_bad_test;
 
 #[cfg(test)]
+#[path = "retry_bad_e2e_test.rs"]
+mod retry_bad_e2e_test;
+
+#[cfg(test)]
 #[path = "planning_heartbeat_test.rs"]
 mod planning_heartbeat_test;
 

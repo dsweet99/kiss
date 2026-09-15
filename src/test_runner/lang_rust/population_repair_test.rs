@@ -44,15 +44,19 @@ fn write_demo_crate(root: &std::path::Path) {
         "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
     )
     .unwrap();
-    let lib = root.join("src").join("lib.rs");
-    fs::write(&lib, "pub fn lib() {}\n").unwrap();
+    fs::write(
+        root.join("Cargo.lock"),
+        "version = 4\n\n[[package]]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    fs::write(root.join("src").join("lib.rs"), "pub fn lib() {}\n").unwrap();
     write_test_entry(
         root,
         "a",
         "test_lib",
         TestStatus::Passed,
         RustLineCoverage {
-            files: BTreeMap::from([(lib.to_string_lossy().to_string(), BTreeSet::from([1]))]),
+            files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
         },
     );
     write_rust_population_manifest_for_args(root, &["test_lib".to_string()], &[]).unwrap();

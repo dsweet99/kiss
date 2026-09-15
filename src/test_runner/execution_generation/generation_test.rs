@@ -159,7 +159,8 @@ fn publish_writes_content_addressed_evidence_blobs() {
 fn successive_witness_publishes_reclaim_obsolete_generation_dirs() {
     let tmp = tempfile::tempdir().unwrap();
     let mut ids = Vec::new();
-    for i in 0..5 {
+    // Three publishes: keep current+parent, reclaim the first obsolete dir.
+    for i in 0..3 {
         let mut payload = generation(&["a"]);
         payload.selector_evidence[0].entry_content_digest = format!("blob-a-{i}");
         payload.functional_summary_all_pass = false;

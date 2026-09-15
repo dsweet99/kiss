@@ -8,20 +8,6 @@ fn kiss_binary() -> Command {
     Command::new(env!("CARGO_BIN_EXE_kiss"))
 }
 
-fn run_default_cov(home: &std::path::Path, repo: &std::path::Path) -> std::process::Output {
-    kiss_binary()
-        .current_dir(repo)
-        .arg("test")
-        .arg("--config")
-        .arg(repo.join(".kissconfig"))
-        .arg("--lang")
-        .arg("python")
-        .arg(".")
-        .env("HOME", home)
-        .output()
-        .unwrap()
-}
-
 fn run_default_check_with_config(
     home: &std::path::Path,
     repo: &std::path::Path,
@@ -38,61 +24,9 @@ fn run_default_check_with_config(
         .unwrap()
 }
 
-#[test]
-fn regression_check_default_warm_gate_matches_cold_and_warm_output() {
-    let repo = TempDir::new().unwrap();
-    let home = TempDir::new().unwrap();
-    init_git_repo(repo.path());
-
-    fs::write(
-        repo.path().join(".kissconfig"),
-        "[test]\ntest_coverage_threshold = 100\n[python]\n[rust]\n",
-    )
-    .unwrap();
-    fs::write(
-        repo.path().join("default.py"),
-        "def uncovered_function(x):\n    return x * 2\n",
-    )
-    .unwrap();
-    fs::write(
-        repo.path().join("test_default.py"),
-        "def test_default():\n    assert True\n",
-    )
-    .unwrap();
-    seed_python_runtime_coverage(
-        repo.path(),
-        &[(
-            "test_default.py::test_default",
-            vec![("test_default.py", vec![1, 2])],
-        )],
-    );
-    commit_all(repo.path(), "init");
-
-    let cold = run_default_cov(home.path(), repo.path());
-    let warm = run_default_cov(home.path(), repo.path());
-
-    assert_eq!(
-        cold.status.code(),
-        warm.status.code(),
-        "exit status should match on cold and warm default runs"
-    );
-    let cold_stdout = String::from_utf8_lossy(&cold.stdout);
-    let warm_stdout = String::from_utf8_lossy(&warm.stdout);
-    let cold_violations: Vec<_> = cold_stdout
-        .lines()
-        .filter(|line| line.contains("VIOLATION:test_coverage"))
-        .collect();
-    let warm_violations: Vec<_> = warm_stdout
-        .lines()
-        .filter(|line| line.contains("VIOLATION:test_coverage"))
-        .collect();
-    assert_eq!(
-        cold_violations, warm_violations,
-        "default warm-hit coverage violations should match cold-hit output"
-    );
-    assert!(cold_stdout.contains("VIOLATION:test_coverage:"));
-    assert!(warm_stdout.contains("VIOLATION:test_coverage:"));
-}
+// Cold/warm coverage-gate equality for seeded incomplete production coverage is
+// covered in-process by
+// `bin_cli::cov_cmd::tests::run_cov_command_warm_seed_still_emits_production_coverage_violations`.
 
 #[test]
 fn regression_cached_coverage_violations_do_not_leak_into_default_gate_mode() {

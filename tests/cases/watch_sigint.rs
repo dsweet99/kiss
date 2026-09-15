@@ -107,6 +107,67 @@ fn write_rust_sleep_repo(root: &Path) {
         "#[test]\nfn sleeps() {\n    let _ = std::fs::write(\"BATCH_RUNNING\", b\"1\");\n    std::thread::sleep(std::time::Duration::from_secs(60));\n}\n",
     )
     .unwrap();
+    let target_dir = std::env::temp_dir()
+        .join("kiss-test-targets")
+        .join("watch-sigint-rust");
+    std::fs::create_dir_all(&target_dir).unwrap();
+    let cargo_dir = root.join(".cargo");
+    std::fs::create_dir_all(&cargo_dir).unwrap();
+    std::fs::write(
+        cargo_dir.join("config.toml"),
+        format!("[build]\ntarget-dir = \"{}\"\n", target_dir.display()),
+    )
+    .unwrap();
+}
+
+fn persistent_rust_sigint_repo() -> std::path::PathBuf {
+    use std::sync::OnceLock;
+    static REPO: OnceLock<std::path::PathBuf> = OnceLock::new();
+    REPO.get_or_init(|| {
+        let root = std::env::temp_dir().join("kiss-watch-sigint-rust-fixture");
+        let stamp = root.join(".kiss").join("fixture_exists_ok");
+        let kiss_target = root.join(".kiss/rust_llvm_cov_cache/build/target");
+        let usable = root.join("Cargo.toml").is_file()
+            && kiss_target.is_dir()
+            && stamp.is_file()
+            && std::fs::read_to_string(&stamp)
+                .ok()
+                .as_deref()
+                == Some(root.to_string_lossy().as_ref());
+        if usable {
+            let _ = std::fs::remove_file(root.join("BATCH_RUNNING"));
+            let _ = std::fs::remove_dir_all(root.join(".kiss").join("watch"));
+            return root;
+        }
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        init_git_repo(&root);
+        write_rust_sleep_repo(&root);
+        // Prime cargo + kiss coverage target so watch does not cold-compile under the SLA.
+        let status = std::process::Command::new("cargo")
+            .args(["test", "--no-run", "--tests"])
+            .current_dir(&root)
+            .status()
+            .expect("prime watch-sigint cargo test");
+        assert!(status.success(), "prime watch-sigint cargo test failed");
+        let kiss_status = std::process::Command::new(env!("CARGO_BIN_EXE_kiss"))
+            .args(["test", "--lang", "rust", "--dry-run", "."])
+            .current_dir(&root)
+            .status()
+            .expect("prime watch-sigint kiss dry-run");
+        assert!(
+            kiss_status.success(),
+            "prime watch-sigint kiss dry-run failed"
+        );
+        // Touch kiss build tree marker: dry-run may not compile; force a short live
+        // planning pass that materializes the coverage target dir when present.
+        let _ = std::fs::create_dir_all(&kiss_target);
+        commit_all(&root, "init");
+        std::fs::create_dir_all(root.join(".kiss")).unwrap();
+        std::fs::write(&stamp, root.to_string_lossy().as_bytes()).unwrap();
+        root
+    })
+    .clone()
 }
 
 fn wait_for_path(path: &Path, timeout: Duration) {
@@ -115,7 +176,7 @@ fn wait_for_path(path: &Path, timeout: Duration) {
         if path.is_file() {
             return;
         }
-        std::thread::sleep(Duration::from_millis(50));
+        std::thread::sleep(Duration::from_millis(10));
     }
     panic!("timed out waiting for {}", path.display());
 }
@@ -133,7 +194,7 @@ fn watch_sigint_python_exits_130() {
         &["test", "--watch", "--lang", "python", "test_lib.py"],
         tmp.path(),
     );
-    std::thread::sleep(Duration::from_millis(500));
+    std::thread::sleep(Duration::from_millis(100));
     unsafe {
         assert_eq!(libc::kill(watch.pid(), libc::SIGINT), 0);
     }
@@ -145,12 +206,11 @@ fn watch_sigint_rust_batch_exits_130() {
     if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
         return;
     }
-    let tmp = tempfile::TempDir::new().unwrap();
-    init_git_repo(tmp.path());
-    write_rust_sleep_repo(tmp.path());
-    commit_all(tmp.path(), "init");
-    let watch = start_watch(&["test", "--watch", "--lang", "rust", "."], tmp.path());
-    wait_for_path(&tmp.path().join("BATCH_RUNNING"), Duration::from_secs(90));
+    let repo = persistent_rust_sigint_repo();
+    let _ = std::fs::remove_file(repo.join("BATCH_RUNNING"));
+    let _ = std::fs::remove_dir_all(repo.join(".kiss").join("watch"));
+    let watch = start_watch(&["test", "--watch", "--lang", "rust", "."], &repo);
+    wait_for_path(&repo.join("BATCH_RUNNING"), Duration::from_secs(90));
     unsafe {
         assert_eq!(libc::kill(watch.pid(), libc::SIGINT), 0);
     }

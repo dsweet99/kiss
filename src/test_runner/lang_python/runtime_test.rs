@@ -25,8 +25,9 @@ fn python_runtime_language_dry_run_and_indexable() {
 #[test]
 fn python_accepted_summary_counts_hits() {
     let rt = PythonRuntime;
+    let tmp = tempfile::tempdir().unwrap();
     let req = EnsureRequest {
-        repo_root: PathBuf::from("."),
+        repo_root: tmp.path().to_path_buf(),
         mode: AcceptMode::All,
         lang_filter: Some(kiss::Language::Python),
         ignore: vec![],
@@ -57,7 +58,6 @@ fn python_accepted_summary_counts_hits() {
     };
     let summary = rt.accepted_summary(&req, &["a".into()], &witness).unwrap();
     assert_eq!(summary.cache_hits, 1);
-    let tmp = tempfile::tempdir().unwrap();
     let _ = rt.discover_universe(&req);
     let _ = rt.coverage_snapshot(tmp.path());
     let _ = rt.status_timing_snapshot(tmp.path());

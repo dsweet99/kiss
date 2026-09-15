@@ -1,6 +1,19 @@
 #![allow(clippy::redundant_pub_crate)]
 #![allow(clippy::needless_pass_by_value)]
 
+#[cfg(all(test, target_os = "linux"))]
+#[used]
+#[allow(non_upper_case_globals)]
+#[unsafe(link_section = ".init_array")]
+static prefer_tmpfs_tmpdir_init: extern "C" fn() = {
+    extern "C" fn init() {
+        if std::env::var_os("TMPDIR").is_none() && std::path::Path::new("/dev/shm").is_dir() {
+            unsafe { std::env::set_var("TMPDIR", "/dev/shm") };
+        }
+    }
+    init
+};
+
 mod analyze;
 mod analyze_cache;
 mod analyze_parse;

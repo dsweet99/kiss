@@ -231,6 +231,12 @@ pub fn enumerate_workspace_python_selectors(
     ignore: &[String],
     pytest_args: &[String],
 ) -> Result<Vec<String>, String> {
+    if pytest_args.is_empty()
+        && let Some(selectors) =
+            stored_python_universe_selectors(repo_root, &[], ignore, PYTHON_COVERAGE_ENV_KEYS)
+    {
+        return Ok(selectors);
+    }
     if !ignore.is_empty() {
         let root = repo_root.to_string_lossy().to_string();
         let (py_files, _rs_files) =

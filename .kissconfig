@@ -12,7 +12,7 @@ docs_allowed = [
 orphan_detection = true
 test_coverage_scope = "by_file"
 test_coverage_threshold = 75
-max_num_tests = 7000
+max_num_tests = 2000
 num_jobs = 16
 num_jobs_pytest = 16
 watch_settle_seconds = 1.0
@@ -20,16 +20,7 @@ pytest_plugins = []
 ignore = ["src/main.rs"]
 
 [test.max_unit_test_seconds]
-"tests/" = 60
-"tests/cases/" = 60
-"src/test_runner/" = 60
-"src/bin_cli/" = 30
-"src/analyze/" = 30
-"src/rust_llvm_cov_runner/publish_derived/" = 120
-"src/rust_llvm_cov_runner/execute_or_reuse/" = 60
-"src/rslip/" = 60
-"src/kiss_publication_barrier/" = 60
-"*" = 5
+"*" = 3
 
 [python]
 boolean_parameters = 2

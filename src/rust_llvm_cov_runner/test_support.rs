@@ -3,6 +3,18 @@ use std::path::Path;
 use std::process::Child;
 use std::time::{Duration, Instant};
 
+/// Prefer tmpfs for TempDir-backed publish barriers (ext4 /tmp fsync is slow).
+#[cfg(test)]
+pub(crate) fn prefer_tmpfs_tmpdir() {
+    use std::sync::Once;
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        if std::env::var_os("TMPDIR").is_none() && Path::new("/dev/shm").is_dir() {
+            unsafe { std::env::set_var("TMPDIR", "/dev/shm") };
+        }
+    });
+}
+
 #[allow(dead_code)]
 pub(crate) fn write_demo_crate_source(root: &Path) {
     fs::write(
@@ -28,6 +40,7 @@ pub(crate) fn llvm_cov_json_for_file(file: &Path) -> String {
 
 #[cfg(test)]
 pub(crate) fn batch_executor_fixture_repo() -> tempfile::TempDir {
+    prefer_tmpfs_tmpdir();
     let tmp = tempfile::tempdir().unwrap();
     fs::create_dir_all(tmp.path().join("src")).unwrap();
     fs::write(
@@ -156,6 +169,7 @@ pub(crate) struct PublishedAlphaFixture {
 
 #[cfg(test)]
 pub(crate) fn published_alpha_derived_fixture() -> PublishedAlphaFixture {
+    prefer_tmpfs_tmpdir();
     use std::collections::{BTreeMap, BTreeSet};
     use std::time::Duration;
 

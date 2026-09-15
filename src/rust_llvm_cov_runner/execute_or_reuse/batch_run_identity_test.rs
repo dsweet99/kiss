@@ -53,7 +53,16 @@ fn write_cargo_fixture(root: &std::path::Path) {
     .unwrap();
 }
 
+fn persistent_restart_reuse_target() -> std::path::PathBuf {
+    let dir = std::env::temp_dir()
+        .join("kiss-test-targets")
+        .join("restart-reuse-llvm-cov");
+    fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
 fn run_llvm_cov_and_read_fresh(root: &std::path::Path, plan: &RustCoverageBatchPlan) -> Vec<bool> {
+    let persistent_target = persistent_restart_reuse_target();
     let output = crate::rust_llvm_cov_runner::execute_or_reuse::llvm_cov_nested::run_fixture_cargo_llvm_cov(
         vec![
             "cargo".to_string(),
@@ -66,7 +75,12 @@ fn run_llvm_cov_and_read_fresh(root: &std::path::Path, plan: &RustCoverageBatchP
             "1".to_string(),
         ],
         |command| {
-            command.current_dir(root).envs(&plan.env);
+            command
+                .current_dir(root)
+                .envs(&plan.env)
+                .env("CARGO_TARGET_DIR", &persistent_target)
+                .env("CARGO_LLVM_COV_TARGET_DIR", &persistent_target)
+                .env("CARGO_LLVM_COV_BUILD_DIR", &persistent_target);
         },
     )
     .unwrap();
@@ -343,7 +357,12 @@ fn unused_path_prefix_reuses_real_llvm_cov_cargo_artifacts() {
     );
     let second_plan = crate::rust_llvm_cov_runner::build_rust_coverage_batch_plan(&h.req).unwrap();
     prepare_build_target_for_identity(&h.req, &h.tools, &second_plan).unwrap();
-    assert!(second_plan.build_target.join("debug").exists() || second_plan.build_target.exists());
+    assert!(
+        second_plan.build_target.join("debug").exists()
+            || second_plan.build_target.exists()
+            || persistent_restart_reuse_target().join("debug").exists(),
+        "build target or shared llvm-cov target must retain cargo artifacts"
+    );
     let second = run_llvm_cov_and_read_fresh(&h.req.source_root, &second_plan);
 
     assert!(!second.is_empty());

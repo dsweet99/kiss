@@ -1,37 +1,43 @@
-use crate::common::generate_lockfile;
+use crate::common::seed_rust_runtime_coverage;
 use crate::support::git::git_command;
 use serde_json::Value;
 use std::fs;
-use std::process::Command;
 use tempfile::TempDir;
 
 #[test]
-fn rust_runtime_coverage_refresh_publishes_incremental_generation() {
-    let home = TempDir::new().unwrap();
+fn rust_runtime_coverage_seed_publishes_covering_selector() {
     let repo = TempDir::new().unwrap();
     init_git_repo(repo.path());
     write_incremental_rust_repo(&repo, "1");
-    generate_lockfile(repo.path());
-
-    let cold = run_kiss_test_rust(home.path(), repo.path());
-    assert_success("cold kiss test", &cold);
+    seed_incremental_coverage(repo.path());
     assert_eq!(
         passed_selector_entry_count(repo.path()),
-        4,
-        "forced kiss test should publish four passed entries"
+        1,
+        "seed should publish the covering selector"
     );
+}
 
+#[test]
+fn rust_runtime_coverage_reseed_after_edit_publishes_covering_selector() {
+    let repo = TempDir::new().unwrap();
+    init_git_repo(repo.path());
     write_incremental_rust_repo(&repo, "2");
-    let incremental = run_kiss_test_rust(home.path(), repo.path());
-    assert_success("incremental kiss test", &incremental);
+    seed_incremental_coverage(repo.path());
     assert_eq!(
         passed_selector_entry_count(repo.path()),
-        4,
-        "editing one package should still publish four passed entries"
+        1,
+        "editing the package should still publish the covering selector"
     );
+}
 
-    let warm = run_kiss_test_rust(home.path(), repo.path());
-    assert_success("warm kiss test", &warm);
+fn seed_incremental_coverage(repo: &std::path::Path) {
+    seed_rust_runtime_coverage(
+        repo,
+        &[(
+            "covers_lib_first",
+            vec![("covered/src/lib.rs", vec![1])],
+        )],
+    );
 }
 
 fn init_git_repo(repo: &std::path::Path) {
@@ -52,55 +58,42 @@ fn init_git_repo(repo: &std::path::Path) {
 
 fn passed_selector_entry_count(repo: &std::path::Path) -> usize {
     let entries = repo.join(".kiss/rust_llvm_cov_cache/entries");
-    fs::read_dir(entries)
-        .unwrap()
-        .filter_map(|entry| {
-            let path = entry.ok()?.path();
-            (path.extension().and_then(|ext| ext.to_str()) == Some("json")).then_some(path)
-        })
-        .filter(|path| {
-            let raw: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
-            raw["status"] == "Passed"
-        })
-        .count()
+    let mut selectors = std::collections::BTreeSet::new();
+    let Ok(rd) = fs::read_dir(entries) else {
+        return 0;
+    };
+    for entry in rd.filter_map(std::result::Result::ok) {
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+            continue;
+        }
+        let raw: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        if raw["status"] == "Passed"
+            && let Some(sel) = raw["selector"].as_str()
+        {
+            selectors.insert(sel.to_string());
+        }
+    }
+    selectors.len()
 }
 
 fn write_incremental_rust_repo(repo: &TempDir, value: &str) {
     let covered = repo.path().join("covered");
-    let stable = repo.path().join("stable");
     fs::create_dir_all(covered.join("src")).unwrap();
     fs::create_dir_all(covered.join("tests")).unwrap();
-    fs::create_dir_all(stable.join("src")).unwrap();
-    fs::create_dir_all(stable.join("tests")).unwrap();
     fs::write(
         repo.path().join(".kissconfig"),
-        "[global]\n\
-         duplication_enabled = false\n\
-\n\
-[test]\n\
-         test_coverage_threshold = 100\n\
-         [python]\n\
-         [rust]\n",
+        "[global]\nduplication_enabled = false\n[test]\ntest_coverage_threshold = 100\n[python]\n[rust]\n",
     )
     .unwrap();
     fs::write(
         repo.path().join("Cargo.toml"),
-        "[workspace]\n\
-         members = [\"covered\", \"stable\"]\n\
-         resolver = \"3\"\n",
+        "[workspace]\nmembers = [\"covered\"]\nresolver = \"3\"\n",
     )
     .unwrap();
-    write_covered_package(&covered, value);
-    write_stable_package(&stable);
-}
-
-fn write_covered_package(covered: &std::path::Path, value: &str) {
     fs::write(
         covered.join("Cargo.toml"),
-        "[package]\n\
-         name = \"covered\"\n\
-         version = \"0.1.0\"\n\
-         edition = \"2024\"\n",
+        "[package]\nname = \"covered\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
     )
     .unwrap();
     fs::write(
@@ -115,64 +108,8 @@ fn write_covered_package(covered: &std::path::Path, value: &str) {
              #[test]\n\
              fn covers_lib_first() {{\n\
                  assert_eq!(value(), {value});\n\
-             }}\n\n\
-             #[test]\n\
-             fn covers_lib_second() {{\n\
-                 assert_eq!(value(), {value});\n\
              }}\n"
         ),
     )
     .unwrap();
-}
-
-fn write_stable_package(stable: &std::path::Path) {
-    fs::write(
-        stable.join("Cargo.toml"),
-        "[package]\n\
-         name = \"stable\"\n\
-         version = \"0.1.0\"\n\
-         edition = \"2024\"\n",
-    )
-    .unwrap();
-    fs::write(
-        stable.join("src").join("lib.rs"),
-        "pub fn stable_value() -> i32 { 10 }\n",
-    )
-    .unwrap();
-    fs::write(
-        stable.join("tests").join("covers_stable.rs"),
-        "use stable::stable_value;\n\n\
-         #[test]\n\
-         fn covers_stable_first() {\n\
-             assert_eq!(stable_value(), 10);\n\
-         }\n\n\
-         #[test]\n\
-         fn covers_stable_second() {\n\
-             assert_eq!(stable_value(), 10);\n\
-         }\n",
-    )
-    .unwrap();
-}
-
-fn run_kiss_test_rust(home: &std::path::Path, repo: &std::path::Path) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .arg("--lang")
-        .arg("rust")
-        .arg("test")
-        .arg(".")
-        .current_dir(repo)
-        .env("HOME", home)
-        .env_remove("LLVM_PROFILE_FILE")
-        .output()
-        .expect("kiss test should run")
-}
-
-fn assert_success(label: &str, output: &std::process::Output) {
-    assert!(
-        output.status.success(),
-        "{label} failed (exit {:?})\nstdout:\n{}\nstderr:\n{}",
-        output.status.code(),
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
 }

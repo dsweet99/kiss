@@ -3,32 +3,23 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
 use crate::analyze_cache::fnv1a64;
 
-const DISK_SCHEMA: &str = "selector-source-digests-v4";
+const DISK_SCHEMA: &str = "selector-source-digests-v5";
 const DISK_FILE: &str = "selector_source_digests.json";
 
 #[derive(Clone, Eq, PartialEq, Hash)]
-struct FileStamp {
+struct ContentMemoKey {
     path: PathBuf,
-    len: u64,
-    mtime_ns: u64,
-    ctime_ns: u64,
-    dev: u64,
-    ino: u64,
+    content_hash: u64,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 struct DiskRecord {
-    len: u64,
-    mtime_ns: u64,
-    ctime_ns: u64,
-    dev: u64,
-    ino: u64,
+    content_hash: u64,
     digest: u64,
     has_literal_includes: bool,
 }
@@ -39,68 +30,14 @@ struct DiskFile {
     files: BTreeMap<String, DiskRecord>,
 }
 
-fn memo() -> &'static Mutex<HashMap<FileStamp, u64>> {
-    static MEMO: OnceLock<Mutex<HashMap<FileStamp, u64>>> = OnceLock::new();
+fn memo() -> &'static Mutex<HashMap<ContentMemoKey, u64>> {
+    static MEMO: OnceLock<Mutex<HashMap<ContentMemoKey, u64>>> = OnceLock::new();
     MEMO.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 fn disk_maps() -> &'static Mutex<HashMap<PathBuf, BTreeMap<String, DiskRecord>>> {
     static MAPS: OnceLock<Mutex<HashMap<PathBuf, BTreeMap<String, DiskRecord>>>> = OnceLock::new();
     MAPS.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-fn system_time_ns(ts: SystemTime) -> u64 {
-    ts.duration_since(UNIX_EPOCH)
-        .map(|d| u64::try_from(d.as_nanos()).unwrap_or(u64::MAX))
-        .unwrap_or(0)
-}
-
-fn ctime_ns(meta: &fs::Metadata) -> u64 {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        let sec = u64::try_from(meta.ctime()).unwrap_or(0);
-        let nsec = u64::try_from(meta.ctime_nsec()).unwrap_or(0);
-        sec.saturating_mul(1_000_000_000).saturating_add(nsec)
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = meta;
-        0
-    }
-}
-
-fn device_inode(meta: &fs::Metadata) -> (u64, u64) {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        (meta.dev(), meta.ino())
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = meta;
-        (0, 0)
-    }
-}
-
-fn stamp_for(path: &Path, meta: &fs::Metadata) -> FileStamp {
-    let (dev, ino) = device_inode(meta);
-    FileStamp {
-        path: path.to_path_buf(),
-        len: meta.len(),
-        mtime_ns: meta.modified().map(system_time_ns).unwrap_or(0),
-        ctime_ns: ctime_ns(meta),
-        dev,
-        ino,
-    }
-}
-
-fn record_matches(record: &DiskRecord, stamp: &FileStamp) -> bool {
-    record.len == stamp.len
-        && record.mtime_ns == stamp.mtime_ns
-        && record.ctime_ns == stamp.ctime_ns
-        && record.dev == stamp.dev
-        && record.ino == stamp.ino
 }
 
 fn load_disk_map(repo_root: &Path) -> BTreeMap<String, DiskRecord> {
@@ -138,17 +75,13 @@ fn with_repo_disk_map<R>(
 fn remember_disk_record(
     repo_root: &Path,
     rel: &str,
-    stamp: &FileStamp,
+    content_hash: u64,
     digest: u64,
     has_literal_includes: bool,
 ) {
     let key = repo_root.to_path_buf();
     let record = DiskRecord {
-        len: stamp.len,
-        mtime_ns: stamp.mtime_ns,
-        ctime_ns: stamp.ctime_ns,
-        dev: stamp.dev,
-        ino: stamp.ino,
+        content_hash,
         digest,
         has_literal_includes,
     };
@@ -160,27 +93,29 @@ fn remember_disk_record(
     }
 }
 
-fn content_digest(repo_root: &Path, rel: &str, path: &Path, stamp: &FileStamp) -> io::Result<u64> {
-    let cached = with_repo_disk_map(repo_root, |disk| {
-        disk.get(rel)
-            .filter(|record| record_matches(record, stamp))
-            .cloned()
-    });
-    if let Some(record) = cached.as_ref()
-        && !record.has_literal_includes
-    {
-        if let Ok(mut guard) = memo().lock() {
-            guard.insert(stamp.clone(), record.digest);
-        }
-        return Ok(record.digest);
-    }
-    if cached.is_none()
-        && let Ok(guard) = memo().lock()
-        && let Some(digest) = guard.get(stamp).copied()
+fn content_digest(repo_root: &Path, rel: &str, path: &Path) -> io::Result<u64> {
+    let bytes = fs::read(path)?;
+    let content_hash = fnv1a64(0xcbf2_9ce4_8422_2325, &bytes);
+    let memo_key = ContentMemoKey {
+        path: path.to_path_buf(),
+        content_hash,
+    };
+    if let Ok(guard) = memo().lock()
+        && let Some(digest) = guard.get(&memo_key).copied()
     {
         return Ok(digest);
     }
-    let bytes = fs::read(path)?;
+    let cached = with_repo_disk_map(repo_root, |disk| {
+        disk.get(rel)
+            .filter(|record| record.content_hash == content_hash && !record.has_literal_includes)
+            .map(|record| record.digest)
+    });
+    if let Some(digest) = cached {
+        if let Ok(mut guard) = memo().lock() {
+            guard.insert(memo_key, digest);
+        }
+        return Ok(digest);
+    }
     let mut hashed = if rel.ends_with(".rs") && !rel.ends_with("build.rs") {
         rust_selector_declaration_bytes(&bytes)
     } else {
@@ -195,9 +130,9 @@ fn content_digest(repo_root: &Path, rel: &str, path: &Path, stamp: &FileStamp) -
         );
     let digest = fnv1a64(0xcbf2_9ce4_8422_2325, &hashed);
     if !has_literal_includes && let Ok(mut guard) = memo().lock() {
-        guard.insert(stamp.clone(), digest);
+        guard.insert(memo_key, digest);
     }
-    remember_disk_record(repo_root, rel, stamp, digest, has_literal_includes);
+    remember_disk_record(repo_root, rel, content_hash, digest, has_literal_includes);
     Ok(digest)
 }
 
@@ -341,9 +276,7 @@ pub(super) fn hash_file_contents(
     repo_root: &Path,
     path: &Path,
 ) -> io::Result<u64> {
-    let meta = fs::metadata(path)?;
-    let stamp = stamp_for(path, &meta);
-    let digest = content_digest(repo_root, rel, path, &stamp)?;
+    let digest = content_digest(repo_root, rel, path)?;
     let acc = fnv1a64(h, rel.as_bytes());
     Ok(fnv1a64(acc, &digest.to_le_bytes()))
 }

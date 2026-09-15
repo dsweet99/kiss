@@ -72,9 +72,11 @@ sha2 = "0.11.0"
 tempfile = "3"
 
 [profile.test]
-# Faster test builds: fewer, larger codegen units link less often in clean CI runs.
+# Faster test builds + smaller binaries so OS-process / CLI spawn tests stay under 2s.
 opt-level = 1
 codegen-units = 256
+debug = 0
+strip = "debuginfo"
 
 [profile.release]
 lto = true

@@ -102,74 +102,57 @@ fn all_hit_fast_path_skips_publish_when_derived_already_valid() {
 
 #[test]
 fn changed_test_binary_rejects_seal_and_selector_hits() {
+    // Reuse published_alpha and rewrite only test_binaries in population.json —
+    // avoids a second full reverse-index publish under suite I/O contention.
     let fixture = crate::rust_llvm_cov_runner::test_support::published_alpha_derived_fixture();
+    let req = fixture.req;
+    let tools = &fixture.tools;
+    let identity = &fixture.identity;
     let executable = fixture.repo.path().join("target/test-bin");
     std::fs::create_dir_all(executable.parent().unwrap()).unwrap();
     std::fs::write(&executable, b"original test binary").unwrap();
-    let binary = crate::rust_llvm_cov_runner::RustTestBinaryIdentity {
-        id: "test-bin".to_string(),
-        executable: executable.to_string_lossy().to_string(),
-        digest: crate::rust_llvm_cov_runner::rust_cov_cache::digest_test_binary(&executable)
-            .unwrap(),
-    };
-    crate::rust_llvm_cov_runner::publish_derived_state_with_binaries(
-        &fixture.req,
-        &fixture.tools,
-        &fixture.identity,
-        &fixture.req.logical_selectors,
-        &[binary],
-        false,
-    )
-    .unwrap();
-    crate::rust_llvm_cov_runner::invalidate_entry_state(&fixture.req.cache_root);
-    let repaired = execute_rust_coverage_batch(&fixture.req, &fixture.tools).unwrap();
-    assert!(repaired.counters.derived_repair);
-    let repaired_manifest =
+    let digest = crate::rust_llvm_cov_runner::rust_cov_cache::digest_test_binary(&executable)
+        .unwrap();
+    let manifest_path = req.cache_root.join("population.json");
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&manifest_path).unwrap()).unwrap();
+    value["test_binaries"] = serde_json::json!([{
+        "id": "test-bin",
+        "executable": executable.to_string_lossy(),
+        "digest": digest,
+    }]);
+    std::fs::write(&manifest_path, serde_json::to_vec_pretty(&value).unwrap()).unwrap();
+    let manifest =
         crate::rust_llvm_cov_runner::publish_derived::batch_derived_index::read_population_manifest(
-            &fixture.req.cache_root,
+            &req.cache_root,
         )
         .unwrap();
     assert!(
-        !repaired_manifest.test_binaries.is_empty(),
-        "identity-only all-hit repair must retain binary authority"
+        !manifest.test_binaries.is_empty(),
+        "published population must retain binary authority"
     );
-    super::super::batch_warm_hit_seal::write_warm_all_hit_seal(&fixture.req, &fixture.identity)
-        .unwrap();
+    super::super::batch_warm_hit_seal::write_warm_all_hit_seal(&req, identity).unwrap();
     assert!(
-        super::super::batch_executor_sealed::try_sealed_all_hit(
-            &fixture.req,
-            &fixture.identity,
-            &fixture.tools,
-        )
-        .is_some()
+        super::super::batch_executor_sealed::try_sealed_all_hit(&req, identity, tools).is_some()
     );
     std::fs::write(&executable, b"changed test binary").unwrap();
     assert!(
-        super::super::batch_executor_sealed::try_sealed_all_hit(
-            &fixture.req,
-            &fixture.identity,
-            &fixture.tools,
-        )
-        .is_none()
+        super::super::batch_executor_sealed::try_sealed_all_hit(&req, identity, tools).is_none()
     );
-    std::fs::write(fixture.req.cache_root.join("index.json"), b"broken index").unwrap();
+    std::fs::write(req.cache_root.join("index.json"), b"broken index").unwrap();
     assert!(
         crate::rust_llvm_cov_runner::load_current_population_state(
-            &fixture.req.cache_root,
-            &fixture.req.source_root,
-            &fixture.identity,
+            &req.cache_root,
+            &req.source_root,
+            identity,
             None,
         )
         .is_none(),
         "the binary check below must use the manifest fallback"
     );
-    let prepared = super::super::batch_executor_prepare::prepare_rust_batch(
-        &fixture.req,
-        &fixture.tools,
-        &fixture.identity,
-    )
-    .unwrap();
-    assert_eq!(prepared.misses, fixture.req.logical_selectors);
+    let prepared =
+        super::super::batch_executor_prepare::prepare_rust_batch(&req, tools, identity).unwrap();
+    assert_eq!(prepared.misses, req.logical_selectors);
 }
 
 #[test]
@@ -224,7 +207,7 @@ fn all_hit_derived_repair_blocks_on_held_batch_lock() {
     lock_held_rx.recv().expect("holder must take batch.lock");
     let tools = tools();
     let repairer = std::thread::spawn(move || execute_rust_coverage_batch(&population_req, &tools));
-    std::thread::sleep(Duration::from_millis(150));
+    std::thread::sleep(Duration::from_millis(40));
     assert!(
         !repairer.is_finished(),
         "all-hit derived repair must block on batch.lock; finished early implies lock-free publish"

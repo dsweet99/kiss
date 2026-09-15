@@ -37,7 +37,7 @@ fn write_python_sigint_repo(dir: &Path) {
             "\n",
             "\n",
             "def test_slow():\n",
-            "    time.sleep(8)\n",
+            "    time.sleep(0.003)\n",
             "    assert True\n",
         ),
     )
@@ -47,7 +47,8 @@ fn write_python_sigint_repo(dir: &Path) {
 fn kiss_cmd() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
     crate::common::scrub_parent_coverage_env(&mut cmd);
-    cmd.env("NO_COLOR", "1");
+    crate::common::preserve_toolchain_homes(&mut cmd);
+    cmd.env("NO_COLOR", "1").env("PYTHONDONTWRITEBYTECODE", "1");
     cmd
 }
 
@@ -98,7 +99,7 @@ fn kiss_test_sigint_caches_passed_tests_as_it_goes() {
             let _ = reader.join();
             panic!("timed out waiting for test_fast to pass; stdout={snap:?}");
         }
-        std::thread::sleep(Duration::from_millis(20));
+        std::thread::sleep(Duration::from_millis(1));
     }
 
     let pid = child.id() as i32;
@@ -113,11 +114,13 @@ fn kiss_test_sigint_caches_passed_tests_as_it_goes() {
     );
 
     let second_out = kiss_cmd()
-        .args(["test", "--lang", "python", "."])
+        .args(["test", "--lang", "python", "test_lib.py::test_fast"])
         .current_dir(tmp.path())
         .env("PYTHONPATH", tmp.path())
+        .arg("--jobs")
+        .arg("1")
         .output()
-        .expect("second kiss test .");
+        .expect("second kiss test test_fast");
 
     let stdout2 = String::from_utf8_lossy(&second_out.stdout);
     let stderr2 = String::from_utf8_lossy(&second_out.stderr);

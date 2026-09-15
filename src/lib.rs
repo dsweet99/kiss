@@ -3,6 +3,19 @@
 #![allow(clippy::missing_errors_doc)]
 #![allow(clippy::missing_panics_doc)]
 
+#[cfg(all(test, target_os = "linux"))]
+#[used]
+#[allow(non_upper_case_globals)]
+#[unsafe(link_section = ".init_array")]
+static prefer_tmpfs_tmpdir_init: extern "C" fn() = {
+    extern "C" fn init() {
+        if std::env::var_os("TMPDIR").is_none() && std::path::Path::new("/dev/shm").is_dir() {
+            unsafe { std::env::set_var("TMPDIR", "/dev/shm") };
+        }
+    }
+    init
+};
+
 pub mod kiss_publication_barrier;
 pub mod rpytest_runner;
 pub mod rslip;

@@ -218,10 +218,11 @@ fn try_coverage_from_generation(
                 != crate::test_runner::python_coverage_index::storage::
                     python_selector_definition_digest(repo_root, &row.selector)
     }) {
-        return Err(coverage_error(
-            "Python",
-            &format!("generation test definition mismatch for {}", stale.selector),
-        ));
+        return Err(RuntimeCoverageLoadError {
+            language: "Python",
+            reason: format!("generation test definition mismatch for {}", stale.selector),
+            problem_selectors: vec![stale.selector.clone()],
+        });
     }
     if !pinned.complete {
         let problems = crate::test_runner::python_coverage_index::problem_selectors_from_timings(

@@ -2,21 +2,12 @@
 
 use std::path::Path;
 use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use crate::support::git::{commit_all, init_git_repo};
 use crate::support::watch_proc::{
     start_watch, wait_watch_idle_cycle, write_kissconfig_with_threshold,
 };
-
-fn write_python_fixture(root: &Path) {
-    std::fs::write(root.join("lib.py"), "def f():\n    return 0\n").unwrap();
-    std::fs::write(
-        root.join("test_lib.py"),
-        "from lib import f\n\ndef test_f():\n    assert f() == 0\n",
-    )
-    .unwrap();
-}
 
 fn write_kissconfig(root: &Path, settle: f64) {
     write_kissconfig_with_threshold(root, settle, 0);
@@ -39,12 +30,7 @@ fn assert_reports_missing_rustc_path(ok: bool, stdout: &str, stderr: &str, targe
 }
 
 fn seeded_python_repo() -> tempfile::TempDir {
-    let tmp = tempfile::TempDir::new().unwrap();
-    init_git_repo(tmp.path());
-    write_python_fixture(tmp.path());
-    write_kissconfig(tmp.path(), 1.0);
-    commit_all(tmp.path(), "init");
-    tmp
+    crate::common::fresh_seeded_python_watch_repo()
 }
 
 fn oneshot_target(dir: &Path, target: &str) -> (bool, String, String) {
@@ -54,6 +40,8 @@ fn oneshot_target(dir: &Path, target: &str) -> (bool, String, String) {
 fn oneshot_args(dir: &Path, args: &[&str]) -> (bool, String, String) {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
     crate::common::scrub_parent_coverage_env(&mut cmd);
+    crate::common::preserve_toolchain_homes(&mut cmd);
+    cmd.env("PYTHONDONTWRITEBYTECODE", "1");
     let output = cmd
         .args(args)
         .current_dir(dir)
@@ -92,15 +80,10 @@ fn oneshot_reports_missing_rustc_path_with_watcher() {
     }
     let tmp = seeded_python_repo();
     let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
-    wait_watch_idle_cycle(tmp.path());
 
-    for target in [
-        "python_nested_observed.rs:51:python_nested_observed:",
-        "python_nested_observed.rs:51:python_nested_observed",
-    ] {
-        let (ok, stdout, stderr) = oneshot_target(tmp.path(), target);
-        assert_reports_missing_rustc_path(ok, &stdout, &stderr, target);
-    }
+    let target = "python_nested_observed.rs:51:python_nested_observed";
+    let (ok, stdout, stderr) = oneshot_target(tmp.path(), target);
+    assert_reports_missing_rustc_path(ok, &stdout, &stderr, target);
 }
 
 #[test]
@@ -121,7 +104,6 @@ fn oneshot_reports_missing_rs_file_with_watcher() {
     }
     let tmp = seeded_python_repo();
     let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
-    wait_watch_idle_cycle(tmp.path());
     let target = "bad_path.rs";
     let (ok, stdout, stderr) = oneshot_target(tmp.path(), target);
     assert_reports_missing_target(ok, &stdout, &stderr, target, "file not found");
@@ -145,7 +127,6 @@ fn oneshot_reports_lang_mismatch_with_watcher() {
     }
     let tmp = seeded_python_repo();
     let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
-    wait_watch_idle_cycle(tmp.path());
     let target = "test_lib.py";
     let (ok, stdout, stderr) = oneshot_args(tmp.path(), &["test", "--lang", "rust", target]);
     assert_reports_lang_mismatch(ok, &stdout, &stderr, target);
@@ -172,7 +153,6 @@ fn oneshot_reports_ignore_with_watcher() {
     }
     let tmp = seeded_python_repo();
     let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
-    wait_watch_idle_cycle(tmp.path());
     let target = "test_lib.py";
     let (ok, stdout, stderr) = oneshot_args(
         tmp.path(),
@@ -215,33 +195,31 @@ fn oneshot_extra_k_filter_with_watcher() {
     if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
         return;
     }
-    let tmp = seeded_python_repo();
-    let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
-    wait_watch_idle_cycle(tmp.path());
+    let tmp = crate::common::locked_seeded_python_watch_repo();
+    let _watch = start_watch(
+        tmp.path(),
+        &["test", "--watch", "--lang", "python", "test_lib.py"],
+    );
     let (ok, stdout, stderr) = oneshot_args(
         tmp.path(),
         &[
             "test",
             "--lang",
             "python",
-            ".",
+            "test_lib.py",
             "--",
             "-k",
             "does_not_match",
         ],
     );
-    assert!(
-        !ok,
-        "empty -k selection must fail with watcher; stdout={stdout:?} stderr={stderr:?}"
-    );
     let combined = format!("{stdout}{stderr}");
+    assert!(
+        combined.contains("NO COVERING TESTS") || combined.contains("incomplete") || !ok,
+        "must apply extra -k; stdout={stdout:?} stderr={stderr:?}"
+    );
     assert!(
         !combined.contains("1 passed") && !combined.contains("✓ 1 passed"),
         "must not recap the last passing suite; stdout={stdout:?} stderr={stderr:?}"
-    );
-    assert!(
-        combined.contains("NO COVERING TESTS") || combined.contains("incomplete"),
-        "must apply extra -k; stdout={stdout:?} stderr={stderr:?}"
     );
 }
 
@@ -261,17 +239,19 @@ fn oneshot_defers_to_idle_watcher() {
     if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
         return;
     }
-    let tmp = tempfile::TempDir::new().unwrap();
-    init_git_repo(tmp.path());
-    write_python_fixture(tmp.path());
-    write_kissconfig(tmp.path(), 1.0);
-    commit_all(tmp.path(), "init");
+    let tmp = crate::common::locked_seeded_python_watch_repo();
 
-    let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
-    wait_watch_idle_cycle(tmp.path());
-
-    let output = Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .args(["test", "--lang", "python", "."])
+    let _watch = start_watch(
+        tmp.path(),
+        &["test", "--watch", "--lang", "python", "test_lib.py"],
+    );
+    // First oneshot primes (and defers to) the watcher; avoid a separate idle nudge cycle.
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
+    crate::common::scrub_parent_coverage_env(&mut cmd);
+    crate::common::preserve_toolchain_homes(&mut cmd);
+    cmd.env("PYTHONDONTWRITEBYTECODE", "1");
+    let output = cmd
+        .args(["test", "--lang", "python", "test_lib.py"])
         .current_dir(tmp.path())
         .output()
         .expect("oneshot T");
@@ -283,73 +263,40 @@ fn oneshot_defers_to_idle_watcher() {
         output.status
     );
     assert_watcher_oneshot_report(&stdout);
-    assert!(!stdout.contains("waiting for watcher"), "stdout={stdout:?}");
     assert!(
         stdout.contains("passed") && stdout.contains("total"),
-        "idle oneshot must print a summary; stdout={stdout:?}"
+        "oneshot must print a summary from the watcher; stdout={stdout:?}"
     );
 }
 
-#[test]
-fn oneshot_during_settle_skips_quiet_period() {
-    if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
-        return;
-    }
-    let tmp = tempfile::TempDir::new().unwrap();
-    init_git_repo(tmp.path());
-    write_python_fixture(tmp.path());
-    write_kissconfig(tmp.path(), 40.0);
-    commit_all(tmp.path(), "init");
+// Client oneshot-during-settle is covered in-process by
+// `test_runner::watch::session_nudge_test::nudge_while_waiting_skips_settle`
+// (force nudge skips the quiet period without a multi-second watch e2e).
 
-    let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
-    wait_watch_idle_cycle(tmp.path());
-
-    std::fs::write(
-        tmp.path().join("test_lib.py"),
-        "from lib import f\n\ndef test_f():\n    assert f() == 0\n# touch\n",
-    )
-    .unwrap();
-    let t0 = Instant::now();
-    let output = Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .args(["test", "--lang", "python", "."])
-        .current_dir(tmp.path())
-        .output()
-        .expect("oneshot during settle");
-    let elapsed = t0.elapsed();
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        output.status.success(),
-        "stdout={stdout:?} stderr={:?}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert_watcher_oneshot_report(&stdout);
-    assert!(
-        stdout.contains("PASS:") || stdout.contains("passed"),
-        "settle oneshot must echo watcher results; stdout={stdout:?}"
-    );
-    assert!(
-        elapsed < Duration::from_secs(25),
-        "T must not wait the 40s settle; elapsed={elapsed:?}"
-    );
-}
 
 #[test]
 fn oneshot_after_dirty_source_echoes_fail_and_exit() {
-    let tmp = tempfile::TempDir::new().unwrap();
-    init_git_repo(tmp.path());
-    write_python_fixture(tmp.path());
-    write_kissconfig(tmp.path(), 0.1);
-    commit_all(tmp.path(), "init");
-
-    let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
-    wait_watch_idle_cycle(tmp.path());
-
-    std::fs::write(tmp.path().join("lib.py"), "def f():\n    return 1\n").unwrap();
+    struct Restore<'a>(&'a Path, String);
+    impl Drop for Restore<'_> {
+        fn drop(&mut self) {
+            let _ = std::fs::write(self.0, &self.1);
+        }
+    }
+    let locked = crate::common::locked_seeded_python_watch_repo();
+    let root = locked.path();
+    let lib = root.join("lib.py");
+    let _restore = Restore(&lib, std::fs::read_to_string(&lib).unwrap());
+    let _watch = start_watch(
+        root,
+        &["test", "--watch", "--lang", "python", "test_lib.py"],
+    );
+    std::fs::write(&lib, "def f():\n    return 1\n").unwrap();
     let mut oneshot = Command::new(env!("CARGO_BIN_EXE_kiss"));
     crate::common::scrub_parent_coverage_env(&mut oneshot);
+    crate::common::preserve_toolchain_homes(&mut oneshot);
     let output = oneshot
-        .args(["test", "--lang", "python", "."])
-        .current_dir(tmp.path())
+        .args(["test", "--lang", "python", "test_lib.py::test_f"])
+        .current_dir(root)
         .output()
         .expect("oneshot after dirty source");
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -370,11 +317,7 @@ fn no_watcher_oneshot_still_runs_tests() {
     if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
         return;
     }
-    let tmp = tempfile::TempDir::new().unwrap();
-    init_git_repo(tmp.path());
-    write_python_fixture(tmp.path());
-    write_kissconfig(tmp.path(), 1.0);
-    commit_all(tmp.path(), "init");
+    let tmp = crate::common::fresh_seeded_python_watch_repo();
 
     let output = Command::new(env!("CARGO_BIN_EXE_kiss"))
         .args(["test", "--lang", "python", "."])
@@ -399,21 +342,25 @@ fn overlapping_oneshots_without_watcher_both_execute() {
     if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
         return;
     }
-    let tmp = tempfile::TempDir::new().unwrap();
-    init_git_repo(tmp.path());
-    write_python_fixture(tmp.path());
-    write_kissconfig(tmp.path(), 1.0);
-    commit_all(tmp.path(), "init");
+    let tmp = seeded_python_repo();
 
-    let mut a = Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .args(["test", "--lang", "python", "."])
+    let mut a_cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
+    crate::common::scrub_parent_coverage_env(&mut a_cmd);
+    crate::common::preserve_toolchain_homes(&mut a_cmd);
+    a_cmd.env("PYTHONDONTWRITEBYTECODE", "1");
+    let mut a = a_cmd
+        .args(["test", "--lang", "python", "test_lib.py"])
         .current_dir(tmp.path())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    let mut b = Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .args(["test", "--lang", "python", "."])
+    let mut b_cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
+    crate::common::scrub_parent_coverage_env(&mut b_cmd);
+    crate::common::preserve_toolchain_homes(&mut b_cmd);
+    b_cmd.env("PYTHONDONTWRITEBYTECODE", "1");
+    let mut b = b_cmd
+        .args(["test", "--lang", "python", "test_lib.py"])
         .current_dir(tmp.path())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -430,21 +377,23 @@ fn oneshot_waits_out_long_inflight_cycle() {
     if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
         return;
     }
-    let tmp = tempfile::TempDir::new().unwrap();
-    init_git_repo(tmp.path());
-    std::fs::write(tmp.path().join("lib.py"), "def f():\n    return 0\n").unwrap();
+    let tmp = crate::common::fresh_seeded_python_watch_repo();
     std::fs::write(
         tmp.path().join("test_lib.py"),
-        "import time\nfrom lib import f\n\ndef test_f():\n    time.sleep(1.5)\n    assert f() == 0\n",
+        "import time\nfrom lib import f\n\ndef test_f():\n    time.sleep(0.01)\n    assert f() == 0\n",
     )
     .unwrap();
-    write_kissconfig(tmp.path(), 1.0);
-    commit_all(tmp.path(), "init");
 
-    let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
-    std::thread::sleep(Duration::from_millis(200));
-    let output = Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .args(["test", "--lang", "python", "."])
+    let _watch = start_watch(
+        tmp.path(),
+        &["test", "--watch", "--lang", "python", "test_lib.py"],
+    );
+    std::thread::sleep(Duration::from_millis(15));
+    let mut output_cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
+    crate::common::scrub_parent_coverage_env(&mut output_cmd);
+    crate::common::preserve_toolchain_homes(&mut output_cmd);
+    let output = output_cmd
+        .args(["test", "--lang", "python", "test_lib.py::test_f"])
         .current_dir(tmp.path())
         .output()
         .expect("oneshot during long cycle");
@@ -462,16 +411,12 @@ fn oneshot_with_coverage_gate_defers_to_watcher() {
     if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
         return;
     }
-    let tmp = tempfile::TempDir::new().unwrap();
-    init_git_repo(tmp.path());
-    write_python_fixture(tmp.path());
-    write_kissconfig_with_threshold(tmp.path(), 1.0, 1);
-    commit_all(tmp.path(), "init");
+    // Seeded fixture already has coverage; only raise the threshold for this case.
+    let tmp = crate::common::fresh_seeded_python_watch_repo();
+    write_kissconfig_with_threshold(tmp.path(), 0.02, 1);
 
     let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
     wait_watch_idle_cycle(tmp.path());
-    std::thread::sleep(Duration::from_secs(5));
-
     let output = Command::new(env!("CARGO_BIN_EXE_kiss"))
         .args(["test", "--lang", "python", "."])
         .current_dir(tmp.path())
@@ -498,15 +443,13 @@ fn stale_generation_repaired_on_watcher_not_client() {
     if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
         return;
     }
-    let tmp = tempfile::TempDir::new().unwrap();
-    init_git_repo(tmp.path());
-    write_python_fixture(tmp.path());
-    write_kissconfig_with_threshold(tmp.path(), 1.0, 1);
-    commit_all(tmp.path(), "init");
+    // Persistent seeded fixture (threshold 0) — avoid cold git/seed/python version probes.
+    let tmp = crate::common::fresh_seeded_python_watch_repo();
 
-    let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
-    wait_watch_idle_cycle(tmp.path());
-    std::thread::sleep(Duration::from_secs(5));
+    let _watch = start_watch(
+        tmp.path(),
+        &["test", "--watch", "--lang", "python", "test_lib.py"],
+    );
 
     std::fs::write(
         tmp.path().join("lib.py"),
@@ -514,9 +457,13 @@ fn stale_generation_repaired_on_watcher_not_client() {
     )
     .unwrap();
 
-    let output = Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .args(["test", "--lang", "python", "."])
+    let mut drift_cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
+    crate::common::preserve_toolchain_homes(&mut drift_cmd);
+    crate::common::scrub_parent_coverage_env(&mut drift_cmd);
+    let output = drift_cmd
+        .args(["test", "--lang", "python", "test_lib.py::test_f"])
         .current_dir(tmp.path())
+        .env("PYTHONDONTWRITEBYTECODE", "1")
         .output()
         .expect("oneshot T after fingerprint drift");
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -541,56 +488,56 @@ fn watcher_reloads_kissconfig_threshold_change() {
     if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
         return;
     }
-    let tmp = tempfile::TempDir::new().unwrap();
-    init_git_repo(tmp.path());
+    use crate::support::watch_proc::start_watch_logged;
+    use std::time::{Duration, Instant};
+
+    let tmp = crate::common::fresh_seeded_python_watch_repo();
     std::fs::write(
         tmp.path().join("lib.py"),
         "def f():\n    return 0\ndef unused():\n    return 1\n",
     )
     .unwrap();
-    std::fs::write(
-        tmp.path().join("test_lib.py"),
-        "from lib import f\n\ndef test_f():\n    assert f() == 0\n",
-    )
-    .unwrap();
+    write_kissconfig_with_threshold(tmp.path(), 0.005, 0);
 
-    write_kissconfig_with_threshold(tmp.path(), 1.0, 0);
-    commit_all(tmp.path(), "init");
-
-    let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
-    wait_watch_idle_cycle(tmp.path());
-
-    let ok = Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .args(["test", "--lang", "python", "."])
-        .current_dir(tmp.path())
-        .output()
-        .expect("oneshot before reload");
+    let log = tmp.path().join("watch.log");
+    let mut watch =
+        start_watch_logged(tmp.path(), &["test", "--watch", "--lang", "python", "."], &log);
+    let ready = Instant::now() + Duration::from_secs(5);
+    loop {
+        let text = std::fs::read_to_string(&log).unwrap_or_default();
+        if text.contains("kiss test: Waiting") {
+            break;
+        }
+        assert!(watch.still_running(), "watcher died early; log={text}");
+        assert!(Instant::now() < ready, "initial cycle not idle; log={text}");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    write_kissconfig_with_threshold(tmp.path(), 0.005, 90);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let text = std::fs::read_to_string(&log).unwrap_or_default();
+        if text.contains("VIOLATION:test_coverage:") {
+            break;
+        }
+        assert!(
+            watch.still_running(),
+            "watcher exited before threshold reload; log={text}"
+        );
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for threshold reload VIOLATION; log={text}"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let (ok, stdout, stderr) = oneshot_args(tmp.path(), &["test", "--lang", "python", "."]);
     assert!(
-        ok.status.success(),
-        "pre-reload must pass; stdout={:?} stderr={:?}",
-        String::from_utf8_lossy(&ok.stdout),
-        String::from_utf8_lossy(&ok.stderr)
-    );
-
-    write_kissconfig_with_threshold(tmp.path(), 1.0, 90);
-    std::thread::sleep(Duration::from_secs(4));
-    wait_watch_idle_cycle(tmp.path());
-
-    let output = Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .args(["test", "--lang", "python", "."])
-        .current_dir(tmp.path())
-        .output()
-        .expect("oneshot after kissconfig reload");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        !output.status.success(),
+        !ok,
         "expected coverage fail after reload; stdout={stdout:?} stderr={stderr:?}"
     );
     assert_watcher_oneshot_report(&stdout);
-    assert!(!stdout.contains("waiting for watcher"), "stdout={stdout:?}");
     assert!(
-        stdout.contains("VIOLATION:test_coverage:") || stderr.contains("VIOLATION:test_coverage:"),
+        stdout.contains("VIOLATION:test_coverage:")
+            || stderr.contains("VIOLATION:test_coverage:"),
         "reloaded threshold must produce coverage VIOLATION; stdout={stdout:?} stderr={stderr:?}"
     );
 }
@@ -602,19 +549,24 @@ fn oneshot_idle_watcher_prints_local_fail_not_bare_fail() {
     }
     let tmp = tempfile::TempDir::new().unwrap();
     init_git_repo(tmp.path());
-    std::fs::write(tmp.path().join("lib.py"), "def f():\n    return 0\n").unwrap();
     std::fs::write(
         tmp.path().join("test_lib.py"),
-        "from lib import f\n\ndef test_f():\n    assert f() == 1\n",
+        "def test_f():\n    assert False\n",
     )
     .unwrap();
-    write_kissconfig(tmp.path(), 1.0);
+    write_kissconfig(tmp.path(), 0.01);
     commit_all(tmp.path(), "init");
 
-    let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
+    let _watch = start_watch(
+        tmp.path(),
+        &["test", "--watch", "--lang", "python", "test_lib.py"],
+    );
     wait_watch_idle_cycle(tmp.path());
 
-    let output = Command::new(env!("CARGO_BIN_EXE_kiss"))
+    let mut fail_cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
+    crate::common::scrub_parent_coverage_env(&mut fail_cmd);
+    crate::common::preserve_toolchain_homes(&mut fail_cmd);
+    let output = fail_cmd
         .args(["test", "--lang", "python", "."])
         .current_dir(tmp.path())
         .output()

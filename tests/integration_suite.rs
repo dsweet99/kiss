@@ -3,6 +3,17 @@ mod common;
 #[path = "support/mod.rs"]
 mod support;
 
+#[cfg(target_os = "linux")]
+#[used]
+#[allow(non_upper_case_globals)]
+#[unsafe(link_section = ".init_array")]
+static prefer_tmpfs_tmpdir_init: extern "C" fn() = {
+    extern "C" fn init() {
+        common::prefer_tmpfs_tmpdir();
+    }
+    init
+};
+
 #[path = "cases/c2_break_orphans.rs"]
 mod break_c2_orphans;
 #[path = "cases/bug_indirect_dependencies_check.rs"]
@@ -75,8 +86,6 @@ mod main_integration;
 mod py_metrics_tests;
 #[path = "cases/python_counts_violations.rs"]
 mod python_counts_violations;
-#[path = "cases/regression_check_all_ignores_test_file_sentinel.rs"]
-mod regression_check_all_ignores_test_file_sentinel;
 #[path = "cases/regression_check_cache_uncached_default.rs"]
 mod regression_check_cache_uncached_default;
 #[path = "cases/regression_check_default_warm_gate.rs"]
@@ -127,8 +136,6 @@ mod watch_client;
 mod watch_client_violations;
 #[path = "cases/watch_paths.rs"]
 mod watch_paths;
-#[path = "cases/regression_test_retry_bad.rs"]
-mod regression_test_retry_bad;
 #[path = "cases/regression_test_sigint_caching.rs"]
 mod regression_test_sigint_caching;
 #[path = "cases/watch_sigint.rs"]

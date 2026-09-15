@@ -1,7 +1,8 @@
 use std::env;
 use std::fs;
+use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Output, Stdio};
+use std::process::{ExitStatus, Output};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -15,7 +16,7 @@ pub fn wait_path(path: &Path, timeout: Duration) {
     let deadline = Instant::now() + timeout;
     while !path.exists() {
         assert!(Instant::now() < deadline, "timeout {}", path.display());
-        thread::sleep(Duration::from_millis(10));
+        thread::sleep(Duration::from_millis(2));
     }
 }
 
@@ -45,10 +46,11 @@ pub fn wait_barrier_ready(barrier: &Path, artifact: &str, phase: &str) {
             }
         }
         assert!(Instant::now() < deadline, "barrier timeout");
-        thread::sleep(Duration::from_millis(20));
+        thread::sleep(Duration::from_millis(2));
     }
 }
 
+#[allow(dead_code)]
 pub fn release_barrier(barrier: &Path) {
     let ready = fs::read_to_string(barrier.join("ready_copy.json")).unwrap();
     let value: serde_json::Value = serde_json::from_str(&ready).unwrap();
@@ -73,34 +75,71 @@ pub fn assert_ok(label: &str, output: &Output) {
     );
 }
 
-pub struct SpawnExact<'a> {
-    pub exe: &'a Path,
+pub struct RaceChild {
+    pid: libc::pid_t,
+}
+
+impl RaceChild {
+    pub fn kill(&mut self) -> std::io::Result<()> {
+        let rc = unsafe { libc::kill(self.pid, libc::SIGKILL) };
+        if rc == 0 {
+            Ok(())
+        } else {
+            Err(std::io::Error::last_os_error())
+        }
+    }
+
+    pub fn wait(&mut self) -> std::io::Result<ExitStatus> {
+        let mut status = 0;
+        let rc = unsafe { libc::waitpid(self.pid, &mut status, 0) };
+        if rc < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(ExitStatus::from_raw(status))
+    }
+
+    pub fn wait_with_output(mut self) -> std::io::Result<Output> {
+        let status = self.wait()?;
+        Ok(Output {
+            status,
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+        })
+    }
+}
+
+pub struct SpawnFork<'a> {
     pub work: &'a Path,
     pub id: &'a str,
     pub mode: &'a str,
-    pub test_name: &'a str,
     pub child_env: &'a str,
     pub root_env: &'a str,
     pub mode_env: &'a str,
     pub barrier: Option<(&'a Path, &'a str)>,
+    pub child_main: fn(),
 }
 
-pub fn spawn_exact(cfg: SpawnExact<'_>) -> Child {
-    let mut cmd = Command::new(cfg.exe);
-    cmd.arg("--exact")
-        .arg(cfg.test_name)
-        .arg("--nocapture")
-        .env(cfg.child_env, cfg.id)
-        .env(cfg.root_env, cfg.work)
-        .env(cfg.mode_env, cfg.mode)
-        .env_remove("LLVM_PROFILE_FILE")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    if let Some((barrier, target)) = cfg.barrier {
-        cmd.env("KISS_QA_PUBLICATION_BARRIER_DIR", barrier)
-            .env("KISS_QA_PUBLICATION_BARRIER_TARGET", target);
+pub fn spawn_fork(cfg: SpawnFork<'_>) -> RaceChild {
+    let pid = unsafe { libc::fork() };
+    assert!(pid >= 0, "fork failed: {}", std::io::Error::last_os_error());
+    if pid == 0 {
+        unsafe {
+            env::set_var(cfg.child_env, cfg.id);
+            env::set_var(cfg.root_env, cfg.work);
+            env::set_var(cfg.mode_env, cfg.mode);
+            env::remove_var("LLVM_PROFILE_FILE");
+            if let Some((barrier, target)) = cfg.barrier {
+                env::set_var("KISS_QA_PUBLICATION_BARRIER_DIR", barrier);
+                env::set_var("KISS_QA_PUBLICATION_BARRIER_TARGET", target);
+            }
+        }
+        let code = match std::panic::catch_unwind(cfg.child_main) {
+            Ok(()) => 0,
+            Err(_) => 1,
+        };
+        unsafe { libc::_exit(code) };
     }
-    cmd.spawn().unwrap()
+    RaceChild { pid }
 }
 
 pub fn child_work_and_repo(child_env: &str, root_env: &str) -> (String, PathBuf, PathBuf) {
