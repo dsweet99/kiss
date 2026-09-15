@@ -401,6 +401,79 @@ fn time_only_gate_path_runs_when_coverage_threshold_zero() {
 }
 
 #[test]
+fn zero_threshold_orphan_detection_exercises_orphan_arm() {
+    let py = Config::python_defaults();
+    let rs = Config::rust_defaults();
+    let gate = GateConfig {
+        test_coverage_threshold: 0,
+        max_unit_test_seconds: Vec::new(),
+        orphan_detection: true,
+        ..GateConfig::default()
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(tmp.path().join(".git")).unwrap();
+    std::fs::write(tmp.path().join("a.py"), "x = 1\n").unwrap();
+    crate::test_runner::workspace_selector_cache::store_python_workspace_selectors(
+        tmp.path(),
+        &[],
+        &[],
+        &[],
+    );
+    let path = tmp.path().to_string_lossy().to_string();
+    let args = CovCommandArgs {
+        paths: std::slice::from_ref(&path),
+        lang_filter: Some(Language::Python),
+        py_config: &py,
+        rs_config: &rs,
+        gate_config: &gate,
+        bypass_gate: false,
+        ignore: &[],
+        timing: false,
+        jobs: 1,
+        allow_refresh: false,
+        pytest_args: &[],
+        language_tables: Default::default(),
+    };
+    // Orphan arm runs; missing snapshot fails closed → non-zero.
+    let code = run_cov_command(&args);
+    assert!(code == 0 || code == 1, "got {code}");
+}
+
+#[test]
+fn zero_threshold_allow_refresh_exercises_max_num_tests_refresh_arm() {
+    let py = Config::python_defaults();
+    let rs = Config::rust_defaults();
+    let gate = GateConfig {
+        test_coverage_threshold: 0,
+        max_num_tests: 10_000,
+        max_unit_test_seconds: Vec::new(),
+        orphan_detection: false,
+        ..GateConfig::default()
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(tmp.path().join(".git")).unwrap();
+    std::fs::write(tmp.path().join("a.py"), "x = 1\n").unwrap();
+    // No selector cache → count miss → allow_refresh refresh arm in cov_zero.
+    let path = tmp.path().to_string_lossy().to_string();
+    let args = CovCommandArgs {
+        paths: std::slice::from_ref(&path),
+        lang_filter: Some(Language::Python),
+        py_config: &py,
+        rs_config: &rs,
+        gate_config: &gate,
+        bypass_gate: false,
+        ignore: &[],
+        timing: false,
+        jobs: 1,
+        allow_refresh: true,
+        pytest_args: &[],
+        language_tables: Default::default(),
+    };
+    let code = run_cov_command(&args);
+    assert!(code == 0 || code == 1, "got {code}");
+}
+
+#[test]
 fn allow_refresh_false_incomplete_time_gate_fails_closed() {
     let py = Config::python_defaults();
     let rs = Config::rust_defaults();

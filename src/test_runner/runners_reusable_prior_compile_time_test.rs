@@ -47,6 +47,21 @@ fn compile_time_fixture_lock() -> MutexGuard<'static, ()> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
+fn lock_compile_time_fixture(lock_name: &str) -> std::fs::File {
+    let lock_path = std::env::temp_dir().join(lock_name);
+    let file = fs::OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .truncate(false)
+        .open(&lock_path)
+        .unwrap_or_else(|e| panic!("open {}: {e}", lock_path.display()));
+    use fs2::FileExt;
+    file.lock_exclusive()
+        .unwrap_or_else(|e| panic!("lock {}: {e}", lock_path.display()));
+    file
+}
+
 struct RestoredPaths {
     snapshots: Vec<(PathBuf, Vec<u8>)>,
 }
@@ -66,42 +81,45 @@ impl Drop for RestoredPaths {
     }
 }
 
-fn persistent_app_builder_workspace() -> PathBuf {
-    static REPO: OnceLock<PathBuf> = OnceLock::new();
-    REPO.get_or_init(|| {
-        let root = std::env::temp_dir().join("kiss-app-builder-fixture");
-        if root.join("Cargo.toml").is_file() {
-            return root;
+fn ensure_app_builder_workspace() -> PathBuf {
+    let root = std::env::temp_dir().join("kiss-app-builder-fixture");
+    if root.join("Cargo.toml").is_file() {
+        if !crate::test_runner::test_mode_fixtures::seeded_population_matches_current_context(
+            &root,
+        ) {
+            warm_app_builder_workspace(&root);
         }
-        fs::create_dir_all(&root).expect("builder fixture root");
-        write_shared_cargo_target_config(&root, "app-builder-demo");
-        warm_app_builder_workspace(&root);
-        prebuild_cargo_tests(&root, "app-builder-demo");
-        root
-    })
-    .clone()
+        return root;
+    }
+    fs::create_dir_all(&root).expect("builder fixture root");
+    write_shared_cargo_target_config(&root, "app-builder-demo");
+    warm_app_builder_workspace(&root);
+    prebuild_cargo_tests(&root, "app-builder-demo");
+    root
 }
 
-fn persistent_app_proc_macro_workspace() -> PathBuf {
-    static REPO: OnceLock<PathBuf> = OnceLock::new();
-    REPO.get_or_init(|| {
-        let root = std::env::temp_dir().join("kiss-app-proc-macro-fixture");
-        if root.join("Cargo.toml").is_file() {
-            return root;
+fn ensure_app_proc_macro_workspace() -> PathBuf {
+    let root = std::env::temp_dir().join("kiss-app-proc-macro-fixture");
+    if root.join("Cargo.toml").is_file() {
+        if !crate::test_runner::test_mode_fixtures::seeded_population_matches_current_context(
+            &root,
+        ) {
+            warm_app_proc_macro_workspace(&root);
         }
-        fs::create_dir_all(&root).expect("proc-macro fixture root");
-        write_shared_cargo_target_config(&root, "app-proc-macro-demo");
-        warm_app_proc_macro_workspace(&root);
-        prebuild_cargo_tests(&root, "app-proc-macro-demo");
-        root
-    })
-    .clone()
+        return root;
+    }
+    fs::create_dir_all(&root).expect("proc-macro fixture root");
+    write_shared_cargo_target_config(&root, "app-proc-macro-demo");
+    warm_app_proc_macro_workspace(&root);
+    prebuild_cargo_tests(&root, "app-proc-macro-demo");
+    root
 }
 
 #[test]
 fn build_script_edit_forces_population_while_ordinary_lib_stays_reusable() {
-    let _lock = compile_time_fixture_lock();
-    let root = persistent_app_builder_workspace();
+    let _mutex = compile_time_fixture_lock();
+    let _file = lock_compile_time_fixture("kiss-app-builder-fixture.lock");
+    let root = ensure_app_builder_workspace();
     let lib = root.join("app").join("src").join("lib.rs");
     let build_rs = root.join("builder").join("build.rs");
     let mut restore = RestoredPaths { snapshots: Vec::new() };
@@ -149,8 +167,9 @@ fn build_script_edit_forces_population_while_ordinary_lib_stays_reusable() {
 
 #[test]
 fn manifest_only_compile_time_edit_forces_population() {
-    let _lock = compile_time_fixture_lock();
-    let root = persistent_app_builder_workspace();
+    let _mutex = compile_time_fixture_lock();
+    let _file = lock_compile_time_fixture("kiss-app-builder-fixture.lock");
+    let root = ensure_app_builder_workspace();
     let manifest = root.join("builder").join("Cargo.toml");
     let mut restore = RestoredPaths { snapshots: Vec::new() };
     restore.snapshot(&manifest);
@@ -180,8 +199,9 @@ fn manifest_only_compile_time_edit_forces_population() {
 
 #[test]
 fn proc_macro_edit_forces_population_while_ordinary_lib_stays_reusable() {
-    let _lock = compile_time_fixture_lock();
-    let root = persistent_app_proc_macro_workspace();
+    let _mutex = compile_time_fixture_lock();
+    let _file = lock_compile_time_fixture("kiss-app-proc-macro-fixture.lock");
+    let root = ensure_app_proc_macro_workspace();
     let lib = root.join("app").join("src").join("lib.rs");
     let macros = root.join("macros").join("src").join("lib.rs");
     let mut restore = RestoredPaths { snapshots: Vec::new() };
