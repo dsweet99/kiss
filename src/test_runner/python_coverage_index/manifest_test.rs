@@ -223,7 +223,7 @@ fn stored_python_universe_selectors_reads_current_manifest() {
         .unwrap();
     let stored =
         stored_python_universe_selectors(tmp.path(), &[], &[], PYTHON_COVERAGE_ENV_KEYS).unwrap();
-    assert_eq!(stored, vec![selector]);
+    assert_eq!(stored, vec![selector.clone()]);
     assert!(
         stored_python_universe_selectors(
             tmp.path(),
@@ -242,13 +242,23 @@ fn stored_python_universe_selectors_reads_current_manifest() {
         .join("new-entry.json");
     std::fs::create_dir_all(entry_path.parent().unwrap()).unwrap();
     std::fs::write(&entry_path, "{}").unwrap();
+    assert_eq!(
+        stored_python_universe_selectors(tmp.path(), &[], &[], PYTHON_COVERAGE_ENV_KEYS).unwrap(),
+        vec![selector.clone()],
+        "coverage population remains the universe when only entries change"
+    );
     assert!(
-        stored_python_universe_selectors(tmp.path(), &[], &[], PYTHON_COVERAGE_ENV_KEYS).is_none()
+        stored_python_universe_population(tmp.path(), &[], PYTHON_COVERAGE_ENV_KEYS).is_none()
     );
 
     std::fs::write(tmp.path().join("new.py"), "x = 2\n").unwrap();
+    assert_eq!(
+        stored_python_universe_selectors(tmp.path(), &[], &[], PYTHON_COVERAGE_ENV_KEYS).unwrap(),
+        vec![selector],
+        "coverage population remains the universe when production inputs change"
+    );
     assert!(
-        stored_python_universe_selectors(tmp.path(), &[], &[], PYTHON_COVERAGE_ENV_KEYS).is_none()
+        stored_python_universe_population(tmp.path(), &[], PYTHON_COVERAGE_ENV_KEYS).is_none()
     );
 }
 

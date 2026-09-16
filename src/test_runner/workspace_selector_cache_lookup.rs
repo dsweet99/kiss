@@ -63,7 +63,15 @@ fn load_cached_python_workspace_hit(
         &plugins,
         &fps.python,
     )
-    .then_some((cache.selectors, cache.files_fingerprint))
+    .then_some((
+        drop_ignored_selectors(cache.selectors, ignore),
+        cache.files_fingerprint,
+    ))
+}
+
+pub(super) fn drop_ignored_selectors(mut selectors: Vec<String>, ignore: &[String]) -> Vec<String> {
+    selectors.retain(|selector| !kiss::selector_ignored_by_prefixes(selector, ignore));
+    selectors
 }
 
 pub(crate) fn load_cached_workspace_selectors(
@@ -99,15 +107,17 @@ pub(crate) fn load_cached_workspace_selectors(
     {
         return None;
     }
+    let python_selectors = drop_ignored_selectors(python.selectors, ignore);
+    let rust_selectors = drop_ignored_selectors(rust.selectors, ignore);
     rust_memo::remember_rust_selectors(
         &rust.source_root,
         ignore,
         &rust.files_fingerprint,
-        &rust.selectors,
+        &rust_selectors,
     );
     Some((
-        python.selectors,
-        rust.selectors,
+        python_selectors,
+        rust_selectors,
         combined_files_fingerprint(&fps),
     ))
 }

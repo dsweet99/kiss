@@ -134,6 +134,7 @@ pub(crate) fn run_test_once(a: RunTestCmdArgs<'_>) -> RunTestOnceOutcome {
     crate::test_runner::runners::clear_python_collect_memo();
 
     let process_started = std::time::Instant::now();
+    let _progress_watchdog = kiss::rust_llvm_cov_runner::ProgressWatchdog::start();
     emit_test_progress("kiss test: Planning ...");
     match pipeline::run_overlapped_test(&a, process_started) {
         Ok(c) => RunTestOnceOutcome::Code(c),

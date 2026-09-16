@@ -263,6 +263,107 @@ fn cargo_discovery_inputs_invalidate_rust_selector_cache() {
 }
 
 #[test]
+fn load_cached_python_workspace_selectors_drops_ignored_paths() {
+    let tmp = tempdir().unwrap();
+    let root = tmp.path();
+    fs::create_dir_all(root.join("tests")).unwrap();
+    fs::write(
+        root.join("tests").join("test_a.py"),
+        "def test_a():\n    pass\n",
+    )
+    .unwrap();
+    let ignore = ["resources".to_string()];
+    store_workspace_selectors(
+        root,
+        &ignore,
+        &[
+            "tests/test_a.py::test_a".into(),
+            "crates/x/resources/t.py::test_x".into(),
+        ],
+        &[],
+        &[],
+    )
+    .expect("store");
+    let loaded =
+        super::load_cached_python_workspace_selectors(root, &ignore, &[]).expect("cache hit");
+    assert_eq!(loaded, vec!["tests/test_a.py::test_a".to_string()]);
+}
+
+#[test]
+fn load_cached_workspace_selectors_drops_ignored_python_paths() {
+    let tmp = tempdir().unwrap();
+    let root = tmp.path();
+    fs::create_dir_all(root.join("tests")).unwrap();
+    fs::write(
+        root.join("tests").join("test_a.py"),
+        "def test_a():\n    pass\n",
+    )
+    .unwrap();
+    let ignore = ["resources".to_string()];
+    store_workspace_selectors(
+        root,
+        &ignore,
+        &[
+            "tests/test_a.py::test_a".into(),
+            "crates/x/resources/t.py::test_x".into(),
+        ],
+        &[],
+        &[],
+    )
+    .expect("store");
+    let (py, _rs, _fp) = load_cached_workspace_selectors(root, &ignore, &[]).expect("cache hit");
+    assert_eq!(py, vec!["tests/test_a.py::test_a".to_string()]);
+}
+
+#[test]
+fn load_cached_rust_workspace_selectors_drops_ignored_paths() {
+    let tmp = tempdir().unwrap();
+    let root = tmp.path();
+    fs::create_dir_all(root.join("src")).unwrap();
+    fs::write(root.join("src").join("lib.rs"), "pub fn f() {}\n").unwrap();
+    super::clear_rust_selector_memo_for_tests();
+    let ignore = ["resources".to_string()];
+    store_workspace_selectors(
+        root,
+        &ignore,
+        &[],
+        &[
+            "src/lib.rs::unit_ok".into(),
+            "crates/x/resources/t.rs::test_x".into(),
+        ],
+        &[],
+    )
+    .expect("store");
+    super::clear_rust_selector_memo_for_tests();
+    let loaded = load_cached_rust_workspace_selectors(root, &ignore).expect("cache hit");
+    assert_eq!(loaded, vec!["src/lib.rs::unit_ok".to_string()]);
+}
+
+#[test]
+fn load_cached_rust_workspace_selectors_keeps_logical_mod_tests() {
+    let tmp = tempdir().unwrap();
+    let root = tmp.path();
+    fs::create_dir_all(root.join("src")).unwrap();
+    fs::write(root.join("src").join("lib.rs"), "pub fn f() {}\n").unwrap();
+    super::clear_rust_selector_memo_for_tests();
+    let ignore = ["tests".to_string()];
+    store_workspace_selectors(
+        root,
+        &ignore,
+        &[],
+        &[
+            "tests::unit_ok".into(),
+            "tests/foo.rs::integ".into(),
+        ],
+        &[],
+    )
+    .expect("store");
+    super::clear_rust_selector_memo_for_tests();
+    let loaded = load_cached_rust_workspace_selectors(root, &ignore).expect("cache hit");
+    assert_eq!(loaded, vec!["tests::unit_ok".to_string()]);
+}
+
+#[test]
 fn load_workspace_selectors_for_count_requires_matching_ignore() {
     let tmp = tempdir().unwrap();
     let root = tmp.path();
@@ -674,4 +775,33 @@ fn git_fingerprint_includes_untracked_sources() {
         load_cached_workspace_selectors(root, &[], &[]).is_none(),
         "untracked .rs must miss selector cache"
     );
+}
+
+#[test]
+fn durable_plan_is_ignored_when_kiss_dir_is_absent() {
+    let tmp = tempdir().unwrap();
+    let root = tmp.path();
+    fs::create_dir_all(root.join("tests")).unwrap();
+    fs::write(root.join("tests/test_a.py"), "def test_a():\n    assert True\n").unwrap();
+    fs::write(root.join("lib.rs"), "#[test]\nfn t() {}\n").unwrap();
+    store_workspace_selectors(
+        root,
+        &[],
+        &["tests/test_a.py::test_a".into()],
+        &["t".into()],
+        &[],
+    );
+    assert!(load_cached_workspace_selectors(root, &[], &[]).is_some());
+    assert!(
+        root.join("target/kiss-plan/python_test_selectors.json")
+            .is_file()
+    );
+    fs::remove_dir_all(root.join(".kiss")).unwrap();
+    super::clear_rust_selector_memo_for_tests();
+    assert!(
+        load_cached_workspace_selectors(root, &[], &[]).is_none(),
+        "rm -rf .kiss must not reuse target/kiss-plan as the workspace universe"
+    );
+    assert!(load_cached_python_workspace_selectors(root, &[], &[]).is_none());
+    assert!(load_cached_rust_workspace_selectors(root, &[]).is_none());
 }

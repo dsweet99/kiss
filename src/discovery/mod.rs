@@ -108,6 +108,22 @@ pub fn path_ignored_by_prefixes(path: &str, prefixes: &[String]) -> bool {
         .any(|prefix| ignore_prefix_matches(path, prefix))
 }
 
+fn selector_file_path(selector: &str) -> Option<&str> {
+    let path = selector.split_once("::").map_or(selector, |(path, _)| path);
+    let looks_like_file = path.contains('/')
+        || path.contains('\\')
+        || Path::new(path)
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("py") || ext.eq_ignore_ascii_case("rs"));
+    looks_like_file.then_some(path)
+}
+
+#[must_use]
+pub fn selector_ignored_by_prefixes(selector: &str, prefixes: &[String]) -> bool {
+    selector_file_path(selector).is_some_and(|path| path_ignored_by_prefixes(path, prefixes))
+}
+
 fn should_ignore(path: &Path, ignore_prefixes: &[String]) -> bool {
     let components: Vec<_> = path.components().collect();
     let dir_components = if components.len() > 1 {
@@ -264,7 +280,13 @@ pub fn default_check_ignore_prefixes() -> Vec<String> {
 pub fn merge_check_ignore_prefixes(user: &[String]) -> Vec<String> {
     let mut ignore = default_check_ignore_prefixes();
     ignore.extend(user.iter().cloned());
-    normalize_ignore_prefixes(&ignore)
+    let mut out = Vec::new();
+    for prefix in normalize_ignore_prefixes(&ignore) {
+        if !out.contains(&prefix) {
+            out.push(prefix);
+        }
+    }
+    out
 }
 
 pub fn normalize_ignore_prefixes(prefixes: &[String]) -> Vec<String> {

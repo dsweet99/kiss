@@ -278,6 +278,7 @@ fn run_after_test_coverage(p: AfterTestCoverage<'_>) -> i32 {
     let universe_s = universe.to_string_lossy().into_owned();
     let paths = [universe_s];
     let started = std::time::Instant::now();
+    crate::test_runner::emit_test_progress("kiss test: Running cov_score");
     let code = run_cov_command_impl(
         &CovCommandArgs {
             paths: &paths,

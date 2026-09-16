@@ -30,8 +30,9 @@ pub(crate) use identity_memo::clear_python_execution_identity_memo;
 #[allow(unused_imports)]
 pub(crate) use load::{
     GenerationLoadError, file_index_from_selector_coverage, generation_file_index,
-    pinned_python_generation_artifacts_present, try_load_pinned_python_generation,
-    try_load_pinned_python_generation_warm, try_load_pinned_python_generation_without_line_index,
+    pinned_python_generation_artifacts_present, try_load_complete_pinned_python_plan,
+    try_load_pinned_python_generation, try_load_pinned_python_generation_warm,
+    try_load_pinned_python_generation_without_line_index,
 };
 pub(crate) use materialize::{
     materialize_and_publish_from_cached_outcomes, selector_deltas_from_cached_outcomes,

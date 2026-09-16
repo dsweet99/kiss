@@ -16,9 +16,7 @@ fn emit_miss_progress(
     on_progress: &mut impl FnMut(RslipBatchProgress),
 ) {
     on_progress(RslipBatchProgress::SelectorFinalized { outcomes });
-    if remaining == 0 || remaining.is_multiple_of(25) {
-        on_progress(RslipBatchProgress::TestsRemaining { remaining });
-    }
+    on_progress(RslipBatchProgress::TestsRemaining { remaining });
 }
 
 pub(super) fn run_rslip_misses(

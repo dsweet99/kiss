@@ -32,6 +32,7 @@ mod lookup;
 #[path = "workspace_selector_cache_python.rs"]
 mod python_inventory;
 use digest::flush_persisted_digests;
+use lookup::drop_ignored_selectors;
 #[cfg(test)]
 pub(crate) use lookup::load_cached_workspace_selectors;
 pub(crate) use lookup::{
@@ -212,17 +213,13 @@ pub(super) fn language_cache_matches(
 
 pub(super) fn read_language_cache(repo_root: &Path, name: &str) -> Option<LanguageSelectorCache> {
     read_cache_at(&cache_path(repo_root, name))
-        .or_else(|| read_cache_at(&durable_cache_path(repo_root, name)))
 }
 
 pub(super) fn read_all_language_caches(repo_root: &Path, name: &str) -> Vec<LanguageSelectorCache> {
     let stem = name.strip_suffix(".json").unwrap_or(name);
     let keyed_prefix = format!("{stem}.");
     let mut paths = Vec::new();
-    for dir in [
-        repo_root.join(".kiss"),
-        repo_root.join("target").join("kiss-plan"),
-    ] {
+    for dir in [repo_root.join(".kiss")] {
         let Ok(entries) = fs::read_dir(dir) else {
             continue;
         };

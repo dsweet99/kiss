@@ -109,4 +109,11 @@ fn population_plan_dedups_selectors_and_captures_plugin_args() {
         &plan.base_identity,
         &["-p".into(), "other_plugin".into()]
     ));
+    let mut stale_fp = plan.base_identity.clone();
+    stale_fp.input_fingerprint = "stale-fingerprint".into();
+    assert!(
+        execution_context_matches_current(repo, &stale_fp, &args),
+        "input fingerprint is not part of execution context"
+    );
+    assert!(!identity_matches_current(repo, &stale_fp, &args));
 }

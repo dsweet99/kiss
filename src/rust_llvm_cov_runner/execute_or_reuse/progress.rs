@@ -85,6 +85,9 @@ pub fn live_rust_was_printed(id: &str) -> bool {
 static PROGRESS_LOCK: Mutex<()> = Mutex::new(());
 
 pub fn emit_progress(message: &str) {
+    if message.starts_with("kiss test:") {
+        super::progress_heartbeat::note_progress();
+    }
     super::progress_watch_report::record_watch_report_line(message);
     let _guard = PROGRESS_LOCK
         .lock()
@@ -286,6 +289,25 @@ fn trim_ascii_line(line: &[u8]) -> &[u8] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pass_lines_do_not_reset_stage_heartbeat() {
+        super::super::progress_heartbeat::note_progress();
+        std::thread::sleep(Duration::from_millis(5));
+        let before = super::super::progress_heartbeat::last_emit_age();
+        emit_progress("PASS: tests/a.py::test_a (0.01s)");
+        let after_pass = super::super::progress_heartbeat::last_emit_age();
+        assert!(
+            after_pass >= before,
+            "PASS: must not refresh the stage watchdog: before={before:?} after={after_pass:?}"
+        );
+        emit_progress("kiss test: working");
+        let after_kiss = super::super::progress_heartbeat::last_emit_age();
+        assert!(
+            after_kiss < after_pass,
+            "kiss test: must refresh the stage watchdog: pass={after_pass:?} kiss={after_kiss:?}"
+        );
+    }
 
     fn replay(stdout: &[u8]) -> Vec<String> {
         let captured = Arc::new(Mutex::new(Vec::new()));

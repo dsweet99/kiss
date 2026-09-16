@@ -13,6 +13,14 @@ fn merge_check_ignore_prefixes_always_includes_defaults() {
 }
 
 #[test]
+fn merge_check_ignore_prefixes_is_idempotent() {
+    let once = merge_check_ignore_prefixes(&["resources".to_string(), "resources".to_string()]);
+    let twice = merge_check_ignore_prefixes(&once);
+    assert_eq!(once, vec!["fake_", "fixtures", "resources"]);
+    assert_eq!(once, twice);
+}
+
+#[test]
 fn test_normalize_ignore_prefixes_trims_and_drops_empty() {
     let out = normalize_ignore_prefixes(&[
         "src/".to_string(),
@@ -172,6 +180,28 @@ fn ignore_prefix_matches_component_and_path_forms() {
         "tests/fake_python/test_x.py::test_x",
         &["fake_".to_string(), "fixtures".to_string()]
     ));
+}
+
+#[test]
+fn selector_ignored_by_prefixes_requires_a_file_path() {
+    let tests = ["tests".to_string()];
+    let resources = ["resources".to_string()];
+    let src = ["src".to_string()];
+    assert!(
+        !selector_ignored_by_prefixes("tests::unit_ok", &tests),
+        "rust logical module tests::unit_ok is not the tests/ directory"
+    );
+    assert!(!selector_ignored_by_prefixes("covers_value", &resources));
+    assert!(selector_ignored_by_prefixes("src/lib.rs::unit_ok", &src));
+    assert!(selector_ignored_by_prefixes(
+        "crates/x/resources/t.rs::test_x",
+        &resources
+    ));
+    assert!(selector_ignored_by_prefixes(
+        "tests/slow/test_b.py::t",
+        &["tests/slow".to_string()]
+    ));
+    assert!(selector_ignored_by_prefixes("lib.rs::unit_ok", &["lib.rs".to_string()]));
 }
 
 #[test]

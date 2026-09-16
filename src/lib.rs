@@ -87,6 +87,7 @@ pub use discovery::{
     find_python_files, find_rust_files, find_source_files, find_source_files_with_ignore,
     gather_files_by_lang, gather_files_by_lang_opts, ignore_prefix_matches,
     merge_check_ignore_prefixes, normalize_ignore_prefixes, path_ignored_by_prefixes,
+    selector_ignored_by_prefixes,
 };
 pub use duplication::{
     CodeChunk, DuplicateCluster, DuplicatePair, DuplicationConfig, MinHashSignature,

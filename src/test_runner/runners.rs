@@ -6,7 +6,7 @@ use std::process::{Command, Stdio};
 pub(crate) use super::rust_llvm_cov::{
     cached_rust_check_aggregate_selectors, run_rust_llvm_cov_selectors,
 };
-use kiss::code_roles::{is_default_pytest_collect_candidate, is_test_only_file};
+use kiss::code_roles::is_test_only_file;
 use kiss::rust_llvm_cov_runner::{
     CoverageOutputMode, RustCoverageBatchRequest, build_rust_coverage_batch_plan,
 };
@@ -231,29 +231,51 @@ pub fn enumerate_workspace_python_selectors(
     ignore: &[String],
     pytest_args: &[String],
 ) -> Result<Vec<String>, String> {
-    if pytest_args.is_empty()
-        && let Some(selectors) =
-            stored_python_universe_selectors(repo_root, &[], ignore, PYTHON_COVERAGE_ENV_KEYS)
-    {
-        return Ok(selectors);
+    if let Some(selectors) = stored_python_universe_selectors(
+        repo_root,
+        pytest_args,
+        ignore,
+        PYTHON_COVERAGE_ENV_KEYS,
+    ) {
+        return filter_ignored_python_selectors(selectors, ignore);
     }
     if !ignore.is_empty() {
-        let root = repo_root.to_string_lossy().to_string();
-        let (py_files, _rs_files) =
-            kiss::gather_files_by_lang(&[root], Some(kiss::Language::Python), ignore);
-
-        let test_paths = py_files
-            .into_iter()
-            .filter(|path| is_default_pytest_collect_candidate(path))
-            .collect::<Vec<_>>();
-        return collect_python_nodeids(repo_root, Some(&test_paths), pytest_args);
+        let paths = crate::test_runner::lang_python::collect_paths::workspace_python_collect_paths(
+            repo_root, ignore,
+        );
+        let collected = collect_from_workspace_paths(repo_root, &paths, pytest_args)?;
+        return filter_ignored_python_selectors(collected, ignore);
     }
 
     let tests_root = repo_root.join("tests");
-    if tests_root.is_dir() {
-        return collect_python_nodeids(repo_root, Some(&[tests_root]), pytest_args);
+    let collected = if tests_root.is_dir() {
+        collect_python_nodeids(repo_root, Some(&[tests_root]), pytest_args)?
+    } else {
+        collect_python_nodeids(repo_root, None, pytest_args)?
+    };
+    filter_ignored_python_selectors(collected, ignore)
+}
+
+fn collect_from_workspace_paths(
+    repo_root: &Path,
+    paths: &[PathBuf],
+    pytest_args: &[String],
+) -> Result<Vec<String>, String> {
+    if paths.is_empty() {
+        collect_python_nodeids(repo_root, None, pytest_args)
+    } else {
+        collect_python_nodeids(repo_root, Some(paths), pytest_args)
     }
-    collect_python_nodeids(repo_root, None, pytest_args)
+}
+
+fn filter_ignored_python_selectors(
+    selectors: Vec<String>,
+    ignore: &[String],
+) -> Result<Vec<String>, String> {
+    Ok(selectors
+        .into_iter()
+        .filter(|selector| !kiss::selector_ignored_by_prefixes(selector, ignore))
+        .collect())
 }
 
 pub fn shell_quote_line(argv: &[String]) -> String {

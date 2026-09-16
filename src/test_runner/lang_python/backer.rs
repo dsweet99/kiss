@@ -154,7 +154,7 @@ impl LanguagePlanner for PythonModule {
             .is_some();
         if has_current_population {
             Ok(CoverageFreshness::Fresh)
-        } else if has_line_precise_entries {
+        } else if has_line_precise_entries || python_generation_context_reusable(self) {
             Ok(CoverageFreshness::ReusablePrior)
         } else {
             Ok(CoverageFreshness::Stale)
@@ -177,10 +177,7 @@ impl LanguagePlanner for PythonModule {
             });
         };
         Ok(SelectionDecision {
-            selectors: selector_ids
-                .into_iter()
-                .map(|id| TestSelector::new(kiss::Language::Python, id))
-                .collect(),
+            selectors: drop_ignored_python_selectors(selector_ids, &self.ignore),
             complete: true,
         })
     }
@@ -188,6 +185,18 @@ impl LanguagePlanner for PythonModule {
     fn manifest_env_allowlist(&self) -> &'static [&'static str] {
         PYTHON_COVERAGE_ENV_KEYS
     }
+}
+
+fn python_generation_context_reusable(module: &PythonModule) -> bool {
+    let Some(plan) = super::generation::try_load_complete_pinned_python_plan(&module.repo_root)
+    else {
+        return false;
+    };
+    super::generation::execution_context_matches_current(
+        &module.repo_root,
+        &plan.base_identity,
+        &module.test_args,
+    )
 }
 
 pub(crate) fn python_population_backer(
@@ -208,6 +217,17 @@ pub(crate) fn python_population_backer(
         changed_tests,
         prior_failures,
     ))
+}
+
+fn drop_ignored_python_selectors(
+    selector_ids: impl IntoIterator<Item = String>,
+    ignore: &[String],
+) -> Vec<TestSelector> {
+    selector_ids
+        .into_iter()
+        .filter(|id| !kiss::selector_ignored_by_prefixes(id, ignore))
+        .map(|id| TestSelector::new(kiss::Language::Python, id))
+        .collect()
 }
 
 pub(crate) fn select_fresh_python_source_selectors(
@@ -274,6 +294,20 @@ mod tests {
             .collect();
         assert_eq!(discovered, cached);
         assert_eq!(full_suite_subprocess_collects_for_tests(), before);
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn drop_ignored_python_selectors_skips_resources_paths() {
+        let kept = drop_ignored_python_selectors(
+            [
+                "scripts/gen.py::test_ok".to_string(),
+                "crates/ruff_linter/resources/test/fixtures/x.py::test_x".to_string(),
+            ],
+            &["resources".to_string()],
+        );
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].id, "scripts/gen.py::test_ok");
     }
 
     #[test]

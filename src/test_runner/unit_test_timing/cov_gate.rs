@@ -4,9 +4,9 @@ use std::time::{Duration, Instant};
 use kiss::Language;
 
 use super::{
-    RuntimeGateEval, RuntimeGateViolation, TimingCollectOpts, TimingLangInclude, TimingPopulation,
-    collect_current_unit_test_timings, evaluate_runtime_gate, load_rust_population_max_duration,
-    selector_matches_ignore_prefix,
+    collect_current_unit_test_timings, evaluate_runtime_gate, known_empty_unit_test_population,
+    load_rust_population_max_duration, selector_matches_ignore_prefix, RuntimeGateEval,
+    RuntimeGateViolation, TimingCollectOpts, TimingLangInclude, TimingPopulation,
 };
 use crate::test_runner::check_line_coverage::repository_root_for_universe;
 
@@ -24,6 +24,9 @@ pub(crate) struct CovTimeGateOpts<'a> {
 pub(crate) fn evaluate_cov_time_gate(opts: CovTimeGateOpts<'_>) -> RuntimeGateEval {
     if opts.limits.is_empty() {
         return RuntimeGateEval::Disabled;
+    }
+    if empty_selector_cache_skips_time_gate(opts) {
+        return RuntimeGateEval::Passed;
     }
     if opts.limits.len() == 1 && opts.limits[0].0 == "*" {
         let fast = evaluate_sole_star_time_gate(opts, opts.limits[0].1);
@@ -44,6 +47,37 @@ pub(crate) fn evaluate_cov_time_gate(opts: CovTimeGateOpts<'_>) -> RuntimeGateEv
     });
     emit_timings_ms(opts.timing, t_timings);
     evaluate_runtime_gate(&timings, opts.limits)
+}
+
+fn empty_selector_cache_skips_time_gate(opts: CovTimeGateOpts<'_>) -> bool {
+    opts.pytest_args.is_empty()
+        && known_empty_unit_test_population(
+            opts.universe,
+            opts.lang_filter,
+            opts.include,
+            opts.ignore,
+            opts.pytest_args,
+        )
+        && !coverage_population_has_timed_tests(opts)
+}
+
+fn coverage_population_has_timed_tests(opts: CovTimeGateOpts<'_>) -> bool {
+    let repo_root = repository_root_for_universe(opts.universe);
+    let want_python =
+        opts.include.python && matches!(opts.lang_filter, None | Some(Language::Python));
+    let want_rust = opts.include.rust && matches!(opts.lang_filter, None | Some(Language::Rust));
+    if want_python
+        && crate::test_runner::python_coverage_index::load_current_python_population_max_duration(
+            &repo_root,
+            opts.pytest_args,
+        )
+        .is_some_and(|max| !max.is_zero())
+    {
+        return true;
+    }
+    want_rust
+        && load_rust_population_max_duration(&repo_root, opts.ignore)
+            .is_some_and(|max| !max.is_zero())
 }
 
 fn try_evaluate_multi_prefix_path_max_gate(opts: CovTimeGateOpts<'_>) -> Option<RuntimeGateEval> {

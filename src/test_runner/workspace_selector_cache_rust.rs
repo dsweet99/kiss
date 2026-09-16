@@ -109,14 +109,15 @@ pub(super) fn load_cached_rust_workspace_hit(
     let fps = super::workspace_lang_fingerprints(repo_root, ignore).ok()?;
     let root = super::normalized_root(repo_root);
     if let Some(selectors) = recall_rust_selectors(&root, ignore, &fps.rust) {
-        return Some((selectors, fps.rust));
+        return Some((super::drop_ignored_selectors(selectors, ignore), fps.rust));
     }
     let cache = cache.or_else(|| read_rust_cache(repo_root, ignore))?;
     if !rust_cache_matches(&cache, repo_root, ignore, &fps.rust) {
         return None;
     }
-    remember_rust_selectors(&root, ignore, &fps.rust, &cache.selectors);
-    Some((cache.selectors, fps.rust))
+    let selectors = super::drop_ignored_selectors(cache.selectors, ignore);
+    remember_rust_selectors(&root, ignore, &fps.rust, &selectors);
+    Some((selectors, fps.rust))
 }
 
 pub(crate) fn store_rust_workspace_selectors(

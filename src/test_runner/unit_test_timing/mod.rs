@@ -9,6 +9,8 @@ mod rust_durations;
 pub(crate) use rust_durations::clear_rust_duration_pairs_memo;
 pub(super) use rust_durations::load_rust_population_max_duration;
 use rust_durations::load_rust_duration_pairs;
+#[cfg(test)]
+pub(crate) use rust_durations::set_pairs_for_tests;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct UnitTestTiming {
@@ -70,8 +72,7 @@ fn filter_timings_by_ignore(
 }
 
 pub(super) fn selector_matches_ignore_prefix(selector: &str, ignore: &[String]) -> bool {
-    let path_part = selector.split_once("::").map_or(selector, |(p, _)| p);
-    kiss::path_ignored_by_prefixes(path_part, ignore)
+    kiss::selector_ignored_by_prefixes(selector, ignore)
 }
 
 fn load_python_timings(repo_root: &Path, pytest_args: &[String]) -> Option<Vec<UnitTestTiming>> {
@@ -193,6 +194,16 @@ pub(crate) fn collect_available_unit_test_timings(
         timings.extend(rust);
     }
     filter_timings_by_ignore(timings, opts.ignore)
+}
+
+pub(crate) fn known_empty_unit_test_population(
+    universe: &Path,
+    lang_filter: Option<Language>,
+    include: TimingLangInclude,
+    ignore: &[String],
+    pytest_args: &[String],
+) -> bool {
+    cheap_codebase_test_count(universe, lang_filter, include, ignore, pytest_args) == Some(0)
 }
 
 fn cheap_codebase_test_count(

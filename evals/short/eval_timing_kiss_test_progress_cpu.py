@@ -50,28 +50,30 @@ def timing_kiss_test_progress_cpu() -> None:
         stdout_chunks: list[str] = []
         deadline = started + 50.0
         while True:
-            observer.sample()
             if time.monotonic() > deadline:
                 process.kill()
                 process.wait()
                 raise subprocess.TimeoutExpired(process.args, 50)
             line = process.stdout.readline()
+            received = time.monotonic()
+            observer.sample()
             if line:
                 stdout_chunks.append(line)
                 if line.startswith("kiss test:"):
-                    progress_times.append(time.monotonic())
+                    progress_times.append(received)
                 continue
             if process.poll() is not None:
                 break
             time.sleep(0.02)
         observer.sample()
         # Drain any remaining buffered stdout after exit.
+        drained = time.monotonic()
         remainder = process.stdout.read()
         if remainder:
             stdout_chunks.append(remainder)
             for line in remainder.splitlines():
                 if line.startswith("kiss test:"):
-                    progress_times.append(time.monotonic())
+                    progress_times.append(drained)
         stderr = process.stderr.read() if process.stderr is not None else ""
         stdout = "".join(stdout_chunks)
         elapsed = time.monotonic() - started

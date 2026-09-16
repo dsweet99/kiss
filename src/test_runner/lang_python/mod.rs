@@ -1,5 +1,6 @@
 pub(crate) mod backer;
 pub(crate) mod collect;
+pub(crate) mod collect_paths;
 pub(crate) mod generation;
 pub(crate) mod rslip;
 mod rslip_emit;

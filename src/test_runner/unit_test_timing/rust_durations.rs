@@ -21,6 +21,13 @@ pub(crate) fn clear_rust_duration_pairs_memo() {
     });
 }
 
+#[cfg(test)]
+pub(crate) fn set_pairs_for_tests(repo_root: &Path, pairs: Vec<DurationPair>) {
+    RUST_DURATION_PAIRS_MEMO.with(|memo| {
+        *memo.borrow_mut() = Some((repo_root.to_path_buf(), pairs));
+    });
+}
+
 pub(crate) fn load_rust_population_max_duration(
     repo_root: &Path,
     ignore: &[String],
@@ -171,6 +178,23 @@ mod tests {
         RUST_DURATION_PAIRS_MEMO.with(|memo| {
             assert!(memo.borrow().is_none());
         });
+    }
+
+    #[test]
+    fn rust_logical_mod_tests_are_not_ignored_as_tests_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path();
+        clear_rust_duration_pairs_memo();
+        set_pairs_for_tests(
+            path,
+            vec![("tests::unit_ok".to_string(), Duration::from_secs(2))],
+        );
+        assert_eq!(
+            load_rust_population_max_duration(path, &["tests".to_string()]),
+            Some(Duration::from_secs(2)),
+            "rust logical tests::unit_ok is not the tests/ directory"
+        );
+        clear_rust_duration_pairs_memo();
     }
 
     #[test]

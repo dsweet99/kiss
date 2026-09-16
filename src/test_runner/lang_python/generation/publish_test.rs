@@ -96,6 +96,37 @@ fn published_repo() -> Option<(tempfile::TempDir, Vec<String>)> {
     Some((tmp, plan.selectors.clone()))
 }
 
+#[test]
+fn stored_universe_keeps_pinned_selectors_when_input_fingerprint_drifts() {
+    let Some((tmp, selectors)) = published_repo() else {
+        return;
+    };
+    let repo = tmp.path();
+    std::fs::write(repo.join("stale.py"), b"y = 2\n").unwrap();
+    std::fs::create_dir_all(repo.join("tests")).unwrap();
+    std::fs::write(
+        repo.join("tests/test_extra.py"),
+        "def test_extra():\n    assert True\n",
+    )
+    .unwrap();
+    let stored = crate::test_runner::python_coverage_index::stored_python_universe_selectors(
+        repo,
+        &[],
+        &[],
+        crate::test_runner::python_coverage_index::PYTHON_COVERAGE_ENV_KEYS,
+    )
+    .expect("pinned complete generation remains the universe");
+    assert_eq!(stored, selectors);
+    assert!(
+        crate::test_runner::python_coverage_index::stored_python_universe_population(
+            repo,
+            &[],
+            crate::test_runner::python_coverage_index::PYTHON_COVERAGE_ENV_KEYS,
+        )
+        .is_none()
+    );
+}
+
 fn cover_exact_identity_restamp_and_closed_misses(repo: &Path, selectors: &[String]) {
     let _ = super::repair::restamp_complete_pinned_from_cache(
         repo,
