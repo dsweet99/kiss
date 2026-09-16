@@ -195,24 +195,9 @@ fn spawn_tracked_batch_child(
 }
 
 fn begin_cargo_nextest_progress() -> FinishCargoNextestProgress {
-    let progress = Arc::new(Mutex::new(CargoNextestProgress::start()));
-    let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let tick_progress = Arc::clone(&progress);
-    let tick_stop = Arc::clone(&stop);
-    std::thread::spawn(move || {
-        let started = std::time::Instant::now();
-        while !tick_stop.load(std::sync::atomic::Ordering::Relaxed) {
-            std::thread::sleep(Duration::from_secs(2));
-            if tick_stop.load(std::sync::atomic::Ordering::Relaxed) {
-                break;
-            }
-            tick_progress
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .tick(started.elapsed());
-        }
-    });
-    FinishCargoNextestProgress { progress, stop }
+    FinishCargoNextestProgress {
+        progress: Arc::new(Mutex::new(CargoNextestProgress::start())),
+    }
 }
 
 type PipeReaderHandle = std::thread::JoinHandle<io::Result<Vec<u8>>>;

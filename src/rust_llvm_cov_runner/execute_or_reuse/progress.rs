@@ -150,12 +150,10 @@ enum ProgressSink {
 
 pub(crate) struct FinishCargoNextestProgress {
     pub progress: Arc<Mutex<CargoNextestProgress>>,
-    pub stop: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Drop for FinishCargoNextestProgress {
     fn drop(&mut self) {
-        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
         self.progress
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -196,16 +194,6 @@ impl CargoNextestProgress {
         self.phase = CargoNextestPhase::Nextest;
         self.nextest_started = Some(Instant::now());
         emit_live_libtest_event(line);
-    }
-
-    pub(crate) fn tick(&mut self, elapsed: Duration) {
-        if self.finished || !matches!(self.phase, CargoNextestPhase::Cargo) {
-            return;
-        }
-        let secs = elapsed.as_secs();
-        if secs > 0 && secs.is_multiple_of(2) {
-            self.emit(&format!("kiss test: cargo {secs}s"));
-        }
     }
 
     pub(crate) fn finish(&mut self) {
@@ -292,16 +280,16 @@ mod tests {
     #[test]
     fn work_type_line_updates_stored_status() {
         let _guard = super::super::progress_heartbeat::work_status_test_guard();
-        super::super::progress_heartbeat::set_work_status("kiss test: working");
+        super::super::progress_heartbeat::set_work_status("working");
         emit_progress("kiss test: Running nextest");
         assert_eq!(
             super::super::progress_heartbeat::current_work_status(),
-            "kiss test: Running nextest"
+            "Running nextest"
         );
         emit_progress("PASS: tests/a.py::test_a (0.01s)");
         assert_eq!(
             super::super::progress_heartbeat::current_work_status(),
-            "kiss test: Running nextest"
+            "Running nextest"
         );
     }
 
@@ -357,30 +345,21 @@ mod tests {
     }
 
     #[test]
-    fn cargo_heartbeat_ticks_only_during_cargo_phase() {
+    fn cargo_progress_does_not_emit_elapsed_second_lines() {
         let captured = Arc::new(Mutex::new(Vec::new()));
         let mut progress =
             CargoNextestProgress::start_with_sink(ProgressSink::Capture(Arc::clone(&captured)));
-        progress.tick(Duration::from_secs(2));
-        progress.tick(Duration::from_secs(4));
         progress.observe_line(br#"{"reason":"build-finished","success":true}"#);
-        progress.tick(Duration::from_secs(6));
         progress.finish();
         let lines = captured
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
         assert!(
-            lines.iter().any(|line| line == "kiss test: cargo 2s"),
-            "{lines:?}"
-        );
-        assert!(
-            lines.iter().any(|line| line == "kiss test: cargo 4s"),
-            "{lines:?}"
-        );
-        assert!(
-            !lines.iter().any(|line| line.contains("cargo 6s")),
-            "no heartbeats after nextest: {lines:?}"
+            !lines
+                .iter()
+                .any(|line| line.starts_with("kiss test: cargo ") && line.ends_with('s')),
+            "no cargo elapsed-second lines: {lines:?}"
         );
     }
 
