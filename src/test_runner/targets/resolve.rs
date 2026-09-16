@@ -270,14 +270,7 @@ fn attach_python_tests(
     }
     let rel =
         repo_relative(repo_root, &model.path).unwrap_or_else(|| model.path.display().to_string());
-    let nodeids = match cached_selectors {
-        Some(cached) => python_selectors_for_rel_path(cached, &rel),
-        None => collect_python_nodeids_for_targets(
-            repo_root,
-            Some(std::slice::from_ref(&model.path)),
-            pytest_args,
-        )?,
-    };
+    let nodeids = python_nodeids_for_model(repo_root, model, &rel, pytest_args, cached_selectors)?;
     attach_python_nodeids(model, &nodeids, &rel);
 
     model.direct_tests.retain(|test| !test.selector.is_empty());
@@ -287,6 +280,31 @@ fn attach_python_tests(
         }
     }
     Ok(())
+}
+
+fn python_nodeids_for_model(
+    repo_root: &Path,
+    model: &SourceModel,
+    rel: &str,
+    pytest_args: &[String],
+    cached_selectors: Option<&[String]>,
+) -> Result<Vec<String>, String> {
+    if let Some(cached) = cached_selectors {
+        let from_cache = python_selectors_for_rel_path(cached, rel);
+        if !from_cache.is_empty() {
+            return Ok(from_cache);
+        }
+        let has_named_tests = is_python_test_module_path(&model.path)
+            && model.direct_tests.iter().any(|test| !test.name.is_empty());
+        if !has_named_tests {
+            return Ok(from_cache);
+        }
+    }
+    collect_python_nodeids_for_targets(
+        repo_root,
+        Some(std::slice::from_ref(&model.path)),
+        pytest_args,
+    )
 }
 
 fn canonicalize_target_path(

@@ -49,7 +49,11 @@ where
         &mut *ctx.run_cycle,
         |args| (ctx.run_cov)(args, live),
     );
-    ctx.suite.merge_lines(&report.lines);
+    if scoped {
+        ctx.suite.merge_lines(&report.lines);
+    } else {
+        ctx.suite.merge_unscoped_lines(&report.lines);
+    }
     if report.interrupted {
         *ctx.last_reply = Some(reply_all(
             &replies,

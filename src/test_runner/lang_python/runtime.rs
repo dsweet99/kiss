@@ -9,7 +9,7 @@ use crate::test_runner::lang_iface::{
     SourceDeltaMisses, WitnessStatus, summary_from_accepted_witness,
 };
 use crate::test_runner::python_coverage_index::generation::{
-    current_python_execution_identity, identity_matches_current,
+    SelectorEvidence, current_python_execution_identity, identity_matches_current,
 };
 use crate::test_runner::python_coverage_index::{
     GenerationReason, publish_python_derived_state_with_filter, repo_relative_coverage_file,
@@ -166,12 +166,15 @@ impl LanguageRuntime for PythonRuntime {
                 if deltas.len() != misses.len() {
                     return Err("error: kiss: incomplete fresh Python generation evidence".into());
                 }
-                let _ = restamp_and_repair_python_population_generation(
-                    &request.repo_root,
-                    &request.extras.python,
-                    &deltas,
-                    GenerationReason::IncompleteRepair,
-                )?;
+                let deltas = in_population_deltas(&request.repo_root, deltas);
+                if !deltas.is_empty() {
+                    let _ = restamp_and_repair_python_population_generation(
+                        &request.repo_root,
+                        &request.extras.python,
+                        &deltas,
+                        GenerationReason::IncompleteRepair,
+                    )?;
+                }
             }
             crate::test_runner::emit_stage_time("selective_index_repair", started.elapsed());
         }
@@ -213,6 +216,16 @@ impl LanguageRuntime for PythonRuntime {
             |selector| selector.to_string(),
         ))
     }
+}
+
+fn in_population_deltas(repo_root: &Path, deltas: Vec<SelectorEvidence>) -> Vec<SelectorEvidence> {
+    let Ok(pinned) = try_load_pinned_python_generation_warm(repo_root) else {
+        return Vec::new();
+    };
+    deltas
+        .into_iter()
+        .filter(|delta| pinned.plan.selectors.iter().any(|s| s == &delta.selector))
+        .collect()
 }
 
 fn statuses_from_summary(

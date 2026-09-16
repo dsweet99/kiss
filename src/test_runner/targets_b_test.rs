@@ -541,6 +541,51 @@ fn unresolved_python_test_file_falls_back_to_workspace_selector_cache() {
 }
 
 #[test]
+fn cached_universe_missing_new_test_file_collects_that_file() {
+    let tmp = tempdir().unwrap();
+    init_git_repo(tmp.path());
+    fs::create_dir_all(tmp.path().join("tests")).unwrap();
+    fs::write(
+        tmp.path().join("tests/test_other.py"),
+        "def test_other():\n    assert True\n",
+    )
+    .unwrap();
+    fs::write(
+        tmp.path().join("tests/test_new.py"),
+        "def test_new():\n    assert False\n",
+    )
+    .unwrap();
+    assert!(
+        crate::test_runner::workspace_selector_cache::store_python_workspace_selectors(
+            tmp.path(),
+            &[],
+            &["tests/test_other.py::test_other".into()],
+            &[],
+        )
+    );
+    let query = resolve_target_operands(
+        tmp.path(),
+        &["tests/test_new.py".into()],
+        Some(Language::Python),
+        &[],
+        &[],
+    )
+    .expect("new test file must resolve even when absent from selector cache");
+    assert!(
+        query.direct_python.contains("tests/test_new.py::test_new"),
+        "must collect the targeted file's selectors, got {:?}",
+        query.direct_python
+    );
+    assert!(
+        !query
+            .direct_python
+            .contains("tests/test_other.py::test_other"),
+        "must not fall back to the unrelated cached universe, got {:?}",
+        query.direct_python
+    );
+}
+
+#[test]
 fn resolve_non_test_source_path_still_inserts_file() {
     let tmp = tempdir().unwrap();
     init_git_repo(tmp.path());

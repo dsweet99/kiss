@@ -1,9 +1,10 @@
 use std::collections::BTreeMap;
 
-use super::progress_watch_report::strip_ansi_prefix;
+#[path = "progress_watch_suite_merge.rs"]
+mod merge;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum SuiteOutcome {
+pub(crate) enum SuiteOutcome {
     Pass,
     Fail,
     Timeout,
@@ -11,115 +12,17 @@ enum SuiteOutcome {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct WatchSuiteReport {
-    named: BTreeMap<String, SuiteOutcome>,
-    anonymous_passed: usize,
-    anonymous_failed: usize,
-    anonymous_timed_out: usize,
-    total_label: String,
-    max_pass_label: String,
-    violations: Vec<String>,
-    gates_clean: bool,
+    pub(crate) named: BTreeMap<String, SuiteOutcome>,
+    pub(crate) anonymous_passed: usize,
+    pub(crate) anonymous_failed: usize,
+    pub(crate) anonymous_timed_out: usize,
+    pub(crate) total_label: String,
+    pub(crate) max_pass_label: String,
+    pub(crate) violations: Vec<String>,
+    pub(crate) gates_clean: bool,
 }
 
 impl WatchSuiteReport {
-    pub fn merge_lines(&mut self, lines: &[String]) {
-        let mut cycle_named = BTreeMap::new();
-        let mut collapsed = [0usize; 3];
-        let mut summary = None;
-        for line in lines {
-            match parse_watch_line(line) {
-                ParsedWatchLine::Named { selector, outcome } => {
-                    cycle_named.insert(selector, outcome);
-                }
-                ParsedWatchLine::Collapsed { outcome, count } => {
-                    collapsed[collapsed_index(outcome)] = count;
-                }
-                ParsedWatchLine::Summary {
-                    passed,
-                    failed,
-                    timed_out,
-                    total,
-                    max_pass,
-                } => {
-                    summary = Some((passed, failed, timed_out, total, max_pass));
-                }
-                ParsedWatchLine::Violation(text) => {
-                    self.gates_clean = false;
-                    if !self.violations.iter().any(|v| v == &text) {
-                        self.violations.push(text);
-                    }
-                }
-                ParsedWatchLine::NoViolations => {
-                    self.gates_clean = true;
-                    self.violations.clear();
-                }
-                ParsedWatchLine::Ignore => {}
-            }
-        }
-        for (selector, outcome) in &cycle_named {
-            self.apply_named(selector.clone(), *outcome);
-        }
-        self.apply_anonymous_counts(&cycle_named, collapsed, summary.as_ref().map(|s| s.0));
-        if let Some((_, _, _, total, max_pass)) = summary {
-            self.total_label = total;
-            self.max_pass_label = max_pass;
-        }
-    }
-
-    fn apply_named(&mut self, selector: String, outcome: SuiteOutcome) {
-        if self.named.insert(selector, outcome).is_some() {
-            return;
-        }
-        match outcome {
-            SuiteOutcome::Pass if self.anonymous_passed > 0 => self.anonymous_passed -= 1,
-            SuiteOutcome::Fail if self.anonymous_failed > 0 => self.anonymous_failed -= 1,
-            SuiteOutcome::Timeout if self.anonymous_timed_out > 0 => self.anonymous_timed_out -= 1,
-            SuiteOutcome::Fail | SuiteOutcome::Timeout if self.anonymous_passed > 0 => {
-                self.anonymous_passed -= 1;
-            }
-            _ => {}
-        }
-    }
-
-    fn apply_anonymous_counts(
-        &mut self,
-        cycle_named: &BTreeMap<String, SuiteOutcome>,
-        collapsed: [usize; 3],
-        summary_passed: Option<usize>,
-    ) {
-        let pass = collapsed[0].max(summary_passed.unwrap_or(0));
-        let target = pass.max(self.passed());
-        let already = self.named_count(SuiteOutcome::Pass);
-        self.anonymous_passed = target.saturating_sub(already);
-        self.take_collapsed_if_new(cycle_named, SuiteOutcome::Fail, collapsed[1]);
-        self.take_collapsed_if_new(cycle_named, SuiteOutcome::Timeout, collapsed[2]);
-    }
-
-    fn take_collapsed_if_new(
-        &mut self,
-        cycle_named: &BTreeMap<String, SuiteOutcome>,
-        outcome: SuiteOutcome,
-        collapsed: usize,
-    ) {
-        if cycle_named.values().any(|item| *item == outcome) {
-            return;
-        }
-        let already = self.named_count(outcome);
-        if collapsed <= already {
-            return;
-        }
-        let extra = collapsed - already;
-        if outcome == SuiteOutcome::Fail {
-            self.anonymous_failed = extra;
-        } else {
-            self.anonymous_timed_out = extra;
-        }
-    }
-
-    fn named_count(&self, outcome: SuiteOutcome) -> usize {
-        self.named.values().filter(|item| **item == outcome).count()
-    }
-
     pub fn passed(&self) -> usize {
         self.named_count(SuiteOutcome::Pass) + self.anonymous_passed
     }
@@ -149,13 +52,9 @@ impl WatchSuiteReport {
         lines.push(summary_line(self));
         lines.join("\n")
     }
-}
 
-fn collapsed_index(outcome: SuiteOutcome) -> usize {
-    match outcome {
-        SuiteOutcome::Pass => 0,
-        SuiteOutcome::Fail => 1,
-        SuiteOutcome::Timeout => 2,
+    fn named_count(&self, outcome: SuiteOutcome) -> usize {
+        self.named.values().filter(|item| **item == outcome).count()
     }
 }
 
@@ -260,108 +159,6 @@ fn push_collapsed(lines: &mut Vec<String>, label: &str, count: usize) {
     }
 }
 
-enum ParsedWatchLine {
-    Named {
-        selector: String,
-        outcome: SuiteOutcome,
-    },
-    Collapsed {
-        outcome: SuiteOutcome,
-        count: usize,
-    },
-    Summary {
-        passed: usize,
-        failed: usize,
-        timed_out: usize,
-        total: String,
-        max_pass: String,
-    },
-    Violation(String),
-    NoViolations,
-    Ignore,
-}
-
-fn parse_watch_line(message: &str) -> ParsedWatchLine {
-    let line = strip_ansi_prefix(message.trim());
-    if line.contains("VIOLATION:") {
-        return ParsedWatchLine::Violation(line.to_string());
-    }
-    if line == "NO VIOLATIONS" {
-        return ParsedWatchLine::NoViolations;
-    }
-    parse_summary_line(line)
-        .unwrap_or_else(|| parse_status_line(line).unwrap_or(ParsedWatchLine::Ignore))
-}
-
-fn parse_summary_line(line: &str) -> Option<ParsedWatchLine> {
-    let rest = line
-        .strip_prefix("✓ ")
-        .or_else(|| line.strip_prefix("✗ "))?;
-    if !rest.contains(" passed · ") {
-        return None;
-    }
-    let parts: Vec<&str> = rest.split(" · ").collect();
-    if parts.len() < 3 {
-        return None;
-    }
-    Some(ParsedWatchLine::Summary {
-        passed: parse_count_word(parts[0], "passed")?,
-        failed: parse_count_word(parts[1], "failed")?,
-        timed_out: parse_count_word(parts[2], "timed out")?,
-        total: part_suffix(parts.get(3).copied(), " total"),
-        max_pass: part_suffix(parts.get(4).copied(), " max pass"),
-    })
-}
-
-fn parse_count_word(part: &str, word: &str) -> Option<usize> {
-    part.strip_suffix(word)?.trim().parse().ok()
-}
-
-fn part_suffix(part: Option<&str>, suffix: &str) -> String {
-    part.and_then(|text| text.strip_suffix(suffix))
-        .unwrap_or("0s")
-        .to_string()
-}
-
-fn parse_status_line(line: &str) -> Option<ParsedWatchLine> {
-    let (outcome, rest) = if let Some(rest) = line.strip_prefix("PASS") {
-        (SuiteOutcome::Pass, rest)
-    } else if let Some(rest) = line.strip_prefix("TIMEOUT") {
-        (SuiteOutcome::Timeout, rest)
-    } else {
-        (SuiteOutcome::Fail, line.strip_prefix("FAIL")?)
-    };
-    let body = rest
-        .strip_prefix(" (cached): ")
-        .or_else(|| rest.strip_prefix(": "))
-        .or_else(|| rest.strip_prefix(' '))?;
-    let selector = strip_trailing_duration(body);
-    if let Some(count) = selector
-        .strip_suffix(" selectors")
-        .and_then(|n| n.parse::<usize>().ok())
-    {
-        return Some(ParsedWatchLine::Collapsed { outcome, count });
-    }
-    if selector.is_empty() {
-        return None;
-    }
-    Some(ParsedWatchLine::Named {
-        selector: selector.to_string(),
-        outcome,
-    })
-}
-
-fn strip_trailing_duration(body: &str) -> &str {
-    let Some(idx) = body.rfind(" (") else {
-        return body;
-    };
-    if body.ends_with(')') {
-        &body[..idx]
-    } else {
-        body
-    }
-}
-
 pub fn merge_watch_exit(cycle_exit: i32, suite_exit: i32) -> i32 {
     if cycle_exit == 130 {
         130
@@ -402,6 +199,69 @@ mod tests {
         let recap_at = recap.rfind("✗ 3 passed").expect("recap");
         let fail_at = recap.find("FAIL tests/c.py::test_c").expect("fail footer");
         assert!(fail_at < recap_at, "recap must be last:\n{recap}");
+    }
+
+    #[test]
+    fn unscoped_green_cycle_drops_absent_failures() {
+        let mut suite = WatchSuiteReport::default();
+        suite.merge_lines(&[
+            "PASS (cached): 4 selectors".into(),
+            "FAIL: tests/gone.py::test_gone (0.01s)".into(),
+            "✗ 4 passed · 1 failed · 0 timed out · 1s total · 0s max pass".into(),
+            "FAIL tests/gone.py::test_gone".into(),
+        ]);
+        assert_eq!(suite.failed(), 1);
+        suite.merge_unscoped_lines(&[
+            "PASS (cached): 3355 selectors".into(),
+            "NO VIOLATIONS".into(),
+            "✓ 3355 passed · 0 failed · 0 timed out · 0.56s total · 0s max pass".into(),
+        ]);
+        assert_eq!(suite.failed(), 0);
+        assert_eq!(suite.test_exit_code(), 0);
+        let recap = suite.format();
+        assert!(
+            recap.contains("3355 passed")
+                && recap.contains("0 failed")
+                && !recap.contains("tests/gone.py::test_gone"),
+            "{recap}"
+        );
+    }
+
+    #[test]
+    fn unscoped_cycle_keeps_failures_still_present() {
+        let mut suite = WatchSuiteReport::default();
+        suite.merge_lines(&[
+            "FAIL: tests/a.py::test_a (0.01s)".into(),
+            "FAIL: tests/b.py::test_b (0.01s)".into(),
+            "✗ 0 passed · 2 failed · 0 timed out · 1s total · 0s max pass".into(),
+        ]);
+        suite.merge_unscoped_lines(&[
+            "PASS (cached): 10 selectors".into(),
+            "FAIL: tests/b.py::test_b (0.01s)".into(),
+            "✗ 10 passed · 1 failed · 0 timed out · 1s total · 0s max pass".into(),
+            "FAIL tests/b.py::test_b".into(),
+        ]);
+        assert_eq!(suite.failed(), 1);
+        let recap = suite.format();
+        assert!(recap.contains("tests/b.py::test_b"), "{recap}");
+        assert!(!recap.contains("tests/a.py::test_a"), "{recap}");
+    }
+
+    #[test]
+    fn unscoped_partial_green_keeps_prior_failures() {
+        let mut suite = WatchSuiteReport::default();
+        suite.merge_lines(&[
+            "PASS: tests/a.py::test_a (0.01s)".into(),
+            "PASS: tests/b.py::test_b (0.01s)".into(),
+            "FAIL: tests/c.py::test_c (0.01s)".into(),
+            "✗ 2 passed · 1 failed · 0 timed out · 1s total · 0s max pass".into(),
+        ]);
+        suite.merge_unscoped_lines(&[
+            "PASS (cached): tests/slow/test_ops_hogneato_sim_tuner_smoke_rust.py::test_ops_hogneato_sim_tuner_smoke_rust (0.46s)".into(),
+            "✓ 1 passed · 0 failed · 0 timed out · 0.46s total · 0s max pass".into(),
+        ]);
+        assert_eq!(suite.failed(), 1);
+        assert!(suite.format().contains("tests/c.py::test_c"));
     }
 
     #[test]

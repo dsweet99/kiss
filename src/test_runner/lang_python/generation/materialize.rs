@@ -224,4 +224,50 @@ mod tests {
         assert_eq!(evidence.raw_status, TestStatus::Passed);
         assert_eq!(evidence.effective_status, TestStatus::TimedOut);
     }
+
+    #[test]
+    fn fresh_outcomes_empty_selectors_return_empty() {
+        let tmp = tempfile::tempdir().unwrap();
+        let summary = SelectorExecutionSummary::default();
+        let deltas = selector_deltas_from_fresh_outcomes(
+            tmp.path(),
+            &[],
+            &summary,
+            &[],
+            &|_, _| true,
+            &kiss::GateConfig::default(),
+        )
+        .unwrap();
+        assert!(deltas.is_empty());
+    }
+
+    #[test]
+    fn fresh_outcomes_unstored_miss_builds_evidence_without_cache() {
+        let tmp = tempfile::tempdir().unwrap();
+        let selector = "tests/test_a.py::test_a";
+        let mut summary = SelectorExecutionSummary::default();
+        summary.raw_statuses.insert(selector.into(), TestStatus::Failed);
+        summary.failed_selectors.push(selector.into());
+        summary.cache_unstored_selectors.push(selector.into());
+        summary
+            .selector_durations_ns
+            .insert(selector.into(), 1_000_000);
+        let deltas = selector_deltas_from_fresh_outcomes(
+            tmp.path(),
+            &[selector.into()],
+            &summary,
+            &[],
+            &|_, _| true,
+            &kiss::GateConfig::default(),
+        )
+        .unwrap();
+        assert_eq!(deltas.len(), 1);
+        assert_eq!(deltas[0].selector, selector);
+        assert_eq!(deltas[0].raw_status, TestStatus::Failed);
+        assert_eq!(deltas[0].effective_status, TestStatus::Failed);
+        assert_eq!(
+            deltas[0].cache_disposition,
+            TimingCacheDisposition::MissUnstored
+        );
+    }
 }
