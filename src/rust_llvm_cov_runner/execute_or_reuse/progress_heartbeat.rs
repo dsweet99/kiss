@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-pub const STAGE_HEARTBEAT: Duration = Duration::from_millis(80);
+pub const STAGE_HEARTBEAT: Duration = Duration::from_millis(500);
 const WATCHDOG_POLL: Duration = Duration::from_millis(20);
 
 fn last_emit() -> &'static Mutex<Option<Instant>> {
@@ -65,7 +65,15 @@ mod tests {
     use std::time::Duration;
 
     #[test]
-    fn stage_heartbeat_is_under_progress_gap_target() {
-        assert!(STAGE_HEARTBEAT <= Duration::from_millis(100));
+    fn stage_heartbeat_is_500ms() {
+        assert_eq!(STAGE_HEARTBEAT, Duration::from_millis(500));
+    }
+
+    #[test]
+    fn silence_exceeds_heartbeat_only_after_500ms() {
+        super::note_progress();
+        assert!(!super::silence_exceeds_heartbeat());
+        std::thread::sleep(STAGE_HEARTBEAT + Duration::from_millis(30));
+        assert!(super::silence_exceeds_heartbeat());
     }
 }
