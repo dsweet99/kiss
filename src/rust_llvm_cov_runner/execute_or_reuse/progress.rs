@@ -86,6 +86,7 @@ static PROGRESS_LOCK: Mutex<()> = Mutex::new(());
 
 pub fn emit_progress(message: &str) {
     super::progress_heartbeat::note_progress();
+    super::progress_heartbeat::note_work_status(message);
     super::progress_watch_report::record_watch_report_line(message);
     let _guard = PROGRESS_LOCK
         .lock()
@@ -287,6 +288,22 @@ fn trim_ascii_line(line: &[u8]) -> &[u8] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn work_type_line_updates_stored_status() {
+        let _guard = super::super::progress_heartbeat::work_status_test_guard();
+        super::super::progress_heartbeat::set_work_status("kiss test: working");
+        emit_progress("kiss test: Running nextest");
+        assert_eq!(
+            super::super::progress_heartbeat::current_work_status(),
+            "kiss test: Running nextest"
+        );
+        emit_progress("PASS: tests/a.py::test_a (0.01s)");
+        assert_eq!(
+            super::super::progress_heartbeat::current_work_status(),
+            "kiss test: Running nextest"
+        );
+    }
 
     #[test]
     fn any_printed_line_resets_stage_heartbeat() {
