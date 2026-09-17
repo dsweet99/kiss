@@ -313,8 +313,15 @@ fn matching_zero_baseline_retains_partial_target() {
     assert!(h.plan.build_target.join("artifact").is_file());
 }
 
+fn skip_real_llvm_cov_under_outer_batch() -> bool {
+    crate::rust_llvm_cov_runner::plan::llvm_cov_active::llvm_cov_batch_already_active()
+}
+
 #[test]
 fn duplicate_path_launch_reuses_real_llvm_cov_cargo_artifacts() {
+    if skip_real_llvm_cov_under_outer_batch() {
+        return;
+    }
     let mut h = identity_harness();
     write_cargo_fixture(&h.req.source_root);
     let path = std::env::var("PATH").unwrap();
@@ -342,6 +349,9 @@ fn duplicate_path_launch_reuses_real_llvm_cov_cargo_artifacts() {
 
 #[test]
 fn unused_path_prefix_reuses_real_llvm_cov_cargo_artifacts() {
+    if skip_real_llvm_cov_under_outer_batch() {
+        return;
+    }
     let mut h = identity_harness();
     write_cargo_fixture(&h.req.source_root);
     let path = std::env::var("PATH").unwrap();
@@ -428,4 +438,87 @@ fn malformed_marker_fails_without_deleting_target_or_replacing() {
         fs::read(build_identity_path(&h.req.cache_root)).unwrap(),
         b"{not-json"
     );
+}
+
+#[test]
+fn path_only_marker_drift_rewrites_identity_without_resetting_target() {
+    let mut h = identity_harness();
+    seed_target(&h.plan, 8);
+    h.req.env.insert("PATH".into(), "/old/bin".into());
+    write_expected_zero_baseline_marker(&h.req, &h.tools).unwrap();
+    let mut stale = loaded_identity(&h.req.cache_root);
+    stale.input.env.insert("PATH".into(), "/stale/bin".into());
+    let path = build_identity_path(&h.req.cache_root);
+    fs::write(&path, serde_json::to_vec(&stale).unwrap()).unwrap();
+    h.req.env.insert("PATH".into(), "/new/bin".into());
+
+    let prep = prepare_build_target_for_identity(&h.req, &h.tools, &h.plan).unwrap();
+
+    assert_eq!(prep.previous_baseline_bytes, 0);
+    assert!(h.plan.build_target.join("artifact").is_file());
+    let marker = loaded_identity(&h.req.cache_root);
+    assert!(!marker.input.env.contains_key("PATH"));
+}
+
+#[test]
+fn instrumented_depot_likely_fresh_accepts_newer_dep_binaries() {
+    let tmp = tempfile::tempdir().unwrap();
+    let source_root = tmp.path().join("src_root");
+    let build_target = tmp.path().join("target");
+    fs::create_dir_all(source_root.join("src")).unwrap();
+    fs::write(source_root.join("Cargo.toml"), "[package]\nname='x'\nversion='0.1.0'\nedition='2021'\n").unwrap();
+    fs::write(source_root.join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
+    let deps = build_target.join("debug").join("deps");
+    fs::create_dir_all(&deps).unwrap();
+    let bin = deps.join("x-aaaa");
+    fs::write(&bin, b"bin").unwrap();
+    let old = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(10);
+    let new = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(50);
+    let _ = fs::File::options()
+        .write(true)
+        .open(source_root.join("src").join("lib.rs"))
+        .unwrap()
+        .set_modified(old);
+    let _ = fs::File::options()
+        .write(true)
+        .open(source_root.join("Cargo.toml"))
+        .unwrap()
+        .set_modified(old);
+    let _ = fs::File::options()
+        .write(true)
+        .open(&bin)
+        .unwrap()
+        .set_modified(new);
+    assert!(instrumented_depot_likely_fresh(&source_root, &build_target));
+    assert!(!instrumented_depot_likely_fresh(&source_root, &tmp.path().join("missing")));
+    assert_eq!(path_size_bytes(&tmp.path().join("no-such")).unwrap_or(0), 0);
+}
+
+#[test]
+fn instrumented_depot_likely_fresh_rejects_object_files_and_stale_bins() {
+    let tmp = tempfile::tempdir().unwrap();
+    let source_root = tmp.path().join("src_root");
+    let build_target = tmp.path().join("target");
+    fs::create_dir_all(source_root.join("src")).unwrap();
+    fs::write(source_root.join("Cargo.toml"), "[package]\nname='y'\nversion='0.1.0'\nedition='2021'\n").unwrap();
+    fs::write(source_root.join("src").join("lib.rs"), "pub fn y() {}\n").unwrap();
+    let deps = build_target.join("debug").join("deps");
+    fs::create_dir_all(&deps).unwrap();
+    fs::write(deps.join("y-bbbb.rlib"), b"obj").unwrap();
+    assert!(!instrumented_depot_likely_fresh(&source_root, &build_target));
+    let bin = deps.join("y-bbbb");
+    fs::write(&bin, b"bin").unwrap();
+    let old = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(5);
+    let new = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(90);
+    let _ = fs::File::options()
+        .write(true)
+        .open(&bin)
+        .unwrap()
+        .set_modified(old);
+    let _ = fs::File::options()
+        .write(true)
+        .open(source_root.join("src").join("lib.rs"))
+        .unwrap()
+        .set_modified(new);
+    assert!(!instrumented_depot_likely_fresh(&source_root, &build_target));
 }

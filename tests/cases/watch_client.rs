@@ -286,11 +286,11 @@ fn oneshot_after_dirty_source_echoes_fail_and_exit() {
     let root = locked.path();
     let lib = root.join("lib.py");
     let _restore = Restore(&lib, std::fs::read_to_string(&lib).unwrap());
+    std::fs::write(&lib, "def f():\n    return 1\n").unwrap();
     let _watch = start_watch(
         root,
         &["test", "--watch", "--lang", "python", "test_lib.py"],
     );
-    std::fs::write(&lib, "def f():\n    return 1\n").unwrap();
     let mut oneshot = Command::new(env!("CARGO_BIN_EXE_kiss"));
     crate::common::scrub_parent_coverage_env(&mut oneshot);
     crate::common::preserve_toolchain_homes(&mut oneshot);

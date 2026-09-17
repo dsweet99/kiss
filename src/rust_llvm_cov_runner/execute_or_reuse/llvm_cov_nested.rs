@@ -19,7 +19,7 @@ pub(crate) fn apply_nested_llvm_cov_argv(argv: &mut Vec<String>) {
     force_serial_llvm_cov_width(argv);
 }
 
-fn argv_is_cargo_llvm_cov_or_nextest(argv: &[String]) -> bool {
+pub(crate) fn argv_is_cargo_llvm_cov_or_nextest(argv: &[String]) -> bool {
     let stop = argv
         .iter()
         .position(|arg| arg == "--")
@@ -146,6 +146,7 @@ fn scrub_fixture_env(command: &mut Command) {
         "NEXTEST_CONFIG",
         "NEXTEST_CONF",
         "CARGO_NEXTEST_CONFIG",
+        crate::rust_llvm_cov_runner::plan::llvm_cov_active::KISS_LLVM_COV_ACTIVE_ENV,
     ] {
         command.env_remove(key);
     }
@@ -158,8 +159,8 @@ fn scrub_fixture_env(command: &mut Command) {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_nested_llvm_cov_argv, ensure_flag_value, force_serial_llvm_cov_width,
-        scrub_fixture_env,
+        apply_nested_llvm_cov_argv, argv_is_cargo_llvm_cov_or_nextest, ensure_flag_value,
+        force_serial_llvm_cov_width, scrub_fixture_env,
     };
     use crate::rust_llvm_cov_runner::plan::llvm_cov_active::LlvmCovActiveEnvGuard;
     use std::process::Command;
@@ -192,6 +193,12 @@ mod tests {
         let _guard = LlvmCovActiveEnvGuard::enter();
         apply_nested_llvm_cov_argv(&mut argv);
         assert_eq!(argv, ["/bin/echo", "hello"]);
+        assert!(!argv_is_cargo_llvm_cov_or_nextest(&argv));
+        assert!(argv_is_cargo_llvm_cov_or_nextest(&[
+            "cargo".into(),
+            "llvm-cov".into(),
+            "nextest".into()
+        ]));
     }
 
     #[test]

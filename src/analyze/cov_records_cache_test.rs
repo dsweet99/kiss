@@ -2,10 +2,10 @@ use super::{
     CovRecordsCacheKey, lock_cache_for, mark_cached_records_orphan_clean, store_cov_records,
     try_load_cov_records, try_load_cov_records_with_orphan_state,
 };
+use crate::analyze::cov_cache_test_support::touch_source;
 use crate::analyze::line_coverage::LineCoverageRecord;
 use crate::test_runner::check_line_coverage::RequiredCoverageLanguages;
 use std::fs;
-use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime};
 
 fn write_python_population(repo: &std::path::Path) {
@@ -24,14 +24,6 @@ fn write_rust_aggregate(repo: &std::path::Path) {
         }"#,
     )
     .unwrap();
-}
-
-fn touch_source(path: &std::path::Path, body: &str) -> PathBuf {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).unwrap();
-    }
-    fs::write(path, body).unwrap();
-    path.to_path_buf()
 }
 
 #[test]

@@ -1,16 +1,8 @@
 use super::{CovCoverableKey, store_coverable_denoms, try_load_coverable_denoms};
+use crate::analyze::cov_cache_test_support::touch_source;
 use crate::analyze::line_coverage::CoverableDenom;
 use std::fs;
-use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
-
-fn touch_source(path: &std::path::Path, body: &str) -> PathBuf {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).unwrap();
-    }
-    fs::write(path, body).unwrap();
-    path.to_path_buf()
-}
 
 #[test]
 fn coverable_cache_hits_then_misses_on_source_change() {
