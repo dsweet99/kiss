@@ -123,3 +123,7 @@ RULE: [Python] [positional_args <= 3] positional_args is the maximum number of p
 
 Complexity and size maxima print `<= N` because a value equal to the configured maximum is legal.
 
+
+## Support
+
+If this project helps you, please consider [sponsoring](https://github.com/sponsors/dsweet99) or see [SUPPORT.md](./SUPPORT.md).
