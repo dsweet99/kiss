@@ -120,9 +120,7 @@ pub(crate) const COVERAGE_CODEGEN_UNITS_FLAG: &str = "-Ccodegen-units=16";
 
 pub fn effective_coverage_build_jobs(configured_jobs: usize) -> usize {
     let configured = configured_jobs.max(1);
-    let host = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(configured);
+    let host = crate::shared_helpers::host_cpu_count(configured);
     configured.max(host)
 }
 
@@ -164,9 +162,7 @@ mod tests {
 
     #[test]
     fn effective_coverage_build_jobs_tracks_host_without_fixed_ceiling() {
-        let host = std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(1);
+        let host = crate::shared_helpers::host_cpu_count(1);
         assert_eq!(effective_coverage_build_jobs(1), host.max(1));
         assert_eq!(
             effective_coverage_build_jobs(host.saturating_mul(2).max(2)),

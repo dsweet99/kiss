@@ -16,9 +16,9 @@ def _stub_fix_cheat_env(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> tuple[Path, Path]:
     kiss = tmp_path / "kiss"
-    python_dir = kiss / "python"
-    python_dir.mkdir(parents=True)
-    (python_dir / "adversarial_cli.py").write_text("# stub\n", encoding="utf-8")
+    ops_dir = kiss / "ops"
+    ops_dir.mkdir(parents=True)
+    (ops_dir / "adversarial.py").write_text("# stub\n", encoding="utf-8")
     repo = tmp_path / "cheat_repo"
     repo.mkdir()
     monkeypatch.setattr(fix_cheat_cli, "repo_root", lambda: kiss)

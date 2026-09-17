@@ -13,22 +13,12 @@ fn seed(enabled: bool) -> WatchReloadSeed {
 }
 
 fn base_args() -> RunTestCmdArgs<'static> {
-    RunTestCmdArgs {
-        invocation: TestInvocation::All,
-        main_branch_cli: None,
-        base_branch_cli: None,
-        dry_run: true,
-        force_rerun: false,
-        force_bad: false,
-        metrics: false,
-        jobs: 2,
-        extra: &[],
-        python_extra: &[],
-        ignore: &[],
-        lang_filter: Some(Language::Python),
-        config_main_branch: None,
-        gate_config: GateConfig::default(),
-    }
+    crate::test_runner::test_mode_fixtures::dry_run_cmd_args(
+        TestInvocation::All,
+        &[],
+        2,
+        Some(Language::Python),
+    )
 }
 
 #[test]

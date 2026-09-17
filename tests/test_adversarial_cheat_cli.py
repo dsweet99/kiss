@@ -17,8 +17,8 @@ def test_cheat_cli(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, expect_success: bool
 ) -> None:
     kiss = tmp_path / "kiss"
-    (kiss / "python").mkdir(parents=True)
-    (kiss / "python" / "adversarial_cli.py").write_text("# stub\n", encoding="utf-8")
+    (kiss / "ops").mkdir(parents=True)
+    (kiss / "ops" / "adversarial.py").write_text("# stub\n", encoding="utf-8")
     adv_root = tmp_path / "kiss-adversarial"
     monkeypatch.setattr(cli, "adversarial_root", lambda: adv_root)
 
@@ -48,8 +48,8 @@ def test_cheat_success_moves_repo_to_kiss_adversarial(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     kiss = tmp_path / "kiss"
-    (kiss / "python").mkdir(parents=True)
-    (kiss / "python" / "adversarial_cli.py").write_text("# stub\n", encoding="utf-8")
+    (kiss / "ops").mkdir(parents=True)
+    (kiss / "ops" / "adversarial.py").write_text("# stub\n", encoding="utf-8")
     adv_root = tmp_path / "kiss-adversarial"
     monkeypatch.setattr(cli, "repo_root", lambda: kiss)
     monkeypatch.setattr(cli, "adversarial_root", lambda: adv_root)

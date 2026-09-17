@@ -49,7 +49,3 @@ main = AdversarialGroup(
     name="adversarial",
     help="Adversarial calibration utilities.",
 )
-
-
-if __name__ == "__main__":
-    main()

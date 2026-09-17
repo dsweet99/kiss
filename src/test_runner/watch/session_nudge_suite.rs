@@ -1,8 +1,7 @@
 #![cfg(unix)]
 
 use super::*;
-use crate::bin_cli::args::TestInvocation;
-use crate::test_runner::test_mode_fixtures::git_in;
+use crate::test_runner::test_mode_fixtures::{git_in, python_dry_run_args};
 use crate::test_runner::watch::event_source::{
     NormalizedWatchEvent, RecvTimeout, WatchEventSource,
 };
@@ -31,22 +30,7 @@ impl WatchEventSource for NudgeScript {
 }
 
 pub(super) fn py_dry_args() -> RunTestCmdArgs<'static> {
-    RunTestCmdArgs {
-        invocation: TestInvocation::Targets(vec!["a.py".into()]),
-        main_branch_cli: None,
-        base_branch_cli: None,
-        dry_run: true,
-        force_rerun: false,
-        force_bad: false,
-        metrics: false,
-        jobs: 1,
-        extra: &[],
-        python_extra: &[],
-        ignore: &[],
-        lang_filter: Some(kiss::Language::Python),
-        config_main_branch: None,
-        gate_config: kiss::GateConfig::default(),
-    }
+    python_dry_run_args(vec!["a.py".into()])
 }
 
 pub(super) fn commit_a_py(tmp: &tempfile::TempDir) -> PathBuf {

@@ -117,8 +117,8 @@ pub use py_metrics::{
     compute_function_metrics,
 };
 pub use shared_helpers::{
-    cargo_target_linker_env, env_map_from_allowlist, json_entry_paths, python_coverage_env_map,
-    pythonpath_for_coverage_identity, scrubbed_git_command,
+    cargo_target_linker_env, env_map_from_allowlist, host_cpu_count, json_entry_paths,
+    python_coverage_env_map, pythonpath_for_coverage_identity, scrubbed_git_command,
 };
 pub use stats::{
     METRICS, MetricDef, MetricScope, MetricStats, PercentileSummary, compute_summaries,

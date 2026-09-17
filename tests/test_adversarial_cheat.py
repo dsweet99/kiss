@@ -45,8 +45,8 @@ def test_build_cheat_prompt_contains_paths_and_thresholds(tmp_path: Path) -> Non
     kiss = tmp_path / "kiss"
     repo = tmp_path / "repo"
     kiss.mkdir()
-    (kiss / "python").mkdir()
-    (kiss / "python" / "adversarial_cli.py").write_text("# stub\n", encoding="utf-8")
+    (kiss / "ops").mkdir()
+    (kiss / "ops" / "adversarial.py").write_text("# stub\n", encoding="utf-8")
     repo.mkdir()
     text = cheat_mod.build_cheat_prompt(kiss, repo, "python")
     assert str(repo.resolve()) in text
@@ -62,7 +62,7 @@ def test_load_coverage_maps_parses_subprocess_json(
     payload = '{"kiss": {"src/a.py": 100.0}, "true": {"src/a.py": 5.0}}'
 
     def fake_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        assert "coverage_maps_cli.py" in cmd[1]
+        assert "coverage_maps.py" in cmd[1]
         return subprocess.CompletedProcess(cmd, 0, payload, "")
 
     monkeypatch.setattr(cheat_mod.subprocess, "run", fake_run)

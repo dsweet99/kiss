@@ -105,6 +105,9 @@ pub(super) fn try_check_aggregate_hit(
     let Some(completed) = check_aggregate_hit_completed(req, &population) else {
         return Ok(None);
     };
+    crate::rust_llvm_cov_runner::execute_or_reuse::progress_prepared_hits::emit_prepared_rust_cache_hits(
+        &completed,
+    );
     Ok(Some(RustCoverageBatchResult {
         completed,
         batch_error: None,

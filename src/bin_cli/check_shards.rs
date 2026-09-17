@@ -64,10 +64,7 @@ pub(crate) fn run_split_check_sharded(exe: &Path, args: &CheckCommandArgs<'_>) -
 }
 
 fn rust_shard_count(file_count: usize) -> usize {
-    let cpus = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(4)
-        .max(1);
+    let cpus = kiss::shared_helpers::host_cpu_count(4);
     cpus.min(file_count.max(1)).max(1)
 }
 
@@ -194,10 +191,7 @@ mod tests {
     #[test]
     fn rust_shard_count_follows_host_parallelism() {
         assert_eq!(rust_shard_count(0), 1);
-        let host = std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(4)
-            .max(1);
+        let host = kiss::host_cpu_count(4);
         assert_eq!(rust_shard_count(10_000), host);
     }
 

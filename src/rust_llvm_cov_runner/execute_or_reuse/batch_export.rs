@@ -250,9 +250,7 @@ pub(crate) fn export_instances_bounded_with(
 }
 
 fn max_export_workers_for_host() -> usize {
-    let available = std::thread::available_parallelism()
-        .map(|count| count.get())
-        .unwrap_or(1);
+    let available = crate::shared_helpers::host_cpu_count(1);
     available.div_ceil(ESTIMATED_CPUS_PER_LLVM_EXPORT).max(1)
 }
 

@@ -9,7 +9,7 @@ import python.adversarial_common as cli
 
 
 def test_main_help() -> None:
-    script = cli.repo_root() / "python" / "adversarial_cli.py"
+    script = cli.repo_root() / "ops" / "adversarial.py"
     result = subprocess.run(
         [sys.executable, str(script), "--help"],
         capture_output=True,
@@ -26,7 +26,7 @@ def test_main_help() -> None:
 
 
 def test_main_lazy_loads_subcommand_help() -> None:
-    script = cli.repo_root() / "python" / "adversarial_cli.py"
+    script = cli.repo_root() / "ops" / "adversarial.py"
     result = subprocess.run(
         [sys.executable, str(script), "metrics", "--help"],
         capture_output=True,
@@ -40,6 +40,7 @@ def test_main_lazy_loads_subcommand_help() -> None:
 
 def test_repo_root_points_at_kiss() -> None:
     root = cli.repo_root()
+    assert (root / "ops" / "adversarial.py").is_file()
     assert (root / "python" / "adversarial_cli.py").is_file()
 
 

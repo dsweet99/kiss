@@ -1,24 +1,8 @@
 use super::*;
-use crate::bin_cli::args::TestInvocation;
 use crate::test_runner::{RunTestOnceOutcome, WatchCoverageResult};
 
 fn dry_args() -> RunTestCmdArgs<'static> {
-    RunTestCmdArgs {
-        invocation: TestInvocation::Targets(vec!["tests/a.py".into()]),
-        main_branch_cli: None,
-        base_branch_cli: None,
-        dry_run: true,
-        force_rerun: false,
-        force_bad: false,
-        metrics: false,
-        jobs: 1,
-        extra: &[],
-        python_extra: &[],
-        ignore: &[],
-        lang_filter: Some(kiss::Language::Python),
-        config_main_branch: None,
-        gate_config: kiss::GateConfig::default(),
-    }
+    crate::test_runner::test_mode_fixtures::python_dry_run_args(vec!["tests/a.py".into()])
 }
 
 #[test]

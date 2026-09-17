@@ -104,22 +104,7 @@ fn workspace_repo() -> TempDir {
 }
 
 fn dry_args(invocation: TestInvocation, ignore: &[String]) -> RunTestCmdArgs<'_> {
-    RunTestCmdArgs {
-        invocation,
-        main_branch_cli: None,
-        base_branch_cli: None,
-        dry_run: true,
-        force_rerun: false,
-        force_bad: false,
-        metrics: false,
-        jobs: 1,
-        extra: &[],
-        python_extra: &[],
-        ignore,
-        lang_filter: None,
-        config_main_branch: None,
-        gate_config: kiss::GateConfig::default(),
-    }
+    crate::test_runner::test_mode_fixtures::dry_run_cmd_args(invocation, ignore, 1, None)
 }
 
 fn dry_targets(root: &Path, targets: &[String], ignore: &[String]) -> i32 {

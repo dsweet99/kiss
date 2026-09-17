@@ -3,6 +3,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+pub fn host_cpu_count(fallback: usize) -> usize {
+    std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(fallback.max(1))
+        .max(1)
+}
+
 pub fn env_map_from_allowlist(keys: &[&str]) -> BTreeMap<String, String> {
     keys.iter()
         .filter_map(|key| {

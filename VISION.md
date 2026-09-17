@@ -1,7 +1,7 @@
 
 
 # kiss test
-- `kiss test`, equivalently `kiss test .`, reports PASS/FAIL/TIMEOUT for all tests, whether Python or Rust. By caching, `kiss test` avoids having to rerun every test every time. By collecting coverage information when it *does* run tests (and caching that information), `kiss test` can figure out which tests need to be run by looking at what has changed in the report.
+- `kiss test`, equivalently `kiss test .`, reports PASS/FAIL/TIMEOUT for all tests (excluding doctests), whether Python or Rust. By caching, `kiss test` avoids having to rerun every test every time. By collecting coverage information when it *does* run tests (and caching that information), `kiss test` can figure out which tests need to be run by looking at what has changed in the report.
 - Ideally, `kiss test` would be constantly working while running, use all of the CPUs it was allocated (via num_jobs), show a fairly steady stream of meaningful logging output (so the user knows it's working), and be very efficient with resources.
 - Also, the user should be able to kill it at any time with CTRL-C and restart with minimal repeating of work. DON'T try to do cleanup at exit time, though. Just exit on CTRL-C quickly. Defer any housekeeping that might be necessary until the next time 'kiss test' is started.
 - When `kiss test --watch` is running, `kiss test` should contact it and ask it for test results.

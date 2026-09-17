@@ -23,9 +23,7 @@ fn export_worker_count_respects_job_and_host_bounds() {
     assert!(export_worker_count(2) <= 2);
     let host_bound = max_export_workers_for_host();
     assert_eq!(export_worker_count(usize::MAX), host_bound);
-    let available = std::thread::available_parallelism()
-        .map(|count| count.get())
-        .unwrap_or(1);
+    let available = crate::shared_helpers::host_cpu_count(1);
     assert_eq!(host_bound, available.div_ceil(2).max(1));
 }
 

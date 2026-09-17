@@ -130,10 +130,7 @@ fn collect_shard_count_for_cap(path_count: usize, cap: usize) -> usize {
         return 1;
     }
     let cap = cap.max(1);
-    let cpus = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(4)
-        .clamp(1, cap);
+    let cpus = kiss::shared_helpers::host_cpu_count(4).clamp(1, cap);
     cpus.min(path_count / 16).max(1)
 }
 

@@ -49,7 +49,7 @@ def format_cheat_report(metrics: CheatMetrics) -> str:
 
 
 def build_cheat_prompt(kiss_root: Path, repo_dir: Path, lang: str) -> str:
-    adversarial_py = (kiss_root / "python" / "adversarial_cli.py").resolve()
+    adversarial_py = (kiss_root / "ops" / "adversarial.py").resolve()
     lang_instruction = {
         "rust": (
             "Rust only (include `Cargo.toml`, tests runnable via "
@@ -120,7 +120,7 @@ def _coverage_maps_subprocess_env() -> dict[str, str]:
 def _load_coverage_maps(repo: Path) -> tuple[dict[str, float], dict[str, float]]:
     import json
 
-    script = Path(__file__).resolve().parent / "coverage_maps_cli.py"
+    script = repo_root() / "ops" / "coverage_maps.py"
     cmd = [sys.executable, str(script), str(repo.resolve())]
     result = subprocess.run(
         cmd,

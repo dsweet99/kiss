@@ -16,7 +16,3 @@ def main() -> None:
         "true": run_true_coverage(repo),
     }
     sys.stdout.write(json.dumps(payload))
-
-
-if __name__ == "__main__":
-    main()
