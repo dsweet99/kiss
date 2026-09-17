@@ -22,6 +22,16 @@ kiss attempts to provide that in the form of stats about files, functions, etc.,
 cargo install kiss-ai
 ```
 
+`kiss check`, `kiss stats`, and `kiss viz` need only the installed binary. `kiss test` also needs the language toolchains for the repos you run it on:
+
+- **Rust coverage:** [`cargo-llvm-cov`](https://crates.io/crates/cargo-llvm-cov) and [`cargo-nextest`](https://crates.io/crates/cargo-nextest) on `PATH` (kiss drives `cargo llvm-cov nextest`).
+- **Python tests:** a `python` interpreter with [`pytest`](https://pypi.org/project/pytest/) importable.
+
+```bash
+cargo install cargo-llvm-cov cargo-nextest
+# Python: pip install pytest   # or your environment's equivalent
+```
+
 ## Quickstart
 
 In your repo root, run:
@@ -48,7 +58,7 @@ VIOLATION:duplication:src/users.py:10:create_user: 80% similar, 2 copies: [src/u
 
 ## `kiss test`
 
-`kiss test` runs your unit tests, then enforces line-level code coverage, and limits running time of unit tests. `kiss test` is designed to be an efficient and robust unit test runner for both Python and Rust. It supports
+`kiss test` runs your unit tests, then enforces line-level code coverage, and limits running time of unit tests. Install the [toolchains above](#installation) before relying on Rust or Python coverage runs. `kiss test` is designed to be an efficient and robust unit test runner for both Python and Rust. It supports
 - Caching, to avoid reruns of working tests
 - Parallelization, to speed up test running
 - Separate interpreters for each Python test, to reduce test flakiness and failures of the test runner

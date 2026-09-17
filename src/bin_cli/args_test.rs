@@ -59,12 +59,22 @@ fn cov_subcommand_parses_as_coverage() {
 #[test]
 fn readme_does_not_mention_cov_token() {
     let readme = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"));
-    assert!(
-        !readme
-            .split(|c: char| !c.is_ascii_alphanumeric())
-            .any(|w| w.eq_ignore_ascii_case("cov")),
-        "README.md must not mention the token cov"
-    );
+    let tokens: Vec<&str> = readme
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .collect();
+    for (i, word) in tokens.iter().enumerate() {
+        if !word.eq_ignore_ascii_case("cov") {
+            continue;
+        }
+        let allowed_llvm_cov = i
+            .checked_sub(1)
+            .is_some_and(|j| tokens[j].eq_ignore_ascii_case("llvm"));
+        assert!(
+            allowed_llvm_cov,
+            "README.md must not mention the token cov except as llvm-cov"
+        );
+    }
 }
 
 #[test]
