@@ -37,7 +37,6 @@ pub(super) fn python_nodeids_for_model(
     )
 }
 
-/// Batch-collect nodeids for Python models still missing selectors; persist hits.
 pub(super) fn hydrate_python_models(
     repo_root: &Path,
     models: &mut BTreeMap<PathBuf, SourceModel>,
