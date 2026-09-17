@@ -47,6 +47,7 @@ pub(super) fn sample_batch_request(root: &Path) -> RustCoverageBatchRequest {
         test_args: Vec::new(),
         env: BTreeMap::new(),
         force_rerun: false,
+        force_rerun_selectors: Vec::new(),
         jobs: 1,
         generated_config: root.join(".kiss/rust_llvm_cov_cache/runs/run-a/nextest.toml"),
         population_publication_selectors: None,
@@ -55,6 +56,7 @@ pub(super) fn sample_batch_request(root: &Path) -> RustCoverageBatchRequest {
         host_platform,
         coverage_output_mode: kiss::rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
         selector_timeout_millis: std::collections::BTreeMap::new(),
+        cache_policy: kiss::test_cache_policy::TestCachePolicy::default(),
     }
 }
 

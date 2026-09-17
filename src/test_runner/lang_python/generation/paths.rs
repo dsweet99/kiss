@@ -1,5 +1,5 @@
-use std::fs::{self, File, OpenOptions};
-use std::io::{Read, Write};
+use std::fs::{self, File};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
@@ -19,9 +19,7 @@ pub(crate) fn pointer_path(cache_root: &Path) -> PathBuf {
 }
 
 pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    hex_encode(hasher.finalize().as_slice())
+    crate::test_runner::execution_generation::sha256_hex(bytes)
 }
 
 pub(crate) fn sha256_file(path: &Path) -> Result<(u64, String), String> {
@@ -76,24 +74,11 @@ pub(crate) fn create_staging_dir(cache_root: &Path) -> Result<PathBuf, String> {
 }
 
 pub(crate) fn write_create_new_bytes(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)
-        .map_err(|e| format!("error: kiss: create_new {}: {e}", path.display()))?;
-    file.write_all(bytes)
-        .map_err(|e| format!("error: kiss: write {}: {e}", path.display()))?;
-    file.sync_all()
-        .map_err(|e| format!("error: kiss: sync_all {}: {e}", path.display()))?;
-    Ok(())
+    crate::test_runner::execution_generation::write_create_new_bytes(path, bytes)
 }
 
 pub(crate) fn sync_dir(path: &Path) -> Result<(), String> {
-    let file =
-        File::open(path).map_err(|e| format!("error: kiss: open dir {}: {e}", path.display()))?;
-    file.sync_all()
-        .map_err(|e| format!("error: kiss: sync dir {}: {e}", path.display()))?;
-    Ok(())
+    crate::test_runner::execution_generation::sync_dir(path)
 }
 
 pub(crate) fn write_json_artifact<T: serde::Serialize>(

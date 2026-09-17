@@ -10,11 +10,14 @@ use crate::rust_llvm_cov_runner::execute_or_reuse::batch_executor_fresh::{
 };
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export::FakeInstanceExporter;
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_run::{
-    BatchSubprocessRunner, CurrentRunCleanup, prepare_batch_run_layout,
+    BatchSubprocessRunner, CurrentRunCleanup, build_identity_path, prepare_batch_run_layout,
+    prepare_build_target_for_identity,
 };
 use crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity;
 use crate::rust_llvm_cov_runner::plan::batch_plan::build_rust_coverage_batch_plan;
-use crate::rust_llvm_cov_runner::test_support::{batch_executor_fixture_repo, batch_executor_request};
+use crate::rust_llvm_cov_runner::test_support::{
+    batch_executor_fixture_repo, batch_executor_request,
+};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
@@ -43,7 +46,7 @@ fn successful_fresh_execution_removes_current_run_directory() {
     let cache_root = req.cache_root.clone();
     seed_durable_cache_artifacts(&cache_root);
     let run_root = run_root_for(&req);
-    let build_target = repo.path().join("target");
+    let build_target = cache_root.join("build").join("target");
 
     let result = execute_rust_coverage_batch_fresh_with_fake(&req, fake_runner()).unwrap();
     assert!(result.batch_error.is_none());
@@ -78,15 +81,17 @@ fn reject_nonzero_without_terminal_events_direct_witness() {
             process_residual_count: 0,
         },
         &BatchEventStream {
-            terminal_tests: vec![crate::rust_llvm_cov_runner::execute_or_reuse::batch_events::BatchTestTerminal {
-                full_name: "pkg::bin$alpha".to_string(),
-                test_name: "alpha".to_string(),
-                passed: true,
-                timed_out: false,
-                exec_time_secs: 0.001,
-                stdout: None,
-                reason: None,
-            }],
+            terminal_tests: vec![
+                crate::rust_llvm_cov_runner::execute_or_reuse::batch_events::BatchTestTerminal {
+                    full_name: "pkg::bin$alpha".to_string(),
+                    test_name: "alpha".to_string(),
+                    passed: true,
+                    timed_out: false,
+                    exec_time_secs: 0.001,
+                    stdout: None,
+                    reason: None,
+                },
+            ],
             ..Default::default()
         },
     );
@@ -243,6 +248,27 @@ fn interrupted_batch_attempts_current_run_cleanup() {
     let err = execute_rust_coverage_batch_fresh_with_fake(&req, runner).unwrap_err();
     assert!(matches!(err, RustLlvmCovError::Interrupted));
     assert!(!run_root.exists());
+}
+
+#[test]
+fn interrupted_batch_preserves_initialized_build_target_for_retry() {
+    let repo = batch_executor_fixture_repo();
+    let req = batch_executor_request(repo.path());
+    let plan = build_rust_coverage_batch_plan(&req).unwrap();
+    let tools = tools();
+    let runner = BatchSubprocessRunner::from_fn(|_, plan| {
+        fs::create_dir_all(&plan.build_target).unwrap();
+        fs::write(plan.build_target.join("partial-artifact"), b"compiled").unwrap();
+        Err(crate::rust_llvm_cov_runner::execute_or_reuse::batch_run::BatchSubprocessRunError::Interrupted)
+    });
+
+    let err = execute_rust_coverage_batch_fresh_with_fake(&req, runner).unwrap_err();
+
+    assert!(matches!(err, RustLlvmCovError::Interrupted));
+    assert!(build_identity_path(&req.cache_root).is_file());
+    assert!(plan.build_target.join("partial-artifact").is_file());
+    prepare_build_target_for_identity(&req, &tools, &plan).unwrap();
+    assert!(plan.build_target.join("partial-artifact").is_file());
 }
 
 #[test]

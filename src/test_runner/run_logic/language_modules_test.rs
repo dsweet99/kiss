@@ -15,6 +15,23 @@ fn planned() -> PlannedSelectors {
 
 #[test]
 #[allow(non_snake_case)]
+fn python_module_run_population_uses_temp_repo_kernel() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(tmp.path().join("app.py"), "VALUE = 1\n").unwrap();
+    let mut planned = planned();
+    planned.repo_root = tmp.path().to_path_buf();
+    planned.sel.python.clear();
+    let options = super::dry_run_selector_options();
+    let ctx = crate::test_runner::coverage_decision::RunContext {
+        planned: &planned,
+        options: &options,
+    };
+    let module = PythonModule::for_execution(&planned.repo_root, &planned.ignore);
+    let _ = <PythonModule as LanguageExecutor>::run_population(&module, &[], &ctx);
+}
+
+#[test]
+#[allow(non_snake_case)]
 fn PythonModule_policy_reads_python_population_decision() {
     let mut planned = planned();
     planned.population_required.python = true;
@@ -249,6 +266,21 @@ fn cached_rust_check_aggregate_is_only_for_non_forced_selective_runs() {
         false,
         &Some(vec!["tests::population".to_string()])
     ));
+}
+
+#[test]
+fn cached_check_aggregate_retry_bad_force_selectors_must_rerun() {
+    // --retry-bad leaves batch-wide force_rerun false and lists FAIL/TIMEOUT
+    // in prior_failure_selectors. A warm check-aggregate shortcut must not
+    // accept those selectors as PASS; intersecting priors become the rerun set.
+    let planned = vec!["tests::ok".to_string(), "tests::bad".to_string()];
+    let prior = vec!["tests::bad".to_string(), "tests::other".to_string()];
+    assert!(should_try_cached_rust_check_aggregate(false, &None));
+    assert_eq!(
+        prior_force_selectors_in_planned(&planned, &prior),
+        vec!["tests::bad".to_string()]
+    );
+    assert!(prior_force_selectors_in_planned(&planned, &[]).is_empty());
 }
 
 #[test]

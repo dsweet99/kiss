@@ -1,10 +1,10 @@
+use crate::rpytest_runner::TestStatus;
 use crate::rust_llvm_cov_runner::batch_lock::lock_batch;
 use crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::publish_next_entry_state;
 use crate::rust_llvm_cov_runner::publish_derived::batch_reverse_publish::publish_reverse_line_index;
 use crate::rust_llvm_cov_runner::publish_derived_state;
 use crate::rust_llvm_cov_runner::test_support::witness_batch_tools;
 use crate::rust_llvm_cov_runner::{RustCovCacheEntry, RustLineCoverage, RustLlvmCovOutcome};
-use crate::rpytest_runner::TestStatus;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
@@ -75,9 +75,12 @@ pub fn write_passed_entry(
     .unwrap();
 }
 
-pub fn seed_alpha_beta_reverse(req: &crate::rust_llvm_cov_runner::RustCoverageBatchRequest) -> String {
+pub fn seed_alpha_beta_reverse(
+    req: &crate::rust_llvm_cov_runner::RustCoverageBatchRequest,
+) -> String {
     let tools = witness_batch_tools();
-    let identity = crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(req, &tools).unwrap();
+    let identity =
+        crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(req, &tools).unwrap();
     let _guard = lock_batch(&req.cache_root).unwrap();
     publish_derived_state(
         req,

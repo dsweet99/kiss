@@ -3,7 +3,45 @@ use std::time::Duration;
 
 use super::*;
 use crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest;
-use crate::rust_llvm_cov_runner::{BATCH_EXECUTION_POLICY_VERSION, CACHE_SCHEMA_VERSION, RustLlvmCovError};
+use crate::rust_llvm_cov_runner::{
+    BATCH_EXECUTION_POLICY_VERSION, CACHE_SCHEMA_VERSION, RustLlvmCovError,
+};
+
+#[test]
+fn terminate_stale_cache_processes_kills_cmdline_match_and_skips_self() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cache_root = tmp.path().join(".kiss").join("rust_llvm_cov_cache");
+    fs::create_dir_all(&cache_root).unwrap();
+    let marker = cache_root.canonicalize().unwrap();
+    let mut child = std::process::Command::new("python3")
+        .arg("-c")
+        .arg("import time; time.sleep(30)")
+        .arg(marker.as_os_str())
+        .spawn()
+        .unwrap();
+    let pid = child.id();
+    let mut killed = 0usize;
+    for _ in 0..50 {
+        killed = terminate_stale_cache_processes(&cache_root);
+        if killed >= 1 {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(
+        killed >= 1,
+        "must kill the process whose cmdline contains the cache root"
+    );
+    let _ = child.wait();
+    assert!(
+        !std::path::Path::new(&format!("/proc/{pid}")).exists(),
+        "stale cache process should be gone"
+    );
+    assert_eq!(
+        terminate_stale_cache_processes(&tmp.path().join("not_a_cache")),
+        0
+    );
+}
 
 #[test]
 fn remove_stale_run_directories_failure_is_recoverable_on_next_run() {
@@ -95,6 +133,52 @@ fn run_batch_subprocess_runs_echo_with_env_dirs() {
 }
 
 #[test]
+fn run_batch_subprocess_aborts_before_spawn_when_llvm_cov_nextest_budget_is_gone() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut req = RustCoverageBatchRequest::witness();
+    req.cwd = tmp.path().to_path_buf();
+    req.source_root = tmp.path().to_path_buf();
+    req.generated_config = tmp.path().join("runs/run-a/nextest.toml");
+    let mut plan = crate::rust_llvm_cov_runner::build_rust_coverage_batch_plan(&req).unwrap();
+    plan.argv = vec!["/bin/echo".to_string(), "hello".to_string()];
+    plan.env.clear();
+    let cap = crate::rust_llvm_cov_runner::execute_or_reuse::llvm_cov_process_budget::llvm_cov_nextest_process_cap();
+    let _live =
+        crate::rust_llvm_cov_runner::execute_or_reuse::llvm_cov_process_budget::ProcessCountOverrideGuard::enter(
+            Some(cap + 1),
+        );
+    let err = run_batch_subprocess(tmp.path(), &plan).unwrap_err();
+    assert!(matches!(
+        err,
+        BatchSubprocessRunError::ProcessBudget { live, cap: got } if live == cap + 1 && got == cap
+    ));
+}
+
+#[test]
+fn run_batch_subprocess_aborts_before_spawn_when_mem_available_is_gone() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut req = RustCoverageBatchRequest::witness();
+    req.cwd = tmp.path().to_path_buf();
+    req.source_root = tmp.path().to_path_buf();
+    req.generated_config = tmp.path().join("runs/run-a/nextest.toml");
+    let mut plan = crate::rust_llvm_cov_runner::build_rust_coverage_batch_plan(&req).unwrap();
+    plan.argv = vec!["/bin/echo".to_string(), "hello".to_string()];
+    plan.env.clear();
+    let _mem =
+        crate::rust_llvm_cov_runner::execute_or_reuse::mem_available::MemAvailableOverrideGuard::enter(
+            Some(1),
+        );
+    let err = run_batch_subprocess(tmp.path(), &plan).unwrap_err();
+    assert!(matches!(
+        err,
+        BatchSubprocessRunError::MemoryFloor {
+            available_kib: 1,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn batch_subprocess_error_converts_to_rust_llvm_cov_error() {
     let err: RustLlvmCovError = BatchSubprocessRunError::Spawn {
         program: "cargo".to_string(),
@@ -104,6 +188,19 @@ fn batch_subprocess_error_converts_to_rust_llvm_cov_error() {
     assert!(matches!(err, RustLlvmCovError::InvalidRequest(message) if message.contains("boom")));
     let interrupted: RustLlvmCovError = BatchSubprocessRunError::Interrupted.into();
     assert!(matches!(interrupted, RustLlvmCovError::Interrupted));
+    let floor: RustLlvmCovError = BatchSubprocessRunError::MemoryFloor {
+        available_kib: 10,
+        floor_kib: 100,
+    }
+    .into();
+    assert!(
+        matches!(floor, RustLlvmCovError::InvalidRequest(message) if message.contains("MemAvailable 10 KiB") && message.contains("100 KiB floor") && !message.contains("clamp"))
+    );
+    let budget: RustLlvmCovError =
+        BatchSubprocessRunError::ProcessBudget { live: 40, cap: 9 }.into();
+    assert!(
+        matches!(budget, RustLlvmCovError::InvalidRequest(message) if message.contains("40 cargo-llvm-cov processes") && message.contains("cap 9") && !message.contains("clamp"))
+    );
 }
 
 #[test]
@@ -142,6 +239,7 @@ fn build_identity_helpers_are_executable_witnesses() {
         source_root: input.source_root.clone(),
         cargo_args: input.cargo_args.clone(),
         env: input.env.clone(),
+        resolved_tools: input.resolved_tools.clone(),
     };
     let _ = BuildIdentityFile {
         input: input.clone(),
@@ -149,6 +247,7 @@ fn build_identity_helpers_are_executable_witnesses() {
     };
     let _ = BuildIdentityPreparation {
         previous_baseline_bytes: 7,
+        reused_existing_target: true,
     };
 
     fs::create_dir_all(&plan.build_target).unwrap();
@@ -164,9 +263,9 @@ fn build_identity_helpers_are_executable_witnesses() {
             .ends_with("identity.json")
     );
 
-    publish_successful_build_identity(&req, &tools, &plan, 0).unwrap();
+    update_build_target_baseline(&req, &tools, &plan, 0).unwrap();
     let prep = prepare_build_target_for_identity(&req, &tools, &plan).unwrap();
-    assert_eq!(prep.previous_baseline_bytes, 0);
+    assert_eq!(prep.previous_baseline_bytes, 5);
 }
 
 #[test]
@@ -183,11 +282,12 @@ fn prepare_build_target_for_identity_retains_external_target_when_growth_limit_e
         .join("runs")
         .join("run-a")
         .join("nextest.toml");
-    let plan = crate::rust_llvm_cov_runner::build_rust_coverage_batch_plan(&req).unwrap();
+    let mut plan = crate::rust_llvm_cov_runner::build_rust_coverage_batch_plan(&req).unwrap();
+    plan.build_target = req.source_root.join("target");
     let tools = witness_batch_tools();
     fs::create_dir_all(&plan.build_target).unwrap();
     fs::write(plan.build_target.join("artifact"), vec![0_u8; 10]).unwrap();
-    publish_successful_build_identity(&req, &tools, &plan, 0).unwrap();
+    update_build_target_baseline(&req, &tools, &plan, 0).unwrap();
     fs::write(plan.build_target.join("artifact"), vec![0_u8; 20]).unwrap();
     prepare_build_target_for_identity(&req, &tools, &plan).unwrap();
     assert!(plan.build_target.exists());
@@ -207,12 +307,11 @@ fn prepare_build_target_for_identity_rebuilds_cache_owned_target_when_growth_lim
         .join("runs")
         .join("run-a")
         .join("nextest.toml");
-    let mut plan = crate::rust_llvm_cov_runner::build_rust_coverage_batch_plan(&req).unwrap();
-    plan.build_target = req.cache_root.join("build").join("target");
+    let plan = crate::rust_llvm_cov_runner::build_rust_coverage_batch_plan(&req).unwrap();
     let tools = witness_batch_tools();
     fs::create_dir_all(&plan.build_target).unwrap();
     fs::write(plan.build_target.join("artifact"), vec![0_u8; 10]).unwrap();
-    publish_successful_build_identity(&req, &tools, &plan, 0).unwrap();
+    update_build_target_baseline(&req, &tools, &plan, 0).unwrap();
     fs::write(plan.build_target.join("artifact"), vec![0_u8; 20]).unwrap();
     prepare_build_target_for_identity(&req, &tools, &plan).unwrap();
     assert!(!plan.build_target.exists());

@@ -1,8 +1,10 @@
 mod unit_test_seconds;
 
+pub(crate) use unit_test_seconds::parse_max_unit_test_seconds;
 pub use unit_test_seconds::{
     MatchedUnitTestSecondsRule, catch_all_limit, default_max_unit_test_seconds, exceeds_limit,
-    format_nested_toml_table, limit_for_selector, matched_rule_for_selector, validate_rules,
+    format_nested_toml_table, limit_for_selector, matched_rule_for_selector,
+    time_gate_uses_path_prefixes, validate_rules,
 };
 
 use crate::config::{ConfigError, check_unknown_keys};
@@ -25,7 +27,7 @@ impl TestCoverageScope {
         }
     }
 
-    fn parse(raw: &str) -> Result<Self, String> {
+    pub(crate) fn parse(raw: &str) -> Result<Self, String> {
         match raw {
             "by_file" => Ok(Self::ByFile),
             "codebase" => Ok(Self::Codebase),
@@ -45,16 +47,15 @@ impl fmt::Display for TestCoverageScope {
 const GLOBAL_KEYS: &[&str] = &[
     "min_similarity",
     "duplication_enabled",
-    "orphan_module_enabled",
     "comment_removal_enabled",
     "docs_allowed",
     "orphan_allowed",
 ];
 
 const GATE_RENAMED_MSG: &str = "\
-[gate] was renamed: put min_similarity/duplication_enabled/orphan_module_enabled/\
+[gate] was renamed: put min_similarity/duplication_enabled/\
 comment_removal_enabled/docs_allowed/orphan_allowed under [global], and test_coverage_threshold/\
-test_coverage_scope/max_unit_test_seconds/max_num_tests under [test]";
+test_coverage_scope/orphan_detection/max_unit_test_seconds/max_num_tests under [test]";
 
 #[derive(Debug, Clone)]
 pub struct GateConfig {
@@ -64,7 +65,7 @@ pub struct GateConfig {
     pub max_num_tests: usize,
     pub min_similarity: f64,
     pub duplication_enabled: bool,
-    pub orphan_module_enabled: bool,
+    pub orphan_detection: bool,
     pub comment_removal_enabled: bool,
     pub docs_allowed: Vec<String>,
     pub orphan_allowed: Vec<String>,
@@ -79,7 +80,7 @@ impl Default for GateConfig {
             max_num_tests: defaults::gate::MAX_NUM_TESTS,
             min_similarity: defaults::duplication::MIN_SIMILARITY,
             duplication_enabled: true,
-            orphan_module_enabled: true,
+            orphan_detection: false,
             comment_removal_enabled: false,
             docs_allowed: Vec::new(),
             orphan_allowed: Vec::new(),
@@ -146,14 +147,13 @@ impl GateConfig {
             return;
         }
         if let Some(global) = value.get("global").and_then(|v| v.as_table()) {
-            if let Err(e) = check_unknown_keys(global, GLOBAL_KEYS, "global") {
-                eprintln!("Error: {e}");
+            if check_unknown_keys(global, GLOBAL_KEYS, "global").is_err() {
                 return;
             }
             merge_global_lenient(self, global);
         }
         if let Some(test) = value.get("test").and_then(|v| v.as_table()) {
-            merge_test_gates_lenient(self, test);
+            crate::test_toml::merge_test_table_lenient(test, Some(self), None, None);
         }
     }
 
@@ -174,7 +174,7 @@ impl GateConfig {
             merge_global_strict(self, global)?;
         }
         if let Some(test) = value.get("test").and_then(|v| v.as_table()) {
-            merge_test_gates_strict(self, test)?;
+            crate::test_toml::merge_test_table_strict(test, Some(self), None, None)?;
         }
         Ok(())
     }

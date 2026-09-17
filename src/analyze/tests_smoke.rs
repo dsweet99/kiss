@@ -189,18 +189,17 @@ fn test_run_analyze_no_files() {
 
 #[test]
 fn test_run_analyze_current_repo_in_process() {
+    // Narrow fixture (not the full kiss tree): still exercises run_analyze_with_result end-to-end.
+    let tmp = tmp_repo_three_files();
     let py_cfg = permissive_config(Config::python_defaults());
     let rs_cfg = permissive_config(Config::rust_defaults());
     let gate_cfg = GateConfig {
         test_coverage_threshold: 0,
         duplication_enabled: false,
-        orphan_module_enabled: false,
-        docs_allowed: vec!["src/".into()],
+        docs_allowed: vec!["".into()],
         ..GateConfig::default()
     };
-    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let src_root = repo_root.join("src");
-    let universe = src_root.to_str().unwrap();
+    let universe = tmp.path().to_str().unwrap();
     let focus = vec![universe.to_string()];
     let opts = AnalyzeOptions {
         universe,

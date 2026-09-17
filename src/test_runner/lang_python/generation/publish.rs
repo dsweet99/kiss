@@ -5,7 +5,7 @@ use kiss::kiss_publication_barrier::publish_atomically;
 
 use super::evidence::PopulationEvidence;
 use super::paths::{
-    create_staging_dir, generation_dir, generations_dir, pointer_path, sha256_hex, sync_dir,
+    create_staging_dir, generation_dir, generations_dir, pointer_path, sync_dir,
     write_json_artifact,
 };
 use super::types::{
@@ -34,7 +34,9 @@ pub(crate) fn publish_python_population_generation_reusing(
 ) -> Result<String, String> {
     let cache_root = python_coverage_cache_root(repo_root)?;
     let _guard = kiss::rslip::lock_rslip_derived_state(&cache_root).map_err(|e| e.to_string())?;
-    let id = publish_locked(&cache_root, plan, evidence, reason, reuse_generation_id)?;
+    let mut evidence = evidence.clone();
+    super::evidence::fill_test_definition_digests(repo_root, &mut evidence);
+    let id = publish_locked(&cache_root, plan, &evidence, reason, reuse_generation_id)?;
     super::memo::clear_python_generation_warm_memo();
     Ok(id)
 }
@@ -59,8 +61,9 @@ pub(crate) fn publish_locked(
             "line_index.json",
             &evidence.line_index,
         )?;
-        push_hardlinked_artifact(&mut artifacts, &staged, src, "timings.json")?;
-        push_hardlinked_artifact(&mut artifacts, &staged, src, "durations.json")?;
+        push_artifact(&mut artifacts, &staged, "timings.json", &evidence.timings)?;
+        let durations = generation_durations_file(&evidence.timings);
+        push_artifact(&mut artifacts, &staged, "durations.json", &durations)?;
     } else {
         push_artifact(&mut artifacts, &staged, "coverage.json", &evidence.coverage)?;
         push_artifact(
@@ -157,10 +160,17 @@ fn write_pointer(
 ) -> Result<(), String> {
     let path = pointer_path(cache_root);
     let tmp = path.with_file_name(format!(".population.{}.tmp", python_unique_suffix()));
+    let parent_generation_id = fs::read(&path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<PopulationPointer>(&bytes).ok())
+        .map(|pointer| pointer.generation_id)
+        .filter(|parent| parent != generation_id)
+        .unwrap_or_default();
     let pointer = PopulationPointer {
         schema_version: POINTER_SCHEMA_VERSION.to_string(),
         generation_id: generation_id.to_string(),
         manifest_sha256: manifest_sha256.to_string(),
+        parent_generation_id,
     };
     publish_atomically("python_population_pointer", &path, &tmp, |file| {
         use std::io::Write;
@@ -182,12 +192,17 @@ fn prune_old_generations(cache_root: &Path, keep_id: &str) -> Result<(), String>
         Ok(entries) => entries,
         Err(_) => return Ok(()),
     };
+    let parent_id = fs::read(pointer_path(cache_root))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<PopulationPointer>(&bytes).ok())
+        .map(|pointer| pointer.parent_generation_id)
+        .unwrap_or_default();
     for entry in entries.flatten() {
         let name = entry.file_name();
         let Some(name) = name.to_str() else {
             continue;
         };
-        if name.starts_with('.') || name == keep_id {
+        if name.starts_with('.') || name == keep_id || name == parent_id {
             continue;
         }
         let path = entry.path();
@@ -197,11 +212,6 @@ fn prune_old_generations(cache_root: &Path, keep_id: &str) -> Result<(), String>
     }
     sync_dir(&root)?;
     Ok(())
-}
-
-#[allow(dead_code)]
-pub(crate) fn pointer_digest_for_tests(generation_id: &str, manifest_sha: &str) -> String {
-    sha256_hex(format!("{generation_id}:{manifest_sha}").as_bytes())
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]

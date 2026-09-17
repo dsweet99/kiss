@@ -4,19 +4,24 @@ use kiss::cli_output::print_final_status;
 
 use crate::bin_cli::cov_cmd::{CovCommandArgs, CovFileSets};
 use crate::test_runner::unit_test_timing::{
-    CovTimeGateOpts, RuntimeGateEval, TimingLangInclude, evaluate_cov_time_gate,
-    runtime_gate_failure_lines,
+    CovTimeGateOpts, RuntimeGateEval, TimingLangInclude, codebase_test_count_for_cov,
+    evaluate_cov_time_gate, runtime_gate_failure_lines,
 };
 
 pub(crate) struct SiblingGateResult {
     pub(crate) coverage_failed: bool,
     pub(crate) time_failed: bool,
     pub(crate) max_num_tests_failed: bool,
+    pub(crate) orphan_failed: bool,
 }
 
 pub(crate) fn finish_sibling_gates(result: SiblingGateResult) -> i32 {
-    print_final_status(result.coverage_failed || result.time_failed || result.max_num_tests_failed);
-    i32::from(result.coverage_failed || result.time_failed || result.max_num_tests_failed)
+    let failed = result.coverage_failed
+        || result.time_failed
+        || result.max_num_tests_failed
+        || result.orphan_failed;
+    print_final_status(failed);
+    i32::from(failed)
 }
 
 pub(crate) fn evaluate_time_gate_for_cov(
@@ -46,6 +51,10 @@ pub(crate) fn apply_time_gate_eval(eval: &RuntimeGateEval) -> bool {
     match eval {
         RuntimeGateEval::Disabled | RuntimeGateEval::Passed => false,
         RuntimeGateEval::Failed(viols) => {
+            crate::test_runner::final_summary::note_violation_kind(
+                "max_unit_test_seconds",
+                viols.len(),
+            );
             for line in runtime_gate_failure_lines(viols) {
                 println!("{line}");
             }
@@ -69,21 +78,36 @@ pub(crate) fn evaluate_max_num_tests_gate(
     if args.bypass_gate {
         return false;
     }
-    let Some(count) = crate::test_runner::unit_test_timing::codebase_test_count_for_cov(
+    let include = TimingLangInclude {
+        python: !files.py_files.is_empty(),
+        rust: !files.rs_files.is_empty(),
+    };
+    let Some(count) = codebase_test_count_for_cov(
         universe_root,
         args.lang_filter,
-        TimingLangInclude {
-            python: !files.py_files.is_empty(),
-            rust: !files.rs_files.is_empty(),
-        },
+        include,
         ignore,
         args.pytest_args,
-    ) else {
+    )
+    .or_else(|| {
+        if args.ignore == ignore {
+            None
+        } else {
+            codebase_test_count_for_cov(
+                universe_root,
+                args.lang_filter,
+                include,
+                args.ignore,
+                args.pytest_args,
+            )
+        }
+    }) else {
         eprintln!("error: kiss test: unit-test population count is unavailable for max_num_tests");
         return true;
     };
     let limit = args.gate_config.max_num_tests;
     if count > limit {
+        crate::test_runner::final_summary::note_violation_kind("max_num_tests", count);
         println!("VIOLATION:max_num_tests: {count} test(s) exceeds max_num_tests={limit}");
         true
     } else {

@@ -14,7 +14,10 @@ pub(crate) fn reverse_bound_index_ok(
     let Some(reverse) = manifest.reverse_line_index.as_ref() else {
         return false;
     };
-    let Some(state) = crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::read_entry_state(cache_root)
+    let Some(state) =
+        crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::read_entry_state(
+            cache_root,
+        )
     else {
         return false;
     };
@@ -47,7 +50,9 @@ fn index_keys_match_reverse_snapshot(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rust_llvm_cov_runner::publish_derived::batch_derived::{INDEX_SCHEMA_VERSION, POPULATION_SCHEMA_VERSION};
+    use crate::rust_llvm_cov_runner::publish_derived::batch_derived::{
+        INDEX_SCHEMA_VERSION, POPULATION_SCHEMA_VERSION,
+    };
     use std::collections::BTreeMap;
 
     #[test]

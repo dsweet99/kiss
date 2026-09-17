@@ -29,6 +29,7 @@ pub(crate) fn selectors_by_changed_file_line(
     if let Some(from_aggregate) =
         kiss::rust_llvm_cov_runner::selector_coverage_from_check_aggregate_generation(
             &cache_root,
+            repo_root,
             generation_fingerprint,
         )
     {

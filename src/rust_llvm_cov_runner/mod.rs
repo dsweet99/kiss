@@ -7,9 +7,13 @@ mod execute_or_reuse;
 mod plan;
 mod publish_derived;
 
+mod build_depot;
 mod file_lock;
 mod kiss_profraw;
+mod ordinary_source_snapshot;
 mod rust_cov_cache;
+mod source_diff;
+mod subprocess_observer;
 
 #[cfg(test)]
 mod lib_test;
@@ -20,6 +24,7 @@ mod structure_regression_test;
 #[cfg(test)]
 mod test_support;
 
+pub use build_depot::{SemanticClearReport, build_depot_target, clear_semantic_evidence};
 pub(crate) use execute_or_reuse::batch_aggregate;
 pub(crate) use execute_or_reuse::batch_check_aggregate_export;
 pub(crate) use execute_or_reuse::batch_events;
@@ -31,6 +36,7 @@ pub(crate) use execute_or_reuse::batch_executor_finish_entries;
 pub(crate) use execute_or_reuse::batch_executor_finish_export;
 pub(crate) use execute_or_reuse::batch_executor_finish_store;
 pub(crate) use execute_or_reuse::batch_executor_fresh;
+pub use execute_or_reuse::batch_executor_prepare::PreparedRustBatch;
 pub(crate) use execute_or_reuse::batch_export;
 pub(crate) use execute_or_reuse::batch_export_catalog;
 #[cfg(test)]
@@ -45,6 +51,7 @@ pub(crate) use execute_or_reuse::batch_output_channel;
 pub(crate) use execute_or_reuse::batch_output_channel_frame;
 pub(crate) use execute_or_reuse::batch_output_channel_token;
 pub(crate) use execute_or_reuse::batch_process_tree;
+pub use execute_or_reuse::batch_process_tree::{cancel_active_batch_scope, reap_orphaned_zombies};
 pub(crate) use execute_or_reuse::batch_result;
 pub(crate) use execute_or_reuse::batch_run;
 pub(crate) use execute_or_reuse::batch_shim;
@@ -54,6 +61,21 @@ pub(crate) use execute_or_reuse::batch_shim_lookup;
 pub(crate) use execute_or_reuse::batch_shim_synthesize;
 pub(crate) use execute_or_reuse::batch_warm_hit_seal;
 pub(crate) use execute_or_reuse::llvm_cov_json;
+#[cfg(test)]
+pub use execute_or_reuse::progress::live_rust_hook_test_guard;
+pub use execute_or_reuse::progress::{
+    clear_live_rust_test_hook, emit_progress, install_live_rust_test_hook, live_rust_was_printed,
+    mark_live_rust_printed, set_live_rust_error, take_live_rust_error,
+};
+pub use execute_or_reuse::progress_heartbeat::ProgressWatchdog;
+pub use execute_or_reuse::progress_prepared_hits::{
+    emit_prepared_rust_cache_hits, install_prepared_rust_cache_hits_hook,
+};
+pub use execute_or_reuse::progress_watch_report::{
+    begin_watch_report_capture, take_watch_report_capture, take_watch_report_lines,
+    transcript_from_lines,
+};
+pub use execute_or_reuse::progress_watch_suite::{WatchSuiteReport, merge_watch_exit};
 pub(crate) use execute_or_reuse::worker;
 #[cfg(test)]
 pub(crate) use execute_or_reuse::worker_cleanup_test;
@@ -95,6 +117,7 @@ pub(crate) use publish_derived::batch_derived_prune;
 pub(crate) use publish_derived::batch_derived_snapshot;
 pub(crate) use publish_derived::batch_entry_state;
 pub(crate) use publish_derived::batch_population_durations;
+pub(crate) use publish_derived::batch_population_durations_sealed;
 pub(crate) use publish_derived::batch_publication_tmp;
 pub(crate) use publish_derived::batch_reverse_build;
 pub(crate) use publish_derived::batch_reverse_line_index;
@@ -113,15 +136,18 @@ use std::time::Duration;
 pub use batch_aggregate::{AggregationCounters, InstanceResult, aggregate_logical_selectors};
 pub use batch_check_aggregate::{
     CHECK_AGGREGATE_SCHEMA_VERSION, CheckAggregateBinaryRecord, CheckAggregateSnapshot,
-    ValidatedCheckAggregate, build_check_aggregate, load_current_check_aggregate_snapshot,
-    load_reusable_prior_check_aggregate, publish_check_aggregate, reusable_check_aggregate_delta,
+    ValidatedCheckAggregate, build_check_aggregate,
+    file_selector_index_from_check_aggregate_generation, file_selector_index_from_validated,
+    load_current_check_aggregate_snapshot, load_reusable_prior_check_aggregate,
+    publish_check_aggregate, reusable_check_aggregate_delta,
     selector_coverage_from_check_aggregate_generation, selector_coverage_from_validated,
 };
 pub use batch_derived::{
     DerivedPublishCounters, INDEX_SCHEMA_VERSION as BATCH_INDEX_SCHEMA_VERSION,
     POPULATION_SCHEMA_VERSION as BATCH_POPULATION_SCHEMA_VERSION, population_derived_state_stale,
     population_manifest_state_is_current, prune_obsolete_selective_generations,
-    publish_derived_state, publish_derived_state_with_binaries,
+    publish_conservative_derived_state_from_check_aggregate, publish_derived_state,
+    publish_derived_state_with_binaries,
 };
 pub use batch_derived_entries::{RustReusableSelectorEntry, load_reusable_prior_selector_entries};
 pub use batch_derived_incremental::{
@@ -129,9 +155,12 @@ pub use batch_derived_incremental::{
 };
 pub use batch_derived_index::{
     RustGenerationCoverageSnapshot, RustPopulationState, RustSnapshotDelta,
-    is_check_aggregate_population, load_current_generation_coverage_snapshot,
-    load_current_generation_line_index, load_current_population_state,
-    load_reusable_prior_population_state, reusable_snapshot_delta,
+    current_population_manifest_matches_identity, current_population_manifest_matches_universe,
+    current_population_manifest_state, current_population_manifest_test_binaries_match,
+    current_test_binaries_match, is_check_aggregate_population,
+    load_current_generation_coverage_from_passing_entries,
+    load_current_generation_coverage_snapshot, load_current_generation_line_index,
+    load_current_population_state, load_reusable_prior_population_state, reusable_snapshot_delta,
 };
 pub use batch_entry_state::{
     ENTRY_STATE_SCHEMA, EntryState, invalidate_entry_state, publish_next_entry_state,
@@ -141,8 +170,18 @@ pub use batch_events::{
     BatchCompilerArtifact, BatchEventStream, BatchTestTerminal, aggregate_selectors_for_test,
     parse_batch_event_stream, selector_matches_test,
 };
-pub use batch_executable_index::{RustTestExecutableIndex, build_rust_test_executable_index};
-pub use batch_executor::execute_rust_coverage_batch;
+pub use batch_executable_index::{
+    RustListedTest, RustTestExecutableIndex, build_rust_test_executable_index,
+    build_rust_test_executable_index_with_tests,
+};
+pub use batch_executor::{
+    execute_rust_coverage_batch, lock_and_hold_batch, try_lock_and_hold_batch,
+};
+pub(crate) use batch_executor::{
+    execute_rust_coverage_batch_with_held_lock, install_held_batch_lock,
+};
+#[cfg(test)]
+pub(crate) use batch_executor::{lock_batch_call_count, reset_lock_batch_call_count};
 #[cfg(test)]
 pub use batch_export::FakeInstanceExporter;
 pub use batch_export::{
@@ -153,18 +192,25 @@ pub use batch_export_resolve::BinaryIdObjectMap;
 pub use batch_export_tools::{
     ExportTools, resolve_export_tools_from_env, resolve_export_tools_from_rustc,
 };
+#[cfg(test)]
+pub use batch_fingerprint::identity_memo_hash_count;
 pub use batch_fingerprint::{
-    RustCoverageBatchIdentity, RustCoverageToolIdentity, batch_identity, entry_fingerprint,
+    RustCoverageBatchIdentity, RustCoverageToolIdentity, batch_identity, begin_identity_memo,
+    entry_fingerprint, identity_memo_is_populated, refresh_identity_memo, remember_identity_memo,
 };
+pub use batch_identity_seal::try_source_matched_seal_identity;
 pub use batch_plan::{
     CheckAggregateRepairPublication, CoverageOutputMode, RustCoverageBatchPlan,
     RustCoverageBatchRequest, build_rust_coverage_batch_plan, validate_supported_rust_cargo_args,
 };
+pub use batch_plan_env::effective_coverage_build_jobs;
 pub use batch_plan_publish::publish_generated_nextest_config;
 pub use batch_plan_test_args::{identity_relevant_test_args, validate_supported_rust_test_args};
 pub use batch_population_durations::{
-    load_current_population_durations, try_load_population_durations,
+    load_current_population_durations, population_entries_all_pass, population_nonpassed_selectors,
+    try_load_population_durations,
 };
+pub use batch_population_durations_sealed::try_load_sealed_population_durations;
 pub use batch_result::{RustCoverageBatchCounters, RustCoverageBatchResult};
 pub use batch_reverse_line_index::{
     REVERSE_LINE_INDEX_SCHEMA, ReversePublishInfo, prune_unreferenced_snapshots,
@@ -173,8 +219,9 @@ pub use batch_reverse_line_index::{
 #[cfg(test)]
 pub use batch_reverse_query::reset_reverse_query_counters_for_test;
 pub use batch_reverse_query::{
-    REVERSE_QUERY_HITS, ReverseQueryCounters, ReverseUnavailableCounts, query_reverse_line_index,
-    snapshot_reverse_query_counters, take_reverse_query_counters_since_last_copy,
+    REVERSE_QUERY_HITS, ReverseQueryCounters, ReverseUnavailableCounts,
+    query_reverse_covering_files, query_reverse_line_index, snapshot_reverse_query_counters,
+    take_reverse_query_counters_since_last_copy,
 };
 pub use batch_reverse_query_metrics::ReverseUnavailableReason;
 pub use batch_runner_resolve::{
@@ -183,10 +230,19 @@ pub use batch_runner_resolve::{
     resolve_delegated_runners, runner_map_fingerprint, write_runner_map,
 };
 pub use batch_shim::run_target_runner_shim;
+pub use cargo_workspace_metadata::workspace_test_target_sources;
 pub use kiss_profraw::{
     KissProfrawProcessGuard, discover_repo_root, redirect_this_process, sweep_kiss_profraw_dir,
+    sweep_orphan_default_profraw,
+};
+pub use ordinary_source_snapshot::{
+    OrdinarySourceInvalidation, classify_ordinary_source_delta, load_ordinary_source_line_hashes,
+    load_ordinary_source_snapshot, remap_covered_file_lines, write_ordinary_source_snapshot,
 };
 pub use plan::batch_plan_shim_const::TARGET_RUNNER_SHIM_SUBCOMMAND;
+pub use plan::execution_identity::{
+    ExecutionContextIdentity, SourceSnapshot, TIMING_CONTEXT_SCHEMA_VERSION, TimingContextIdentity,
+};
 pub use rust_cov_cache::{
     RustCovCacheEntry, generation_entries_fingerprint, repo_relative_coverage_file,
     repo_relative_path, store_rust_cov_cache_entry,
@@ -196,10 +252,17 @@ pub use shared_input::{
     is_cargo_config_input_path, is_rust_cov_cache_input, rust_cov_input_files,
     selection_context_source_digest, workspace_input_digest,
 };
+pub use source_diff::{SourceFileDiff, diff_file_lines, remap_line_set};
+pub use subprocess_observer::{
+    SubprocessObserver, SubprocessObserverSnapshot, bind_subprocess_observer,
+    record_cargo_nextest_invocation, record_llvm_export_invocations, record_pytest_invocation,
+    reset_subprocess_observer, subprocess_observer_snapshot,
+};
 pub use worker::rust_cov_cache_tmp_parent;
 
-pub const CACHE_SCHEMA_VERSION: &str = "rust-llvm-cov-cache-v4";
-pub const BATCH_EXECUTION_POLICY_VERSION: &str = "rust-batch-execution-v2";
+pub const CACHE_SCHEMA_VERSION: &str = "rust-llvm-cov-cache-v5";
+pub const BATCH_EXECUTION_POLICY_VERSION: &str = "rust-batch-execution-v3";
+pub const CACHE_POLICY_SCHEMA_VERSION: &str = "kiss-test-cache-policy-v1";
 
 pub use llvm_cov_json::RustLineCoverage;
 

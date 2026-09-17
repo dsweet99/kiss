@@ -6,31 +6,67 @@ use crate::test_runner::lang_rust::llvm_cov::error::map_rust_llvm_cov_error;
 use crate::test_runner::last_status::{LastStatusIdentity, record_statuses};
 use crate::test_runner::runners::{
     SelectorCacheRecord, SelectorExecutionRecord, SelectorExecutionSummary,
-    rust_logical_to_kiss_test_ids,
 };
+use crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached;
 
 #[allow(dead_code)]
 pub(crate) fn cached_summary_from_check_aggregate_population(
     repo_root: &Path,
     selectors: &[String],
     population: &kiss::rust_llvm_cov_runner::RustPopulationState,
-) -> Option<SelectorExecutionSummary> {
+    gate: &kiss::GateConfig,
+) -> Result<Option<SelectorExecutionSummary>, String> {
     if !population
         .entries_fingerprint
         .starts_with("check-aggregate:")
     {
-        return None;
+        return Ok(None);
     }
     let cache_root = repo_root.join(".kiss").join("rust_llvm_cov_cache");
-    let pairs = kiss::rust_llvm_cov_runner::try_load_population_durations(&cache_root, population)?;
+    if !kiss::rust_llvm_cov_runner::current_test_binaries_match(repo_root, population)
+        || !kiss::rust_llvm_cov_runner::population_entries_all_pass(&cache_root, population)
+    {
+        return Ok(None);
+    }
+    let Some(pairs) =
+        kiss::rust_llvm_cov_runner::try_load_population_durations(&cache_root, population)
+    else {
+        return Ok(None);
+    };
     let duration_by_selector: std::collections::BTreeMap<_, _> = pairs.into_iter().collect();
-    let report_ids = rust_logical_to_kiss_test_ids(repo_root, &[]).ok()?;
+    let report_ids = rust_logical_to_kiss_test_ids_cached(repo_root, &[])?;
+    let Some(summary) =
+        cached_summary_from_duration_pairs(selectors, &duration_by_selector, &report_ids, gate)
+    else {
+        return Ok(None);
+    };
+    if summary.total != selectors.len() {
+        return Ok(None);
+    }
+    Ok(Some(summary))
+}
+
+fn cached_summary_from_duration_pairs(
+    selectors: &[String],
+    duration_by_selector: &std::collections::BTreeMap<String, std::time::Duration>,
+    report_ids: &std::collections::BTreeMap<String, String>,
+    gate: &kiss::GateConfig,
+) -> Option<SelectorExecutionSummary> {
     let mut summary = SelectorExecutionSummary::default();
     for selector in selectors {
         let report =
-            crate::test_runner::runners::require_kiss_test_report_id(&report_ids, selector).ok()?;
+            crate::test_runner::runners::require_kiss_test_report_id(report_ids, selector).ok()?;
         let duration = duration_by_selector.get(selector).copied()?;
-        println!("PASS (cached): {report}");
+        let effective = crate::test_runner::status_labels::apply_unit_test_time_limit(
+            kiss::rpytest_runner::TestStatus::Passed,
+            &report,
+            duration,
+            gate,
+        );
+        if effective != kiss::rpytest_runner::TestStatus::Passed {
+            return None;
+        }
+        crate::test_runner::emit_test_progress(&format!("PASS (cached): {report}"));
         summary.record(SelectorExecutionRecord {
             selector: report,
             status: kiss::rpytest_runner::TestStatus::Passed,
@@ -78,6 +114,99 @@ fn print_rust_llvm_cov_outcome(
     status
 }
 
+fn emit_bulk_cached_pass_summary(
+    outcomes: &[&RustLlvmCovOutcome],
+    report_ids: &std::collections::BTreeMap<String, String>,
+    gate: &kiss::GateConfig,
+) {
+    let mut cached_pass = 0usize;
+    for outcome in outcomes {
+        if !matches!(outcome.cache_status, RustCovCacheStatus::Hit)
+            || outcome.status != kiss::rpytest_runner::TestStatus::Passed
+        {
+            continue;
+        }
+        let Ok(report_id) = crate::test_runner::runners::require_kiss_test_report_id(
+            report_ids,
+            &outcome.selector,
+        ) else {
+            continue;
+        };
+        if kiss::rust_llvm_cov_runner::live_rust_was_printed(&report_id) {
+            continue;
+        }
+        let effective = crate::test_runner::status_labels::apply_unit_test_time_limit(
+            outcome.status,
+            &report_id,
+            outcome.duration,
+            gate,
+        );
+        if effective == kiss::rpytest_runner::TestStatus::Passed {
+            cached_pass += 1;
+        }
+    }
+    if cached_pass > 0 {
+        crate::test_runner::emit_test_progress(&format!(
+            "PASS (cached): {cached_pass} selectors"
+        ));
+    }
+}
+
+fn effective_status_for_completed_outcome(
+    outcome: &RustLlvmCovOutcome,
+    report_id: &str,
+    gate: &kiss::GateConfig,
+    emit_each: bool,
+) -> kiss::rpytest_runner::TestStatus {
+    if kiss::rust_llvm_cov_runner::live_rust_was_printed(report_id) {
+        return crate::test_runner::status_labels::apply_unit_test_time_limit(
+            outcome.status,
+            report_id,
+            outcome.duration,
+            gate,
+        );
+    }
+    if emit_each
+        || !matches!(outcome.cache_status, RustCovCacheStatus::Hit)
+        || outcome.status != kiss::rpytest_runner::TestStatus::Passed
+    {
+        return print_rust_llvm_cov_outcome(outcome, report_id, gate);
+    }
+    crate::test_runner::status_labels::apply_unit_test_time_limit(
+        outcome.status,
+        report_id,
+        outcome.duration,
+        gate,
+    )
+}
+
+fn record_completed_outcome(
+    summary: &mut SelectorExecutionSummary,
+    statuses: &mut Vec<(String, kiss::rpytest_runner::TestStatus)>,
+    outcome: &RustLlvmCovOutcome,
+    report_id: String,
+    effective: kiss::rpytest_runner::TestStatus,
+) {
+    let raw = outcome.status;
+    statuses.push((outcome.selector.clone(), effective));
+    summary.record(SelectorExecutionRecord {
+        selector: report_id,
+        status: effective,
+        raw_status: Some(raw),
+        cache_record: match outcome.cache_status {
+            RustCovCacheStatus::Hit => SelectorCacheRecord::Hit,
+            RustCovCacheStatus::MissStored => SelectorCacheRecord::MissStored,
+            RustCovCacheStatus::FreshUnstored => SelectorCacheRecord::MissUnstored,
+        },
+        exit_code: outcome.exit_code,
+        duration: outcome.duration,
+    });
+    summary.raw_statuses.insert(outcome.selector.clone(), raw);
+    summary
+        .selector_durations_ns
+        .insert(outcome.selector.clone(), outcome.duration.as_nanos() as u64);
+}
+
 pub(crate) fn finish_rust_coverage_batch_result(
     repo_root: &Path,
     identity: &LastStatusIdentity,
@@ -86,60 +215,31 @@ pub(crate) fn finish_rust_coverage_batch_result(
 ) -> Result<SelectorExecutionSummary, String> {
     let mut summary = SelectorExecutionSummary::default();
     summary.record_rust_batch_counters(&result.counters);
-    let report_ids = rust_logical_to_kiss_test_ids(repo_root, &[])?;
+    let report_ids = rust_logical_to_kiss_test_ids_cached(repo_root, &[])?;
+    let current_completed: Vec<_> = result
+        .completed
+        .iter()
+        .filter(|outcome| report_ids.contains_key(&outcome.selector))
+        .collect();
     let mut statuses = Vec::new();
-    let emit_each = result.completed.len() <= 64;
-    let mut cached_pass = 0usize;
+    let emit_each = current_completed.len() <= 64;
     if !emit_each {
-        for outcome in &result.completed {
-            if matches!(outcome.cache_status, RustCovCacheStatus::Hit)
-                && outcome.status == kiss::rpytest_runner::TestStatus::Passed
-            {
-                cached_pass += 1;
-            }
-        }
-        if cached_pass > 0 {
-            println!("PASS (cached): {cached_pass} selectors");
-        }
+        emit_bulk_cached_pass_summary(&current_completed, &report_ids, gate);
     }
-    for outcome in &result.completed {
+    for outcome in current_completed {
         let report_id = crate::test_runner::runners::require_kiss_test_report_id(
             &report_ids,
             &outcome.selector,
         )?;
-        let raw = outcome.status;
-        let effective = if emit_each
-            || !matches!(outcome.cache_status, RustCovCacheStatus::Hit)
-            || outcome.status != kiss::rpytest_runner::TestStatus::Passed
-        {
-            print_rust_llvm_cov_outcome(outcome, &report_id, gate)
-        } else {
-            crate::test_runner::status_labels::apply_unit_test_time_limit(
-                outcome.status,
-                &report_id,
-                outcome.duration,
-                gate,
-            )
-        };
-
-        statuses.push((outcome.selector.clone(), raw));
-        summary.record(SelectorExecutionRecord {
-            selector: report_id.clone(),
-            status: effective,
-            raw_status: Some(raw),
-            cache_record: match outcome.cache_status {
-                RustCovCacheStatus::Hit => SelectorCacheRecord::Hit,
-                RustCovCacheStatus::MissStored => SelectorCacheRecord::MissStored,
-                RustCovCacheStatus::FreshUnstored => SelectorCacheRecord::MissUnstored,
-            },
-            exit_code: outcome.exit_code,
-            duration: outcome.duration,
-        });
-
-        summary.raw_statuses.insert(outcome.selector.clone(), raw);
-        summary
-            .selector_durations_ns
-            .insert(outcome.selector.clone(), outcome.duration.as_nanos() as u64);
+        let effective =
+            effective_status_for_completed_outcome(outcome, &report_id, gate, emit_each);
+        record_completed_outcome(
+            &mut summary,
+            &mut statuses,
+            outcome,
+            report_id,
+            effective,
+        );
     }
     record_statuses(repo_root, kiss::Language::Rust, identity, &statuses)?;
     if let Some(err) = result.batch_error {

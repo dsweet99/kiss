@@ -13,6 +13,7 @@ pub use collect::{
 pub use config_keys::{python_config_key, rust_config_key};
 pub use generate::{
     GenerateConfigParams, auto_created_gate_config, generate_config_toml_by_language,
+    generate_gate_stub_toml,
 };
 pub use infer_gate::infer_gate_config_for_paths;
 pub use merge::{MergeLanguageUpdate, merge_config_toml};

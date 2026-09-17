@@ -99,6 +99,8 @@ fn env_value(command: &Command, key: &str) -> Option<String> {
 
 #[test]
 fn ingest_live_shim_identities_records_each_identity_once() {
+    let _serial =
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::signal_test_guard();
     let guard = BatchProcessTreeGuard::install().expect("install guard");
     let mut children = Vec::new();
     let mut identities = Vec::new();
@@ -141,6 +143,8 @@ fn ingest_live_shim_identities_records_each_identity_once() {
 
 #[test]
 fn wait_child_with_interruption_returns_on_normal_exit() {
+    let _serial =
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::signal_test_guard();
     let guard = BatchProcessTreeGuard::install().expect("install guard");
     let mut command = Command::new("/bin/sh");
     command.arg("-c").arg("sleep 0.05");
@@ -164,7 +168,67 @@ fn wait_child_with_interruption_returns_on_normal_exit() {
 }
 
 #[test]
+fn wait_child_keeps_completed_status_if_interrupted_after_exit() {
+    let _serial =
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::signal_test_guard();
+    let guard = BatchProcessTreeGuard::install().expect("install guard");
+    let mut command = Command::new("/bin/sh");
+    command.arg("-c").arg("exit 0");
+    command.stdin(Stdio::null());
+    command.stdout(Stdio::null());
+    command.stderr(Stdio::null());
+    let mut child = guard
+        .spawn_batch_command(&mut command)
+        .expect("spawn child");
+    record_child_process_group(guard.registry().as_ref(), &child);
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    guard.set_interrupted_for_test(true);
+    let mut seen = HashSet::new();
+    let waited = wait_child_with_interruption(
+        &mut child,
+        &guard,
+        std::path::Path::new("/nonexistent"),
+        &mut seen,
+    )
+    .expect("completed child must not be rewritten as interrupted");
+    assert!(waited.success());
+}
+
+#[test]
+fn wait_child_killed_status_stays_interrupted() {
+    let _serial =
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::signal_test_guard();
+    let guard = BatchProcessTreeGuard::install().expect("install guard");
+    let mut command = Command::new("/bin/sh");
+    command.arg("-c").arg("sleep 2");
+    command.stdin(Stdio::null());
+    command.stdout(Stdio::null());
+    command.stderr(Stdio::null());
+    let mut child = guard
+        .spawn_batch_command(&mut command)
+        .expect("spawn child");
+    record_child_process_group(guard.registry().as_ref(), &child);
+    let _ = child.kill();
+    let _ = child.try_wait();
+    guard.set_interrupted_for_test(true);
+    let mut seen = HashSet::new();
+    let err = wait_child_with_interruption(
+        &mut child,
+        &guard,
+        std::path::Path::new("/nonexistent"),
+        &mut seen,
+    )
+    .expect_err("killed child plus interrupt flag must stay interrupted");
+    assert!(matches!(
+        err,
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_run::BatchSubprocessRunError::Interrupted
+    ));
+}
+
+#[test]
 fn wait_child_with_interruption_fails_when_interrupted() {
+    let _serial =
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::signal_test_guard();
     let guard = BatchProcessTreeGuard::install().expect("install guard");
     let mut command = Command::new("/bin/sh");
     command.arg("-c").arg("sleep 2");
@@ -184,6 +248,77 @@ fn wait_child_with_interruption_fails_when_interrupted() {
         &mut seen,
     )
     .expect_err("expected interrupted wait");
-    assert_eq!(err.kind(), std::io::ErrorKind::Interrupted);
-    assert!(err.to_string().contains("batch interrupted"));
+    assert!(matches!(
+        err,
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_run::BatchSubprocessRunError::Interrupted
+    ));
+}
+
+#[test]
+fn wait_child_aborts_when_llvm_cov_nextest_budget_is_crossed() {
+    let _serial =
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::signal_test_guard();
+    let cap = crate::rust_llvm_cov_runner::execute_or_reuse::llvm_cov_process_budget::llvm_cov_nextest_process_cap();
+    let _live =
+        crate::rust_llvm_cov_runner::execute_or_reuse::llvm_cov_process_budget::ProcessCountOverrideGuard::enter(
+            Some(cap + 1),
+        );
+    let guard = BatchProcessTreeGuard::install().expect("install guard");
+    let mut command = Command::new("/bin/sh");
+    command.arg("-c").arg("sleep 2");
+    command.stdin(Stdio::null());
+    command.stdout(Stdio::null());
+    command.stderr(Stdio::null());
+    let mut child = guard
+        .spawn_batch_command(&mut command)
+        .expect("spawn child");
+    record_child_process_group(guard.registry().as_ref(), &child);
+    let mut seen = HashSet::new();
+    let err = wait_child_with_interruption(
+        &mut child,
+        &guard,
+        std::path::Path::new("/nonexistent"),
+        &mut seen,
+    )
+    .expect_err("process budget must abort the batch");
+    assert!(matches!(
+        err,
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_run::BatchSubprocessRunError::ProcessBudget {
+            ..
+        }
+    ));
+}
+
+#[test]
+fn wait_child_aborts_when_mem_available_crosses_floor() {
+    let _serial =
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::signal_test_guard();
+    let _mem = crate::rust_llvm_cov_runner::execute_or_reuse::mem_available::MemAvailableOverrideGuard::enter(
+        Some(1),
+    );
+    let guard = BatchProcessTreeGuard::install().expect("install guard");
+    let mut command = Command::new("/bin/sh");
+    command.arg("-c").arg("sleep 2");
+    command.stdin(Stdio::null());
+    command.stdout(Stdio::null());
+    command.stderr(Stdio::null());
+    let mut child = guard
+        .spawn_batch_command(&mut command)
+        .expect("spawn child");
+    record_child_process_group(guard.registry().as_ref(), &child);
+    let mut seen = HashSet::new();
+    let err = wait_child_with_interruption(
+        &mut child,
+        &guard,
+        std::path::Path::new("/nonexistent"),
+        &mut seen,
+    )
+    .expect_err("memory floor must abort the batch");
+    assert!(matches!(
+        err,
+        crate::rust_llvm_cov_runner::execute_or_reuse::batch_run::BatchSubprocessRunError::MemoryFloor {
+            available_kib: 1,
+            ..
+        }
+    ));
 }

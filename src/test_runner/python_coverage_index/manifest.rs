@@ -84,12 +84,17 @@ pub(crate) fn write_python_population_manifest_with_identity_and_entries_fingerp
         entries_fingerprint: entries_fingerprint.to_string(),
         selectors,
     };
-    kiss::kiss_publication_barrier::publish_atomically("python_population", &path, &tmp_path, |file| {
-        serde_json::to_writer_pretty(&mut *file, &payload).map_err(std::io::Error::other)?;
-        use std::io::Write;
-        file.write_all(b"\n")?;
-        Ok(())
-    })
+    kiss::kiss_publication_barrier::publish_atomically(
+        "python_population",
+        &path,
+        &tmp_path,
+        |file| {
+            serde_json::to_writer_pretty(&mut *file, &payload).map_err(std::io::Error::other)?;
+            use std::io::Write;
+            file.write_all(b"\n")?;
+            Ok(())
+        },
+    )
     .map_err(|e| e.to_string())
 }
 
@@ -121,13 +126,48 @@ pub(crate) fn read_python_population_manifest(
         .and_then(|bytes| serde_json::from_slice::<PythonPopulationManifest>(&bytes).ok())
 }
 
+fn keep_non_ignored_selector(selector: &str, ignore: &[String]) -> bool {
+    let path = selector.split_once("::").map_or(selector, |(path, _)| path);
+    !kiss::path_ignored_by_prefixes(path, ignore)
+}
+
 pub(crate) fn stored_python_universe_selectors(
+    repo_root: &Path,
+    test_args: &[String],
+    ignore: &[String],
+    env_keys: &[&str],
+) -> Option<Vec<String>> {
+    stored_python_universe_names(repo_root, test_args, env_keys).map(|selectors| {
+        selectors
+            .into_iter()
+            .filter(|selector| keep_non_ignored_selector(selector, ignore))
+            .collect()
+    })
+}
+
+fn stored_python_universe_names(
     repo_root: &Path,
     test_args: &[String],
     env_keys: &[&str],
 ) -> Option<Vec<String>> {
-    stored_python_universe_population(repo_root, test_args, env_keys)
-        .map(|population| population.selectors)
+    if let Some(plan) = super::generation::try_load_complete_pinned_python_plan(repo_root)
+        && super::generation::execution_context_matches_current(
+            repo_root,
+            &plan.base_identity,
+            test_args,
+        )
+    {
+        return Some(plan.selectors);
+    }
+    let identity =
+        current_python_population_manifest_identity_with_env_keys(repo_root, test_args, env_keys)
+            .ok()?;
+    let manifest = read_python_population_manifest(repo_root)?;
+    if !manifest.matches_python_identity(&identity, &normalized_python_repo_root(repo_root)) {
+        return None;
+    }
+    valid_stored_selectors(&manifest.selectors)?;
+    Some(manifest.selectors.clone())
 }
 
 pub(crate) struct StoredPythonPopulation {
@@ -140,14 +180,13 @@ pub(crate) fn stored_python_universe_population(
     test_args: &[String],
     env_keys: &[&str],
 ) -> Option<StoredPythonPopulation> {
-    let _ = env_keys;
+    let selectors = stored_python_universe_names(repo_root, test_args, env_keys)?;
     if let Ok(pinned) = super::generation::try_load_pinned_python_generation(repo_root) {
         let exec =
             super::generation::current_python_execution_identity(repo_root, test_args).ok()?;
         if pinned.plan.base_identity == exec && pinned.complete {
-            valid_stored_selectors(&pinned.plan.selectors)?;
             return Some(StoredPythonPopulation {
-                selectors: pinned.plan.selectors.clone(),
+                selectors,
                 identity: format!("gen:{}", pinned.generation_id),
             });
         }
@@ -162,11 +201,9 @@ pub(crate) fn stored_python_universe_population(
         && manifest.input_fingerprint == input_fingerprint
         && manifest.entries_fingerprint == entries_fingerprint
     {
-        valid_stored_selectors(&manifest.selectors)?;
-        let identity = stable_population_identity(&manifest);
         Some(StoredPythonPopulation {
-            selectors: manifest.selectors.clone(),
-            identity,
+            selectors,
+            identity: stable_population_identity(&manifest),
         })
     } else {
         None

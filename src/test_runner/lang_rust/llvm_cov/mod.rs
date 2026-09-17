@@ -1,14 +1,11 @@
-use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use kiss::rust_llvm_cov_runner::{
     CheckAggregateRepairPublication, CoverageOutputMode, RustCoverageBatchRequest,
     RustCoverageBatchResult, RustCoverageToolIdentity, RustTestExecutableIndex,
     build_rust_coverage_batch_plan, build_rust_test_executable_index, execute_rust_coverage_batch,
     resolve_batch_request_runners, validate_supported_rust_test_args,
 };
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 
 use crate::test_runner::last_status::rust_last_status_identity;
 use crate::test_runner::runners::SelectorExecutionSummary;
@@ -21,21 +18,26 @@ mod timeout;
 use timeout::selector_timeout_millis_for_batch;
 
 mod finish;
+mod live_witness;
+mod live_status;
 mod witness;
 pub(crate) use finish::{
     cached_summary_from_check_aggregate_population, finish_rust_coverage_batch_result,
 };
+use live_status::{flush_live_rust_witness, install_live_rust_status_hook};
 use witness::publish_rust_witness_after_batch;
 
 pub(crate) fn validate_rust_extra_args(extra: &[String]) -> Result<(), String> {
     validate_supported_rust_test_args(extra)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn run_rust_llvm_cov_selectors(
     repo_root: &Path,
     selectors: &[String],
     extra: &[String],
     force_rerun: bool,
+    force_rerun_selectors: &[String],
     jobs: usize,
     population_publication_selectors: Option<Vec<String>>,
     gate: &kiss::GateConfig,
@@ -46,6 +48,7 @@ pub(crate) fn run_rust_llvm_cov_selectors(
         RustCoverageRunOptions {
             extra,
             force_rerun,
+            force_rerun_selectors,
             jobs,
             population_publication_selectors,
             coverage_output_mode: CoverageOutputMode::SelectorEntries,
@@ -56,6 +59,13 @@ pub(crate) fn run_rust_llvm_cov_selectors(
     )
 }
 
+pub(crate) struct CheckAggregatePublicationOpts<'a> {
+    pub population_publication_selectors: Option<Vec<String>>,
+    pub publication_binary_ids: Option<std::collections::BTreeSet<String>>,
+    pub repair_publication: Option<CheckAggregateRepairPublication>,
+    pub force_rerun_selectors: &'a [String],
+}
+
 pub(crate) fn run_rust_llvm_cov_check_aggregate_selectors(
     repo_root: &Path,
     selectors: &[String],
@@ -64,14 +74,18 @@ pub(crate) fn run_rust_llvm_cov_check_aggregate_selectors(
     publication_binary_ids: Option<std::collections::BTreeSet<String>>,
     repair_publication: Option<CheckAggregateRepairPublication>,
 ) -> Result<SelectorExecutionSummary, String> {
+    let no_force_selectors: &[String] = &[];
     run_rust_llvm_cov_check_aggregate_selectors_with_publication(
         repo_root,
         selectors,
         extra,
         jobs,
-        None,
-        publication_binary_ids,
-        repair_publication,
+        CheckAggregatePublicationOpts {
+            population_publication_selectors: None,
+            publication_binary_ids,
+            repair_publication,
+            force_rerun_selectors: no_force_selectors,
+        },
         kiss::GateConfig::load_for_repo(repo_root),
     )
 }
@@ -81,8 +95,7 @@ pub(crate) fn run_rust_llvm_cov_check_aggregate_selectors_with_gate(
     selectors: &[String],
     extra: &[String],
     jobs: usize,
-    publication_binary_ids: Option<std::collections::BTreeSet<String>>,
-    repair_publication: Option<CheckAggregateRepairPublication>,
+    opts: CheckAggregatePublicationOpts<'_>,
     gate: &kiss::GateConfig,
 ) -> Result<SelectorExecutionSummary, String> {
     run_rust_llvm_cov_check_aggregate_selectors_with_publication(
@@ -90,54 +103,43 @@ pub(crate) fn run_rust_llvm_cov_check_aggregate_selectors_with_gate(
         selectors,
         extra,
         jobs,
-        None,
-        publication_binary_ids,
-        repair_publication,
+        opts,
         gate.clone(),
     )
 }
 
-#[allow(dead_code)]
-pub(crate) fn run_rust_llvm_cov_check_aggregate_population_selectors(
-    repo_root: &Path,
-    selectors: &[String],
-    extra: &[String],
-    jobs: usize,
-    population_publication_selectors: Vec<String>,
-) -> Result<SelectorExecutionSummary, String> {
-    run_rust_llvm_cov_check_aggregate_selectors_with_publication(
-        repo_root,
-        selectors,
-        extra,
-        jobs,
-        Some(population_publication_selectors),
-        None,
-        None,
-        kiss::GateConfig::load_for_repo(repo_root),
-    )
-}
-
-#[allow(dead_code)]
 pub(crate) fn cached_rust_check_aggregate_selectors(
     repo_root: &Path,
     selectors: &[String],
     extra: &[String],
+    gate: &kiss::GateConfig,
 ) -> Result<Option<SelectorExecutionSummary>, String> {
     let cache_root = repo_root.join(".kiss").join("rust_llvm_cov_cache");
 
     if cache_root.join("execution_witness.json").is_file()
         || cache_root.join("index.json").is_file()
+        || cache_root.join("current_generation.json").is_file()
     {
         let identity =
             crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(
                 repo_root, extra,
             )?;
-        if let Some(summary) = crate::test_runner::execution_witness::try_warm_rust_cached_summary(
-            repo_root,
-            selectors,
-            &identity,
-            &kiss::GateConfig::load_for_repo(repo_root),
-        ) {
+        let binaries_are_current =
+            kiss::rust_llvm_cov_runner::current_population_manifest_test_binaries_match(
+                &cache_root,
+                repo_root,
+                &identity,
+            )
+            .unwrap_or(false);
+        if binaries_are_current
+            && let Some(summary) =
+                crate::test_runner::execution_witness::try_warm_rust_cached_summary(
+                    repo_root,
+                    selectors,
+                    &identity,
+                    gate,
+                )
+        {
             return Ok(Some(summary));
         }
     }
@@ -156,22 +158,15 @@ pub(crate) fn cached_rust_check_aggregate_selectors(
     ) else {
         return Ok(None);
     };
-    Ok(cached_summary_from_check_aggregate_population(
-        repo_root,
-        selectors,
-        &population,
-    ))
+    cached_summary_from_check_aggregate_population(repo_root, selectors, &population, gate)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn run_rust_llvm_cov_check_aggregate_selectors_with_publication(
     repo_root: &Path,
     selectors: &[String],
     extra: &[String],
     jobs: usize,
-    population_publication_selectors: Option<Vec<String>>,
-    publication_binary_ids: Option<std::collections::BTreeSet<String>>,
-    repair_publication: Option<CheckAggregateRepairPublication>,
+    opts: CheckAggregatePublicationOpts<'_>,
     gate: kiss::GateConfig,
 ) -> Result<SelectorExecutionSummary, String> {
     run_rust_llvm_cov_selectors_with_deps(
@@ -179,12 +174,15 @@ fn run_rust_llvm_cov_check_aggregate_selectors_with_publication(
         selectors,
         RustCoverageRunOptions {
             extra,
-            force_rerun: true,
+            force_rerun: false,
+            force_rerun_selectors: opts.force_rerun_selectors,
             jobs,
-            population_publication_selectors,
+            population_publication_selectors: opts
+                .population_publication_selectors
+                .or_else(|| Some(selectors.to_vec())),
             coverage_output_mode: CoverageOutputMode::CheckAggregate {
-                publication_binary_ids,
-                repair_publication,
+                publication_binary_ids: opts.publication_binary_ids,
+                repair_publication: opts.repair_publication,
             },
             gate,
         },
@@ -205,6 +203,7 @@ pub(crate) struct RustCoverageToolVersions {
 pub(crate) struct RustCoverageRunOptions<'a> {
     pub(crate) extra: &'a [String],
     pub(crate) force_rerun: bool,
+    pub(crate) force_rerun_selectors: &'a [String],
     pub(crate) jobs: usize,
     pub(crate) population_publication_selectors: Option<Vec<String>>,
     pub(crate) coverage_output_mode: CoverageOutputMode,
@@ -231,9 +230,9 @@ where
         return Ok(SelectorExecutionSummary::default());
     }
     let stage_started = std::time::Instant::now();
-    println!("kiss test: Running batch-request");
+    crate::test_runner::emit_test_progress("kiss test: Running batch-request");
     let request_started = std::time::Instant::now();
-    let batch_req = rust_coverage_batch_request_from_parts(
+    let mut batch_req = rust_coverage_batch_request_from_parts(
         repo_root,
         selectors,
         options.extra,
@@ -243,10 +242,11 @@ where
         options.coverage_output_mode,
         &options.gate,
     )?;
-    println!(
+    batch_req.force_rerun_selectors = options.force_rerun_selectors.to_vec();
+    crate::test_runner::emit_test_progress(&format!(
         "kiss test: Ran batch-request {:.1}ms",
         request_started.elapsed().as_secs_f64() * 1000.0
-    );
+    ));
     build_rust_coverage_batch_plan(&batch_req)?;
     let versions = detect_versions(repo_root)?;
     let identity = rust_last_status_identity(
@@ -257,9 +257,32 @@ where
         options.extra,
         &batch_req.runner_map_fingerprint,
     );
-    let result = execute_batch(&batch_req, &versions)?;
+    let batch_identity =
+        crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(
+            repo_root,
+            &batch_req.test_args,
+        )?;
+    install_live_rust_status_hook(
+        repo_root,
+        selectors,
+        &options.gate,
+        &identity,
+        Some(&batch_identity),
+        batch_req.population_publication_selectors.as_deref(),
+        options.jobs,
+        &batch_req.selector_timeout_millis,
+    )?;
+    let result = execute_batch(&batch_req, &versions);
+    let live_err = kiss::rust_llvm_cov_runner::take_live_rust_error();
+    kiss::rust_llvm_cov_runner::clear_live_rust_test_hook();
+    flush_live_rust_witness();
+    if let Some(err) = live_err {
+        eprintln!("{err}");
+    }
+    let result = result?;
     crate::test_runner::emit_stage_time("rust_llvm_cov", stage_started.elapsed());
     let summary = finish_rust_coverage_batch_result(repo_root, &identity, result, &options.gate)?;
+    live_status::finish_live_rust_remaining();
     publish_rust_witness_after_batch(repo_root, &batch_req, &summary)?;
     Ok(summary)
 }
@@ -301,6 +324,7 @@ pub(crate) fn rust_coverage_batch_request_from_parts(
         test_args: extra.to_vec(),
         env: relevant_rust_batch_env(),
         force_rerun,
+        force_rerun_selectors: Vec::new(),
         jobs,
         generated_config: unique_rust_coverage_batch_config_path(repo_root),
         population_publication_selectors,
@@ -309,6 +333,11 @@ pub(crate) fn rust_coverage_batch_request_from_parts(
         host_platform: String::new(),
         coverage_output_mode,
         selector_timeout_millis,
+        cache_policy: kiss::TestSectionConfig::try_load_path_only(&kiss::kissconfig_path_for_repo(
+            repo_root,
+        ))
+        .map(|config| config.cache_policy)
+        .unwrap_or_default(),
     };
     resolve_batch_request_runners(&mut req).map_err(map_rust_llvm_cov_error)?;
     Ok(req)
@@ -367,23 +396,8 @@ pub(crate) fn rust_coverage_tool_identity_from_versions(
     }
 }
 
-fn unique_rust_coverage_batch_config_path(repo_root: &Path) -> PathBuf {
-    static NEXT_RUN_ID: AtomicU64 = AtomicU64::new(0);
-    let run_id = NEXT_RUN_ID.fetch_add(1, Ordering::Relaxed);
-    let timestamp_nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system time must be after Unix epoch")
-        .as_nanos();
-    repo_root
-        .join(".kiss")
-        .join("rust_llvm_cov_cache")
-        .join("runs")
-        .join(format!(
-            "run-{}-{timestamp_nanos}-{run_id}",
-            std::process::id()
-        ))
-        .join("nextest.toml")
-}
+mod run_id;
+use run_id::unique_rust_coverage_batch_config_path;
 
 pub(crate) fn detect_rust_coverage_tool_versions(
     repo_root: &Path,

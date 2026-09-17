@@ -59,6 +59,13 @@ pub(crate) fn apply_identity_only_repair_labeled(
     .map_err(|err| CoverageRefreshError::publication("Rust", format!("{err:?}")))?;
     kiss::rust_llvm_cov_runner::publish_check_aggregate(&build.request, &aggregate)
         .map_err(|err| CoverageRefreshError::publication("Rust", format!("{err:?}")))?;
+    kiss::rust_llvm_cov_runner::publish_conservative_derived_state_from_check_aggregate(
+        &build.request,
+        &build.tools,
+        &build.identity,
+        &aggregate,
+    )
+    .map_err(|err| CoverageRefreshError::publication("Rust", format!("{err:?}")))?;
     load_rust_runtime_coverage(repo_root, ignore, &kiss::GateConfig::default())
         .map(|_| ())
         .map_err(|err| CoverageRefreshError::validation("Rust", err))?;

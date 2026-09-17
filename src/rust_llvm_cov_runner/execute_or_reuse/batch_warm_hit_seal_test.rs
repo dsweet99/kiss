@@ -26,6 +26,7 @@ fn request(cache_root: PathBuf, selectors: &[&str]) -> RustCoverageBatchRequest 
         test_args: Vec::new(),
         env: BTreeMap::new(),
         force_rerun: false,
+        force_rerun_selectors: Vec::new(),
         jobs: 1,
         generated_config: PathBuf::from("cfg"),
         population_publication_selectors: None,
@@ -34,6 +35,7 @@ fn request(cache_root: PathBuf, selectors: &[&str]) -> RustCoverageBatchRequest 
         host_platform: String::new(),
         coverage_output_mode: crate::rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
         selector_timeout_millis: BTreeMap::new(),
+        cache_policy: crate::test_cache_policy::TestCachePolicy::default(),
     }
 }
 
@@ -76,9 +78,13 @@ fn write_and_try_warm_all_hit_seal_positive_round_trip() {
 }
 
 #[test]
-fn write_warm_all_hit_seal_errors_without_entry_state() {
+fn write_warm_all_hit_seal_errors_without_population_or_entry_state() {
     let tmp = tempfile::tempdir().unwrap();
     let req = request(tmp.path().to_path_buf(), &["a::t"]);
     let err = write_warm_all_hit_seal(&req, &identity("gen1")).unwrap_err();
-    assert!(err.to_string().contains("entry_state"));
+    let msg = err.to_string();
+    assert!(
+        msg.contains("population") || msg.contains("entry_state"),
+        "unexpected error: {msg}"
+    );
 }

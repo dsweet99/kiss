@@ -5,7 +5,8 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 
 use super::collect::reset_python_collect_memo_for_tests;
-use crate::test_runner::coverage_decision::LanguageExecutor;
+use crate::test_runner::coverage_decision::{LanguageExecutor, LanguagePlanner};
+use crate::test_runner::python_coverage_index::write_python_population_manifest_for_args;
 use crate::test_runner::runners::{
     enumerate_workspace_python_selectors, python_backer::PythonModule,
 };
@@ -93,4 +94,39 @@ fn dry_run_lines_omit_ignored_fixture_selectors() {
     let output = lines.join("\n");
     assert!(!output.contains("fixtures/mv/python"));
     assert!(output.contains("tests/test_kept.py::test_kept"));
+}
+
+#[test]
+fn stored_universe_with_pytest_args_skips_collect_of_extra_tests() {
+    let _lock = crate::cwd_test_lock::lock();
+    reset_python_collect_memo_for_tests();
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("app.py"), "VALUE = 1\n").unwrap();
+    fs::create_dir_all(tmp.path().join("tests")).unwrap();
+    fs::write(
+        tmp.path().join("tests/test_extra.py"),
+        "def test_extra():\n    assert True\n",
+    )
+    .unwrap();
+    let selector = "tests/test_stored.py::test_value".to_string();
+    let pytest_args = vec!["-p".to_string(), "pytest_asyncio.plugin".to_string()];
+    write_python_population_manifest_for_args(
+        tmp.path(),
+        std::slice::from_ref(&selector),
+        &pytest_args,
+    )
+    .unwrap();
+    std::fs::write(tmp.path().join("stale.py"), "x = 2\n").unwrap();
+
+    let enumerated = enumerate_workspace_python_selectors(tmp.path(), &[], &pytest_args).unwrap();
+    assert_eq!(enumerated, vec![selector.clone()]);
+
+    let module = PythonModule::for_execution_with_args(tmp.path(), &[], &pytest_args);
+    let discovered = module
+        .discover_universe()
+        .unwrap()
+        .into_iter()
+        .map(|item| item.id)
+        .collect::<Vec<_>>();
+    assert_eq!(discovered, vec![selector]);
 }

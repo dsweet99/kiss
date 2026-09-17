@@ -49,3 +49,28 @@ fn language_modules_route_python_and_rust_through_ensure() {
         "direct try_warm_python bypass must be retired from language_modules"
     );
 }
+
+#[test]
+fn rust_all_mode_check_aggregate_forwards_force_selectors() {
+    // --retry-bad leaves force=false and lists FAIL/TIMEOUT in force_selectors.
+    // AcceptMode::All must thread those into check-aggregate so population hit
+    // cannot absorb forced selectors (parity with AcceptMode::Subset).
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("src/test_runner/lang_rust/runtime.rs");
+    let src = std::fs::read_to_string(&path).expect("read rust runtime");
+    assert!(
+        src.contains("run_rust_llvm_cov_check_aggregate_selectors_with_gate"),
+        "All mode must use check-aggregate entry point"
+    );
+    assert!(
+        src.contains("&request.force_selectors"),
+        "All-mode check-aggregate must forward force_selectors for --retry-bad"
+    );
+    let cov = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("src/test_runner/lang_rust/llvm_cov/mod.rs");
+    let cov_src = std::fs::read_to_string(&cov).expect("read llvm_cov mod");
+    assert!(
+        !cov_src.contains("force_rerun_selectors: &[],"),
+        "check-aggregate publication helper must not hardcode empty force_rerun_selectors"
+    );
+}

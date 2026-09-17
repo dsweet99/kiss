@@ -18,6 +18,7 @@ fn run_rust_llvm_cov_selectors_rejects_unsupported_test_args_before_tool_detecti
         &["tests::case".to_string()],
         &["--format".to_string(), "json".to_string()],
         false,
+        &[],
         1,
         None,
         &kiss::GateConfig::default(),
@@ -86,6 +87,73 @@ mod tests {
     assert_eq!(
         summary.timed_out_selectors,
         vec!["src/lib.rs::gets_value".to_string()]
+    );
+}
+
+#[test]
+fn finish_rust_failure_recap_uses_path_symbol_report_id() {
+    let tmp = tempfile::tempdir().unwrap();
+    super::tests::write_rust_test_crate(tmp.path(), &["gets_value"]);
+    let identity = rust_last_status_identity(
+        "cargo 1.88.0",
+        "cargo-llvm-cov 0.6.0",
+        "rustc 1.88.0",
+        "cargo-nextest 0.9.0",
+        &[],
+        "0000000000000000",
+    );
+    let result = RustCoverageBatchResult {
+        completed: vec![RustLlvmCovOutcome {
+            selector: "tests::gets_value".to_string(),
+            status: kiss::rpytest_runner::TestStatus::Failed,
+            exit_code: Some(1),
+            duration: Duration::from_millis(12),
+            coverage: RustLineCoverage {
+                files: BTreeMap::new(),
+            },
+            test_binary_ids: vec!["bin".to_string()],
+            cache_status: RustCovCacheStatus::MissStored,
+            stdout: None,
+            stderr: Some(b"assertion failed\n".to_vec()),
+        }],
+        batch_error: None,
+        counters: RustCoverageBatchCounters::default(),
+        test_binaries: Vec::new(),
+    };
+
+    let out = crate::test_runner::capture_stdout::capture_stdout(|| {
+        let summary = finish_rust_coverage_batch_result(
+            tmp.path(),
+            &identity,
+            result,
+            &kiss::GateConfig::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            summary.failed_selectors,
+            vec!["src/lib.rs::gets_value".to_string()]
+        );
+        let recap = crate::test_runner::final_summary::FinalTestSummary::absorb(&[&summary]);
+        print!(
+            "{}",
+            crate::test_runner::final_summary::format_final_test_summary(
+                &recap,
+                Duration::from_millis(40),
+                false,
+            )
+        );
+    });
+    assert!(
+        out.contains("FAIL:") || out.contains("FAIL ("),
+        "streaming FAIL line must remain: {out}"
+    );
+    assert!(
+        out.lines().any(|line| line == "FAIL src/lib.rs::gets_value"),
+        "recap must use kiss-test PATH::symbol id, out={out}"
+    );
+    assert!(
+        out.contains("FAIL: src/lib.rs::gets_value") || out.contains("FAIL ("),
+        "streaming FAIL line must use PATH::symbol id: {out}"
     );
 }
 
@@ -272,6 +340,11 @@ fn run_rust_llvm_cov_selectors_reaches_compat_executor_for_nonempty_selectors() 
         "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
     )
     .unwrap();
+    std::fs::write(
+        tmp.path().join("Cargo.lock"),
+        "version = 4\n\n[[package]]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
     std::fs::create_dir_all(tmp.path().join("src")).unwrap();
     std::fs::write(
         tmp.path().join("src").join("lib.rs"),
@@ -279,14 +352,27 @@ fn run_rust_llvm_cov_selectors_reaches_compat_executor_for_nonempty_selectors() 
     )
     .unwrap();
 
-    let outcome = run_rust_llvm_cov_selectors(
+    let outcome = run_rust_llvm_cov_selectors_with_deps(
         tmp.path(),
         &["tests::case".to_string()],
-        &[],
-        true,
-        1,
-        None,
-        &kiss::GateConfig::default(),
+        RustCoverageRunOptions {
+            extra: &[],
+            force_rerun: true,
+            force_rerun_selectors: &[],
+            jobs: 1,
+            population_publication_selectors: None,
+            coverage_output_mode: kiss::rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
+            gate: kiss::GateConfig::default(),
+        },
+        |_repo| {
+            Ok(RustCoverageToolVersions {
+                cargo: "cargo 1.88.0".into(),
+                llvm_cov: "cargo-llvm-cov 0.6.0".into(),
+                rustc: "rustc 1.88.0".into(),
+                cargo_nextest: "cargo-nextest 0.9.0".into(),
+            })
+        },
+        |_batch_req, _versions| Err("logical selector tests::case did not execute".into()),
     );
     match outcome {
         Ok(summary) => {

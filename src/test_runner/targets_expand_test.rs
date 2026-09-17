@@ -65,6 +65,22 @@ fn expand_honors_lang_and_ignore() {
 }
 
 #[test]
+fn expand_lang_filter_on_other_language_dir_is_empty_not_zero_files() {
+    let tmp = tempdir().unwrap();
+    init_git_repo(tmp.path());
+    let dir = tmp.path().join("nested");
+    fs::create_dir_all(dir.join("src")).unwrap();
+    fs::write(dir.join("src").join("lib.rs"), "pub fn n() {}\n").unwrap();
+    let expanded =
+        expand_target_operands(tmp.path(), &["nested".into()], &[], Some(Language::Python))
+            .unwrap();
+    match expanded {
+        ExpandedTargetPlan::Files(files) => assert!(files.is_empty(), "{files:?}"),
+        ExpandedTargetPlan::All => panic!("expected empty files, not all"),
+    }
+}
+
+#[test]
 fn expand_empty_and_missing_fail_fast() {
     let tmp = tempdir().unwrap();
     init_git_repo(tmp.path());
@@ -76,6 +92,29 @@ fn expand_empty_and_missing_fail_fast() {
     let missing_err =
         expand_target_operands(tmp.path(), &["missing".into()], &[], None).unwrap_err();
     assert!(missing_err.contains("not found"), "{missing_err}");
+}
+
+#[test]
+fn expand_rejects_rustc_style_missing_path() {
+    let tmp = tempdir().unwrap();
+    init_git_repo(tmp.path());
+    for raw in [
+        "python_nested_observed.rs:51:python_nested_observed",
+        "python_nested_observed.rs:51:python_nested_observed:",
+    ] {
+        let err = expand_target_operands(tmp.path(), &[raw.into()], &[], None).unwrap_err();
+        assert!(err.contains("path not found"), "{raw}: {err}");
+        assert!(err.contains(raw), "{err}");
+    }
+}
+
+#[test]
+fn expand_rejects_missing_rs_file() {
+    let tmp = tempdir().unwrap();
+    init_git_repo(tmp.path());
+    let err = expand_target_operands(tmp.path(), &["bad_path.rs".into()], &[], None).unwrap_err();
+    assert!(err.contains("file not found"), "{err}");
+    assert!(err.contains("bad_path.rs"), "{err}");
 }
 
 #[test]
@@ -94,4 +133,27 @@ fn expand_sole_repo_root_is_all_and_mix_errors() {
     let mix_err =
         expand_target_operands(tmp.path(), &[root_s, "lib.rs".into()], &[], None).unwrap_err();
     assert!(mix_err.contains("mixed"), "{mix_err}");
+}
+
+#[test]
+fn expand_rejects_lang_mismatch_on_existing_file() {
+    let tmp = tempdir().unwrap();
+    init_git_repo(tmp.path());
+    fs::write(tmp.path().join("lib.py"), "x = 1\n").unwrap();
+    let err = expand_target_operands(tmp.path(), &["lib.py".into()], &[], Some(Language::Rust))
+        .unwrap_err();
+    assert!(err.contains("is python"), "{err}");
+    assert!(err.contains("--lang selects only rust"), "{err}");
+    assert!(err.contains("lib.py"), "{err}");
+}
+
+#[test]
+fn expand_rejects_ignore_prefix_on_existing_file() {
+    let tmp = tempdir().unwrap();
+    init_git_repo(tmp.path());
+    fs::write(tmp.path().join("test_lib.py"), "x = 1\n").unwrap();
+    let err = expand_target_operands(tmp.path(), &["test_lib.py".into()], &["test_".into()], None)
+        .unwrap_err();
+    assert!(err.contains("--ignore prefix"), "{err}");
+    assert!(err.contains("test_lib.py"), "{err}");
 }

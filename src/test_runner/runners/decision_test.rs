@@ -3,9 +3,7 @@ use crate::test_runner::coverage_decision::{LanguagePlanner, SelectionDecision};
 use crate::test_runner::python_coverage_index::{
     python_coverage_cache_root, rebuild_python_coverage_index,
 };
-use crate::test_runner::rust_coverage_index::{
-    rebuild_rust_coverage_index, write_rust_population_manifest_for_args,
-};
+use crate::test_runner::rust_coverage_index::rebuild_rust_coverage_index;
 use kiss::rpytest_runner::TestStatus;
 use kiss::rslip::LineCoverage;
 use std::time::Duration;
@@ -148,6 +146,12 @@ fn prior_failures_for_language_loads_rust_failures_with_live_identity() {
             "demo::tests::failed"
         )]
     );
+    assert!(
+        super::current_prior_failures(tmp.path(), kiss::Language::Rust, &[], &[])
+            .unwrap()
+            .is_empty(),
+        "removed tests must not return through prior-failure selection"
+    );
 }
 
 #[test]
@@ -215,6 +219,13 @@ fn combined_selectors_routes_changed_python_and_rust_tests() {
         "#[cfg(test)]\nmod tests {\n    #[test]\n    fn rust_changed() { assert_eq!(1, 1); }\n}\n",
     )
     .unwrap();
+    // Seeded universe avoids pytest collect in helper/universe expansion.
+    crate::test_runner::python_coverage_index::write_python_population_manifest_for_args(
+        tmp.path(),
+        &["tests/test_app.py::test_py_changed".to_string()],
+        &[],
+    )
+    .unwrap();
 
     let plan = combined_selectors(
         tmp.path(),
@@ -256,6 +267,12 @@ fn changed_python_helper_without_selector_selects_language_universe() {
     .unwrap();
     let helper = tests.join("helpers.py");
     std::fs::write(&helper, "def helper():\n    return 1\n").unwrap();
+    crate::test_runner::python_coverage_index::write_python_population_manifest_for_args(
+        tmp.path(),
+        &["tests/test_app.py::test_app".to_string()],
+        &[],
+    )
+    .unwrap();
 
     let plan = combined_selectors(
         tmp.path(),

@@ -6,7 +6,7 @@ use std::process::{Command, Stdio};
 pub(crate) use super::rust_llvm_cov::{
     cached_rust_check_aggregate_selectors, run_rust_llvm_cov_selectors,
 };
-use kiss::code_roles::{is_default_pytest_collect_candidate, is_test_only_file};
+use kiss::code_roles::is_test_only_file;
 use kiss::rust_llvm_cov_runner::{
     CoverageOutputMode, RustCoverageBatchRequest, build_rust_coverage_batch_plan,
 };
@@ -16,8 +16,7 @@ mod decision;
 #[cfg(test)]
 pub(crate) use decision::combined_selectors;
 pub(crate) use decision::{
-    CombinedSelectorInput, SelectorPlan, combined_selectors_with_direct,
-    prior_failures_for_language,
+    CombinedSelectorInput, SelectorPlan, combined_selectors_with_direct, current_prior_failures,
 };
 
 #[path = "runners/rust_enumerate.rs"]
@@ -104,19 +103,7 @@ pub(crate) fn partition_changed_paths_with_roles(
     (source, test)
 }
 
-pub(crate) fn roles_for_universe(
-    repo_root: &Path,
-    ignore: &[String],
-) -> Result<kiss::code_roles::SourceRoleIndex, kiss::code_roles::RoleBuildError> {
-    let root = repo_root.to_string_lossy().to_string();
-    let (py, rs) = kiss::gather_files_by_lang(&[root], None, ignore);
-    let py_parsed = crate::analyze_parse::parse_py_files(&py)?;
-    let rs_parsed = crate::analyze_parse::parse_rs_files(&rs)?;
-    kiss::code_roles::build_source_role_index(&py_parsed, &rs_parsed, &py, &rs)
-}
-
-#[cfg(test)]
-fn roles_for_changed_paths(
+pub(crate) fn roles_for_changed_paths(
     paths: &[PathBuf],
 ) -> Result<kiss::code_roles::SourceRoleIndex, kiss::code_roles::RoleBuildError> {
     let py: Vec<_> = paths
@@ -199,7 +186,8 @@ fn python_nodeids_from_stored_universe(
     repo_root: &Path,
     py_files: &[PathBuf],
 ) -> Option<BTreeSet<String>> {
-    let selectors = stored_python_universe_selectors(repo_root, &[], PYTHON_COVERAGE_ENV_KEYS)?;
+    let selectors =
+        stored_python_universe_selectors(repo_root, &[], &[], PYTHON_COVERAGE_ENV_KEYS)?;
     let mut rels = BTreeSet::new();
     for path in py_files {
         rels.insert(python_repo_relative_path(repo_root, path)?);
@@ -212,12 +200,6 @@ fn python_nodeids_from_stored_universe(
         }
     }
     Some(out)
-}
-
-pub(crate) fn kiss_test_report_id(map: &BTreeMap<String, String>, logical: &str) -> String {
-    map.get(logical)
-        .cloned()
-        .unwrap_or_else(|| logical.to_string())
 }
 
 pub(crate) fn require_kiss_test_report_id(
@@ -233,11 +215,15 @@ pub(crate) fn rust_report_ids_for_selectors(
     repo_root: &Path,
     selectors: &[String],
 ) -> Result<BTreeMap<String, String>, String> {
-    let map = rust_logical_to_kiss_test_ids(repo_root, &[])?;
+    let universe =
+        super::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(repo_root, &[])?;
+    let mut out = BTreeMap::new();
     for selector in selectors {
-        require_kiss_test_report_id(&map, selector)?;
+        if let Some(id) = universe.get(selector) {
+            out.insert(selector.clone(), id.clone());
+        }
     }
-    Ok(map)
+    Ok(out)
 }
 
 pub fn enumerate_workspace_python_selectors(
@@ -245,23 +231,51 @@ pub fn enumerate_workspace_python_selectors(
     ignore: &[String],
     pytest_args: &[String],
 ) -> Result<Vec<String>, String> {
+    if let Some(selectors) = stored_python_universe_selectors(
+        repo_root,
+        pytest_args,
+        ignore,
+        PYTHON_COVERAGE_ENV_KEYS,
+    ) {
+        return filter_ignored_python_selectors(selectors, ignore);
+    }
     if !ignore.is_empty() {
-        let root = repo_root.to_string_lossy().to_string();
-        let (py_files, _rs_files) =
-            kiss::gather_files_by_lang(&[root], Some(kiss::Language::Python), ignore);
-
-        let test_paths = py_files
-            .into_iter()
-            .filter(|path| is_default_pytest_collect_candidate(path))
-            .collect::<Vec<_>>();
-        return collect_python_nodeids(repo_root, Some(&test_paths), pytest_args);
+        let paths = crate::test_runner::lang_python::collect_paths::workspace_python_collect_paths(
+            repo_root, ignore,
+        );
+        let collected = collect_from_workspace_paths(repo_root, &paths, pytest_args)?;
+        return filter_ignored_python_selectors(collected, ignore);
     }
 
     let tests_root = repo_root.join("tests");
-    if tests_root.is_dir() {
-        return collect_python_nodeids(repo_root, Some(&[tests_root]), pytest_args);
+    let collected = if tests_root.is_dir() {
+        collect_python_nodeids(repo_root, Some(&[tests_root]), pytest_args)?
+    } else {
+        collect_python_nodeids(repo_root, None, pytest_args)?
+    };
+    filter_ignored_python_selectors(collected, ignore)
+}
+
+fn collect_from_workspace_paths(
+    repo_root: &Path,
+    paths: &[PathBuf],
+    pytest_args: &[String],
+) -> Result<Vec<String>, String> {
+    if paths.is_empty() {
+        collect_python_nodeids(repo_root, None, pytest_args)
+    } else {
+        collect_python_nodeids(repo_root, Some(paths), pytest_args)
     }
-    collect_python_nodeids(repo_root, None, pytest_args)
+}
+
+fn filter_ignored_python_selectors(
+    selectors: Vec<String>,
+    ignore: &[String],
+) -> Result<Vec<String>, String> {
+    Ok(selectors
+        .into_iter()
+        .filter(|selector| !kiss::selector_ignored_by_prefixes(selector, ignore))
+        .collect())
 }
 
 pub fn shell_quote_line(argv: &[String]) -> String {
@@ -320,6 +334,7 @@ pub(crate) fn build_rust_coverage_batch_dry_run_lines(
         test_args: extra.to_vec(),
         env: BTreeMap::new(),
         force_rerun: false,
+        force_rerun_selectors: Vec::new(),
         jobs,
         generated_config: PathBuf::from("<generated-filter>"),
         population_publication_selectors: None,
@@ -328,6 +343,7 @@ pub(crate) fn build_rust_coverage_batch_dry_run_lines(
         host_platform,
         coverage_output_mode: CoverageOutputMode::SelectorEntries,
         selector_timeout_millis: std::collections::BTreeMap::new(),
+        cache_policy: kiss::test_cache_policy::TestCachePolicy::default(),
     };
     let plan = build_rust_coverage_batch_plan(&req)?;
     let mut lines = vec![

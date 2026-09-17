@@ -3,7 +3,9 @@ use std::time::Duration;
 
 use crate::rust_llvm_cov_runner::{
     RustCovCacheStatus, RustLineCoverage, RustLlvmCovOutcome,
-    batch_aggregate::{InstanceResult, aggregate_logical_selectors},
+    batch_aggregate::{
+        InstanceResult, aggregate_logical_selectors, aggregate_logical_selectors_check_aggregate,
+    },
     batch_plan::RustCoverageBatchRequest,
 };
 
@@ -12,13 +14,21 @@ pub(crate) fn aggregate_with_zero_limit_bans(
     exact: bool,
     instances: &[InstanceResult],
 ) -> (Vec<RustLlvmCovOutcome>, usize) {
+    let is_check_aggregate = matches!(
+        req.coverage_output_mode,
+        crate::rust_llvm_cov_runner::CoverageOutputMode::CheckAggregate { .. }
+    );
     let runnable: Vec<String> = req
         .logical_selectors
         .iter()
         .filter(|selector| !selector_timeout_is_ban(req, selector))
         .cloned()
         .collect();
-    let (runnable_outcomes, counters) = aggregate_logical_selectors(&runnable, exact, instances);
+    let (runnable_outcomes, counters) = if is_check_aggregate {
+        aggregate_logical_selectors_check_aggregate(&runnable, exact, instances)
+    } else {
+        aggregate_logical_selectors(&runnable, exact, instances)
+    };
     let mut by_selector: BTreeMap<String, RustLlvmCovOutcome> = runnable_outcomes
         .into_iter()
         .map(|outcome| (outcome.selector.clone(), outcome))
@@ -61,12 +71,16 @@ pub(crate) fn unmatched_selectors_batch_error(
     unmatched_selectors: usize,
     counters: crate::rust_llvm_cov_runner::batch_result::RustCoverageBatchCounters,
 ) -> Option<crate::rust_llvm_cov_runner::batch_result::RustCoverageBatchResult> {
-    (unmatched_selectors > 0).then(|| crate::rust_llvm_cov_runner::batch_result::RustCoverageBatchResult {
-        completed: Vec::new(),
-        batch_error: Some(crate::rust_llvm_cov_runner::RustLlvmCovError::InvalidRequest(format!(
-            "{kind} batch did not execute {unmatched_selectors} requested Rust selector(s)"
-        ))),
-        counters,
-        test_binaries: Vec::new(),
+    (unmatched_selectors > 0).then(|| {
+        crate::rust_llvm_cov_runner::batch_result::RustCoverageBatchResult {
+            completed: Vec::new(),
+            batch_error: Some(
+                crate::rust_llvm_cov_runner::RustLlvmCovError::InvalidRequest(format!(
+                    "{kind} batch did not execute {unmatched_selectors} requested Rust selector(s)"
+                )),
+            ),
+            counters,
+            test_binaries: Vec::new(),
+        }
     })
 }

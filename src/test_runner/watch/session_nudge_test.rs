@@ -2,14 +2,18 @@
 
 use super::super::*;
 use super::{NudgeScript, commit_a_py, py_dry_args, timeout_steps};
+use crate::bin_cli::args::TestInvocation;
 use crate::test_runner::RunTestOnceOutcome;
-use crate::test_runner::test_mode_fixtures::init_git;
+use crate::test_runner::capture_stdout::capture_stdout;
+use crate::test_runner::run_test;
+use crate::test_runner::test_mode_fixtures::{git_in, init_git};
 use crate::test_runner::watch::control::NudgeRequestMsg;
 use crate::test_runner::watch::event_source::{NormalizedWatchEvent, RecvTimeout};
 use std::collections::VecDeque;
 use std::env;
+use std::fs;
 use std::path::Path;
-use std::sync::{Arc, mpsc};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
 fn send_nudge_after(
@@ -71,17 +75,18 @@ fn nudge_while_waiting_skips_settle() {
             force: true,
             force_bad: false,
             metrics: true,
+            ..Default::default()
         },
     );
     let mut steps = VecDeque::new();
     steps.push_back(Err(RecvTimeout::Timeout));
     steps.push_back(Ok(vec![NormalizedWatchEvent::Paths(vec![file])]));
-    steps.extend(timeout_steps(4));
+    steps.extend(timeout_steps(1));
     let mut src = NudgeScript { steps };
     let t0 = Instant::now();
     let code = run_watch_loop(
         py_dry_args(),
-        Duration::from_secs(30),
+        Duration::from_millis(100),
         tmp.path(),
         &mut src,
         Some(&rx),
@@ -104,6 +109,7 @@ fn forwarded_force_applies_to_queued_cycle_then_clears() {
             force: true,
             force_bad: true,
             metrics: true,
+            ..Default::default()
         },
         reply: r1,
     })
@@ -121,13 +127,716 @@ fn forwarded_force_applies_to_queued_cycle_then_clears() {
     let base = py_dry_args();
     assert!(!base.force_rerun && !base.force_bad && !base.metrics);
     let live = live_from_args_disabled(base, Duration::from_secs(1), Path::new("."));
-    let (cycle1, replies) = take_queued_cycle_args(&live, &mut queued);
-    assert!(queued.is_none(), "queue consumed");
-    assert!(cycle1.force_rerun && cycle1.force_bad && cycle1.metrics);
-    assert_eq!(replies.len(), 2);
+    let replies_len;
+    {
+        let (cycle1, replies) = take_queued_cycle_args(&live, &mut queued);
+        assert!(queued.is_none(), "queue consumed");
+        assert!(cycle1.force_rerun && cycle1.force_bad && cycle1.metrics);
+        replies_len = replies.len();
+    }
+    assert_eq!(replies_len, 2);
     let (cycle2, replies2) = take_queued_cycle_args(&live, &mut queued);
     assert!(!cycle2.force_rerun && !cycle2.force_bad && !cycle2.metrics);
     assert!(replies2.is_empty());
+}
+
+#[test]
+fn forwarded_extra_overrides_watcher_and_starts_new_cycle() {
+    use crate::test_runner::watch::control::NudgeRequestMsg as Msg;
+    let (tx, rx) = mpsc::channel::<NudgeRequest>();
+    let (reply_tx, _reply_rx) = mpsc::sync_channel(1);
+    tx.send(NudgeRequest {
+        msg: Msg {
+            extra: vec!["-k".into(), "does_not_match".into()],
+            python_extra: vec!["-k".into(), "does_not_match".into()],
+            ..Default::default()
+        },
+        reply: reply_tx,
+    })
+    .unwrap();
+    let mut queued = None;
+    coalesce_nudges(Some(&rx), &mut queued);
+    let base = py_dry_args();
+    let mut live = live_from_args_disabled(base, Duration::from_secs(1), Path::new("."));
+    queued
+        .as_mut()
+        .expect("queued")
+        .stamp_filter_override(&live);
+    assert!(queued.as_ref().expect("queued").wants_new_cycle());
+    apply_queued_filters(&mut live, &queued);
+    let (cycle, _) = take_queued_cycle_args(&live, &mut queued);
+    assert_eq!(
+        cycle.extra,
+        &["-k".to_string(), "does_not_match".to_string()]
+    );
+    assert_eq!(
+        cycle.python_extra,
+        &["-k".to_string(), "does_not_match".to_string()]
+    );
+}
+
+fn watcher_running_invocations() -> Vec<TestInvocation> {
+    vec![
+        TestInvocation::Commit,
+        TestInvocation::Base,
+        TestInvocation::Main,
+        TestInvocation::Targets(vec!["pkg".into()]),
+        TestInvocation::Targets(vec!["tests".into()]),
+        TestInvocation::Targets(vec!["tests/test_app.py".into()]),
+        TestInvocation::Targets(vec!["tests/test_app.py::test_value".into()]),
+        TestInvocation::Targets(vec!["pkg/models.py::Group".into()]),
+        TestInvocation::Targets(vec!["pkg/models.py::Group.__init__".into()]),
+        TestInvocation::Targets(vec!["tests/test_group.py::TestUser.test_email".into()]),
+        TestInvocation::Targets(vec!["tests/test_group.py::TestUser::test_email".into()]),
+        TestInvocation::Targets(vec!["tests/test_params.py::test_item[0]".into()]),
+        TestInvocation::Targets(vec!["src/lib.rs".into()]),
+        TestInvocation::Targets(vec!["src/lib.rs::value".into()]),
+        TestInvocation::Targets(vec!["tests/smoke.rs".into()]),
+        TestInvocation::Targets(vec!["src/lib.rs::gets_value".into()]),
+        TestInvocation::Targets(vec!["src/lib.rs".into(), "tests/test_app.py".into()]),
+    ]
+}
+
+#[test]
+fn unscoped_force_keeps_watcher_commit_base_main_and_path_descriptors() {
+    use crate::test_runner::watch::control::NudgeRequestMsg as Msg;
+    for invocation in watcher_running_invocations() {
+        let (tx, rx) = mpsc::channel::<NudgeRequest>();
+        let (reply, _wait) = mpsc::sync_channel(1);
+        tx.send(NudgeRequest {
+            msg: Msg {
+                force: true,
+                ..Default::default()
+            },
+            reply,
+        })
+        .unwrap();
+        let mut queued = None;
+        coalesce_nudges(Some(&rx), &mut queued);
+        let mut base = py_dry_args();
+        base.invocation = invocation.clone();
+        let live = live_from_args_disabled(base, Duration::from_secs(1), Path::new("."));
+        let (cycle, _) = take_queued_cycle_args(&live, &mut queued);
+        assert!(cycle.force_rerun, "invocation={invocation:?}");
+        assert_eq!(cycle.invocation, invocation);
+    }
+}
+
+#[test]
+fn forwarded_force_two_path_descriptors_override_watcher_modes() {
+    use crate::test_runner::watch::control::NudgeRequestMsg as Msg;
+    let force_targets = vec![
+        "tests/test_app.py::test_value".to_string(),
+        "src/lib.rs::gets_value".to_string(),
+    ];
+    for watcher in [
+        TestInvocation::All,
+        TestInvocation::Commit,
+        TestInvocation::Base,
+        TestInvocation::Main,
+        TestInvocation::Targets(vec!["pkg".into()]),
+    ] {
+        let (tx, rx) = mpsc::channel::<NudgeRequest>();
+        let (reply, _wait) = mpsc::sync_channel(1);
+        tx.send(NudgeRequest {
+            msg: Msg {
+                force: true,
+                targets: force_targets.clone(),
+                ..Default::default()
+            },
+            reply,
+        })
+        .unwrap();
+        let mut queued = None;
+        coalesce_nudges(Some(&rx), &mut queued);
+        let mut base = py_dry_args();
+        base.invocation = watcher.clone();
+        let live = live_from_args_disabled(base, Duration::from_secs(1), Path::new("."));
+        let (cycle, _) = take_queued_cycle_args(&live, &mut queued);
+        assert!(cycle.force_rerun, "watcher={watcher:?}");
+        assert_eq!(
+            cycle.invocation,
+            TestInvocation::Targets(force_targets.clone()),
+            "watcher={watcher:?}"
+        );
+    }
+}
+
+#[test]
+fn unscoped_force_nudge_keeps_running_watcher_invocation() {
+    // Coalesce coverage of every descriptor lives in
+    // `unscoped_force_keeps_watcher_commit_base_main_and_path_descriptors`.
+    // This live-loop check only needs a few representative running invocations.
+    let representative = [
+        TestInvocation::Commit,
+        TestInvocation::Targets(vec!["tests/test_app.py::test_value".into()]),
+        TestInvocation::Targets(vec!["src/lib.rs".into(), "tests/test_app.py".into()]),
+    ];
+    let tmp = tempfile::tempdir().unwrap();
+    init_git(&tmp);
+    commit_a_py(&tmp);
+    for invocation in representative {
+        let (tx, rx) = mpsc::channel::<NudgeRequest>();
+        let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+        let cycles = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let seen = Arc::new(Mutex::new(Vec::<(bool, TestInvocation)>::new()));
+        let cycles_nudge = Arc::clone(&cycles);
+        let sender = std::thread::spawn(move || {
+            while cycles_nudge.load(std::sync::atomic::Ordering::SeqCst) < 1 {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            std::thread::sleep(Duration::from_millis(5));
+            tx.send(NudgeRequest {
+                msg: NudgeRequestMsg {
+                    force: true,
+                    ..Default::default()
+                },
+                reply: reply_tx,
+            })
+            .unwrap();
+            assert_eq!(
+                reply_rx
+                    .recv_timeout(Duration::from_secs(5))
+                    .unwrap()
+                    .exit_code,
+                0
+            );
+        });
+        let cycles_run = Arc::clone(&cycles);
+        let seen_run = Arc::clone(&seen);
+        let mut src = NudgeScript {
+            steps: timeout_steps(4),
+        };
+        let mut args = py_dry_args();
+        args.invocation = invocation.clone();
+        let code = run_watch_loop_with(
+            args,
+            Duration::from_secs(3600),
+            tmp.path(),
+            &mut src,
+            Some(&rx),
+            move |cycle_args| {
+                cycles_run.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                seen_run
+                    .lock()
+                    .unwrap()
+                    .push((cycle_args.force_rerun, cycle_args.invocation.clone()));
+                RunTestOnceOutcome::Code(0)
+            },
+            |_args| WatchCoverageResult::ok(0),
+        );
+        sender.join().unwrap();
+        assert_eq!(code, 1, "invocation={invocation:?}");
+        let seen = seen.lock().unwrap().clone();
+        assert_eq!(
+            seen.len(),
+            2,
+            "initial plus unscoped force; invocation={invocation:?}"
+        );
+        assert!(!seen[0].0 && seen[0].1 == invocation, "initial={seen:?}");
+        assert!(seen[1].0 && seen[1].1 == invocation, "forced={seen:?}");
+    }
+}
+
+#[test]
+fn commit_nudge_overrides_watcher_all_invocation() {
+    use crate::test_runner::watch::control::{NudgeInvocation, NudgeRequestMsg as Msg};
+    let (tx, rx) = mpsc::channel::<NudgeRequest>();
+    let (reply, _wait) = mpsc::sync_channel(1);
+    tx.send(NudgeRequest {
+        msg: Msg {
+            invocation: NudgeInvocation::Commit,
+            ..Default::default()
+        },
+        reply,
+    })
+    .unwrap();
+    let mut queued = None;
+    coalesce_nudges(Some(&rx), &mut queued);
+    assert!(
+        queued.as_ref().is_some_and(|q| !q.invocation.is_all()),
+        "commit must request a new cycle"
+    );
+    let mut base = py_dry_args();
+    base.invocation = TestInvocation::All;
+    let live = live_from_args_disabled(base, Duration::from_secs(1), Path::new("."));
+    let (cycle, _) = take_queued_cycle_args(&live, &mut queued);
+    assert_eq!(
+        cycle.invocation,
+        TestInvocation::Commit,
+        "commit must run through the shared processor, not the watcher's All recap"
+    );
+}
+
+#[test]
+fn retry_bad_targets_override_watcher_all_invocation() {
+    use crate::test_runner::watch::control::NudgeRequestMsg as Msg;
+    let selected = "tests/fast/app_server/test_transact_grid.py::test_assign_method_follows_grid_queue_after_rebind";
+    let (tx, rx) = mpsc::channel::<NudgeRequest>();
+    let (reply, _wait) = mpsc::sync_channel(1);
+    tx.send(NudgeRequest {
+        msg: Msg {
+            force: false,
+            force_bad: true,
+            targets: vec![selected.into()],
+            ..Default::default()
+        },
+        reply,
+    })
+    .unwrap();
+    let mut queued = None;
+    coalesce_nudges(Some(&rx), &mut queued);
+    let mut base = py_dry_args();
+    base.invocation = TestInvocation::All;
+    let live = live_from_args_disabled(base, Duration::from_secs(1), Path::new("."));
+    let (cycle, _) = take_queued_cycle_args(&live, &mut queued);
+    assert!(cycle.force_bad);
+    assert!(!cycle.force_rerun);
+    assert_eq!(
+        cycle.invocation,
+        TestInvocation::Targets(vec![selected.into()]),
+        "retry-bad TARGET must scope the watcher cycle"
+    );
+}
+
+#[test]
+fn forwarded_force_targets_override_watcher_all_invocation() {
+    use crate::test_runner::watch::control::NudgeRequestMsg as Msg;
+    let (tx, rx) = mpsc::channel::<NudgeRequest>();
+    let (reply, _wait) = mpsc::sync_channel(1);
+    tx.send(NudgeRequest {
+        msg: Msg {
+            force: true,
+            targets: vec![
+                "tests/fast/analysis/test_mmfv_latency_ab_timings_gantt.py::test_gantt_helpers_prepare_assign_and_filter".into(),
+            ],
+            ..Default::default()
+        },
+        reply,
+    })
+    .unwrap();
+    let mut queued = None;
+    coalesce_nudges(Some(&rx), &mut queued);
+    let mut base = py_dry_args();
+    base.invocation = TestInvocation::All;
+    let live = live_from_args_disabled(base, Duration::from_secs(1), Path::new("."));
+    let (cycle, _) = take_queued_cycle_args(&live, &mut queued);
+    assert!(cycle.force_rerun);
+    assert_eq!(
+        cycle.invocation,
+        TestInvocation::Targets(vec![
+            "tests/fast/analysis/test_mmfv_latency_ab_timings_gantt.py::test_gantt_helpers_prepare_assign_and_filter".into()
+        ])
+    );
+}
+
+#[test]
+fn unscoped_force_keeps_watcher_all_invocation() {
+    use crate::test_runner::watch::control::NudgeRequestMsg as Msg;
+    let (tx, rx) = mpsc::channel::<NudgeRequest>();
+    let (reply, _wait) = mpsc::sync_channel(1);
+    tx.send(NudgeRequest {
+        msg: Msg {
+            force: true,
+            ..Default::default()
+        },
+        reply,
+    })
+    .unwrap();
+    let mut queued = None;
+    coalesce_nudges(Some(&rx), &mut queued);
+    let mut base = py_dry_args();
+    base.invocation = TestInvocation::All;
+    let live = live_from_args_disabled(base, Duration::from_secs(1), Path::new("."));
+    let (cycle, _) = take_queued_cycle_args(&live, &mut queued);
+    assert!(cycle.force_rerun);
+    assert_eq!(cycle.invocation, TestInvocation::All);
+}
+
+#[test]
+fn coalesce_unions_force_targets_until_unscoped_force() {
+    use crate::test_runner::watch::control::NudgeRequestMsg as Msg;
+    let (tx, rx) = mpsc::channel::<NudgeRequest>();
+    let (r1, _w1) = mpsc::sync_channel(1);
+    let (r2, _w2) = mpsc::sync_channel(1);
+    let (r3, _w3) = mpsc::sync_channel(1);
+    tx.send(NudgeRequest {
+        msg: Msg {
+            force: true,
+            targets: vec!["tests/a.py::test_a".into()],
+            ..Default::default()
+        },
+        reply: r1,
+    })
+    .unwrap();
+    tx.send(NudgeRequest {
+        msg: Msg {
+            force: true,
+            targets: vec!["tests/b.py::test_b".into()],
+            ..Default::default()
+        },
+        reply: r2,
+    })
+    .unwrap();
+    let mut queued = None;
+    coalesce_nudges(Some(&rx), &mut queued);
+    let mut base = py_dry_args();
+    base.invocation = TestInvocation::All;
+    let live = live_from_args_disabled(base, Duration::from_secs(1), Path::new("."));
+    let q = queued.as_ref().expect("coalesced");
+    assert_eq!(
+        q.targets,
+        vec![
+            "tests/a.py::test_a".to_string(),
+            "tests/b.py::test_b".to_string()
+        ]
+    );
+    tx.send(NudgeRequest {
+        msg: Msg {
+            force: true,
+            ..Default::default()
+        },
+        reply: r3,
+    })
+    .unwrap();
+    coalesce_nudges(Some(&rx), &mut queued);
+    let (cycle, replies) = take_queued_cycle_args(&live, &mut queued);
+    assert!(cycle.force_rerun);
+    assert_eq!(cycle.invocation, TestInvocation::All);
+    assert_eq!(replies.len(), 3);
+}
+
+#[test]
+fn retry_bad_nudge_reruns_only_selected_fake_python_test_on_tmp_repo() {
+    let _cwd = crate::cwd_test_lock::lock();
+    let tmp = tempfile::tempdir().unwrap();
+    init_git(&tmp);
+    let tests = tmp.path().join("tests");
+    fs::create_dir_all(&tests).unwrap();
+    fs::write(
+        tests.join("test_pair.py"),
+        "def test_first():\n    assert True\n\ndef test_second():\n    assert True\n",
+    )
+    .unwrap();
+    assert!(
+        git_in(tmp.path())
+            .args(["add", "-A"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        git_in(tmp.path())
+            .args(["commit", "-m", "init"])
+            .status()
+            .unwrap()
+            .success()
+    );
+
+    let selected = "tests/test_pair.py::test_first";
+    let (tx, rx) = mpsc::channel::<NudgeRequest>();
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    let cycles = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let seen = Arc::new(Mutex::new(Vec::<TestInvocation>::new()));
+    let forced_out = Arc::new(Mutex::new(String::new()));
+    let cycles_nudge = Arc::clone(&cycles);
+    let sender = std::thread::spawn(move || {
+        while cycles_nudge.load(std::sync::atomic::Ordering::SeqCst) < 1 {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        std::thread::sleep(Duration::from_millis(20));
+        tx.send(NudgeRequest {
+            msg: NudgeRequestMsg {
+                force: false,
+                force_bad: true,
+                targets: vec![selected.into()],
+                ..Default::default()
+            },
+            reply: reply_tx,
+        })
+        .unwrap();
+        assert_eq!(
+            reply_rx
+                .recv_timeout(Duration::from_secs(30))
+                .unwrap()
+                .exit_code,
+            0
+        );
+    });
+
+    let orig = env::current_dir().unwrap();
+    env::set_current_dir(tmp.path()).unwrap();
+    let cycles_run = Arc::clone(&cycles);
+    let seen_run = Arc::clone(&seen);
+    let out_run = Arc::clone(&forced_out);
+    let mut src = NudgeScript {
+        steps: timeout_steps(12),
+    };
+    let mut args = py_dry_args();
+    args.invocation = TestInvocation::All;
+    args.dry_run = false;
+    let code = run_watch_loop_with(
+        args,
+        Duration::from_secs(3600),
+        tmp.path(),
+        &mut src,
+        Some(&rx),
+        move |cycle_args| {
+            let n = cycles_run.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+            seen_run.lock().unwrap().push(cycle_args.invocation.clone());
+            if n == 1 {
+                return RunTestOnceOutcome::Code(0);
+            }
+            let stdout = capture_stdout(|| {
+                assert_eq!(run_test(cycle_args), 0);
+            });
+            *out_run.lock().unwrap() = stdout;
+            RunTestOnceOutcome::Code(0)
+        },
+        |_args| WatchCoverageResult::ok(0),
+    );
+    sender.join().unwrap();
+    env::set_current_dir(orig).unwrap();
+    assert_eq!(code, 1);
+    let invocations = seen.lock().unwrap().clone();
+    assert_eq!(invocations.len(), 2, "initial All plus retry-bad TARGET");
+    assert_eq!(invocations[0], TestInvocation::All);
+    assert_eq!(
+        invocations[1],
+        TestInvocation::Targets(vec![selected.to_string()])
+    );
+    let stdout = forced_out.lock().unwrap().clone();
+    assert!(
+        stdout.contains("test_pair.py::test_first"),
+        "retry-bad selector must run, got:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("test_pair.py::test_second"),
+        "sibling test must not run when TARGET is set, got:\n{stdout}"
+    );
+}
+
+#[test]
+fn targeted_force_nudge_reruns_only_selected_fake_python_test() {
+    let _cwd = crate::cwd_test_lock::lock();
+    let tmp = tempfile::tempdir().unwrap();
+    init_git(&tmp);
+    let tests = tmp.path().join("tests");
+    fs::create_dir_all(&tests).unwrap();
+    fs::write(
+        tests.join("test_pair.py"),
+        "def test_first():\n    assert True\n\ndef test_second():\n    assert True\n",
+    )
+    .unwrap();
+    assert!(
+        git_in(tmp.path())
+            .args(["add", "-A"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        git_in(tmp.path())
+            .args(["commit", "-m", "init"])
+            .status()
+            .unwrap()
+            .success()
+    );
+
+    let selected = "tests/test_pair.py::test_first";
+    let (tx, rx) = mpsc::channel::<NudgeRequest>();
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    let cycles = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let seen = Arc::new(Mutex::new(Vec::<TestInvocation>::new()));
+    let forced_out = Arc::new(Mutex::new(String::new()));
+    let cycles_nudge = Arc::clone(&cycles);
+    let sender = std::thread::spawn(move || {
+        while cycles_nudge.load(std::sync::atomic::Ordering::SeqCst) < 1 {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        std::thread::sleep(Duration::from_millis(20));
+        tx.send(NudgeRequest {
+            msg: NudgeRequestMsg {
+                force: true,
+                targets: vec![selected.into()],
+                ..Default::default()
+            },
+            reply: reply_tx,
+        })
+        .unwrap();
+        assert_eq!(
+            reply_rx
+                .recv_timeout(Duration::from_secs(30))
+                .unwrap()
+                .exit_code,
+            0
+        );
+    });
+
+    let orig = env::current_dir().unwrap();
+    env::set_current_dir(tmp.path()).unwrap();
+    let cycles_run = Arc::clone(&cycles);
+    let seen_run = Arc::clone(&seen);
+    let out_run = Arc::clone(&forced_out);
+    let mut src = NudgeScript {
+        steps: timeout_steps(12),
+    };
+    let mut args = py_dry_args();
+    args.invocation = TestInvocation::All;
+    args.dry_run = false;
+    let code = run_watch_loop_with(
+        args,
+        Duration::from_secs(3600),
+        tmp.path(),
+        &mut src,
+        Some(&rx),
+        move |cycle_args| {
+            let n = cycles_run.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+            seen_run.lock().unwrap().push(cycle_args.invocation.clone());
+            if n == 1 {
+                return RunTestOnceOutcome::Code(0);
+            }
+            let stdout = capture_stdout(|| {
+                assert_eq!(run_test(cycle_args), 0);
+            });
+            *out_run.lock().unwrap() = stdout;
+            RunTestOnceOutcome::Code(0)
+        },
+        |_args| WatchCoverageResult::ok(0),
+    );
+    sender.join().unwrap();
+    env::set_current_dir(orig).unwrap();
+    assert_eq!(code, 1);
+    let invocations = seen.lock().unwrap().clone();
+    assert_eq!(invocations.len(), 2, "initial All plus targeted force");
+    assert_eq!(invocations[0], TestInvocation::All);
+    assert_eq!(
+        invocations[1],
+        TestInvocation::Targets(vec![selected.to_string()])
+    );
+    let stdout = forced_out.lock().unwrap().clone();
+    assert!(
+        stdout.contains("test_pair.py::test_first"),
+        "forced selector must run, got:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("test_pair.py::test_second"),
+        "sibling test must not run, got:\n{stdout}"
+    );
+}
+
+#[test]
+fn targeted_force_nudge_reruns_two_selected_fake_python_tests() {
+    let _cwd = crate::cwd_test_lock::lock();
+    let tmp = tempfile::tempdir().unwrap();
+    init_git(&tmp);
+    let tests = tmp.path().join("tests");
+    fs::create_dir_all(&tests).unwrap();
+    fs::write(
+        tests.join("test_trio.py"),
+        "def test_first():\n    assert True\n\ndef test_second():\n    assert True\n\ndef test_third():\n    assert True\n",
+    )
+    .unwrap();
+    assert!(
+        git_in(tmp.path())
+            .args(["add", "-A"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        git_in(tmp.path())
+            .args(["commit", "-m", "init"])
+            .status()
+            .unwrap()
+            .success()
+    );
+
+    let selected = vec![
+        "tests/test_trio.py::test_first".to_string(),
+        "tests/test_trio.py::test_third".to_string(),
+    ];
+    let (tx, rx) = mpsc::channel::<NudgeRequest>();
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    let cycles = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let seen = Arc::new(Mutex::new(Vec::<TestInvocation>::new()));
+    let forced_out = Arc::new(Mutex::new(String::new()));
+    let cycles_nudge = Arc::clone(&cycles);
+    let selected_nudge = selected.clone();
+    let sender = std::thread::spawn(move || {
+        while cycles_nudge.load(std::sync::atomic::Ordering::SeqCst) < 1 {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        std::thread::sleep(Duration::from_millis(20));
+        tx.send(NudgeRequest {
+            msg: NudgeRequestMsg {
+                force: true,
+                targets: selected_nudge,
+                ..Default::default()
+            },
+            reply: reply_tx,
+        })
+        .unwrap();
+        assert_eq!(
+            reply_rx
+                .recv_timeout(Duration::from_secs(30))
+                .unwrap()
+                .exit_code,
+            0
+        );
+    });
+
+    let orig = env::current_dir().unwrap();
+    env::set_current_dir(tmp.path()).unwrap();
+    let cycles_run = Arc::clone(&cycles);
+    let seen_run = Arc::clone(&seen);
+    let out_run = Arc::clone(&forced_out);
+    let mut src = NudgeScript {
+        steps: timeout_steps(12),
+    };
+    let mut args = py_dry_args();
+    args.invocation = TestInvocation::All;
+    args.dry_run = false;
+    let code = run_watch_loop_with(
+        args,
+        Duration::from_secs(3600),
+        tmp.path(),
+        &mut src,
+        Some(&rx),
+        move |cycle_args| {
+            let n = cycles_run.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+            seen_run.lock().unwrap().push(cycle_args.invocation.clone());
+            if n == 1 {
+                return RunTestOnceOutcome::Code(0);
+            }
+            let stdout = capture_stdout(|| {
+                assert_eq!(run_test(cycle_args), 0);
+            });
+            *out_run.lock().unwrap() = stdout;
+            RunTestOnceOutcome::Code(0)
+        },
+        |_args| WatchCoverageResult::ok(0),
+    );
+    sender.join().unwrap();
+    env::set_current_dir(orig).unwrap();
+    assert_eq!(code, 1);
+    let invocations = seen.lock().unwrap().clone();
+    assert_eq!(invocations.len(), 2, "initial All plus targeted force");
+    assert_eq!(invocations[0], TestInvocation::All);
+    assert_eq!(invocations[1], TestInvocation::Targets(selected.clone()));
+    let stdout = forced_out.lock().unwrap().clone();
+    assert!(
+        stdout.contains("test_trio.py::test_first"),
+        "first forced selector must run, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("test_trio.py::test_third"),
+        "second forced selector must run, got:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("test_trio.py::test_second"),
+        "unselected sibling must not run, got:\n{stdout}"
+    );
 }
 
 #[test]
@@ -253,6 +962,256 @@ fn idle_nudge_without_file_events_must_not_start_another_cycle() {
     );
 }
 
+#[test]
+fn idle_target_nudge_runs_scoped_cycle_and_replies_cycle_summary() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_git(&tmp);
+    commit_a_py(&tmp);
+
+    let (tx, rx) = mpsc::channel::<NudgeRequest>();
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    let tests = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let seen = Arc::new(Mutex::new(Vec::<TestInvocation>::new()));
+    let tests_nudge = std::sync::Arc::clone(&tests);
+    let sender = std::thread::spawn(move || {
+        while tests_nudge.load(std::sync::atomic::Ordering::SeqCst) < 1 {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        std::thread::sleep(Duration::from_millis(20));
+        tx.send(NudgeRequest {
+            msg: NudgeRequestMsg {
+                targets: vec!["tests/a.py::test_a".into()],
+                ..Default::default()
+            },
+            reply: reply_tx,
+        })
+        .unwrap();
+        reply_rx.recv_timeout(Duration::from_secs(5)).unwrap()
+    });
+
+    let tests_run = std::sync::Arc::clone(&tests);
+    let seen_run = Arc::clone(&seen);
+    let mut src = NudgeScript {
+        steps: timeout_steps(12),
+    };
+    let mut args = py_dry_args();
+    args.dry_run = false;
+    args.invocation = TestInvocation::All;
+    let code = run_watch_loop_with(
+        args,
+        Duration::from_secs(3600),
+        tmp.path(),
+        &mut src,
+        Some(&rx),
+        move |cycle_args| {
+            let n = tests_run.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            seen_run.lock().unwrap().push(cycle_args.invocation.clone());
+            if n == 0 {
+                kiss::rust_llvm_cov_runner::emit_progress("PASS: tests/a.py::test_a (0.01s)");
+                kiss::rust_llvm_cov_runner::emit_progress("PASS: tests/b.py::test_b (0.01s)");
+                kiss::rust_llvm_cov_runner::emit_progress(
+                    "✓ 2 passed · 0 failed · 0 timed out · 1s total · 0s max pass",
+                );
+            } else {
+                kiss::rust_llvm_cov_runner::emit_progress("PASS: tests/a.py::test_a (0.01s)");
+                kiss::rust_llvm_cov_runner::emit_progress(
+                    "✓ 1 passed · 0 failed · 0 timed out · 0.01s total · 0s max pass",
+                );
+            }
+            RunTestOnceOutcome::Code(0)
+        },
+        |_args| WatchCoverageResult::ok(0),
+    );
+    let reply = sender.join().unwrap();
+    assert_eq!(code, 1);
+    let seen = seen.lock().unwrap().clone();
+    assert_eq!(
+        seen,
+        vec![
+            TestInvocation::All,
+            TestInvocation::Targets(vec!["tests/a.py::test_a".into()]),
+        ],
+        "TARGET-only idle nudge must start a scoped cycle"
+    );
+    let out = reply.output.clone().unwrap_or_default();
+    assert!(
+        out.contains("1 passed") && !out.contains("2 passed"),
+        "targeted waiter must see this cycle, not the merged suite; out={out:?}"
+    );
+    assert!(
+        !out.contains("tests/b.py::test_b"),
+        "targeted recap must not list sibling selectors; out={out:?}"
+    );
+}
+
+#[test]
+fn unscoped_idle_nudge_after_target_still_recaps_full_suite() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_git(&tmp);
+    commit_a_py(&tmp);
+
+    let (tx, rx) = mpsc::channel::<NudgeRequest>();
+    let (reply_target_tx, reply_target_rx) = mpsc::sync_channel(1);
+    let (reply_idle_tx, reply_idle_rx) = mpsc::sync_channel(1);
+    let tests = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let tests_nudge = std::sync::Arc::clone(&tests);
+    let sender = std::thread::spawn(move || {
+        while tests_nudge.load(std::sync::atomic::Ordering::SeqCst) < 1 {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        std::thread::sleep(Duration::from_millis(20));
+        tx.send(NudgeRequest {
+            msg: NudgeRequestMsg {
+                targets: vec!["tests/a.py::test_a".into()],
+                ..Default::default()
+            },
+            reply: reply_target_tx,
+        })
+        .unwrap();
+        let targeted = reply_target_rx
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap();
+        tx.send(NudgeRequest {
+            msg: NudgeRequestMsg::default(),
+            reply: reply_idle_tx,
+        })
+        .unwrap();
+        let idle = reply_idle_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        (targeted, idle)
+    });
+
+    let tests_run = std::sync::Arc::clone(&tests);
+    let mut src = NudgeScript {
+        steps: timeout_steps(16),
+    };
+    let mut args = py_dry_args();
+    args.dry_run = false;
+    args.invocation = TestInvocation::All;
+    let code = run_watch_loop_with(
+        args,
+        Duration::from_secs(3600),
+        tmp.path(),
+        &mut src,
+        Some(&rx),
+        move |cycle_args| {
+            let n = tests_run.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if n == 0 {
+                kiss::rust_llvm_cov_runner::emit_progress("PASS: tests/a.py::test_a (0.01s)");
+                kiss::rust_llvm_cov_runner::emit_progress("PASS: tests/b.py::test_b (0.01s)");
+                kiss::rust_llvm_cov_runner::emit_progress(
+                    "✓ 2 passed · 0 failed · 0 timed out · 1s total · 0s max pass",
+                );
+            } else {
+                kiss::rust_llvm_cov_runner::emit_progress("PASS: tests/a.py::test_a (0.01s)");
+                kiss::rust_llvm_cov_runner::emit_progress(
+                    "✓ 1 passed · 0 failed · 0 timed out · 0.01s total · 0s max pass",
+                );
+            }
+            let _ = cycle_args;
+            RunTestOnceOutcome::Code(0)
+        },
+        |_args| WatchCoverageResult::ok(0),
+    );
+    let (targeted, idle) = sender.join().unwrap();
+    assert_eq!(code, 1);
+    let targeted_out = targeted.output.clone().unwrap_or_default();
+    let idle_out = idle.output.clone().unwrap_or_default();
+    assert!(
+        targeted_out.contains("1 passed") && !targeted_out.contains("2 passed"),
+        "TARGET waiter={targeted_out:?}"
+    );
+    assert!(
+        idle_out.contains("2 passed") && idle_out.contains("tests/b.py::test_b"),
+        "unscoped idle recap must keep the last full cycle; idle={idle_out:?}"
+    );
+    assert_eq!(
+        tests.load(std::sync::atomic::Ordering::SeqCst),
+        2,
+        "unscoped idle after TARGET must not start a third cycle"
+    );
+}
+
+#[test]
+fn idle_nudge_recaps_all_known_pass_fail_timeouts() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_git(&tmp);
+    let file = commit_a_py(&tmp);
+
+    let (tx, rx) = mpsc::channel::<NudgeRequest>();
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    let tests = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let tests_nudge = std::sync::Arc::clone(&tests);
+    let sender = std::thread::spawn(move || {
+        while tests_nudge.load(std::sync::atomic::Ordering::SeqCst) < 2 {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        std::thread::sleep(Duration::from_millis(20));
+        tx.send(NudgeRequest {
+            msg: NudgeRequestMsg::default(),
+            reply: reply_tx,
+        })
+        .unwrap();
+        reply_rx.recv_timeout(Duration::from_secs(5)).unwrap()
+    });
+
+    let tests_run = std::sync::Arc::clone(&tests);
+    let mut steps = VecDeque::new();
+    steps.push_back(Err(RecvTimeout::Timeout));
+    steps.push_back(Ok(vec![NormalizedWatchEvent::Paths(vec![file])]));
+    steps.extend(timeout_steps(16));
+    let mut src = NudgeScript { steps };
+    let mut args = py_dry_args();
+    args.dry_run = false;
+    args.invocation = TestInvocation::All;
+    let code = run_watch_loop_with(
+        args,
+        Duration::from_millis(1),
+        tmp.path(),
+        &mut src,
+        Some(&rx),
+        move |_args| {
+            let n = tests_run.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if n == 0 {
+                kiss::rust_llvm_cov_runner::emit_progress("PASS: tests/a.py::test_a (0.01s)");
+                kiss::rust_llvm_cov_runner::emit_progress("PASS: tests/b.py::test_b (0.01s)");
+                kiss::rust_llvm_cov_runner::emit_progress("FAIL: tests/c.py::test_c (0.01s)");
+                kiss::rust_llvm_cov_runner::emit_progress(
+                    "✗ 2 passed · 1 failed · 0 timed out · 1s total · 0s max pass",
+                );
+                kiss::rust_llvm_cov_runner::emit_progress("FAIL tests/c.py::test_c");
+                RunTestOnceOutcome::Code(1)
+            } else {
+                kiss::rust_llvm_cov_runner::emit_progress(
+                    "PASS (cached): tests/slow/test_ops_hogneato_sim_tuner_smoke_rust.py::test_ops_hogneato_sim_tuner_smoke_rust (0.46s)",
+                );
+                kiss::rust_llvm_cov_runner::emit_progress(
+                    "✓ 1 passed · 0 failed · 0 timed out · 0.46s total · 0s max pass",
+                );
+                RunTestOnceOutcome::Code(0)
+            }
+        },
+        |_args| WatchCoverageResult::ok(0),
+    );
+    let reply = sender.join().unwrap();
+    assert_eq!(code, 1);
+    assert_eq!(
+        tests.load(std::sync::atomic::Ordering::SeqCst),
+        2,
+        "file change runs a second cycle; idle nudge must not start a third"
+    );
+    let out = reply.output.clone().unwrap_or_default();
+    assert!(
+        out.contains("1 failed")
+            && (out.contains("2 passed") || out.contains("3 passed"))
+            && out.contains("tests/c.py::test_c"),
+        "idle oneshot must recap all known results, not the last cycle only; out={out:?}"
+    );
+    assert_ne!(
+        reply.exit_code, 0,
+        "suite still has a failure; reply={reply:?}"
+    );
+}
+
 fn spawn_nudge_during_barrier(
     entered: std::sync::Arc<std::sync::Barrier>,
     release: std::sync::Arc<std::sync::Barrier>,
@@ -349,6 +1308,7 @@ fn nudge_while_cycle_in_flight_runs_second_cycle_before_reply() {
             force: true,
             force_bad: false,
             metrics: false,
+            ..Default::default()
         },
     );
     let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));

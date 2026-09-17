@@ -15,11 +15,27 @@ pub(crate) struct PlanSelectorsRequest<'a> {
     pub config_main_branch: Option<&'a str>,
 }
 
-pub(crate) fn plan_selectors(req: PlanSelectorsRequest<'_>) -> Result<PlannedSelectors, String> {
-    let ignore_norm = kiss::normalize_ignore_prefixes(req.ignore);
+pub(crate) struct VcsWorkspace {
+    pub repo_root: std::path::PathBuf,
+    pub ignore_norm: Vec<String>,
+    pub source_changed: Vec<std::path::PathBuf>,
+    pub test_changed: Vec<std::path::PathBuf>,
+    pub changed_lines:
+        std::collections::BTreeMap<std::path::PathBuf, std::collections::BTreeSet<u32>>,
+}
+
+pub(crate) fn plan_vcs_workspace(req: &PlanSelectorsRequest<'_>) -> Result<VcsWorkspace, String> {
     let cwd = std::env::current_dir().map_err(|e| format!("error: kiss test: {e}"))?;
     let repo_root = crate::test_git::require_git_repo_root(&cwd)
         .map_err(|e| format!("error: kiss test requires a git repository ({e})"))?;
+    plan_vcs_workspace_at(req, repo_root)
+}
+
+pub(crate) fn plan_vcs_workspace_at(
+    req: &PlanSelectorsRequest<'_>,
+    repo_root: std::path::PathBuf,
+) -> Result<VcsWorkspace, String> {
+    let ignore_norm = kiss::normalize_ignore_prefixes(req.ignore);
     let diff_target = crate::test_git::resolve_diff_target(
         &repo_root,
         req.mode,
@@ -58,28 +74,89 @@ pub(crate) fn plan_selectors(req: PlanSelectorsRequest<'_>) -> Result<PlannedSel
         &ignore_norm,
         lang_filter,
     );
-    let roles = runners::roles_for_universe(&repo_root, &ignore_norm)
+    let existing_changed: Vec<_> = abs_paths
+        .iter()
+        .filter(|path| path.exists())
+        .cloned()
+        .collect();
+    let roles = runners::roles_for_changed_paths(&existing_changed)
         .map_err(|err| format!("error: kiss test: {err}"))?;
     let (source_changed, test_changed) =
         runners::partition_changed_paths_with_roles(&abs_paths, &roles);
+    Ok(VcsWorkspace {
+        repo_root,
+        ignore_norm,
+        source_changed,
+        test_changed,
+        changed_lines,
+    })
+}
+
+pub(crate) fn plan_selectors_from_workspace(
+    ws: &VcsWorkspace,
+    extras: crate::test_runner::language_keyed::LanguageKeyed<&[String]>,
+    lang_filter: Option<Language>,
+) -> Result<PlannedSelectors, String> {
     let selector_plan = runners::combined_selectors_with_direct(runners::CombinedSelectorInput {
-        repo_root: &repo_root,
-        source_paths: &source_changed,
-        test_paths: &test_changed,
-        changed_lines: &changed_lines,
-        test_args: req.extras,
-        lang_filter: lang_filter.map(|l| match l {
-            crate::test_git::TestLangFilter::Python => Language::Python,
-            crate::test_git::TestLangFilter::Rust => Language::Rust,
-        }),
-        ignore: &ignore_norm,
+        repo_root: &ws.repo_root,
+        source_paths: &ws.source_changed,
+        test_paths: &ws.test_changed,
+        changed_lines: &ws.changed_lines,
+        test_args: extras,
+        lang_filter,
+        ignore: &ws.ignore_norm,
         extra_direct_python: &[],
         extra_direct_rust: &[],
         include_prior_failures: true,
     })?;
     Ok(planned_from_selector_plan(
-        repo_root,
+        ws.repo_root.clone(),
         selector_plan,
-        ignore_norm,
+        ws.ignore_norm.clone(),
     ))
+}
+
+pub(crate) fn python_all_plan(
+    repo_root: &std::path::Path,
+    ignore: &[String],
+    python_extra: &[String],
+    py_sel: Vec<String>,
+    cover_python: bool,
+) -> (Vec<String>, bool) {
+    if !cover_python {
+        return (Vec::new(), false);
+    }
+    let stored = crate::test_runner::python_coverage_index::stored_python_universe_selectors(
+        repo_root,
+        python_extra,
+        ignore,
+        crate::test_runner::python_coverage_index::PYTHON_COVERAGE_ENV_KEYS,
+    );
+    let py_sel = stored.unwrap_or(py_sel);
+    if py_sel.is_empty() {
+        return (py_sel, false);
+    }
+    let index_present =
+        crate::test_runner::python_coverage_index::python_coverage_index_file_present(repo_root);
+    if !index_present {
+        return (py_sel, true);
+    }
+    let fingerprint_started = std::time::Instant::now();
+    let current = crate::test_runner::python_coverage_index::python_population_manifest_is_current_for_args_with_env_keys(
+        repo_root,
+        &py_sel,
+        python_extra,
+        crate::test_runner::python_coverage_index::PYTHON_COVERAGE_ENV_KEYS,
+    );
+    crate::test_runner::emit_stage_time(
+        "python_source_fingerprint",
+        fingerprint_started.elapsed(),
+    );
+    (py_sel, !current)
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn plan_selectors(req: PlanSelectorsRequest<'_>) -> Result<PlannedSelectors, String> {
+    let ws = plan_vcs_workspace(&req)?;
+    plan_selectors_from_workspace(&ws, req.extras, req.lang_filter)
 }

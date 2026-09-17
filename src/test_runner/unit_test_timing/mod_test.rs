@@ -50,7 +50,7 @@ fn incomplete_population_fail_closed_when_enabled() {
 }
 
 #[test]
-fn runtime_gate_failure_lines_are_sorted_and_labeled() {
+fn runtime_gate_failure_lines_count_only() {
     let lines = runtime_gate_failure_lines(&[
         RuntimeGateViolation {
             language: Language::Rust,
@@ -66,14 +66,9 @@ fn runtime_gate_failure_lines_are_sorted_and_labeled() {
         },
     ]);
     assert_eq!(
-        lines[0],
-        "VIOLATION:max_unit_test_seconds: 2 test(s) exceeded path-pattern time limits"
+        lines,
+        ["VIOLATION:max_unit_test_seconds: 2 test(s) exceeded path-pattern time limits"]
     );
-    assert_eq!(
-        lines[1],
-        "  [python] tests/test_x.py::test_y: 2.41s (limit 2.00s)"
-    );
-    assert_eq!(lines[2], "  [rust] crate::b: 3.00s (limit 2.00s)");
 }
 
 #[test]
@@ -181,6 +176,30 @@ fn ignore_prefixes_drop_matching_path_selectors() {
     let filtered = filter_timings_by_ignore(mixed, &["fake_".into()]);
     assert_eq!(filtered.len(), 1);
     assert_eq!(filtered[0].selector, "tests/test_app.py::test_app");
+
+    let rust_logical = vec![
+        UnitTestTiming {
+            language: Language::Rust,
+            selector: "tests::unit_ok".into(),
+            duration: Duration::from_secs(2),
+        },
+        UnitTestTiming {
+            language: Language::Rust,
+            selector: "src/lib.rs::unit_ok".into(),
+            duration: Duration::from_secs(2),
+        },
+    ];
+    let filtered = filter_timings_by_ignore(rust_logical, &["tests".into()]);
+    assert_eq!(filtered.len(), 2);
+    let filtered = filter_timings_by_ignore(
+        vec![UnitTestTiming {
+            language: Language::Rust,
+            selector: "src/lib.rs::unit_ok".into(),
+            duration: Duration::from_secs(2),
+        }],
+        &["src".into()],
+    );
+    assert!(filtered.is_empty());
 }
 
 #[test]
@@ -218,6 +237,170 @@ fn path_max_gate_respects_ignore_prefixes() {
 }
 
 #[test]
+fn evaluate_cov_time_gate_passes_when_workspace_selectors_are_empty() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    std::fs::write(repo.join("app.py"), "x = 1\n").unwrap();
+    crate::test_runner::workspace_selector_cache::store_workspace_selectors(
+        repo,
+        &[],
+        &[],
+        &[],
+        &[],
+    )
+    .expect("store empty python selectors");
+    let eval = evaluate_cov_time_gate(CovTimeGateOpts {
+        universe: repo,
+        lang_filter: Some(Language::Python),
+        include: TimingLangInclude {
+            python: true,
+            rust: false,
+        },
+        ignore: &[],
+        limits: &[("*".to_string(), 1.0)],
+        timing: false,
+        pytest_args: &[],
+    });
+    assert_eq!(eval, RuntimeGateEval::Passed);
+}
+
+#[test]
+fn evaluate_cov_time_gate_does_not_skip_rust_mod_tests_for_ignore_tests() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    std::fs::create_dir_all(repo.join("src")).unwrap();
+    std::fs::write(repo.join("src").join("lib.rs"), "pub fn f() {}\n").unwrap();
+    crate::test_runner::workspace_selector_cache::clear_rust_selector_memo_for_tests();
+    let ignore = ["tests".to_string()];
+    crate::test_runner::workspace_selector_cache::store_workspace_selectors(
+        repo,
+        &ignore,
+        &[],
+        &["tests::unit_ok".into()],
+        &[],
+    )
+    .expect("store rust logical selectors");
+    crate::test_runner::workspace_selector_cache::clear_rust_selector_memo_for_tests();
+    clear_rust_duration_pairs_memo();
+    set_pairs_for_tests(
+        repo,
+        vec![("tests::unit_ok".into(), Duration::from_secs(2))],
+    );
+    let eval = evaluate_cov_time_gate(CovTimeGateOpts {
+        universe: repo,
+        lang_filter: Some(Language::Rust),
+        include: TimingLangInclude {
+            python: false,
+            rust: true,
+        },
+        ignore: &ignore,
+        limits: &[("*".to_string(), 0.5)],
+        timing: false,
+        pytest_args: &[],
+    });
+    match eval {
+        RuntimeGateEval::Failed(viols) => {
+            assert_eq!(viols.len(), 1);
+            assert_eq!(viols[0].selector, "tests::unit_ok");
+        }
+        other => panic!("expected Failed, got {other:?}"),
+    }
+}
+
+#[test]
+fn evaluate_cov_time_gate_empty_selectors_do_not_hide_slow_population() {
+    use crate::test_runner::python_coverage_index::{
+        python_coverage_cache_root, read_python_population_manifest, write_population_durations,
+        write_python_population_manifest_for_args,
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    std::fs::write(repo.join("app.py"), "x = 1\n").unwrap();
+    std::fs::create_dir_all(repo.join("tests")).unwrap();
+    std::fs::write(
+        repo.join("tests").join("test_slow.py"),
+        "def test_slow():\n    assert True\n",
+    )
+    .unwrap();
+    crate::test_runner::workspace_selector_cache::store_workspace_selectors(
+        repo,
+        &[],
+        &[],
+        &[],
+        &[],
+    )
+    .expect("store empty python selectors");
+    let selector = "tests/test_slow.py::test_slow".to_string();
+    write_python_population_manifest_for_args(repo, std::slice::from_ref(&selector), &[])
+        .expect("population manifest");
+    let manifest = read_python_population_manifest(repo).expect("read manifest");
+    let cache_root = python_coverage_cache_root(repo).expect("cache root");
+    write_population_durations(
+        &cache_root,
+        &manifest,
+        &[(selector.clone(), Duration::from_secs(5))],
+    )
+    .expect("durations");
+    let max =
+        crate::test_runner::python_coverage_index::load_current_python_population_max_duration(
+            repo,
+            &[],
+        );
+    assert_eq!(
+        max,
+        Some(Duration::from_secs(5)),
+        "population must be visible"
+    );
+    let eval = evaluate_cov_time_gate(CovTimeGateOpts {
+        universe: repo,
+        lang_filter: Some(Language::Python),
+        include: TimingLangInclude {
+            python: true,
+            rust: false,
+        },
+        ignore: &[],
+        limits: &[("*".to_string(), 1.0)],
+        timing: false,
+        pytest_args: &[],
+    });
+    match eval {
+        RuntimeGateEval::Failed(viols) => {
+            assert_eq!(viols.len(), 1);
+            assert_eq!(viols[0].selector, selector);
+        }
+        other => panic!("expected Failed, got {other:?}"),
+    }
+}
+
+#[test]
+fn evaluate_cov_time_gate_does_not_pass_empty_population_when_pytest_args_set() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    std::fs::write(repo.join("app.py"), "x = 1\n").unwrap();
+    crate::test_runner::workspace_selector_cache::store_workspace_selectors(
+        repo,
+        &[],
+        &[],
+        &[],
+        &[],
+    )
+    .expect("store empty python selectors");
+    let eval = evaluate_cov_time_gate(CovTimeGateOpts {
+        universe: repo,
+        lang_filter: Some(Language::Python),
+        include: TimingLangInclude {
+            python: true,
+            rust: false,
+        },
+        ignore: &[],
+        limits: &[("*".to_string(), 1.0)],
+        timing: false,
+        pytest_args: &["-k".into(), "does_not_match".into()],
+    });
+    assert_ne!(eval, RuntimeGateEval::Passed);
+}
+
+#[test]
 fn evaluate_cov_time_gate_disabled_without_limits() {
     let tmp = tempfile::tempdir().unwrap();
     let eval = evaluate_cov_time_gate(CovTimeGateOpts {
@@ -238,11 +421,11 @@ fn evaluate_cov_time_gate_disabled_without_limits() {
 #[test]
 fn evaluate_cov_time_gate_sole_star_from_python_generation() {
     use crate::test_runner::python_coverage_index::generation::{
-        PopulationEvidence, SelectorEvidence, TimingCacheDisposition,
-        population_plan_for_selectors, publish_python_population_generation,
+        population_plan_for_selectors, publish_python_population_generation, PopulationEvidence,
+        SelectorEvidence, TimingCacheDisposition,
     };
     use crate::test_runner::python_coverage_index::{
-        GenerationReason, PYTHON_SELECTOR_DISCOVERY_VERSION, clear_python_generation_warm_memo,
+        clear_python_generation_warm_memo, GenerationReason, PYTHON_SELECTOR_DISCOVERY_VERSION,
     };
     use crate::test_runner::runners::detect_rslip_versions;
     use kiss::rpytest_runner::TestStatus;
@@ -309,11 +492,11 @@ fn evaluate_cov_time_gate_sole_star_from_python_generation() {
 #[test]
 fn evaluate_cov_time_gate_multi_prefix_and_incomplete() {
     use crate::test_runner::python_coverage_index::generation::{
-        PopulationEvidence, SelectorEvidence, TimingCacheDisposition,
-        population_plan_for_selectors, publish_python_population_generation,
+        population_plan_for_selectors, publish_python_population_generation, PopulationEvidence,
+        SelectorEvidence, TimingCacheDisposition,
     };
     use crate::test_runner::python_coverage_index::{
-        GenerationReason, PYTHON_SELECTOR_DISCOVERY_VERSION, clear_python_generation_warm_memo,
+        clear_python_generation_warm_memo, GenerationReason, PYTHON_SELECTOR_DISCOVERY_VERSION,
     };
     use crate::test_runner::runners::detect_rslip_versions;
     use kiss::rpytest_runner::TestStatus;
@@ -379,4 +562,63 @@ fn evaluate_cov_time_gate_multi_prefix_and_incomplete() {
         matches!(eval, RuntimeGateEval::Passed | RuntimeGateEval::Failed(_)),
         "unexpected {eval:?}"
     );
+}
+
+#[test]
+fn python_timings_map_published_population_durations() {
+    use crate::test_runner::python_coverage_index::generation::{
+        population_plan_for_selectors, publish_python_population_generation, PopulationEvidence,
+        SelectorEvidence, TimingCacheDisposition,
+    };
+    use crate::test_runner::python_coverage_index::{
+        clear_python_generation_warm_memo, GenerationReason, PYTHON_SELECTOR_DISCOVERY_VERSION,
+    };
+    use crate::test_runner::runners::detect_rslip_versions;
+    use kiss::rpytest_runner::TestStatus;
+    use std::collections::BTreeMap;
+    use std::fs;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    fs::create_dir_all(repo.join(".git")).unwrap();
+    fs::write(repo.join("app.py"), b"x = 1\n").unwrap();
+    let Ok((py, pt)) = detect_rslip_versions(repo) else {
+        return;
+    };
+    let selector = "t.py::test_a".to_string();
+    let mut plan =
+        population_plan_for_selectors(repo, std::slice::from_ref(&selector), &[]).unwrap();
+    plan.base_identity.python_version = py;
+    plan.base_identity.pytest_version = pt;
+    plan.base_identity.selector_discovery_version = PYTHON_SELECTOR_DISCOVERY_VERSION.to_string();
+    let mut evidence = PopulationEvidence::from_ordered_selectors(&plan.selectors);
+    evidence.absorb_selector(SelectorEvidence {
+        selector: selector.clone(),
+        raw_status: TestStatus::Passed,
+        effective_status: TestStatus::Passed,
+        duration: Some(Duration::from_millis(9)),
+        cache_disposition: TimingCacheDisposition::MissStored,
+        reason: None,
+        coverage: BTreeMap::from([("app.py".into(), [1u32].into_iter().collect())]),
+    });
+    publish_python_population_generation(repo, &plan, &evidence, GenerationReason::Complete)
+        .unwrap();
+    clear_python_generation_warm_memo();
+    let pop = collect_current_unit_test_timings(TimingCollectOpts {
+        universe: repo,
+        lang_filter: Some(Language::Python),
+        include: TimingLangInclude {
+            python: true,
+            rust: false,
+        },
+        ignore: &[],
+        pytest_args: &[],
+    });
+    match pop {
+        TimingPopulation::Complete(rows) => {
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].selector, selector);
+        }
+        other => panic!("expected Complete, got {other:?}"),
+    }
 }

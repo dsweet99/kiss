@@ -8,7 +8,7 @@ use crate::rust_llvm_cov_runner::plan::cargo_workspace_metadata::workspace_metad
 
 #[path = "shared_input_snapshot.rs"]
 mod shared_input_snapshot;
-pub(crate) use shared_input_snapshot::rust_input_snapshot;
+pub(crate) use shared_input_snapshot::{ordinary_source_content_digest, rust_input_snapshot};
 
 pub fn workspace_input_digest(root: &Path) -> io::Result<String> {
     digest_input_files(root, &rust_cov_input_files(root)?)
@@ -52,9 +52,15 @@ pub fn selection_context_source_digest(
 
 fn digest_input_files(root: &Path, files: &[PathBuf]) -> io::Result<String> {
     let _ = root;
-    let mut h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(0xcbf2_9ce4_8422_2325, b"shared-input-v1");
+    let mut h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(
+        0xcbf2_9ce4_8422_2325,
+        b"shared-input-v1",
+    );
     for file in files {
-        h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(h, file.to_string_lossy().as_bytes());
+        h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(
+            h,
+            file.to_string_lossy().as_bytes(),
+        );
         h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(h, &[0]);
         h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(h, &fs::read(file)?);
         h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(h, &[0]);
@@ -148,7 +154,8 @@ mod tests {
         )
         .unwrap();
         fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
-        let mut req = crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
+        let mut req =
+            crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
         req.cwd = tmp.path().to_path_buf();
         req.source_root = tmp.path().to_path_buf();
         req.cargo_args.clear();
@@ -174,7 +181,8 @@ mod tests {
         )
         .unwrap();
         fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
-        let mut req = crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
+        let mut req =
+            crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
         req.cwd = tmp.path().to_path_buf();
         req.source_root = tmp.path().to_path_buf();
         req.cargo_args.clear();
@@ -205,7 +213,8 @@ mod tests {
         )
         .unwrap();
         fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
-        let mut req = crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
+        let mut req =
+            crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
         req.cwd = tmp.path().to_path_buf();
         req.source_root = tmp.path().to_path_buf();
         req.cargo_args.clear();
@@ -353,7 +362,8 @@ mod tests {
             "pub fn orphan() {}\n",
         )
         .unwrap();
-        let mut req = crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
+        let mut req =
+            crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
         req.cwd = tmp.path().join("crate");
         req.source_root = tmp.path().to_path_buf();
         req.cargo_args.clear();

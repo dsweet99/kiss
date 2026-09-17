@@ -10,6 +10,7 @@ use super::runners::*;
 use super::rust_coverage_index::{
     rebuild_rust_coverage_index, write_rust_population_manifest_for_args, write_test_entry,
 };
+use crate::test_runner::test_mode_fixtures::clone_warm_demo_repo;
 
 #[test]
 fn py_selector_uses_double_colon() {
@@ -110,29 +111,7 @@ fn combined_selectors_uses_existing_rust_index_for_source_changes() {
 #[test]
 fn combined_selectors_repopulates_when_rust_test_args_change() {
     let tmp = TempDir::new().unwrap();
-    let src = tmp.path().join("src");
-    fs::create_dir(&src).unwrap();
-    let lib = src.join("lib.rs");
-    fs::write(
-        &lib,
-        "pub fn value() -> u32 { 1 }\n#[cfg(test)]\nmod tests { #[test] fn gets_value() {} }\n",
-    )
-    .unwrap();
-    write_test_entry(
-        tmp.path(),
-        "abc",
-        "tests::gets_value",
-        TestStatus::Passed,
-        RustLineCoverage {
-            files: std::collections::BTreeMap::from([(
-                lib.to_string_lossy().to_string(),
-                std::collections::BTreeSet::from([1]),
-            )]),
-        },
-    );
-    rebuild_rust_coverage_index(tmp.path()).unwrap();
-    write_rust_population_manifest_for_args(tmp.path(), &["tests::gets_value".to_string()], &[])
-        .unwrap();
+    let lib = clone_warm_demo_repo(tmp.path());
 
     let plan = combined_selectors(
         tmp.path(),
@@ -184,13 +163,8 @@ fn combined_selectors_prefers_rust_changed_line_matches() {
             )]),
         },
     );
+    // rebuild publishes the population from entry selectors; no second publish.
     rebuild_rust_coverage_index(tmp.path()).unwrap();
-    write_rust_population_manifest_for_args(
-        tmp.path(),
-        &["tests::first".to_string(), "tests::second".to_string()],
-        &[],
-    )
-    .unwrap();
 
     let plan = combined_selectors(
         tmp.path(),
@@ -334,9 +308,12 @@ fn rust_coverage_batch_dry_run_lines_render_one_nextest_batch() {
     let lines =
         build_rust_coverage_batch_dry_run_lines(&selectors, &["--exact".into()], 8).unwrap();
 
+    let expected_build_jobs = kiss::rust_llvm_cov_runner::effective_coverage_build_jobs(8);
     assert_eq!(lines[0], "RUST BATCH selectors=2 jobs=8");
     assert!(lines[1].starts_with("cargo llvm-cov nextest"));
-    assert!(lines[1].contains("'--build-jobs' 8"));
+    assert!(
+        lines[1].contains(&format!("'--build-jobs' {expected_build_jobs}"))
+    );
     assert!(lines[1].contains("'--test-threads' 8"));
     assert!(lines[1].contains("'--message-format-version' 0.1"));
     assert!(!lines[1].contains("llvm-cov test"));

@@ -2,12 +2,21 @@
 mod batch_process_tree_groups;
 #[path = "batch_process_tree_reap.rs"]
 mod batch_process_tree_reap;
+#[path = "batch_process_tree_subreaper.rs"]
+mod batch_process_tree_subreaper;
 
 #[allow(unused_imports)]
 pub(crate) use batch_process_tree_groups::signal_process_group;
 pub(crate) use batch_process_tree_groups::{
     identity_still_valid, process_group_alive, signal_validated_process_group,
 };
+#[cfg(all(test, target_os = "linux"))]
+pub(super) use batch_process_tree_subreaper::child_subreaper_is_set;
+pub(super) use batch_process_tree_subreaper::{clear_child_subreaper, install_child_subreaper};
+
+pub fn reap_orphaned_zombies() {
+    batch_process_tree_reap::reap_zombies();
+}
 
 use std::io;
 use std::process::{Child, Command};
@@ -17,6 +26,12 @@ use std::time::{Duration, Instant};
 
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
+
+#[cfg(test)]
+pub(crate) fn signal_test_guard() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: Mutex<()> = Mutex::new(());
+    LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ProcessGroupIdentity {
@@ -82,6 +97,20 @@ pub fn batch_scope_interrupted() -> bool {
         .unwrap_or(false)
 }
 
+pub fn cancel_active_batch_scope() {
+    let Some((registry, interrupted)) = batch_scope_sigint_state() else {
+        return;
+    };
+    interrupted.store(true, Ordering::SeqCst);
+    let identities = registry.identities();
+    for identity in &identities {
+        signal_validated_process_group(identity, libc::SIGKILL);
+    }
+    #[cfg(target_os = "linux")]
+    batch_process_tree_reap::kill_reparented_children();
+    batch_process_tree_reap::reap_zombies();
+}
+
 impl BatchProcessTreeGuard {
     pub fn install() -> io::Result<Self> {
         if let Some((registry, interrupted)) = batch_scope_sigint_state() {
@@ -132,6 +161,16 @@ impl BatchProcessTreeGuard {
         if self.owns_sigint_handler {
             self.interrupted.store(true, Ordering::SeqCst);
         }
+        if self.interrupted.load(Ordering::SeqCst) || grace == Duration::ZERO {
+            let identities = self.registry.identities();
+            for identity in &identities {
+                signal_validated_process_group(identity, libc::SIGKILL);
+            }
+            #[cfg(target_os = "linux")]
+            batch_process_tree_reap::kill_reparented_children();
+            batch_process_tree_reap::reap_zombies();
+            return self.registry.residual_count();
+        }
         self.reap_lingering_descendants(grace)
     }
 
@@ -160,7 +199,13 @@ impl Drop for BatchProcessTreeGuard {
         if self.owns_sigint_handler {
             clear_sigint_handler();
         }
-        let _ = self.terminate_descendants(Duration::from_millis(250));
+        let grace = if self.interrupted() {
+            Duration::ZERO
+        } else {
+            Duration::from_millis(250)
+        };
+        let _ = self.terminate_descendants(grace);
+        clear_child_subreaper();
     }
 }
 
@@ -202,17 +247,6 @@ fn clear_batch_scope_sigint() {
     {
         *state = None;
     }
-}
-
-fn install_child_subreaper() -> io::Result<()> {
-    #[cfg(target_os = "linux")]
-    {
-        let rc = unsafe { libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) };
-        if rc != 0 {
-            return Err(io::Error::last_os_error());
-        }
-    }
-    Ok(())
 }
 
 #[cfg(unix)]

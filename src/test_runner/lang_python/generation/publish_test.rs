@@ -10,8 +10,16 @@ use super::identity::population_plan_for_selectors;
 use super::load::try_load_pinned_python_generation_warm;
 use super::publish::publish_python_population_generation;
 use super::types::{GenerationReason, TimingCacheDisposition};
-use crate::test_runner::python_coverage_index::PYTHON_SELECTOR_DISCOVERY_VERSION;
 use crate::test_runner::runners::detect_rslip_versions;
+
+fn assert_pointer_records_parent(repo: &Path, expected_parent: &str) {
+    let cache =
+        crate::test_runner::python_coverage_index::storage::python_coverage_cache_root(repo)
+            .unwrap();
+    let bytes = std::fs::read(super::paths::pointer_path(&cache)).unwrap();
+    let pointer: super::types::PopulationPointer = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(pointer.parent_generation_id, expected_parent);
+}
 
 fn assert_published_interned_line_index(repo: &Path) {
     let full = super::load::try_load_pinned_python_generation(repo).unwrap();
@@ -49,7 +57,173 @@ fn assert_legacy_line_index_interns_without_name_blowup() {
     );
 }
 
-fn assert_restamp_rewrites_stale_kissconfig_and_refuses_fingerprint(repo: &Path) {
+fn assert_repair_skips_line_index_bytes(repo: &Path) {
+    let without_line_index =
+        super::load::try_load_pinned_python_generation_without_line_index(repo).unwrap();
+    assert!(without_line_index.line_index.files.is_empty());
+    assert!(!without_line_index.selector_coverage.is_empty());
+    let index = super::load::generation_file_index(&without_line_index);
+    assert!(index.contains_key("app.py"));
+}
+
+fn passed_evidence(selector: &str, file: &str, lines: &[u32]) -> SelectorEvidence {
+    SelectorEvidence {
+        selector: selector.to_string(),
+        raw_status: TestStatus::Passed,
+        effective_status: TestStatus::Passed,
+        duration: Some(Duration::from_millis(3)),
+        cache_disposition: TimingCacheDisposition::MissStored,
+        reason: None,
+        coverage: BTreeMap::from([(file.to_string(), lines.iter().copied().collect())]),
+    }
+}
+
+/// Shared fixture: published complete generation with one selector covering app.py:1.
+fn published_repo() -> Option<(tempfile::TempDir, Vec<String>)> {
+    let tmp = tempdir().unwrap();
+    let repo = tmp.path();
+    std::fs::create_dir_all(repo.join(".git")).unwrap();
+    std::fs::write(repo.join("app.py"), b"x = 1\n").unwrap();
+    // population_plan_for_selectors already resolves tool versions; skip a second detect.
+    let Ok(plan) = population_plan_for_selectors(repo, &["t.py::test_a".into()], &[]) else {
+        return None;
+    };
+    let mut evidence = PopulationEvidence::from_ordered_selectors(&plan.selectors);
+    evidence.absorb_selector(passed_evidence("t.py::test_a", "app.py", &[1]));
+    let _ =
+        publish_python_population_generation(repo, &plan, &evidence, GenerationReason::Complete)
+            .unwrap();
+    Some((tmp, plan.selectors.clone()))
+}
+
+#[test]
+fn stored_universe_keeps_pinned_selectors_when_input_fingerprint_drifts() {
+    let Some((tmp, selectors)) = published_repo() else {
+        return;
+    };
+    let repo = tmp.path();
+    std::fs::write(repo.join("stale.py"), b"y = 2\n").unwrap();
+    std::fs::create_dir_all(repo.join("tests")).unwrap();
+    std::fs::write(
+        repo.join("tests/test_extra.py"),
+        "def test_extra():\n    assert True\n",
+    )
+    .unwrap();
+    let stored = crate::test_runner::python_coverage_index::stored_python_universe_selectors(
+        repo,
+        &[],
+        &[],
+        crate::test_runner::python_coverage_index::PYTHON_COVERAGE_ENV_KEYS,
+    )
+    .expect("pinned complete generation remains the universe");
+    assert_eq!(stored, selectors);
+    assert!(
+        crate::test_runner::python_coverage_index::stored_python_universe_population(
+            repo,
+            &[],
+            crate::test_runner::python_coverage_index::PYTHON_COVERAGE_ENV_KEYS,
+        )
+        .is_none()
+    );
+}
+
+fn cover_exact_identity_restamp_and_closed_misses(repo: &Path, selectors: &[String]) {
+    let _ = super::repair::restamp_complete_pinned_from_cache(
+        repo,
+        &[],
+        &|_, _| true,
+        &kiss::GateConfig::default(),
+    );
+    let matched = super::repair::try_restamp_matching_pinned_universe(
+        repo,
+        selectors,
+        &[],
+        &|_, _| true,
+        &kiss::GateConfig::default(),
+        Some(&[]),
+    )
+    .unwrap();
+    assert!(matched, "exact identity may restamp an unchanged universe");
+    assert!(
+        !super::repair::try_restamp_matching_pinned_universe(
+            repo,
+            &["other.py::test_z".into()],
+            &[],
+            &|_, _| true,
+            &kiss::GateConfig::default(),
+            None,
+        )
+        .unwrap()
+    );
+    let empty = tempdir().unwrap();
+    assert!(
+        !super::repair::try_restamp_matching_pinned_universe(
+            empty.path(),
+            selectors,
+            &[],
+            &|_, _| true,
+            &kiss::GateConfig::default(),
+            None,
+        )
+        .unwrap()
+    );
+    assert!(
+        super::repair::repair_python_population_generation(
+            repo,
+            &[passed_evidence("missing.py::test_z", "app.py", &[1])],
+            GenerationReason::SelectiveRepair,
+        )
+        .is_err()
+    );
+    let problems =
+        super::repair::problem_selectors_from_timings(&[super::types::SelectorTimingRecord {
+            selector: "failed.py::t".into(),
+            raw_status: "failed".into(),
+            effective_status: "failed".into(),
+            duration_ns: Some(1),
+            cache_disposition: TimingCacheDisposition::MissStored,
+            reason: None,
+            test_definition_digest: String::new(),
+        }]);
+    assert_eq!(problems, vec!["failed.py::t".to_string()]);
+}
+
+#[test]
+fn publish_then_warm_load_reads_coverage_and_timings() {
+    let tmp = tempdir().unwrap();
+    let repo = tmp.path();
+    std::fs::create_dir_all(repo.join(".git")).unwrap();
+    std::fs::write(repo.join("app.py"), b"x = 1\n").unwrap();
+    let Ok(plan) = population_plan_for_selectors(repo, &["t.py::test_a".into()], &[]) else {
+        return;
+    };
+    let mut evidence = PopulationEvidence::from_ordered_selectors(&plan.selectors);
+    evidence.absorb_selector(passed_evidence("t.py::test_a", "app.py", &[1]));
+    let id =
+        publish_python_population_generation(repo, &plan, &evidence, GenerationReason::Complete)
+            .unwrap();
+    assert_pointer_records_parent(repo, "");
+    let second =
+        publish_python_population_generation(repo, &plan, &evidence, GenerationReason::Complete)
+            .unwrap();
+    assert_pointer_records_parent(repo, &id);
+    assert_ne!(second, id);
+    let pinned = try_load_pinned_python_generation_warm(repo).unwrap();
+    assert_eq!(pinned.generation_id, second);
+    assert!(pinned.complete);
+    assert_eq!(pinned.coverage.get("app.py"), Some(&BTreeSet::from([1u32])));
+    assert_eq!(pinned.timings.len(), 1);
+    assert_published_interned_line_index(repo);
+    assert_legacy_line_index_interns_without_name_blowup();
+    cover_exact_identity_restamp_and_closed_misses(repo, &plan.selectors);
+}
+
+#[test]
+fn restamp_rewrites_stale_kissconfig_digest() {
+    let Some((tmp, _)) = published_repo() else {
+        return;
+    };
+    let repo = tmp.path();
     let pinned = super::load::try_load_pinned_python_generation(repo).unwrap();
     let mut stale_kc = pinned.plan.clone();
     stale_kc.base_identity.kissconfig_test_digest = "stale-kissconfig".into();
@@ -79,14 +253,22 @@ fn assert_restamp_rewrites_stale_kissconfig_and_refuses_fingerprint(repo: &Path)
         after_kc.plan.base_identity.kissconfig_test_digest,
         "stale-kissconfig"
     );
+}
 
-    let mut stale_fp = after_kc.plan.clone();
+#[test]
+fn restamp_rewrites_stale_input_fingerprint() {
+    let Some((tmp, _)) = published_repo() else {
+        return;
+    };
+    let repo = tmp.path();
+    let pinned = try_load_pinned_python_generation_warm(repo).unwrap();
+    let mut stale_fp = pinned.plan.clone();
     stale_fp.base_identity.input_fingerprint = "stale-fingerprint".into();
     let mut fp_evidence = PopulationEvidence::from_ordered_selectors(&stale_fp.selectors);
-    fp_evidence.coverage = after_kc.coverage.clone();
-    fp_evidence.selector_coverage = after_kc.selector_coverage.clone();
-    fp_evidence.timings = after_kc.timings.clone();
-    fp_evidence.complete = after_kc.complete;
+    fp_evidence.coverage = pinned.coverage.clone();
+    fp_evidence.selector_coverage = pinned.selector_coverage.clone();
+    fp_evidence.timings = pinned.timings.clone();
+    fp_evidence.complete = pinned.complete;
     fp_evidence.rebuild_line_index();
     super::publish::publish_python_population_generation(
         repo,
@@ -95,37 +277,20 @@ fn assert_restamp_rewrites_stale_kissconfig_and_refuses_fingerprint(repo: &Path)
         GenerationReason::Complete,
     )
     .unwrap();
-    let refused = super::repair::try_restamp_matching_pinned_universe(
-        repo,
-        &stale_fp.selectors,
-        &[],
-        &|_, _| true,
-        None,
-    )
-    .unwrap();
-    assert!(
-        !refused,
-        "unknown run-miss set must rematerialize fingerprint drift"
-    );
-    assert_eq!(
-        try_load_pinned_python_generation_warm(repo)
-            .unwrap()
-            .plan
-            .base_identity
-            .input_fingerprint,
-        "stale-fingerprint"
-    );
+    // Matching definition digests: fingerprint-only drift restamps without
+    // requiring an explicit run-miss list (cov_score / warm load path).
     let restamped = super::repair::try_restamp_matching_pinned_universe(
         repo,
         &stale_fp.selectors,
         &[],
         &|_, _| true,
-        Some(&[]),
+        &kiss::GateConfig::default(),
+        None,
     )
     .unwrap();
     assert!(
         restamped,
-        "bounded rslip misses may restamp fingerprint drift"
+        "fingerprint-only drift must restamp when definition digests match"
     );
     assert_ne!(
         try_load_pinned_python_generation_warm(repo)
@@ -137,54 +302,50 @@ fn assert_restamp_rewrites_stale_kissconfig_and_refuses_fingerprint(repo: &Path)
     );
 }
 
-fn assert_repair_skips_line_index_bytes(repo: &Path) {
-    let without_line_index =
-        super::load::try_load_pinned_python_generation_without_line_index(repo).unwrap();
-    assert!(without_line_index.line_index.files.is_empty());
-    assert!(!without_line_index.selector_coverage.is_empty());
-    let index = super::load::generation_file_index(&without_line_index);
-    assert!(index.contains_key("app.py"));
-}
-
-fn passed_evidence(selector: &str, file: &str, lines: &[u32]) -> SelectorEvidence {
-    SelectorEvidence {
-        selector: selector.to_string(),
-        raw_status: TestStatus::Passed,
-        effective_status: TestStatus::Passed,
-        duration: Some(Duration::from_millis(3)),
-        cache_disposition: TimingCacheDisposition::MissStored,
-        reason: None,
-        coverage: BTreeMap::from([(file.to_string(), lines.iter().copied().collect())]),
-    }
-}
-
 #[test]
-fn publish_then_warm_load_reads_coverage_and_timings() {
-    let tmp = tempdir().unwrap();
-    let repo = tmp.path();
-    std::fs::create_dir_all(repo.join(".git")).unwrap();
-    std::fs::write(repo.join("app.py"), b"x = 1\n").unwrap();
-
-    let Ok((py, pt)) = detect_rslip_versions(repo) else {
+fn restamp_refuses_stale_definition_digests() {
+    let Some((tmp, _)) = published_repo() else {
         return;
     };
-    let mut plan = population_plan_for_selectors(repo, &["t.py::test_a".into()], &[]).unwrap();
-    plan.base_identity.python_version = py;
-    plan.base_identity.pytest_version = pt;
-    plan.base_identity.selector_discovery_version = PYTHON_SELECTOR_DISCOVERY_VERSION.to_string();
-    let mut evidence = PopulationEvidence::from_ordered_selectors(&plan.selectors);
-    evidence.absorb_selector(passed_evidence("t.py::test_a", "app.py", &[1]));
-    let id =
-        publish_python_population_generation(repo, &plan, &evidence, GenerationReason::Complete)
-            .unwrap();
+    let repo = tmp.path();
     let pinned = try_load_pinned_python_generation_warm(repo).unwrap();
-    assert_eq!(pinned.generation_id, id);
-    assert!(pinned.complete);
-    assert_eq!(pinned.coverage.get("app.py"), Some(&BTreeSet::from([1u32])));
-    assert_eq!(pinned.timings.len(), 1);
-    assert_published_interned_line_index(repo);
-    assert_legacy_line_index_interns_without_name_blowup();
-    assert_restamp_rewrites_stale_kissconfig_and_refuses_fingerprint(repo);
+    let mut stale_digest_plan = pinned.plan.clone();
+    stale_digest_plan.base_identity.input_fingerprint = "stale-fingerprint".into();
+    let mut digest_evidence =
+        PopulationEvidence::from_ordered_selectors(&stale_digest_plan.selectors);
+    digest_evidence.coverage = pinned.coverage.clone();
+    digest_evidence.selector_coverage = pinned.selector_coverage.clone();
+    digest_evidence.timings = pinned.timings.clone();
+    for row in &mut digest_evidence.timings {
+        row.test_definition_digest = "stale-definition-digest".into();
+    }
+    digest_evidence.complete = pinned.complete;
+    digest_evidence.rebuild_line_index();
+    super::publish::publish_python_population_generation(
+        repo,
+        &stale_digest_plan,
+        &digest_evidence,
+        GenerationReason::Complete,
+    )
+    .unwrap();
+    let refused = super::repair::try_restamp_matching_pinned_universe(
+        repo,
+        &stale_digest_plan.selectors,
+        &[],
+        &|_, _| true,
+        &kiss::GateConfig::default(),
+        None,
+    )
+    .unwrap();
+    assert!(!refused, "stale definition digests must refuse restamp");
+    assert_eq!(
+        try_load_pinned_python_generation_warm(repo)
+            .unwrap()
+            .plan
+            .base_identity
+            .input_fingerprint,
+        "stale-fingerprint"
+    );
 }
 
 #[test]
@@ -193,6 +354,11 @@ fn selective_repair_updates_only_changed_selector_coverage() {
     let repo = tmp.path();
     std::fs::create_dir_all(repo.join(".git")).unwrap();
     std::fs::write(repo.join("app.py"), b"x = 1\ny = 2\n").unwrap();
+    std::fs::write(
+        repo.join("t.py"),
+        b"def test_a(): pass\ndef test_b(): pass\n",
+    )
+    .unwrap();
     let Ok((_py, _pt)) = detect_rslip_versions(repo) else {
         return;
     };
@@ -212,6 +378,21 @@ fn selective_repair_updates_only_changed_selector_coverage() {
     )
     .unwrap();
     assert!(unchanged.is_none(), "matching evidence must not rewrite");
+    std::fs::write(
+        repo.join("t.py"),
+        b"def test_a(): pass  # changed\ndef test_b(): pass\n",
+    )
+    .unwrap();
+    let digest_repaired = super::repair::repair_python_population_generation(
+        repo,
+        &[passed_evidence("t.py::test_a", "app.py", &[1])],
+        GenerationReason::SelectiveRepair,
+    )
+    .unwrap();
+    assert!(
+        digest_repaired.is_some(),
+        "changed test definition must rewrite matching evidence"
+    );
     let changed = super::repair::repair_python_population_generation(
         repo,
         &[passed_evidence("t.py::test_a", "app.py", &[2])],

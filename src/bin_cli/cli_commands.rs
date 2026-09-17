@@ -7,7 +7,7 @@ use super::parse_positive_usize;
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     #[command(
-        about = "Run static complexity, graph, duplicate, comment, doc, and orphan checks",
+        about = "Run static complexity, graph, duplicate, comment, and doc checks",
         after_help = "If .kissconfig is missing, writes one from current-codebase maxima."
     )]
     Check {
@@ -117,14 +117,9 @@ pub enum Commands {
         dry_run: bool,
         #[arg(
             long,
-            help = "Force selected tests to rerun instead of reusing test-runner caches"
+            help = "Rerun FAIL and TIMEOUT tests in the TARGET subset"
         )]
-        force: bool,
-        #[arg(
-            long,
-            help = "Rerun tests that need it under normal rules, plus any marked FAIL or TIMEOUT"
-        )]
-        force_bad: bool,
+        retry_bad: bool,
         #[arg(long, help = "Print test-run metrics")]
         metrics: bool,
         #[arg(long, help = "Include files that currently pass the coverage gate")]
@@ -148,33 +143,6 @@ pub enum Commands {
         )]
         extra: Vec<String>,
     },
-    #[command(
-        name = "__coverage",
-        hide = true,
-        about = "Coverage-only evaluation (prefer kiss test for the full path)"
-    )]
-    Coverage {
-        #[arg(
-            default_value = ".",
-            value_name = "PATH",
-            help = "Files or directories to analyze"
-        )]
-        paths: Vec<String>,
-        #[arg(long, help = "Include files that currently pass the coverage gate")]
-        all: bool,
-        #[arg(long, value_name = "PREFIX", help = "Path prefix to exclude")]
-        ignore: Vec<String>,
-        #[arg(long, help = "Print coverage stage timings")]
-        timing: bool,
-        #[arg(
-            short = 'j',
-            long,
-            value_name = "JOBS",
-            value_parser = parse_positive_usize,
-            help = "Maximum number of coverage jobs to run concurrently"
-        )]
-        jobs: Option<usize>,
-    },
     #[command(name = "__rust-llvm-cov-target-runner", hide = true)]
     RustLlvmCovTargetRunner {
         #[arg(long, value_name = "DIR")]
@@ -185,30 +153,5 @@ pub enum Commands {
         platform: String,
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         command: Vec<OsString>,
-    },
-    #[command(about = "Rename or move a Python or Rust symbol (beta)")]
-    Mv {
-        #[arg(value_name = "SOURCE", help = "Symbol to rename (PATH::symbol)")]
-        query: String,
-        #[arg(value_name = "TARGET", help = "New symbol name")]
-        new_name: String,
-        #[arg(
-            default_value = ".",
-            value_name = "PATH",
-            help = "Files or directories to search"
-        )]
-        paths: Vec<String>,
-        #[arg(
-            long,
-            value_name = "DEST_FILE",
-            help = "Write the renamed symbol to DEST_FILE"
-        )]
-        to: Option<PathBuf>,
-        #[arg(long, help = "Show the rename without writing files")]
-        dry_run: bool,
-        #[arg(long, help = "Print JSON instead of text")]
-        json: bool,
-        #[arg(long, value_name = "PREFIX", help = "Path prefix to exclude")]
-        ignore: Vec<String>,
     },
 }

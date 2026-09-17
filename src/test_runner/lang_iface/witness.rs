@@ -1,9 +1,12 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use kiss::GateConfig;
 use kiss::rpytest_runner::TestStatus;
 
+use super::witness_reuse::{
+    gate_violation_from_raw_pass, miss_is_warm_skippable, reusable_without_rerun,
+};
 use crate::test_runner::runners::{
     SelectorCacheRecord, SelectorExecutionRecord, SelectorExecutionSummary,
 };
@@ -77,6 +80,7 @@ pub(crate) struct ExecutionWitness {
     pub(crate) covered_lines: BTreeMap<String, Vec<u32>>,
     pub(crate) complete: bool,
     pub(crate) generation_id: String,
+    pub(crate) raw_statuses: Vec<WitnessStatus>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -125,9 +129,8 @@ pub(crate) fn miss_selectors_for_repair(
     match accept_witness(mode, &planned, current_identity_digest, witness) {
         AcceptDecision::Accept => Vec::new(),
         AcceptDecision::Miss(reason) => match reason {
-            "incomplete" | "non_passed" | "missing_selector" | "missing_duration" => {
-                repair_planned(&planned, witness)
-            }
+            "incomplete" | "non_passed" | "missing_selector" | "missing_duration"
+            | "selector_universe" => repair_planned(&planned, witness),
             _ => planned,
         },
     }
@@ -150,9 +153,7 @@ fn repair_planned(planned: &[String], witness: &ExecutionWitness) -> Vec<String>
     planned
         .iter()
         .filter(|sel| match index.get(sel.as_str()) {
-            Some(&i) => {
-                witness.statuses[i] != WitnessStatus::Passed || witness.durations_ns[i].is_none()
-            }
+            Some(&i) => !reusable_without_rerun(witness, i) || witness.durations_ns[i].is_none(),
             None => true,
         })
         .cloned()
@@ -168,38 +169,49 @@ fn shape_or_identity_miss(
     {
         return Some(AcceptDecision::Miss("witness_shape"));
     }
-    if witness.identity_digest != current_identity_digest {
+    if !identity_covers(&witness.identity_digest, current_identity_digest) {
         return Some(AcceptDecision::Miss("identity"));
     }
     None
 }
 
-fn accept_all(planned: &[String], witness: &ExecutionWitness) -> AcceptDecision {
-    if witness.scope != WitnessScope::Full {
-        return AcceptDecision::Miss("scope_subset");
-    }
-    if !witness.complete {
-        return AcceptDecision::Miss("incomplete");
-    }
-    if planned != witness.selectors.as_slice() {
-        return AcceptDecision::Miss("selector_universe");
-    }
-    if witness.statuses.iter().any(|s| *s != WitnessStatus::Passed) {
-        return AcceptDecision::Miss("non_passed");
-    }
-    if witness.durations_ns.iter().any(Option::is_none) {
-        return AcceptDecision::Miss("missing_duration");
-    }
-    AcceptDecision::Accept
+pub(crate) fn identity_covers(witness_digest: &str, current: &str) -> bool {
+    witness_digest == current
 }
 
-fn accept_subset(planned: &[String], witness: &ExecutionWitness) -> AcceptDecision {
+fn accept_all(planned: &[String], witness: &ExecutionWitness) -> AcceptDecision {
+    if let Some(miss) = accept_all_preconditions(planned, witness) {
+        return miss;
+    }
+    accept_planned_rows(planned, witness, "selector_universe")
+}
+
+fn accept_all_preconditions(
+    planned: &[String],
+    witness: &ExecutionWitness,
+) -> Option<AcceptDecision> {
+    if witness.scope != WitnessScope::Full {
+        return Some(AcceptDecision::Miss("scope_subset"));
+    }
+    if !witness.complete {
+        return Some(AcceptDecision::Miss("incomplete"));
+    }
+    let planned_set: BTreeSet<&str> = planned.iter().map(String::as_str).collect();
+    let witness_set: BTreeSet<&str> = witness.selectors.iter().map(String::as_str).collect();
+    (planned_set != witness_set).then_some(AcceptDecision::Miss("selector_universe"))
+}
+
+fn accept_planned_rows(
+    planned: &[String],
+    witness: &ExecutionWitness,
+    missing: &'static str,
+) -> AcceptDecision {
     let index = selector_index(&witness.selectors);
     for selector in planned {
         let Some(&i) = index.get(selector.as_str()) else {
-            return AcceptDecision::Miss("missing_selector");
+            return AcceptDecision::Miss(missing);
         };
-        if witness.statuses[i] != WitnessStatus::Passed {
+        if !reusable_without_rerun(witness, i) {
             return AcceptDecision::Miss("non_passed");
         }
         if witness.durations_ns[i].is_none() {
@@ -207,6 +219,10 @@ fn accept_subset(planned: &[String], witness: &ExecutionWitness) -> AcceptDecisi
         }
     }
     AcceptDecision::Accept
+}
+
+fn accept_subset(planned: &[String], witness: &ExecutionWitness) -> AcceptDecision {
+    accept_planned_rows(planned, witness, "missing_selector")
 }
 
 fn selector_index(selectors: &[String]) -> BTreeMap<&str, usize> {
@@ -224,21 +240,27 @@ pub(crate) fn prune_witness_to_known_selectors(
     let mut selectors = Vec::with_capacity(witness.selectors.len());
     let mut statuses = Vec::with_capacity(witness.statuses.len());
     let mut durations_ns = Vec::with_capacity(witness.durations_ns.len());
-    for ((sel, st), dur) in witness
+    let mut raw_statuses = Vec::with_capacity(witness.raw_statuses.len());
+    for (i, ((sel, st), dur)) in witness
         .selectors
         .iter()
         .zip(witness.statuses.iter())
         .zip(witness.durations_ns.iter())
+        .enumerate()
     {
         if known.contains(sel) {
             selectors.push(sel.clone());
             statuses.push(*st);
             durations_ns.push(*dur);
+            if let Some(raw) = witness.raw_statuses.get(i) {
+                raw_statuses.push(*raw);
+            }
         }
     }
     witness.selectors = selectors;
     witness.statuses = statuses;
     witness.durations_ns = durations_ns;
+    witness.raw_statuses = raw_statuses;
 }
 
 pub(crate) fn reclassify_statuses_with_gate(
@@ -320,7 +342,7 @@ fn planned_witness_records(
         let status = witness.statuses[i]
             .to_test_status()
             .unwrap_or(TestStatus::Failed);
-        if require_all_passed {
+        if require_all_passed && !gate_violation_from_raw_pass(witness, i) {
             assert_eq!(status, TestStatus::Passed);
         }
         records.push((
@@ -333,6 +355,9 @@ fn planned_witness_records(
 }
 
 fn emit_cached_witness_lines(records: &[(String, TestStatus, Duration)]) {
+    if !crate::test_runner::check_runtime_refresh::test_runner_stdout_enabled() {
+        return;
+    }
     if records.len() <= 64 {
         for (report, status, duration) in records {
             crate::test_runner::status_labels::print_classified_status_line(
@@ -367,7 +392,7 @@ fn count_test_statuses(records: &[(String, TestStatus, Duration)]) -> (usize, us
 
 fn print_cached_total(label: &str, count: usize) {
     if count > 0 {
-        println!("{label} (cached): {count} selectors");
+        crate::test_runner::emit_test_progress(&format!("{label} (cached): {count} selectors"));
     }
 }
 
@@ -385,12 +410,7 @@ pub(crate) fn all_misses_warm_skippable(witness: &ExecutionWitness, misses: &[St
     }
     let index = selector_index(&witness.selectors);
     misses.iter().all(|sel| match index.get(sel.as_str()) {
-        Some(&i) => {
-            matches!(
-                witness.statuses[i],
-                WitnessStatus::TimedOut | WitnessStatus::Unresolved
-            ) && witness.durations_ns[i].is_some()
-        }
+        Some(&i) => miss_is_warm_skippable(witness, i),
         None => false,
     })
 }

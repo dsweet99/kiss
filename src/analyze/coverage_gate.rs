@@ -5,8 +5,8 @@ use crate::analyze::focus::{FocusFilter, is_focus_file};
 use crate::analyze::line_coverage::{LineCoverageRecord, coverage_percentage};
 use kiss::TestCoverageScope;
 use kiss::cli_output::{
-    CodebaseCoverageGateFailureCtx, CoverageGateFailureCtx, codebase_coverage_gate_failure_lines,
-    coverage_gate_failure_lines,
+    CodebaseCoverageGateFailureCtx, CoverageFileStat, CoverageGateFailureCtx,
+    codebase_coverage_gate_failure_lines, coverage_gate_failure_lines, coverage_unit_name,
 };
 
 pub(crate) fn evaluate_line_gate(
@@ -29,12 +29,21 @@ fn evaluate_by_file(
     focus: &FocusFilter,
     threshold: usize,
 ) -> Option<crate::analyze::options::AnalyzeResult> {
-    let file_pcts: HashMap<_, _> = records
+    let file_stats: HashMap<_, _> = records
         .iter()
         .filter(|record| is_focus_file(&record.file, focus))
-        .map(|record| (record.file.clone(), record.percent))
+        .map(|record| {
+            (
+                record.file.clone(),
+                CoverageFileStat {
+                    percent: record.percent,
+                    covered_lines: record.covered_lines,
+                    total_lines: record.total_lines,
+                },
+            )
+        })
         .collect();
-    if !file_pcts.values().any(|pct| *pct < threshold) {
+    if !file_stats.values().any(|stat| stat.percent < threshold) {
         return None;
     }
     let unreferenced = records
@@ -43,17 +52,19 @@ fn evaluate_by_file(
         .map(|record| {
             (
                 record.file.clone(),
-                "<file>".to_string(),
+                coverage_unit_name(&record.file),
                 record.first_uncovered_line.unwrap_or(1),
             )
         })
         .collect::<Vec<_>>();
-    for line in coverage_gate_failure_lines(&CoverageGateFailureCtx {
+    let lines = coverage_gate_failure_lines(&CoverageGateFailureCtx {
         threshold,
         unreferenced: &unreferenced,
-        file_pcts: &file_pcts,
-    }) {
-        println!("{line}");
+        file_stats: &file_stats,
+    });
+    crate::test_runner::final_summary::note_violation_kind("test_coverage", lines.len());
+    for line in lines {
+        kiss::rust_llvm_cov_runner::emit_progress(&line);
     }
     Some(crate::analyze::options::AnalyzeResult { success: false })
 }
@@ -80,18 +91,28 @@ fn evaluate_codebase(
     let mut diagnostics: Vec<_> = focus_records
         .iter()
         .filter_map(|record| {
-            record
-                .first_uncovered_line
-                .map(|line| (record.file.clone(), line, record.percent))
+            record.first_uncovered_line.map(|line| {
+                (
+                    record.file.clone(),
+                    line,
+                    CoverageFileStat {
+                        percent: record.percent,
+                        covered_lines: record.covered_lines,
+                        total_lines: record.total_lines,
+                    },
+                )
+            })
         })
         .collect();
     diagnostics.sort_by(|a, b| a.0.cmp(&b.0));
-    for line in codebase_coverage_gate_failure_lines(&CodebaseCoverageGateFailureCtx {
+    let lines = codebase_coverage_gate_failure_lines(&CodebaseCoverageGateFailureCtx {
         percent,
         threshold,
         diagnostics: &diagnostics,
-    }) {
-        println!("{line}");
+    });
+    crate::test_runner::final_summary::note_violation_kind("test_coverage", lines.len());
+    for line in lines {
+        kiss::rust_llvm_cov_runner::emit_progress(&line);
     }
     Some(crate::analyze::options::AnalyzeResult { success: false })
 }

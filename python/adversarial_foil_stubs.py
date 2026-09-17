@@ -14,9 +14,11 @@ def stub_foil_env(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> tuple[Path, Path]:
     kiss = tmp_path / "kiss"
+    ops_dir = kiss / "ops"
+    ops_dir.mkdir(parents=True)
+    (ops_dir / "coverage_metrics.py").write_text("# stub\n", encoding="utf-8")
     python_dir = kiss / "python"
     python_dir.mkdir(parents=True)
-    (python_dir / "coverage_metrics_cli.py").write_text("# stub\n", encoding="utf-8")
     adv_root = tmp_path / "kiss-adversarial"
     monkeypatch.setattr(cli, "repo_root", lambda: kiss)
     monkeypatch.setattr(cli, "adversarial_root", lambda: adv_root)

@@ -33,6 +33,29 @@ pub(super) fn python_entries_fingerprint(cache_root: &Path) -> String {
     format!("{h:016x}")
 }
 
+/// Mirrors `stored_python_universe_population` input/entries fingerprint checks for
+/// v1 `population.json` seeds written by `seed_python_runtime_coverage`.
+pub(super) fn python_seeded_population_is_current(repo: &Path) -> bool {
+    let repo = repo.canonicalize().unwrap();
+    let cache_root = python_rslip_cache_root_for_repo(&repo);
+    let manifest_path = cache_root.join("population.json");
+    let Ok(bytes) = fs::read(manifest_path) else {
+        return false;
+    };
+    let manifest: serde_json::Value = match serde_json::from_slice(&bytes) {
+        Ok(value) => value,
+        Err(_) => return false,
+    };
+    let (Some(recorded_input), Some(recorded_entries)) = (
+        manifest["input_fingerprint"].as_str(),
+        manifest["entries_fingerprint"].as_str(),
+    ) else {
+        return false;
+    };
+    recorded_input == python_source_input_fingerprint(&repo)
+        && recorded_entries == python_entries_fingerprint(&cache_root)
+}
+
 pub(super) fn python_source_input_fingerprint(root: &Path) -> String {
     let mut h = python_fnv1a64(
         0xcbf2_9ce4_8422_2325,
@@ -77,7 +100,10 @@ fn visit_python_source_inputs(dir: &Path, out: &mut Vec<PathBuf>) {
                 continue;
             }
             visit_python_source_inputs(&path, out);
-        } else if file_type.is_file() && is_python_source_input_path(&path) {
+        } else if file_type.is_file()
+            && is_python_source_input_path(&path)
+            && !is_python_test_module_path(&path)
+        {
             out.push(path);
         }
     }
@@ -89,6 +115,11 @@ fn should_skip_python_source_input_dir(path: &Path) -> bool {
 
 fn is_python_source_input_path(path: &Path) -> bool {
     kiss::rslip::is_rslip_cache_input(path)
+}
+
+fn is_python_test_module_path(path: &Path) -> bool {
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    name.ends_with(".py") && (name.starts_with("test_") || name.ends_with("_test.py"))
 }
 
 fn trim_outer_ascii_whitespace(bytes: &[u8]) -> &[u8] {

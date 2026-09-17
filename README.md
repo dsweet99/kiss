@@ -14,12 +14,22 @@ kiss will help your agent produce simpler, clearer, more maintainable code. kiss
 ## The Problem: Missing Global Context
 LLMs operate locally, focusing on whatever code they are editing plus bits and pieces of other, relevant code. They ignore the overall structure of the codebase because they don't see it. Over time, code tends to be a little more tangled, a little less DRY, harder to read and harder to update. To counteract this, LLMs need global information about the codebase.
 
-kiss attempts to provide that in the form of stats about files, functions, etc., code-graph metrics, detected duplication, and low runtime line coverage. `kiss check` stays fast and static; run `kiss test` when you need coverage enforcement. kiss's output is compact, so it won't bloat context. `orphan_module` is a static isolation check: a production module with no production or test-only import edges, that is not a recognized entry, and is not under `orphan_allowed`.
+kiss attempts to provide that in the form of stats about files, functions, etc., code-graph metrics, detected duplication, and low runtime line coverage. `kiss check` stays fast and static; run `kiss test` when you need coverage enforcement. kiss's output is compact, so it won't bloat context. `orphan` (under `[test] orphan_detection`) is a flood-fill reachability check run by `kiss test` after coverage: a production unit that no test, main, or coverage-reached unit names. `kiss check` does not report orphans.
 
 ## Installation
 
 ```bash
 cargo install kiss-ai
+```
+
+`kiss check`, `kiss stats`, and `kiss viz` need only the installed binary. `kiss test` also needs the language toolchains for the repos you run it on:
+
+- **Rust coverage:** [`cargo-llvm-cov`](https://crates.io/crates/cargo-llvm-cov) and [`cargo-nextest`](https://crates.io/crates/cargo-nextest) on `PATH` (kiss drives `cargo llvm-cov nextest`).
+- **Python tests:** a `python` interpreter with [`pytest`](https://pypi.org/project/pytest/) importable.
+
+```bash
+cargo install cargo-llvm-cov cargo-nextest
+# Python: pip install pytest   # or your environment's equivalent
 ```
 
 ## Quickstart
@@ -48,11 +58,13 @@ VIOLATION:duplication:src/users.py:10:create_user: 80% similar, 2 copies: [src/u
 
 ## `kiss test`
 
-`kiss test` runs your unit tests, then enforces line-level code coverage, and limites running time of unit tests. `kiss test` is designed to be an efficient and robust unit test runner for both Python and Rust. It supports
+`kiss test` runs your unit tests, then enforces line-level code coverage, and limits running time of unit tests. Install the [toolchains above](#installation) before relying on Rust or Python coverage runs. `kiss test` is designed to be an efficient and robust unit test runner for both Python and Rust. It supports
 - Caching, to avoid reruns of working tests
 - Parallelization, to speed up test running
 - Separate interpreters for each Python test, to reduce test flakiness and failures of the test runner
 - Timeouts with feedback for your agent so that it will write faster tests
+- `kiss test --watch`: keep a long-lived watcher; a later `kiss test` can ask it for results (immediate reuse when nothing changed, otherwise a cache-aware rerun)
+- `kiss test --retry-bad TARGET`: rerun only the FAIL and TIMEOUT tests in that TARGET subset
 
 
 ---
@@ -73,7 +85,7 @@ Analyzed from: .
 Config: defaults + ./.kissconfig (found)
 
 Analyzed: N files, N code_units, N statements, N graph_nodes, N graph_edges
-Violations: 0 duplicate, 0 orphan, 0 comment, 0 doc
+Violations: 0 duplicate, 0 comment, 0 doc
 
 === Rust (N files) ===
 metric_id                        N   p50   p90   p95   p99   max

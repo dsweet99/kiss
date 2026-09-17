@@ -24,6 +24,7 @@ fn witness(complete: bool) -> ExecutionWitness {
         covered_lines: BTreeMap::from([("f.rs".into(), vec![1])]),
         complete,
         generation_id: "g".into(),
+        raw_statuses: Vec::new(),
     }
 }
 
@@ -63,6 +64,23 @@ fn merge_updates_only_ran_selectors_and_preserves_siblings() {
         },
     };
     assert!(publish_complete(&req, &universe, &statuses, Some(&prior)));
+}
+
+#[test]
+fn subset_publication_cannot_drop_full_siblings() {
+    let prior = witness(true);
+    let batch = PublishBatch {
+        selectors: vec!["b".into()],
+        statuses: vec![WitnessStatus::Passed],
+        durations_ns: vec![Some(9)],
+        covered_lines: BTreeMap::new(),
+        publication_universe: Some(vec!["b".into()]),
+        summary: SelectorExecutionSummary::default(),
+    };
+    let universe = publication_universe(&batch, Some(&prior));
+    assert_eq!(universe, vec!["a".to_string(), "b".to_string()]);
+    let (statuses, _) = merge_statuses(&universe, Some(&prior), &batch);
+    assert_eq!(statuses, vec![WitnessStatus::Passed, WitnessStatus::Passed]);
 }
 
 #[test]

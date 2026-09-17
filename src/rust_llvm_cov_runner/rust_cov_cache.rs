@@ -1,11 +1,116 @@
+use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::rpytest_runner::TestStatus;
 use serde::{Deserialize, Serialize};
 
 use crate::rust_llvm_cov_runner::{CACHE_SCHEMA_VERSION, RustLineCoverage, RustLlvmCovOutcome};
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+struct TestBinaryStamp {
+    path: PathBuf,
+    len: u64,
+    mtime_ns: u64,
+    ctime_ns: u64,
+    dev: u64,
+    ino: u64,
+    sample_hash: u64,
+}
+
+const BINARY_DIGEST_MEMO_FILE: &str = "binary_digest_memo.json";
+
+fn rust_cache_root_from_binary(path: &Path) -> Option<PathBuf> {
+    let mut cursor = path.parent()?;
+    loop {
+        let cache = cursor.join(".kiss").join("rust_llvm_cov_cache");
+        if cache.is_dir() {
+            return Some(cache);
+        }
+        cursor = cursor.parent()?;
+    }
+}
+
+fn load_persisted_binary_digest(stamp: &TestBinaryStamp) -> Option<String> {
+    let cache = rust_cache_root_from_binary(&stamp.path)?;
+    let bytes = fs::read(cache.join(BINARY_DIGEST_MEMO_FILE)).ok()?;
+    let entries: Vec<(TestBinaryStamp, String)> = serde_json::from_slice(&bytes).ok()?;
+    entries
+        .into_iter()
+        .find(|(stored, _)| stored == stamp)
+        .map(|(_, digest)| digest)
+}
+
+fn persist_binary_digest(stamp: &TestBinaryStamp, digest: &str) {
+    let Some(cache) = rust_cache_root_from_binary(&stamp.path) else {
+        return;
+    };
+    let path = cache.join(BINARY_DIGEST_MEMO_FILE);
+    let mut entries: Vec<(TestBinaryStamp, String)> = fs::read(&path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default();
+    if let Some((_, stored)) = entries.iter_mut().find(|(stored, _)| stored == stamp) {
+        *stored = digest.to_string();
+    } else {
+        entries.push((stamp.clone(), digest.to_string()));
+    }
+    if let Ok(bytes) = serde_json::to_vec(&entries) {
+        let _ = fs::write(path, bytes);
+    }
+}
+
+fn test_binary_digest_memo() -> &'static Mutex<HashMap<TestBinaryStamp, String>> {
+    static MEMO: OnceLock<Mutex<HashMap<TestBinaryStamp, String>>> = OnceLock::new();
+    MEMO.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn time_ns(value: SystemTime) -> u64 {
+    value
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX))
+        .unwrap_or(0)
+}
+
+fn test_binary_stamp(path: &Path, metadata: &fs::Metadata) -> io::Result<TestBinaryStamp> {
+    #[cfg(unix)]
+    use std::os::unix::fs::MetadataExt;
+    let mut file = File::open(path)?;
+    let sample_len = usize::try_from(metadata.len().min(4096)).unwrap_or(4096);
+    let mut sample = vec![0; sample_len];
+    file.read_exact(&mut sample)?;
+    let mut sample_hash = rust_cov_fnv1a64(0xcbf2_9ce4_8422_2325, &sample);
+    if metadata.len() > 4096 {
+        file.seek(SeekFrom::End(-4096))?;
+        sample.resize(4096, 0);
+        file.read_exact(&mut sample)?;
+        sample_hash = rust_cov_fnv1a64(sample_hash, &sample);
+    }
+    Ok(TestBinaryStamp {
+        path: path.to_path_buf(),
+        len: metadata.len(),
+        mtime_ns: metadata.modified().map(time_ns).unwrap_or(0),
+        #[cfg(unix)]
+        ctime_ns: u64::try_from(metadata.ctime())
+            .unwrap_or(0)
+            .saturating_mul(1_000_000_000)
+            .saturating_add(u64::try_from(metadata.ctime_nsec()).unwrap_or(0)),
+        #[cfg(not(unix))]
+        ctime_ns: 0,
+        #[cfg(unix)]
+        dev: metadata.dev(),
+        #[cfg(not(unix))]
+        dev: 0,
+        #[cfg(unix)]
+        ino: metadata.ino(),
+        #[cfg(not(unix))]
+        ino: 0,
+        sample_hash,
+    })
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RustCovCacheEntry {
@@ -174,6 +279,10 @@ pub fn store_rust_cov_cache_entry(
     {
         return Ok(());
     }
+    crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::invalidate_entry_state(
+        cache_root,
+    );
+    crate::rust_llvm_cov_runner::publish_derived::batch_population_durations::invalidate_population_durations_for_entry_write(cache_root)?;
     let parent = path
         .parent()
         .ok_or_else(|| io::Error::other("cache path has no parent"))?;
@@ -194,8 +303,10 @@ pub fn store_rust_cov_cache_entry(
             format!("store_rust_cov_cache_entry {}: {err}", path.display()),
         )
     })?;
-    crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::invalidate_entry_state(cache_root);
-    crate::rust_llvm_cov_runner::publish_derived::batch_population_durations::invalidate_population_durations(cache_root);
+    crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::invalidate_entry_state(
+        cache_root,
+    );
+    crate::rust_llvm_cov_runner::publish_derived::batch_population_durations::invalidate_population_durations_for_entry_write(cache_root)?;
     Ok(())
 }
 
@@ -220,6 +331,43 @@ pub(crate) fn rust_cov_fnv1a64(h: u64, bytes: &[u8]) -> u64 {
         .fold(h, |acc, byte| (acc ^ u64::from(*byte)).wrapping_mul(PRIME))
 }
 
+pub(crate) fn digest_test_binary(
+    path: &Path,
+) -> Result<String, crate::rust_llvm_cov_runner::RustLlvmCovError> {
+    let io_error = |err: std::io::Error| {
+        crate::rust_llvm_cov_runner::RustLlvmCovError::Io(std::io::Error::new(
+            err.kind(),
+            format!("digest_test_binary {}: {err}", path.display()),
+        ))
+    };
+    let metadata = fs::metadata(path).map_err(io_error)?;
+    let stamp = test_binary_stamp(path, &metadata).map_err(io_error)?;
+    if let Ok(memo) = test_binary_digest_memo().lock()
+        && let Some(digest) = memo.get(&stamp)
+    {
+        return Ok(digest.clone());
+    }
+    if let Some(digest) = load_persisted_binary_digest(&stamp) {
+        if let Ok(mut memo) = test_binary_digest_memo().lock() {
+            memo.insert(stamp, digest.clone());
+        }
+        return Ok(digest);
+    }
+    let bytes = std::fs::read(path).map_err(|err| {
+        crate::rust_llvm_cov_runner::RustLlvmCovError::Io(std::io::Error::new(
+            err.kind(),
+            format!("digest_test_binary {}: {err}", path.display()),
+        ))
+    })?;
+    let h = rust_cov_fnv1a64(0xcbf2_9ce4_8422_2325, &bytes);
+    let digest = format!("{h:016x}");
+    if let Ok(mut memo) = test_binary_digest_memo().lock() {
+        memo.insert(stamp.clone(), digest.clone());
+    }
+    persist_binary_digest(&stamp, &digest);
+    Ok(digest)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -240,6 +388,24 @@ mod tests {
             stdout: Some(b"out".to_vec()),
             stderr: Some(b"err".to_vec()),
         }
+    }
+
+    #[test]
+    fn test_binary_digest_memo_is_stamp_validated() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("test-bin");
+        fs::write(&path, b"first").unwrap();
+        let first = digest_test_binary(&path).unwrap();
+        let stamp = test_binary_stamp(&path, &fs::metadata(&path).unwrap()).unwrap();
+        assert!(
+            test_binary_digest_memo()
+                .lock()
+                .unwrap()
+                .contains_key(&stamp)
+        );
+        assert_eq!(digest_test_binary(&path).unwrap(), first);
+        fs::write(&path, b"other").unwrap();
+        assert_ne!(digest_test_binary(&path).unwrap(), first);
     }
 
     #[test]
@@ -299,6 +465,27 @@ mod tests {
         store_rust_cov_cache_entry(tmp.path(), "abc123", &filled).unwrap();
         let loaded = load_rust_cov_cache_entry(tmp.path(), "abc123").unwrap();
         assert_eq!(loaded.coverage.files["src/lib.rs"], BTreeSet::from([1, 2]));
+    }
+
+    #[test]
+    fn entry_store_invalidates_population_certificate_before_publish_attempt() {
+        let tmp = tempfile::tempdir().unwrap();
+        let certificate = tmp.path().join("population_durations.json");
+        fs::write(&certificate, b"stale all-pass certificate").unwrap();
+        fs::write(tmp.path().join("entries"), b"not a directory").unwrap();
+
+        assert!(
+            store_rust_cov_cache_entry(
+                tmp.path(),
+                "cannot-publish",
+                &RustCovCacheEntry::from(&outcome()),
+            )
+            .is_err()
+        );
+        assert!(
+            !certificate.exists(),
+            "the old all-pass certificate must disappear before entry publication"
+        );
     }
 
     #[test]
@@ -362,11 +549,12 @@ mod tests {
         )
         .unwrap();
 
-        let names: BTreeSet<_> = crate::rust_llvm_cov_runner::plan::shared_input::rust_cov_input_files(tmp.path())
-            .unwrap()
-            .into_iter()
-            .map(|path| path.strip_prefix(tmp.path()).unwrap().to_path_buf())
-            .collect();
+        let names: BTreeSet<_> =
+            crate::rust_llvm_cov_runner::plan::shared_input::rust_cov_input_files(tmp.path())
+                .unwrap()
+                .into_iter()
+                .map(|path| path.strip_prefix(tmp.path()).unwrap().to_path_buf())
+                .collect();
 
         assert!(names.contains(Path::new("Cargo.toml")));
         assert!(names.contains(Path::new("Cargo.lock")));
@@ -375,12 +563,16 @@ mod tests {
         assert!(names.contains(Path::new("src/lib.rs")));
         assert!(!names.contains(Path::new("target/ignored.rs")));
         assert!(!names.contains(Path::new(".kiss/rust_llvm_cov_cache/ignored.rs")));
-        assert!(crate::rust_llvm_cov_runner::plan::shared_input::should_skip_rust_cov_dir(
-            &tmp.path().join("target")
-        ));
-        assert!(crate::rust_llvm_cov_runner::plan::shared_input::is_kiss_rust_cov_cache_dir(
-            &tmp.path().join(".kiss").join("rust_llvm_cov_cache")
-        ));
+        assert!(
+            crate::rust_llvm_cov_runner::plan::shared_input::should_skip_rust_cov_dir(
+                &tmp.path().join("target")
+            )
+        );
+        assert!(
+            crate::rust_llvm_cov_runner::plan::shared_input::is_kiss_rust_cov_cache_dir(
+                &tmp.path().join(".kiss").join("rust_llvm_cov_cache")
+            )
+        );
     }
 
     #[test]

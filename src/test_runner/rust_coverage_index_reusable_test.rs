@@ -1,6 +1,7 @@
 use crate::test_runner::coverage_decision::{CoverageFreshness, SelectionBasis};
 use crate::test_runner::rust_coverage_index::{
-    ResolvedRustPopulation, resolve_rust_population_state, select_rust_source_selectors_for_basis,
+    ResolveRustPopulationArgs, ResolvedRustPopulation, resolve_rust_population_state,
+    select_rust_source_selectors_for_basis,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -243,9 +244,10 @@ fn resolve_stale_population_when_no_manifest_matches() {
     fs::create_dir_all(tmp.path().join("src")).unwrap();
     let lib = tmp.path().join("src").join("lib.rs");
     fs::write(&lib, "pub fn value() -> u32 { 1 }\n").unwrap();
-    let resolved: ResolvedRustPopulation =
-        resolve_rust_population_state(tmp.path(), &[], std::slice::from_ref(&lib), &[])
-            .expect("resolved population");
+    let resolved: ResolvedRustPopulation = resolve_rust_population_state(
+        ResolveRustPopulationArgs::for_paths(tmp.path(), std::slice::from_ref(&lib)),
+    )
+    .expect("resolved population");
     assert_eq!(resolved, ResolvedRustPopulation::ColdStale);
     assert_eq!(resolved.freshness(), CoverageFreshness::Stale);
     assert_eq!(resolved.basis(), SelectionBasis::Population);

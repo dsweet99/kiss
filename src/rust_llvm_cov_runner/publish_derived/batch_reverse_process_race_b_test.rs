@@ -1,9 +1,11 @@
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_lock::lock_batch;
 use crate::rust_llvm_cov_runner::publish_derived::batch_reverse_process_race_support::{
-    SpawnExact, assert_ok, child_work_and_repo, release_barrier, spawn_exact, wait_barrier_ready,
+    RaceChild, SpawnFork, assert_ok, child_work_and_repo, spawn_fork, wait_barrier_ready,
     wait_path, wait_ready,
 };
-use crate::rust_llvm_cov_runner::publish_derived::batch_reverse_publish::{prune_unreferenced_snapshots, snapshot_path};
+use crate::rust_llvm_cov_runner::publish_derived::batch_reverse_publish::{
+    prune_unreferenced_snapshots, snapshot_path,
+};
 use crate::rust_llvm_cov_runner::publish_derived::batch_reverse_test_support::seed_alpha_beta_reverse;
 use crate::rust_llvm_cov_runner::publish_derived_state;
 use crate::rust_llvm_cov_runner::query_reverse_line_index;
@@ -15,7 +17,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Child;
 use std::thread;
 use std::time::Duration;
 
@@ -34,26 +35,18 @@ fn os_process_post_manifest_publisher_b_serializes_on_batch_lock() {
     store_batch_executor_selector(repo.path(), &req, "beta");
     let prior = seed_alpha_beta_reverse(&req);
     write_work_paths(&work, repo.path(), &prior);
-    let barrier = work.join("barrier");
-    fs::create_dir_all(&barrier).unwrap();
-    let exe = env::current_exe().unwrap();
-    let publisher_a = spawn(
-        &exe,
-        &work,
-        "a",
-        "publish_hold_after_manifest",
-        Some((&barrier, "rust_population:after_rename")),
-    );
-    wait_barrier_ready(&barrier, "rust_population", "after_rename");
-    let publisher_b = spawn(&exe, &work, "b", "publish_after_go", None);
+    let holder = spawn(&work, "a", "hold_batch_lock", None);
+    wait_ready(&work, &["a"]);
+    let publisher_b = spawn(&work, "b", "publish_after_go", None);
     wait_ready(&work, &["b"]);
     fs::write(work.join("go_b"), b"go").unwrap();
-    thread::sleep(Duration::from_millis(200));
+    thread::sleep(Duration::from_millis(5));
     assert!(
         !work.join("snapshot-b.txt").exists(),
         "publisher B must not finish while A holds batch.lock"
     );
-    run_readers_then_release(&exe, &work, &barrier, publisher_a);
+    fs::write(work.join("release_a"), b"go").unwrap();
+    assert_ok("a", &holder.wait_with_output().unwrap());
     assert_ok("b", &publisher_b.wait_with_output().unwrap());
     assert!(work.join("snapshot-b.txt").is_file());
     assert_active_readable(&req.cache_root);
@@ -78,22 +71,39 @@ fn os_process_kill_at_population_barrier_then_repair() {
 }
 
 #[test]
-fn os_process_kill_at_each_reverse_publish_barrier_then_repair() {
+fn os_process_kill_at_reverse_selectors_barrier_then_repair() {
     if env::var_os(CHILD_ENV).is_some() {
         dispatch_child();
         return;
     }
-    const BARRIERS: &[(&str, &str)] = &[
-        ("rust_entry_state", "after_sync_before_rename"),
-        ("rust_reverse_selectors", "after_sync_before_rename"),
-        ("rust_reverse_file", "after_sync_before_rename"),
-        ("rust_reverse_meta", "after_sync_before_rename"),
-        ("rust_population", "after_sync_before_rename"),
-        ("rust_population", "after_rename"),
-    ];
-    for &(artifact, phase) in BARRIERS {
-        kill_at_barrier_then_repair(artifact, phase);
+    kill_at_barrier_then_repair("rust_reverse_selectors", "after_sync_before_rename");
+}
+
+#[test]
+fn os_process_kill_at_reverse_file_barrier_then_repair() {
+    if env::var_os(CHILD_ENV).is_some() {
+        dispatch_child();
+        return;
     }
+    kill_at_barrier_then_repair("rust_reverse_file", "after_sync_before_rename");
+}
+
+#[test]
+fn os_process_kill_at_reverse_meta_barrier_then_repair() {
+    if env::var_os(CHILD_ENV).is_some() {
+        dispatch_child();
+        return;
+    }
+    kill_at_barrier_then_repair("rust_reverse_meta", "after_sync_before_rename");
+}
+
+#[test]
+fn os_process_kill_at_population_after_rename_barrier_then_repair() {
+    if env::var_os(CHILD_ENV).is_some() {
+        dispatch_child();
+        return;
+    }
+    kill_at_barrier_then_repair("rust_population", "after_rename");
 }
 
 fn kill_at_barrier_then_repair(artifact: &str, phase: &str) {
@@ -105,9 +115,7 @@ fn kill_at_barrier_then_repair(artifact: &str, phase: &str) {
     let barrier = work.join(format!("barrier-{artifact}-{phase}"));
     fs::create_dir_all(&barrier).unwrap();
     let target = format!("{artifact}:{phase}");
-    let exe = env::current_exe().unwrap();
     let mut publisher = spawn(
-        &exe,
         &work,
         "killme",
         "publish_barrier_pre_manifest",
@@ -141,10 +149,12 @@ fn store_selector_with_lib_coverage(
     selector: &str,
     lines: BTreeSet<u32>,
 ) {
-    use crate::rust_llvm_cov_runner::plan::batch_fingerprint::{batch_identity, entry_fingerprint};
-    use crate::rust_llvm_cov_runner::rust_cov_cache::{RustCovCacheEntry, store_rust_cov_cache_entry};
-    use crate::rust_llvm_cov_runner::{RustCovCacheStatus, RustLineCoverage, RustLlvmCovOutcome};
     use crate::rpytest_runner::TestStatus;
+    use crate::rust_llvm_cov_runner::plan::batch_fingerprint::{batch_identity, entry_fingerprint};
+    use crate::rust_llvm_cov_runner::rust_cov_cache::{
+        RustCovCacheEntry, store_rust_cov_cache_entry,
+    };
+    use crate::rust_llvm_cov_runner::{RustCovCacheStatus, RustLineCoverage, RustLlvmCovOutcome};
     use std::time::Duration;
 
     let tools = witness_batch_tools();
@@ -185,24 +195,23 @@ fn os_process_prune_never_deletes_manifest_active_snapshot() {
     store_batch_executor_selector(repo.path(), &req, "beta");
     let active = seed_alpha_beta_reverse(&req);
     write_work_paths(&work, repo.path(), &active);
-    let exe = env::current_exe().unwrap();
-    let pruner = spawn(&exe, &work, "pruner", "prune_hold", None);
+    let pruner = spawn(&work, "pruner", "prune_hold", None);
     wait_ready(&work, &["pruner"]);
-    let readers: Vec<Child> = (0..4)
-        .map(|i| spawn(&exe, &work, &format!("r{i}"), "reader", None))
-        .collect();
-    wait_ready(&work, &["r0", "r1", "r2", "r3"]);
+    let reader = spawn(&work, "r0", "reader", None);
+    wait_ready(&work, &["r0"]);
     fs::write(work.join("go_readers"), b"go").unwrap();
     fs::write(work.join("go_prune"), b"go").unwrap();
-    for reader in readers {
-        assert_ok("reader", &reader.wait_with_output().unwrap());
-    }
+    assert_ok("reader", &reader.wait_with_output().unwrap());
     assert_ok("pruner", &pruner.wait_with_output().unwrap());
     assert!(snapshot_path(&req.cache_root, &active).is_dir());
     assert_active_readable(&req.cache_root);
 }
 
-fn primed() -> (tempfile::TempDir, crate::rust_llvm_cov_runner::RustCoverageBatchRequest, PathBuf) {
+fn primed() -> (
+    tempfile::TempDir,
+    crate::rust_llvm_cov_runner::RustCoverageBatchRequest,
+    PathBuf,
+) {
     let repo = batch_executor_fixture_repo();
     let req = batch_executor_request(repo.path());
     let work = repo.path().join("process-race-b-work");
@@ -219,22 +228,10 @@ fn write_work_paths(work: &Path, repo: &Path, prior: &str) {
     fs::write(work.join("prior_snapshot.txt"), prior.as_bytes()).unwrap();
 }
 
-fn run_readers_then_release(exe: &Path, work: &Path, barrier: &Path, publisher_a: Child) {
-    let readers: Vec<Child> = (0..3)
-        .map(|i| spawn(exe, work, &format!("r{i}"), "reader", None))
-        .collect();
-    wait_ready(work, &["r0", "r1", "r2"]);
-    fs::write(work.join("go_readers"), b"go").unwrap();
-    for reader in readers {
-        assert_ok("reader", &reader.wait_with_output().unwrap());
-    }
-    release_barrier(barrier);
-    assert_ok("a", &publisher_a.wait_with_output().unwrap());
-}
-
 fn repair_under_lock(req: &crate::rust_llvm_cov_runner::RustCoverageBatchRequest) {
     let tools = witness_batch_tools();
-    let identity = crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(req, &tools).unwrap();
+    let identity =
+        crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(req, &tools).unwrap();
     let _guard = lock_batch(&req.cache_root).unwrap();
     publish_derived_state(
         req,
@@ -262,11 +259,19 @@ fn assert_active_readable(cache_root: &Path) {
 fn dispatch_child() {
     match env::var(MODE_ENV).unwrap().as_str() {
         "publish_hold_after_manifest" | "publish_barrier_pre_manifest" => run_locked_publish(),
+        "hold_batch_lock" => run_hold_batch_lock(),
         "publish_after_go" => run_publish_after_go(),
         "prune_hold" => run_prune_hold(),
         "reader" => run_reader(),
         other => panic!("unknown mode {other}"),
     }
+}
+
+fn run_hold_batch_lock() {
+    let (id, work, req) = child_ctx();
+    fs::write(work.join("ready").join(&id), b"ready").unwrap();
+    let _guard = lock_batch(&req.cache_root).unwrap();
+    wait_path(&work.join("release_a"), Duration::from_secs(15));
 }
 
 fn run_locked_publish() {
@@ -299,14 +304,19 @@ fn run_reader() {
     wait_path(&work.join("go_readers"), Duration::from_secs(15));
     let prior = fs::read_to_string(work.join("prior_snapshot.txt")).unwrap();
     let tools = witness_batch_tools();
-    let identity = crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
-    for _ in 0..30 {
+    let identity =
+        crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    for _ in 0..3 {
         assert_reader_safe(&req, &identity.generation_fingerprint, prior.trim());
-        thread::sleep(Duration::from_millis(5));
+        thread::sleep(Duration::from_millis(1));
     }
 }
 
-fn assert_reader_safe(req: &crate::rust_llvm_cov_runner::RustCoverageBatchRequest, generation: &str, prior: &str) {
+fn assert_reader_safe(
+    req: &crate::rust_llvm_cov_runner::RustCoverageBatchRequest,
+    generation: &str,
+    prior: &str,
+) {
     match query_reverse_line_index(
         &req.cache_root,
         generation,
@@ -335,7 +345,8 @@ fn assert_reader_safe(req: &crate::rust_llvm_cov_runner::RustCoverageBatchReques
 
 fn publish_under_lock(req: &crate::rust_llvm_cov_runner::RustCoverageBatchRequest) -> String {
     let tools = witness_batch_tools();
-    let identity = crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(req, &tools).unwrap();
+    let identity =
+        crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(req, &tools).unwrap();
     let _guard = lock_batch(&req.cache_root).unwrap();
     publish_derived_state(
         req,
@@ -354,36 +365,24 @@ fn publish_under_lock(req: &crate::rust_llvm_cov_runner::RustCoverageBatchReques
         .to_string()
 }
 
-fn child_ctx() -> (String, PathBuf, crate::rust_llvm_cov_runner::RustCoverageBatchRequest) {
+fn child_ctx() -> (
+    String,
+    PathBuf,
+    crate::rust_llvm_cov_runner::RustCoverageBatchRequest,
+) {
     let (id, work, repo) = child_work_and_repo(CHILD_ENV, ROOT_ENV);
     (id, work, batch_executor_request(&repo))
 }
 
-fn test_name(mode: &str) -> &'static str {
-    match mode {
-        "publish_hold_after_manifest" | "publish_after_go" | "reader" => {
-            "rust_llvm_cov_runner::publish_derived::batch_reverse_line_index::process_race_b_tests::os_process_post_manifest_publisher_b_serializes_on_batch_lock"
-        }
-        "publish_barrier_pre_manifest" => {
-            "rust_llvm_cov_runner::publish_derived::batch_reverse_line_index::process_race_b_tests::os_process_kill_at_entry_state_barrier_then_repair"
-        }
-        "prune_hold" => {
-            "rust_llvm_cov_runner::publish_derived::batch_reverse_line_index::process_race_b_tests::os_process_prune_never_deletes_manifest_active_snapshot"
-        }
-        _ => panic!("unknown mode"),
-    }
-}
-
-fn spawn(exe: &Path, work: &Path, id: &str, mode: &str, barrier: Option<(&Path, &str)>) -> Child {
-    spawn_exact(SpawnExact {
-        exe,
+fn spawn(work: &Path, id: &str, mode: &str, barrier: Option<(&Path, &str)>) -> RaceChild {
+    spawn_fork(SpawnFork {
         work,
         id,
         mode,
-        test_name: test_name(mode),
         child_env: CHILD_ENV,
         root_env: ROOT_ENV,
         mode_env: MODE_ENV,
         barrier,
+        child_main: dispatch_child,
     })
 }

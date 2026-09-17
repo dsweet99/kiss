@@ -1,4 +1,6 @@
-use crate::rust_llvm_cov_runner::plan::batch_fingerprint::{RustCoverageBatchIdentity, RustCoverageToolIdentity};
+use crate::rust_llvm_cov_runner::plan::batch_fingerprint::{
+    RustCoverageBatchIdentity, RustCoverageToolIdentity,
+};
 use crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest;
 use crate::rust_llvm_cov_runner::publish_derived::batch_derived_generations::{
     build_generation_index, count_generations,
@@ -6,7 +8,9 @@ use crate::rust_llvm_cov_runner::publish_derived::batch_derived_generations::{
 pub(crate) use crate::rust_llvm_cov_runner::publish_derived::batch_derived_prune::maybe_prune_obsolete_selective_after_batch;
 use crate::rust_llvm_cov_runner::publish_derived::batch_derived_prune::prune_non_current_generations;
 pub use crate::rust_llvm_cov_runner::publish_derived::batch_derived_prune::prune_obsolete_selective_generations;
-use crate::rust_llvm_cov_runner::rust_cov_cache::{generation_entries_fingerprint, load_rust_cov_cache_entry};
+use crate::rust_llvm_cov_runner::rust_cov_cache::{
+    generation_entries_fingerprint, load_rust_cov_cache_entry,
+};
 use crate::rust_llvm_cov_runner::{
     RustLlvmCovError, RustTestBinaryIdentity, batch_check_aggregate::ValidatedCheckAggregate,
 };
@@ -16,11 +20,11 @@ use std::io;
 use std::path::Path;
 
 #[cfg(test)]
+use crate::rpytest_runner::TestStatus;
+#[cfg(test)]
 use crate::rust_llvm_cov_runner::RustLineCoverage;
 #[cfg(test)]
 use crate::rust_llvm_cov_runner::rust_cov_cache::RustCovCacheEntry;
-#[cfg(test)]
-use crate::rpytest_runner::TestStatus;
 pub const INDEX_SCHEMA_VERSION: &str = "rust-llvm-cov-index-v3";
 pub const POPULATION_SCHEMA_VERSION: &str = "rust-llvm-cov-population-v6";
 
@@ -84,31 +88,43 @@ fn republish_if_entry_state_missing(
     identity: &RustCoverageBatchIdentity,
     test_binaries: &[RustTestBinaryIdentity],
 ) -> Result<Option<DerivedPublishCounters>, RustLlvmCovError> {
-    if crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::read_entry_state(&req.cache_root).is_some() {
+    if crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::read_entry_state(
+        &req.cache_root,
+    )
+    .is_some()
+    {
         return Ok(None);
     }
-    let Ok(bytes) = fs::read(req.cache_root.join("population.json")) else {
+    let Some(manifest) =
+        crate::rust_llvm_cov_runner::publish_derived::batch_derived_index::read_population_manifest(
+            &req.cache_root,
+        )
+    else {
         return Ok(None);
     };
-    let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+    if manifest.reverse_line_index.is_none() || manifest.selectors.is_empty() {
         return Ok(None);
+    }
+    let inherited_binaries;
+    let effective_binaries = if test_binaries.is_empty()
+        && manifest.input_fingerprint == identity.input_digest
+        && manifest.generation_fingerprint == identity.generation_fingerprint
+        && manifest.selection_context_fingerprint == identity.selection_context_fingerprint
+    {
+        inherited_binaries = manifest.test_binaries.into_values().collect::<Vec<_>>();
+        inherited_binaries.as_slice()
+    } else {
+        test_binaries
     };
-    let selectors = value
-        .get("reverse_line_index")
-        .and_then(|_| value.get("selectors"))
-        .and_then(|node| node.as_array())
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| item.as_str().map(str::to_string))
-                .collect::<Vec<_>>()
-        })
-        .filter(|items| !items.is_empty());
-    let Some(selectors) = selectors else {
-        return Ok(None);
-    };
-    publish_derived_state_with_binaries(req, tools, identity, &selectors, test_binaries, true)
-        .map(Some)
+    publish_derived_state_with_binaries(
+        req,
+        tools,
+        identity,
+        &manifest.selectors,
+        effective_binaries,
+        true,
+    )
+    .map(Some)
 }
 pub fn population_derived_state_stale(
     req: &RustCoverageBatchRequest,
@@ -201,6 +217,24 @@ pub fn publish_derived_state_with_binaries(
     test_binaries: &[RustTestBinaryIdentity],
     derived_repair: bool,
 ) -> Result<DerivedPublishCounters, RustLlvmCovError> {
+    let inherited_binaries;
+    let effective_binaries = if test_binaries.is_empty() {
+        inherited_binaries =
+            crate::rust_llvm_cov_runner::publish_derived::batch_derived_index::read_population_manifest(
+                &req.cache_root,
+            )
+            .filter(|manifest| {
+                manifest.input_fingerprint == identity.input_digest
+                    && manifest.generation_fingerprint == identity.generation_fingerprint
+                    && manifest.selection_context_fingerprint
+                        == identity.selection_context_fingerprint
+            })
+            .map(|manifest| manifest.test_binaries.into_values().collect::<Vec<_>>())
+            .unwrap_or_default();
+        inherited_binaries.as_slice()
+    } else {
+        test_binaries
+    };
     crate::rust_llvm_cov_runner::publish_derived::batch_publication_tmp::sweep_orphaned_publication_tmps(&req.cache_root)
         .map_err(|err| io_context("sweep_orphaned_publication_tmps", err))?;
     let pruned = prune_non_current_generations(&req.cache_root, &identity.generation_fingerprint)
@@ -216,12 +250,13 @@ pub fn publish_derived_state_with_binaries(
             .map_err(|err| io_context("generation_entries_fingerprint", err))?;
     let prior_snapshot =
         crate::rust_llvm_cov_runner::publish_derived::batch_reverse_line_index::read_prior_snapshot_id(&req.cache_root);
-    let revision = crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::publish_next_entry_state(
-        &req.cache_root,
-        &identity.generation_fingerprint,
-        &entries_fingerprint,
-    )
-    .map_err(|err| annotate_io("publish_next_entry_state", err))?;
+    let revision =
+        crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::publish_next_entry_state(
+            &req.cache_root,
+            &identity.generation_fingerprint,
+            &entries_fingerprint,
+        )
+        .map_err(|err| annotate_io("publish_next_entry_state", err))?;
     let reverse = crate::rust_llvm_cov_runner::publish_derived::batch_reverse_line_index::publish_reverse_line_index(
         &req.cache_root,
         &req.source_root,
@@ -243,7 +278,7 @@ pub fn publish_derived_state_with_binaries(
         tools,
         identity,
         selectors,
-        test_binaries,
+        effective_binaries,
         &entries_fingerprint,
         Some(&reverse),
     )
@@ -291,7 +326,7 @@ fn annotate_io(step: &str, err: RustLlvmCovError) -> RustLlvmCovError {
     }
 }
 
-pub(crate) fn publish_conservative_derived_state_from_check_aggregate(
+pub fn publish_conservative_derived_state_from_check_aggregate(
     req: &RustCoverageBatchRequest,
     tools: &RustCoverageToolIdentity,
     identity: &RustCoverageBatchIdentity,

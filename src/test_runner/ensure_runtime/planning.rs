@@ -21,10 +21,32 @@ pub(crate) fn ensure_request_for_all(
     let mut planned_rust = Vec::new();
     if lang_filter != Some(Language::Rust) {
         planned_python =
-            runners::enumerate_workspace_python_selectors(repo_root, &ignore_norm, &pytest_args)?;
+            crate::test_runner::workspace_selector_cache::load_cached_python_workspace_selectors(
+                repo_root,
+                &ignore_norm,
+                &pytest_args,
+            )
+            .map_or_else(
+                || {
+                    runners::enumerate_workspace_python_selectors(
+                        repo_root,
+                        &ignore_norm,
+                        &pytest_args,
+                    )
+                },
+                Ok,
+            )?;
     }
     if lang_filter != Some(Language::Python) {
-        planned_rust = runners::enumerate_workspace_rust_selectors(repo_root, &ignore_norm)?;
+        planned_rust =
+            crate::test_runner::workspace_selector_cache::load_cached_rust_workspace_selectors(
+                repo_root,
+                &ignore_norm,
+            )
+            .map_or_else(
+                || runners::enumerate_workspace_rust_selectors(repo_root, &ignore_norm),
+                Ok,
+            )?;
     }
     Ok(EnsureRequest {
         repo_root: repo_root.to_path_buf(),

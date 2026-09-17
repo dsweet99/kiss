@@ -52,11 +52,12 @@ pub(crate) fn python_witness_from_pinned(pinned: &PinnedPythonGeneration) -> Exe
         scope: WitnessScope::Full,
         identity_digest: python_identity_digest(pinned),
         selectors,
-        statuses,
         durations_ns,
         covered_lines: Default::default(),
         complete: pinned.complete,
         generation_id: pinned.generation_id.clone(),
+        raw_statuses: statuses.clone(),
+        statuses,
     }
 }
 
@@ -72,9 +73,12 @@ pub(crate) fn try_warm_python_cached_summary(
     }
     let mut witness = python_witness_from_pinned(&pinned);
     let gate = GateConfig::load_for_repo(repo_root);
+    if witness.raw_statuses.len() != witness.statuses.len() {
+        witness.raw_statuses = witness.statuses.clone();
+    }
     witness.statuses = reclassify_statuses_with_gate(
         &witness.selectors,
-        &witness.statuses,
+        &witness.raw_statuses,
         &witness.durations_ns,
         &gate,
     );

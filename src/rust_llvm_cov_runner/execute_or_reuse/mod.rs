@@ -8,6 +8,10 @@ pub(crate) mod batch_events;
 
 pub(crate) mod batch_executor;
 
+pub(crate) mod batch_executor_prepare;
+
+pub(crate) mod batch_executor_sealed;
+
 pub(crate) mod batch_executor_finish;
 
 pub(crate) mod batch_executor_finish_entries;
@@ -43,10 +47,20 @@ pub(crate) mod batch_output_channel_token;
 pub(crate) mod batch_process_tree;
 
 pub(crate) mod progress;
+pub(crate) mod progress_heartbeat;
+pub(crate) mod progress_prepared_hits;
+pub(crate) mod progress_watch_report;
+pub(crate) mod progress_watch_suite;
 
 pub(crate) mod batch_result;
 
 pub(crate) mod batch_run;
+
+pub(crate) mod mem_available;
+
+pub(crate) mod llvm_cov_nested;
+
+pub(crate) mod llvm_cov_process_budget;
 
 pub(crate) mod batch_warm_hit_seal;
 

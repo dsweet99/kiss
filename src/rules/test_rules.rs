@@ -19,4 +19,10 @@ pub(super) const TEST_RULE_SPECS: &[RuleSpec] = &[
         threshold: ThresholdValue::Usize(|_, g| g.max_num_tests),
         description: "max_num_tests is the maximum number of unit tests in the current population (Python + Rust). Enforced by `kiss test` alongside coverage. `0` means any test fails. Default is 999999. Config key lives under `[test]`.",
     },
+    RuleSpec {
+        metric: "orphan",
+        op: ThresholdOp::Equal,
+        threshold: ThresholdValue::Usize(|_, _| 0),
+        description: "orphan flags a production code unit (module, function, method, or class) that flood-fill never reaches from tests, mains, or coverage-reached units. Enforced by kiss test after tests pass and coverage is complete, when orphan_detection=true (default false). kiss check does not run orphan detection. Entries, tests, trait-impl methods, orphan_allowed paths, and __init__.py / mod.rs module units are not candidates.",
+    },
 ];

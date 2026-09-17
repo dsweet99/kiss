@@ -24,6 +24,7 @@ fn write_generation_fixture(repo: &Path, with_path_maxes: bool) -> PathBuf {
         schema_version: POINTER_SCHEMA_VERSION.to_string(),
         generation_id: gen_id.clone(),
         manifest_sha256: "abc".into(),
+        parent_generation_id: String::new(),
     };
     fs::write(
         pointer_path(&cache_root),
@@ -51,6 +52,7 @@ fn write_generation_fixture(repo: &Path, with_path_maxes: bool) -> PathBuf {
     )
     .unwrap();
     let manifest = serde_json::json!({
+        "complete": true,
         "plan": {
             "selectors": [
                 "tests/test_a.py::test_one",
@@ -64,6 +66,24 @@ fn write_generation_fixture(repo: &Path, with_path_maxes: bool) -> PathBuf {
     )
     .unwrap();
     gen_dir
+}
+
+#[test]
+fn incomplete_generation_has_no_complete_timing_population() {
+    let tmp = tempfile::tempdir().unwrap();
+    let gen_dir = write_generation_fixture(tmp.path(), true);
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(gen_dir.join("manifest.json")).unwrap()).unwrap();
+    manifest["complete"] = serde_json::Value::Bool(false);
+    fs::write(
+        gen_dir.join("manifest.json"),
+        serde_json::to_vec_pretty(&manifest).unwrap(),
+    )
+    .unwrap();
+    clear_generation_durations_memo();
+    assert!(try_load_generation_durations_pairs(tmp.path()).is_none());
+    assert!(try_load_generation_max_duration(tmp.path()).is_none());
+    assert!(try_load_generation_path_maxes(tmp.path()).is_none());
 }
 
 #[test]
@@ -148,6 +168,7 @@ fn unresolved_durations_are_not_collapsed_to_zero_in_sidecars() {
             duration_ns: Some(4_000_000),
             cache_disposition: TimingCacheDisposition::MissStored,
             reason: None,
+            test_definition_digest: String::new(),
         },
         SelectorTimingRecord {
             selector: "tests/a.py::unresolved".into(),
@@ -156,6 +177,7 @@ fn unresolved_durations_are_not_collapsed_to_zero_in_sidecars() {
             duration_ns: None,
             cache_disposition: TimingCacheDisposition::Unknown,
             reason: Some("missing outcome".into()),
+            test_definition_digest: String::new(),
         },
         SelectorTimingRecord {
             selector: "tests/b.py::only_unresolved".into(),
@@ -164,6 +186,7 @@ fn unresolved_durations_are_not_collapsed_to_zero_in_sidecars() {
             duration_ns: None,
             cache_disposition: TimingCacheDisposition::Unknown,
             reason: Some("missing outcome".into()),
+            test_definition_digest: String::new(),
         },
     ];
     let file = super::super::publish::generation_durations_file(&timings);

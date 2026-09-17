@@ -32,7 +32,7 @@ fn line_index_schema_v2() -> String {
 impl Default for InternedLineIndex {
     fn default() -> Self {
         Self {
-            schema_version: LINE_INDEX_SCHEMA_V2.to_string(),
+            schema_version: line_index_schema_v2(),
             selectors: Vec::new(),
             files: BTreeMap::new(),
             selector_ids: BTreeMap::new(),
@@ -43,7 +43,7 @@ impl Default for InternedLineIndex {
 impl InternedLineIndex {
     pub(crate) fn from_selectors(selectors: &[String]) -> Self {
         let mut index = Self {
-            schema_version: LINE_INDEX_SCHEMA_V2.to_string(),
+            schema_version: line_index_schema_v2(),
             selectors: selectors.to_vec(),
             files: BTreeMap::new(),
             selector_ids: BTreeMap::new(),
@@ -149,3 +149,16 @@ pub(crate) struct PythonPopulationPlan {
     pub(crate) base_identity: PythonExecutionIdentity,
     pub(crate) selectors: Vec<String>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn line_index_schema_v2_default() {
+        assert_eq!(line_index_schema_v2(), LINE_INDEX_SCHEMA_V2);
+        let index: InternedLineIndex = serde_json::from_str("{}").unwrap();
+        assert_eq!(index.schema_version, LINE_INDEX_SCHEMA_V2);
+    }
+}
+

@@ -6,15 +6,14 @@ mod test_dispatch;
 #[cfg(test)]
 mod test_dispatch_b;
 
-use crate::bin_cli::args::{Cli, Commands, parse_test_invocation, validate_test_branch_options};
+use crate::bin_cli::args::{parse_test_invocation, validate_test_branch_options, Cli, Commands};
 
 use handlers::{
-    dispatch_check, dispatch_cov, dispatch_dry, dispatch_mv, dispatch_rules, dispatch_stats,
-    dispatch_test, dispatch_viz,
+    dispatch_check, dispatch_dry, dispatch_rules, dispatch_stats, dispatch_test, dispatch_viz,
 };
 use options::{
-    CheckDispatchOptions, CovDispatchOptions, DryDispatchOptions, MvDispatchOptions, MvOutputFlags,
-    RulesDispatchOptions, StatsDispatchOptions, TestDispatchOptions, TriConfig, VizDispatchOptions,
+    CheckDispatchOptions, DryDispatchOptions, RulesDispatchOptions, StatsDispatchOptions,
+    TestDispatchOptions, TriConfig, VizDispatchOptions,
 };
 
 use kiss::GateConfig;
@@ -32,44 +31,34 @@ fn dispatch_analyze(
             paths,
             ignore,
             timing,
-        } => dispatch_check(CheckDispatchOptions {
-            lang,
-            paths,
-            ignore,
-            timing,
-            config,
-            cfg,
-        }),
-        Commands::Coverage {
-            paths,
-            all,
-            ignore,
-            timing,
-            jobs,
-        } => dispatch_cov(CovDispatchOptions {
-            lang,
-            paths,
-            bypass_gate: all,
-            ignore,
-            timing,
-            jobs,
-            cfg,
-            test_cfg: test_section,
-        }),
+        } => {
+            let ignore = test_section.merged_ignore(&ignore);
+            dispatch_check(CheckDispatchOptions {
+                lang,
+                paths,
+                ignore,
+                timing,
+                config,
+                cfg,
+            })
+        }
         Commands::Stats {
             paths,
             all,
             table,
             ignore,
-        } => dispatch_stats(StatsDispatchOptions {
-            lang,
-            paths,
-            all,
-            table,
-            ignore,
-            cfg,
-            config,
-        }),
+        } => {
+            let ignore = test_section.merged_ignore(&ignore);
+            dispatch_stats(StatsDispatchOptions {
+                lang,
+                paths,
+                all,
+                table,
+                ignore,
+                cfg,
+                config,
+            })
+        }
         _ => 2,
     }
 }
@@ -120,24 +109,6 @@ fn dispatch_tools(
         test_command @ Commands::Test { .. } => {
             dispatch_test_command(lang, config.as_ref(), test_command, cfg, test_section)
         }
-        Commands::Mv {
-            query,
-            new_name,
-            paths,
-            to,
-            dry_run,
-            json,
-            ignore,
-        } => dispatch_mv(MvDispatchOptions {
-            lang,
-            query,
-            new_name,
-            paths,
-            to,
-            mv_flags: MvOutputFlags { dry_run, json },
-            ignore,
-            language_tables: cfg.language_tables,
-        }),
         _ => 2,
     }
 }
@@ -155,8 +126,7 @@ fn dispatch_test_command(
             main_branch,
             base_branch,
             dry_run,
-            force,
-            force_bad,
+            retry_bad,
             metrics,
             coverage_all,
             watch,
@@ -189,8 +159,7 @@ fn dispatch_test_command(
                 main_branch,
                 base_branch,
                 dry_run,
-                force,
-                force_bad,
+                retry_bad,
                 metrics,
                 coverage_all,
                 watch,
@@ -226,8 +195,7 @@ pub fn dispatch(
         Cli {
             lang,
             config,
-            command:
-                command @ (Commands::Check { .. } | Commands::Coverage { .. } | Commands::Stats { .. }),
+            command: command @ (Commands::Check { .. } | Commands::Stats { .. }),
         } => dispatch_analyze(lang, config, command, &cfg, test_section),
         Cli {
             lang,

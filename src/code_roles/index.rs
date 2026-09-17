@@ -82,6 +82,11 @@ impl SourceRoleIndex {
 }
 
 #[must_use]
+pub fn contains_file(roles: &SourceRoleIndex, path: &Path) -> bool {
+    facts_for(roles, path).is_some()
+}
+
+#[must_use]
 pub fn is_test_only_file(roles: &SourceRoleIndex, path: &Path) -> bool {
     roles.file_composition(path) == FileComposition::TestOnly
 }
@@ -270,6 +275,7 @@ mod index_test {
         let index = SourceRoleIndex::empty();
         let path = Path::new("missing.rs");
         assert_eq!(index.role_at(path, 1), CodeRole::Production);
+        assert!(!contains_file(&index, path));
         assert_eq!(
             index.file_composition(path),
             FileComposition::ProductionOnly
@@ -301,6 +307,7 @@ mod index_test {
             FileRoleFacts::new(CodeContextSet::production_only(), vec![prod, test]),
         );
         let index = SourceRoleIndex::new(files);
+        assert!(contains_file(&index, Path::new("mixed.rs")));
         assert_eq!(
             index.role_for_span(Path::new("mixed.rs"), prod.span),
             CodeRole::Production

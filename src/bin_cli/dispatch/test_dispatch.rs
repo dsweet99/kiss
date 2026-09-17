@@ -81,8 +81,7 @@ fn call_handler_dispatchers(
         main_branch: None,
         base_branch: None,
         dry_run: true,
-        force: false,
-        force_bad: false,
+        retry_bad: false,
         metrics: false,
         coverage_all: false,
         watch: false,
@@ -93,19 +92,6 @@ fn call_handler_dispatchers(
         cfg,
         reload_kissconfig: true,
         config_path: None,
-    });
-    let _ = handlers::dispatch_mv(options::MvDispatchOptions {
-        lang: None,
-        query: "sample.py::old".to_string(),
-        new_name: "new".to_string(),
-        paths: vec![".".to_string()],
-        to: None,
-        mv_flags: options::MvOutputFlags {
-            dry_run: true,
-            json: false,
-        },
-        ignore: vec![],
-        language_tables: kiss::LanguageTablesPresent::both(),
     });
 }
 
@@ -174,8 +160,7 @@ fn dispatch_test_command_rejects_invalid_modes_before_running_tests() {
                 main_branch: None,
                 base_branch: None,
                 dry_run: true,
-                force: false,
-                force_bad: false,
+                retry_bad: false,
                 metrics: false,
                 coverage_all: false,
                 watch: false,
@@ -257,19 +242,6 @@ fn dispatch_private_routers_cover_additional_command_variants() {
         &cfg,
         &test,
     );
-    let _ = dispatch_analyze(
-        None,
-        None,
-        Commands::Coverage {
-            paths: vec![".".to_string()],
-            all: false,
-            ignore: vec![],
-            timing: false,
-            jobs: None,
-        },
-        &cfg,
-        &test,
-    );
     let _ = dispatch_tools(
         None,
         None,
@@ -280,21 +252,6 @@ fn dispatch_private_routers_cover_additional_command_variants() {
             minhash_size: 100,
             lsh_bands: 20,
             min_similarity: Some(0.9),
-            ignore: vec![],
-        },
-        &cfg,
-        &test,
-    );
-    let _ = dispatch_tools(
-        None,
-        None,
-        Commands::Mv {
-            query: "sample.py::old".to_string(),
-            new_name: "new".to_string(),
-            paths: vec![".".to_string()],
-            to: None,
-            dry_run: true,
-            json: false,
             ignore: vec![],
         },
         &cfg,
@@ -325,8 +282,7 @@ fn dispatch_test_rejects_watch_with_dry_run() {
                 main_branch: None,
                 base_branch: None,
                 dry_run: true,
-                force: false,
-                force_bad: false,
+                retry_bad: false,
                 metrics: false,
                 coverage_all: false,
                 watch: true,

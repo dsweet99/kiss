@@ -1,5 +1,24 @@
+fn run_env_body_in_isolated_process(test_name: &str) -> bool {
+    const ENV: &str = "KISS_ISOLATED_REFRESH_ENV_TEST";
+    if std::env::var(ENV).as_deref() == Ok(test_name) {
+        return false;
+    }
+    let full_name = format!("test_runner::check_runtime_refresh::apply_tests::{test_name}");
+    let status =
+        std::process::Command::new(std::env::current_exe().expect("current test executable"))
+            .args(["--exact", &full_name])
+            .env(ENV, test_name)
+            .status()
+            .expect("spawn isolated refresh environment test");
+    assert!(status.success(), "isolated refresh test failed: {status}");
+    true
+}
+
 #[test]
 fn scoped_refresh_env_guard_sets_and_restores_process_env() {
+    if run_env_body_in_isolated_process("scoped_refresh_env_guard_sets_and_restores_process_env") {
+        return;
+    }
     let key = super::COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV;
     let previous = std::env::var_os(key);
     unsafe { std::env::remove_var(key) };
@@ -23,6 +42,9 @@ fn scoped_refresh_env_guard_sets_and_restores_process_env() {
 
 #[test]
 fn scoped_refresh_env_guard_is_safe_across_threads() {
+    if run_env_body_in_isolated_process("scoped_refresh_env_guard_is_safe_across_threads") {
+        return;
+    }
     let key = super::COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV;
     let previous = std::env::var_os(key);
     unsafe { std::env::remove_var(key) };
@@ -51,6 +73,9 @@ fn scoped_refresh_env_guard_is_safe_across_threads() {
 
 #[test]
 fn restore_refresh_active_env_covers_set_and_clear_arms() {
+    if run_env_body_in_isolated_process("restore_refresh_active_env_covers_set_and_clear_arms") {
+        return;
+    }
     let key = super::COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV;
     let previous = std::env::var_os(key);
     unsafe { std::env::set_var(key, "seed") };
@@ -69,6 +94,11 @@ fn restore_refresh_active_env_covers_set_and_clear_arms() {
 
 #[test]
 fn restore_refresh_active_env_is_metamorphic_under_nested_clear_set() {
+    if run_env_body_in_isolated_process(
+        "restore_refresh_active_env_is_metamorphic_under_nested_clear_set",
+    ) {
+        return;
+    }
     let key = super::COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV;
     let previous = std::env::var_os(key);
     let seed = 0xC0FFEE_u64;
@@ -126,15 +156,90 @@ fn try_repair_rust_check_aggregate_returns_none_or_discovery_error_on_empty_repo
     }
 }
 
+pub(super) fn persistent_bare_repair_repo() -> std::path::PathBuf {
+    use std::path::PathBuf;
+    use std::sync::OnceLock;
+    static REPO: OnceLock<PathBuf> = OnceLock::new();
+    REPO.get_or_init(|| {
+        let root = std::env::temp_dir().join("kiss-bare-repair-fixture");
+        if !root.join("Cargo.toml").is_file() {
+            std::fs::create_dir_all(&root).expect("bare repair fixture root");
+            bare_crate_with_lib_at(&root);
+            let target_dir = {
+                let dir = std::env::temp_dir().join("kiss-test-targets").join("bare-repair");
+                std::fs::create_dir_all(&dir).unwrap();
+                dir
+            };
+            let status = std::process::Command::new("cargo")
+                .args(["test", "--no-run", "-q"])
+                .current_dir(&root)
+                .env("CARGO_TARGET_DIR", &target_dir)
+                .status()
+                .expect("prebuild bare repair crate");
+            assert!(status.success(), "bare repair crate prebuild failed");
+        }
+        root
+    })
+    .clone()
+}
+
+pub(super) fn bare_crate_synthetic_executable_build_at(
+    repo: &std::path::Path,
+    selector: &str,
+) -> crate::test_runner::rust_llvm_cov::RustExecutableIndexBuild {
+    if !repo.join("Cargo.toml").is_file() {
+        bare_crate_with_lib_at(repo);
+    }
+    let selectors = vec![selector.to_string()];
+    let request = crate::test_runner::rust_llvm_cov::rust_coverage_batch_request_from_parts(
+        repo,
+        &selectors,
+        &[],
+        false,
+        1,
+        Some(selectors.clone()),
+        kiss::rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
+        &kiss::GateConfig::default(),
+    )
+    .expect("batch request");
+    let versions =
+        crate::test_runner::rust_llvm_cov::detect_rust_coverage_tool_versions(repo).expect("tools");
+    let tools =
+        crate::test_runner::rust_llvm_cov::rust_coverage_tool_identity_from_versions(&versions);
+    let identity = kiss::rust_llvm_cov_runner::batch_identity(&request, &tools).expect("identity");
+    let mut build = crate::test_runner::rust_llvm_cov::RustExecutableIndexBuild {
+        request,
+        tools,
+        identity,
+        index: kiss::rust_llvm_cov_runner::RustTestExecutableIndex {
+            selector_binary_ids: std::collections::BTreeMap::new(),
+            test_binaries: Vec::new(),
+            counters: kiss::rust_llvm_cov_runner::RustCoverageBatchCounters::default(),
+        },
+    };
+    inject_synthetic_binary_into_index(&mut build, selector, "bin");
+    build
+}
+
 pub(super) fn bare_crate_with_lib(tmp: &tempfile::TempDir) {
+    bare_crate_with_lib_at(tmp.path());
+}
+
+pub(super) fn bare_crate_with_lib_at(repo: &std::path::Path) {
+    std::fs::create_dir_all(repo).expect("bare crate root");
     std::fs::write(
-        tmp.path().join("Cargo.toml"),
+        repo.join("Cargo.toml"),
         "[package]\nname=\"t\"\nversion=\"0.0.0\"\nedition=\"2021\"\n",
     )
     .unwrap();
-    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
     std::fs::write(
-        tmp.path().join("src/lib.rs"),
+        repo.join("Cargo.lock"),
+        "version = 4\n\n[[package]]\nname = \"t\"\nversion = \"0.0.0\"\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(repo.join("src")).unwrap();
+    std::fs::write(
+        repo.join("src/lib.rs"),
         "pub fn covered() {}\n\
          #[cfg(test)]\n\
          mod tests {\n\
@@ -158,7 +263,14 @@ pub(super) fn inject_synthetic_binary_into_index(
     build.index.test_binaries = vec![kiss::rust_llvm_cov_runner::RustTestBinaryIdentity {
         id: binary_id.to_string(),
         executable: exe.to_string_lossy().to_string(),
-        digest: "synthetic-digest".to_string(),
+        digest: {
+            let h = b"synthetic-test-binary"
+                .iter()
+                .fold(0xcbf2_9ce4_8422_2325u64, |h, byte| {
+                    (h ^ u64::from(*byte)).wrapping_mul(0x0100_0000_01b3)
+                });
+            format!("{h:016x}")
+        },
     }];
     build.index.selector_binary_ids =
         std::collections::BTreeMap::from([(selector.to_string(), vec![binary_id.to_string()])]);
@@ -209,32 +321,20 @@ pub(super) fn seed_prior_selector_entries(
 fn apply_identity_only_repair_publishes_when_maps_match_injected_index() {
     let tmp = tempfile::tempdir().unwrap();
     bare_crate_with_lib(&tmp);
-    let selectors =
-        crate::test_runner::runners::enumerate_workspace_rust_selectors(tmp.path(), &[])
-            .expect("bare crate with a unit test should enumerate selectors");
-    assert!(
-        !selectors.is_empty(),
-        "expected at least one rust selector, got {selectors:?}"
-    );
-    let mut build = crate::test_runner::rust_llvm_cov::build_current_rust_test_executable_index(
-        tmp.path(),
-        &selectors,
-        &[],
-        1,
-    )
-    .expect("bare crate can build an executable index");
-    let line_map = inject_synthetic_binary_into_index(&mut build, &selectors[0], "bin-a");
-
+    // Known selector from bare_crate_with_lib — avoid cold cargo enumerate.
+    let selectors = vec!["tests::missing_case".to_string()];
+    let mut build = bare_crate_synthetic_executable_build_at(tmp.path(), &selectors[0]);
     for selector in &selectors {
         build
             .index
             .selector_binary_ids
             .entry(selector.clone())
-            .or_insert_with(|| vec!["bin-a".to_string()]);
+            .or_insert_with(|| vec!["bin".to_string()]);
     }
-    let retained = std::collections::BTreeMap::from([("bin-a".to_string(), line_map)]);
+    let line_map = inject_synthetic_binary_into_index(&mut build, &selectors[0], "bin");
+    let retained = std::collections::BTreeMap::from([("bin".to_string(), line_map)]);
     let prior_generation = "prior-generation";
-    seed_prior_selector_entries(&build, prior_generation, &selectors, "bin-a");
+    seed_prior_selector_entries(&build, prior_generation, &selectors, "bin");
     let stats = super::apply_identity_only_repair(
         tmp.path(),
         &[],
@@ -246,6 +346,16 @@ fn apply_identity_only_repair_publishes_when_maps_match_injected_index() {
     .expect("identity-only repair should publish a valid aggregate");
     assert!(stats.by_language.rust.identity_only_repair);
     assert_eq!(stats.by_language.rust.aggregate_binaries, 1);
+    assert!(
+        kiss::rust_llvm_cov_runner::load_current_population_state(
+            &build.request.cache_root,
+            &build.request.source_root,
+            &build.identity,
+            Some(&selectors),
+        )
+        .is_some(),
+        "identity-only repair must publish matching population state"
+    );
 }
 
 #[test]
@@ -280,33 +390,26 @@ fn finalize_population_summary_maps_nonzero_exit_to_test_execution() {
 fn finalize_population_summary_accepts_zero_exit_after_identity_publish() {
     let tmp = tempfile::tempdir().unwrap();
     bare_crate_with_lib(&tmp);
-    let selectors =
-        crate::test_runner::runners::enumerate_workspace_rust_selectors(tmp.path(), &[])
-            .expect("selectors");
-    let mut build = crate::test_runner::rust_llvm_cov::build_current_rust_test_executable_index(
-        tmp.path(),
-        &selectors,
-        &[],
-        1,
-    )
-    .expect("index");
-    let line_map = inject_synthetic_binary_into_index(&mut build, &selectors[0], "bin-a");
+    // Known selector from bare_crate_with_lib — avoid cold cargo enumerate.
+    let selectors = vec!["tests::missing_case".to_string()];
+    let mut build = bare_crate_synthetic_executable_build_at(tmp.path(), &selectors[0]);
+    let line_map = inject_synthetic_binary_into_index(&mut build, &selectors[0], "bin");
     for selector in &selectors {
         build
             .index
             .selector_binary_ids
             .entry(selector.clone())
-            .or_insert_with(|| vec!["bin-a".to_string()]);
+            .or_insert_with(|| vec!["bin".to_string()]);
     }
     let prior_generation = "prior-generation";
-    seed_prior_selector_entries(&build, prior_generation, &selectors, "bin-a");
+    seed_prior_selector_entries(&build, prior_generation, &selectors, "bin");
     super::apply_identity_only_repair(
         tmp.path(),
         &[],
         &build,
         &selectors,
         prior_generation,
-        std::collections::BTreeMap::from([("bin-a".to_string(), line_map)]),
+        std::collections::BTreeMap::from([("bin".to_string(), line_map)]),
     )
     .expect("publish");
     let summary = crate::test_runner::runners::SelectorExecutionSummary {

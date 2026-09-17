@@ -352,6 +352,19 @@ fn multiple_language_backers_combine_without_selector_collisions() {
 }
 
 #[test]
+fn one_prior_failure_with_fresh_index_stays_selective() {
+    let (mut planner, select_calls) = FakePlanner::fresh(Language::Rust, Vec::new());
+    planner.prior_failures = vec![selector(Language::Rust, "a")];
+    let plan = CoverageDecisionEngine::new(vec![planner.boxed()])
+        .plan(&[])
+        .unwrap();
+    assert_eq!(plan.selected, vec![selector(Language::Rust, "a")]);
+    assert!(plan.population.is_empty());
+    assert!(plan.population_languages.is_empty());
+    assert_eq!(select_calls.get(), 1);
+}
+
+#[test]
 fn supported_language_unifies_planner_and_runtime_stacks() {
     use crate::test_runner::coverage_decision::SupportedLanguage;
     use crate::test_runner::lang_iface::LanguageRuntime;

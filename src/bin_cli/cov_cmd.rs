@@ -1,25 +1,32 @@
 use crate::analyze;
+use crate::analyze::build_focus_filter;
 use crate::analyze::cov_records_cache::{
-    CovRecordsCacheKey, store_cov_records, try_load_cov_records,
+    CovRecordsCacheKey, mark_cached_records_orphan_result,
+    try_load_cov_records_with_orphan_violations,
 };
-use crate::analyze::line_coverage::{
-    CoverageSourceFacts, RuntimeCoverageSnapshot, compute_line_coverage_records,
+use crate::bin_cli::cov_cmd_cache::{
+    compute_and_store_records, gather_cov_files, lang_filter_cache_label,
 };
-use crate::analyze::{build_focus_filter, gather_files};
 use crate::bin_cli::cov_sibling_gates::{
     SiblingGateResult, apply_time_gate_eval, evaluate_max_num_tests_gate,
     evaluate_time_gate_for_cov, finish_sibling_gates,
 };
+
+#[path = "cov_zero.rs"]
+mod cov_zero;
+use cov_zero::finish_zero_threshold_cov;
 use crate::bin_cli::util::{merge_check_ignore_prefixes, validate_paths};
 use crate::test_runner::check_line_coverage::{
-    RequiredCoverageLanguages, ensure_check_runtime_coverage, load_check_runtime_coverage,
-    repository_root_for_universe,
+    RequiredCoverageLanguages, repository_root_for_universe,
 };
 use crate::test_runner::unit_test_timing::RuntimeGateEval;
 use kiss::Language;
 use kiss::cli_output::{print_no_files_message, print_violations};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Instant;
+
+pub(crate) use crate::bin_cli::cov_cmd_cache::CovFileSets;
+pub(crate) use crate::bin_cli::cov_cmd_cache::load_or_refresh_snapshot;
 
 pub struct CovCommandArgs<'a> {
     pub paths: &'a [String],
@@ -34,41 +41,6 @@ pub struct CovCommandArgs<'a> {
     pub allow_refresh: bool,
     pub pytest_args: &'a [String],
     pub language_tables: kiss::LanguageTablesPresent,
-}
-
-fn load_or_refresh_snapshot(
-    repo_root: &Path,
-    required: RequiredCoverageLanguages,
-    ignore: &[String],
-    jobs: usize,
-    allow_refresh: bool,
-    gate: &kiss::GateConfig,
-    pytest_args: &[String],
-) -> Result<crate::test_runner::check_line_coverage::ValidatedCovInputs, i32> {
-    use crate::test_runner::check_line_coverage::ValidatedCovInputs;
-    let snapshot =
-        match load_check_runtime_coverage(repo_root, required, ignore, gate, pytest_args) {
-            Ok(snapshot) => snapshot,
-            Err(load_err) => {
-                if !allow_refresh {
-                    eprintln!("{load_err}");
-                    return Err(1);
-                }
-                ensure_check_runtime_coverage(repo_root, required, ignore, jobs, pytest_args, gate)
-                    .map_err(|err| {
-                        eprintln!("{err}");
-                        1
-                    })?;
-                load_check_runtime_coverage(repo_root, required, ignore, gate, pytest_args)
-                    .map_err(|err| {
-                        eprintln!("{err}");
-                        1
-                    })?
-            }
-        };
-    Ok(ValidatedCovInputs::from_snapshot(
-        required, snapshot, repo_root,
-    ))
 }
 
 fn evaluate_coverage_gate(
@@ -99,9 +71,28 @@ struct RecordsEvalCtx<'a> {
     ignore: &'a [String],
 }
 
-fn evaluate_records_with_time(
+fn orphan_gate_failed_with_violations(
+    ctx: &RecordsEvalCtx<'_>,
+    snapshot: Option<&analyze::line_coverage::RuntimeCoverageSnapshot>,
+) -> (bool, Vec<kiss::Violation>) {
+    let Some(snapshot) = snapshot else {
+        return (false, Vec::new());
+    };
+    let repo_root = repository_root_for_universe(ctx.universe_root);
+    analyze::evaluate_orphan_unit_gate_with_viols(
+        &repo_root,
+        &ctx.files.py_files,
+        &ctx.files.rs_files,
+        snapshot,
+        ctx.args.gate_config,
+        ctx.args.bypass_gate,
+    )
+}
+
+fn evaluate_records_with_time_and_orphan(
     records: &[analyze::line_coverage::LineCoverageRecord],
     ctx: &RecordsEvalCtx<'_>,
+    orphan_failed: bool,
 ) -> i32 {
     let coverage_failed = evaluate_coverage_gate(
         records,
@@ -118,14 +109,41 @@ fn evaluate_records_with_time(
         coverage_failed,
         time_failed,
         max_num_tests_failed,
+        orphan_failed,
     })
 }
 
+#[cfg(test)]
+fn evaluate_records_with_time(
+    records: &[analyze::line_coverage::LineCoverageRecord],
+    ctx: &RecordsEvalCtx<'_>,
+    snapshot: Option<&analyze::line_coverage::RuntimeCoverageSnapshot>,
+) -> i32 {
+    let (orphan_failed, _) = orphan_gate_failed_with_violations(ctx, snapshot);
+    evaluate_records_with_time_and_orphan(records, ctx, orphan_failed)
+}
+
+#[cfg(test)]
 fn try_evaluate_records_with_time(
     records: &[analyze::line_coverage::LineCoverageRecord],
     ctx: &RecordsEvalCtx<'_>,
 ) -> Option<i32> {
+    try_evaluate_records_with_orphan_state(records, ctx, false)
+}
+
+fn try_evaluate_records_with_cached_orphans(
+    records: &[analyze::line_coverage::LineCoverageRecord],
+    ctx: &RecordsEvalCtx<'_>,
+    orphan_viols: &[kiss::Violation],
+) -> Option<i32> {
+    let t_time = std::time::Instant::now();
     let time_eval = evaluate_time_gate_for_cov(ctx.args, ctx.universe_root, ctx.files, ctx.ignore);
+    if ctx.args.timing {
+        eprintln!(
+            "TIMING:coverage_sibling_time_gate_ms:{}",
+            t_time.elapsed().as_millis()
+        );
+    }
     if matches!(time_eval, RuntimeGateEval::Incomplete) {
         if !ctx.args.allow_refresh {
             eprintln!(
@@ -136,6 +154,20 @@ fn try_evaluate_records_with_time(
 
         return None;
     }
+
+    let orphan_failed = if ctx.args.gate_config.orphan_detection && !ctx.args.bypass_gate {
+        if !orphan_viols.is_empty() {
+            crate::test_runner::final_summary::note_violation_kind("orphan", orphan_viols.len());
+            kiss::cli_output::print_violations(orphan_viols);
+            true
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
+    let t_cov = std::time::Instant::now();
     let coverage_failed = evaluate_coverage_gate(
         records,
         ctx.focus,
@@ -143,90 +175,50 @@ fn try_evaluate_records_with_time(
         ctx.scope,
         ctx.args.bypass_gate,
     );
+    if ctx.args.timing {
+        eprintln!(
+            "TIMING:coverage_sibling_coverage_gate_ms:{}",
+            t_cov.elapsed().as_millis()
+        );
+    }
     let time_failed = apply_time_gate_eval(&time_eval);
+    let t_max = std::time::Instant::now();
     let max_num_tests_failed =
         evaluate_max_num_tests_gate(ctx.args, ctx.universe_root, ctx.files, ctx.ignore);
+    if ctx.args.timing {
+        eprintln!(
+            "TIMING:coverage_sibling_max_num_tests_ms:{}",
+            t_max.elapsed().as_millis()
+        );
+    }
     Some(finish_sibling_gates(SiblingGateResult {
         coverage_failed,
         time_failed,
         max_num_tests_failed,
+        orphan_failed,
     }))
 }
 
-pub(crate) struct CovFileSets {
-    pub(crate) py_files: Vec<PathBuf>,
-    pub(crate) rs_files: Vec<PathBuf>,
-}
-
-fn gather_cov_files(
-    universe_root: &Path,
-    lang_filter: Option<Language>,
-    ignore: &[String],
-) -> Option<CovFileSets> {
-    let repo_root = repository_root_for_universe(universe_root);
-    let list_key = crate::analyze::cov_file_list_cache::CovFileListKey {
-        repo_root: &repo_root,
-        lang_filter,
-        ignore,
-    };
-    let (py_files, mut rs_files) = if let Some(cached) =
-        crate::analyze::cov_file_list_cache::try_load_cov_file_list(&list_key)
-    {
-        cached
-    } else {
-        let (py_files, rs_files) = gather_files(universe_root, lang_filter, ignore);
-        if !py_files.is_empty() || !rs_files.is_empty() {
-            crate::analyze::cov_file_list_cache::store_cov_file_list(
-                &list_key, &py_files, &rs_files,
-            );
-        }
-        (py_files, rs_files)
-    };
-    rs_files =
-        super::cov_workspace_files::filter_root_workspace_rust_cov_files(&repo_root, rs_files);
-    if py_files.is_empty() && rs_files.is_empty() {
-        None
-    } else {
-        Some(CovFileSets { py_files, rs_files })
+#[cfg(test)]
+fn try_evaluate_records_with_orphan_state(
+    records: &[analyze::line_coverage::LineCoverageRecord],
+    ctx: &RecordsEvalCtx<'_>,
+    orphan_clean: bool,
+) -> Option<i32> {
+    if ctx.args.gate_config.orphan_detection && !ctx.args.bypass_gate && !orphan_clean {
+        return None;
     }
+    try_evaluate_records_with_cached_orphans(records, ctx, &[])
 }
 
-fn lang_filter_cache_label(lang_filter: Option<Language>) -> Option<&'static str> {
-    lang_filter.map(|lang| match lang {
-        Language::Python => "python",
-        Language::Rust => "rust",
-    })
-}
-
-fn compute_and_store_records(
-    cache_key: &CovRecordsCacheKey<'_>,
-    repo_root: &Path,
-    files: &CovFileSets,
-    snapshot: &RuntimeCoverageSnapshot,
-    timing: bool,
-    t0: Instant,
-) -> Result<Vec<analyze::line_coverage::LineCoverageRecord>, kiss::RoleBuildError> {
-    if timing {
-        eprintln!(
-            "TIMING:coverage_snapshot_load_or_refresh_ms:{}",
-            t0.elapsed().as_millis()
-        );
-    }
-    let t_records = Instant::now();
-    let facts = CoverageSourceFacts::from_files(&files.py_files, &files.rs_files)?;
-    let records = compute_line_coverage_records(repo_root, &facts, snapshot);
-    if timing {
-        eprintln!(
-            "TIMING:coverage_records_compute_ms:{}",
-            t_records.elapsed().as_millis()
-        );
-    }
-    store_cov_records(cache_key, &records);
-    Ok(records)
-}
-
+#[allow(dead_code)]
 pub fn run_cov_command(args: &CovCommandArgs<'_>) -> i32 {
+    run_cov_command_impl(args, true)
+}
+
+pub(crate) fn run_cov_command_impl(args: &CovCommandArgs<'_>, print_empty: bool) -> i32 {
     crate::test_runner::python_coverage_index::clear_python_generation_warm_memo();
+    crate::test_runner::unit_test_timing::clear_rust_duration_pairs_memo();
     let _ = (args.py_config, args.rs_config);
     let ignore = merge_check_ignore_prefixes(args.ignore);
     validate_paths(args.paths);
@@ -239,7 +231,9 @@ pub fn run_cov_command(args: &CovCommandArgs<'_>) -> i32 {
     let universe_root = Path::new(universe);
     let t_gather = Instant::now();
     let Some(files) = gather_cov_files(universe_root, args.lang_filter, &ignore) else {
-        print_no_files_message(args.lang_filter, universe_root);
+        if print_empty {
+            print_no_files_message(args.lang_filter, universe_root);
+        }
         return 0;
     };
     if let Err(code) = crate::bin_cli::util::reject_unconfigured_languages(
@@ -258,30 +252,7 @@ pub fn run_cov_command(args: &CovCommandArgs<'_>) -> i32 {
     let threshold = args.gate_config.test_coverage_threshold;
 
     if threshold == 0 && !args.bypass_gate {
-        let repo_root = repository_root_for_universe(universe_root);
-        let required = RequiredCoverageLanguages {
-            python: !files.py_files.is_empty(),
-            rust: !files.rs_files.is_empty(),
-        };
-
-        let _ = load_or_refresh_snapshot(
-            &repo_root,
-            required,
-            &ignore,
-            args.jobs,
-            args.allow_refresh,
-            args.gate_config,
-            args.pytest_args,
-        );
-        let time_eval = evaluate_time_gate_for_cov(args, universe_root, &files, &ignore);
-        let time_failed = apply_time_gate_eval(&time_eval);
-        let max_num_tests_failed =
-            evaluate_max_num_tests_gate(args, universe_root, &files, &ignore);
-        return finish_sibling_gates(SiblingGateResult {
-            coverage_failed: false,
-            time_failed,
-            max_num_tests_failed,
-        });
+        return finish_zero_threshold_cov(args, universe_root, &files, &ignore);
     }
     evaluate_gathered_cov(EvaluateGatheredCov {
         args,
@@ -304,6 +275,34 @@ struct EvaluateGatheredCov<'a> {
     threshold: usize,
 }
 
+fn try_evaluate_from_cache(
+    cache_key: &CovRecordsCacheKey<'_>,
+    eval_ctx: &RecordsEvalCtx<'_>,
+    repo_root: &Path,
+    required: RequiredCoverageLanguages,
+    t0: &Instant,
+) -> Option<i32> {
+    let (records, cached_orphan_policy, cached_orphan_viols) =
+        try_load_cov_records_with_orphan_violations(cache_key)?;
+    let bypass_or_disabled =
+        !eval_ctx.args.gate_config.orphan_detection || eval_ctx.args.bypass_gate;
+    let policy_matches =
+        cached_orphan_policy == orphan_policy(&eval_ctx.args.gate_config.orphan_allowed);
+    if eval_ctx.args.timing {
+        eprintln!(
+            "TIMING:coverage_records_cache_hit_ms:{}",
+            t0.elapsed().as_millis()
+        );
+    }
+    if bypass_or_disabled {
+        return try_evaluate_records_with_cached_orphans(&records, eval_ctx, &[]);
+    }
+    if policy_matches && let Some(orphan_viols) = cached_orphan_viols {
+        return try_evaluate_records_with_cached_orphans(&records, eval_ctx, &orphan_viols);
+    }
+    evaluate_cached_records_for_orphan(&records, eval_ctx, repo_root, required, cache_key, t0)
+}
+
 fn evaluate_gathered_cov(p: EvaluateGatheredCov<'_>) -> i32 {
     let scope = p.args.gate_config.test_coverage_scope;
     let repo_root = repository_root_for_universe(p.universe_root);
@@ -320,6 +319,7 @@ fn evaluate_gathered_cov(p: EvaluateGatheredCov<'_>) -> i32 {
         bypass_gate: p.args.bypass_gate,
         ignore: p.ignore,
         lang_filter: lang_filter_cache_label(p.args.lang_filter),
+        pytest_args: p.args.pytest_args,
     };
     let focus = build_focus_filter(p.focus_paths, p.universe, p.args.lang_filter, p.ignore);
     let t0 = Instant::now();
@@ -332,16 +332,10 @@ fn evaluate_gathered_cov(p: EvaluateGatheredCov<'_>) -> i32 {
         files: p.files,
         ignore: p.ignore,
     };
-    if let Some(records) = try_load_cov_records(&cache_key) {
-        if p.args.timing {
-            eprintln!(
-                "TIMING:coverage_records_cache_hit_ms:{}",
-                t0.elapsed().as_millis()
-            );
-        }
-        if let Some(code) = try_evaluate_records_with_time(&records, &eval_ctx) {
-            return code;
-        }
+    if let Some(code) =
+        try_evaluate_from_cache(&cache_key, &eval_ctx, &repo_root, required, &t0)
+    {
+        return code;
     }
     let validated = match load_or_refresh_snapshot(
         &repo_root,
@@ -374,9 +368,76 @@ fn evaluate_gathered_cov(p: EvaluateGatheredCov<'_>) -> i32 {
             return 1;
         }
     };
-    evaluate_records_with_time(&records, &eval_ctx)
+    let (orphan_failed, viols) =
+        orphan_gate_failed_with_violations(&eval_ctx, Some(&validated.snapshot));
+    mark_cached_records_orphan_result(
+        &cache_key,
+        &orphan_policy(&eval_ctx.args.gate_config.orphan_allowed),
+        &viols,
+    );
+    evaluate_records_with_time_and_orphan(&records, &eval_ctx, orphan_failed)
 }
 
+fn evaluate_cached_records_for_orphan(
+    records: &[analyze::line_coverage::LineCoverageRecord],
+    eval_ctx: &RecordsEvalCtx<'_>,
+    repo_root: &Path,
+    required: RequiredCoverageLanguages,
+    cache_key: &CovRecordsCacheKey<'_>,
+    t0: &Instant,
+) -> Option<i32> {
+    if !eval_ctx.args.gate_config.orphan_detection || eval_ctx.args.bypass_gate {
+        return None;
+    }
+    let time_eval = evaluate_time_gate_for_cov(
+        eval_ctx.args,
+        eval_ctx.universe_root,
+        eval_ctx.files,
+        eval_ctx.ignore,
+    );
+    if matches!(time_eval, RuntimeGateEval::Incomplete) {
+        return None;
+    }
+    let validated = match load_or_refresh_snapshot(
+        repo_root,
+        required,
+        eval_ctx.ignore,
+        eval_ctx.args.jobs,
+        eval_ctx.args.allow_refresh,
+        eval_ctx.args.gate_config,
+        eval_ctx.args.pytest_args,
+    ) {
+        Ok(validated) => validated,
+        Err(code) => return Some(code),
+    };
+    if eval_ctx.args.timing
+        && let Some(id) = validated.python_generation_id.as_ref()
+    {
+        eprintln!("TIMING:python_generation_id:{id}");
+    }
+    if eval_ctx.args.timing {
+        eprintln!(
+            "TIMING:coverage_snapshot_load_or_refresh_ms:{}",
+            t0.elapsed().as_millis()
+        );
+    }
+    let (orphan_failed, viols) =
+        orphan_gate_failed_with_violations(eval_ctx, Some(&validated.snapshot));
+    mark_cached_records_orphan_result(
+        cache_key,
+        &orphan_policy(&eval_ctx.args.gate_config.orphan_allowed),
+        &viols,
+    );
+    Some(evaluate_records_with_time_and_orphan(
+        records,
+        eval_ctx,
+        orphan_failed,
+    ))
+}
+
+fn orphan_policy(orphan_allowed: &[String]) -> String {
+    format!("orphan-policy-v1:{}", orphan_allowed.join("\0"))
+}
 #[cfg(test)]
 #[path = "cov_cmd_refresh_test.rs"]
 mod refresh_tests;

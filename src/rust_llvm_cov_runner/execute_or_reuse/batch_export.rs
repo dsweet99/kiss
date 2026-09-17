@@ -13,6 +13,8 @@ use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export_resolve::{
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export_tools::ExportTools;
 use crate::rust_llvm_cov_runner::{RustLineCoverage, RustLlvmCovError};
 
+const ESTIMATED_CPUS_PER_LLVM_EXPORT: usize = 2;
+
 pub(crate) use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export_merge::{
     export_instance_coverage, merge_profiles,
 };
@@ -178,10 +180,12 @@ pub(crate) fn export_instances_bounded_with(
     requests: Vec<InstanceExportRequest>,
     export_fn: BatchInstanceExportFn,
 ) -> Result<(Vec<(String, RustLineCoverage)>, ExportCounters), RustLlvmCovError> {
+    let jobs = export_worker_count(jobs);
     assert!(jobs > 0, "jobs must be greater than zero");
     if requests.is_empty() {
         return Ok((Vec::new(), ExportCounters::default()));
     }
+    crate::rust_llvm_cov_runner::record_llvm_export_invocations(requests.len());
     let export_fn = export_fn;
     let source_root = source_root.to_path_buf();
     let (tx, rx) = mpsc::channel();
@@ -243,6 +247,15 @@ pub(crate) fn export_instances_bounded_with(
     };
     drain_export_results(&mut drain)?;
     Ok((results, counters))
+}
+
+fn max_export_workers_for_host() -> usize {
+    let available = crate::shared_helpers::host_cpu_count(1);
+    available.div_ceil(ESTIMATED_CPUS_PER_LLVM_EXPORT).max(1)
+}
+
+fn export_worker_count(jobs: usize) -> usize {
+    jobs.clamp(1, max_export_workers_for_host())
 }
 
 struct ExportDrainState<'a> {
@@ -334,7 +347,8 @@ fn drain_export_results(drain: &mut ExportDrainState<'_>) -> Result<(), RustLlvm
             Err(RecvTimeoutError::Disconnected) => break,
         }
     }
-    if crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::batch_scope_interrupted() {
+    if crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::batch_scope_interrupted()
+    {
         return Err(RustLlvmCovError::Interrupted);
     }
     Ok(())

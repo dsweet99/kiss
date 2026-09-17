@@ -61,6 +61,12 @@ pub mod gate {
     pub const TEST_COVERAGE_SCOPE_TOML: &str = "\"codebase\"";
     pub const MAX_UNIT_TEST_SECONDS: f64 = 2.0;
     pub const MAX_NUM_TESTS: usize = 999_999;
+    pub const NUM_JOBS: usize = 4;
+    pub const NUM_JOBS_PYTEST: usize = 16;
+    pub const NUM_JOBS_LLVM_COV: usize = 4;
+    pub const MIN_MEMAVAILABLE_KIB: u64 = 262_144;
+    pub const MIN_MEMAVAILABLE_PERCENT: u64 = 10;
+    pub const WATCH_SETTLE_SECONDS: f64 = 1.0;
 }
 
 pub fn default_config_toml() -> String {
@@ -70,7 +76,6 @@ pub fn default_config_toml() -> String {
 [global]
 min_similarity = {min_sim}
 duplication_enabled = true
-orphan_module_enabled = true
 comment_removal_enabled = false
 docs_allowed = []
 orphan_allowed = []
@@ -78,9 +83,12 @@ orphan_allowed = []
 [test]
 test_coverage_threshold = {gate_coverage}
 test_coverage_scope = {gate_scope}
+orphan_detection = false
 max_num_tests = {max_num_tests}
-num_jobs = 4
-watch_settle_seconds = 1.0
+num_jobs = {num_jobs}
+num_jobs_pytest = {num_jobs_pytest}
+num_jobs_llvm_cov = {num_jobs_llvm_cov}
+watch_settle_seconds = {watch_settle:.1}
 pytest_plugins = []
 ignore = []
 
@@ -137,6 +145,10 @@ dependency_depth = {rs_dep_depth}
         gate_scope = gate::TEST_COVERAGE_SCOPE_TOML,
         max_unit_test_seconds = gate::MAX_UNIT_TEST_SECONDS,
         max_num_tests = gate::MAX_NUM_TESTS,
+        num_jobs = gate::NUM_JOBS,
+        num_jobs_pytest = gate::NUM_JOBS_PYTEST,
+        num_jobs_llvm_cov = gate::NUM_JOBS_LLVM_COV,
+        watch_settle = gate::WATCH_SETTLE_SECONDS,
         min_sim = duplication::MIN_SIMILARITY,
         py_statements = python::STATEMENTS_PER_FUNCTION,
         py_pos_args = python::POSITIONAL_ARGS,
@@ -211,6 +223,10 @@ mod tests {
             "init default must emit [global]:\n{toml}"
         );
         assert!(
+            toml.contains("orphan_detection = false"),
+            "init default must emit orphan_detection=false:\n{toml}"
+        );
+        assert!(
             toml.contains("comment_removal_enabled = false"),
             "init default must emit comment_removal_enabled=false:\n{toml}"
         );
@@ -232,7 +248,7 @@ mod tests {
         );
         assert!(
             toml.contains(
-                "num_jobs = 4\nwatch_settle_seconds = 1.0\npytest_plugins = []\nignore = []\n"
+                "num_jobs = 4\nnum_jobs_pytest = 16\nnum_jobs_llvm_cov = 4\nwatch_settle_seconds = 1.0\npytest_plugins = []\nignore = []\n"
             ),
             "init default must emit [test] runtime defaults:\n{toml}"
         );

@@ -1,6 +1,6 @@
 use super::*;
-use crate::rslip::cache::{self, rslip_cache_fingerprint, store_rslip_cache_entry};
 use crate::rpytest_runner::{PytestRunError, PytestRunOutcome, PytestRunRequest, PytestRunner};
+use crate::rslip::cache::{self, rslip_cache_fingerprint, store_rslip_cache_entry};
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs;

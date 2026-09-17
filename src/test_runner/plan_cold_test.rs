@@ -59,6 +59,16 @@ fn wipe_selector_cache(root: &Path) {
     let _ = fs::remove_dir_all(root.join(".kiss"));
 }
 
+fn shrink_durable_plan_selectors(root: &Path) {
+    for name in ["python_test_selectors.json", "rust_test_selectors.json"] {
+        let path = root.join("target").join("kiss-plan").join(name);
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        value["selectors"] = serde_json::json!([]);
+        fs::write(path, serde_json::to_vec(&value).unwrap()).unwrap();
+    }
+}
+
 fn assert_both_languages(planned: &PlannedSelectors) {
     assert!(!planned.sel.python.is_empty());
     assert!(!planned.sel.rust.is_empty());
@@ -66,6 +76,7 @@ fn assert_both_languages(planned: &PlannedSelectors) {
 
 #[test]
 fn cold_all_enumerates_and_stores_fingerprint() {
+    let _cwd = crate::cwd_test_lock::lock();
     let _cwd = cwd_test_lock::lock();
     let tmp = TempDir::new().unwrap();
     init_git_repo(tmp.path());
@@ -88,6 +99,27 @@ fn cold_all_enumerates_and_stores_fingerprint() {
     assert_eq!(rs_hit.sel.rust, both.sel.rust);
 
     std::env::set_current_dir(orig).unwrap();
+}
+
+#[test]
+fn wiping_kiss_rediscovers_after_durable_plan_shrink() {
+    let _cwd = crate::cwd_test_lock::lock();
+    let _cwd = cwd_test_lock::lock();
+    let tmp = TempDir::new().unwrap();
+    init_git_repo(tmp.path());
+    write_cold_demo(tmp.path());
+    let orig = std::env::current_dir().unwrap();
+    std::env::set_current_dir(tmp.path()).unwrap();
+
+    let both = plan_all(None);
+    assert_both_languages(&both);
+    shrink_durable_plan_selectors(tmp.path());
+    wipe_selector_cache(tmp.path());
+    crate::test_runner::workspace_selector_cache::clear_rust_selector_memo_for_tests();
+    let after = plan_all(None);
+    std::env::set_current_dir(orig).unwrap();
+    assert_eq!(after.sel.python, both.sel.python);
+    assert_eq!(after.sel.rust, both.sel.rust);
 }
 
 #[test]
@@ -125,6 +157,7 @@ fn watch_stage_names_use_kiss_test_stage_format() {
 
 #[test]
 fn cold_lang_filter_miss_arms_do_not_store_all_cache() {
+    let _cwd = crate::cwd_test_lock::lock();
     let _cwd = cwd_test_lock::lock();
     let tmp = TempDir::new().unwrap();
     init_git_repo(tmp.path());
@@ -148,6 +181,7 @@ fn cold_lang_filter_miss_arms_do_not_store_all_cache() {
 
 #[test]
 fn cold_dot_target_uses_plan_all_and_rust_extras_validate() {
+    let _cwd = crate::cwd_test_lock::lock();
     let _cwd = cwd_test_lock::lock();
     let tmp = TempDir::new().unwrap();
     init_git_repo(tmp.path());
@@ -179,4 +213,87 @@ fn cold_dot_target_uses_plan_all_and_rust_extras_validate() {
     assert!(bad.is_err(), "expected rust extra validation error");
 
     std::env::set_current_dir(orig).unwrap();
+}
+
+#[test]
+fn all_mode_does_not_substitute_commit_covering() {
+    let plan = include_str!("plan.rs");
+    let vcs = include_str!("plan_vcs.rs");
+    assert!(
+        !plan.contains("commit_covering_plan"),
+        "All planning must keep the workspace universe, not a commit-covering subset"
+    );
+    assert!(
+        !vcs.contains("commit_covering_plan") && !vcs.contains("commit_python_covering_plan"),
+        "python_all_plan must not replace the universe with commit covering"
+    );
+}
+
+#[test]
+fn python_all_plan_keeps_provided_universe_and_requires_population_without_index() {
+    let tmp = TempDir::new().unwrap();
+    init_git_repo(tmp.path());
+    let provided = vec![
+        "tests/test_a.py::test_a".into(),
+        "tests/test_b.py::test_b".into(),
+    ];
+    let (sel, required) =
+        super::plan_vcs::python_all_plan(tmp.path(), &[], &[], provided.clone(), true);
+    assert_eq!(sel, provided);
+    assert!(required);
+    let (skipped, skip_required) =
+        super::plan_vcs::python_all_plan(tmp.path(), &[], &[], provided, false);
+    assert!(skipped.is_empty());
+    assert!(!skip_required);
+}
+
+#[test]
+fn dirty_all_keeps_both_rust_tests_after_one_file_change() {
+    let _cwd = crate::cwd_test_lock::lock();
+    let tmp = TempDir::new().unwrap();
+    crate::test_runner::test_mode_fixtures::init_git(&tmp);
+    fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname='all_universe'\nversion='0.1.0'\nedition='2021'\n",
+    )
+    .unwrap();
+    fs::create_dir_all(tmp.path().join("src")).unwrap();
+    fs::write(
+        tmp.path().join("src/lib.rs"),
+        "pub fn a() -> u8 { 1 }\npub fn b() -> u8 { 2 }\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn a_ok() { assert_eq!(super::a(), 1); }\n    #[test]\n    fn b_ok() { assert_eq!(super::b(), 2); }\n}\n",
+    )
+    .unwrap();
+    assert!(
+        crate::test_runner::test_mode_fixtures::git_in(tmp.path())
+            .args(["add", "."])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        crate::test_runner::test_mode_fixtures::git_in(tmp.path())
+            .args(["commit", "-m", "init"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    fs::write(
+        tmp.path().join("src/lib.rs"),
+        "pub fn a() -> u8 { 3 }\npub fn b() -> u8 { 2 }\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn a_ok() { assert_eq!(super::a(), 3); }\n    #[test]\n    fn b_ok() { assert_eq!(super::b(), 2); }\n}\n",
+    )
+    .unwrap();
+    let orig = std::env::current_dir().unwrap();
+    std::env::set_current_dir(tmp.path()).unwrap();
+    let planned = plan_all(Some(Language::Rust));
+    std::env::set_current_dir(orig).unwrap();
+    assert!(
+        planned.sel.rust.iter().any(|s| s.contains("a_ok")),
+        "All must keep a_ok after a dirty edit: {:?}",
+        planned.sel.rust
+    );
+    assert!(
+        planned.sel.rust.iter().any(|s| s.contains("b_ok")),
+        "All must keep b_ok, not only the commit-covering test: {:?}",
+        planned.sel.rust
+    );
 }

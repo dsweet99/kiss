@@ -24,9 +24,45 @@ pub(crate) const RUST_COVERAGE_ENV_KEYS: &[&str] = &[
     "CARGO_TARGET_DIR",
     "LLVM_PROFILE_FILE",
     "KISS_RUST_LLVM_COV_HOLD_BEFORE_GO_MS",
+    "CMAKE_PREFIX_PATH",
+];
+const RUST_CHILD_ENV_KEYS: &[&str] = &[
+    "PATH",
+    "HOME",
+    "USER",
+    "LOGNAME",
+    "SHELL",
+    "TMPDIR",
+    "TMP",
+    "TEMP",
+    "CARGO_HOME",
+    "RUSTUP_HOME",
+    "RUSTUP_TOOLCHAIN",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "LD_LIBRARY_PATH",
+    "CC",
+    "CXX",
+    "CONDA_PREFIX",
+    "PKG_CONFIG_PATH",
 ];
 pub(crate) fn relevant_rust_batch_env() -> BTreeMap<String, String> {
-    kiss::env_map_from_allowlist(RUST_COVERAGE_ENV_KEYS)
+    let mut env = kiss::env_map_from_allowlist(RUST_CHILD_ENV_KEYS);
+    env.extend(kiss::env_map_from_allowlist(RUST_COVERAGE_ENV_KEYS));
+    env.extend(kiss::cargo_target_linker_env());
+    fill_cmake_prefix_from_conda(&mut env);
+    env
+}
+
+fn fill_cmake_prefix_from_conda(env: &mut BTreeMap<String, String>) {
+    if !env.contains_key("CMAKE_PREFIX_PATH")
+        && let Some(conda) = env.get("CONDA_PREFIX").cloned()
+    {
+        env.insert("CMAKE_PREFIX_PATH".to_string(), conda);
+    }
 }
 
 pub(crate) fn rust_coverage_cache_root(repo_root: &Path) -> PathBuf {
@@ -84,6 +120,7 @@ pub(crate) fn resolved_rust_batch_request_parts(
         test_args: test_args.to_vec(),
         env: relevant_rust_batch_env(),
         force_rerun: false,
+        force_rerun_selectors: Vec::new(),
         jobs: 1,
         generated_config: repo_root.join(".kiss/rust_llvm_cov_cache/runs/plan/nextest.toml"),
         population_publication_selectors: None,
@@ -92,6 +129,7 @@ pub(crate) fn resolved_rust_batch_request_parts(
         host_platform,
         coverage_output_mode: CoverageOutputMode::SelectorEntries,
         selector_timeout_millis: BTreeMap::new(),
+        cache_policy: kiss::test_cache_policy::TestCachePolicy::default(),
     };
     resolve_batch_request_runners(&mut req).map_err(|err| format!("{err:?}"))?;
     let tools = tool_identity::cached_rust_coverage_tool_identity(repo_root)?;
@@ -104,6 +142,7 @@ pub(crate) fn publish_rust_derived_state_with_filter(
     test_args: &[String],
     _is_indexable: impl Fn(&Path, &Path) -> bool,
 ) -> Result<(), String> {
+    kiss::rust_llvm_cov_runner::refresh_identity_memo();
     let (mut req, tools) = resolved_rust_batch_request_parts(repo_root, test_args)?;
     let identity = kiss::rust_llvm_cov_runner::batch_identity(&req, &tools)
         .map_err(|err| format!("batch identity: {err}"))?;
@@ -120,13 +159,46 @@ pub(crate) fn publish_rust_derived_state_with_filter(
     };
     selectors.sort();
     selectors.dedup();
+    if selectors.is_empty() {
+        return Ok(());
+    }
     req.logical_selectors = selectors.clone();
     req.population_publication_selectors = Some(selectors.clone());
     let identity = kiss::rust_llvm_cov_runner::batch_identity(&req, &tools)
         .map_err(|err| format!("batch identity: {err}"))?;
-    kiss::rust_llvm_cov_runner::publish_derived_state(&req, &tools, &identity, &selectors, true)
-        .map_err(|err| format!("{err:?}"))?;
+    kiss::rust_llvm_cov_runner::publish_derived_state_with_binaries(
+        &req,
+        &tools,
+        &identity,
+        &selectors,
+        &[],
+        true,
+    )
+    .map_err(|err| format!("{err:?}"))?;
     Ok(())
+}
+
+pub(crate) fn rust_selective_rebuild_publication_selectors<'a>(
+    repo_root: &Path,
+    planned: &'a [String],
+    extras: &[String],
+) -> Option<&'a [String]> {
+    if planned.is_empty() {
+        return None;
+    }
+    if rust_population_manifest_is_current_for_args(repo_root, planned, extras) {
+        return None;
+    }
+    let path = rust_coverage_cache_root(repo_root).join("population.json");
+    let count = std::fs::read(path).ok().and_then(|bytes| {
+        let value: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+        Some(value.get("selectors")?.as_array()?.len())
+    });
+    match count {
+        Some(n) if planned.len() < n => None,
+        Some(_) => Some(planned),
+        None => None,
+    }
 }
 
 pub(crate) fn rust_population_manifest_is_current_for_args(
@@ -171,7 +243,8 @@ pub(crate) use tool_identity::rust_coverage_tool_versions_from_cache_or_detect;
 #[path = "rust_coverage_index/selection.rs"]
 mod selection;
 pub(crate) use selection::{
-    ResolvedRustPopulation, resolve_rust_population_state, select_rust_source_selectors_for_basis,
+    ResolveRustPopulationArgs, ResolvedRustPopulation, resolve_rust_population_state,
+    select_rust_source_selectors_for_basis,
 };
 
 #[path = "rust_coverage_index/line_select.rs"]

@@ -97,7 +97,10 @@ fn hash_line_map(mut h: u64, map: &BTreeMap<String, BTreeSet<u32>>) -> u64 {
     for (file, lines) in map {
         h = hash_str(h, file);
         for line in lines {
-            h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(h, line.to_le_bytes().as_slice());
+            h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(
+                h,
+                line.to_le_bytes().as_slice(),
+            );
         }
         h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(h, &[0]);
     }

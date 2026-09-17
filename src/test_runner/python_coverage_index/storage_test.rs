@@ -109,6 +109,7 @@ fn stale_entries_fingerprint_makes_python_index_fail_closed() {
         tmp.path(),
         &PythonCoverageIndex::new(),
         &stale_fingerprint,
+        &[],
     )
     .unwrap();
 

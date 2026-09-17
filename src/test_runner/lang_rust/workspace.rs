@@ -54,9 +54,30 @@ pub(crate) fn non_member_rust_crate_roots(
     Ok(roots.into_iter().collect())
 }
 
+fn cargo_toml_has_table(text: &str, table: &str) -> bool {
+    text.lines().any(|line| {
+        let trimmed = line.trim();
+        trimmed == table || trimmed.starts_with(&format!("{table}."))
+    })
+}
+
+fn single_package_member_dirs(repo_root: &Path) -> Option<BTreeSet<PathBuf>> {
+    let text = std::fs::read_to_string(repo_root.join("Cargo.toml")).ok()?;
+    if cargo_toml_has_table(&text, "[workspace]") {
+        return None;
+    }
+    if !cargo_toml_has_table(&text, "[package]") {
+        return None;
+    }
+    Some(BTreeSet::from([canonical_manifest_dir(repo_root)]))
+}
+
 pub(crate) fn cargo_workspace_member_manifest_dirs(
     repo_root: &Path,
 ) -> Result<BTreeSet<PathBuf>, String> {
+    if let Some(dirs) = single_package_member_dirs(repo_root) {
+        return Ok(dirs);
+    }
     let output = Command::new("cargo")
         .args(["metadata", "--format-version", "1", "--no-deps"])
         .current_dir(repo_root)
@@ -142,6 +163,18 @@ fn nearest_cargo_manifest_dir_cached(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn single_package_manifest_is_the_only_member_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("Cargo.toml"),
+            "[package]\nname = \"solo\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        let dirs = cargo_workspace_member_manifest_dirs(tmp.path()).unwrap();
+        assert_eq!(dirs, BTreeSet::from([canonical_manifest_dir(tmp.path())]));
+    }
 
     #[test]
     fn fixture_path_filter_only_applies_under_tests() {

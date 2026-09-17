@@ -99,6 +99,7 @@ impl PopulationEvidence {
             duration_ns: item.duration.map(|d| d.as_nanos() as u64),
             cache_disposition: item.cache_disposition,
             reason: item.reason,
+            test_definition_digest: String::new(),
         };
         replace_selector_coverage(self, &item.selector, item.coverage);
         self.recompute_complete();
@@ -153,6 +154,19 @@ fn unresolved_timing(selector: &str) -> SelectorTimingRecord {
         duration_ns: None,
         cache_disposition: TimingCacheDisposition::Unknown,
         reason: Some("missing outcome".to_string()),
+        test_definition_digest: String::new(),
+    }
+}
+
+pub(crate) fn fill_test_definition_digests(repo_root: &Path, evidence: &mut PopulationEvidence) {
+    for row in &mut evidence.timings {
+        if row.test_definition_digest.is_empty() {
+            row.test_definition_digest =
+                crate::test_runner::python_coverage_index::storage::python_selector_definition_digest(
+                    repo_root,
+                    &row.selector,
+                );
+        }
     }
 }
 
@@ -318,5 +332,52 @@ mod tests {
             Some(&BTreeSet::from([2, 3, 4]))
         );
         assert!(evidence.complete);
+    }
+
+    #[test]
+    fn absorb_updates_last_of_many_selectors_by_index() {
+        let selectors: Vec<String> = (0..64).map(|i| format!("t.py::test_{i}")).collect();
+        let mut evidence = PopulationEvidence::from_ordered_selectors(&selectors);
+        evidence.absorb_selector(SelectorEvidence {
+            selector: "t.py::test_63".to_string(),
+            raw_status: TestStatus::Passed,
+            effective_status: TestStatus::Passed,
+            duration: Some(Duration::from_millis(3)),
+            cache_disposition: TimingCacheDisposition::MissStored,
+            reason: None,
+            coverage: BTreeMap::new(),
+        });
+        assert_eq!(evidence.timings[63].effective_status, "passed");
+        assert_eq!(evidence.timings[0].effective_status, "unresolved");
+        assert!(!evidence.complete);
+    }
+
+    #[test]
+    fn fill_test_definition_digests_reuses_one_hash_per_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("t.py"), "def test_a():\n    pass\n").unwrap();
+        let mut evidence = PopulationEvidence::from_ordered_selectors(&[
+            "t.py::test_a".to_string(),
+            "t.py::test_b".to_string(),
+        ]);
+        super::fill_test_definition_digests(tmp.path(), &mut evidence);
+        assert!(!evidence.timings[0].test_definition_digest.is_empty());
+        assert_eq!(
+            evidence.timings[0].test_definition_digest,
+            evidence.timings[1].test_definition_digest
+        );
+        evidence.absorb_selector(SelectorEvidence {
+            selector: "t.py::test_a".to_string(),
+            raw_status: TestStatus::Failed,
+            effective_status: TestStatus::Failed,
+            duration: Some(Duration::from_millis(1)),
+            cache_disposition: TimingCacheDisposition::MissStored,
+            reason: None,
+            coverage: BTreeMap::new(),
+        });
+        assert!(!evidence.complete);
+        evidence.recompute_complete();
+        evidence.rebuild_line_index();
+        assert!(!evidence.complete);
     }
 }

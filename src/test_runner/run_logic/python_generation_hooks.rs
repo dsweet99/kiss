@@ -25,6 +25,7 @@ pub(super) fn rebuild_python_index(
         &ctx.planned.repo_root,
         None,
         ctx.options.extras.python,
+        &ctx.options.gate,
         |path, repo_root| is_indexable(module, path, repo_root),
     )?;
     Ok(())
@@ -44,6 +45,7 @@ pub(super) fn write_python_manifest(
             &ctx.planned.repo_root,
             Some(selectors),
             ctx.options.extras.python,
+            &ctx.options.gate,
             true,
             |path, repo_root| is_indexable(module, path, repo_root),
         )?;
@@ -52,6 +54,7 @@ pub(super) fn write_python_manifest(
             &ctx.planned.repo_root,
             Some(selectors),
             ctx.options.extras.python,
+            &ctx.options.gate,
             |path, repo_root| is_indexable(module, path, repo_root),
         )?;
     }

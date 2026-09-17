@@ -4,10 +4,7 @@ use crate::analyze::options::AnalyzeOptions;
 use crate::analyze::parallel::RustAnalysis;
 use crate::analyze_parse::{analyze_py_parsed, analyze_rs_parsed};
 use kiss::code_roles::SourceRoleIndex;
-use kiss::{
-    ContextDependencyGraph, DependencyGraph, DuplicateCluster, ParsedFile, ParsedRustFile,
-    Violation,
-};
+use kiss::{DependencyGraph, DuplicateCluster, ParsedFile, ParsedRustFile, Violation};
 use std::path::PathBuf;
 
 pub(crate) struct PySide {
@@ -17,7 +14,6 @@ pub(crate) struct PySide {
     pub viols: Vec<Violation>,
     pub comments: Vec<Violation>,
     pub graph: Option<DependencyGraph>,
-    pub ctx: ContextDependencyGraph,
     pub dups: Vec<DuplicateCluster>,
 }
 
@@ -58,7 +54,7 @@ pub(crate) fn run_python_side(
     let refs: Vec<&ParsedFile> = parsed.iter().collect();
     let roles = kiss::code_roles::classify_python(&refs, py_files)?;
     let t1 = std::time::Instant::now();
-    let ((units, stmts, viols), (comments, graph, ctx, dups)) = rayon::join(
+    let ((units, stmts, viols), (comments, graph, dups)) = rayon::join(
         || analyze_py_parsed(parsed, opts.py_config, &roles),
         || py_side_rest(parsed, opts, &roles),
     );
@@ -73,7 +69,6 @@ pub(crate) fn run_python_side(
     Ok(PySide {
         comments,
         graph,
-        ctx,
         dups,
         roles,
         units,
@@ -94,10 +89,9 @@ pub(crate) fn run_rust_after_parse(
     let (units, stmts, viols) = analyze_rs_parsed(&parsed, opts.rs_config, &roles)?;
     let t3 = std::time::Instant::now();
     let comments = rs_comments(&parsed, opts, &roles);
-    let (graph, ctx) = build_rs_graphs(&parsed, &roles);
+    let (graph, _ctx) = build_rs_graphs(&parsed, &roles);
     let analysis = RustAnalysis {
         graph,
-        ctx,
         dups: rs_dups(&parsed, opts, &roles),
     };
     if opts.show_timing {
@@ -123,16 +117,12 @@ fn py_graph_and_dups(
     parsed: &[ParsedFile],
     opts: &AnalyzeOptions<'_>,
     roles: &SourceRoleIndex,
-) -> (
-    Option<DependencyGraph>,
-    ContextDependencyGraph,
-    Vec<DuplicateCluster>,
-) {
-    let ((graph, ctx), dups) = rayon::join(
+) -> (Option<DependencyGraph>, Vec<DuplicateCluster>) {
+    let ((graph, _ctx), dups) = rayon::join(
         || build_py_graphs(parsed, roles),
         || py_dups(parsed, opts, roles),
     );
-    (graph, ctx, dups)
+    (graph, dups)
 }
 
 fn py_side_rest(
@@ -142,14 +132,13 @@ fn py_side_rest(
 ) -> (
     Vec<Violation>,
     Option<DependencyGraph>,
-    ContextDependencyGraph,
     Vec<DuplicateCluster>,
 ) {
-    let (comments, (graph, ctx, dups)) = rayon::join(
+    let (comments, (graph, dups)) = rayon::join(
         || py_comments(parsed, opts, roles),
         || py_graph_and_dups(parsed, opts, roles),
     );
-    (comments, graph, ctx, dups)
+    (comments, graph, dups)
 }
 
 fn py_comments(

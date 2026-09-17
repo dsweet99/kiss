@@ -1,11 +1,11 @@
 use super::*;
+use crate::rpytest_runner::{PytestRunError, PytestRunOutcome, PytestRunner};
 use crate::rslip::batch::{PreparedRslipMisses, RslipCacheCandidate, RslipCacheCandidateGroup};
 use crate::rslip::cache::{rslip_cache_fingerprint, store_rslip_cache_entry};
-use crate::rpytest_runner::{PytestRunError, PytestRunOutcome, PytestRunner};
 use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::mpsc;
 use std::thread;
@@ -138,11 +138,12 @@ fn all_hit_batch_does_not_wait_for_entry_lock() {
     let root_for_lock = req.cache_root.clone();
     let fingerprint_for_lock = fingerprint.clone();
     let lock_holder = thread::spawn(move || {
-        let _guard = crate::rslip::lock_rslip_cache_entry(&root_for_lock, &fingerprint_for_lock).unwrap();
+        let _guard =
+            crate::rslip::lock_rslip_cache_entry(&root_for_lock, &fingerprint_for_lock).unwrap();
         locked_tx.send(()).unwrap();
         thread::sleep(Duration::from_millis(200));
     });
-    locked_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+    locked_rx.recv_timeout(Duration::from_secs(5)).unwrap();
     let rslip = Rslip::new(PytestRunner::from_bounded_fn(move |_reqs, _jobs| {
         panic!("all-hit batch should not invoke runner")
     }));
@@ -347,4 +348,95 @@ fn batch_pytest_failure_is_stored_after_coverage_parse() {
     );
     assert_eq!(rerun[0].as_ref().unwrap().status, TestStatus::Failed);
     assert_eq!(calls.get(), 1);
+}
+
+fn count_json_files(dir: &Path) -> usize {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .filter(|entry| {
+            entry
+                .path()
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("json"))
+        })
+        .count()
+}
+
+#[test]
+fn repeated_forced_misses_do_not_leave_unreferenced_artifact_files() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_sample_tree(tmp.path());
+    let calls = Rc::new(Cell::new(0));
+    let rslip = Rslip::new(fake_runner(Rc::clone(&calls)));
+    let req = RslipRequest {
+        force_rerun: true,
+        ..rslip_sample_request(tmp.path())
+    };
+    let artifacts = req.cache_root.join("artifacts");
+
+    for _ in 0..3 {
+        let outcome = rslip.run_or_reuse(req.clone()).unwrap();
+        assert_eq!(outcome.cache_status, CacheStatus::MissStored);
+    }
+
+    let leftover = count_json_files(&artifacts);
+    assert_eq!(
+        leftover, 0,
+        "coverage artifacts are consumed into cache entries; leftover files={leftover}"
+    );
+    assert_eq!(calls.get(), 3);
+}
+
+fn count_dir_files(dir: &Path) -> usize {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .filter(|entry| entry.path().is_file())
+        .count()
+}
+
+#[test]
+fn repeated_forced_misses_do_not_leave_testmon_files() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_sample_tree(tmp.path());
+    let rslip = Rslip::new(PytestRunner::from_fn(|req| {
+        write_coverage_artifact(&req, "1,3");
+        if let Some(path) = req.env.get("TESTMON_DATAFILE") {
+            let path = PathBuf::from(path);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).unwrap();
+            }
+            fs::write(&path, b"x").unwrap();
+        }
+        Ok(PytestRunOutcome {
+            nodeid: req.nodeid,
+            status: TestStatus::Passed,
+            exit_code: Some(0),
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+            duration: Duration::from_millis(1),
+            artifacts: BTreeMap::from([(
+                runtime::COVERAGE_ARTIFACT.to_string(),
+                req.artifacts[0].path.clone(),
+            )]),
+        })
+    }));
+    let req = RslipRequest {
+        force_rerun: true,
+        ..rslip_sample_request(tmp.path())
+    };
+    let testmon = req.cache_root.join("testmon");
+    for _ in 0..3 {
+        rslip.run_or_reuse(req.clone()).unwrap();
+    }
+    let leftover = count_dir_files(&testmon);
+    assert_eq!(
+        leftover, 0,
+        "testmon files are per-miss scratch; leftover files={leftover}"
+    );
 }

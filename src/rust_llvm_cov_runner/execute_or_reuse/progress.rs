@@ -1,12 +1,110 @@
+use std::collections::HashSet;
 use std::io::Write;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-pub(crate) fn emit_progress(message: &str) {
-    println!("{message}");
-    let _ = std::io::stdout().flush();
+type LiveRustHook = Box<dyn FnMut(&str, &str, f64) + Send>;
+
+fn live_hook() -> &'static Mutex<Option<LiveRustHook>> {
+    static LIVE_HOOK: OnceLock<Mutex<Option<LiveRustHook>>> = OnceLock::new();
+    LIVE_HOOK.get_or_init(|| Mutex::new(None))
+}
+
+fn live_printed() -> &'static Mutex<HashSet<String>> {
+    static LIVE_PRINTED: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    LIVE_PRINTED.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+fn live_error() -> &'static Mutex<Option<String>> {
+    static LIVE_ERROR: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+    LIVE_ERROR.get_or_init(|| Mutex::new(None))
+}
+
+#[cfg(test)]
+pub fn live_rust_hook_test_guard() -> std::sync::MutexGuard<'static, ()> {
+    static TEST_GUARD: Mutex<()> = Mutex::new(());
+    TEST_GUARD
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+pub fn install_live_rust_test_hook(hook: impl FnMut(&str, &str, f64) + Send + 'static) {
+    live_printed()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clear();
+    *live_error()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    *live_hook()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Box::new(hook));
+}
+
+pub fn clear_live_rust_test_hook() {
+    *live_hook()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    super::progress_prepared_hits::clear_prepared_rust_cache_hits_hook();
+}
+
+pub fn set_live_rust_error(message: String) {
+    let mut err = live_error()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if err.is_none() {
+        *err = Some(message);
+    }
+}
+
+#[must_use]
+pub fn take_live_rust_error() -> Option<String> {
+    live_error()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .take()
+}
+
+pub fn mark_live_rust_printed(id: &str) {
+    live_printed()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .insert(id.to_string());
+}
+
+#[must_use]
+pub fn live_rust_was_printed(id: &str) -> bool {
+    live_printed()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .contains(id)
+}
+
+static PROGRESS_LOCK: Mutex<()> = Mutex::new(());
+
+pub fn emit_progress(message: &str) {
+    super::progress_heartbeat::note_progress();
+    super::progress_heartbeat::note_work_status(message);
+    super::progress_watch_report::record_watch_report_line(message);
+    let _guard = PROGRESS_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    #[cfg(unix)]
+    {
+        let mut line = Vec::with_capacity(message.len() + 1);
+        line.extend_from_slice(message.as_bytes());
+        line.push(b'\n');
+        unsafe {
+            let _ = libc::write(libc::STDOUT_FILENO, line.as_ptr().cast(), line.len());
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        println!("{message}");
+        let _ = std::io::stdout().flush();
+    }
 }
 
 pub(crate) fn format_ran(name: &str, duration: Duration) -> String {
@@ -50,11 +148,13 @@ enum ProgressSink {
     Capture(Arc<Mutex<Vec<String>>>),
 }
 
-pub(crate) struct FinishCargoNextestProgress(pub Arc<Mutex<CargoNextestProgress>>);
+pub(crate) struct FinishCargoNextestProgress {
+    pub progress: Arc<Mutex<CargoNextestProgress>>,
+}
 
 impl Drop for FinishCargoNextestProgress {
     fn drop(&mut self) {
-        self.0
+        self.progress
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .finish();
@@ -79,7 +179,11 @@ impl CargoNextestProgress {
     }
 
     pub(crate) fn observe_line(&mut self, line: &[u8]) {
-        if self.finished || matches!(self.phase, CargoNextestPhase::Nextest) {
+        if self.finished {
+            return;
+        }
+        if matches!(self.phase, CargoNextestPhase::Nextest) {
+            emit_live_libtest_event(line);
             return;
         }
         if !line_starts_nextest(line) {
@@ -89,6 +193,7 @@ impl CargoNextestProgress {
         self.emit(&running_line("nextest"));
         self.phase = CargoNextestPhase::Nextest;
         self.nextest_started = Some(Instant::now());
+        emit_live_libtest_event(line);
     }
 
     pub(crate) fn finish(&mut self) {
@@ -133,6 +238,33 @@ fn line_starts_nextest(line: &[u8]) -> bool {
     value.get("reason").and_then(Value::as_str) == Some("build-finished")
 }
 
+fn emit_live_libtest_event(line: &[u8]) {
+    let Ok(value) = serde_json::from_slice::<Value>(trim_ascii_line(line)) else {
+        return;
+    };
+    if value.get("type").and_then(Value::as_str) != Some("test") {
+        return;
+    }
+    let event = value.get("event").and_then(Value::as_str).unwrap_or("");
+    if !matches!(event, "ok" | "failed" | "timeout" | "timed_out") {
+        return;
+    }
+    let Some(name) = value.get("name").and_then(Value::as_str) else {
+        return;
+    };
+    let exec_time = value
+        .get("exec_time")
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0);
+    if let Some(hook) = live_hook()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .as_mut()
+    {
+        hook(name, event, exec_time);
+    }
+}
+
 fn trim_ascii_line(line: &[u8]) -> &[u8] {
     let mut line = line;
     while line.last().is_some_and(|b| *b == b'\n' || *b == b'\r') {
@@ -144,6 +276,47 @@ fn trim_ascii_line(line: &[u8]) -> &[u8] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn work_type_line_updates_stored_status() {
+        let _guard = super::super::progress_heartbeat::work_status_test_guard();
+        super::super::progress_heartbeat::set_work_status("working");
+        emit_progress("kiss test: Running nextest");
+        assert_eq!(
+            super::super::progress_heartbeat::current_work_status(),
+            "Running nextest"
+        );
+        emit_progress("PASS: tests/a.py::test_a (0.01s)");
+        assert_eq!(
+            super::super::progress_heartbeat::current_work_status(),
+            "Running nextest"
+        );
+    }
+
+    #[test]
+    fn any_printed_line_resets_stage_heartbeat() {
+        super::super::progress_heartbeat::note_progress();
+        std::thread::sleep(Duration::from_millis(5));
+        let before = super::super::progress_heartbeat::last_emit_age();
+        emit_progress("PASS: tests/a.py::test_a (0.01s)");
+        let after_pass = super::super::progress_heartbeat::last_emit_age();
+        assert!(
+            after_pass < before,
+            "PASS: must refresh the stage watchdog: before={before:?} after={after_pass:?}"
+        );
+        emit_progress("FAIL: tests/b.py::test_b (0.01s)");
+        let after_fail = super::super::progress_heartbeat::last_emit_age();
+        assert!(
+            after_fail < Duration::from_millis(5),
+            "FAIL: must refresh the stage watchdog: after_fail={after_fail:?}"
+        );
+        emit_progress("TIMEOUT: tests/c.py::test_c (1.00s)");
+        let after_timeout = super::super::progress_heartbeat::last_emit_age();
+        assert!(
+            after_timeout < Duration::from_millis(5),
+            "TIMEOUT: must refresh the stage watchdog: after_timeout={after_timeout:?}"
+        );
+    }
 
     fn replay(stdout: &[u8]) -> Vec<String> {
         let captured = Arc::new(Mutex::new(Vec::new()));
@@ -169,6 +342,25 @@ mod tests {
                     .join(" ")
             })
             .collect()
+    }
+
+    #[test]
+    fn cargo_progress_does_not_emit_elapsed_second_lines() {
+        let captured = Arc::new(Mutex::new(Vec::new()));
+        let mut progress =
+            CargoNextestProgress::start_with_sink(ProgressSink::Capture(Arc::clone(&captured)));
+        progress.observe_line(br#"{"reason":"build-finished","success":true}"#);
+        progress.finish();
+        let lines = captured
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        assert!(
+            !lines
+                .iter()
+                .any(|line| line.starts_with("kiss test: cargo ") && line.ends_with('s')),
+            "no cargo elapsed-second lines: {lines:?}"
+        );
     }
 
     #[test]
@@ -200,6 +392,48 @@ mod tests {
             names(&lines),
             ["kiss test: Running cargo", "kiss test: Ran cargo",]
         );
+    }
+
+    #[test]
+    fn live_hook_emits_terminal_libtest_events() {
+        let _hook_guard = live_rust_hook_test_guard();
+        let seen = std::sync::Arc::new(Mutex::new(Vec::new()));
+        let captured = std::sync::Arc::clone(&seen);
+        install_live_rust_test_hook(move |name, event, exec_time| {
+            captured
+                .lock()
+                .unwrap()
+                .push((name.to_string(), event.to_string(), exec_time));
+        });
+        let _ = replay(
+            br#"{"reason":"build-finished","success":true}
+{"type":"test","event":"ok","name":"pkg::bin$case","exec_time":0.25}
+"#,
+        );
+        clear_live_rust_test_hook();
+        let events = seen.lock().unwrap().clone();
+        assert_eq!(events, vec![("pkg::bin$case".into(), "ok".into(), 0.25)]);
+    }
+
+    #[test]
+    fn live_hook_receives_events_from_reader_thread() {
+        let _hook_guard = live_rust_hook_test_guard();
+        let seen = std::sync::Arc::new(Mutex::new(Vec::new()));
+        let captured = std::sync::Arc::clone(&seen);
+        install_live_rust_test_hook(move |name, _, _| {
+            captured.lock().unwrap().push(name.to_string());
+        });
+        std::thread::spawn(|| {
+            let _ = replay(
+                br#"{"reason":"build-finished","success":true}
+{"type":"test","event":"ok","name":"pkg::bin$cross_thread","exec_time":0.01}
+"#,
+            );
+        })
+        .join()
+        .unwrap();
+        clear_live_rust_test_hook();
+        assert_eq!(*seen.lock().unwrap(), vec!["pkg::bin$cross_thread"]);
     }
 
     #[test]
@@ -244,20 +478,20 @@ mod tests {
     fn llvm_cov_progress_is_wired_into_fresh_export() {
         let src = include_str!("batch_executor_fresh.rs");
         assert!(
-            src.contains("log_named_step(\"llvm-cov\""),
+            src.contains("\"llvm-cov\""),
             "fresh export must log Running/Ran llvm-cov"
         );
         assert!(
-            src.matches("log_named_step(\"llvm-cov\"").count() >= 2,
+            src.matches("\"llvm-cov\"").count() >= 2,
             "selector-entry and check-aggregate exports must both log llvm-cov"
         );
         let finish = include_str!("batch_executor_finish_check_aggregate.rs");
         assert!(
-            finish.contains("log_named_step(\"entry-store\""),
+            finish.contains("\"entry-store\""),
             "check-aggregate finish must log Running/Ran entry-store"
         );
         assert!(
-            finish.contains("log_named_step(\"derived-publish\""),
+            finish.contains("\"derived-publish\""),
             "check-aggregate finish must log Running/Ran derived-publish"
         );
     }

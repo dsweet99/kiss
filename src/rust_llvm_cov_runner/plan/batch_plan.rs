@@ -2,7 +2,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use crate::rust_llvm_cov_runner::RustTestBinaryIdentity;
-use crate::rust_llvm_cov_runner::plan::batch_plan_env::ensure_coverage_link_build_id;
+use crate::rust_llvm_cov_runner::plan::batch_plan_env::{
+    effective_coverage_build_jobs, ensure_coverage_codegen_units, ensure_coverage_line_tables_only,
+    ensure_coverage_link_build_id, normalized_request_environment,
+};
 use crate::rust_llvm_cov_runner::plan::batch_plan_nextest_config::build_nextest_config_toml;
 use crate::rust_llvm_cov_runner::plan::batch_plan_test_args::validate_supported_rust_test_args;
 
@@ -21,14 +24,17 @@ pub struct RustCoverageBatchRequest {
     pub test_args: Vec<String>,
     pub env: BTreeMap<String, String>,
     pub force_rerun: bool,
+    pub force_rerun_selectors: Vec<String>,
     pub jobs: usize,
     pub generated_config: PathBuf,
     pub population_publication_selectors: Option<Vec<String>>,
-    pub delegated_runners: crate::rust_llvm_cov_runner::plan::batch_runner_resolve::DelegatedRunnerMap,
+    pub delegated_runners:
+        crate::rust_llvm_cov_runner::plan::batch_runner_resolve::DelegatedRunnerMap,
     pub runner_map_fingerprint: String,
     pub host_platform: String,
     pub coverage_output_mode: CoverageOutputMode,
     pub selector_timeout_millis: BTreeMap<String, u64>,
+    pub cache_policy: crate::test_cache_policy::TestCachePolicy,
 }
 
 #[cfg(test)]
@@ -44,6 +50,7 @@ impl RustCoverageBatchRequest {
             test_args: vec!["--exact".to_string()],
             env: BTreeMap::from([("KEEP_ME".to_string(), "1".to_string())]),
             force_rerun: true,
+            force_rerun_selectors: Vec::new(),
             jobs: 4,
             generated_config: PathBuf::from(
                 "/repo/.kiss/rust_llvm_cov_cache/runs/run-witness/nextest.toml",
@@ -57,6 +64,7 @@ impl RustCoverageBatchRequest {
             host_platform: "x86_64-unknown-linux-gnu".to_string(),
             coverage_output_mode: CoverageOutputMode::SelectorEntries,
             selector_timeout_millis: BTreeMap::new(),
+            cache_policy: crate::test_cache_policy::TestCachePolicy::default(),
         }
     }
 }
@@ -86,27 +94,10 @@ pub fn build_rust_coverage_batch_plan(
     req: &RustCoverageBatchRequest,
 ) -> Result<RustCoverageBatchPlan, String> {
     validate_batch_request(req)?;
-    let build_target = req.source_root.join("target");
+    let build_target = req.cache_root.join("build").join("target");
     let target_runner_output_dir = target_runner_output_dir(req);
     let runner_map_path = super::batch_plan_nextest_config::runner_map_path_for_request(req);
-    let mut env = req.env.clone();
-    ensure_coverage_link_build_id(&mut env);
-
-    env.remove("KISS_RUST_COVERAGE_PROFILE_POOL");
-
-    crate::rust_llvm_cov_runner::kiss_profraw::ensure_kiss_profraw_env(&mut env, &req.source_root);
-    let build_target_value = build_target.to_string_lossy().to_string();
-    env.insert(
-        "NEXTEST_EXPERIMENTAL_LIBTEST_JSON".to_string(),
-        "1".to_string(),
-    );
-    env.insert("CARGO_TARGET_DIR".to_string(), build_target_value.clone());
-    env.insert(
-        "CARGO_LLVM_COV_TARGET_DIR".to_string(),
-        build_target_value.clone(),
-    );
-    env.insert("CARGO_LLVM_COV_BUILD_DIR".to_string(), build_target_value);
-    super::batch_plan_nextest_config::apply_target_runner_env(&mut env, req, &runner_map_path);
+    let env = effective_coverage_environment(req);
 
     let target_runner_cargo_config =
         super::batch_plan_nextest_config::target_runner_cargo_config_path(req);
@@ -116,7 +107,7 @@ pub fn build_rust_coverage_batch_plan(
             &runner_map_path,
         );
 
-    let jobs = req.jobs.to_string();
+    let build_jobs = effective_coverage_build_jobs(req.jobs).to_string();
     let test_threads = super::batch_plan_nextest_config::nextest_test_threads(req);
     let mut argv = vec![
         req.cargo.to_string_lossy().to_string(),
@@ -124,7 +115,7 @@ pub fn build_rust_coverage_batch_plan(
         "nextest".to_string(),
         "--no-report".to_string(),
         "--build-jobs".to_string(),
-        jobs.clone(),
+        build_jobs,
         "--test-threads".to_string(),
         test_threads,
         "--no-fail-fast".to_string(),
@@ -180,6 +171,45 @@ pub fn build_rust_coverage_batch_plan(
     })
 }
 
+pub(crate) use super::batch_plan_skip_llvm::rewrite_plan_argv_skip_llvm_cov_wrapper;
+
+pub(crate) fn effective_coverage_environment(
+    req: &RustCoverageBatchRequest,
+) -> BTreeMap<String, String> {
+    let mut env = normalized_request_environment(&req.env);
+    ensure_coverage_link_build_id(&mut env);
+    ensure_coverage_line_tables_only(&mut env);
+    ensure_coverage_codegen_units(&mut env);
+    crate::rust_llvm_cov_runner::kiss_profraw::ensure_kiss_profraw_env(&mut env, &req.source_root);
+    crate::rust_llvm_cov_runner::plan::llvm_cov_active::mark_llvm_cov_active(&mut env);
+    env.remove("KISS_RUST_COVERAGE_PROFILE_POOL");
+
+    let build_target = req.cache_root.join("build").join("target");
+    let build_target_value = build_target.to_string_lossy().to_string();
+    env.insert(
+        "NEXTEST_EXPERIMENTAL_LIBTEST_JSON".to_string(),
+        "1".to_string(),
+    );
+    env.insert("CARGO_TARGET_DIR".to_string(), build_target_value.clone());
+    env.insert(
+        "CARGO_LLVM_COV_TARGET_DIR".to_string(),
+        build_target_value.clone(),
+    );
+    env.insert("CARGO_LLVM_COV_BUILD_DIR".to_string(), build_target_value);
+    env.insert("CARGO_INCREMENTAL".to_string(), "0".to_string());
+    let runner_map_path = super::batch_plan_nextest_config::runner_map_path_for_request(req);
+    super::batch_plan_nextest_config::apply_target_runner_env(&mut env, req, &runner_map_path);
+    env
+}
+
+pub(crate) fn effective_coverage_identity_environment(
+    req: &RustCoverageBatchRequest,
+) -> BTreeMap<String, String> {
+    let mut env = effective_coverage_environment(req);
+    env.remove("LLVM_PROFILE_FILE_NAME");
+    env
+}
+
 pub(crate) fn target_runner_output_dir(req: &RustCoverageBatchRequest) -> PathBuf {
     req.generated_config
         .parent()
@@ -187,15 +217,20 @@ pub(crate) fn target_runner_output_dir(req: &RustCoverageBatchRequest) -> PathBu
         .unwrap_or_else(|| req.cache_root.join("runs").join("instances"))
 }
 
+pub(crate) fn is_workspace_list_build(req: &RustCoverageBatchRequest) -> bool {
+    req.logical_selectors.is_empty() && req.population_publication_selectors.as_deref() == Some(&[])
+}
+
 fn validate_batch_request(req: &RustCoverageBatchRequest) -> Result<(), String> {
     if req.jobs == 0 {
         return Err("jobs must be greater than zero".to_string());
     }
-    if req.logical_selectors.is_empty()
-        || req
-            .logical_selectors
-            .iter()
-            .any(|selector| selector.is_empty())
+    if !is_workspace_list_build(req)
+        && (req.logical_selectors.is_empty()
+            || req
+                .logical_selectors
+                .iter()
+                .any(|selector| selector.is_empty()))
     {
         return Err("logical selectors must not be empty".to_string());
     }

@@ -6,9 +6,12 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use kiss::rust_llvm_cov_runner::RustCoverageToolIdentity;
 
-use crate::test_runner::runners::command_stdout;
+const TOOL_VERSIONS_SCHEMA: &str = "rust-tool-versions-v4";
 
-const TOOL_VERSIONS_SCHEMA: &str = "rust-tool-versions-v2";
+#[path = "tool_identity_host_cache.rs"]
+mod host_cache;
+#[path = "tool_identity_live.rs"]
+mod live;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 struct RustToolVersionsCache {
@@ -28,7 +31,7 @@ struct PersistedFileMeta {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
-struct PersistedToolIdentityCacheKey {
+pub(super) struct PersistedToolIdentityCacheKey {
     cargo: PathBuf,
     rustc: PathBuf,
     cargo_meta: Option<(u64, Option<u64>)>,
@@ -39,7 +42,7 @@ struct PersistedToolIdentityCacheKey {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct ToolIdentityCacheKey {
+pub(super) struct ToolIdentityCacheKey {
     cargo: PathBuf,
     rustc: PathBuf,
     cargo_meta: Option<(u64, Option<SystemTime>)>,
@@ -60,7 +63,7 @@ fn rust_tool_versions_cache_path(repo_root: &Path) -> PathBuf {
     repo_root.join(".kiss").join("rust_tool_versions.json")
 }
 
-fn system_time_to_nanos(ts: SystemTime) -> Option<u64> {
+pub(super) fn system_time_to_nanos(ts: SystemTime) -> Option<u64> {
     ts.duration_since(UNIX_EPOCH)
         .ok()
         .map(|d| u64::try_from(d.as_nanos()).unwrap_or(u64::MAX))
@@ -103,7 +106,7 @@ fn restore_path_metas(metas: &[PersistedFileMeta]) -> Vec<(PathBuf, u64, Option<
 }
 
 impl ToolIdentityCacheKey {
-    fn to_persisted(&self) -> PersistedToolIdentityCacheKey {
+    pub(super) fn to_persisted(&self) -> PersistedToolIdentityCacheKey {
         PersistedToolIdentityCacheKey {
             cargo: self.cargo.clone(),
             rustc: self.rustc.clone(),
@@ -241,19 +244,6 @@ fn which_meta(program: &Path) -> Option<(u64, Option<SystemTime>)> {
     })
 }
 
-fn detect_live_rust_coverage_tool_identity(
-    repo_root: &Path,
-) -> Result<RustCoverageToolIdentity, String> {
-    let cargo = PathBuf::from("cargo");
-    let rustc = PathBuf::from("rustc");
-    Ok(RustCoverageToolIdentity {
-        cargo_version: command_stdout(&cargo, &["--version"], repo_root)?,
-        llvm_cov_version: command_stdout(&cargo, &["llvm-cov", "--version"], repo_root)?,
-        rustc_version: command_stdout(&rustc, &["-Vv"], repo_root)?,
-        cargo_nextest_version: command_stdout(&cargo, &["nextest", "--version"], repo_root)?,
-    })
-}
-
 fn detect_rust_coverage_tool_identity(
     repo_root: &Path,
     key: &ToolIdentityCacheKey,
@@ -263,8 +253,13 @@ fn detect_rust_coverage_tool_identity(
     {
         return Ok(tools);
     }
-    let live = detect_live_rust_coverage_tool_identity(repo_root)?;
+    if let Some(tools) = host_cache::read_host_cached_rust_tool_identity(key) {
+        let _ = write_cached_rust_tool_identity(repo_root, key, &tools);
+        return Ok(tools);
+    }
+    let live = live::detect_live_rust_coverage_tool_identity(repo_root)?;
     let _ = write_cached_rust_tool_identity(repo_root, key, &live);
+    let _ = host_cache::write_host_cached_rust_tool_identity(key, &live);
     Ok(live)
 }
 

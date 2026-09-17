@@ -5,7 +5,7 @@ use kiss::Language;
 
 use crate::test_runner::lang_iface::{
     AcceptMode, EnsureRequest, ExecutionWitness, LanguageRuntime, OutcomeBatch, PublishBatch,
-    WitnessScope, summary_from_accepted_witness,
+    SourceDeltaMisses, WitnessScope, summary_from_accepted_witness,
 };
 use crate::test_runner::runners::SelectorExecutionSummary;
 use crate::test_runner::rust_coverage_index::{
@@ -22,6 +22,81 @@ use super::witness_store::{
 mod population_repair;
 
 pub(crate) struct RustRuntime;
+
+fn rust_population_publication_selectors(
+    mode: AcceptMode,
+    planned: &[String],
+) -> Option<Vec<String>> {
+    match mode {
+        AcceptMode::All => Some(planned.to_vec()),
+        AcceptMode::Subset => None,
+    }
+}
+
+fn rust_summary_from_witness(
+    request: &EnsureRequest,
+    planned: &[String],
+    witness: &ExecutionWitness,
+) -> SelectorExecutionSummary {
+    if !kiss::time_gate_uses_path_prefixes(&request.gate.max_unit_test_seconds) {
+        return summary_from_accepted_witness(planned, witness, str::to_string);
+    }
+    let report_ids = crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
+        &request.repo_root,
+        &[],
+    )
+    .unwrap_or_default();
+    summary_from_accepted_witness(planned, witness, |selector| {
+        report_string_for_logical_string(&report_ids, selector)
+    })
+}
+
+fn rust_summary_from_witness_statuses(
+    request: &EnsureRequest,
+    planned: &[String],
+    witness: &ExecutionWitness,
+) -> SelectorExecutionSummary {
+    if !kiss::time_gate_uses_path_prefixes(&request.gate.max_unit_test_seconds) {
+        return crate::test_runner::lang_iface::summary_from_witness_statuses(
+            planned,
+            witness,
+            str::to_string,
+            false,
+        );
+    }
+    let report_ids = crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
+        &request.repo_root,
+        &[],
+    )
+    .unwrap_or_default();
+    crate::test_runner::lang_iface::summary_from_witness_statuses(
+        planned,
+        witness,
+        |selector| report_string_for_logical_string(&report_ids, selector),
+        false,
+    )
+}
+
+fn rust_publication_universe(
+    mode: AcceptMode,
+    planned: &[String],
+    miss_set: &[String],
+) -> Option<Vec<String>> {
+    match mode {
+        AcceptMode::All => Some(planned.to_vec()),
+        AcceptMode::Subset => Some(miss_set.to_vec()),
+    }
+}
+
+impl SourceDeltaMisses for RustRuntime {
+    fn extra_source_delta_misses(
+        &self,
+        request: &EnsureRequest,
+        planned: &[String],
+    ) -> Result<Vec<String>, String> {
+        super::rust_source_delta_misses(&request.repo_root, planned, &request.extras.rust)
+    }
+}
 
 impl LanguageRuntime for RustRuntime {
     fn language(&self) -> Language {
@@ -46,10 +121,8 @@ impl LanguageRuntime for RustRuntime {
         if miss_set.is_empty() {
             return Ok(OutcomeBatch::default());
         }
-        let publication = match request.mode {
-            AcceptMode::All => Some(request.planned.rust.clone()),
-            AcceptMode::Subset => Some(miss_set.to_vec()),
-        };
+        let publication_universe =
+            rust_publication_universe(request.mode, &request.planned.rust, miss_set);
         let summary = match request.mode {
             AcceptMode::All => {
 
@@ -58,8 +131,12 @@ impl LanguageRuntime for RustRuntime {
                     miss_set,
                     &request.extras.rust,
                     request.jobs,
-                    None,
-                    None,
+                    crate::test_runner::rust_llvm_cov::CheckAggregatePublicationOpts {
+                        population_publication_selectors: publication_universe.clone(),
+                        publication_binary_ids: None,
+                        repair_publication: None,
+                        force_rerun_selectors: &request.force_selectors,
+                    },
                     &request.gate,
                 )?
             }
@@ -70,8 +147,9 @@ impl LanguageRuntime for RustRuntime {
                     miss_set,
                     &request.extras.rust,
                     request.force,
+                    &request.force_selectors,
                     request.jobs,
-                    publication.clone(),
+                    rust_population_publication_selectors(request.mode, &request.planned.rust),
                     &request.gate,
                 )?
             }
@@ -84,7 +162,7 @@ impl LanguageRuntime for RustRuntime {
             statuses,
             durations_ns,
             covered_lines: BTreeMap::new(),
-            publication_universe: publication,
+            publication_universe,
         })
     }
 
@@ -111,6 +189,7 @@ impl LanguageRuntime for RustRuntime {
             durations_ns: &durations,
             covered_lines: &covered,
             complete,
+            jobs: request.jobs,
         })?;
         Ok(())
     }
@@ -143,20 +222,12 @@ impl LanguageRuntime for RustRuntime {
         request: &EnsureRequest,
         planned: &[String],
         witness: &ExecutionWitness,
-    ) -> SelectorExecutionSummary {
-        let report_ids =
-            crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
-                &request.repo_root,
-                &[],
-            )
-            .unwrap_or_default();
-        let mut summary = summary_from_accepted_witness(planned, witness, |selector| {
-            report_string_for_logical_string(&report_ids, selector)
-        });
-        if population_repair::repair_stale_population_on_all_mode_accept(request, planned) {
+    ) -> Result<SelectorExecutionSummary, String> {
+        let mut summary = rust_summary_from_witness(request, planned, witness);
+        if population_repair::repair_stale_population_on_all_mode_accept(request, planned)? {
             summary.rust_derived_repair = true;
         }
-        summary
+        Ok(summary)
     }
 
     fn cached_witness_summary(
@@ -165,18 +236,7 @@ impl LanguageRuntime for RustRuntime {
         planned: &[String],
         witness: &ExecutionWitness,
     ) -> SelectorExecutionSummary {
-        let report_ids =
-            crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
-                &request.repo_root,
-                &[],
-            )
-            .unwrap_or_default();
-        crate::test_runner::lang_iface::summary_from_witness_statuses(
-            planned,
-            witness,
-            |selector| report_string_for_logical_string(&report_ids, selector),
-            false,
-        )
+        rust_summary_from_witness_statuses(request, planned, witness)
     }
 
     fn selectors_for_time_gate(
@@ -184,6 +244,9 @@ impl LanguageRuntime for RustRuntime {
         request: &EnsureRequest,
         selectors: &[String],
     ) -> Result<Vec<String>, String> {
+        if !kiss::time_gate_uses_path_prefixes(&request.gate.max_unit_test_seconds) {
+            return Ok(selectors.to_vec());
+        }
         let report_ids =
             crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
                 &request.repo_root,
@@ -198,6 +261,39 @@ impl LanguageRuntime for RustRuntime {
                 selectors,
             ),
         )
+    }
+}
+
+#[cfg(test)]
+mod publication_selector_tests {
+    use super::{rust_population_publication_selectors, rust_publication_universe};
+    use crate::test_runner::lang_iface::AcceptMode;
+
+    #[test]
+    fn subset_does_not_publish_a_selective_miss_set_as_population() {
+        let planned = vec!["a".into(), "b".into()];
+        let misses = vec!["a".into()];
+        assert_eq!(
+            rust_population_publication_selectors(AcceptMode::Subset, &planned),
+            None
+        );
+        assert_eq!(
+            rust_publication_universe(AcceptMode::Subset, &planned, &misses),
+            Some(misses)
+        );
+    }
+
+    #[test]
+    fn all_mode_publishes_the_planned_universe() {
+        let planned = vec!["a".into(), "b".into()];
+        assert_eq!(
+            rust_population_publication_selectors(AcceptMode::All, &planned),
+            Some(planned.clone())
+        );
+        assert_eq!(
+            rust_publication_universe(AcceptMode::All, &planned, &["a".into()]),
+            Some(planned)
+        );
     }
 }
 

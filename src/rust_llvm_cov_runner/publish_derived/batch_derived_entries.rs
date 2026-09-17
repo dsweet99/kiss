@@ -61,9 +61,11 @@ pub fn load_reusable_prior_selector_entries(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rust_llvm_cov_runner::rust_cov_cache::RustCovCacheEntry;
-    use crate::rust_llvm_cov_runner::{RustCovCacheStatus, RustLlvmCovOutcome, RustTestBinaryIdentity};
     use crate::rpytest_runner::TestStatus;
+    use crate::rust_llvm_cov_runner::rust_cov_cache::RustCovCacheEntry;
+    use crate::rust_llvm_cov_runner::{
+        RustCovCacheStatus, RustLlvmCovOutcome, RustTestBinaryIdentity,
+    };
     use std::time::Duration;
 
     fn population() -> RustPopulationState {

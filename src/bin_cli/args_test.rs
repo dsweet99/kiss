@@ -52,22 +52,29 @@ fn cov_subcommand_parses_as_coverage() {
             .any(|w| w.eq_ignore_ascii_case("cov")),
         "top-level help must not mention the token cov\n{help}"
     );
-    let cli = Cli::parse_from(["kiss", "__coverage", ".", "-j", "7"]);
-    assert!(matches!(
-        cli.command,
-        Commands::Coverage { jobs: Some(7), .. }
-    ));
+    assert!(Cli::try_parse_from(["kiss", "__coverage"]).is_err());
+    assert!(Cli::command().find_subcommand("__coverage").is_none());
 }
 
 #[test]
 fn readme_does_not_mention_cov_token() {
     let readme = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"));
-    assert!(
-        !readme
-            .split(|c: char| !c.is_ascii_alphanumeric())
-            .any(|w| w.eq_ignore_ascii_case("cov")),
-        "README.md must not mention the token cov"
-    );
+    let tokens: Vec<&str> = readme
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .collect();
+    for (i, word) in tokens.iter().enumerate() {
+        if !word.eq_ignore_ascii_case("cov") {
+            continue;
+        }
+        let allowed_llvm_cov = i
+            .checked_sub(1)
+            .is_some_and(|j| tokens[j].eq_ignore_ascii_case("llvm"));
+        assert!(
+            allowed_llvm_cov,
+            "README.md must not mention the token cov except as llvm-cov"
+        );
+    }
 }
 
 #[test]
@@ -129,6 +136,42 @@ fn check_rejects_removed_coverage_flags() {
 }
 
 #[test]
+fn test_retry_bad_parses_and_removed_force_flags_are_rejected() {
+    let cli = Cli::parse_from(["kiss", "test", ".", "--retry-bad"]);
+    assert!(matches!(
+        cli.command,
+        Commands::Test {
+            retry_bad: true,
+            ..
+        }
+    ));
+    let targeted = Cli::parse_from([
+        "kiss",
+        "test",
+        "--retry-bad",
+        "tests/fast/app_server/test_transact_grid.py::test_assign_method_follows_grid_queue_after_rebind",
+    ]);
+    match targeted.command {
+        Commands::Test {
+            operands,
+            retry_bad,
+            ..
+        } => {
+            assert!(retry_bad);
+            assert_eq!(
+                parse_test_invocation(&operands).unwrap(),
+                TestInvocation::Targets(vec![
+                    "tests/fast/app_server/test_transact_grid.py::test_assign_method_follows_grid_queue_after_rebind".into()
+                ])
+            );
+        }
+        _ => panic!("expected Test"),
+    }
+    assert!(Cli::try_parse_from(["kiss", "test", ".", "--force"]).is_err());
+    assert!(Cli::try_parse_from(["kiss", "test", ".", "--force-bad"]).is_err());
+}
+
+#[test]
 fn test_invocation_parses_modes_dot_all_and_targets() {
     assert_eq!(
         parse_test_invocation(&[".".into()]).unwrap(),
@@ -166,14 +209,12 @@ fn test_branch_options_are_mode_specific() {
     assert!(validate_test_branch_options(&TestInvocation::Base, None, Some("origin/main")).is_ok());
     assert!(validate_test_branch_options(&TestInvocation::All, Some("main"), None).is_err());
     assert!(validate_test_branch_options(&TestInvocation::Commit, None, Some("base")).is_err());
-    assert!(
-        validate_test_branch_options(
-            &TestInvocation::Targets(vec!["a.py".into()]),
-            Some("main"),
-            None
-        )
-        .is_err()
-    );
+    assert!(validate_test_branch_options(
+        &TestInvocation::Targets(vec!["a.py".into()]),
+        Some("main"),
+        None
+    )
+    .is_err());
 }
 
 #[test]
@@ -185,12 +226,10 @@ fn test_command_help_is_language_neutral_for_shared_options() {
         .render_long_help()
         .to_string();
 
-    assert!(help.contains("Force selected tests to rerun instead of reusing test-runner caches"));
-    assert!(
-        help.contains(
-            "Rerun tests that need it under normal rules, plus any marked FAIL or TIMEOUT"
-        )
-    );
+    assert!(help.contains("--retry-bad"));
+    assert!(!help.contains("--force"));
+    assert!(help
+        .contains("Rerun FAIL and TIMEOUT tests in the TARGET subset"));
     assert!(help.contains("Maximum number of test jobs to run concurrently"));
     assert!(help.contains("commit, base, main, ., or PATH / PATH::symbol / directory"));
     assert!(help.contains("[TARGET]"));
@@ -213,9 +252,7 @@ fn top_level_help_describes_commands_and_global_flags() {
     assert!(help.contains("Filter by language: python (py) or rust (rs)"));
     assert!(!help.contains("Use built-in defaults, ignoring config files"));
     assert!(!help.contains("--defaults"));
-    assert!(
-        help.contains("Run static complexity, graph, duplicate, comment, doc, and orphan checks")
-    );
+    assert!(help.contains("Run static complexity, graph, duplicate, comment, and doc checks"));
     assert!(help.contains("Show metric statistics for the codebase"));
     assert!(!help.contains("Generate .kissconfig thresholds from an existing codebase"));
     assert!(!help.contains("Generate .kissconfig from the current directory"));
@@ -232,6 +269,7 @@ fn top_level_help_describes_commands_and_global_flags() {
     assert!(!help.contains("Output markdown path"));
     assert!(help.contains("Run covering tests and enforce coverage and time gates"));
     assert!(!help.contains("Coverage-only evaluation (prefer kiss test for the full path)"));
+    assert!(Cli::command().find_subcommand("__coverage").is_none());
     assert!(!help.contains("Coverage is enforced by kiss test, not a standalone command"));
     assert!(
         !help.lines().any(|line| {
@@ -240,7 +278,8 @@ fn top_level_help_describes_commands_and_global_flags() {
         }),
         "top-level help must not list cov\n{help}"
     );
-    assert!(help.contains("Rename or move a Python or Rust symbol (beta)"));
+    assert!(!help.contains("Rename or move a Python or Rust symbol (beta)"));
+    assert!(Cli::command().find_subcommand("mv").is_none());
     assert!(help.contains("Usage:"));
     assert!(help.contains("Examples:"));
     assert!(help.contains("kiss check"));

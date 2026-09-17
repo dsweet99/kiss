@@ -19,7 +19,6 @@ fn bug_check_reports_indirect_dependencies_for_fan_in_zero_entry() {
         root.join(".kissconfig"),
         "[global]\n\
          duplication_enabled = false\n\
-         orphan_module_enabled = false\n\
          \n\
 [test]\n\
          test_coverage_threshold = 0\n\

@@ -1,16 +1,19 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 
-use crate::rust_include::canonical_path;
+use crate::rust_include::{
+    canonical_path, extract_include_literal_from_macro, resolve_include_path,
+};
 use crate::rust_parsing::ParsedRustFile;
 
 use super::cfg_pred::{AtomInterner, CfgPred};
 use super::error::RoleBuildError;
 use super::facts::{FileRoleFacts, RoleRange};
 use super::index::SourceRoleIndex;
-use super::rust_cargo::{CargoRoot, cargo_roots_for_files};
-use super::rust_include_parse::{IncludeAst, IncludeKind, parse_include_source};
-use super::rust_walk::{WalkOutput, walk_file};
+use super::rust_cargo::{cargo_roots_for_files, workspace_roots_at, CargoRoot};
+use super::rust_include_parse::{parse_include_source, IncludeAst, IncludeKind};
+use super::rust_modules::resolve_external_mod;
+use super::rust_walk::{walk_file, WalkOutput};
 use super::span::SourceSpan;
 use super::sweep::normalize_ranges;
 use super::types::CodeContextSet;
@@ -20,6 +23,12 @@ struct WorkItem {
     pred: CfgPred,
     allow_production: bool,
     kind: IncludeKind,
+}
+
+#[derive(Clone, Copy)]
+enum WalkMode {
+    Full,
+    ShardLocal,
 }
 
 pub fn classify_rust(
@@ -39,16 +48,99 @@ pub fn classify_rust(
     let mut atoms = AtomInterner::new();
     let mut acc: HashMap<PathBuf, Vec<RoleRange>> = HashMap::new();
     let mut base: HashMap<PathBuf, CodeContextSet> = HashMap::new();
-    let mut queue = seed_queue(&cargo_roots, &paths);
+    let shard_local = std::env::var_os("KISS_CHECK_GATHER_ROOTS").is_some();
+    let mut queue = if shard_local {
+        seed_queue_sharded(&paths)
+    } else {
+        seed_queue(&cargo_roots, &paths)
+    };
+    let walk_mode = if shard_local {
+        WalkMode::ShardLocal
+    } else {
+        WalkMode::Full
+    };
     let mut seen: HashSet<String> = HashSet::new();
     while let Some(item) = queue.pop_front() {
         let key = work_key(&item);
         if !seen.insert(key) {
             continue;
         }
-        process_work_item(item, &by_path, &mut atoms, &mut acc, &mut base, &mut queue)?;
+        process_work_item(
+            item,
+            &by_path,
+            &mut atoms,
+            &mut acc,
+            &mut base,
+            &mut queue,
+            walk_mode,
+        )?;
     }
     Ok(finish_rust_index(&paths, acc, base))
+}
+
+pub fn reachable_workspace_rust_sources(
+    repo_root: &Path,
+) -> Result<HashSet<PathBuf>, RoleBuildError> {
+    let roots = workspace_roots_at(repo_root)?;
+    Ok(reachable_rust_sources_from(
+        roots.into_iter().map(|root| root.src_path),
+    ))
+}
+
+fn reachable_rust_sources_from(entry_paths: impl IntoIterator<Item = PathBuf>) -> HashSet<PathBuf> {
+    let mut seen = HashSet::new();
+    let mut stack: Vec<PathBuf> = entry_paths
+        .into_iter()
+        .map(|path| canonical_path(&path))
+        .filter(|path| path.is_file())
+        .collect();
+    while let Some(path) = stack.pop() {
+        if !seen.insert(path.clone()) {
+            continue;
+        }
+        let Ok(source) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(ast) = syn::parse_file(&source) else {
+            continue;
+        };
+        for child in rust_child_source_paths(&path, &ast.items) {
+            if child.is_file() {
+                stack.push(canonical_path(&child));
+            }
+        }
+    }
+    seen
+}
+
+fn rust_child_source_paths(parent: &Path, items: &[syn::Item]) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    collect_child_source_paths(parent, items, &mut out);
+    out
+}
+
+fn collect_child_source_paths(parent: &Path, items: &[syn::Item], out: &mut Vec<PathBuf>) {
+    for item in items {
+        match item {
+            syn::Item::Mod(module) => {
+                if let Some((_, nested)) = &module.content {
+                    collect_child_source_paths(parent, nested, out);
+                    continue;
+                }
+                let mut atoms = AtomInterner::new();
+                if let Ok(edges) = resolve_external_mod(parent, module, &CfgPred::True, &mut atoms)
+                {
+                    out.extend(edges.into_iter().map(|edge| edge.target));
+                }
+            }
+            syn::Item::Macro(item_macro) => {
+                if let Some(lit) = extract_include_literal_from_macro(&item_macro.mac) {
+                    out.push(resolve_include_path(parent, &lit));
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 fn seed_queue(cargo_roots: &[CargoRoot], paths: &[PathBuf]) -> VecDeque<WorkItem> {
@@ -73,6 +165,31 @@ fn seed_queue(cargo_roots: &[CargoRoot], paths: &[PathBuf]) -> VecDeque<WorkItem
         });
     }
     queue
+}
+
+fn seed_queue_sharded(paths: &[PathBuf]) -> VecDeque<WorkItem> {
+    let mut queue = VecDeque::new();
+    for path in paths {
+        queue.push_back(WorkItem {
+            path: path.clone(),
+            pred: CfgPred::True,
+            allow_production: !path_components_suggest_test(path),
+            kind: IncludeKind::Items,
+        });
+    }
+    queue
+}
+
+fn path_components_suggest_test(path: &Path) -> bool {
+    path.components().any(|c| {
+        let Some(name) = c.as_os_str().to_str() else {
+            return false;
+        };
+        matches!(name, "tests" | "test" | "benches" | "examples")
+            || name.ends_with("_tests")
+            || name.ends_with("_test")
+            || name.starts_with("test_")
+    })
 }
 
 fn loose_seed_paths(paths: &[PathBuf]) -> Vec<PathBuf> {
@@ -115,6 +232,7 @@ fn process_work_item(
     acc: &mut HashMap<PathBuf, Vec<RoleRange>>,
     base: &mut HashMap<PathBuf, CodeContextSet>,
     queue: &mut VecDeque<WorkItem>,
+    walk_mode: WalkMode,
 ) -> Result<(), RoleBuildError> {
     let path = canonical_path(&item.path);
     let walked = walk_path(
@@ -124,6 +242,7 @@ fn process_work_item(
         item.allow_production,
         by_path,
         atoms,
+        walk_mode,
     )?;
     let ctx = super::cfg_sat::contexts_for_pred(&item.pred, item.allow_production);
     let entry = base
@@ -142,9 +261,20 @@ fn walk_path(
     allow_production: bool,
     by_path: &HashMap<PathBuf, &ParsedRustFile>,
     atoms: &mut AtomInterner,
+    walk_mode: WalkMode,
 ) -> Result<WalkOutput, RoleBuildError> {
     if let Some(parsed) = by_path.get(path) {
         return walk_file(path, &parsed.ast, pred, allow_production, atoms);
+    }
+    match walk_mode {
+        WalkMode::ShardLocal => {
+            return Ok(WalkOutput {
+                ranges: Vec::new(),
+                mods: Vec::new(),
+                includes: Vec::new(),
+            });
+        }
+        WalkMode::Full => {}
     }
     if !path.is_file() {
         return Err(missing_source(path, kind));
@@ -388,5 +518,25 @@ mod rust_roles_test {
             index.file_composition(&inner),
             super::super::types::FileComposition::TestOnly
         );
+    }
+
+    #[test]
+    fn reachable_sources_follow_mods_and_skip_orphans() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(
+            tmp.path().join("Cargo.toml"),
+            "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
+        )
+        .unwrap();
+        std::fs::write(src.join("lib.rs"), "mod kept;\n").unwrap();
+        std::fs::write(src.join("kept.rs"), "pub fn k() {}\n").unwrap();
+        std::fs::write(src.join("orphan.rs"), "pub fn o() {}\n").unwrap();
+
+        let reachable = reachable_workspace_rust_sources(tmp.path()).unwrap();
+        assert!(reachable.contains(&canonical_path(&src.join("lib.rs"))));
+        assert!(reachable.contains(&canonical_path(&src.join("kept.rs"))));
+        assert!(!reachable.contains(&canonical_path(&src.join("orphan.rs"))));
     }
 }

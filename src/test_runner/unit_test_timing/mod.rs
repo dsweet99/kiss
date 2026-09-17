@@ -4,11 +4,13 @@ use std::time::Duration;
 use kiss::Language;
 
 use crate::test_runner::check_line_coverage::repository_root_for_universe;
-use crate::test_runner::rust_coverage_index::{
-    resolved_rust_batch_request_parts, rust_coverage_cache_root,
-};
-use crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached;
-use crate::test_runner::selector_ids::report_string_for_logical_string;
+
+mod rust_durations;
+pub(crate) use rust_durations::clear_rust_duration_pairs_memo;
+pub(super) use rust_durations::load_rust_population_max_duration;
+use rust_durations::load_rust_duration_pairs;
+#[cfg(test)]
+pub(crate) use rust_durations::set_pairs_for_tests;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct UnitTestTiming {
@@ -70,8 +72,7 @@ fn filter_timings_by_ignore(
 }
 
 pub(super) fn selector_matches_ignore_prefix(selector: &str, ignore: &[String]) -> bool {
-    let path_part = selector.split_once("::").map_or(selector, |(p, _)| p);
-    kiss::path_ignored_by_prefixes(path_part, ignore)
+    kiss::selector_ignored_by_prefixes(selector, ignore)
 }
 
 fn load_python_timings(repo_root: &Path, pytest_args: &[String]) -> Option<Vec<UnitTestTiming>> {
@@ -93,65 +94,30 @@ fn load_python_timings(repo_root: &Path, pytest_args: &[String]) -> Option<Vec<U
 }
 
 fn load_rust_timings(repo_root: &Path) -> Option<Vec<UnitTestTiming>> {
-    let (req, tools) = resolved_rust_batch_request_parts(repo_root, &[]).ok()?;
-    let identity = kiss::rust_llvm_cov_runner::batch_identity(&req, &tools).ok()?;
-    let cache_root = rust_coverage_cache_root(repo_root);
-
-    if let Some(pairs) = kiss::rust_llvm_cov_runner::load_current_population_durations(
-        &cache_root,
-        repo_root,
-        &identity,
-        &req,
-        &tools,
-        None,
-    ) {
-        let report_ids = rust_logical_to_kiss_test_ids_cached(repo_root, &[]).ok()?;
-        return Some(
-            pairs
-                .into_iter()
-                .map(|(selector, duration)| UnitTestTiming {
-                    language: Language::Rust,
-                    selector: report_string_for_logical_string(&report_ids, &selector),
-                    duration,
-                })
-                .collect(),
-        );
-    }
-    load_rust_timings_from_witness(repo_root, &identity)
+    Some(map_rust_timing_pairs(repo_root, load_rust_duration_pairs(repo_root)?))
 }
 
-fn load_rust_timings_from_witness(
+fn map_rust_timing_pairs(
     repo_root: &Path,
-    identity: &kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity,
-) -> Option<Vec<UnitTestTiming>> {
-    use crate::test_runner::execution_witness::{
-        try_load_rust_execution_witness, try_warm_rust_cached_summary,
-    };
-    let witness = try_load_rust_execution_witness(repo_root).ok()?;
-    let _ = try_warm_rust_cached_summary(
-        repo_root,
-        &witness.selectors,
-        identity,
-        &kiss::GateConfig::load_for_repo(repo_root),
-    )?;
-    if witness.durations_ns.len() != witness.selectors.len() {
-        return None;
-    }
-    let report_ids = rust_logical_to_kiss_test_ids_cached(repo_root, &[]).ok()?;
-    witness
-        .selectors
-        .iter()
-        .zip(witness.durations_ns.iter())
-        .map(|(selector, &ns)| {
-            let duration = Duration::from_nanos(ns?);
-            Some(UnitTestTiming {
-                language: Language::Rust,
-                selector: report_string_for_logical_string(&report_ids, selector),
-                duration,
-            })
+    pairs: Vec<(String, std::time::Duration)>,
+) -> Vec<UnitTestTiming> {
+    let selectors: Vec<String> = pairs.iter().map(|(selector, _)| selector.clone()).collect();
+    let report_ids =
+        crate::test_runner::runners::rust_report_ids_for_selectors(repo_root, &selectors)
+            .unwrap_or_default();
+    pairs
+        .into_iter()
+        .map(|(selector, duration)| UnitTestTiming {
+            language: Language::Rust,
+            selector: report_ids
+                .get(&selector)
+                .cloned()
+                .unwrap_or(selector),
+            duration,
         })
-        .collect::<Option<Vec<_>>>()
+        .collect()
 }
+
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct RuntimeGateViolation {
@@ -207,23 +173,10 @@ pub(crate) fn evaluate_runtime_gate(
 }
 
 pub(crate) fn runtime_gate_failure_lines(viols: &[RuntimeGateViolation]) -> Vec<String> {
-    let mut ordered: Vec<&RuntimeGateViolation> = viols.iter().collect();
-    ordered
-        .sort_by(|a, b| (a.language, a.selector.as_str()).cmp(&(b.language, b.selector.as_str())));
-    let mut lines = vec![format!(
+    vec![format!(
         "VIOLATION:max_unit_test_seconds: {} test(s) exceeded path-pattern time limits",
-        ordered.len()
-    )];
-    for v in ordered {
-        lines.push(format!(
-            "  [{}] {}: {:.2}s (limit {:.2}s)",
-            v.language.label(),
-            v.selector,
-            v.seconds,
-            v.limit_seconds
-        ));
-    }
-    lines
+        viols.len()
+    )]
 }
 
 pub(crate) fn collect_available_unit_test_timings(
@@ -243,23 +196,36 @@ pub(crate) fn collect_available_unit_test_timings(
     filter_timings_by_ignore(timings, opts.ignore)
 }
 
+pub(crate) fn known_empty_unit_test_population(
+    universe: &Path,
+    lang_filter: Option<Language>,
+    include: TimingLangInclude,
+    ignore: &[String],
+    pytest_args: &[String],
+) -> bool {
+    cheap_codebase_test_count(universe, lang_filter, include, ignore, pytest_args) == Some(0)
+}
+
 fn cheap_codebase_test_count(
     universe: &Path,
     lang_filter: Option<Language>,
     include: TimingLangInclude,
     ignore: &[String],
+    pytest_args: &[String],
 ) -> Option<usize> {
     let repo_root = repository_root_for_universe(universe);
-    let (py, rs) =
-        super::workspace_selector_cache::load_workspace_selectors_for_count(&repo_root, ignore)?;
-    let mut total = 0usize;
-    if include.python && matches!(lang_filter, None | Some(Language::Python)) {
-        total += py.len();
-    }
-    if include.rust && matches!(lang_filter, None | Some(Language::Rust)) {
-        total += rs.len();
-    }
-    Some(total)
+    let need_python = include.python && matches!(lang_filter, None | Some(Language::Python));
+    let need_rust = include.rust && matches!(lang_filter, None | Some(Language::Rust));
+    let (py, rs) = super::workspace_selector_cache::load_workspace_selectors_for_count(
+        &repo_root,
+        ignore,
+        pytest_args,
+        super::workspace_selector_cache::SelectorCountNeed {
+            python: need_python,
+            rust: need_rust,
+        },
+    )?;
+    Some(py.len() + rs.len())
 }
 
 pub(crate) fn codebase_test_count_for_cov(
@@ -269,7 +235,12 @@ pub(crate) fn codebase_test_count_for_cov(
     ignore: &[String],
     pytest_args: &[String],
 ) -> Option<usize> {
-    if let Some(n) = cheap_codebase_test_count(universe, lang_filter, include, ignore) {
+    if let Some(n) = cheap_codebase_test_count(universe, lang_filter, include, ignore, pytest_args)
+    {
+        return Some(n);
+    }
+    if let Some(n) = timing_artifact_test_count(universe, lang_filter, include, ignore, pytest_args)
+    {
         return Some(n);
     }
     match collect_current_unit_test_timings(TimingCollectOpts {
@@ -282,6 +253,38 @@ pub(crate) fn codebase_test_count_for_cov(
         TimingPopulation::Complete(entries) => Some(entries.len()),
         TimingPopulation::Incomplete => None,
     }
+}
+
+fn timing_artifact_test_count(
+    universe: &Path,
+    lang_filter: Option<Language>,
+    include: TimingLangInclude,
+    ignore: &[String],
+    pytest_args: &[String],
+) -> Option<usize> {
+    let repo_root = repository_root_for_universe(universe);
+    let want_python = include.python && matches!(lang_filter, None | Some(Language::Python));
+    let want_rust = include.rust && matches!(lang_filter, None | Some(Language::Rust));
+    let mut count = 0usize;
+    if want_python {
+        let pairs =
+            crate::test_runner::python_coverage_index::load_current_python_population_durations(
+                &repo_root,
+                pytest_args,
+            )?;
+        count += pairs
+            .into_iter()
+            .filter(|(selector, _)| !selector_matches_ignore_prefix(selector, ignore))
+            .count();
+    }
+    if want_rust {
+        let pairs = load_rust_duration_pairs(&repo_root)?;
+        count += pairs
+            .into_iter()
+            .filter(|(selector, _)| !selector_matches_ignore_prefix(selector, ignore))
+            .count();
+    }
+    Some(count)
 }
 
 pub(crate) fn unit_test_runtime_sec_report_for_universe(
@@ -299,7 +302,8 @@ pub(crate) fn unit_test_runtime_sec_report_for_universe(
         ignore,
         pytest_args,
     });
-    let codebase_tests = cheap_codebase_test_count(universe, lang_filter, include, ignore);
+    let codebase_tests =
+        cheap_codebase_test_count(universe, lang_filter, include, ignore, pytest_args);
     let report = build_unit_test_runtime_grouped_report(&timings, rules, codebase_tests)?;
     Some(format_unit_test_runtime_grouped_report(&report))
 }

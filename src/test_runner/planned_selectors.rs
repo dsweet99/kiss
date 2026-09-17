@@ -26,7 +26,50 @@ pub(crate) struct PlannedSelectors {
     pub skip_index_rebuild_after_selective: crate::test_runner::language_keyed::LanguageKeyed<bool>,
 }
 
+pub(crate) fn empty_planned(repo_root: PathBuf, ignore: Vec<String>) -> PlannedSelectors {
+    PlannedSelectors {
+        repo_root,
+        sel: crate::test_runner::language_keyed::LanguageKeyed {
+            python: Vec::new(),
+            rust: Vec::new(),
+        },
+        population_required: crate::test_runner::language_keyed::LanguageKeyed {
+            python: false,
+            rust: false,
+        },
+        source_paths: crate::test_runner::language_keyed::LanguageKeyed {
+            python: Vec::new(),
+            rust: Vec::new(),
+        },
+        vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed { python: 0, rust: 0 },
+        snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
+            python: 0,
+            rust: 0,
+        },
+        snapshot_delta_structural: crate::test_runner::language_keyed::LanguageKeyed {
+            python: false,
+            rust: false,
+        },
+        prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
+            python: Vec::new(),
+            rust: Vec::new(),
+        },
+        coverage_decision_engine_used: false,
+        selection_basis: crate::test_runner::language_keyed::LanguageKeyed {
+            python: crate::test_runner::coverage_decision::SelectionBasis::Current,
+            rust: crate::test_runner::coverage_decision::SelectionBasis::Current,
+        },
+        ignore,
+        workspace_files_fingerprint: None,
+        skip_index_rebuild_after_selective: crate::test_runner::language_keyed::LanguageKeyed {
+            python: false,
+            rust: false,
+        },
+    }
+}
+
 pub(crate) struct SelectorRunOptions<'a> {
+    #[allow(dead_code)]
     pub dry_run: bool,
     pub force_rerun: bool,
     pub metrics: bool,
@@ -50,7 +93,6 @@ pub(crate) fn should_force_cold_initialization(
         && !repo_root.join(".kiss").exists()
 }
 
-#[doc = "kiss-coverage-off"]
 pub(crate) fn apply_cold_initialization_population(
     a: &RunTestCmdArgs<'_>,
     planned: &mut PlannedSelectors,
@@ -58,14 +100,8 @@ pub(crate) fn apply_cold_initialization_population(
     if !should_force_cold_initialization(a, &planned.repo_root) {
         return;
     }
-    match a.lang_filter {
-        Some(Language::Python) => planned.population_required.python = true,
-        Some(Language::Rust) => planned.population_required.rust = true,
-        None => {
-            planned.population_required.python = true;
-            planned.population_required.rust = true;
-        }
-    }
+    planned.population_required.python = true;
+    planned.population_required.rust = true;
 }
 
 pub(crate) fn apply_force_all_population(a: &RunTestCmdArgs<'_>, planned: &mut PlannedSelectors) {

@@ -3,7 +3,9 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use crate::rust_llvm_cov_runner::plan::batch_fingerprint::{RustCoverageBatchIdentity, RustCoverageToolIdentity};
+use crate::rust_llvm_cov_runner::plan::batch_fingerprint::{
+    RustCoverageBatchIdentity, RustCoverageToolIdentity,
+};
 use crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest;
 use crate::rust_llvm_cov_runner::publish_derived::batch_derived::POPULATION_SCHEMA_VERSION;
 use crate::rust_llvm_cov_runner::publish_derived::batch_reverse_build::ReversePublishInfo;

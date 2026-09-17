@@ -9,6 +9,13 @@ use kiss::rust_llvm_cov_runner::RustLineCoverage;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 
+fn subset_mode_request(repo: &std::path::Path, rust: Vec<String>) -> EnsureRequest {
+    let mut req = all_mode_request(repo);
+    req.mode = AcceptMode::Subset;
+    req.planned.rust = rust;
+    req
+}
+
 fn all_mode_request(repo: &std::path::Path) -> EnsureRequest {
     EnsureRequest {
         repo_root: repo.to_path_buf(),
@@ -37,25 +44,53 @@ fn write_demo_crate(root: &std::path::Path) {
         "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
     )
     .unwrap();
-    let lib = root.join("src").join("lib.rs");
-    fs::write(&lib, "pub fn lib() {}\n").unwrap();
+    fs::write(
+        root.join("Cargo.lock"),
+        "version = 4\n\n[[package]]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    fs::write(root.join("src").join("lib.rs"), "pub fn lib() {}\n").unwrap();
     write_test_entry(
         root,
         "a",
         "test_lib",
         TestStatus::Passed,
         RustLineCoverage {
-            files: BTreeMap::from([(lib.to_string_lossy().to_string(), BTreeSet::from([1]))]),
+            files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
         },
     );
     write_rust_population_manifest_for_args(root, &["test_lib".to_string()], &[]).unwrap();
 }
 
 #[test]
+fn subset_mode_repairs_when_planned_universe_grows() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_demo_crate(tmp.path());
+    let lib = tmp.path().join("src").join("lib.rs");
+    write_test_entry(
+        tmp.path(),
+        "b",
+        "test_new",
+        TestStatus::Passed,
+        RustLineCoverage {
+            files: BTreeMap::from([(lib.to_string_lossy().to_string(), BTreeSet::from([1]))]),
+        },
+    );
+    let grown = vec!["test_lib".to_string(), "test_new".to_string()];
+    let req = subset_mode_request(tmp.path(), grown.clone());
+    assert!(repair_stale_population_on_all_mode_accept(&req, &grown).unwrap());
+    assert!(rust_population_manifest_is_current_for_args(
+        tmp.path(),
+        &grown,
+        &[],
+    ));
+}
+
+#[test]
 fn empty_all_mode_plan_skips_repair() {
     let tmp = tempfile::tempdir().unwrap();
     let req = all_mode_request(tmp.path());
-    assert!(!repair_stale_population_on_all_mode_accept(&req, &[]));
+    assert!(!repair_stale_population_on_all_mode_accept(&req, &[]).unwrap());
 }
 
 #[test]
@@ -68,10 +103,7 @@ fn current_all_mode_manifest_skips_repair() {
         &["test_lib".to_string()],
         &[],
     ));
-    assert!(!repair_stale_population_on_all_mode_accept(
-        &req,
-        &["test_lib".to_string()],
-    ));
+    assert!(!repair_stale_population_on_all_mode_accept(&req, &["test_lib".to_string()],).unwrap());
 }
 
 #[test]
@@ -81,9 +113,31 @@ fn broken_all_mode_manifest_is_rebuilt() {
     let path = rust_population_manifest_path(tmp.path());
     fs::write(&path, "{ broken").unwrap();
     let req = all_mode_request(tmp.path());
-    assert!(repair_stale_population_on_all_mode_accept(
-        &req,
-        &["test_lib".to_string()],
-    ));
+    assert!(repair_stale_population_on_all_mode_accept(&req, &["test_lib".to_string()],).unwrap());
     serde_json::from_str::<serde_json::Value>(&fs::read_to_string(path).unwrap()).unwrap();
+}
+
+#[test]
+fn stale_derived_index_repair_preserves_binary_authority() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_demo_crate(tmp.path());
+    let population_path = rust_population_manifest_path(tmp.path());
+    let before: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&population_path).unwrap()).unwrap();
+    fs::write(
+        tmp.path()
+            .join(".kiss")
+            .join("rust_llvm_cov_cache")
+            .join("index.json"),
+        "{ broken",
+    )
+    .unwrap();
+    let req = all_mode_request(tmp.path());
+    assert!(repair_stale_population_on_all_mode_accept(&req, &["test_lib".to_string()]).unwrap());
+    let after: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(population_path).unwrap()).unwrap();
+    assert_eq!(
+        after["test_binaries"], before["test_binaries"],
+        "derived-only repair must not replace existing binary authority"
+    );
 }

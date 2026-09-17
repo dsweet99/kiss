@@ -1,4 +1,5 @@
 use super::*;
+use crate::rpytest_runner::TestStatus;
 use crate::rust_llvm_cov_runner::RustCovCacheStatus;
 use crate::rust_llvm_cov_runner::RustLineCoverage;
 use crate::rust_llvm_cov_runner::RustLlvmCovError;
@@ -7,7 +8,6 @@ use crate::rust_llvm_cov_runner::rust_cov_cache::RustCovCacheEntry;
 use crate::rust_llvm_cov_runner::test_support::{
     batch_executor_fixture_repo, batch_executor_request, witness_batch_tools,
 };
-use crate::rpytest_runner::TestStatus;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 

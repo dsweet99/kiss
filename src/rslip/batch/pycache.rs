@@ -11,6 +11,31 @@ const SKIP_DIRS: &[&str] = &[
     ".pytest_cache",
 ];
 
+pub(super) fn purge_pyc_for_nodeid(source_root: &Path, nodeid: &str) {
+    let file = nodeid.split("::").next().unwrap_or("");
+    if file.is_empty() {
+        return;
+    }
+    let py = source_root.join(file);
+    let Some(parent) = py.parent() else {
+        return;
+    };
+    let Some(stem) = py.file_stem().and_then(|stem| stem.to_str()) else {
+        return;
+    };
+    let prefix = format!("{stem}.");
+    let Ok(entries) = fs::read_dir(parent.join("__pycache__")) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with(&prefix) && name.ends_with(".pyc") {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
+}
+
 pub(super) fn purge_pycache_under(root: &Path) {
     let Ok(entries) = fs::read_dir(root) else {
         return;

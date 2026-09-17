@@ -74,7 +74,9 @@ fn reverse_rejects_wrong_schema_and_snapshot_id() {
         serde_json::to_vec_pretty(&bad).unwrap(),
     )
     .unwrap();
-    assert!(crate::rust_llvm_cov_runner::query_reverse_line_index(&cache, "gen1", &wanted()).is_none());
+    assert!(
+        crate::rust_llvm_cov_runner::query_reverse_line_index(&cache, "gen1", &wanted()).is_none()
+    );
     write_population_with_reverse(&cache, "gen1", "fp", &info);
     bad = serde_json::from_slice(&fs::read(cache.join("population.json")).unwrap()).unwrap();
     bad["reverse_line_index"]["snapshot_id"] = serde_json::json!("no-such");
@@ -83,7 +85,9 @@ fn reverse_rejects_wrong_schema_and_snapshot_id() {
         serde_json::to_vec_pretty(&bad).unwrap(),
     )
     .unwrap();
-    assert!(crate::rust_llvm_cov_runner::query_reverse_line_index(&cache, "gen1", &wanted()).is_none());
+    assert!(
+        crate::rust_llvm_cov_runner::query_reverse_line_index(&cache, "gen1", &wanted()).is_none()
+    );
 }
 
 #[test]
@@ -99,7 +103,9 @@ fn reverse_rejects_tampered_selectors_digest() {
     meta["selectors_digest"] = serde_json::json!("0".repeat(64));
     let meta_bytes = write_meta_with_newline(&root, &meta);
     rewrite_population_meta_digest(&cache, &meta_bytes);
-    assert!(crate::rust_llvm_cov_runner::query_reverse_line_index(&cache, "gen1", &wanted()).is_none());
+    assert!(
+        crate::rust_llvm_cov_runner::query_reverse_line_index(&cache, "gen1", &wanted()).is_none()
+    );
 }
 
 #[test]
@@ -114,7 +120,9 @@ fn reverse_rejects_malformed_meta_json() {
         b"{",
     )
     .unwrap();
-    assert!(crate::rust_llvm_cov_runner::query_reverse_line_index(&cache, "gen1", &wanted()).is_none());
+    assert!(
+        crate::rust_llvm_cov_runner::query_reverse_line_index(&cache, "gen1", &wanted()).is_none()
+    );
 }
 
 #[test]
@@ -145,7 +153,9 @@ fn reverse_rejects_unknown_selector_id() {
     meta["files"][&key]["digest"] = serde_json::json!(hex_digest(&record_bytes));
     let meta_bytes = write_meta_with_newline(&root, &meta);
     rewrite_population_meta_digest(&cache, &meta_bytes);
-    assert!(crate::rust_llvm_cov_runner::query_reverse_line_index(&cache, "gen1", &wanted()).is_none());
+    assert!(
+        crate::rust_llvm_cov_runner::query_reverse_line_index(&cache, "gen1", &wanted()).is_none()
+    );
 }
 
 #[test]
@@ -157,7 +167,9 @@ fn reverse_rejects_malformed_file_record_bytes() {
     let info = publish_bound_reverse(&cache, &source, "gen1", "fp");
     let root = snapshot_path(&cache, &info.snapshot_id);
     fs::write(first_file_record(&root), b"not-json").unwrap();
-    assert!(crate::rust_llvm_cov_runner::query_reverse_line_index(&cache, "gen1", &wanted()).is_none());
+    assert!(
+        crate::rust_llvm_cov_runner::query_reverse_line_index(&cache, "gen1", &wanted()).is_none()
+    );
 }
 
 #[test]
@@ -199,7 +211,8 @@ fn revision_advance_and_reverse_hit_avoid_entry_reads() {
     fs::set_permissions(&entries, fs::Permissions::from_mode(0o000)).unwrap();
     let hit_ok = crate::rust_llvm_cov_runner::query_reverse_line_index(&cache, "gen1", &wanted());
     publish_next_entry_state(&cache, "gen1", "fp-b").unwrap();
-    let hit_stale = crate::rust_llvm_cov_runner::query_reverse_line_index(&cache, "gen1", &wanted());
+    let hit_stale =
+        crate::rust_llvm_cov_runner::query_reverse_line_index(&cache, "gen1", &wanted());
     fs::set_permissions(&entries, fs::Permissions::from_mode(mode)).unwrap();
     assert_eq!(
         hit_ok.unwrap().get("src/lib.rs").unwrap(),
@@ -232,4 +245,44 @@ fn abandoned_staging_reclaimed_without_activation() {
     assert!(removed >= 1);
     assert!(!staging.exists());
     assert!(snapshot_path(cache, &active.snapshot_id).is_dir());
+}
+
+#[test]
+fn covering_files_empty_rels_returns_empty_set() {
+    let tmp = tempdir().unwrap();
+    let out = crate::rust_llvm_cov_runner::query_reverse_covering_files(tmp.path(), "gen", &[]);
+    assert_eq!(out, Some(std::collections::BTreeSet::new()));
+}
+
+#[test]
+fn covering_files_unknown_rel_is_unavailable() {
+    let tmp = tempdir().unwrap();
+    let cache = tmp.path().join("cache");
+    let source = tmp.path().join("src");
+    seed(&cache, &source);
+    publish_bound_reverse(&cache, &source, "gen1", "fp");
+    assert!(
+        crate::rust_llvm_cov_runner::query_reverse_covering_files(
+            &cache,
+            "gen1",
+            &["missing.rs".into()],
+        )
+        .is_none()
+    );
+}
+
+#[test]
+fn covering_files_known_rel_returns_selectors() {
+    let tmp = tempdir().unwrap();
+    let cache = tmp.path().join("cache");
+    let source = tmp.path().join("src");
+    seed(&cache, &source);
+    publish_bound_reverse(&cache, &source, "gen1", "fp");
+    let out = crate::rust_llvm_cov_runner::query_reverse_covering_files(
+        &cache,
+        "gen1",
+        &["src/lib.rs".into()],
+    )
+    .expect("known rel must be available");
+    assert!(out.contains("test_a"));
 }

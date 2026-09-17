@@ -35,14 +35,27 @@ pub(crate) fn selectors_fingerprint(selectors: &[String]) -> String {
     format!("{h:016x}")
 }
 
-#[allow(dead_code)]
+pub(crate) fn force_rerun_blocks_all_hit_reuse(req: &RustCoverageBatchRequest) -> bool {
+    if req.force_rerun {
+        return true;
+    }
+    req.force_rerun_selectors.iter().any(|forced| {
+        req.logical_selectors
+            .iter()
+            .any(|selector| selector == forced)
+    })
+}
+
 pub(crate) fn try_warm_all_hit_seal(
     req: &RustCoverageBatchRequest,
     identity: &RustCoverageBatchIdentity,
 ) -> Option<()> {
     let bytes = fs::read(seal_path(&req.cache_root)).ok()?;
     let seal: WarmAllHitSeal = serde_json::from_slice(&bytes).ok()?;
-    let entry_state = crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::read_entry_state(&req.cache_root)?;
+    let entry_state =
+        crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::read_entry_state(
+            &req.cache_root,
+        )?;
     let selectors_fp = selectors_fingerprint(&req.logical_selectors);
     let ok = seal.schema_version == SEAL_SCHEMA_VERSION
         && seal.all_passed
@@ -58,8 +71,34 @@ pub(crate) fn write_warm_all_hit_seal(
     req: &RustCoverageBatchRequest,
     identity: &RustCoverageBatchIdentity,
 ) -> io::Result<()> {
-    let entry_state = crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::read_entry_state(&req.cache_root)
-        .ok_or_else(|| io::Error::other("warm all-hit seal requires entry_state.json"))?;
+    let entry_state =
+        match crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::read_entry_state(
+            &req.cache_root,
+        ) {
+            Some(state) if state.generation_fingerprint == identity.generation_fingerprint => state,
+            _ => {
+                let population = crate::rust_llvm_cov_runner::publish_derived::batch_derived_index::
+                load_current_population_state(
+                &req.cache_root,
+                &req.source_root,
+                identity,
+                Some(&req.logical_selectors),
+            )
+            .ok_or_else(|| io::Error::other("warm all-hit seal missing population state"))?;
+                crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::publish_next_entry_state(
+                &req.cache_root,
+                &identity.generation_fingerprint,
+                &population.entries_fingerprint,
+            )
+            .map_err(|err| io::Error::other(format!("{err:?}")))?;
+                crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::read_entry_state(
+                    &req.cache_root,
+                )
+                .ok_or_else(|| {
+                    io::Error::other("warm all-hit seal failed to publish entry_state")
+                })?
+            }
+        };
     if entry_state.generation_fingerprint != identity.generation_fingerprint {
         return Err(io::Error::other(
             "warm all-hit seal generation mismatch with entry_state",

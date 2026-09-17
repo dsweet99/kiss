@@ -1,7 +1,9 @@
 use std::fmt;
 use std::fs::{File, OpenOptions};
+use std::io::ErrorKind;
 use std::path::Path;
 use std::sync::Mutex;
+use std::time::Duration;
 
 use fs2::FileExt;
 
@@ -15,7 +17,7 @@ use check_runtime_refresh_repair::try_repair_rust_check_aggregate_labeled;
 #[cfg(test)]
 pub(crate) use check_runtime_refresh_repair::{
     CheckAggregateRepairDecision, classify_check_aggregate_repair,
-    maybe_downgrade_rerun_when_witness_warm, retained_maps_ignoring_digest_mismatch,
+    classify_check_aggregate_repair_with_replacements,
 };
 
 #[path = "check_runtime_refresh_apply.rs"]
@@ -40,6 +42,10 @@ use check_runtime_refresh_types::{PythonRuntimeRefresh, RustRuntimeRefresh};
 mod python_refresh_tests;
 
 pub(crate) const COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV: &str = "KISS_COVERAGE_RUNTIME_REFRESH_ACTIVE";
+
+pub(crate) fn test_runner_stdout_enabled() -> bool {
+    std::env::var_os(COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV).is_none()
+}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct LanguageRefreshStats {
@@ -199,6 +205,7 @@ fn refresh_python_and_rust_parallel(
     })
 }
 
+#[derive(Debug)]
 pub(super) struct RefreshLockGuard {
     _file: File,
 }
@@ -247,6 +254,14 @@ pub(super) fn lock_refresh(
     repo_root: &Path,
     language: &'static str,
 ) -> Result<RefreshLockGuard, CoverageRefreshError> {
+    lock_refresh_for(repo_root, language, Duration::from_secs(30))
+}
+
+fn lock_refresh_for(
+    repo_root: &Path,
+    language: &'static str,
+    timeout: Duration,
+) -> Result<RefreshLockGuard, CoverageRefreshError> {
     let path = repo_root
         .join(".kiss")
         .join("check_runtime_coverage_locks")
@@ -262,8 +277,37 @@ pub(super) fn lock_refresh(
         .truncate(false)
         .open(&path)
         .map_err(|err| CoverageRefreshError::lock(language, err))?;
-    file.lock_exclusive()
-        .map_err(|err| CoverageRefreshError::lock(language, err))?;
+    let mut reported_wait = false;
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        match file.try_lock_exclusive() {
+            Ok(()) => break,
+            Err(err) if err.kind() == ErrorKind::WouldBlock => {
+                if !reported_wait {
+                    crate::test_runner::emit_test_progress(&format!(
+                        "kiss test: waiting for {language} runtime coverage refresh"
+                    ));
+                    reported_wait = true;
+                }
+                let now = std::time::Instant::now();
+                if now >= deadline {
+                    return Err(CoverageRefreshError::lock(
+                        language,
+                        std::io::Error::new(
+                            ErrorKind::TimedOut,
+                            format!("timed out after {}s", timeout.as_secs_f64()),
+                        ),
+                    ));
+                }
+                std::thread::sleep(
+                    deadline
+                        .saturating_duration_since(now)
+                        .min(Duration::from_millis(250)),
+                );
+            }
+            Err(err) => return Err(CoverageRefreshError::lock(language, err)),
+        }
+    }
     Ok(RefreshLockGuard { _file: file })
 }
 
@@ -316,41 +360,6 @@ fn ensure_rust_runtime_coverage_with_stats_labeled(
         .map_err(|err| CoverageRefreshError::publication("Rust", err))?;
     let summary = result.rust().map(|r| r.summary.clone()).unwrap_or_default();
     finalize_population_summary_labeled(repo_root, ignore, &summary, true, caller_label)
-}
-
-#[allow(dead_code)]
-pub(crate) fn ensure_rust_runtime_coverage_shared(
-    repo_root: &Path,
-    ignore: &[String],
-    jobs: usize,
-    caller_label: &str,
-    gate: &kiss::GateConfig,
-) -> Result<crate::test_runner::runners::SelectorExecutionSummary, CoverageRefreshError> {
-    if load_rust_runtime_coverage(repo_root, ignore, gate).is_ok() {
-        let rust_batch_cache_hits =
-            crate::test_runner::runners::enumerate_workspace_rust_selectors(repo_root, ignore)
-                .unwrap_or_default()
-                .len();
-        return Ok(crate::test_runner::runners::SelectorExecutionSummary {
-            total: rust_batch_cache_hits,
-            cache_hits: rust_batch_cache_hits,
-            rust_batch_cache_hits,
-            ..Default::default()
-        });
-    }
-    let stats = ensure_rust_runtime_coverage_with_stats_labeled(
-        repo_root,
-        ignore,
-        jobs,
-        caller_label,
-        gate,
-    )?;
-    Ok(crate::test_runner::runners::SelectorExecutionSummary {
-        rust_test_instances: stats.by_language.rust.test_instances,
-        rust_aggregate_binaries: stats.by_language.rust.aggregate_binaries,
-        rust_aggregate_exports: stats.by_language.rust.aggregate_exports,
-        ..Default::default()
-    })
 }
 
 #[cfg(test)]

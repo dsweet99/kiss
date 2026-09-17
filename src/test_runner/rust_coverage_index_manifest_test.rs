@@ -40,6 +40,15 @@ fn write_rust_population_manifest_for_args_marks_population_current() {
         &["missing_selector".to_string()],
         &[],
     ));
+    let grown = ["test_lib".to_string(), "test_new".to_string()];
+    assert_eq!(
+        rust_selective_rebuild_publication_selectors(tmp.path(), &grown, &[]),
+        Some(grown.as_slice())
+    );
+    assert_eq!(
+        rust_selective_rebuild_publication_selectors(tmp.path(), &["test_lib".to_string()], &[],),
+        None
+    );
 }
 
 #[test]
@@ -195,4 +204,21 @@ fn facade_helpers_have_contracts() {
     assert!(is_cargo_config_input_path(Path::new(".cargo/config.toml")));
     assert!(!is_cargo_config_input_path(Path::new("config.toml")));
     assert!(rust_population_manifest_path(tmp.path()).ends_with("population.json"));
+}
+
+#[test]
+fn derived_publish_without_selectors_does_not_write_empty_population() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::create_dir_all(tmp.path().join("src")).unwrap();
+    fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
+    )
+    .unwrap();
+    fs::write(tmp.path().join("src").join("lib.rs"), "pub fn lib() {}\n").unwrap();
+    write_rust_population_manifest_for_args(tmp.path(), &["test_lib".to_string()], &[]).unwrap();
+    let before = fs::read(rust_population_manifest_path(tmp.path())).unwrap();
+    publish_rust_derived_state_with_filter(tmp.path(), Some(&[]), &[], |_, _| true).unwrap();
+    let after = fs::read(rust_population_manifest_path(tmp.path())).unwrap();
+    assert_eq!(before, after);
 }

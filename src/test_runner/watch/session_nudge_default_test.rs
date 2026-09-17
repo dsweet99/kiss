@@ -11,7 +11,7 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 #[test]
-fn default_nudge_while_settling_replies_without_new_cycle() {
+fn default_nudge_while_settling_runs_new_cycle() {
     let tmp = tempfile::tempdir().unwrap();
     init_git(&tmp);
     let file = commit_a_py(&tmp);
@@ -60,7 +60,7 @@ fn default_nudge_while_settling_replies_without_new_cycle() {
     assert_eq!(code, 1);
     assert_eq!(
         tests.load(std::sync::atomic::Ordering::SeqCst),
-        1,
-        "default nudge while settling must reply without incrementing run_cycle"
+        2,
+        "default nudge while settling must run the changed files"
     );
 }

@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 
 use crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest;
-use crate::rust_llvm_cov_runner::plan::batch_plan_nextest_config::{nextest_filter_string, toml_basic_string};
+use crate::rust_llvm_cov_runner::plan::batch_plan_nextest_config::{
+    nextest_filter_string, toml_basic_string,
+};
 
 pub(crate) fn append_slow_timeout_toml(out: &mut String, req: &RustCoverageBatchRequest) {
     if req.selector_timeout_millis.is_empty() {
@@ -91,7 +93,8 @@ mod tests {
 
     #[test]
     fn overrides_group_selectors_sharing_a_limit() {
-        let mut req = crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
+        let mut req =
+            crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
         req.test_args.clear();
         req.logical_selectors = vec!["alpha".into(), "beta".into(), "gamma".into()];
         req.selector_timeout_millis = BTreeMap::from([
@@ -120,11 +123,13 @@ mod tests {
 
     #[test]
     fn large_check_aggregate_uniform_timeout_uses_profile_slow_timeout() {
-        let mut req = crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
-        req.coverage_output_mode = crate::rust_llvm_cov_runner::plan::batch_plan::CoverageOutputMode::CheckAggregate {
-            publication_binary_ids: None,
-            repair_publication: None,
-        };
+        let mut req =
+            crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
+        req.coverage_output_mode =
+            crate::rust_llvm_cov_runner::plan::batch_plan::CoverageOutputMode::CheckAggregate {
+                publication_binary_ids: None,
+                repair_publication: None,
+            };
         req.logical_selectors = (0..80).map(|i| format!("t{i}")).collect();
         req.selector_timeout_millis = req
             .logical_selectors

@@ -67,8 +67,8 @@ fn select_fresh_python_source_selectors_and_select_fresh_rust_source_selectors_c
         },
     );
     rebuild_python_coverage_index(tmp.path()).unwrap();
+    // rebuild publishes the population from entry selectors; no second publish.
     rebuild_rust_coverage_index(tmp.path()).unwrap();
-    write_rust_test_population(tmp.path(), "tests::test_value");
 
     assert_eq!(
         python_backer::select_fresh_python_source_selectors(
@@ -133,10 +133,6 @@ fn assert_rust_module_selects(repo: &std::path::Path, lib: &std::path::Path) {
             complete: true,
         }
     );
-}
-
-fn write_rust_test_population(repo: &std::path::Path, selector: &str) {
-    write_rust_population_manifest_for_args(repo, &[selector.to_string()], &[]).unwrap();
 }
 
 fn single_line_change(path: &std::path::Path) -> BTreeMap<std::path::PathBuf, BTreeSet<u32>> {

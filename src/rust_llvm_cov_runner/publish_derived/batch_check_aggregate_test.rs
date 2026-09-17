@@ -37,11 +37,41 @@ fn strict_current_rejects_stale_identity_but_reusable_prior_accepts_it() {
 }
 
 #[test]
+fn strict_current_rejects_changed_test_binary_digest() {
+    let fixture = AggregateFixture::new();
+    publish_check_aggregate(&fixture.req, &fixture.aggregate).unwrap();
+    fs::write(
+        fixture.req.source_root.join("target").join("bin-a"),
+        "changed binary",
+    )
+    .unwrap();
+    assert!(
+        load_current_check_aggregate_snapshot(
+            &fixture.req.cache_root,
+            &fixture.req.source_root,
+            &fixture.identity,
+            Some(&fixture.aggregate.selectors),
+        )
+        .is_none()
+    );
+    assert!(
+        selector_coverage_from_check_aggregate_generation(
+            &fixture.req.cache_root,
+            &fixture.req.source_root,
+            &fixture.identity.generation_fingerprint,
+        )
+        .is_none(),
+        "line-selection fallback must reject the same corrupted aggregate"
+    );
+}
+
+#[test]
 fn selector_coverage_from_generation_unions_binary_line_maps() {
     let fixture = AggregateFixture::new();
     publish_check_aggregate(&fixture.req, &fixture.aggregate).unwrap();
     let maps = selector_coverage_from_check_aggregate_generation(
         &fixture.req.cache_root,
+        &fixture.req.source_root,
         &fixture.identity.generation_fingerprint,
     )
     .expect("generation coverage");
@@ -51,12 +81,20 @@ fn selector_coverage_from_generation_unions_binary_line_maps() {
     assert!(
         selector_coverage_from_check_aggregate_generation(
             &fixture.req.cache_root,
+            &fixture.req.source_root,
             "other-generation",
         )
         .is_none()
     );
     let from_validated = selector_coverage_from_validated(&fixture.aggregate, selector);
     assert_eq!(from_validated.files, coverage.files);
+    let file_index = file_selector_index_from_check_aggregate_generation(
+        &fixture.req.cache_root,
+        &fixture.req.source_root,
+        &fixture.identity.generation_fingerprint,
+    )
+    .expect("file selector index");
+    assert!(file_index["src/lib.rs"].contains(selector));
 }
 
 #[test]
@@ -114,6 +152,14 @@ fn loader_rejects_integrity_fingerprint_corruption() {
             &fixture.req.source_root,
             &fixture.identity,
             Some(&fixture.aggregate.selectors),
+        )
+        .is_none()
+    );
+    assert!(
+        selector_coverage_from_check_aggregate_generation(
+            &fixture.req.cache_root,
+            &fixture.req.source_root,
+            &fixture.identity.generation_fingerprint,
         )
         .is_none()
     );
@@ -311,14 +357,13 @@ fn fixture_identity() -> RustCoverageBatchIdentity {
 }
 
 fn fixture_binary(root: &Path, binary_id: &str) -> RustTestBinaryIdentity {
+    let executable = root.join("target").join("bin-a");
     RustTestBinaryIdentity {
         id: binary_id.to_string(),
-        executable: root
-            .join("target")
-            .join("bin-a")
-            .to_string_lossy()
-            .to_string(),
-        digest: "binary-digest".to_string(),
+        executable: executable.to_string_lossy().to_string(),
+        digest: crate::rust_llvm_cov_runner::execute_or_reuse::batch_executor_finish::
+            digest_test_binary(&executable)
+            .unwrap(),
     }
 }
 

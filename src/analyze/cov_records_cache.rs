@@ -1,22 +1,32 @@
 use std::fs;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
+use fs2::FileExt;
+use kiss::check_cache::CachedViolation;
 use kiss::check_universe_cache::CachedLineCoverageRecord;
 use serde::{Deserialize, Serialize};
 
 use crate::analyze::line_coverage::{
     LineCoverageRecord, cached_line_records, line_records_from_cache,
 };
-use crate::analyze_cache::{fnv1a64, mix_sorted_paths_len_mtime};
+use crate::analyze_cache::fnv1a64;
 use crate::test_runner::check_line_coverage::RequiredCoverageLanguages;
 
-const SCHEMA_VERSION: &str = "kiss-cov-records-v5";
+const SCHEMA_VERSION: &str = "kiss-cov-records-v11";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct CovRecordsCache {
     schema_version: String,
     fingerprint: String,
     records: Vec<CachedLineCoverageRecord>,
+    #[serde(default)]
+    orphan_clean_policy: String,
+    #[serde(default)]
+    orphan_clean_records_digest: String,
+    #[serde(default)]
+    orphan_violations: Option<Vec<CachedViolation>>,
 }
 
 #[derive(Clone, Debug)]
@@ -29,40 +39,179 @@ pub(crate) struct CovRecordsCacheKey<'a> {
     pub(crate) bypass_gate: bool,
     pub(crate) ignore: &'a [String],
     pub(crate) lang_filter: Option<&'a str>,
+    pub(crate) pytest_args: &'a [String],
 }
 
 pub(crate) fn try_load_cov_records(
     key: &CovRecordsCacheKey<'_>,
 ) -> Option<Vec<LineCoverageRecord>> {
+    try_load_cov_records_with_orphan_state(key).map(|(records, _)| records)
+}
+
+pub(crate) fn try_load_cov_records_with_orphan_violations(
+    key: &CovRecordsCacheKey<'_>,
+) -> Option<(Vec<LineCoverageRecord>, String, Option<Vec<kiss::Violation>>)> {
     let fingerprint = cov_records_fingerprint(key)?;
     let raw = fs::read(cache_path(key.repo_root)).ok()?;
     let cache: CovRecordsCache = serde_json::from_slice(&raw).ok()?;
     if cache.schema_version != SCHEMA_VERSION || cache.fingerprint != fingerprint {
         return None;
     }
-    Some(line_records_from_cache(&cache.records))
+    let (orphan_clean_policy, orphan_violations) = if cache.orphan_clean_records_digest
+        == records_digest(&cache.records)
+    {
+        let viols = cache
+            .orphan_violations
+            .map(|viols| {
+                viols
+                    .into_iter()
+                    .map(CachedViolation::into_violation)
+                    .collect()
+            })
+            .or_else(|| {
+                if !cache.orphan_clean_policy.is_empty() {
+                    Some(Vec::new())
+                } else {
+                    None
+                }
+            });
+        (cache.orphan_clean_policy, viols)
+    } else {
+        (String::default(), None)
+    };
+    Some((
+        line_records_from_cache(&cache.records),
+        orphan_clean_policy,
+        orphan_violations,
+    ))
+}
+
+pub(crate) fn try_load_cov_records_with_orphan_state(
+    key: &CovRecordsCacheKey<'_>,
+) -> Option<(Vec<LineCoverageRecord>, String)> {
+    try_load_cov_records_with_orphan_violations(key).map(|(records, policy, viols)| {
+        let clean_policy = if viols.as_ref().is_some_and(|v| v.is_empty()) {
+            policy
+        } else {
+            String::default()
+        };
+        (records, clean_policy)
+    })
 }
 
 pub(crate) fn store_cov_records(key: &CovRecordsCacheKey<'_>, records: &[LineCoverageRecord]) {
     let Some(fingerprint) = cov_records_fingerprint(key) else {
         return;
     };
+    let Some(_lock) = lock_cache(key.repo_root) else {
+        return;
+    };
+    let path = cache_path(key.repo_root);
+    let cached_records = cached_line_records(records);
+    let new_digest = records_digest(&cached_records);
+    let preserved = load_cache(&path).filter(|cache| {
+        cache.schema_version == SCHEMA_VERSION
+            && cache.fingerprint == fingerprint
+            && cache.orphan_clean_records_digest == new_digest
+            && records_digest(&cache.records) == new_digest
+    });
     let cache = CovRecordsCache {
         schema_version: SCHEMA_VERSION.to_string(),
         fingerprint,
-        records: cached_line_records(records),
+        records: cached_records,
+        orphan_clean_policy: preserved
+            .as_ref()
+            .map(|cache| cache.orphan_clean_policy.clone())
+            .unwrap_or_default(),
+        orphan_clean_records_digest: preserved
+            .as_ref()
+            .map(|cache| cache.orphan_clean_records_digest.clone())
+            .unwrap_or_default(),
+        orphan_violations: preserved.and_then(|cache| cache.orphan_violations),
     };
     let Ok(bytes) = serde_json::to_vec(&cache) else {
         return;
     };
+    publish_cache_bytes(&path, &bytes);
+}
+
+pub(crate) fn mark_cached_records_orphan_result(
+    key: &CovRecordsCacheKey<'_>,
+    policy: &str,
+    violations: &[kiss::Violation],
+) {
+    let Some(fingerprint) = cov_records_fingerprint(key) else {
+        return;
+    };
     let path = cache_path(key.repo_root);
-    if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
+    let Some(_lock) = lock_cache(key.repo_root) else {
+        return;
+    };
+    let Some(mut cache) = load_cache(&path) else {
+        return;
+    };
+    if cache.schema_version != SCHEMA_VERSION || cache.fingerprint != fingerprint {
+        return;
     }
-    let tmp = path.with_extension("json.tmp");
-    if fs::write(&tmp, bytes).is_ok() {
-        let _ = fs::rename(tmp, path);
+    cache.orphan_clean_policy = policy.to_string();
+    cache.orphan_clean_records_digest = records_digest(&cache.records);
+    cache.orphan_violations = Some(violations.iter().map(CachedViolation::from).collect());
+    let Ok(bytes) = serde_json::to_vec(&cache) else {
+        return;
+    };
+    publish_cache_bytes(&path, &bytes);
+}
+
+#[allow(dead_code)]
+pub(crate) fn mark_cached_records_orphan_clean(key: &CovRecordsCacheKey<'_>, policy: &str) {
+    mark_cached_records_orphan_result(key, policy, &[]);
+}
+
+fn lock_cache(repo_root: &Path) -> Option<fs::File> {
+    lock_cache_for(repo_root, Duration::from_secs(30))
+}
+
+fn lock_cache_for(repo_root: &Path, timeout: Duration) -> Option<fs::File> {
+    let dir = repo_root.join(".kiss");
+    fs::create_dir_all(&dir).ok()?;
+    let file = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(dir.join("cov_records_cache.lock"))
+        .ok()?;
+    let deadline = Instant::now() + timeout;
+    loop {
+        match file.try_lock_exclusive() {
+            Ok(()) => return Some(file),
+            Err(err) if err.kind() == ErrorKind::WouldBlock && Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(25));
+            }
+            Err(_) => return None,
+        }
     }
+}
+
+fn load_cache(path: &Path) -> Option<CovRecordsCache> {
+    serde_json::from_slice(&fs::read(path).ok()?).ok()
+}
+
+fn records_digest(records: &[CachedLineCoverageRecord]) -> String {
+    serde_json::to_vec(records)
+        .map(|bytes| format!("{:016x}", fnv1a64(0xcbf2_9ce4_8422_2325, &bytes)))
+        .unwrap_or_default()
+}
+
+fn publish_cache_bytes(path: &Path, bytes: &[u8]) {
+    let tmp = path.with_file_name(format!(
+        ".cov_records.{}.tmp",
+        kiss::kiss_publication_barrier::unique_process_suffix()
+    ));
+    if fs::write(&tmp, bytes).is_ok() && fs::rename(&tmp, path).is_ok() {
+        return;
+    }
+    let _ = fs::remove_file(tmp);
 }
 
 fn cache_path(repo_root: &Path) -> PathBuf {
@@ -84,15 +233,20 @@ fn cov_records_fingerprint(key: &CovRecordsCacheKey<'_>) -> Option<String> {
         h = fnv1a64(h, prefix.as_bytes());
         h = fnv1a64(h, &[0]);
     }
-    h = mix_sorted_paths_len_mtime(h, key.py_files);
-    h = mix_sorted_paths_len_mtime(h, key.rs_files);
-    h = fnv1a64(
-        h,
-        kiss::code_roles::role_input_fingerprint(key.py_files, key.rs_files)
-            .ok()?
-            .as_bytes(),
-    );
+    h = mix_sorted_source_contents(h, key.py_files.iter().chain(key.rs_files))?;
+    let cargo = key.repo_root.join("Cargo.toml");
+    h = fnv1a64(h, cargo.to_string_lossy().as_bytes());
+    if let Ok(bytes) = fs::read(&cargo) {
+        h = fnv1a64(h, &bytes);
+    }
     if key.required.python {
+        let identity =
+            crate::test_runner::python_coverage_index::current_python_execution_identity(
+                key.repo_root,
+                key.pytest_args,
+            )
+            .ok()?;
+        h = fnv1a64(h, &serde_json::to_vec(&identity).ok()?);
         h = fnv1a64(h, python_backend_identity(key.repo_root)?.as_bytes());
     }
     if key.required.rust {
@@ -101,8 +255,19 @@ fn cov_records_fingerprint(key: &CovRecordsCacheKey<'_>) -> Option<String> {
     Some(format!("{h:016x}"))
 }
 
-pub(crate) fn python_backend_identity_for_file_list(repo_root: &Path) -> Option<String> {
-    python_backend_identity(repo_root)
+fn mix_sorted_source_contents<'a, I>(mut h: u64, files: I) -> Option<u64>
+where
+    I: IntoIterator<Item = &'a PathBuf>,
+{
+    let mut paths: Vec<&PathBuf> = files.into_iter().collect();
+    paths.sort();
+    for path in paths {
+        h = fnv1a64(h, path.to_string_lossy().as_bytes());
+        h = fnv1a64(h, &[0]);
+        h = fnv1a64(h, &fs::read(path).ok()?);
+        h = fnv1a64(h, &[0]);
+    }
+    Some(h)
 }
 
 fn python_backend_identity(repo_root: &Path) -> Option<String> {
@@ -136,26 +301,32 @@ fn python_coverage_cache_root_population(repo_root: &Path) -> Option<PathBuf> {
     candidate.is_file().then_some(candidate)
 }
 
-pub(crate) fn rust_backend_identity_for_file_list(repo_root: &Path) -> Option<String> {
-    rust_backend_identity(repo_root)
-}
-
 fn rust_backend_identity(repo_root: &Path) -> Option<String> {
     let cache = repo_root.join(".kiss").join("rust_llvm_cov_cache");
-    if let Ok(witness) =
-        crate::test_runner::execution_witness::try_load_rust_execution_witness(repo_root)
-    {
-        return Some(format!(
-            "rs-wit:{}:{}:{}",
-            witness.generation_id,
-            witness.identity_digest,
-            witness.selectors.len()
-        ));
+    let witness = cache.join("execution_witness.json");
+    let mut parts = Vec::new();
+    if let Some(identity) = file_content_identity(&witness) {
+        parts.push(format!("wit:{identity}"));
+    }
+    if let Some(identity) = file_content_identity(&cache.join("current_generation.json")) {
+        parts.push(format!("gen:{identity}"));
     }
     if let Some(identity) = rust_check_aggregate_backend_identity(&cache) {
-        return Some(identity);
+        parts.push(identity);
     }
-    rust_population_backend_identity(&cache)
+    if let Some(identity) = rust_population_backend_identity(&cache) {
+        parts.push(identity);
+    }
+    (!parts.is_empty()).then(|| format!("rs:{}", parts.join("|")))
+}
+
+fn file_content_identity(path: &Path) -> Option<String> {
+    let bytes = fs::read(path).ok()?;
+    Some(format!(
+        "{}:{:016x}",
+        bytes.len(),
+        fnv1a64(0xcbf2_9ce4_8422_2325, &bytes)
+    ))
 }
 
 fn rust_check_aggregate_backend_identity(cache: &Path) -> Option<String> {

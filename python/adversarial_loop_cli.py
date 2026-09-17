@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import click
 
 from python.adversarial_common import ensure_import_path, repo_root
@@ -31,7 +29,7 @@ def loop(num_iterations: int, lang: str | None) -> None:
     ensure_import_path()
     from python.adversarial_loop import AdversarialLoopConfig, run_adversarial_loop
 
-    script = Path(__file__).resolve().parent / "adversarial_cli.py"
+    script = repo_root() / "ops" / "adversarial.py"
     try:
         run_adversarial_loop(
             AdversarialLoopConfig(

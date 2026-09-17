@@ -23,6 +23,7 @@ fn generation_identity_mismatch_does_not_fall_through_to_v1_generic() {
     let repo = tmp.path();
     fs::create_dir_all(repo.join(".git")).unwrap();
     fs::write(repo.join("app.py"), b"x = 1\n").unwrap();
+    fs::write(repo.join("t.py"), b"def ok():\n    assert True\n").unwrap();
     let Ok((_py, _pt)) = detect_rslip_versions(repo) else {
         return;
     };
@@ -39,6 +40,11 @@ fn generation_identity_mismatch_does_not_fall_through_to_v1_generic() {
         reason: None,
         coverage: BTreeMap::from([("app.py".into(), [1u32].into_iter().collect())]),
     });
+    // Stale digests refuse restamp; load must still report identity mismatch
+    // (not fall through to the v1 generic population error).
+    for row in &mut evidence.timings {
+        row.test_definition_digest = "stale-definition-digest".into();
+    }
     publish_python_population_generation(repo, &plan, &evidence, GenerationReason::Complete)
         .unwrap();
     clear_python_generation_warm_memo();
@@ -58,11 +64,12 @@ fn generation_identity_mismatch_does_not_fall_through_to_v1_generic() {
 }
 
 #[test]
-fn drifted_fingerprint_rejected_by_ensure_and_cov_even_with_warm_seal() {
+fn drifted_fingerprint_blocks_warm_seal_but_restamps_on_cov_load() {
     let tmp = tempfile::tempdir().unwrap();
     let repo = tmp.path();
     fs::create_dir_all(repo.join(".git")).unwrap();
     fs::write(repo.join("app.py"), b"x = 1\n").unwrap();
+    fs::write(repo.join("t.py"), b"def ok():\n    assert True\n").unwrap();
     let Ok((_py, _pt)) = detect_rslip_versions(repo) else {
         return;
     };
@@ -101,11 +108,13 @@ fn drifted_fingerprint_rejected_by_ensure_and_cov_even_with_warm_seal() {
         "warm seal must not treat a drifted fingerprint as a current population"
     );
     assert!(try_warm_python_cached_summary(repo, &selectors, &[]).is_none());
-    let err = load_python_runtime_coverage(repo, &[], &kiss::GateConfig::default())
-        .expect_err("cov must reject drifted fingerprint");
+    // Fingerprint-only drift with matching definition digests is restamped on
+    // load; cov must succeed without requiring allow_refresh.
+    let coverage = load_python_runtime_coverage(repo, &[], &kiss::GateConfig::default())
+        .expect("fingerprint-only drift must restamp during cov load");
     assert!(
-        err.reason.contains("generation identity mismatch"),
-        "got: {}",
-        err.reason
+        coverage.covered_lines.contains_key("app.py"),
+        "restamped coverage must retain published lines: {:?}",
+        coverage.covered_lines
     );
 }

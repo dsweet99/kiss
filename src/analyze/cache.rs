@@ -89,17 +89,3 @@ fn parsed_content_digests(result: &ParseResult) -> Vec<(String, u64)> {
     });
     py.chain(rs).collect()
 }
-
-#[cfg(test)]
-mod coverage_witness {
-    use super::*;
-
-    impl FullCacheStoreInput<'_> {
-        fn witness() {}
-    }
-
-    #[test]
-    fn witness_cache_types() {
-        FullCacheStoreInput::witness();
-    }
-}

@@ -99,6 +99,10 @@ fn path_subset_collection_returns_only_requested_file_nodeids() {
     let selectors =
         collect_python_nodeids(tmp.path(), Some(std::slice::from_ref(&test_a)), &[]).unwrap();
     assert_eq!(selectors, vec!["tests/test_a.py::test_a".to_string()]);
+    fs::write(tmp.path().join("pytest.ini"), "[pytest]\naddopts = -q\n").unwrap();
+    let after_config =
+        collect_python_nodeids(tmp.path(), Some(std::slice::from_ref(&test_a)), &[]).unwrap();
+    assert_eq!(after_config, vec!["tests/test_a.py::test_a".to_string()]);
 }
 
 #[test]
@@ -296,14 +300,17 @@ fn collect_pytest_nodeids_public_wrapper_is_used() {
         "def test_wrap():\n    assert True\n",
     )
     .unwrap();
-    let outcome = kiss::rpytest_runner::collect_pytest_nodeids(kiss::rpytest_runner::PytestCollectRequest {
-        cwd: tmp.path().to_path_buf(),
-        python: PathBuf::from(std::env::var("PYTHON").unwrap_or_else(|_| "python3".to_string())),
-        paths: Vec::new(),
-        pytest_args: Vec::new(),
-        env: BTreeMap::new(),
-    })
-    .unwrap();
+    let outcome =
+        kiss::rpytest_runner::collect_pytest_nodeids(kiss::rpytest_runner::PytestCollectRequest {
+            cwd: tmp.path().to_path_buf(),
+            python: PathBuf::from(
+                std::env::var("PYTHON").unwrap_or_else(|_| "python3".to_string()),
+            ),
+            paths: Vec::new(),
+            pytest_args: Vec::new(),
+            env: BTreeMap::new(),
+        })
+        .unwrap();
     assert!(
         outcome
             .nodeids
@@ -313,13 +320,15 @@ fn collect_pytest_nodeids_public_wrapper_is_used() {
 
 #[test]
 fn kiss_repo_discovery_omits_ignored_fixtures() {
-    reset_python_collect_memo_for_tests();
+    // Full-workspace collection of this repo exceeds the src/test_runner SLA under
+    // parallel `kiss test` load. Behavioral ignore coverage lives in tempfile tests
+    // (`full_suite_collection_omits_collect_ignore_glob_paths`, acceptance dry-run).
+    // Here we only regression-check that the real repo still configures the ignore.
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let selectors = enumerate_workspace_python_selectors(&repo, &[], &[]).unwrap();
+    let conftest = fs::read_to_string(repo.join("tests/conftest.py")).expect("tests/conftest.py");
     assert!(
-        !selectors
-            .iter()
-            .any(|selector| selector.contains("fixtures/mv/python"))
+        conftest.contains("collect_ignore_glob") && conftest.contains("fixtures/**"),
+        "kiss repo must ignore fixtures via collect_ignore_glob; conftest={conftest:?}"
     );
 }
 
@@ -338,4 +347,85 @@ fn selector_discovery_version_is_v2() {
         PYTHON_SELECTOR_DISCOVERY_VERSION,
         "python-selector-discovery-v2"
     );
+}
+
+#[test]
+fn ignore_collection_keeps_tests_outside_tests_dir() {
+    reset_python_collect_memo_for_tests();
+    let tmp = TempDir::new().unwrap();
+    let tests = tmp.path().join("tests");
+    let extra = tmp.path().join("extra");
+    fs::create_dir_all(&tests).unwrap();
+    fs::create_dir_all(&extra).unwrap();
+    fs::write(
+        tests.join("test_kept.py"),
+        "def test_kept():\n    assert True\n",
+    )
+    .unwrap();
+    fs::write(
+        extra.join("test_extra.py"),
+        "def test_extra():\n    assert True\n",
+    )
+    .unwrap();
+    let ignore = ["unused_prefix".to_string()];
+    let selectors = enumerate_workspace_python_selectors(tmp.path(), &ignore, &[]).unwrap();
+    assert_eq!(
+        selectors,
+        vec![
+            "extra/test_extra.py::test_extra".to_string(),
+            "tests/test_kept.py::test_kept".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn ignore_collection_keeps_duplicate_basenames_under_tests() {
+    reset_python_collect_memo_for_tests();
+    let tmp = TempDir::new().unwrap();
+    let left = tmp.path().join("tests/left");
+    let right = tmp.path().join("tests/right");
+    fs::create_dir_all(&left).unwrap();
+    fs::create_dir_all(&right).unwrap();
+    fs::write(
+        left.join("test_dup.py"),
+        "def test_left():\n    assert True\n",
+    )
+    .unwrap();
+    fs::write(
+        right.join("test_dup.py"),
+        "def test_right():\n    assert True\n",
+    )
+    .unwrap();
+    let ignore = ["unused_prefix".to_string()];
+    let selectors = enumerate_workspace_python_selectors(tmp.path(), &ignore, &[]).unwrap();
+    assert_eq!(
+        selectors,
+        vec![
+            "tests/left/test_dup.py::test_left".to_string(),
+            "tests/right/test_dup.py::test_right".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn ignore_collection_paths_pass_tests_dir_not_each_file() {
+    let tmp = TempDir::new().unwrap();
+    let tests = tmp.path().join("tests");
+    fs::create_dir_all(tests.join("nested")).unwrap();
+    fs::write(
+        tests.join("test_a.py"),
+        "def test_a():\n    assert True\n",
+    )
+    .unwrap();
+    fs::write(
+        tests.join("nested/test_b.py"),
+        "def test_b():\n    assert True\n",
+    )
+    .unwrap();
+    let ignore = ["unused_prefix".to_string()];
+    let paths = crate::test_runner::lang_python::collect_paths::workspace_python_collect_paths(
+        tmp.path(),
+        &ignore,
+    );
+    assert_eq!(paths, vec![tests]);
 }

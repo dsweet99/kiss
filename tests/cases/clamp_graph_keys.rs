@@ -68,7 +68,7 @@ fn assert_analyze_skips_pathless_and_aggregators(graph: &DependencyGraph) {
     config.cycle_size = 0;
     config.indirect_dependencies = 0;
     config.dependency_depth = 0;
-    let viols = analyze_graph(graph, &config, false);
+    let viols = analyze_graph(graph, &config);
     assert!(
         !viols.iter().any(|v| v.unit_name == "ghost"),
         "pathless nodes must not get their own violation"

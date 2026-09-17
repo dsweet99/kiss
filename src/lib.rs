@@ -3,6 +3,19 @@
 #![allow(clippy::missing_errors_doc)]
 #![allow(clippy::missing_panics_doc)]
 
+#[cfg(all(test, target_os = "linux"))]
+#[used]
+#[allow(non_upper_case_globals)]
+#[unsafe(link_section = ".init_array")]
+static prefer_tmpfs_tmpdir_init: extern "C" fn() = {
+    extern "C" fn init() {
+        if std::env::var_os("TMPDIR").is_none() && std::path::Path::new("/dev/shm").is_dir() {
+            unsafe { std::env::set_var("TMPDIR", "/dev/shm") };
+        }
+    }
+    init
+};
+
 pub mod kiss_publication_barrier;
 pub mod rpytest_runner;
 pub mod rslip;
@@ -26,19 +39,20 @@ pub mod discovery;
 pub mod duplication;
 pub mod graph;
 pub mod layout_cycles;
-mod macro_expr_parser;
 pub mod minhash;
 pub mod parsing;
 pub mod stats;
 pub mod stats_detailed;
-pub mod symbol_mv;
+pub mod test_cache_policy;
 pub mod test_refs;
 pub mod test_section_config;
+pub(crate) mod test_toml;
 pub mod units;
 
 pub mod code_roles;
 pub mod lang_analysis;
 pub mod rust_counts;
+pub mod rust_coverage_off;
 pub mod rust_fn_metrics;
 pub mod rust_graph;
 pub mod rust_include;
@@ -49,8 +63,6 @@ pub mod rust_units;
 pub mod global_metrics;
 pub mod layout_layers;
 pub mod layout_output;
-
-pub(crate) mod symbol_mv_support;
 
 #[cfg(test)]
 pub mod test_utils;
@@ -75,6 +87,7 @@ pub use discovery::{
     find_python_files, find_rust_files, find_source_files, find_source_files_with_ignore,
     gather_files_by_lang, gather_files_by_lang_opts, ignore_prefix_matches,
     merge_check_ignore_prefixes, normalize_ignore_prefixes, path_ignored_by_prefixes,
+    selector_ignored_by_prefixes,
 };
 pub use duplication::{
     CodeChunk, DuplicateCluster, DuplicatePair, DuplicationConfig, MinHashSignature,
@@ -85,13 +98,15 @@ pub use duplication::{
 };
 pub use gate_config::{
     GateConfig, MatchedUnitTestSecondsRule, TestCoverageScope, catch_all_limit, exceeds_limit,
+    time_gate_uses_path_prefixes,
     format_nested_toml_table, limit_for_selector, matched_rule_for_selector,
 };
 pub use graph::{
     ContextDependencyGraph, CycleInfo, DependencyGraph, EdgeOrigin, GraphKeyMaxima,
-    ModuleGraphMetrics, RoleDependencyGraphs, analyze_graph, build_dependency_graph,
-    build_python_context_graph, collect_orphan_entry_paths, compute_cyclomatic_complexity,
-    graph_key_maxima, module_name_for_path, orphan_violations, path_for_module_name,
+    ModuleGraphMetrics, OrphanCoverage, OrphanUnitInput, RoleDependencyGraphs, analyze_graph,
+    build_dependency_graph, build_python_context_graph, collect_orphan_entry_callables,
+    collect_orphan_entry_paths, compute_cyclomatic_complexity, graph_key_maxima,
+    module_name_for_path, orphan_unit_violations, orphan_violations, path_for_module_name,
 };
 pub use layout_cycles::{CycleBreakSuggestion, LayoutCycleAnalysis, analyze_cycles};
 pub use layout_layers::{LayerInfo, compute_layers};
@@ -102,8 +117,8 @@ pub use py_metrics::{
     compute_function_metrics,
 };
 pub use shared_helpers::{
-    env_map_from_allowlist, json_entry_paths, python_coverage_env_map,
-    pythonpath_for_coverage_identity, scrubbed_git_command,
+    cargo_target_linker_env, env_map_from_allowlist, host_cpu_count, json_entry_paths,
+    python_coverage_env_map, pythonpath_for_coverage_identity, scrubbed_git_command,
 };
 pub use stats::{
     METRICS, MetricDef, MetricScope, MetricStats, PercentileSummary, compute_summaries,
@@ -125,6 +140,7 @@ pub use rust_counts::{
     analyze_rust_file, analyze_rust_file_include_rollup,
     analyze_rust_file_include_rollup_with_roles, analyze_rust_file_with_roles,
 };
+pub use rust_coverage_off::coverage_off_attrs;
 pub use rust_fn_metrics::{
     RustFileMetrics, RustFunctionMetrics, RustTypeMetrics, compute_rust_file_metrics,
     compute_rust_file_metrics_with_roles, compute_rust_function_metrics, count_non_doc_attrs,
@@ -145,11 +161,35 @@ pub use global_metrics::GlobalMetrics;
 
 #[cfg(test)]
 pub mod cwd_test_lock {
+    use std::cell::Cell;
+    use std::path::PathBuf;
     use std::sync::Mutex;
 
     static LOCK: Mutex<()> = Mutex::new(());
+    thread_local! {
+        static DEPTH: Cell<usize> = const { Cell::new(0) };
+    }
 
-    pub fn lock() -> std::sync::MutexGuard<'static, ()> {
-        LOCK.lock().unwrap()
+    pub struct Guard {
+        _lock: Option<std::sync::MutexGuard<'static, ()>>,
+        original: Option<PathBuf>,
+    }
+
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            if let Some(original) = &self.original {
+                let _ = std::env::set_current_dir(original);
+            }
+            DEPTH.set(DEPTH.get().saturating_sub(1));
+        }
+    }
+
+    pub fn lock() -> Guard {
+        let lock = (DEPTH.get() == 0).then(|| LOCK.lock().unwrap());
+        DEPTH.set(DEPTH.get() + 1);
+        Guard {
+            _lock: lock,
+            original: std::env::current_dir().ok(),
+        }
     }
 }

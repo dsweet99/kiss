@@ -160,3 +160,18 @@ pub enum PytestRunError {
     Timeout(Duration),
     WorkerPanic,
 }
+
+impl PytestRunError {
+    pub(crate) fn cloned(&self) -> Self {
+        match self {
+            Self::InvalidRequest(message) => Self::InvalidRequest(message.clone()),
+            Self::Protocol(message) => Self::Protocol(message.clone()),
+            Self::Spawn { program, message } => Self::Spawn {
+                program: program.clone(),
+                message: message.clone(),
+            },
+            Self::Timeout(timeout) => Self::Timeout(*timeout),
+            Self::WorkerPanic => Self::WorkerPanic,
+        }
+    }
+}

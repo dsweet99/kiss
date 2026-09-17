@@ -12,7 +12,9 @@ pub const OUTPUT_CHANNEL_SOCKET_ENV: &str = "KISS_OUTPUT_CHANNEL_SOCKET";
 pub const OUTPUT_CHANNEL_TOKEN_ENV: &str = "KISS_OUTPUT_CHANNEL_TOKEN";
 
 pub(crate) const FRAME_MAGIC: &[u8; 4] = b"KOC1";
-pub(crate) use crate::rust_llvm_cov_runner::execute_or_reuse::batch_output_channel_frame::{read_frame, write_frame};
+pub(crate) use crate::rust_llvm_cov_runner::execute_or_reuse::batch_output_channel_frame::{
+    read_frame, write_frame,
+};
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_output_channel_token::{
     TOKEN_LEN, decode_token_hex, encode_token_hex, random_token,
 };

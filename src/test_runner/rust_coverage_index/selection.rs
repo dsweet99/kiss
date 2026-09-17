@@ -46,66 +46,130 @@ impl ResolvedRustPopulation {
     }
 }
 
-pub(crate) fn resolve_rust_population_state(
-    repo_root: &Path,
-    ignore: &[String],
-    rust_source_paths: &[PathBuf],
-    test_args: &[String],
-) -> Result<ResolvedRustPopulation, String> {
-    let _ = rust_source_paths;
-    let identity = current_rust_coverage_batch_identity(repo_root, test_args)?;
-    let cache_root = rust_coverage_cache_root(repo_root);
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ResolveRustPopulationArgs<'a> {
+    pub repo_root: &'a Path,
+    pub ignore: &'a [String],
+    pub rust_source_paths: &'a [PathBuf],
+    pub rust_changed_lines: &'a BTreeMap<PathBuf, BTreeSet<u32>>,
+    pub expected_selectors: Option<&'a [String]>,
+    pub test_args: &'a [String],
+}
 
-    let current = kiss::rust_llvm_cov_runner::load_current_population_state(
-        &cache_root,
-        repo_root,
-        &identity,
-        None,
-    );
-    if let Some(current) = current {
-        return Ok(ResolvedRustPopulation::Current { state: current });
-    }
-    let partial_current = kiss::rust_llvm_cov_runner::load_current_population_state(
-        &cache_root,
-        repo_root,
-        &identity,
-        None,
-    );
-    if let Some(partial_current) = partial_current
-        && current_partial_population_covers_selection(
+#[cfg(test)]
+static EMPTY_CHANGED_LINES: BTreeMap<PathBuf, BTreeSet<u32>> = BTreeMap::new();
+
+impl<'a> ResolveRustPopulationArgs<'a> {
+    #[cfg(test)]
+    pub(crate) fn for_paths(repo_root: &'a Path, rust_source_paths: &'a [PathBuf]) -> Self {
+        Self {
             repo_root,
+            ignore: &[],
             rust_source_paths,
-            &BTreeMap::new(),
-            test_args,
-            &partial_current,
-        )
-    {
-        return Ok(ResolvedRustPopulation::Current {
-            state: partial_current,
-        });
+            rust_changed_lines: &EMPTY_CHANGED_LINES,
+            expected_selectors: None,
+            test_args: &[],
+        }
     }
-    let universe = super::super::runners::enumerate_workspace_rust_selectors(repo_root, ignore)?;
+}
+
+pub(crate) fn resolve_rust_population_state(
+    args: ResolveRustPopulationArgs<'_>,
+) -> Result<ResolvedRustPopulation, String> {
+    let identity = current_rust_coverage_batch_identity(args.repo_root, args.test_args)?;
+    let cache_root = rust_coverage_cache_root(args.repo_root);
+    if let Some(state) = load_exact_current_population(&cache_root, &identity, &args) {
+        return Ok(ResolvedRustPopulation::Current { state });
+    }
+    if let Some(state) = load_partial_current_population(&cache_root, &identity, &args) {
+        return Ok(ResolvedRustPopulation::Current { state });
+    }
+    load_reusable_or_stale(&cache_root, &identity, &args)
+}
+
+fn load_exact_current_population(
+    cache_root: &Path,
+    identity: &kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity,
+    args: &ResolveRustPopulationArgs<'_>,
+) -> Option<kiss::rust_llvm_cov_runner::RustPopulationState> {
+    let expected = args.expected_selectors?;
+    kiss::rust_llvm_cov_runner::load_current_population_state(
+        cache_root,
+        args.repo_root,
+        identity,
+        Some(expected),
+    )
+}
+
+fn load_partial_current_population(
+    cache_root: &Path,
+    identity: &kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity,
+    args: &ResolveRustPopulationArgs<'_>,
+) -> Option<kiss::rust_llvm_cov_runner::RustPopulationState> {
+    let state = kiss::rust_llvm_cov_runner::load_current_population_state(
+        cache_root,
+        args.repo_root,
+        identity,
+        None,
+    )?;
+    if args.expected_selectors.is_none() {
+        return Some(state);
+    }
+    let covers = current_partial_population_covers_selection(
+        args.repo_root,
+        args.rust_source_paths,
+        args.rust_changed_lines,
+        args.test_args,
+        &state,
+    );
+    covers.then_some(state)
+}
+
+fn load_reusable_or_stale(
+    cache_root: &Path,
+    identity: &kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity,
+    args: &ResolveRustPopulationArgs<'_>,
+) -> Result<ResolvedRustPopulation, String> {
+    let universe =
+        match crate::test_runner::workspace_selector_cache::load_cached_rust_workspace_selectors(
+            args.repo_root,
+            args.ignore,
+        ) {
+            Some(selectors) => selectors,
+            None => {
+                let selectors = super::super::runners::enumerate_workspace_rust_selectors(
+                    args.repo_root,
+                    args.ignore,
+                )?;
+                crate::test_runner::workspace_selector_cache::store_rust_workspace_selectors(
+                    args.repo_root,
+                    args.ignore,
+                    &selectors,
+                );
+                selectors
+            }
+        };
     let reusable = kiss::rust_llvm_cov_runner::load_reusable_prior_population_state(
-        &cache_root,
-        repo_root,
+        cache_root,
+        args.repo_root,
         Some(&universe),
         &identity.selection_context_fingerprint,
     );
-    if let Some(reusable) = reusable {
-        let delta = kiss::rust_llvm_cov_runner::reusable_snapshot_delta(
-            repo_root,
-            &reusable.ordinary_source_digests,
-            &identity.ordinary_source_digests,
-        );
-        if delta == kiss::rust_llvm_cov_runner::RustSnapshotDelta::StructuralChange {
-            return Ok(ResolvedRustPopulation::StructuralStale);
-        }
-        return Ok(ResolvedRustPopulation::ReusablePrior {
-            state: reusable,
-            delta,
-        });
+    let Some(reusable) = reusable else {
+        return Ok(ResolvedRustPopulation::ColdStale);
+    };
+    let delta = kiss::rust_llvm_cov_runner::reusable_snapshot_delta(
+        args.repo_root,
+        &reusable.ordinary_source_digests,
+        &identity.ordinary_source_digests,
+    );
+    if delta == kiss::rust_llvm_cov_runner::RustSnapshotDelta::StructuralChange {
+        return Ok(ResolvedRustPopulation::StructuralStale);
     }
-    Ok(ResolvedRustPopulation::ColdStale)
+    Ok(ResolvedRustPopulation::ReusablePrior {
+        state: reusable,
+        delta,
+    })
 }
 
 fn current_partial_population_covers_selection(
@@ -232,12 +296,13 @@ fn select_check_aggregate_current_basis(
             &changed_rels,
             &population.generation_fingerprint,
         );
+        let file_selectors = check_aggregate_file_selectors(repo_root, population);
         let mut selectors = BTreeSet::new();
         let mut saw_covered_file = false;
         for source_path in rust_source_paths {
             let rel = repo_relative_path(repo_root, source_path)?;
             if !population.line_index.contains_key(&rel) {
-                continue;
+                return None;
             }
             saw_covered_file = true;
             if let Some(selected_for_file) = line_selectors_by_file
@@ -248,18 +313,26 @@ fn select_check_aggregate_current_basis(
                     selected_for_file,
                     &population.selectors,
                 );
-                if narrowed.is_empty() {
-                    return Some(population.selectors.iter().cloned().collect());
+                if !narrowed.is_empty() {
+                    selectors.extend(narrowed);
+                    continue;
                 }
-                selectors.extend(narrowed);
-            } else {
+            }
+            let narrowed = file_selectors
+                .get(&rel)
+                .map(|selected| {
+                    planned_check_aggregate_line_selectors(selected, &population.selectors)
+                })
+                .unwrap_or_default();
+            if narrowed.is_empty() {
                 return Some(population.selectors.iter().cloned().collect());
             }
+            selectors.extend(narrowed);
         }
         if saw_covered_file {
             return Some(selectors);
         }
-        return Some(BTreeSet::new());
+        return None;
     }
     select_check_aggregate_source_selectors(repo_root, rust_source_paths, population)
 }
@@ -279,20 +352,35 @@ fn select_check_aggregate_source_selectors(
 ) -> Option<BTreeSet<String>> {
     let plan_trace = std::env::var_os("KISS_PLAN_TRACE").is_some();
     let mark = std::time::Instant::now();
+    let file_selectors = check_aggregate_file_selectors(repo_root, population);
+    let mut out = BTreeSet::new();
+    let mut saw_covered_file = false;
     for source_path in rust_source_paths {
         let rel = repo_relative_path(repo_root, source_path)?;
-        if population.line_index.contains_key(&rel) {
-            let out: BTreeSet<String> = population.selectors.iter().cloned().collect();
-            if plan_trace {
-                eprintln!(
-                    "KISS_PLAN_TRACE check_agg_select_ms={} sources={} selectors={}",
-                    mark.elapsed().as_millis(),
-                    rust_source_paths.len(),
-                    out.len()
-                );
-            }
-            return Some(out);
+        if !population.line_index.contains_key(&rel) {
+            return None;
         }
+        saw_covered_file = true;
+        let narrowed = file_selectors
+            .get(&rel)
+            .map(|selected| planned_check_aggregate_line_selectors(selected, &population.selectors))
+            .unwrap_or_default();
+        if narrowed.is_empty() {
+            out.extend(population.selectors.iter().cloned());
+        } else {
+            out.extend(narrowed);
+        }
+    }
+    if saw_covered_file {
+        if plan_trace {
+            eprintln!(
+                "KISS_PLAN_TRACE check_agg_select_ms={} sources={} selectors={}",
+                mark.elapsed().as_millis(),
+                rust_source_paths.len(),
+                out.len()
+            );
+        }
+        return Some(out);
     }
     if plan_trace {
         eprintln!(
@@ -301,62 +389,37 @@ fn select_check_aggregate_source_selectors(
             rust_source_paths.len()
         );
     }
-    Some(BTreeSet::new())
+    None
 }
 
-fn select_reusable_prior_rust_source_selectors(
+fn check_aggregate_file_selectors(
     repo_root: &Path,
-    rust_source_paths: &[PathBuf],
-    rust_changed_lines: &BTreeMap<PathBuf, BTreeSet<u32>>,
     population: &kiss::rust_llvm_cov_runner::RustPopulationState,
-) -> Option<BTreeSet<String>> {
-    if kiss::rust_llvm_cov_runner::is_check_aggregate_population(population) {
-        for source_path in rust_source_paths {
-            if !source_path
-                .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("rs"))
-            {
-                return None;
-            }
-        }
-        return select_check_aggregate_current_basis(
-            repo_root,
-            rust_source_paths,
-            rust_changed_lines,
-            population,
-        );
+) -> BTreeMap<String, BTreeSet<String>> {
+    if !kiss::rust_llvm_cov_runner::current_test_binaries_match(repo_root, population) {
+        return BTreeMap::new();
     }
-    let line_selectors_by_file = if rust_changed_lines.is_empty() {
-        BTreeMap::new()
-    } else {
-        selectors_by_changed_file_line(
-            repo_root,
-            &changed_line_rels(repo_root, rust_changed_lines),
-            &population.generation_fingerprint,
-        )
+    let Some(snapshot) = kiss::rust_llvm_cov_runner::load_reusable_prior_check_aggregate(
+        &rust_coverage_cache_root(repo_root),
+        repo_root,
+        &population.selectors,
+        &population.selection_context_fingerprint,
+    ) else {
+        return BTreeMap::new();
     };
-    let mut selectors = BTreeSet::new();
-    for source_path in rust_source_paths {
-        if !source_path
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("rs"))
-        {
-            return None;
-        }
-        let rel = repo_relative_path(repo_root, source_path)?;
-        let file_selectors = population.line_index.get(&rel)?;
-        if file_selectors.is_empty() {
-            return None;
-        }
-        let selected_for_file = line_selectors_by_file
-            .get(&rel)
-            .filter(|selectors| !selectors.is_empty())
-            .unwrap_or(file_selectors);
-        selectors.extend(selected_for_file.iter().cloned());
+    if snapshot.generation_fingerprint != population.generation_fingerprint {
+        return BTreeMap::new();
     }
-    Some(selectors)
+    kiss::rust_llvm_cov_runner::file_selector_index_from_validated(&snapshot)
 }
+
+#[path = "selection_reuse.rs"]
+mod selection_reuse;
+use selection_reuse::select_reusable_prior_rust_source_selectors;
 
 #[cfg(test)]
 #[path = "selection_coverage_witness_test.rs"]
 mod coverage_witness;
+#[cfg(test)]
+#[path = "selection_partial_miss_test.rs"]
+mod selection_partial_miss_test;

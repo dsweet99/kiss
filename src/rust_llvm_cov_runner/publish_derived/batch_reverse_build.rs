@@ -1,6 +1,6 @@
+use crate::rpytest_runner::TestStatus;
 use crate::rust_llvm_cov_runner::rust_cov_cache::{RustCovCacheEntry, repo_relative_coverage_file};
 use crate::rust_llvm_cov_runner::{CACHE_SCHEMA_VERSION, RustLlvmCovError};
-use crate::rpytest_runner::TestStatus;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};

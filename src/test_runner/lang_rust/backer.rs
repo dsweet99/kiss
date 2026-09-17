@@ -7,8 +7,8 @@ use crate::test_runner::coverage_decision::{
     SelectionDecision, TestSelector, full_population_plan,
 };
 use crate::test_runner::rust_coverage_index::{
-    RUST_COVERAGE_ENV_KEYS, ResolvedRustPopulation, resolve_rust_population_state,
-    select_rust_source_selectors_for_basis,
+    RUST_COVERAGE_ENV_KEYS, ResolveRustPopulationArgs, ResolvedRustPopulation,
+    resolve_rust_population_state, select_rust_source_selectors_for_basis,
 };
 
 use crate::test_runner::runners::enumerate_workspace_rust_selectors;
@@ -100,12 +100,14 @@ impl RustModule {
     fn resolved_state(&self) -> Result<&ResolvedRustPopulation, String> {
         self.resolved
             .get_or_init(|| {
-                resolve_rust_population_state(
-                    &self.repo_root,
-                    &self.ignore,
-                    &self.rust_source_paths,
-                    &self.rust_test_args,
-                )
+                resolve_rust_population_state(ResolveRustPopulationArgs {
+                    repo_root: &self.repo_root,
+                    ignore: &self.ignore,
+                    rust_source_paths: &self.rust_source_paths,
+                    rust_changed_lines: &self.rust_changed_lines,
+                    expected_selectors: None,
+                    test_args: &self.rust_test_args,
+                })
             })
             .as_ref()
             .map_err(|err| err.clone())
@@ -118,8 +120,8 @@ impl LanguagePlanner for RustModule {
     }
 
     fn discover_universe(&self) -> Result<Vec<TestSelector>, String> {
-        if let Some((_py, cached_rs, _fp)) =
-            crate::test_runner::workspace_selector_cache::load_cached_workspace_selectors(
+        if let Some(cached_rs) =
+            crate::test_runner::workspace_selector_cache::load_cached_rust_workspace_selectors(
                 &self.repo_root,
                 &self.ignore,
             )
@@ -129,12 +131,16 @@ impl LanguagePlanner for RustModule {
                 .map(|id| TestSelector::new(kiss::Language::Rust, id))
                 .collect());
         }
-        Ok(
-            enumerate_workspace_rust_selectors(&self.repo_root, &self.ignore)?
-                .into_iter()
-                .map(|id| TestSelector::new(kiss::Language::Rust, id))
-                .collect(),
-        )
+        let ids = enumerate_workspace_rust_selectors(&self.repo_root, &self.ignore)?;
+        crate::test_runner::workspace_selector_cache::store_rust_workspace_selectors(
+            &self.repo_root,
+            &self.ignore,
+            &ids,
+        );
+        Ok(ids
+            .into_iter()
+            .map(|id| TestSelector::new(kiss::Language::Rust, id))
+            .collect())
     }
 
     fn changed_tests(&self, _diff: &ChangedDiff) -> Vec<TestSelector> {
@@ -145,14 +151,24 @@ impl LanguagePlanner for RustModule {
         self.prior_failures.clone()
     }
 
-    fn freshness(&self, _universe: &[TestSelector]) -> Result<CoverageFreshness, String> {
-        if self.rust_source_paths.is_empty()
+    fn freshness(&self, universe: &[TestSelector]) -> Result<CoverageFreshness, String> {
+        if universe.is_empty()
+            && self.rust_source_paths.is_empty()
             && self.changed_tests.is_empty()
             && self.resolved.get().is_none()
         {
             return Ok(CoverageFreshness::Fresh);
         }
         let resolved = self.resolved_state()?;
+        if let Some(state) = resolved.state() {
+            let published: BTreeSet<&str> = state.selectors.iter().map(String::as_str).collect();
+            if universe
+                .iter()
+                .any(|sel| !published.contains(sel.id.as_str()))
+            {
+                return Ok(CoverageFreshness::Stale);
+            }
+        }
         Ok(resolved.freshness())
     }
 
@@ -209,8 +225,15 @@ pub(crate) fn select_fresh_rust_source_selectors(
     rust_changed_lines: &BTreeMap<PathBuf, BTreeSet<u32>>,
     rust_test_args: &[String],
 ) -> Option<BTreeSet<String>> {
-    let resolved =
-        resolve_rust_population_state(repo_root, &[], rust_source_paths, rust_test_args).ok()?;
+    let resolved = resolve_rust_population_state(ResolveRustPopulationArgs {
+        repo_root,
+        ignore: &[],
+        rust_source_paths,
+        rust_changed_lines,
+        expected_selectors: None,
+        test_args: rust_test_args,
+    })
+    .ok()?;
     select_rust_source_selectors_for_basis(
         repo_root,
         rust_source_paths,
@@ -233,7 +256,7 @@ mod tests {
     use kiss::rust_llvm_cov_runner::RustPopulationState;
 
     #[test]
-    fn freshness_trusts_resolved_partial_current_population() {
+    fn freshness_stale_when_universe_not_in_population() {
         let tmp = tempfile::tempdir().unwrap();
         let resolved = ResolvedRustPopulation::Current {
             state: RustPopulationState {
@@ -257,13 +280,21 @@ mod tests {
             prior_failures: &[],
             resolved: Some(resolved),
         });
-        let universe = [TestSelector::new(
+        let missing = [TestSelector::new(
             kiss::Language::Rust,
             "tests::full_universe_member",
         )];
+        let covered = [TestSelector::new(
+            kiss::Language::Rust,
+            "tests::selected_by_changed_source",
+        )];
 
         assert_eq!(
-            module.freshness(&universe).unwrap(),
+            module.freshness(&missing).unwrap(),
+            CoverageFreshness::Stale
+        );
+        assert_eq!(
+            module.freshness(&covered).unwrap(),
             CoverageFreshness::Fresh
         );
     }

@@ -1,5 +1,6 @@
 use super::fresh_test_helpers::{execute_rust_coverage_batch_fresh_with_fake, fake_runner, tools};
 use super::*;
+use crate::rpytest_runner::TestStatus;
 use crate::rust_llvm_cov_runner::RustCovCacheStatus;
 use crate::rust_llvm_cov_runner::RustLlvmCovError;
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_result::RustCoverageBatchResult;
@@ -12,7 +13,6 @@ use crate::rust_llvm_cov_runner::plan::batch_plan::build_rust_coverage_batch_pla
 use crate::rust_llvm_cov_runner::test_support::{
     batch_executor_fixture_repo, batch_executor_request, store_batch_executor_selector,
 };
-use crate::rpytest_runner::TestStatus;
 use std::fs;
 use std::sync::Arc;
 use std::time::Duration;
@@ -48,7 +48,7 @@ fn fresh_batch_stores_passed_selector_entries() {
     }));
     assert_eq!(result.counters.build_invocations, 1);
     assert_eq!(result.counters.export_jobs, 2);
-    assert_eq!(result.counters.build_target_baseline_bytes, 0);
+    assert_eq!(result.counters.build_target_baseline_bytes, 12);
 }
 
 #[test]
@@ -66,10 +66,14 @@ fn fresh_build_identity_helpers_track_build_compatible_inputs() {
     };
     let prep = BuildIdentityPreparation {
         previous_baseline_bytes: 12,
+        reused_existing_target: true,
     };
 
     assert_eq!(base, build_identity_input(&same_build, &tools));
-    assert_eq!(marker.input.cache_schema, crate::rust_llvm_cov_runner::CACHE_SCHEMA_VERSION);
+    assert_eq!(
+        marker.input.cache_schema,
+        crate::rust_llvm_cov_runner::CACHE_SCHEMA_VERSION
+    );
     assert_eq!(
         marker.input.execution_policy,
         crate::rust_llvm_cov_runner::BATCH_EXECUTION_POLICY_VERSION
@@ -86,7 +90,7 @@ fn fresh_build_identity_helpers_track_build_compatible_inputs() {
 }
 
 #[test]
-fn fresh_build_identity_drops_incompatible_baseline_and_retains_external_target() {
+fn fresh_build_identity_drops_incompatible_cache_target() {
     let repo = batch_executor_fixture_repo();
     let mut req = batch_executor_request(repo.path());
     let tools = tools();
@@ -101,7 +105,13 @@ fn fresh_build_identity_drops_incompatible_baseline_and_retains_external_target(
 
     assert_eq!(prep.previous_baseline_bytes, 0);
     assert!(!identity.generation_fingerprint.is_empty());
-    assert!(changed_plan.build_target.exists());
+    assert!(!changed_plan.build_target.exists());
+    let marker: BuildIdentityFile = serde_json::from_slice(
+        &fs::read(req.cache_root.join("build").join("identity.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(marker.input, build_identity_input(&req, &tools));
+    assert_eq!(marker.build_target_baseline_bytes, 0);
 }
 
 #[test]
@@ -171,8 +181,9 @@ fn subprocess_exporter_wrapper_propagates_pre_export_failures() {
         None,
     );
 
-    let err = execute_fresh_batch_with_exporter(&req, &tools, &identity, &plan, &runner, exporter)
-        .unwrap_err();
+    let err =
+        execute_fresh_batch_with_exporter(&req, &tools, &identity, &plan, &runner, Some(exporter))
+            .unwrap_err();
 
     assert!(
         matches!(err, RustLlvmCovError::InvalidRequest(message) if message.contains("without terminal test events"))
@@ -218,7 +229,7 @@ fn subprocess_exporter_wrapper_handles_failed_test_without_export_jobs() {
     );
 
     let result =
-        execute_fresh_batch_with_exporter(&req, &tools, &identity, &plan, &runner, exporter)
+        execute_fresh_batch_with_exporter(&req, &tools, &identity, &plan, &runner, Some(exporter))
             .unwrap();
 
     assert_eq!(result.counters.export_jobs, 0);
@@ -229,10 +240,11 @@ fn subprocess_exporter_wrapper_handles_failed_test_without_export_jobs() {
 fn check_aggregate_branch_reports_missing_shim_metadata_before_export() {
     let repo = batch_executor_fixture_repo();
     let mut req = batch_executor_request(repo.path());
-    req.coverage_output_mode = crate::rust_llvm_cov_runner::plan::batch_plan::CoverageOutputMode::CheckAggregate {
-        publication_binary_ids: None,
-        repair_publication: None,
-    };
+    req.coverage_output_mode =
+        crate::rust_llvm_cov_runner::plan::batch_plan::CoverageOutputMode::CheckAggregate {
+            publication_binary_ids: None,
+            repair_publication: None,
+        };
     let runner = BatchSubprocessRunner::from_fn(|_, plan| {
         fs::create_dir_all(&plan.build_target).unwrap();
         let bin = plan.build_target.join("bin");
@@ -276,10 +288,11 @@ fn check_aggregate_branch_reports_missing_shim_metadata_before_export() {
 fn check_aggregate_branch_builds_export_requests_with_shim_metadata() {
     let repo = batch_executor_fixture_repo();
     let mut req = batch_executor_request(repo.path());
-    req.coverage_output_mode = crate::rust_llvm_cov_runner::plan::batch_plan::CoverageOutputMode::CheckAggregate {
-        publication_binary_ids: None,
-        repair_publication: None,
-    };
+    req.coverage_output_mode =
+        crate::rust_llvm_cov_runner::plan::batch_plan::CoverageOutputMode::CheckAggregate {
+            publication_binary_ids: None,
+            repair_publication: None,
+        };
     let runner = BatchSubprocessRunner::from_fn(|_, plan| {
         fs::create_dir_all(&plan.build_target).unwrap();
         let bin = plan.build_target.join("bin");
@@ -357,4 +370,50 @@ fn apply_non_primary_cleanup_error_passes_through_clean_result() {
     };
     let ok = apply_non_primary_cleanup_error(result, None).unwrap();
     assert!(ok.completed.is_empty());
+}
+
+#[test]
+fn failed_build_does_not_publish_baseline_or_coverage_outcomes() {
+    let repo = batch_executor_fixture_repo();
+    let req = batch_executor_request(repo.path());
+    let runner = BatchSubprocessRunner::from_fn(|_, plan| {
+        fs::create_dir_all(&plan.build_target).unwrap();
+        fs::write(plan.build_target.join("partial"), b"x").unwrap();
+        Ok(
+            crate::rust_llvm_cov_runner::execute_or_reuse::batch_run::BatchSubprocessRunOutcome {
+                exit_code: Some(0),
+                stdout: br#"{"reason":"build-finished","success":false}"#.to_vec(),
+                stderr: b"build failed".to_vec(),
+                duration: Duration::from_millis(1),
+                process_residual_count: 0,
+            },
+        )
+    });
+    let err = execute_rust_coverage_batch_fresh_with_fake(&req, runner).unwrap_err();
+    assert!(
+        matches!(err, RustLlvmCovError::InvalidRequest(message) if message.contains("build failed"))
+    );
+    let marker: BuildIdentityFile = serde_json::from_slice(
+        &fs::read(req.cache_root.join("build").join("identity.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(marker.build_target_baseline_bytes, 0);
+    assert!(!req.cache_root.join("index.json").exists());
+    assert!(!req.cache_root.join("execution_witness.json").exists());
+}
+
+#[test]
+fn interrupted_batch_keeps_context_marker_without_coverage_publication() {
+    let repo = batch_executor_fixture_repo();
+    let req = batch_executor_request(repo.path());
+    let runner = BatchSubprocessRunner::from_fn(|_, _| {
+        Err(
+            crate::rust_llvm_cov_runner::execute_or_reuse::batch_run::BatchSubprocessRunError::Interrupted,
+        )
+    });
+    let err = execute_rust_coverage_batch_fresh_with_fake(&req, runner).unwrap_err();
+    assert!(matches!(err, RustLlvmCovError::Interrupted));
+    assert!(req.cache_root.join("build").join("identity.json").is_file());
+    assert!(!req.cache_root.join("index.json").exists());
+    assert!(!req.cache_root.join("execution_witness.json").exists());
 }

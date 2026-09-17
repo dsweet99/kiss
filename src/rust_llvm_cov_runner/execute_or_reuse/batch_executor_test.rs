@@ -1,8 +1,13 @@
 use super::*;
+use crate::rpytest_runner::TestStatus;
 use crate::rust_llvm_cov_runner::RustCovCacheStatus;
 use crate::rust_llvm_cov_runner::RustLineCoverage;
 use crate::rust_llvm_cov_runner::RustLlvmCovError;
+use crate::rust_llvm_cov_runner::RustLlvmCovOutcome;
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_lock::lock_batch;
+use crate::rust_llvm_cov_runner::execute_or_reuse::batch_result::{
+    RustCoverageBatchCounters, RustCoverageBatchResult,
+};
 use crate::rust_llvm_cov_runner::plan::batch_fingerprint::{batch_identity, entry_fingerprint};
 use crate::rust_llvm_cov_runner::publish_derived_state;
 use crate::rust_llvm_cov_runner::rust_cov_cache::{RustCovCacheEntry, store_rust_cov_cache_entry};
@@ -10,7 +15,6 @@ use crate::rust_llvm_cov_runner::test_support::{
     batch_executor_fixture_repo, batch_executor_request, store_alpha_entry,
     store_batch_executor_selector, witness_batch_tools,
 };
-use crate::rpytest_runner::TestStatus;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::sync::mpsc;
@@ -24,6 +28,35 @@ fn write_check_aggregate_hit_durations(
     req: &crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest,
     identity: &crate::rust_llvm_cov_runner::plan::batch_fingerprint::RustCoverageBatchIdentity,
 ) {
+    let tools = tools();
+    for selector in &req.logical_selectors {
+        let fingerprint = crate::rust_llvm_cov_runner::plan::batch_fingerprint::entry_fingerprint(
+            &identity.input_digest,
+            req,
+            &tools,
+            selector,
+        );
+        let entry = RustCovCacheEntry::from_outcome(
+            &crate::rust_llvm_cov_runner::RustLlvmCovOutcome {
+                selector: selector.clone(),
+                status: TestStatus::Passed,
+                exit_code: Some(0),
+                duration: Duration::from_millis(1),
+                coverage: RustLineCoverage::default(),
+                test_binary_ids: Vec::new(),
+                cache_status: RustCovCacheStatus::Hit,
+                stdout: None,
+                stderr: None,
+            },
+            &identity.generation_fingerprint,
+        );
+        crate::rust_llvm_cov_runner::rust_cov_cache::store_rust_cov_cache_entry(
+            &req.cache_root,
+            &fingerprint,
+            &entry,
+        )
+        .unwrap();
+    }
     let population = crate::rust_llvm_cov_runner::publish_derived::batch_derived_index::load_current_population_state(
         &req.cache_root,
         &req.source_root,
@@ -79,6 +112,67 @@ fn all_hit_batch_returns_without_batch_lock_or_spawn() {
 }
 
 #[test]
+fn sealed_all_hit_refuses_force_rerun_selectors_for_retry_bad() {
+    let repo = batch_executor_fixture_repo();
+    let mut req = batch_executor_request(repo.path());
+    store_batch_executor_selector(repo.path(), &req, "alpha");
+    store_batch_executor_selector(repo.path(), &req, "beta");
+    let tools = tools();
+    // Warm seal from an all-pass batch (raw Passed), as --retry-bad leaves force_rerun=false.
+    let _ = execute_rust_coverage_batch(&req, &tools).unwrap();
+    req.force_rerun = false;
+    req.force_rerun_selectors = vec!["alpha".to_string()];
+    let identity = batch_identity(&req, &tools).unwrap();
+    assert!(
+        super::super::batch_executor_sealed::try_sealed_all_hit(&req, &identity, &tools).is_none(),
+        "force_rerun_selectors must block sealed all-hit reuse"
+    );
+    let mut fresh_called = false;
+    let result =
+        execute_rust_coverage_batch_with_fresh(&req, &tools, |req, _tools, _identity, _plan| {
+            fresh_called = true;
+            Ok(RustCoverageBatchResult {
+                completed: req
+                    .logical_selectors
+                    .iter()
+                    .map(|selector| RustLlvmCovOutcome {
+                        selector: selector.clone(),
+                        status: TestStatus::Passed,
+                        exit_code: Some(0),
+                        duration: Duration::from_millis(3),
+                        coverage: RustLineCoverage {
+                            files: BTreeMap::from([(
+                                "src/lib.rs".to_string(),
+                                BTreeSet::from([1]),
+                            )]),
+                        },
+                        test_binary_ids: vec!["test-bin".to_string()],
+                        cache_status: RustCovCacheStatus::MissStored,
+                        stdout: None,
+                        stderr: None,
+                    })
+                    .collect(),
+                batch_error: None,
+                counters: RustCoverageBatchCounters::default(),
+                test_binaries: Vec::new(),
+            })
+        })
+        .unwrap();
+    assert!(
+        fresh_called,
+        "retry-bad forced selectors must not take sealed all-hit; prepare/fresh must run"
+    );
+    assert!(
+        result
+            .completed
+            .iter()
+            .any(|outcome| outcome.selector == "alpha"
+                && outcome.cache_status != RustCovCacheStatus::Hit),
+        "forced selector must not remain a warm Hit"
+    );
+}
+
+#[test]
 fn all_hit_rejects_empty_coverage_pass_entries() {
     let repo = batch_executor_fixture_repo();
     let req = batch_executor_request(repo.path());
@@ -88,7 +182,10 @@ fn all_hit_rejects_empty_coverage_pass_entries() {
     let tools = tools();
     let identity = batch_identity(&req, &tools).unwrap();
     let fingerprint = entry_fingerprint(&identity.input_digest, &req, &tools, "alpha");
-    let path = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_cache_entry_path(&req.cache_root, &fingerprint);
+    let path = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_cache_entry_path(
+        &req.cache_root,
+        &fingerprint,
+    );
     let poison = RustCovCacheEntry::from_outcome(
         &crate::rust_llvm_cov_runner::RustLlvmCovOutcome {
             selector: "alpha".to_string(),
@@ -122,7 +219,7 @@ fn all_hit_rejects_empty_coverage_pass_entries() {
         })
         .unwrap();
     assert_eq!(result.counters.build_invocations, 1);
-    assert_eq!(result.counters.cache_hits, 0);
+    assert_eq!(result.counters.cache_hits, 1);
 }
 
 #[test]
@@ -174,9 +271,11 @@ fn all_hit_derived_repair_reports_deferred_legacy_cleanup() {
     population_req.population_publication_selectors =
         Some(vec!["alpha".to_string(), "beta".to_string()]);
     fs::create_dir_all(population_req.cache_root.join("workers").join("slot-0")).unwrap();
-    let _slot_guard =
-        crate::rust_llvm_cov_runner::execute_or_reuse::worker::lock_worker_for_test(&population_req.cache_root, 0)
-            .unwrap();
+    let _slot_guard = crate::rust_llvm_cov_runner::execute_or_reuse::worker::lock_worker_for_test(
+        &population_req.cache_root,
+        0,
+    )
+    .unwrap();
 
     let result = execute_rust_coverage_batch(&population_req, &tools()).unwrap();
 
@@ -326,7 +425,8 @@ fn check_aggregate_population_rechecks_cache_after_lock_without_fresh_run() {
     let binary = crate::rust_llvm_cov_runner::RustTestBinaryIdentity {
         id: "bin-a".to_string(),
         executable: binary_path.to_string_lossy().to_string(),
-        digest: "aaaaaaaaaaaaaaaa".to_string(),
+        digest: crate::rust_llvm_cov_runner::rust_cov_cache::digest_test_binary(&binary_path)
+            .unwrap(),
     };
     let aggregate = crate::rust_llvm_cov_runner::build_check_aggregate(
         &req,
@@ -352,12 +452,18 @@ fn check_aggregate_population_rechecks_cache_after_lock_without_fresh_run() {
     .unwrap();
     write_check_aggregate_hit_durations(&req, &identity);
 
+    reset_lock_batch_call_count();
     let result =
         execute_rust_coverage_batch_with_fresh(&req, &tools, |_req, _tools, _identity, _plan| {
             panic!("fresh check-aggregate run should be skipped after lock recheck")
         })
         .unwrap();
 
+    assert_eq!(
+        lock_batch_call_count(),
+        0,
+        "a read-only CheckAggregate hit must not acquire the writer lock"
+    );
     assert_eq!(result.completed.len(), 2);
     assert_eq!(result.counters.cache_hits, 2);
     assert_eq!(result.counters.build_invocations, 0);
@@ -366,6 +472,156 @@ fn check_aggregate_population_rechecks_cache_after_lock_without_fresh_run() {
             .completed
             .iter()
             .all(|outcome| outcome.cache_status == RustCovCacheStatus::Hit)
+    );
+    fs::write(&binary_path, "binary-a-rebuilt").unwrap();
+    let err =
+        execute_rust_coverage_batch_with_fresh(&req, &tools, |_req, _tools, _identity, _plan| {
+            Err(
+                crate::rust_llvm_cov_runner::RustLlvmCovError::InvalidRequest(
+                    "fresh-called-after-binary-drift".to_string(),
+                ),
+            )
+        })
+        .expect_err("binary drift must not use check-aggregate execution hit");
+    assert!(format!("{err:?}").contains("fresh-called-after-binary-drift"));
+    fs::write(&binary_path, "binary-a").unwrap();
+    let mut drifted = req.clone();
+    drifted
+        .env
+        .insert("RUSTFLAGS".to_string(), "-C debuginfo=1".to_string());
+    let err = execute_rust_coverage_batch_with_fresh(
+        &drifted,
+        &tools,
+        |_req, _tools, _identity, _plan| {
+            Err(
+                crate::rust_llvm_cov_runner::RustLlvmCovError::InvalidRequest(
+                    "fresh-called".to_string(),
+                ),
+            )
+        },
+    )
+    .expect_err("identity drift must not use reusable-prior execution hit");
+    assert!(format!("{err:?}").contains("fresh-called"));
+}
+
+#[test]
+fn check_aggregate_hit_refuses_force_rerun_selectors_for_retry_bad() {
+    let repo = batch_executor_fixture_repo();
+    fs::create_dir_all(repo.path().join("target")).unwrap();
+    let binary_path = repo.path().join("target").join("bin-a");
+    fs::write(&binary_path, "binary-a").unwrap();
+    let mut req = batch_executor_request(repo.path());
+    req.population_publication_selectors = Some(req.logical_selectors.clone());
+    req.coverage_output_mode = CoverageOutputMode::CheckAggregate {
+        publication_binary_ids: None,
+        repair_publication: None,
+    };
+    let tools = tools();
+    let identity = batch_identity(&req, &tools).unwrap();
+    let binary = crate::rust_llvm_cov_runner::RustTestBinaryIdentity {
+        id: "bin-a".to_string(),
+        executable: binary_path.to_string_lossy().to_string(),
+        digest: crate::rust_llvm_cov_runner::rust_cov_cache::digest_test_binary(&binary_path)
+            .unwrap(),
+    };
+    let aggregate = crate::rust_llvm_cov_runner::build_check_aggregate(
+        &req,
+        &identity,
+        &req.logical_selectors,
+        BTreeMap::from([
+            ("alpha".to_string(), vec!["bin-a".to_string()]),
+            ("beta".to_string(), vec!["bin-a".to_string()]),
+        ]),
+        std::slice::from_ref(&binary),
+        BTreeMap::from([(
+            "bin-a".to_string(),
+            RustLineCoverage {
+                files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
+            },
+        )]),
+    )
+    .unwrap();
+    crate::rust_llvm_cov_runner::publish_check_aggregate(&req, &aggregate).unwrap();
+    crate::rust_llvm_cov_runner::publish_derived::batch_derived::publish_conservative_derived_state_from_check_aggregate(
+        &req, &tools, &identity, &aggregate,
+    )
+    .unwrap();
+    write_check_aggregate_hit_durations(&req, &identity);
+
+    req.force_rerun = false;
+    req.force_rerun_selectors = vec!["alpha".to_string()];
+    assert!(
+        super::reuse::try_check_aggregate_hit(&req, &identity)
+            .unwrap()
+            .is_none(),
+        "force_rerun_selectors must block check-aggregate all-hit reuse"
+    );
+    let mut fresh_called = false;
+    let _ =
+        execute_rust_coverage_batch_with_fresh(&req, &tools, |_req, _tools, _identity, _plan| {
+            fresh_called = true;
+            Err(RustLlvmCovError::InvalidRequest("forced-fresh".to_string()))
+        });
+    assert!(
+        fresh_called,
+        "retry-bad must reach fresh check-aggregate execution instead of population hit"
+    );
+}
+
+#[test]
+fn check_aggregate_hit_reuses_when_force_rerun_selectors_empty() {
+    // Documents why AcceptMode::All must thread force_selectors into the batch:
+    // empty force_rerun_selectors still allows population hit even for miss_set
+    // that the ensure kernel already narrowed to --retry-bad priors.
+    let repo = batch_executor_fixture_repo();
+    fs::create_dir_all(repo.path().join("target")).unwrap();
+    let binary_path = repo.path().join("target").join("bin-a");
+    fs::write(&binary_path, "binary-a").unwrap();
+    let mut req = batch_executor_request(repo.path());
+    req.population_publication_selectors = Some(req.logical_selectors.clone());
+    req.coverage_output_mode = CoverageOutputMode::CheckAggregate {
+        publication_binary_ids: None,
+        repair_publication: None,
+    };
+    let tools = tools();
+    let identity = batch_identity(&req, &tools).unwrap();
+    let binary = crate::rust_llvm_cov_runner::RustTestBinaryIdentity {
+        id: "bin-a".to_string(),
+        executable: binary_path.to_string_lossy().to_string(),
+        digest: crate::rust_llvm_cov_runner::rust_cov_cache::digest_test_binary(&binary_path)
+            .unwrap(),
+    };
+    let aggregate = crate::rust_llvm_cov_runner::build_check_aggregate(
+        &req,
+        &identity,
+        &req.logical_selectors,
+        BTreeMap::from([
+            ("alpha".to_string(), vec!["bin-a".to_string()]),
+            ("beta".to_string(), vec!["bin-a".to_string()]),
+        ]),
+        std::slice::from_ref(&binary),
+        BTreeMap::from([(
+            "bin-a".to_string(),
+            RustLineCoverage {
+                files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
+            },
+        )]),
+    )
+    .unwrap();
+    crate::rust_llvm_cov_runner::publish_check_aggregate(&req, &aggregate).unwrap();
+    crate::rust_llvm_cov_runner::publish_derived::batch_derived::publish_conservative_derived_state_from_check_aggregate(
+        &req, &tools, &identity, &aggregate,
+    )
+    .unwrap();
+    write_check_aggregate_hit_durations(&req, &identity);
+
+    req.force_rerun = false;
+    req.force_rerun_selectors.clear();
+    assert!(
+        super::reuse::try_check_aggregate_hit(&req, &identity)
+            .unwrap()
+            .is_some(),
+        "empty force_rerun_selectors must still allow check-aggregate population hit"
     );
 }
 

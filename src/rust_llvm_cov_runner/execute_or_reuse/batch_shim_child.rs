@@ -185,7 +185,9 @@ fn run_delegated_child_pool_fast(
     profile_path: &Path,
 ) -> io::Result<DelegatedChildOutcome> {
     let mut child = build_delegated_command(delegated, command);
-    crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim_delegated::scrub_coverage_build_env(&mut child);
+    crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim_delegated::scrub_coverage_build_env(
+        &mut child,
+    );
     child.env("LLVM_PROFILE_FILE", profile_path);
     child.stdout(Stdio::null());
     child.stderr(Stdio::null());

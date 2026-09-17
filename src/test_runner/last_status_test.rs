@@ -11,6 +11,53 @@ fn identity() -> LastStatusIdentity {
 }
 
 #[test]
+fn concurrent_language_writers_preserve_both_failures() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let root = tmp.path().to_path_buf();
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+    let python_root = root.clone();
+    let python_barrier = barrier.clone();
+    let python = std::thread::spawn(move || {
+        python_barrier.wait();
+        record_statuses(
+            &python_root,
+            Language::Python,
+            &python_last_status_identity("3.12.0", "8.0.0", &[]),
+            &[(
+                "tests/test_app.py::test_failed".to_string(),
+                kiss::rpytest_runner::TestStatus::Failed,
+            )],
+        )
+        .unwrap();
+    });
+    let rust = std::thread::spawn(move || {
+        barrier.wait();
+        let identity = rust_last_status_identity("cargo", "llvm", "rustc", "nextest", &[], "map");
+        record_statuses(
+            &root,
+            Language::Rust,
+            &identity,
+            &[(
+                "crate::test_failed".to_string(),
+                kiss::rpytest_runner::TestStatus::Failed,
+            )],
+        )
+        .unwrap();
+    });
+    python.join().unwrap();
+    rust.join().unwrap();
+    assert_eq!(
+        prior_failures(tmp.path(), Language::Python, &identity()).unwrap(),
+        vec!["tests/test_app.py::test_failed".to_string()]
+    );
+    let rust_identity = rust_last_status_identity("cargo", "llvm", "rustc", "nextest", &[], "map");
+    assert_eq!(
+        prior_failures(tmp.path(), Language::Rust, &rust_identity).unwrap(),
+        vec!["crate::test_failed".to_string()]
+    );
+}
+
+#[test]
 fn failed_status_is_reported_as_prior_failure() {
     let tmp = tempfile::TempDir::new().unwrap();
     let statuses = vec![(

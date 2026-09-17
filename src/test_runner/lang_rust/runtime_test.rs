@@ -21,8 +21,9 @@ fn rust_runtime_language_and_dry_run_and_indexable() {
 #[test]
 fn accepted_summary_emits_cached_passes() {
     let rt = RustRuntime;
+    let tmp = tempfile::tempdir().unwrap();
     let req = EnsureRequest {
-        repo_root: PathBuf::from("."),
+        repo_root: tmp.path().to_path_buf(),
         mode: AcceptMode::Subset,
         lang_filter: Some(kiss::Language::Rust),
         ignore: vec![],
@@ -49,12 +50,12 @@ fn accepted_summary_emits_cached_passes() {
         covered_lines: BTreeMap::new(),
         complete: true,
         generation_id: "g".into(),
+        raw_statuses: Vec::new(),
     };
-    let summary = rt.accepted_summary(&req, &["a".into()], &witness);
+    let summary = rt.accepted_summary(&req, &["a".into()], &witness).unwrap();
     assert_eq!(summary.total, 1);
     assert_eq!(summary.cache_hits, 1);
     assert!(!summary.rust_derived_repair);
-    let tmp = tempfile::tempdir().unwrap();
     let _ = rt.discover_universe(&req);
     let _ = rt.coverage_snapshot(tmp.path());
     let _ = rt.status_timing_snapshot(tmp.path());
@@ -145,7 +146,67 @@ fn prune_removed_rust_witness_selectors_drops_stale_entries() {
         selectors: vec![
             "tests::case".into(),
             "force_miss_batch_writes_warm_hit_seal_for_later_hit".into(),
+            "cwd_test_lock::guard_restores_current_directory_during_unwind".into(),
         ],
+        statuses: vec![
+            crate::test_runner::lang_iface::WitnessStatus::Passed,
+            crate::test_runner::lang_iface::WitnessStatus::Passed,
+            crate::test_runner::lang_iface::WitnessStatus::Passed,
+        ],
+        durations_ns: vec![Some(1), Some(1), Some(1)],
+        covered_lines: Default::default(),
+        complete: true,
+        generation_id: "gen".into(),
+        raw_statuses: Vec::new(),
+    };
+    crate::test_runner::workspace_selector_cache::store_workspace_selectors(
+        tmp.path(),
+        &["ignored".into()],
+        &[],
+        &["tests::case".into()],
+        &[],
+    )
+    .unwrap();
+    super::witness_store::prune_removed_rust_witness_selectors(tmp.path(), &mut witness).unwrap();
+    assert_eq!(witness.selectors, vec!["tests::case".to_string()]);
+}
+
+#[test]
+fn prune_removed_rust_witness_selectors_keeps_current_long_bare_names() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+    std::fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname=\"t\"\nversion=\"0.1.0\"\nedition=\"2021\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tmp.path().join("src/lib.rs"),
+        "#[cfg(test)]\nmod tests {\n    #[test]\n    fn case() {}\n}\n",
+    )
+    .unwrap();
+    let long = "force_miss_batch_writes_warm_hit_seal_for_later_hit";
+    crate::test_runner::workspace_selector_cache::store_workspace_selectors(
+        tmp.path(),
+        &[],
+        &[],
+        &["tests::case".into(), long.into()],
+        &[],
+    )
+    .unwrap();
+    crate::test_runner::workspace_selector_cache::store_workspace_selectors(
+        tmp.path(),
+        &["ignored".into()],
+        &[],
+        &["tests::case".into()],
+        &[],
+    )
+    .unwrap();
+    let mut witness = crate::test_runner::lang_iface::ExecutionWitness {
+        language: "rust".into(),
+        scope: crate::test_runner::lang_iface::WitnessScope::Full,
+        identity_digest: "id".into(),
+        selectors: vec!["tests::case".into(), long.into()],
         statuses: vec![
             crate::test_runner::lang_iface::WitnessStatus::Passed,
             crate::test_runner::lang_iface::WitnessStatus::Passed,
@@ -154,10 +215,13 @@ fn prune_removed_rust_witness_selectors_drops_stale_entries() {
         covered_lines: Default::default(),
         complete: true,
         generation_id: "gen".into(),
+        raw_statuses: Vec::new(),
     };
     super::witness_store::prune_removed_rust_witness_selectors(tmp.path(), &mut witness).unwrap();
-    assert_eq!(witness.selectors, vec!["tests::case".to_string()]);
-    assert_eq!(witness.statuses.len(), 1);
+    assert_eq!(
+        witness.selectors,
+        vec!["tests::case".to_string(), long.to_string()]
+    );
 }
 
 #[test]
@@ -172,7 +236,10 @@ fn selectors_for_time_gate_fails_closed_without_report_ids() {
         force: false,
         force_selectors: Vec::new(),
         jobs: 1,
-        gate: kiss::GateConfig::default(),
+        gate: kiss::GateConfig {
+            max_unit_test_seconds: vec![("tests/".into(), 2.0)],
+            ..kiss::GateConfig::default()
+        },
         extras: crate::test_runner::language_keyed::LanguageKeyed {
             python: vec![],
             rust: vec![],
@@ -229,7 +296,10 @@ fn time_gate_report_ids(ignore: &[String]) -> Result<Vec<String>, String> {
         force: false,
         force_selectors: Vec::new(),
         jobs: 1,
-        gate: kiss::GateConfig::default(),
+        gate: kiss::GateConfig {
+            max_unit_test_seconds: vec![("src/".into(), 2.0)],
+            ..kiss::GateConfig::default()
+        },
         extras: crate::test_runner::language_keyed::LanguageKeyed {
             python: vec![],
             rust: vec![],

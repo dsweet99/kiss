@@ -46,7 +46,7 @@ def test_adversarial_module_exports_main() -> None:
 
 
 def test_adversarial_script_help() -> None:
-    script = cli.repo_root() / "python" / "adversarial_cli.py"
+    script = cli.repo_root() / "ops" / "adversarial.py"
     env = {**os.environ, "PYTHONPATH": str(cli.repo_root())}
     result = subprocess.run(
         [sys.executable, str(script), "--help"],
@@ -61,7 +61,7 @@ def test_adversarial_script_help() -> None:
 
 
 def test_adversarial_script_help_without_pythonpath() -> None:
-    script = cli.repo_root() / "python" / "adversarial_cli.py"
+    script = cli.repo_root() / "ops" / "adversarial.py"
     env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
     result = subprocess.run(
         [sys.executable, str(script), "--help"],

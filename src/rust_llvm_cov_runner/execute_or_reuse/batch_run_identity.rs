@@ -4,13 +4,16 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::rust_llvm_cov_runner::plan::batch_fingerprint::RustCoverageToolIdentity;
-use crate::rust_llvm_cov_runner::plan::batch_plan::{RustCoverageBatchPlan, RustCoverageBatchRequest};
+use crate::rust_llvm_cov_runner::plan::batch_plan::{
+    RustCoverageBatchPlan, RustCoverageBatchRequest,
+};
 use crate::rust_llvm_cov_runner::{BATCH_EXECUTION_POLICY_VERSION, CACHE_SCHEMA_VERSION};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct BuildIdentityPreparation {
     pub(crate) previous_baseline_bytes: u64,
+    pub(crate) reused_existing_target: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -27,6 +30,8 @@ pub(crate) struct BuildIdentityInput {
     pub(crate) source_root: String,
     pub(crate) cargo_args: Vec<String>,
     pub(crate) env: BTreeMap<String, String>,
+    #[serde(default)]
+    pub(crate) resolved_tools: BTreeMap<String, String>,
 }
 
 const BUILD_TARGET_GROWTH_NUMERATOR: u64 = 3;
@@ -38,68 +43,119 @@ pub(crate) fn prepare_build_target_for_identity(
     plan: &RustCoverageBatchPlan,
 ) -> io::Result<BuildIdentityPreparation> {
     let expected = build_identity_input(req, tools);
-    let build_target_is_cache_owned = plan.build_target.starts_with(&req.cache_root);
+    let cache_owned = plan.build_target.starts_with(&req.cache_root);
     if let Some(previous) = load_build_identity(&req.cache_root)?
-        && previous.input == expected
+        && identity_input_matches(&previous.input, &expected)
     {
-        let baseline = previous.build_target_baseline_bytes;
-        if baseline > 0 && build_target_is_cache_owned {
-            let current_bytes = path_size_bytes(&plan.build_target)?;
-            let growth_limit = baseline.saturating_mul(BUILD_TARGET_GROWTH_NUMERATOR)
-                / BUILD_TARGET_GROWTH_DENOMINATOR;
-            if current_bytes > growth_limit {
-                remove_build_target(&plan.build_target)?;
-                return Ok(BuildIdentityPreparation {
-                    previous_baseline_bytes: 0,
-                });
-            }
+        if previous.input != expected {
+            write_build_identity_atomic(
+                &req.cache_root,
+                &BuildIdentityFile {
+                    input: expected,
+                    build_target_baseline_bytes: previous.build_target_baseline_bytes,
+                },
+            )?;
         }
-        return Ok(BuildIdentityPreparation {
-            previous_baseline_bytes: if build_target_is_cache_owned {
-                baseline
-            } else {
-                0
-            },
-        });
+        return retain_matching_or_reset_if_grown(req, tools, plan, previous, cache_owned);
     }
-    if build_target_is_cache_owned {
-        remove_build_target(&plan.build_target)?;
+    reset_cache_owned_target_for_expected_context(req, tools, plan, cache_owned)
+}
+
+fn identity_input_matches(previous: &BuildIdentityInput, expected: &BuildIdentityInput) -> bool {
+    let mut previous = previous.clone();
+    let mut expected = expected.clone();
+    previous.env.remove("PATH");
+    expected.env.remove("PATH");
+    previous == expected
+}
+
+fn retain_matching_or_reset_if_grown(
+    req: &RustCoverageBatchRequest,
+    tools: &RustCoverageToolIdentity,
+    plan: &RustCoverageBatchPlan,
+    previous: BuildIdentityFile,
+    cache_owned: bool,
+) -> io::Result<BuildIdentityPreparation> {
+    let baseline = previous.build_target_baseline_bytes;
+    if baseline > 0 && cache_owned {
+        let current_bytes = path_size_bytes(&plan.build_target)?;
+        let growth_limit = baseline.saturating_mul(BUILD_TARGET_GROWTH_NUMERATOR)
+            / BUILD_TARGET_GROWTH_DENOMINATOR;
+        if current_bytes > growth_limit {
+            return reset_cache_owned_target_for_expected_context(req, tools, plan, cache_owned);
+        }
     }
     Ok(BuildIdentityPreparation {
-        previous_baseline_bytes: 0,
+        previous_baseline_bytes: if cache_owned { baseline } else { 0 },
+        reused_existing_target: true,
     })
 }
 
-pub(crate) fn publish_successful_build_identity(
+fn reset_cache_owned_target_for_expected_context(
+    req: &RustCoverageBatchRequest,
+    tools: &RustCoverageToolIdentity,
+    plan: &RustCoverageBatchPlan,
+    cache_owned: bool,
+) -> io::Result<BuildIdentityPreparation> {
+    if cache_owned {
+        remove_build_target(&plan.build_target)?;
+        write_expected_zero_baseline_marker(req, tools)?;
+    }
+    Ok(BuildIdentityPreparation {
+        previous_baseline_bytes: 0,
+        reused_existing_target: false,
+    })
+}
+
+fn write_expected_zero_baseline_marker(
+    req: &RustCoverageBatchRequest,
+    tools: &RustCoverageToolIdentity,
+) -> io::Result<()> {
+    write_build_identity_atomic(
+        &req.cache_root,
+        &BuildIdentityFile {
+            input: build_identity_input(req, tools),
+            build_target_baseline_bytes: 0,
+        },
+    )
+}
+
+pub(crate) fn update_build_target_baseline(
     req: &RustCoverageBatchRequest,
     tools: &RustCoverageToolIdentity,
     plan: &RustCoverageBatchPlan,
     previous_baseline_bytes: u64,
 ) -> io::Result<u64> {
-    let build_target_is_cache_owned = plan.build_target.starts_with(&req.cache_root);
-
-    let current_target_bytes = if build_target_is_cache_owned {
+    if previous_baseline_bytes != 0 {
+        return Ok(previous_baseline_bytes);
+    }
+    let cache_owned = plan.build_target.starts_with(&req.cache_root);
+    let current_target_bytes = if cache_owned {
         path_size_bytes(&plan.build_target)?
     } else {
         0
     };
-    let baseline_bytes = if previous_baseline_bytes == 0 {
-        current_target_bytes
-    } else {
-        previous_baseline_bytes
+    let input = match load_build_identity(&req.cache_root)? {
+        Some(previous) => previous.input,
+        None => build_identity_input(req, tools),
     };
-    let marker = BuildIdentityFile {
-        input: build_identity_input(req, tools),
-        build_target_baseline_bytes: baseline_bytes,
-    };
-    write_build_identity_atomic(&req.cache_root, &marker)?;
-    Ok(baseline_bytes)
+    write_build_identity_atomic(
+        &req.cache_root,
+        &BuildIdentityFile {
+            input,
+            build_target_baseline_bytes: current_target_bytes,
+        },
+    )?;
+    Ok(current_target_bytes)
 }
 
 pub(crate) fn build_identity_input(
     req: &RustCoverageBatchRequest,
     tools: &RustCoverageToolIdentity,
 ) -> BuildIdentityInput {
+    let mut env =
+        crate::rust_llvm_cov_runner::plan::batch_plan::effective_coverage_identity_environment(req);
+    env.remove("PATH");
     BuildIdentityInput {
         cache_schema: CACHE_SCHEMA_VERSION.to_string(),
         execution_policy: BATCH_EXECUTION_POLICY_VERSION.to_string(),
@@ -111,7 +167,10 @@ pub(crate) fn build_identity_input(
         ],
         source_root: req.source_root.to_string_lossy().to_string(),
         cargo_args: req.cargo_args.clone(),
-        env: req.env.clone(),
+        env,
+        resolved_tools: crate::rust_llvm_cov_runner::plan::batch_plan_env::resolved_identity_tools(
+            &req.env, &req.cwd,
+        ),
     }
 }
 
@@ -168,3 +227,51 @@ pub(crate) fn path_size_bytes(path: &Path) -> io::Result<u64> {
     }
     Ok(0)
 }
+
+pub(crate) fn instrumented_depot_likely_fresh(source_root: &Path, build_target: &Path) -> bool {
+    let deps = build_target.join("debug").join("deps");
+    let Ok(entries) = fs::read_dir(&deps) else {
+        return false;
+    };
+    let mut newest_bin: Option<std::time::SystemTime> = None;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if name.contains('.') && !name.ends_with(".exe") {
+            continue;
+        }
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
+        if !meta.is_file() {
+            continue;
+        }
+        let Ok(modified) = meta.modified() else {
+            continue;
+        };
+        newest_bin = Some(match newest_bin {
+            Some(prev) => prev.max(modified),
+            None => modified,
+        });
+    }
+    let Some(newest_bin) = newest_bin else {
+        return false;
+    };
+    let Ok(inputs) =
+        crate::rust_llvm_cov_runner::plan::shared_input::rust_cov_input_files(source_root)
+    else {
+        return false;
+    };
+    inputs.iter().all(|input| {
+        fs::metadata(input)
+            .ok()
+            .and_then(|meta| meta.modified().ok())
+            .is_some_and(|modified| modified <= newest_bin)
+    })
+}
+
+#[cfg(test)]
+#[path = "batch_run_identity_test.rs"]
+mod identity_tests;

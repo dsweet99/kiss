@@ -109,7 +109,13 @@ pub(crate) fn store_completed_outcomes_with(
 ) -> Result<(), RustLlvmCovError> {
     let jobs = entry_store_jobs(req, tools, identity, completed);
     let results = run_entry_store_jobs(req.jobs, &req.cache_root, jobs, store)?;
-    reconcile_entry_store_results(completed, results)
+    reconcile_entry_store_results(completed, results)?;
+    crate::rust_llvm_cov_runner::write_ordinary_source_snapshot(
+        &req.cache_root,
+        &req.source_root,
+        identity,
+    )
+    .map_err(RustLlvmCovError::Io)
 }
 
 fn entry_store_jobs(

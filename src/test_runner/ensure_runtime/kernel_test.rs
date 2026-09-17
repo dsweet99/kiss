@@ -9,7 +9,7 @@ use kiss::rpytest_runner::TestStatus;
 use super::ensure_runtime_cache;
 use crate::test_runner::lang_iface::{
     AcceptMode, EnsureRequest, ExecutionWitness, LanguageRuntime, OutcomeBatch, PublishBatch,
-    WitnessScope, WitnessStatus,
+    SourceDeltaMisses, WitnessScope, WitnessStatus,
 };
 use crate::test_runner::runners::{
     SelectorCacheRecord, SelectorExecutionRecord, SelectorExecutionSummary,
@@ -28,6 +28,8 @@ struct FakeRuntime {
     language: Language,
     state: Rc<RefCell<FakeState>>,
 }
+
+impl SourceDeltaMisses for FakeRuntime {}
 
 impl LanguageRuntime for FakeRuntime {
     fn language(&self) -> Language {
@@ -128,6 +130,7 @@ impl LanguageRuntime for FakeRuntime {
             covered_lines: batch.covered_lines.clone(),
             complete,
             generation_id: "gen".into(),
+            raw_statuses: Vec::new(),
         });
         Ok(())
     }
@@ -151,7 +154,7 @@ impl LanguageRuntime for FakeRuntime {
         _request: &EnsureRequest,
         planned: &[String],
         _witness: &ExecutionWitness,
-    ) -> SelectorExecutionSummary {
+    ) -> Result<SelectorExecutionSummary, String> {
         let mut summary = SelectorExecutionSummary::default();
         for sel in planned {
             summary.record(SelectorExecutionRecord {
@@ -163,7 +166,7 @@ impl LanguageRuntime for FakeRuntime {
                 duration: std::time::Duration::from_millis(1),
             });
         }
-        summary
+        Ok(summary)
     }
 }
 
@@ -229,6 +232,7 @@ fn accept_skips_run() {
             covered_lines: BTreeMap::new(),
             complete: true,
             generation_id: "g".into(),
+            raw_statuses: Vec::new(),
         }),
         ..Default::default()
     }));
@@ -256,6 +260,7 @@ fn second_ensure_after_partial_failure_runs_only_problem_selectors() {
             covered_lines: BTreeMap::new(),
             complete: false,
             generation_id: "g".into(),
+            raw_statuses: Vec::new(),
         }),
         run_exit_code: 0,
         ..Default::default()
@@ -270,7 +275,7 @@ fn second_ensure_after_partial_failure_runs_only_problem_selectors() {
 }
 
 #[test]
-fn terminal_incomplete_reports_without_run_or_publish() {
+fn unresolved_with_duration_reruns_and_publishes() {
     let state = Rc::new(RefCell::new(FakeState {
         witness: Some(ExecutionWitness {
             language: "python".into(),
@@ -282,6 +287,7 @@ fn terminal_incomplete_reports_without_run_or_publish() {
             covered_lines: BTreeMap::new(),
             complete: false,
             generation_id: "g".into(),
+            raw_statuses: Vec::new(),
         }),
         run_exit_code: 1,
         ..Default::default()
@@ -293,8 +299,8 @@ fn terminal_incomplete_reports_without_run_or_publish() {
     let result =
         ensure_runtime_cache(&request(vec!["a".into(), "b".into()]), &[&runtime]).expect("ensure");
     assert_ne!(result.exit_code, 0);
-    assert!(state.borrow().run_calls.is_empty());
-    assert_eq!(state.borrow().publish_calls, 0);
+    assert_eq!(state.borrow().run_calls, vec![vec!["b".to_string()]]);
+    assert_eq!(state.borrow().publish_calls, 1);
 }
 
 #[test]
@@ -328,6 +334,7 @@ fn rust_accept_under_fake_runs_zero_exports_and_delta_publish() {
             covered_lines: BTreeMap::from([("f.rs".into(), vec![1])]),
             complete: true,
             generation_id: "g".into(),
+            raw_statuses: Vec::new(),
         }),
         ..Default::default()
     }));
@@ -351,6 +358,9 @@ fn rust_accept_under_fake_runs_zero_exports_and_delta_publish() {
     assert_eq!(result.exit_code, 0);
     assert_eq!(state.borrow().run_calls, vec![vec!["b".to_string()]]);
     assert_eq!(state.borrow().publish_calls, 1);
+    let observed = kiss::rust_llvm_cov_runner::subprocess_observer_snapshot();
+    assert_eq!(observed.llvm_export_invocations, 0);
+    assert_eq!(observed.cargo_invocations, 0);
 }
 
 #[test]

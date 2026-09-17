@@ -120,22 +120,27 @@ pub(crate) fn real_tool_identity(cwd: &Path) -> RustCoverageToolIdentity {
 
 pub(crate) fn run_cargo_llvm_cov_json(target_dir: &Path) -> Vec<u8> {
     build_helper_bin(target_dir);
-    let output = Command::new("cargo")
-        .args([
-            "llvm-cov",
-            "test",
-            "-p",
-            "export-contract-runner",
-            "--manifest-path",
-            &fixture_manifest().to_string_lossy(),
-            "--json",
-            "--",
-            "--test-threads=1",
-            "spawns_instrumented_helper_binary",
-        ])
-        .env("CARGO_TARGET_DIR", target_dir)
-        .current_dir(FIXTURE_ROOT)
-        .output()
+    let output =
+        crate::rust_llvm_cov_runner::execute_or_reuse::llvm_cov_nested::run_fixture_cargo_llvm_cov(
+            vec![
+                "cargo".to_string(),
+                "llvm-cov".to_string(),
+                "test".to_string(),
+                "-p".to_string(),
+                "export-contract-runner".to_string(),
+                "--manifest-path".to_string(),
+                fixture_manifest().to_string_lossy().to_string(),
+                "--json".to_string(),
+                "--".to_string(),
+                "--test-threads=1".to_string(),
+                "spawns_instrumented_helper_binary".to_string(),
+            ],
+            |command| {
+                command
+                    .env("CARGO_TARGET_DIR", target_dir)
+                    .current_dir(FIXTURE_ROOT);
+            },
+        )
         .expect("cargo llvm-cov test");
     assert!(
         output.status.success(),
@@ -170,11 +175,15 @@ pub(crate) fn merge_profraws_for_test(
         command.arg(profraw);
     }
     command.arg("-o").arg(profdata_output);
-    let status = command.status().map_err(crate::rust_llvm_cov_runner::RustLlvmCovError::Io)?;
+    let status = command
+        .status()
+        .map_err(crate::rust_llvm_cov_runner::RustLlvmCovError::Io)?;
     if !status.success() {
-        return Err(crate::rust_llvm_cov_runner::RustLlvmCovError::InvalidRequest(
-            "llvm-profdata merge failed for fixture profraws".into(),
-        ));
+        return Err(
+            crate::rust_llvm_cov_runner::RustLlvmCovError::InvalidRequest(
+                "llvm-profdata merge failed for fixture profraws".into(),
+            ),
+        );
     }
     Ok(())
 }
@@ -184,7 +193,10 @@ pub(crate) fn export_merged_profile(
     profdata: &Path,
     source_root: &Path,
     objects: &[PathBuf],
-) -> Result<crate::rust_llvm_cov_runner::RustLineCoverage, crate::rust_llvm_cov_runner::RustLlvmCovError> {
+) -> Result<
+    crate::rust_llvm_cov_runner::RustLineCoverage,
+    crate::rust_llvm_cov_runner::RustLlvmCovError,
+> {
     let mut command = std::process::Command::new(&tools.llvm_cov);
     command
         .arg("export")
@@ -195,14 +207,21 @@ pub(crate) fn export_merged_profile(
     for object in objects {
         command.arg("-object").arg(object);
     }
-    let output = command.output().map_err(crate::rust_llvm_cov_runner::RustLlvmCovError::Io)?;
+    let output = command
+        .output()
+        .map_err(crate::rust_llvm_cov_runner::RustLlvmCovError::Io)?;
     if !output.status.success() {
-        return Err(crate::rust_llvm_cov_runner::RustLlvmCovError::InvalidRequest(format!(
-            "llvm-cov export failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        )));
+        return Err(
+            crate::rust_llvm_cov_runner::RustLlvmCovError::InvalidRequest(format!(
+                "llvm-cov export failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )),
+        );
     }
-    crate::rust_llvm_cov_runner::execute_or_reuse::llvm_cov_json::parse_llvm_cov_json(&output.stdout, source_root)
+    crate::rust_llvm_cov_runner::execute_or_reuse::llvm_cov_json::parse_llvm_cov_json(
+        &output.stdout,
+        source_root,
+    )
 }
 
 pub(crate) fn collect_profraws(dir: &Path, out: &mut Vec<PathBuf>) {

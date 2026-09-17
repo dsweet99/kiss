@@ -69,6 +69,32 @@ fn empty_coverage_is_never_reusable() {
 }
 
 #[test]
+fn from_outcome_with_memo_matches_from_outcome_digests() {
+    let tmp = tempfile::tempdir().unwrap();
+    let app = tmp.path().join("app.py");
+    fs::write(&app, "x = 1\n").unwrap();
+    let coverage = LineCoverage {
+        files: BTreeMap::from([(app.to_string_lossy().into_owned(), BTreeSet::from([1]))]),
+    };
+    let outcome = crate::rslip::RslipOutcome {
+        nodeid: "test_sample.py::test_ok".into(),
+        status: TestStatus::Passed,
+        exit_code: Some(0),
+        duration: std::time::Duration::from_millis(1),
+        coverage,
+        cache_status: crate::rslip::CacheStatus::MissStored,
+        stdout: None,
+        stderr: None,
+    };
+    let direct = RslipCacheEntry::from_outcome(&outcome, tmp.path());
+    let mut memo = DigestMemo::new();
+    let memoized = RslipCacheEntry::from_outcome_with_memo(&outcome, tmp.path(), &mut memo);
+    assert_eq!(direct.covered_digests, memoized.covered_digests);
+    let again = RslipCacheEntry::from_outcome_with_memo(&outcome, tmp.path(), &mut memo);
+    assert_eq!(direct.covered_digests, again.covered_digests);
+}
+
+#[test]
 fn failed_status_is_never_reusable_even_with_coverage() {
     let tmp = tempfile::tempdir().unwrap();
     let app = tmp.path().join("app.py");

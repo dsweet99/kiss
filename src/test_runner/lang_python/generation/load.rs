@@ -201,6 +201,27 @@ pub(crate) fn load_pinned_without_line_index_locked(
     })
 }
 
+pub(crate) fn try_load_complete_pinned_python_plan(
+    repo_root: &Path,
+) -> Option<super::types::PythonPopulationPlan> {
+    let cache_root = python_coverage_cache_root(repo_root).ok()?;
+    let _guard = kiss::rslip::lock_rslip_derived_state(&cache_root).ok()?;
+    let pointer = read_pointer(&cache_root).ok()?;
+    let gen_dir = generation_dir(&cache_root, &pointer.generation_id);
+    let manifest_bytes = fs::read(gen_dir.join("manifest.json")).ok()?;
+    if sha256_hex(&manifest_bytes) != pointer.manifest_sha256 {
+        return None;
+    }
+    let manifest: GenerationManifest = serde_json::from_slice(&manifest_bytes).ok()?;
+    if manifest.schema_version != GENERATION_SCHEMA_VERSION
+        || manifest.generation_id != pointer.generation_id
+        || manifest.plan.selectors.is_empty()
+    {
+        return None;
+    }
+    Some(manifest.plan)
+}
+
 pub(crate) fn file_index_from_selector_coverage(
     selector_coverage: &SelectorCoverageMap,
 ) -> BTreeMap<String, std::collections::BTreeSet<String>> {

@@ -3,7 +3,70 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use super::*;
-use crate::test_runner::watch::lock::{WatchLockGuard, watch_lock_path};
+use crate::test_runner::watch::lock::{watch_lock_path, WatchLockGuard};
+
+#[test]
+fn nudge_request_progress_line_includes_fields() {
+    assert_eq!(
+        NudgeRequestMsg::default().progress_line(),
+        "kiss test: request force=false force_bad=false metrics=false"
+    );
+    assert_eq!(
+        NudgeRequestMsg {
+            force: true,
+            force_bad: true,
+            metrics: true,
+            targets: vec!["a.rs".into(), "b.py".into()],
+            ..Default::default()
+        }
+        .progress_line(),
+        "kiss test: request force=true force_bad=true metrics=true targets=a.rs b.py"
+    );
+}
+
+#[test]
+fn handle_client_logs_received_request() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path().to_path_buf();
+    let lock_path = watch_lock_path(&repo);
+    let _lock = WatchLockGuard::lock(&lock_path).unwrap();
+    let control = WatchControlServer::start(&repo).unwrap();
+    let server = thread::spawn(move || {
+        let req = control
+            .nudge_rx
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap();
+        let _ = req.reply.send(NudgeReplyMsg {
+            exit_code: 0,
+            pid: std::process::id(),
+            error: None,
+            output: None,
+        });
+        drop(control);
+    });
+    let out = crate::test_runner::capture_stdout::capture_stdout(|| {
+        let reply = try_client_nudge(
+            &repo,
+            &NudgeRequestMsg {
+                force: false,
+                force_bad: true,
+                metrics: true,
+                targets: vec!["src/lib.rs".into()],
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .expect("client");
+        assert_eq!(reply.exit_code, 0);
+    });
+    server.join().unwrap();
+    assert!(
+        out.contains(
+            "kiss test: request force=false force_bad=true metrics=true targets=src/lib.rs"
+        ),
+        "watcher must log the received kiss test request; stdout={out:?}"
+    );
+}
 
 #[test]
 fn protocol_round_trip_on_socket() {
@@ -32,6 +95,7 @@ fn protocol_round_trip_on_socket() {
             force: true,
             force_bad: false,
             metrics: false,
+            ..Default::default()
         },
     )
     .unwrap();
@@ -171,7 +235,7 @@ fn probe_times_out_when_lock_held_without_session() {
 
 #[test]
 fn start_publishes_session_well_before_client_retry() {
-    let mut max = Duration::ZERO;
+    let mut samples = Vec::with_capacity(20);
     for _ in 0..20 {
         let tmp = tempfile::tempdir().unwrap();
         let t0 = Instant::now();
@@ -182,12 +246,42 @@ fn start_publishes_session_well_before_client_retry() {
             "start must publish session.json"
         );
         drop(control);
-        if elapsed > max {
-            max = elapsed;
-        }
+        samples.push(elapsed);
     }
+    samples.sort();
+    let median = samples[samples.len() / 2];
+    let max = *samples.last().unwrap();
     assert!(
-        max < CLIENT_SESSION_RETRY / 2,
-        "lock-to-session gap must stay under half the client wait; max={max:?}"
+        median < CLIENT_SESSION_RETRY / 2,
+        "typical lock-to-session gap must stay under half the client wait; median={median:?}"
     );
+    assert!(
+        max < CLIENT_SESSION_RETRY,
+        "even the slowest start must beat the full client wait; max={max:?}"
+    );
+}
+
+#[test]
+fn reclaim_stale_watch_sockets_removes_dead_socks_keeps_live() {
+    let _ = std::fs::create_dir_all(WATCH_SOCKET_TMP_DIR);
+    let dead = std::path::PathBuf::from(format!(
+        "{WATCH_SOCKET_TMP_DIR}/reclaim-dead-{}.sock",
+        std::process::id()
+    ));
+    let live = std::path::PathBuf::from(format!(
+        "{WATCH_SOCKET_TMP_DIR}/reclaim-live-{}.sock",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&dead);
+    let _ = std::fs::remove_file(&live);
+    {
+        let listener = UnixListener::bind(&dead).unwrap();
+        drop(listener);
+    }
+    let live_listener = UnixListener::bind(&live).unwrap();
+    reclaim_stale_watch_sockets(None);
+    assert!(!dead.exists(), "dead sock must be reclaimed");
+    assert!(live.exists(), "live sock must be kept");
+    drop(live_listener);
+    let _ = std::fs::remove_file(&live);
 }

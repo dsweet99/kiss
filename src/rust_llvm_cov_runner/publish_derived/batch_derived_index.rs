@@ -1,5 +1,7 @@
 use crate::rust_llvm_cov_runner::plan::batch_fingerprint::RustCoverageBatchIdentity;
-use crate::rust_llvm_cov_runner::publish_derived::batch_derived::{INDEX_SCHEMA_VERSION, POPULATION_SCHEMA_VERSION};
+use crate::rust_llvm_cov_runner::publish_derived::batch_derived::{
+    INDEX_SCHEMA_VERSION, POPULATION_SCHEMA_VERSION,
+};
 use crate::rust_llvm_cov_runner::publish_derived::batch_derived_index_check_aggregate_support::{
     CHECK_AGGREGATE_ENTRIES_PREFIX, index_matches_check_aggregate,
     load_check_aggregate_population_state,
@@ -58,6 +60,7 @@ pub fn load_current_population_state(
             input_fingerprint: identity.input_digest.clone(),
             generation_fingerprint: identity.generation_fingerprint.clone(),
             selection_context_fingerprint: identity.selection_context_fingerprint.clone(),
+            ordinary_source_digests: identity.ordinary_source_digests.clone(),
         },
     )
 }
@@ -69,20 +72,23 @@ pub fn load_current_generation_coverage_snapshot(
     selectors: Option<&[String]>,
 ) -> Option<RustGenerationCoverageSnapshot> {
     let population = load_current_population_state(cache_root, source_root, identity, selectors)?;
-    let entries = crate::rust_llvm_cov_runner::publish_derived::batch_derived_snapshot::load_manifest_generation_entries(
-        cache_root,
-        source_root,
-        &population,
-    )?;
-    let snapshot_identity =
-        crate::rust_llvm_cov_runner::publish_derived::batch_derived_snapshot::stable_generation_coverage_identity(
-            &population,
-            &entries,
-        );
-    Some(RustGenerationCoverageSnapshot {
-        identity: snapshot_identity,
-        covered_lines: entries,
-        population,
+    current_test_binaries_match(source_root, &population).then_some(())?;
+    generation::generation_coverage_from_population(cache_root, source_root, population)
+}
+
+pub fn current_test_binaries_match(source_root: &Path, population: &RustPopulationState) -> bool {
+    if !population.selectors.is_empty() && population.test_binaries.is_empty() {
+        return false;
+    }
+    population.test_binaries.values().all(|binary| {
+        let path = Path::new(&binary.executable);
+        let path = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            source_root.join(path)
+        };
+        crate::rust_llvm_cov_runner::rust_cov_cache::digest_test_binary(&path)
+            .is_ok_and(|digest| digest == binary.digest)
     })
 }
 pub fn load_reusable_prior_population_state(
@@ -105,6 +111,7 @@ pub(crate) enum PopulationLoadMode {
         input_fingerprint: String,
         generation_fingerprint: String,
         selection_context_fingerprint: String,
+        ordinary_source_digests: BTreeMap<String, String>,
     },
     ReusablePrior {
         selection_context_fingerprint: String,
@@ -232,10 +239,12 @@ pub(crate) fn population_current_identity_matches(
         PopulationLoadMode::Current {
             input_fingerprint,
             generation_fingerprint,
+            ordinary_source_digests,
             ..
         } => {
             manifest.input_fingerprint == *input_fingerprint
                 && manifest.generation_fingerprint == *generation_fingerprint
+                && manifest.ordinary_source_digests == *ordinary_source_digests
         }
         PopulationLoadMode::ReusablePrior { .. } => true,
     }
@@ -252,7 +261,10 @@ fn manifest_generation_entries_complete(
         return true;
     }
     if let Some(reverse) = manifest.reverse_line_index.as_ref() {
-        let Some(state) = crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::read_entry_state(cache_root)
+        let Some(state) =
+            crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::read_entry_state(
+                cache_root,
+            )
         else {
             return false;
         };
@@ -286,7 +298,9 @@ fn manifest_generation_entries_scanned(
         let Ok(bytes) = fs::read(&path) else {
             continue;
         };
-        let Ok(parsed) = serde_json::from_slice::<crate::rust_llvm_cov_runner::RustCovCacheEntry>(&bytes) else {
+        let Ok(parsed) =
+            serde_json::from_slice::<crate::rust_llvm_cov_runner::RustCovCacheEntry>(&bytes)
+        else {
             continue;
         };
         if parsed.schema_version != crate::rust_llvm_cov_runner::CACHE_SCHEMA_VERSION
@@ -371,14 +385,17 @@ pub(crate) fn read_population_manifest(cache_root: &Path) -> Option<PopulationMa
     })
 }
 
-pub(crate) fn read_population_generation(cache_root: &Path) -> Option<String> {
-    let bytes = fs::read(cache_root.join("population.json")).ok()?;
-    let value: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
-    value
-        .get("generation_fingerprint")?
-        .as_str()
-        .map(str::to_string)
-}
+#[path = "batch_derived_index_generation.rs"]
+mod generation;
+pub use generation::load_current_generation_coverage_from_passing_entries;
+
+#[path = "batch_derived_index_manifest_match.rs"]
+mod manifest_match;
+pub(crate) use manifest_match::read_population_generation;
+pub use manifest_match::{
+    current_population_manifest_matches_identity, current_population_manifest_matches_universe,
+    current_population_manifest_state, current_population_manifest_test_binaries_match,
+};
 
 #[cfg(test)]
 #[path = "batch_derived_index_check_aggregate_test.rs"]

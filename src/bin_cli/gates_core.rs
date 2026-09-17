@@ -3,7 +3,6 @@ use crate::bin_cli::config_session::{
     ensure_default_config_exists, load_configs, load_gate_config,
 };
 use crate::bin_cli::mimic::run_mimic;
-use crate::bin_cli::run::run;
 use crate::bin_cli::stats::{
     RunStatsArgs, collect_all_units, print_all_top_metrics, print_top_for_metric, run_stats,
     run_stats_summary, run_stats_table,
@@ -81,12 +80,6 @@ fn test_cli_and_commands() {
     assert!(matches!(
         Cli::try_parse_from(["kiss", "stats"]).unwrap().command,
         Commands::Stats { .. }
-    ));
-    assert!(matches!(
-        Cli::try_parse_from(["kiss", "mv", "src/a.py::foo", "bar"])
-            .unwrap()
-            .command,
-        Commands::Mv { .. }
     ));
     assert!(matches!(
         Cli::try_parse_from(["kiss", "check"]).unwrap().command,
@@ -204,9 +197,4 @@ fn test_stats_top_helpers() {
     print_top_for_metric(&units, 1, "test_metric", |u| u.statements);
     assert_eq!(truncate("short.rs", 20), "short.rs");
     assert!(truncate("this/is/a/very/long/path.rs", 20).starts_with("..."));
-}
-
-#[test]
-fn test_run_entrypoint_exists() {
-    let _ = run as fn() -> i32;
 }

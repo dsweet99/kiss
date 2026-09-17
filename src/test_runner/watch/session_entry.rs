@@ -21,7 +21,7 @@ pub(crate) fn run_test_watch(
     rs_config: kiss::Config,
     run_cov: impl FnMut(&RunTestCmdArgs<'_>, &WatchLiveConfig) -> WatchCoverageResult,
 ) -> i32 {
-    match prepare_watch_session(&args) {
+    match prepare_watch_session(&args, &seed.config_path) {
         Ok(prepared) => {
             let config_path =
                 super::reload::resolve_config_path(&prepared.repo_root, &seed.config_path);
@@ -33,32 +33,16 @@ pub(crate) fn run_test_watch(
     }
 }
 
-#[doc = "kiss-coverage-off"]
+#[rustfmt::skip]
 fn run_native_watch(
     prepared: PreparedWatch,
     live: WatchLiveConfig,
     mut run_cov: impl FnMut(&RunTestCmdArgs<'_>, &WatchLiveConfig) -> WatchCoverageResult,
 ) -> i32 {
-    let PreparedWatch {
-        repo_root,
-        mut source,
-        owner,
-    } = prepared;
-    #[cfg(unix)]
-    {
-        run_prepared_loop(
-            &repo_root,
-            &mut source,
-            Some(&owner.control.nudge_rx),
-            live,
-            &mut run_cov,
-        )
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = owner;
-        run_prepared_loop(&repo_root, &mut source, None, live, &mut run_cov)
-    }
+    let PreparedWatch { repo_root, mut source, owner } = prepared;
+    #[cfg(unix)] let nudge = Some(&owner.control.nudge_rx);
+    #[cfg(not(unix))] let nudge: Option<&Receiver<NudgeRequest>> = { let _ = owner; None };
+    run_prepared_loop(&repo_root, &mut source, nudge, live, &mut run_cov)
 }
 
 fn run_prepared_loop<C>(
@@ -83,68 +67,46 @@ struct PreparedWatch {
     owner: (),
 }
 
-#[doc = "kiss-coverage-off"]
-fn prepare_watch_session(args: &RunTestCmdArgs<'_>) -> Result<PreparedWatch, i32> {
-    let cwd = std::env::current_dir().map_err(|e| {
-        eprintln!("error: kiss test: {e}");
-        1
-    })?;
-    let repo_root = crate::test_git::require_git_repo_root(&cwd).map_err(|e| {
-        eprintln!("error: kiss test requires a git repository ({e})");
-        1
-    })?;
-    let registrations = resolve_watch_registrations(&repo_root, &args.invocation, args.ignore)
-        .map_err(|e| {
-            eprintln!("error: kiss test --watch: {e}");
-            1
-        })?;
-
-    #[cfg(unix)]
-    let owner = WatchSessionOwner::acquire(&repo_root).map_err(|e| {
-        eprintln!("error: kiss test --watch: {e}");
-        1
-    })?;
-    #[cfg(not(unix))]
-    let owner = ();
-
-    let source = NativeWatchEventSource::register(&registrations).map_err(|e| {
-        eprintln!("error: kiss test --watch: {e}");
-        1
-    })?;
-    Ok(PreparedWatch {
-        repo_root,
-        source,
-        owner,
-    })
+#[rustfmt::skip]
+fn prepare_watch_session(
+    args: &RunTestCmdArgs<'_>,
+    config_path: &Path,
+) -> Result<PreparedWatch, i32> {
+    let cwd = std::env::current_dir().map_err(|e| { eprintln!("error: kiss test: {e}"); 1 })?;
+    let repo_root = crate::test_git::require_git_repo_root(&cwd)
+        .map_err(|e| { eprintln!("error: kiss test requires a git repository ({e})"); 1 })?;
+    let registrations = resolve_watch_registrations(
+        &repo_root,
+        &args.invocation,
+        args.ignore,
+        config_path,
+    )
+        .map_err(|e| { eprintln!("error: kiss test --watch: {e}"); 1 })?;
+    #[cfg(unix)] let owner = WatchSessionOwner::acquire(&repo_root)
+        .map_err(|e| { eprintln!("error: kiss test --watch: {e}"); 1 })?;
+    #[cfg(not(unix))] let owner = ();
+    let source = NativeWatchEventSource::register(
+        &registrations,
+        &repo_root,
+        &args.invocation,
+        config_path,
+    )
+    .map_err(|e| { eprintln!("error: kiss test --watch: {e}"); 1 })?;
+    Ok(PreparedWatch { repo_root, source, owner })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bin_cli::args::TestInvocation;
     use crate::test_runner::WatchCoverageResult;
-    use crate::test_runner::test_mode_fixtures::{git_in, init_git};
+    use crate::test_runner::test_mode_fixtures::{git_in, init_git, python_dry_run_args};
     use crate::test_runner::watch::event_source::FakeWatchEventSource;
     use std::env;
+    use std::path::Path;
     use std::time::Duration;
 
     fn py_args() -> RunTestCmdArgs<'static> {
-        RunTestCmdArgs {
-            invocation: TestInvocation::Targets(vec!["a.py".into()]),
-            main_branch_cli: None,
-            base_branch_cli: None,
-            dry_run: true,
-            force_rerun: false,
-            force_bad: false,
-            metrics: false,
-            jobs: 1,
-            extra: &[],
-            python_extra: &[],
-            ignore: &[],
-            lang_filter: Some(kiss::Language::Python),
-            config_main_branch: None,
-            gate_config: kiss::GateConfig::default(),
-        }
+        python_dry_run_args(vec!["a.py".into()])
     }
 
     #[test]
@@ -153,7 +115,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let orig = env::current_dir().unwrap();
         env::set_current_dir(tmp.path()).unwrap();
-        let err = prepare_watch_session(&py_args());
+        let err = prepare_watch_session(&py_args(), Path::new(".kissconfig"));
         env::set_current_dir(orig).unwrap();
         assert!(matches!(err, Err(1)));
     }
@@ -180,7 +142,8 @@ mod tests {
         );
         let orig = env::current_dir().unwrap();
         env::set_current_dir(tmp.path()).unwrap();
-        let prepared = prepare_watch_session(&py_args()).expect("prepare");
+        let prepared =
+            prepare_watch_session(&py_args(), Path::new(".kissconfig")).expect("prepare");
         assert_eq!(
             prepared.repo_root.canonicalize().unwrap(),
             tmp.path().canonicalize().unwrap()
@@ -241,8 +204,12 @@ mod tests {
 
     #[test]
     fn run_prepared_loop_exits_on_disconnect() {
+        let _cwd = crate::cwd_test_lock::lock();
         let tmp = tempfile::tempdir().unwrap();
         init_git(&tmp);
+        std::fs::write(tmp.path().join("a.py"), "x=1\n").unwrap();
+        let orig = env::current_dir().unwrap();
+        env::set_current_dir(tmp.path()).unwrap();
         let seed = WatchReloadSeed {
             cli_ignore: Vec::new(),
             jobs_cli: Some(1),
@@ -265,6 +232,7 @@ mod tests {
         };
         let mut cov = |_a: &RunTestCmdArgs<'_>, _l: &WatchLiveConfig| WatchCoverageResult::ok(0);
         let code = run_prepared_loop(tmp.path(), &mut fake, None, live, &mut cov);
+        env::set_current_dir(orig).unwrap();
         assert_eq!(code, 1);
     }
 

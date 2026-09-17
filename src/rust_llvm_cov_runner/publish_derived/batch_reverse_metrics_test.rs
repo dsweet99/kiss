@@ -1,3 +1,4 @@
+use crate::rpytest_runner::TestStatus;
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_result::RustCoverageBatchCounters;
 use crate::rust_llvm_cov_runner::plan::batch_fingerprint::entry_fingerprint;
 use crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::publish_next_entry_state;
@@ -16,7 +17,6 @@ use crate::rust_llvm_cov_runner::{
     publish_derived_state, query_reverse_line_index, reset_reverse_query_counters_for_test,
     snapshot_reverse_query_counters,
 };
-use crate::rpytest_runner::TestStatus;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::sync::Mutex;
@@ -68,6 +68,17 @@ fn reverse_hit_increments_query_hit_counter() {
 
         batch.incorporate_process_reverse_query_counters();
         assert_eq!(batch.reverse_query_hits, 1);
+        let covering = crate::rust_llvm_cov_runner::query_reverse_covering_files(
+            &cache,
+            "gen1",
+            &["src/lib.rs".into()],
+        )
+        .expect("known rel");
+        assert!(covering.contains("test_a"));
+        assert_eq!(
+            crate::rust_llvm_cov_runner::query_reverse_covering_files(&cache, "gen1", &[]),
+            Some(std::collections::BTreeSet::new())
+        );
     });
 }
 
@@ -112,7 +123,8 @@ fn publish_derived_state_sets_reverse_published_counter() {
     fs::write(repo.path().join("src/lib.rs"), "pub fn x() {}\n").unwrap();
     let req = derived_fixture_request(repo.path());
     let tools = witness_batch_tools();
-    let identity = crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    let identity =
+        crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
     let fingerprint = entry_fingerprint(&identity.input_digest, &req, &tools, "alpha");
     let mut coverage = BTreeMap::new();
     coverage.insert("src/lib.rs".to_string(), BTreeSet::from([1]));

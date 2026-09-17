@@ -2,24 +2,31 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 #[cfg(unix)]
-use super::control::NudgeRequest;
+use super::control::{NudgeReplyMsg, NudgeRequest};
 use super::coverage::WatchCoverageResult;
 use super::event_source::WatchEventSource;
 use super::filter::WatchPathFilter;
 use super::reload::{WatchLiveConfig, WatchReloadSeed};
-#[cfg(not(unix))]
-use super::session_cycle::NudgeRequest;
 use super::session_cycle::{CycleOutcome, EXIT_INTERRUPTED, WatchCycleCtx, run_one_watch_cycle};
+#[cfg(not(unix))]
+use super::session_cycle::{NudgeReplyMsg, NudgeRequest};
 use super::session_idle::{
-    QueuedCycle, coalesce_nudges, force_ready_if_pending, try_reply_idle_nudge,
+    QueuedCycle, coalesce_nudges, force_ready_if_pending, reply_all_queued, try_reply_idle_nudge,
     wait_until_next_cycle,
 };
 use super::settle::SettleMachine;
 use crate::test_runner::runners::clear_python_collect_memo;
 use crate::test_runner::{RunTestCmdArgs, RunTestOnceOutcome, run_test_once};
 
+#[cfg(test)]
+fn watch_loop_serial() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 #[allow(unused_imports)]
-pub(super) use super::session_cycle::take_queued_cycle_args;
+pub(super) use super::session_cycle::{apply_queued_filters, take_queued_cycle_args};
 
 #[allow(dead_code)]
 pub(crate) fn run_watch_loop(
@@ -101,6 +108,8 @@ where
     F: FnMut(RunTestCmdArgs<'_>) -> RunTestOnceOutcome,
     C: FnMut(&RunTestCmdArgs<'_>, &WatchLiveConfig) -> WatchCoverageResult,
 {
+    #[cfg(test)]
+    let _serial = watch_loop_serial();
     let mut filter = WatchPathFilter::build_with_config(
         repo_root,
         &live.ignore,
@@ -111,6 +120,7 @@ where
     let mut machine = SettleMachine::new(live.settle);
     let mut queued: Option<QueuedCycle> = None;
     let mut last_reply = None;
+    let mut suite = kiss::rust_llvm_cov_runner::WatchSuiteReport::default();
     let mut initial = true;
     loop {
         if !initial {
@@ -122,22 +132,39 @@ where
             return 1;
         }
         match run_one_watch_cycle(WatchCycleCtx {
-            live: &live,
+            live: &mut live,
             queued: &mut queued,
             source,
             filter: &mut filter,
             machine: &mut machine,
             repo_root,
             last_reply: &mut last_reply,
+            suite: &mut suite,
             run_cycle: &mut run_cycle,
             run_cov: &mut run_cov,
         }) {
-            CycleOutcome::Interrupted => return EXIT_INTERRUPTED,
+            CycleOutcome::Interrupted => {
+                coalesce_nudges(nudge_rx, &mut queued);
+                let msg = last_reply.clone().unwrap_or(NudgeReplyMsg {
+                    exit_code: EXIT_INTERRUPTED,
+                    pid: std::process::id(),
+                    error: None,
+                    output: None,
+                });
+                reply_all_queued(&mut queued, &msg);
+                return EXIT_INTERRUPTED;
+            }
             CycleOutcome::Error => return 1,
             CycleOutcome::Continue => {}
         }
+        kiss::rust_llvm_cov_runner::reap_orphaned_zombies();
         coalesce_nudges(nudge_rx, &mut queued);
-        if !try_reply_idle_nudge(&mut queued, last_reply.as_ref()) && queued.is_some() {
+        if let Some(q) = queued.as_mut() {
+            q.stamp_filter_override(&live);
+        }
+        if !try_reply_idle_nudge(&mut queued, last_reply.as_ref(), machine.has_pending_work())
+            && queued.is_some()
+        {
             force_ready_if_pending(&mut machine, repo_root);
             continue;
         }
@@ -149,6 +176,7 @@ where
             nudge_rx,
             &mut queued,
             last_reply.as_ref(),
+            &live,
         ) {
             return code;
         }

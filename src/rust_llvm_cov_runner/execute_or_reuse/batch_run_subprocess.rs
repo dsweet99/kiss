@@ -12,10 +12,12 @@ use crate::rust_llvm_cov_runner::execute_or_reuse::batch_output_channel::{
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::{
     BatchProcessTreeGuard, record_child_process_group,
 };
-use crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim::load_live_shim_process_identities;
-use crate::rust_llvm_cov_runner::execute_or_reuse::progress::{CargoNextestProgress, FinishCargoNextestProgress};
+use crate::rust_llvm_cov_runner::execute_or_reuse::progress::{
+    CargoNextestProgress, FinishCargoNextestProgress,
+};
 use crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchPlan;
 
+use super::batch_run_wait::{ingest_live_shim_identities, wait_child_with_interruption};
 use super::{BatchSubprocessRunError, BatchSubprocessRunOutcome};
 
 struct OutputChannelShutdown {
@@ -31,7 +33,8 @@ impl OutputChannelShutdown {
 
     fn stop_with_errors(
         mut self,
-    ) -> crate::rust_llvm_cov_runner::execute_or_reuse::batch_output_channel::OutputChannelStop {
+    ) -> crate::rust_llvm_cov_runner::execute_or_reuse::batch_output_channel::OutputChannelStop
+    {
         self.server
             .take()
             .expect("output channel server present")
@@ -52,6 +55,19 @@ pub(crate) fn run_batch_subprocess(
     plan: &RustCoverageBatchPlan,
 ) -> Result<BatchSubprocessRunOutcome, BatchSubprocessRunError> {
     ensure_batch_env_dirs(plan)?;
+    crate::rust_llvm_cov_runner::execute_or_reuse::mem_available::check_host_mem_available()?;
+    crate::rust_llvm_cov_runner::execute_or_reuse::llvm_cov_process_budget::check_llvm_cov_nextest_budget()?;
+    let _nested_lock = if crate::rust_llvm_cov_runner::execute_or_reuse::llvm_cov_nested::argv_is_cargo_llvm_cov_or_nextest(
+        &plan.argv,
+    ) {
+        Some(
+            crate::rust_llvm_cov_runner::execute_or_reuse::llvm_cov_nested::NestedLlvmCovLock::acquire(
+            )
+            .map_err(|err| spawn_component_error("nested-llvm-cov", err.to_string()))?,
+        )
+    } else {
+        None
+    };
     let run_root = batch_run_root(plan)?;
     let (output_server, env) = start_output_channel_for_batch(run_root, plan)?;
     let output_server = OutputChannelShutdown::new(output_server);
@@ -140,7 +156,7 @@ fn run_tracked_batch_command(
     let mut child = spawn_tracked_batch_child(cwd, plan, env, process_tree, &program)?;
     let _finish_progress = begin_cargo_nextest_progress();
     let (stdout_handle, stderr_handle) =
-        spawn_batch_pipe_readers(&mut child, &program, &_finish_progress.0)?;
+        spawn_batch_pipe_readers(&mut child, &program, &_finish_progress.progress)?;
     let output_dir = plan.target_runner_output_dir.clone();
     let mut seen_shim_metadata = HashSet::new();
     let wait_result = wait_child_with_interruption(
@@ -149,15 +165,9 @@ fn run_tracked_batch_command(
         &output_dir,
         &mut seen_shim_metadata,
     );
+    let status = wait_result?;
     let stdout = join_pipe_reader(stdout_handle, &program, "stdout")?;
     let stderr = join_pipe_reader(stderr_handle, &program, "stderr")?;
-    let status = match wait_result {
-        Ok(status) => status,
-        Err(err) if err.kind() == io::ErrorKind::Interrupted => {
-            return Err(BatchSubprocessRunError::Interrupted);
-        }
-        Err(err) => return Err(spawn_component_error(&program, err.to_string())),
-    };
     Ok(std::process::Output {
         status,
         stdout,
@@ -172,7 +182,10 @@ fn spawn_tracked_batch_child(
     process_tree: &BatchProcessTreeGuard,
     program: &str,
 ) -> Result<std::process::Child, BatchSubprocessRunError> {
-    let argv = &plan.argv;
+    let mut argv = plan.argv.clone();
+    crate::rust_llvm_cov_runner::execute_or_reuse::llvm_cov_nested::apply_nested_llvm_cov_argv(
+        &mut argv,
+    );
     let mut command = Command::new(program);
     command
         .args(&argv[1..])
@@ -189,7 +202,9 @@ fn spawn_tracked_batch_child(
 }
 
 fn begin_cargo_nextest_progress() -> FinishCargoNextestProgress {
-    FinishCargoNextestProgress(Arc::new(Mutex::new(CargoNextestProgress::start())))
+    FinishCargoNextestProgress {
+        progress: Arc::new(Mutex::new(CargoNextestProgress::start())),
+    }
 }
 
 type PipeReaderHandle = std::thread::JoinHandle<io::Result<Vec<u8>>>;
@@ -212,60 +227,6 @@ fn spawn_batch_pipe_readers(
         std::thread::spawn(move || read_stdout_tracking_progress(stdout_pipe, stdout_progress));
     let stderr_handle = std::thread::spawn(move || read_pipe_to_end(stderr_pipe));
     Ok((stdout_handle, stderr_handle))
-}
-
-fn wait_child_with_interruption(
-    child: &mut std::process::Child,
-    process_tree: &BatchProcessTreeGuard,
-    output_dir: &Path,
-    seen_shim_metadata: &mut HashSet<String>,
-) -> io::Result<std::process::ExitStatus> {
-    loop {
-        ingest_live_shim_identities(
-            process_tree.registry().as_ref(),
-            output_dir,
-            seen_shim_metadata,
-        );
-        if let Some(status) = child.try_wait()? {
-            if process_tree.interrupted() {
-                return Err(io::Error::new(
-                    io::ErrorKind::Interrupted,
-                    "batch interrupted",
-                ));
-            }
-            return Ok(status);
-        }
-        if process_tree.interrupted() {
-            ingest_live_shim_identities(
-                process_tree.registry().as_ref(),
-                output_dir,
-                seen_shim_metadata,
-            );
-            let _ = process_tree.terminate_descendants(Duration::from_millis(250));
-            let _ = child.wait();
-            return Err(io::Error::new(
-                io::ErrorKind::Interrupted,
-                "batch interrupted",
-            ));
-        }
-        std::thread::sleep(Duration::from_millis(25));
-    }
-}
-
-fn ingest_live_shim_identities(
-    registry: &crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::ProcessTreeRegistry,
-    output_dir: &Path,
-    seen: &mut HashSet<String>,
-) {
-    let Ok(identities) = load_live_shim_process_identities(output_dir) else {
-        return;
-    };
-    for identity in identities {
-        let key = format!("{}:{}", identity.pid, identity.pgid);
-        if seen.insert(key) {
-            registry.record(identity);
-        }
-    }
 }
 
 fn join_pipe_reader(
@@ -327,8 +288,63 @@ fn ensure_batch_env_dirs(plan: &RustCoverageBatchPlan) -> Result<(), BatchSubpro
 }
 
 pub(crate) fn apply_batch_subprocess_env(command: &mut Command, env: &BTreeMap<String, String>) {
-    crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim_delegated::scrub_coverage_build_env(command);
-    command.envs(env);
+    let defined = defined_child_env(env);
+    strip_unrecorded_inherited_env(command, &defined);
+    crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim_delegated::scrub_coverage_build_env(
+        command,
+    );
+    command.envs(&defined);
+}
+
+fn strip_unrecorded_inherited_env(command: &mut Command, defined: &BTreeMap<String, String>) {
+    for (key, _) in std::env::vars() {
+        if !defined.contains_key(&key) {
+            command.env_remove(key);
+        }
+    }
+}
+
+fn defined_child_env(env: &BTreeMap<String, String>) -> BTreeMap<String, String> {
+    let mut defined = env.clone();
+    for key in [
+        "PATH",
+        "HOME",
+        "USER",
+        "LOGNAME",
+        "SHELL",
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "RUSTUP_TOOLCHAIN",
+        "LD_LIBRARY_PATH",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "LANG",
+        "LC_ALL",
+        "LC_CTYPE",
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR",
+        "CC",
+        "CXX",
+        "CONDA_PREFIX",
+        "CMAKE_PREFIX_PATH",
+        "PKG_CONFIG_PATH",
+    ] {
+        if !defined.contains_key(key)
+            && let Ok(value) = std::env::var(key)
+        {
+            defined.insert(key.to_string(), value);
+        }
+    }
+    for (key, value) in crate::cargo_target_linker_env() {
+        defined.entry(key).or_insert(value);
+    }
+    if !defined.contains_key("CMAKE_PREFIX_PATH")
+        && let Some(conda) = defined.get("CONDA_PREFIX").cloned()
+    {
+        defined.insert("CMAKE_PREFIX_PATH".to_string(), conda);
+    }
+    defined
 }
 
 #[cfg(test)]

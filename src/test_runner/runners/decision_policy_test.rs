@@ -12,7 +12,7 @@ use crate::test_runner::python_coverage_index::{
 use crate::test_runner::runners::python_backer;
 use crate::test_runner::runners::rust_backer::RustModule;
 use crate::test_runner::rust_coverage_index::{
-    rebuild_rust_coverage_index, write_rust_population_manifest_for_args, write_test_entry,
+    write_rust_population_manifest_for_args, write_test_entry,
 };
 
 struct PlannerParityCase {
@@ -44,9 +44,9 @@ fn planner_parity_cases(
             files: BTreeMap::new(),
         },
     );
-    rebuild_rust_coverage_index(repo_root).unwrap();
-    write_python_population_manifest_for_args(repo_root, &[universe[0].id.clone()], &[]).unwrap();
+    // Empty coverage: publish population directly (rebuild would omit the selector).
     write_rust_population_manifest_for_args(repo_root, &[universe[1].id.clone()], &[]).unwrap();
+    write_python_population_manifest_for_args(repo_root, &[universe[0].id.clone()], &[]).unwrap();
 
     vec![
         PlannerParityCase {
@@ -159,6 +159,11 @@ fn concrete_language_planners_keep_policy_parity() {
         "pub fn value() -> i32 { 1 }\n#[cfg(test)]\nmod tests { #[test] fn test_value() { assert_eq!(super::value(), 1); } }\n",
     )
     .unwrap();
+    // Prime host/tool caches once (no Cargo.toml: metadata is skipped, not spawned).
+    let _ = crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(
+        tmp.path(),
+        &[],
+    );
     let universe = [
         TestSelector::new(kiss::Language::Python, "tests/test_app.py::test_value"),
         TestSelector::new(kiss::Language::Rust, "tests::test_value"),

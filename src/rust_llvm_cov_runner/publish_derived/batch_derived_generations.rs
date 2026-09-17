@@ -1,6 +1,6 @@
+use crate::rpytest_runner::TestStatus;
 use crate::rust_llvm_cov_runner::rust_cov_cache::{RustCovCacheEntry, repo_relative_coverage_file};
 use crate::rust_llvm_cov_runner::{RustLineCoverage, RustLlvmCovError};
-use crate::rpytest_runner::TestStatus;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;

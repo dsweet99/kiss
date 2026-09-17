@@ -3,6 +3,17 @@ mod common;
 #[path = "support/mod.rs"]
 mod support;
 
+#[cfg(target_os = "linux")]
+#[used]
+#[allow(non_upper_case_globals)]
+#[unsafe(link_section = ".init_array")]
+static prefer_tmpfs_tmpdir_init: extern "C" fn() = {
+    extern "C" fn init() {
+        common::prefer_tmpfs_tmpdir();
+    }
+    init
+};
+
 #[path = "cases/c2_break_orphans.rs"]
 mod break_c2_orphans;
 #[path = "cases/bug_indirect_dependencies_check.rs"]
@@ -75,8 +86,6 @@ mod main_integration;
 mod py_metrics_tests;
 #[path = "cases/python_counts_violations.rs"]
 mod python_counts_violations;
-#[path = "cases/regression_check_all_ignores_test_file_sentinel.rs"]
-mod regression_check_all_ignores_test_file_sentinel;
 #[path = "cases/regression_check_cache_uncached_default.rs"]
 mod regression_check_cache_uncached_default;
 #[path = "cases/regression_check_default_warm_gate.rs"]
@@ -111,22 +120,6 @@ mod regression_stats_grouped_unit_test_runtime;
 mod regression_stats_summary_headers_and_coverage;
 #[path = "cases/regression_stats_summary_uses_cache.rs"]
 mod regression_stats_summary_uses_cache;
-#[path = "cases/review_findings.rs"]
-mod review_findings;
-#[path = "cases/review_findings_cache.rs"]
-mod review_findings_cache;
-#[path = "cases/review_findings_python.rs"]
-mod review_findings_python;
-#[path = "cases/review_findings_python_2.rs"]
-mod review_findings_python_2;
-#[path = "cases/review_findings_python_3.rs"]
-mod review_findings_python_3;
-#[path = "cases/review_findings_rust.rs"]
-mod review_findings_rust;
-#[path = "cases/review_findings_rust_2.rs"]
-mod review_findings_rust_2;
-#[path = "cases/review_findings_rust_3.rs"]
-mod review_findings_rust_3;
 #[path = "cases/rules_config_integration.rs"]
 mod rules_config_integration;
 #[path = "cases/rust_counts_violations.rs"]
@@ -135,48 +128,16 @@ mod rust_counts_violations;
 mod stress_break_kiss;
 #[path = "cases/stress_break_kiss_2.rs"]
 mod stress_break_kiss_2;
-#[path = "cases/symbol_mv_corpus.rs"]
-mod symbol_mv_corpus;
-#[path = "cases/symbol_mv_internal_coverage.rs"]
-mod symbol_mv_internal_coverage;
-#[path = "cases/symbol_mv_matrix.rs"]
-mod symbol_mv_matrix;
-#[path = "cases/symbol_mv_metamorphic.rs"]
-mod symbol_mv_metamorphic;
-#[path = "cases/symbol_mv_regressions.rs"]
-mod symbol_mv_regressions;
-#[path = "cases/symbol_mv_regressions_10.rs"]
-mod symbol_mv_regressions_10;
-#[path = "cases/symbol_mv_regressions_11.rs"]
-mod symbol_mv_regressions_11;
-#[path = "cases/symbol_mv_regressions_12.rs"]
-mod symbol_mv_regressions_12;
-#[path = "cases/symbol_mv_regressions_13.rs"]
-mod symbol_mv_regressions_13;
-#[path = "cases/symbol_mv_regressions_14.rs"]
-mod symbol_mv_regressions_14;
-#[path = "cases/symbol_mv_regressions_2.rs"]
-mod symbol_mv_regressions_2;
-#[path = "cases/symbol_mv_regressions_3.rs"]
-mod symbol_mv_regressions_3;
-#[path = "cases/symbol_mv_regressions_4.rs"]
-mod symbol_mv_regressions_4;
-#[path = "cases/symbol_mv_regressions_5.rs"]
-mod symbol_mv_regressions_5;
-#[path = "cases/symbol_mv_regressions_6.rs"]
-mod symbol_mv_regressions_6;
-#[path = "cases/symbol_mv_regressions_7.rs"]
-mod symbol_mv_regressions_7;
-#[path = "cases/symbol_mv_regressions_8.rs"]
-mod symbol_mv_regressions_8;
-#[path = "cases/symbol_mv_regressions_9.rs"]
-mod symbol_mv_regressions_9;
 #[path = "cases/sync_stats_check.rs"]
 mod sync_stats_check;
 #[path = "cases/watch_client.rs"]
 mod watch_client;
 #[path = "cases/watch_client_violations.rs"]
 mod watch_client_violations;
+#[path = "cases/watch_paths.rs"]
+mod watch_paths;
+#[path = "cases/regression_test_sigint_caching.rs"]
+mod regression_test_sigint_caching;
 #[path = "cases/watch_sigint.rs"]
 mod watch_sigint;
 #[path = "cases/watch_startup_order.rs"]

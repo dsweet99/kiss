@@ -7,7 +7,7 @@ use super::{
 
 #[path = "plan_rust.rs"]
 mod plan_rust;
-use plan_rust::rust_population_current_for_all_selectors;
+use plan_rust::rust_plan_selectors;
 
 #[path = "plan_explicit.rs"]
 mod plan_explicit;
@@ -15,19 +15,36 @@ use plan_explicit::plan_explicit_target_selectors;
 
 #[path = "plan_vcs.rs"]
 mod plan_vcs;
-pub(crate) use plan_vcs::{PlanSelectorsRequest, plan_selectors};
+#[cfg(test)]
+pub(crate) use plan_vcs::plan_selectors;
+pub(crate) use plan_vcs::{
+    PlanSelectorsRequest, VcsWorkspace, plan_selectors_from_workspace, plan_vcs_workspace_at,
+};
 
 pub(crate) enum TargetPlanKind<'a> {
+    #[allow(dead_code)]
     All,
     Targets(&'a [String]),
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn plan_target_selectors(
     kind: TargetPlanKind<'_>,
     ignore: &[String],
     extras: crate::test_runner::language_keyed::LanguageKeyed<&[String]>,
     lang_filter: Option<Language>,
     gate: &kiss::GateConfig,
+) -> Result<PlannedSelectors, String> {
+    plan_target_selectors_with_priors(kind, ignore, extras, lang_filter, gate, false)
+}
+
+pub(crate) fn plan_target_selectors_with_priors(
+    kind: TargetPlanKind<'_>,
+    ignore: &[String],
+    extras: crate::test_runner::language_keyed::LanguageKeyed<&[String]>,
+    lang_filter: Option<Language>,
+    gate: &kiss::GateConfig,
+    include_prior_failures: bool,
 ) -> Result<PlannedSelectors, String> {
     let ignore_norm = kiss::normalize_ignore_prefixes(ignore);
     let cwd = std::env::current_dir().map_err(|e| format!("error: kiss test: {e}"))?;
@@ -47,12 +64,16 @@ pub(crate) fn plan_target_selectors(
                 ExpandedTargetPlan::All => {
                     plan_all_selectors(&repo_root, &ignore_norm, extras.python, lang_filter, gate)
                 }
+                ExpandedTargetPlan::Files(files) if files.is_empty() => Ok(
+                    super::planned_selectors::empty_planned(repo_root.clone(), ignore_norm),
+                ),
                 ExpandedTargetPlan::Files(files) => plan_explicit_target_selectors(
                     &repo_root,
                     &files,
                     &ignore_norm,
                     extras,
                     lang_filter,
+                    include_prior_failures,
                 ),
             }
         }
@@ -74,10 +95,96 @@ fn plan_all_selectors(
     let (py_sel, rs_sel) = discover_all_selectors(repo_root, ignore, python_extra, lang_filter)?;
     let fp = if lang_filter.is_none() {
         super::workspace_selector_cache::store_workspace_selectors(
-            repo_root, ignore, &py_sel, &rs_sel,
+            repo_root,
+            ignore,
+            &py_sel,
+            &rs_sel,
+            python_extra,
         )
     } else {
         None
+    };
+    Ok(planned_all(
+        repo_root,
+        ignore,
+        python_extra,
+        py_sel,
+        rs_sel,
+        fp,
+        gate,
+    ))
+}
+
+pub(crate) struct AllWorkspaceCache {
+    pub py: Vec<String>,
+    pub rs: Vec<String>,
+    pub fp: String,
+}
+
+pub(crate) fn load_all_workspace_cache(
+    repo_root: &std::path::Path,
+    ignore: &[String],
+    python_extra: &[String],
+    lang_filter: Option<Language>,
+) -> Option<AllWorkspaceCache> {
+    let cache_started = std::time::Instant::now();
+    let (cached_py, cached_rs, fp) =
+        super::workspace_selector_cache::load_cached_workspace_selectors_for_lang(
+            repo_root,
+            ignore,
+            python_extra,
+            lang_filter,
+        )?;
+    let (py, rs) = match lang_filter {
+        None => (cached_py, cached_rs),
+        Some(Language::Python) => (cached_py, Vec::new()),
+        Some(Language::Rust) => (Vec::new(), cached_rs),
+    };
+    crate::test_runner::emit_stage_time("plan_cache", cache_started.elapsed());
+    Some(AllWorkspaceCache { py, rs, fp })
+}
+
+pub(crate) fn cover_all_language(
+    repo_root: &std::path::Path,
+    ignore: &[String],
+    python_extra: &[String],
+    language: Language,
+    gate: &kiss::GateConfig,
+    cached: Option<&AllWorkspaceCache>,
+) -> Result<PlannedSelectors, String> {
+    let (py_sel, rs_sel, fp) = match cached {
+        Some(cache) => (cache.py.clone(), cache.rs.clone(), Some(cache.fp.clone())),
+        None => {
+            let (py_sel, rs_sel) = match language {
+                Language::Python => {
+                    if crate::test_runner::python_coverage_index::stored_python_universe_selectors(
+                        repo_root,
+                        python_extra,
+                        ignore,
+                        crate::test_runner::python_coverage_index::PYTHON_COVERAGE_ENV_KEYS,
+                    )
+                    .is_some()
+                    {
+                        (Vec::new(), Vec::new())
+                    } else {
+                        let (py_sel, py_elapsed) =
+                            timed_python_selectors(repo_root, ignore, python_extra);
+                        crate::test_runner::emit_stage_time("plan_python", py_elapsed);
+                        (py_sel?, Vec::new())
+                    }
+                }
+                Language::Rust => {
+                    let (rs_sel, rs_elapsed) = timed_rust_selectors(repo_root, ignore);
+                    crate::test_runner::emit_stage_time("plan_rust", rs_elapsed);
+                    (Vec::new(), rs_sel?)
+                }
+            };
+            (py_sel, rs_sel, None)
+        }
+    };
+    let (py_sel, rs_sel) = match language {
+        Language::Python => (py_sel, Vec::new()),
+        Language::Rust => (Vec::new(), rs_sel),
     };
     Ok(planned_all(
         repo_root,
@@ -99,7 +206,12 @@ fn try_plan_all_from_cache(
 ) -> Option<PlannedSelectors> {
     let cache_started = std::time::Instant::now();
     let (cached_py, cached_rs, fp) =
-        super::workspace_selector_cache::load_cached_workspace_selectors(repo_root, ignore)?;
+        super::workspace_selector_cache::load_cached_workspace_selectors_for_lang(
+            repo_root,
+            ignore,
+            python_extra,
+            lang_filter,
+        )?;
     let (py_sel, rs_sel) = match lang_filter {
         None => (cached_py, cached_rs),
         Some(Language::Python) => (cached_py, Vec::new()),
@@ -123,7 +235,30 @@ fn timed_python_selectors(
     python_extra: &[String],
 ) -> (Result<Vec<String>, String>, std::time::Duration) {
     let started = std::time::Instant::now();
+    if let Some(stored) = crate::test_runner::python_coverage_index::stored_python_universe_selectors(
+        repo_root,
+        python_extra,
+        ignore,
+        crate::test_runner::python_coverage_index::PYTHON_COVERAGE_ENV_KEYS,
+    ) {
+        return (Ok(stored), started.elapsed());
+    }
+    if let Some(cached) = super::workspace_selector_cache::load_cached_python_workspace_selectors(
+        repo_root,
+        ignore,
+        python_extra,
+    ) {
+        return (Ok(cached), started.elapsed());
+    }
     let out = runners::enumerate_workspace_python_selectors(repo_root, ignore, python_extra);
+    if let Ok(ids) = out.as_ref() {
+        super::workspace_selector_cache::store_python_workspace_selectors(
+            repo_root,
+            ignore,
+            ids,
+            python_extra,
+        );
+    }
     (out, started.elapsed())
 }
 
@@ -132,7 +267,15 @@ fn timed_rust_selectors(
     ignore: &[String],
 ) -> (Result<Vec<String>, String>, std::time::Duration) {
     let started = std::time::Instant::now();
+    if let Some(cached) =
+        super::workspace_selector_cache::load_cached_rust_workspace_selectors(repo_root, ignore)
+    {
+        return (Ok(cached), started.elapsed());
+    }
     let out = runners::enumerate_workspace_rust_selectors(repo_root, ignore);
+    if let Ok(ids) = out.as_ref() {
+        super::workspace_selector_cache::store_rust_workspace_selectors(repo_root, ignore, ids);
+    }
     (out, started.elapsed())
 }
 
@@ -174,40 +317,19 @@ fn planned_all(
     workspace_files_fingerprint: Option<String>,
     gate: &kiss::GateConfig,
 ) -> PlannedSelectors {
-    let python_population_required = if py_sel.is_empty() {
-        false
-    } else if !crate::test_runner::python_coverage_index::python_coverage_index_file_present(
-        repo_root,
-    ) {
-        true
-    } else {
-        let fingerprint_started = std::time::Instant::now();
-        let current = crate::test_runner::python_coverage_index::python_population_manifest_is_current_for_args_with_env_keys(
-            repo_root,
-            &py_sel,
-            python_extra,
-            crate::test_runner::python_coverage_index::PYTHON_COVERAGE_ENV_KEYS,
-        );
-        crate::test_runner::emit_stage_time(
-            "python_source_fingerprint",
-            fingerprint_started.elapsed(),
-        );
-        !current
-    };
-    let rust_population_required = if rs_sel.is_empty() {
-        false
-    } else {
-        !rust_population_current_for_all_selectors(repo_root, &rs_sel, gate)
-    };
+    let cover_python = rs_sel.is_empty() || !py_sel.is_empty();
+    let (py_sel, python_population_required) =
+        plan_vcs::python_all_plan(repo_root, ignore, python_extra, py_sel, cover_python);
+    let rust_plan = rust_plan_selectors(repo_root, rs_sel, gate);
     PlannedSelectors {
         repo_root: repo_root.to_path_buf(),
         sel: crate::test_runner::language_keyed::LanguageKeyed {
             python: py_sel,
-            rust: rs_sel,
+            rust: rust_plan.planned,
         },
         population_required: crate::test_runner::language_keyed::LanguageKeyed {
             python: python_population_required,
-            rust: rust_population_required,
+            rust: rust_plan.population_required,
         },
         source_paths: crate::test_runner::language_keyed::LanguageKeyed {
             python: Vec::new(),

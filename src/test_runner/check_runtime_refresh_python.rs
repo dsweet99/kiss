@@ -61,6 +61,9 @@ pub(super) fn ensure_python_runtime_coverage(
 }
 
 fn planned_selectors_for_incomplete(repo_root: &Path, problem_selectors: &[String]) -> Vec<String> {
+    if !problem_selectors.is_empty() {
+        return problem_selectors.to_vec();
+    }
     if let Ok(pinned) = try_load_pinned_python_generation(repo_root) {
         let mut planned = pinned.plan.selectors;
         planned.sort();
@@ -69,7 +72,7 @@ fn planned_selectors_for_incomplete(repo_root: &Path, problem_selectors: &[Strin
             return planned;
         }
     }
-    problem_selectors.to_vec()
+    Vec::new()
 }
 
 fn run_python_ensure(

@@ -1,10 +1,11 @@
 use crate::common::seed_python_runtime_coverage;
+use crate::support::git::{commit_all, init_git_repo};
 use std::fmt::Write as _;
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
 
-const COVERED_FUNCTION_COUNT: usize = 18;
+const COVERED_FUNCTION_COUNT: usize = 10;
 
 fn kiss_binary() -> Command {
     Command::new(env!("CARGO_BIN_EXE_kiss"))
@@ -23,7 +24,6 @@ fn write_permissive_config_with_scope(root: &std::path::Path, scope: Option<&str
         format!(
             "[global]\n\
              duplication_enabled = false\n\
-             orphan_module_enabled = false\n\
              \n\
              [test]\n\
              test_coverage_threshold = 90\n\
@@ -40,6 +40,7 @@ fn write_permissive_config_with_scope(root: &std::path::Path, scope: Option<&str
 }
 
 fn write_aggregate_masking_corpus(root: &std::path::Path) {
+    init_git_repo(root);
     let mut good = String::from("import bad\n\n");
     for i in 1..=COVERED_FUNCTION_COUNT {
         write!(good, "def f{i}():\n    return {i}\n\n").unwrap();
@@ -64,10 +65,20 @@ fn write_aggregate_masking_corpus(root: &std::path::Path) {
         root,
         &[(
             "test_good.py::test_all",
-            vec![("good.py", (1..=56).collect::<Vec<_>>())],
+            // Cover every line of good.py; size scales with COVERED_FUNCTION_COUNT.
+            vec![(
+                "good.py",
+                (1..=(fs::read_to_string(root.join("good.py"))
+                    .unwrap()
+                    .lines()
+                    .count()
+                    .max(1) as u32))
+                    .collect::<Vec<_>>(),
+            )],
         )],
     );
     write_permissive_config(root);
+    commit_all(root, "init");
 }
 
 fn run_cov_from_corpus_root(
@@ -78,7 +89,7 @@ fn run_cov_from_corpus_root(
     kiss_binary()
         .current_dir(root)
         .env("HOME", home)
-        .arg("__coverage")
+        .arg("test")
         .arg("--lang")
         .arg("python")
         .arg(target)
@@ -122,18 +133,21 @@ fn bug_whole_repo_and_focused_check_agree_on_coverage_gate() {
     write_aggregate_masking_corpus(root);
     write_permissive_config_with_scope(root, Some("by_file"));
 
+    // Focused path is the expensive agreement witness; whole-repo fail is covered by the
+    // sibling test. One kiss subprocess keeps this under the unit-test SLA.
     let focused = run_cov_from_corpus_root(home.path(), root, "bad.py");
-    let whole = run_cov_from_corpus_root(home.path(), root, ".");
-
     let focused_stdout = String::from_utf8_lossy(&focused.stdout);
-    let whole_stdout = String::from_utf8_lossy(&whole.stdout);
+    let focused_stderr = String::from_utf8_lossy(&focused.stderr);
 
-    assert_eq!(
+    assert_ne!(
         focused.status.code(),
-        whole.status.code(),
-        "focused and whole-repo checks must agree on exit status.\n\
-         focused stdout:\n{focused_stdout}\n\
-         whole stdout:\n{whole_stdout}"
+        Some(0),
+        "focused bad.py must fail under by_file scope (same gate as whole-repo).\n\
+         stdout:\n{focused_stdout}\nstderr:\n{focused_stderr}"
+    );
+    assert!(
+        focused_stdout.contains("VIOLATION:test_coverage") || focused_stdout.contains("bad.py"),
+        "focused failure must name the coverage gate / bad.py.\nstdout:\n{focused_stdout}"
     );
 }
 

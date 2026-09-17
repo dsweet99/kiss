@@ -70,8 +70,8 @@ fn forkserver_configures_pytest_once_per_controller() {
     );
     assert_eq!(
         body.matches("sessionstart").count(),
-        2,
-        "expected two sessionstart, got:\n{body}"
+        1,
+        "same-module batch should sessionstart once, got:\n{body}"
     );
 }
 
@@ -85,16 +85,21 @@ fn forkserver_isolation_with_module_loaded_during_parent_configure() {
     )
     .unwrap();
     fs::write(
-        tmp.path().join("test_sample.py"),
+        tmp.path().join("test_mutate.py"),
         "import stateful\n\n\
-def test_mutate_global():\n    stateful.VALUE = 1\n    assert stateful.VALUE == 1\n\n\
+def test_mutate_global():\n    stateful.VALUE = 1\n    assert stateful.VALUE == 1\n",
+    )
+    .unwrap();
+    fs::write(
+        tmp.path().join("test_clean.py"),
+        "import stateful\n\n\
 def test_global_starts_clean():\n    assert stateful.VALUE == 0\n",
     )
     .unwrap();
     let outcomes = ForkserverPytestRunner::new().run_many_bounded(
         vec![
-            base_req(tmp.path(), "test_sample.py::test_mutate_global"),
-            base_req(tmp.path(), "test_sample.py::test_global_starts_clean"),
+            base_req(tmp.path(), "test_mutate.py::test_mutate_global"),
+            base_req(tmp.path(), "test_clean.py::test_global_starts_clean"),
         ],
         1,
     );

@@ -94,7 +94,6 @@ mod finalize_types_touch {
             rs_stats: None,
             rs: RustAnalysis {
                 graph: None,
-                ctx: kiss::ContextDependencyGraph::empty(),
                 dups: vec![],
             },
             py_graph: None,

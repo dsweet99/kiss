@@ -148,6 +148,7 @@ impl PytestRunner {
     }
 
     pub fn run_one(&self, req: PytestRunRequest) -> Result<PytestRunOutcome, PytestRunError> {
+        crate::rust_llvm_cov_runner::record_pytest_invocation();
         (self.run_one)(req)
     }
 
@@ -155,6 +156,9 @@ impl PytestRunner {
         &self,
         reqs: Vec<PytestRunRequest>,
     ) -> Vec<Result<PytestRunOutcome, PytestRunError>> {
+        if !reqs.is_empty() {
+            crate::rust_llvm_cov_runner::record_pytest_invocation();
+        }
         (self.run_many)(reqs)
     }
 
@@ -174,6 +178,9 @@ impl PytestRunner {
         max_jobs: usize,
         on_complete: &mut dyn FnMut(usize, PytestRunResult),
     ) {
+        if !reqs.is_empty() {
+            crate::rust_llvm_cov_runner::record_pytest_invocation();
+        }
         (self.run_many_bounded)(reqs, max_jobs, on_complete);
     }
 }

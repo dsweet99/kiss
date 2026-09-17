@@ -39,7 +39,8 @@ fn population_load_skips_entry_scan_when_reverse_bound() {
     store_batch_executor_selector(repo.path(), &req, "beta");
     let _ = seed_alpha_beta_reverse(&req);
     let tools = witness_batch_tools();
-    let identity = crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
+    let identity =
+        crate::rust_llvm_cov_runner::plan::batch_fingerprint::batch_identity(&req, &tools).unwrap();
     let entries = req.cache_root.join("entries");
     let mode = entries.metadata().unwrap().permissions().mode();
     fs::set_permissions(&entries, fs::Permissions::from_mode(0o000)).unwrap();

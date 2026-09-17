@@ -21,18 +21,91 @@ pub struct RustCoverageBatchIdentity {
     pub ordinary_source_digests: BTreeMap<String, String>,
 }
 
+thread_local! {
+    static IDENTITY_MEMO: std::cell::RefCell<IdentityMemo> =
+        const { std::cell::RefCell::new(IdentityMemo::new()) };
+}
+
+struct IdentityMemo {
+    enabled: bool,
+    value: Option<RustCoverageBatchIdentity>,
+    hash_count: usize,
+}
+
+impl IdentityMemo {
+    const fn new() -> Self {
+        Self {
+            enabled: false,
+            value: None,
+            hash_count: 0,
+        }
+    }
+}
+
+pub fn begin_identity_memo() {
+    IDENTITY_MEMO.with(|memo| {
+        let mut memo = memo.borrow_mut();
+        *memo = IdentityMemo {
+            enabled: true,
+            value: None,
+            hash_count: 0,
+        };
+    });
+}
+
+pub fn remember_identity_memo(identity: RustCoverageBatchIdentity) {
+    IDENTITY_MEMO.with(|memo| {
+        let mut memo = memo.borrow_mut();
+        if memo.enabled {
+            memo.value = Some(identity);
+        }
+    });
+}
+
+pub fn refresh_identity_memo() {
+    IDENTITY_MEMO.with(|memo| {
+        memo.borrow_mut().value = None;
+    });
+}
+
+pub fn identity_memo_is_populated() -> bool {
+    IDENTITY_MEMO.with(|memo| {
+        let memo = memo.borrow();
+        memo.enabled && memo.value.is_some()
+    })
+}
+
+#[cfg(test)]
+pub fn identity_memo_hash_count() -> usize {
+    IDENTITY_MEMO.with(|memo| memo.borrow().hash_count)
+}
+
 pub fn batch_identity(
     req: &RustCoverageBatchRequest,
     tools: &RustCoverageToolIdentity,
 ) -> io::Result<RustCoverageBatchIdentity> {
-    if let Some(cached) = crate::rust_llvm_cov_runner::plan::batch_identity_seal::try_identity_from_mtime_seal(
-        &req.cache_root,
-        &req.source_root,
-        req,
-        tools,
-    ) {
+    if let Some(cached) = IDENTITY_MEMO.with(|memo| {
+        let memo = memo.borrow();
+        (memo.enabled).then(|| memo.value.clone()).flatten()
+    }) {
         return Ok(cached);
     }
+    if let Some(sealed) =
+        crate::rust_llvm_cov_runner::plan::batch_identity_seal::try_identity_from_mtime_seal(
+            &req.cache_root,
+            &req.source_root,
+            req,
+            tools,
+        )
+    {
+        remember_identity_memo(sealed.clone());
+        return Ok(sealed);
+    }
+    IDENTITY_MEMO.with(|memo| {
+        if memo.borrow().enabled {
+            memo.borrow_mut().hash_count += 1;
+        }
+    });
     let snapshot = rust_input_snapshot(&req.source_root, req)
         .map_err(|err| io::Error::other(format!("{err:?}")))?;
     let generation_fingerprint = generation_fingerprint(
@@ -60,7 +133,70 @@ pub fn batch_identity(
         tools,
         &identity,
     );
+    IDENTITY_MEMO.with(|memo| {
+        let mut memo = memo.borrow_mut();
+        if memo.enabled {
+            memo.value = Some(identity.clone());
+        }
+    });
     Ok(identity)
+}
+
+#[cfg(test)]
+mod identity_memo_test {
+    use super::{
+        RustCoverageBatchIdentity, batch_identity, begin_identity_memo, identity_memo_hash_count,
+        refresh_identity_memo, remember_identity_memo,
+    };
+
+    #[test]
+    fn begin_identity_memo_hashes_once_across_repeats() {
+        begin_identity_memo();
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+        std::fs::write(tmp.path().join("Cargo.toml"), "[package]\n").unwrap();
+        std::fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
+        let mut req =
+            crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
+        req.source_root = tmp.path().to_path_buf();
+        req.cwd = tmp.path().to_path_buf();
+        req.cache_root = tmp.path().join(".kiss").join("rust_llvm_cov_cache");
+        let tools = crate::rust_llvm_cov_runner::test_support::witness_batch_tools();
+        let _ = batch_identity(&req, &tools).unwrap();
+        let _ = batch_identity(&req, &tools).unwrap();
+        assert_eq!(identity_memo_hash_count(), 1);
+    }
+
+    #[test]
+    fn refresh_identity_memo_drops_remembered_value() {
+        begin_identity_memo();
+        remember_identity_memo(RustCoverageBatchIdentity {
+            input_digest: "input".into(),
+            generation_fingerprint: "generation".into(),
+            selection_context_fingerprint: "selection".into(),
+            ordinary_source_digests: Default::default(),
+        });
+        assert!(super::identity_memo_is_populated());
+        refresh_identity_memo();
+        assert!(!super::identity_memo_is_populated());
+    }
+
+    #[test]
+    fn transferred_identity_avoids_hashing_on_receiving_thread() {
+        begin_identity_memo();
+        let identity = RustCoverageBatchIdentity {
+            input_digest: "input".into(),
+            generation_fingerprint: "generation".into(),
+            selection_context_fingerprint: "selection".into(),
+            ordinary_source_digests: Default::default(),
+        };
+        remember_identity_memo(identity.clone());
+        let req =
+            crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
+        let tools = crate::rust_llvm_cov_runner::test_support::witness_batch_tools();
+        assert_eq!(batch_identity(&req, &tools).unwrap(), identity);
+        assert_eq!(identity_memo_hash_count(), 0);
+    }
 }
 
 pub fn entry_fingerprint(
@@ -72,6 +208,23 @@ pub fn entry_fingerprint(
     let mut h = generation_hash(input_digest, req, tools, BATCH_EXECUTION_POLICY_VERSION);
     h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(h, selector.as_bytes());
     h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(h, &[0]);
+    h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(
+        h,
+        req.cache_policy.digest().as_bytes(),
+    );
+    h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(h, &[0]);
+    h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(
+        h,
+        req.cache_policy.effective_digest(selector).as_bytes(),
+    );
+    h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(h, &[0]);
+    for path in req.cache_policy.declared_paths(selector) {
+        h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(h, path.as_bytes());
+        h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(h, &[0]);
+        let bytes = std::fs::read(req.source_root.join(&path)).unwrap_or_default();
+        h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(h, &bytes);
+        h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(h, &[0]);
+    }
     format!("{h:016x}")
 }
 
@@ -105,10 +258,13 @@ fn generation_hash(
     tools: &RustCoverageToolIdentity,
     execution_policy: &str,
 ) -> u64 {
-    let mut h =
-        crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(0xcbf2_9ce4_8422_2325, b"batch-fingerprint-v1");
+    let mut h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(
+        0xcbf2_9ce4_8422_2325,
+        b"batch-fingerprint-v1",
+    );
     for part in [
         CACHE_SCHEMA_VERSION.as_bytes(),
+        crate::rust_llvm_cov_runner::CACHE_POLICY_SCHEMA_VERSION.as_bytes(),
         source_digest.as_bytes(),
         execution_policy.as_bytes(),
         req.runner_map_fingerprint.as_bytes(),
@@ -122,11 +278,22 @@ fn generation_hash(
         h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(h, part);
         h = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_fnv1a64(h, &[0]);
     }
-    h = hash_env(&mut h, &req.env);
+    let mut env =
+        crate::rust_llvm_cov_runner::plan::batch_plan::effective_coverage_identity_environment(req);
+    env.remove("PATH");
+    h = hash_env(&mut h, &env);
+    h = hash_env(
+        &mut h,
+        &crate::rust_llvm_cov_runner::plan::batch_plan_env::resolved_identity_tools(
+            &req.env, &req.cwd,
+        ),
+    );
     h = hash_string_list(&mut h, &req.cargo_args);
     hash_string_list(
         &mut h,
-        &crate::rust_llvm_cov_runner::plan::batch_plan_test_args::identity_relevant_test_args(&req.test_args),
+        &crate::rust_llvm_cov_runner::plan::batch_plan_test_args::identity_relevant_test_args(
+            &req.test_args,
+        ),
     )
 }
 
@@ -151,277 +318,5 @@ fn hash_string_list(h: &mut u64, values: &[String]) -> u64 {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest;
-    use crate::rust_llvm_cov_runner::test_support::witness_batch_tools;
-    use std::fs;
-
-    fn tools() -> RustCoverageToolIdentity {
-        witness_batch_tools()
-    }
-
-    fn request() -> RustCoverageBatchRequest {
-        RustCoverageBatchRequest::witness()
-    }
-
-    #[test]
-    fn entry_fingerprints_differ_by_selector_but_share_generation() {
-        let tmp = tempfile::tempdir().unwrap();
-        fs::create_dir_all(tmp.path().join("src")).unwrap();
-        fs::write(tmp.path().join("Cargo.toml"), "[package]\n").unwrap();
-        fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
-
-        let mut req = request();
-        req.source_root = tmp.path().to_path_buf();
-        req.cwd = tmp.path().to_path_buf();
-        let identity = batch_identity(&req, &tools()).unwrap();
-        let alpha = entry_fingerprint(&identity.input_digest, &req, &tools(), "alpha");
-        let beta = entry_fingerprint(&identity.input_digest, &req, &tools(), "beta");
-        assert_ne!(alpha, beta);
-        assert_eq!(
-            identity.generation_fingerprint,
-            generation_fingerprint(
-                &identity.input_digest,
-                &req,
-                &tools(),
-                BATCH_EXECUTION_POLICY_VERSION
-            )
-        );
-    }
-
-    #[test]
-    fn generation_fingerprint_excludes_selector() {
-        let tmp = tempfile::tempdir().unwrap();
-        fs::create_dir_all(tmp.path().join("src")).unwrap();
-        fs::write(tmp.path().join("Cargo.toml"), "[package]\n").unwrap();
-        fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
-
-        let mut req_a = request();
-        req_a.source_root = tmp.path().to_path_buf();
-        req_a.cwd = tmp.path().to_path_buf();
-        let mut req_b = req_a.clone();
-        req_b.logical_selectors = vec!["other".to_string()];
-        let id_a = batch_identity(&req_a, &tools()).unwrap();
-        let id_b = batch_identity(&req_b, &tools()).unwrap();
-        assert_eq!(id_a.generation_fingerprint, id_b.generation_fingerprint);
-    }
-
-    #[test]
-    fn generation_fingerprint_tracks_env_and_tool_identity_fields() {
-        let tmp = tempfile::tempdir().unwrap();
-        fs::create_dir_all(tmp.path().join("src")).unwrap();
-        fs::write(tmp.path().join("Cargo.toml"), "[package]\n").unwrap();
-        fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
-
-        let mut req = request();
-        req.source_root = tmp.path().to_path_buf();
-        req.cwd = tmp.path().to_path_buf();
-        req.env.insert("K".to_string(), "V".to_string());
-        let with_env = batch_identity(&req, &tools()).unwrap();
-        req.env.clear();
-        let without_env = batch_identity(&req, &tools()).unwrap();
-        assert_ne!(
-            with_env.generation_fingerprint,
-            without_env.generation_fingerprint
-        );
-
-        let tools_a = tools();
-        let mut tools_b = tools();
-        tools_b.cargo_nextest_version = "cargo-nextest 0.10".to_string();
-        let id_a = batch_identity(&req, &tools_a).unwrap();
-        let id_b = batch_identity(&req, &tools_b).unwrap();
-        assert_ne!(id_a.generation_fingerprint, id_b.generation_fingerprint);
-        assert_eq!(tools_a.cargo_nextest_version, "cargo-nextest 0.9");
-    }
-
-    #[test]
-    fn ordinary_source_edit_changes_generation_but_not_selection_context() {
-        let tmp = tempfile::tempdir().unwrap();
-        fs::create_dir_all(tmp.path().join("src")).unwrap();
-        fs::write(
-            tmp.path().join("Cargo.toml"),
-            "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
-        )
-        .unwrap();
-        fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
-
-        let mut req = request();
-        req.source_root = tmp.path().to_path_buf();
-        req.cwd = tmp.path().to_path_buf();
-        req.cargo_args.clear();
-        let _ = crate::rust_llvm_cov_runner::plan::cargo_workspace_metadata::workspace_metadata_from_cargo(
-            &req.cwd,
-            &req.cargo,
-            &req.cargo_args,
-        );
-        let before = batch_identity(&req, &tools()).unwrap();
-        fs::write(tmp.path().join("src").join("lib.rs"), "pub fn y() {}\n").unwrap();
-        let after = batch_identity(&req, &tools()).unwrap();
-        assert_ne!(before.input_digest, after.input_digest);
-        assert_ne!(before.generation_fingerprint, after.generation_fingerprint);
-        assert_eq!(before.ordinary_source_digests.len(), 1);
-        assert_eq!(after.ordinary_source_digests.len(), 1);
-        assert_ne!(
-            before.ordinary_source_digests.get("src/lib.rs"),
-            after.ordinary_source_digests.get("src/lib.rs")
-        );
-        assert_eq!(
-            before.selection_context_fingerprint,
-            after.selection_context_fingerprint
-        );
-    }
-
-    #[test]
-    fn ordinary_test_file_edit_changes_generation_but_not_selection_context() {
-        let tmp = tempfile::tempdir().unwrap();
-        fs::create_dir_all(tmp.path().join("src")).unwrap();
-        fs::create_dir_all(tmp.path().join("tests")).unwrap();
-        fs::write(
-            tmp.path().join("Cargo.toml"),
-            "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
-        )
-        .unwrap();
-        fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
-        fs::write(
-            tmp.path().join("tests").join("integration.rs"),
-            "#[test] fn passes() { assert!(true); }\n",
-        )
-        .unwrap();
-
-        let mut req = request();
-        req.source_root = tmp.path().to_path_buf();
-        req.cwd = tmp.path().to_path_buf();
-        req.cargo_args.clear();
-        let _ = crate::rust_llvm_cov_runner::plan::cargo_workspace_metadata::workspace_metadata_from_cargo(
-            &req.cwd,
-            &req.cargo,
-            &req.cargo_args,
-        );
-        let before = batch_identity(&req, &tools()).unwrap();
-        fs::write(
-            tmp.path().join("tests").join("integration.rs"),
-            "#[test] fn passes() { assert!(true); assert!(true); }\n",
-        )
-        .unwrap();
-        let after = batch_identity(&req, &tools()).unwrap();
-        assert_ne!(before.input_digest, after.input_digest);
-        assert_ne!(before.generation_fingerprint, after.generation_fingerprint);
-        assert_eq!(
-            before.selection_context_fingerprint,
-            after.selection_context_fingerprint
-        );
-    }
-
-    #[test]
-    fn cargo_manifest_edit_changes_selection_context_fingerprint() {
-        let tmp = tempfile::tempdir().unwrap();
-        fs::create_dir_all(tmp.path().join("src")).unwrap();
-        fs::write(
-            tmp.path().join("Cargo.toml"),
-            "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
-        )
-        .unwrap();
-        fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
-
-        let mut req = request();
-        req.source_root = tmp.path().to_path_buf();
-        req.cwd = tmp.path().to_path_buf();
-        req.cargo_args.clear();
-        let before = batch_identity(&req, &tools()).unwrap();
-        fs::write(
-            tmp.path().join("Cargo.toml"),
-            "[package]\nname='demo'\nversion='0.1.1'\nedition='2024'\n",
-        )
-        .unwrap();
-        let after = batch_identity(&req, &tools()).unwrap();
-        assert_ne!(
-            before.selection_context_fingerprint,
-            after.selection_context_fingerprint
-        );
-    }
-
-    #[test]
-    fn allowlisted_env_change_changes_selection_context_fingerprint() {
-        let tmp = tempfile::tempdir().unwrap();
-        fs::create_dir_all(tmp.path().join("src")).unwrap();
-        fs::write(
-            tmp.path().join("Cargo.toml"),
-            "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
-        )
-        .unwrap();
-        fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
-
-        let mut req = request();
-        req.source_root = tmp.path().to_path_buf();
-        req.cwd = tmp.path().to_path_buf();
-        req.env
-            .insert("BUILD_SCRIPT_INPUT".to_string(), "alpha".to_string());
-        let before = batch_identity(&req, &tools()).unwrap();
-        req.env
-            .insert("BUILD_SCRIPT_INPUT".to_string(), "beta".to_string());
-        let after = batch_identity(&req, &tools()).unwrap();
-        assert_ne!(
-            before.selection_context_fingerprint,
-            after.selection_context_fingerprint
-        );
-    }
-
-    #[test]
-    fn build_script_rs_edit_changes_selection_context_fingerprint() {
-        let tmp = tempfile::tempdir().unwrap();
-        fs::create_dir_all(tmp.path().join("src")).unwrap();
-        fs::write(
-            tmp.path().join("Cargo.toml"),
-            "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\nbuild='build.rs'\n",
-        )
-        .unwrap();
-        fs::write(
-            tmp.path().join("build.rs"),
-            "fn main() { println!(\"cargo:rerun-if-env-changed=BUILD_SCRIPT_INPUT\"); }\n",
-        )
-        .unwrap();
-        fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
-
-        let mut req = request();
-        req.source_root = tmp.path().to_path_buf();
-        req.cwd = tmp.path().to_path_buf();
-        req.cargo_args.clear();
-        let _ = crate::rust_llvm_cov_runner::plan::cargo_workspace_metadata::workspace_metadata_from_cargo(
-            &req.cwd,
-            &req.cargo,
-            &req.cargo_args,
-        );
-        let before = batch_identity(&req, &tools()).unwrap();
-        fs::write(
-            tmp.path().join("build.rs"),
-            "fn main() { println!(\"cargo:rerun-if-changed=build.rs\"); }\n",
-        )
-        .unwrap();
-        let after = batch_identity(&req, &tools()).unwrap();
-        assert_ne!(
-            before.selection_context_fingerprint,
-            after.selection_context_fingerprint
-        );
-        assert_ne!(before.input_digest, after.input_digest);
-    }
-
-    #[test]
-    fn identity_structs_expose_all_tool_and_batch_fields() {
-        let tools = RustCoverageToolIdentity {
-            cargo_version: "cargo".to_string(),
-            llvm_cov_version: "llvm-cov".to_string(),
-            rustc_version: "rustc".to_string(),
-            cargo_nextest_version: "nextest".to_string(),
-        };
-        let identity = RustCoverageBatchIdentity {
-            input_digest: "abc".to_string(),
-            generation_fingerprint: "def".to_string(),
-            selection_context_fingerprint: "ghi".to_string(),
-            ordinary_source_digests: BTreeMap::new(),
-        };
-        assert_eq!(tools.rustc_version, "rustc");
-        assert_eq!(identity.input_digest, "abc");
-        assert_eq!(identity.selection_context_fingerprint, "ghi");
-    }
-}
+#[path = "batch_fingerprint_test.rs"]
+mod tests;

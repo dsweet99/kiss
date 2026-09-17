@@ -13,7 +13,6 @@ fn write_gate_config(root: &std::path::Path, enabled: bool) {
         format!(
             "[global]\n\
              duplication_enabled = false\n\
-             orphan_module_enabled = false\n\
              comment_removal_enabled = {enabled}\n\
              \n\
              [test]\n\
@@ -52,6 +51,32 @@ fn check_flags_python_comment_not_docstring_when_enabled() {
     assert!(
         !out.status.success(),
         "comment violation should fail check; stdout:\n{stdout}"
+    );
+}
+
+#[test]
+fn check_accepts_python_shebang_when_comment_removal_enabled() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+    fs::write(
+        root.join("app.py"),
+        "#!/usr/bin/env python3\ndef foo():\n    return 1\n",
+    )
+    .unwrap();
+    seed_python_runtime_coverage(root, &[("tests/test_app.py::test_app", vec![])]);
+    write_gate_config(root, true);
+    let out = kiss_binary()
+        .current_dir(root)
+        .arg("check")
+        .arg("--lang")
+        .arg("python")
+        .arg(".")
+        .output()
+        .expect("kiss check should run");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !stdout.contains("VIOLATION:comment:"),
+        "shebang must not be a comment violation; stdout:\n{stdout}"
     );
 }
 
@@ -124,6 +149,7 @@ fn library_collects_comments_and_emits_config_flag() {
             py_graph: kiss::GraphKeyMaxima::default(),
             rs_graph: kiss::GraphKeyMaxima::default(),
             gate: &gate,
+            ignore: &[],
         },
     );
     assert!(toml.contains("comment_removal_enabled = true"));

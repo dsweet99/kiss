@@ -1,7 +1,7 @@
 use super::*;
+use crate::rpytest_runner::TestStatus;
 use crate::rust_llvm_cov_runner::rust_cov_cache::store_rust_cov_cache_entry;
 use crate::rust_llvm_cov_runner::{RustCovCacheStatus, RustLlvmCovOutcome};
-use crate::rpytest_runner::TestStatus;
 use std::time::Duration;
 
 #[test]
@@ -25,6 +25,11 @@ fn load_manifest_generation_entries_ignores_non_json_and_stale_entries() {
         &cache,
         "alpha",
         entry("alpha", "generation", TestStatus::Passed, "src/lib.rs", 1),
+    );
+    store_entry(
+        &cache,
+        "extra",
+        entry("gamma", "generation", TestStatus::Passed, "src/lib.rs", 7),
     );
 
     let entries =

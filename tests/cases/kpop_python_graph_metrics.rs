@@ -45,7 +45,7 @@ fn bug_indirect_dependencies_violation_should_include_entry_modules() {
         indirect_dependencies: 0,
         ..Config::python_defaults()
     };
-    let violations = analyze_graph(&g, &config, false);
+    let violations = analyze_graph(&g, &config);
 
     assert!(
         violations

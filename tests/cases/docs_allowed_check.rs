@@ -13,7 +13,6 @@ fn write_docs_config(root: &std::path::Path, docs_allowed: &str) {
         format!(
             "[global]\n\
              duplication_enabled = false\n\
-             orphan_module_enabled = false\n\
              comment_removal_enabled = false\n\
              docs_allowed = {docs_allowed}\n\
              \n\
@@ -136,6 +135,7 @@ fn library_emits_docs_allowed_in_generated_config() {
             py_graph: kiss::GraphKeyMaxima::default(),
             rs_graph: kiss::GraphKeyMaxima::default(),
             gate: &gate,
+            ignore: &[],
         },
     );
     assert!(toml.contains("docs_allowed = [\"docs\"]"), "toml:\n{toml}");

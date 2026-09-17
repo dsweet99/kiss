@@ -64,6 +64,8 @@ struct LoadedDurations {
 fn load_memoized(repo_root: &Path) -> Option<LoadedDurations> {
     let cache_root = python_coverage_cache_root(repo_root).ok()?;
     let pointer = read_pointer(&cache_root)?;
+    let gen_dir = generation_dir(&cache_root, &pointer.generation_id);
+    let _ = read_plan_selectors(&gen_dir)?;
     if let Ok(guard) = DURATIONS_MEMO.lock()
         && let Some(entry) = guard.as_ref()
         && entry.generation_id == pointer.generation_id
@@ -74,7 +76,6 @@ fn load_memoized(repo_root: &Path) -> Option<LoadedDurations> {
             path_maxes: entry.path_maxes.clone(),
         });
     }
-    let gen_dir = generation_dir(&cache_root, &pointer.generation_id);
     let mut file = read_durations_file(&gen_dir)?;
     let selectors = read_plan_selectors(&gen_dir)?;
     if file.durations_ns.len() != selectors.len() {
@@ -118,6 +119,8 @@ pub(crate) fn try_load_generation_path_maxes_only(
 ) -> Option<Vec<PathMaxDuration>> {
     let cache_root = python_coverage_cache_root(repo_root).ok()?;
     let pointer = read_pointer(&cache_root)?;
+    let gen_dir = generation_dir(&cache_root, &pointer.generation_id);
+    let _ = read_plan_selectors(&gen_dir)?;
     if let Ok(guard) = DURATIONS_MEMO.lock()
         && let Some(entry) = guard.as_ref()
         && entry.generation_id == pointer.generation_id
@@ -131,7 +134,6 @@ pub(crate) fn try_load_generation_path_maxes_only(
     {
         return Some(entry.path_maxes.clone());
     }
-    let gen_dir = generation_dir(&cache_root, &pointer.generation_id);
     let file = read_durations_file(&gen_dir)?;
     if !file.path_maxes.is_empty() {
         if let Ok(mut guard) = PATH_MAXES_MEMO.lock() {
@@ -180,6 +182,7 @@ fn read_durations_file(gen_dir: &Path) -> Option<GenerationDurationsFile> {
 
 #[derive(Deserialize)]
 struct ManifestSelectorsOnly {
+    complete: bool,
     plan: PlanSelectorsOnly,
 }
 
@@ -191,7 +194,7 @@ struct PlanSelectorsOnly {
 fn read_plan_selectors(gen_dir: &Path) -> Option<Vec<String>> {
     let bytes = fs::read(gen_dir.join("manifest.json")).ok()?;
     let manifest: ManifestSelectorsOnly = serde_json::from_slice(&bytes).ok()?;
-    Some(manifest.plan.selectors)
+    manifest.complete.then_some(manifest.plan.selectors)
 }
 
 #[cfg(test)]

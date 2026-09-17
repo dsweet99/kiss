@@ -49,7 +49,7 @@ def format_cheat_report(metrics: CheatMetrics) -> str:
 
 
 def build_cheat_prompt(kiss_root: Path, repo_dir: Path, lang: str) -> str:
-    adversarial_py = (kiss_root / "python" / "adversarial_cli.py").resolve()
+    adversarial_py = (kiss_root / "ops" / "adversarial.py").resolve()
     lang_instruction = {
         "rust": (
             "Rust only (include `Cargo.toml`, tests runnable via "
@@ -73,7 +73,7 @@ Use this directory exactly; do not relocate the repo.
 ## Goal
 
 Write unit tests and cache state that **satisfy kiss's cached runtime coverage**
-(`kiss __coverage --all` exits 0 with no `test_coverage` gate failures) but **do not**
+(`kiss test --coverage-all` exits 0 with no `test_coverage` gate failures) but **do not**
 satisfy independently collected runtime line coverage (`slipcover` for Python,
 `cargo llvm-cov` for Rust): source files should report low line coverage even
 though kiss treats them as fully covered from its cached coverage view.
@@ -90,7 +90,7 @@ From the kiss repo root ({kiss_root.resolve()}), repeatedly run:
 
 Revise the generated repo until **both** hold:
 
-- `kiss __coverage --all` passes (exit code 0, no test_coverage violations)
+- `kiss test --coverage-all` passes (exit code 0, no test_coverage violations)
 - at least one non-test source file has kiss coverage 100% but runtime line coverage
   below {TRUE_COVERAGE_CEILING:.0f}%
 
@@ -102,7 +102,7 @@ met. Print the final cheat-verify output when done.
 
 
 def run_kiss_check(repo: Path) -> tuple[int, str]:
-    cmd = ["kiss", "__coverage", "--all", str(repo.resolve())]
+    cmd = ["kiss", "test", "--coverage-all", str(repo.resolve())]
     result = subprocess.run(cmd, capture_output=True, text=True, check=False)
     combined = result.stdout
     if result.stderr:
@@ -120,7 +120,7 @@ def _coverage_maps_subprocess_env() -> dict[str, str]:
 def _load_coverage_maps(repo: Path) -> tuple[dict[str, float], dict[str, float]]:
     import json
 
-    script = Path(__file__).resolve().parent / "coverage_maps_cli.py"
+    script = repo_root() / "ops" / "coverage_maps.py"
     cmd = [sys.executable, str(script), str(repo.resolve())]
     result = subprocess.run(
         cmd,

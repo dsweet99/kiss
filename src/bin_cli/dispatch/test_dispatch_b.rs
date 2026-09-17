@@ -49,26 +49,6 @@ fn public_dispatch_routes_analyze_and_tool_groups() {
         ),
         2
     );
-    assert_ne!(
-        dispatch(
-            Cli {
-                config: None,
-                lang: Some(kiss::Language::Python),
-                command: Commands::Coverage {
-                    paths: vec![".".to_string()],
-                    all: false,
-                    ignore: vec![],
-                    timing: false,
-                    jobs: None,
-                },
-            },
-            &py,
-            &rs,
-            &gate,
-            &test,
-        ),
-        2
-    );
     assert_eq!(
         dispatch(
             Cli {
@@ -105,28 +85,6 @@ fn public_dispatch_routes_analyze_and_tool_groups() {
         ),
         2
     );
-    assert_ne!(
-        dispatch(
-            Cli {
-                config: None,
-                lang: Some(kiss::Language::Python),
-                command: Commands::Mv {
-                    query: "sample.py::value".to_string(),
-                    new_name: "new_value".to_string(),
-                    paths: vec![".".to_string()],
-                    to: None,
-                    dry_run: true,
-                    json: false,
-                    ignore: vec![],
-                },
-            },
-            &py,
-            &rs,
-            &gate,
-            &test,
-        ),
-        2
-    );
     assert_eq!(
         dispatch(
             Cli {
@@ -137,8 +95,7 @@ fn public_dispatch_routes_analyze_and_tool_groups() {
                     main_branch: None,
                     base_branch: None,
                     dry_run: true,
-                    force: false,
-                    force_bad: false,
+                    retry_bad: false,
                     metrics: false,
                     coverage_all: false,
                     watch: false,
@@ -182,8 +139,7 @@ fn dispatch_test_command_routes_valid_test_mode() {
             main_branch: None,
             base_branch: None,
             dry_run: true,
-            force: false,
-            force_bad: false,
+            retry_bad: false,
             metrics: false,
             coverage_all: false,
             watch: false,
@@ -223,8 +179,7 @@ fn dispatch_test_command_rejects_removed_validate_selection() {
             main_branch: None,
             base_branch: None,
             dry_run: true,
-            force: false,
-            force_bad: false,
+            retry_bad: false,
             metrics: false,
             coverage_all: false,
             watch: false,

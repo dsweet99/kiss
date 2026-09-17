@@ -1,10 +1,10 @@
+use crate::rpytest_runner::TestStatus;
 use crate::rust_llvm_cov_runner::publish_derived::batch_reverse_build::REVERSE_LINE_INDEX_SCHEMA;
 use crate::rust_llvm_cov_runner::publish_derived::batch_reverse_publish::snapshot_path;
 use crate::rust_llvm_cov_runner::publish_derived::batch_reverse_test_support::{
     publish_bound_reverse, write_passed_entry, write_population_with_reverse,
 };
 use crate::rust_llvm_cov_runner::rust_cov_cache::{RustCovCacheEntry, repo_relative_coverage_file};
-use crate::rpytest_runner::TestStatus;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
@@ -51,7 +51,8 @@ fn assert_reverse_matches_forward_oracle(
     generation: &str,
     wanted: &BTreeMap<String, BTreeSet<u32>>,
 ) {
-    let reverse = crate::rust_llvm_cov_runner::query_reverse_line_index(cache, generation, wanted).unwrap();
+    let reverse =
+        crate::rust_llvm_cov_runner::query_reverse_line_index(cache, generation, wanted).unwrap();
     let oracle = forward_oracle_selectors(cache, source, generation, wanted);
     assert_eq!(reverse, oracle, "reverse must equal forward-entry oracle");
 }
@@ -137,7 +138,8 @@ fn reverse_index_answers_disjoint_line_requests() {
 
     let wanted = BTreeMap::from([("src/lib.rs".into(), BTreeSet::from([1_u32, 2_u32]))]);
     assert_reverse_matches_forward_oracle(&cache, &source, "gen1", &wanted);
-    let hit = crate::rust_llvm_cov_runner::query_reverse_line_index(&cache, "gen1", &wanted).unwrap();
+    let hit =
+        crate::rust_llvm_cov_runner::query_reverse_line_index(&cache, "gen1", &wanted).unwrap();
     assert_eq!(
         hit.get("src/lib.rs").unwrap(),
         &BTreeSet::from(["test_a".to_string(), "test_b".to_string()])

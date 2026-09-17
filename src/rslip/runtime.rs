@@ -46,6 +46,26 @@ def _write():
     os.replace(tmp, _out_path)
 
 
+def reset_coverage(out_path=None):
+    global _out_path, _files
+    if out_path is not None:
+        _out_path = out_path
+    _files = {}
+    try:
+        sys.monitoring.restart_events()
+    except Exception:
+        pass
+
+
+def snapshot_coverage():
+    return {path: set(lines) for path, lines in _files.items()}
+
+
+def merge_coverage(files):
+    for path, lines in files.items():
+        _files.setdefault(path, set()).update(lines)
+
+
 sys.monitoring.use_tool_id(_tool_id, "rslip")
 sys.monitoring.register_callback(_tool_id, _events, _line_callback)
 sys.monitoring.set_events(_tool_id, _events)
@@ -61,5 +81,8 @@ mod tests {
         assert!(PYTHON_RUNTIME.contains("sys.monitoring.set_events"));
         assert!(PYTHON_RUNTIME.contains("sys.monitoring.DISABLE"));
         assert!(PYTHON_RUNTIME.contains("filename.startswith(\"<\")"));
+        assert!(PYTHON_RUNTIME.contains("def reset_coverage"));
+        assert!(PYTHON_RUNTIME.contains("def snapshot_coverage"));
+        assert!(PYTHON_RUNTIME.contains("def merge_coverage"));
     }
 }

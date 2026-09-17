@@ -9,7 +9,14 @@ static WARM_MEMO: Mutex<Option<WarmMemoEntry>> = Mutex::new(None);
 
 struct WarmMemoEntry {
     cache_root: PathBuf,
+    pointer_marker: Option<String>,
     result: Result<PinnedPythonGeneration, GenerationLoadError>,
+}
+
+fn pointer_marker(cache_root: &Path) -> Option<String> {
+    std::fs::read(super::paths::pointer_path(cache_root))
+        .ok()
+        .map(|bytes| super::paths::sha256_hex(&bytes))
 }
 
 pub(crate) fn clear_python_generation_warm_memo() {
@@ -24,9 +31,11 @@ pub(crate) fn try_load_pinned_python_generation_warm_memoized(
     repo_root: &Path,
 ) -> Result<PinnedPythonGeneration, GenerationLoadError> {
     let cache_root = python_coverage_cache_root(repo_root).map_err(GenerationLoadError::Corrupt)?;
+    let current_pointer = pointer_marker(&cache_root);
     if let Ok(guard) = WARM_MEMO.lock()
         && let Some(entry) = guard.as_ref()
         && entry.cache_root == cache_root
+        && entry.pointer_marker == current_pointer
     {
         return entry.result.clone();
     }
@@ -37,6 +46,7 @@ pub(crate) fn try_load_pinned_python_generation_warm_memoized(
     };
     if let Ok(mut guard) = WARM_MEMO.lock() {
         *guard = Some(WarmMemoEntry {
+            pointer_marker: pointer_marker(&cache_root),
             cache_root,
             result: loaded.clone(),
         });

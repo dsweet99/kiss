@@ -1,13 +1,23 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::process::{Command, Stdio};
 
+use rayon::prelude::*;
+
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_events::selector_matches_test;
-use crate::rust_llvm_cov_runner::execute_or_reuse::batch_executor_finish::{digest_test_binary, test_binary_id_for_path};
+use crate::rust_llvm_cov_runner::execute_or_reuse::batch_executor_finish::{
+    digest_test_binary, test_binary_id_for_path,
+};
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_result::RustCoverageBatchCounters;
-use crate::rust_llvm_cov_runner::execute_or_reuse::batch_run::{self, CurrentRunCleanup, FreshBatchRunScope};
+use crate::rust_llvm_cov_runner::execute_or_reuse::batch_run::{
+    self, CurrentRunCleanup, FreshBatchRunScope,
+};
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim::load_target_runner_list_metadata;
-use crate::rust_llvm_cov_runner::plan::batch_fingerprint::{RustCoverageBatchIdentity, RustCoverageToolIdentity};
-use crate::rust_llvm_cov_runner::plan::batch_plan::{RustCoverageBatchPlan, RustCoverageBatchRequest};
+use crate::rust_llvm_cov_runner::plan::batch_fingerprint::{
+    RustCoverageBatchIdentity, RustCoverageToolIdentity,
+};
+use crate::rust_llvm_cov_runner::plan::batch_plan::{
+    RustCoverageBatchPlan, RustCoverageBatchRequest,
+};
 use crate::rust_llvm_cov_runner::{RustLlvmCovError, RustTestBinaryIdentity};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -17,12 +27,27 @@ pub struct RustTestExecutableIndex {
     pub counters: RustCoverageBatchCounters,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RustListedTest {
+    pub executable: String,
+    pub logical_name: String,
+}
+
 pub fn build_rust_test_executable_index(
+    req: &RustCoverageBatchRequest,
+    tools: &RustCoverageToolIdentity,
+    identity: &RustCoverageBatchIdentity,
+    plan: &RustCoverageBatchPlan,
+) -> Result<RustTestExecutableIndex, RustLlvmCovError> {
+    build_rust_test_executable_index_with_tests(req, tools, identity, plan).map(|(index, _)| index)
+}
+
+pub fn build_rust_test_executable_index_with_tests(
     req: &RustCoverageBatchRequest,
     tools: &RustCoverageToolIdentity,
     _identity: &RustCoverageBatchIdentity,
     plan: &RustCoverageBatchPlan,
-) -> Result<RustTestExecutableIndex, RustLlvmCovError> {
+) -> Result<(RustTestExecutableIndex, Vec<RustListedTest>), RustLlvmCovError> {
     crate::rust_llvm_cov_runner::plan::batch_platform::ensure_batch_platform_supported()?;
     let scope =
         FreshBatchRunScope::begin_with_layout(&req.cache_root, plan, CurrentRunCleanup::default())
@@ -33,8 +58,17 @@ pub fn build_rust_test_executable_index(
             &plan.runner_map_path,
             &req.delegated_runners,
         )?;
-        crate::rust_llvm_cov_runner::plan::batch_plan_publish::publish_generated_nextest_config(plan, req)?;
+        crate::rust_llvm_cov_runner::plan::batch_plan_publish::publish_generated_nextest_config(
+            plan, req,
+        )?;
         let mut list_plan = plan.clone();
+        if build_identity.reused_existing_target
+            && batch_run::instrumented_depot_likely_fresh(&req.source_root, &plan.build_target)
+        {
+            crate::rust_llvm_cov_runner::plan::batch_plan::rewrite_plan_argv_skip_llvm_cov_wrapper(
+                &mut list_plan,
+            );
+        }
         select_no_tests(&mut list_plan);
         let run = batch_run::default_batch_subprocess_runner()
             .run(&req.cwd, &list_plan)
@@ -46,23 +80,26 @@ pub fn build_rust_test_executable_index(
                 String::from_utf8_lossy(&run.stderr)
             )));
         }
-        let build_target_baseline_bytes = batch_run::publish_successful_build_identity(
+        let build_target_baseline_bytes = batch_run::update_build_target_baseline(
             req,
             tools,
             plan,
             build_identity.previous_baseline_bytes,
         )?;
-        let index = executable_index_from_list_metadata(req, plan)?;
-        Ok(RustTestExecutableIndex {
-            selector_binary_ids: index.selector_binary_ids,
-            test_binaries: index.test_binaries,
-            counters: RustCoverageBatchCounters {
-                build_invocations: 1,
-                build_target_baseline_bytes,
-                process_residual_count: run.process_residual_count,
-                ..Default::default()
+        let (index, listed_tests) = executable_index_and_listed_tests(req, plan)?;
+        Ok((
+            RustTestExecutableIndex {
+                selector_binary_ids: index.selector_binary_ids,
+                test_binaries: index.test_binaries,
+                counters: RustCoverageBatchCounters {
+                    build_invocations: 1,
+                    build_target_baseline_bytes,
+                    process_residual_count: run.process_residual_count,
+                    ..Default::default()
+                },
             },
-        })
+            listed_tests,
+        ))
     })();
     match outcome {
         Ok(index) => scope.finish(Ok(index)),
@@ -78,10 +115,18 @@ fn select_no_tests(plan: &mut RustCoverageBatchPlan) {
     plan.argv.push(String::new());
 }
 
+#[cfg(test)]
 fn executable_index_from_list_metadata(
     req: &RustCoverageBatchRequest,
     plan: &RustCoverageBatchPlan,
 ) -> Result<RustTestExecutableIndex, RustLlvmCovError> {
+    executable_index_and_listed_tests(req, plan).map(|(index, _)| index)
+}
+
+fn executable_index_and_listed_tests(
+    req: &RustCoverageBatchRequest,
+    plan: &RustCoverageBatchPlan,
+) -> Result<(RustTestExecutableIndex, Vec<RustListedTest>), RustLlvmCovError> {
     let exact = req.test_args.iter().any(|arg| arg == "--exact");
     let list_metadata = load_target_runner_list_metadata(&plan.target_runner_output_dir)
         .map_err(RustLlvmCovError::Io)?;
@@ -90,58 +135,152 @@ fn executable_index_from_list_metadata(
             "no Rust test executable metadata produced by nextest list phase".into(),
         ));
     }
-    let kiss_profraw = crate::rust_llvm_cov_runner::kiss_profraw::kiss_profraw_dir(&req.source_root);
+    let kiss_profraw =
+        crate::rust_llvm_cov_runner::kiss_profraw::kiss_profraw_dir(&req.source_root);
+    let resolved: Result<Vec<_>, RustLlvmCovError> = list_metadata
+        .into_par_iter()
+        .map(|item| resolve_listed_executable(req, exact, &kiss_profraw, item))
+        .collect();
+    let resolved = resolved?;
     let mut binary_by_id = BTreeMap::new();
     let mut selector_binary_ids = BTreeMap::<String, BTreeSet<String>>::new();
-    for item in list_metadata {
-        let executable = item
-            .argv
-            .first()
-            .ok_or_else(|| RustLlvmCovError::InvalidRequest("missing list executable".into()))?;
-        let path = std::path::Path::new(executable);
-        let id = test_binary_id_for_path(path);
-        let digest = digest_test_binary(path)?;
-        binary_by_id.insert(
-            id.clone(),
-            RustTestBinaryIdentity {
-                id: id.clone(),
-                executable: executable.clone(),
-                digest,
-            },
-        );
-        let test_names = list_test_names_from_executable(path, &id, &kiss_profraw)?;
-        for selector in &req.logical_selectors {
-            if test_names
-                .iter()
-                .any(|test_name| selector_matches_test(test_name, selector, exact))
-            {
-                selector_binary_ids
-                    .entry(selector.clone())
-                    .or_default()
-                    .insert(id.clone());
-            }
+    let mut listed_tests = BTreeSet::new();
+    for item in resolved {
+        binary_by_id.insert(item.binary.id.clone(), item.binary);
+        for (executable, logical_name) in item.listed_tests {
+            listed_tests.insert((executable, logical_name));
+        }
+        for (selector, id) in item.selector_hits {
+            selector_binary_ids.entry(selector).or_default().insert(id);
         }
     }
     let selector_binary_ids = selector_binary_ids
         .into_iter()
         .map(|(selector, ids)| (selector, ids.into_iter().collect()))
         .collect();
-    Ok(RustTestExecutableIndex {
-        selector_binary_ids,
-        test_binaries: binary_by_id.into_values().collect(),
-        counters: RustCoverageBatchCounters::default(),
+    Ok((
+        RustTestExecutableIndex {
+            selector_binary_ids,
+            test_binaries: binary_by_id.into_values().collect(),
+            counters: RustCoverageBatchCounters::default(),
+        },
+        listed_tests
+            .into_iter()
+            .map(|(executable, logical_name)| RustListedTest {
+                executable,
+                logical_name,
+            })
+            .collect(),
+    ))
+}
+
+struct ResolvedListedExecutable {
+    binary: RustTestBinaryIdentity,
+    listed_tests: Vec<(String, String)>,
+    selector_hits: Vec<(String, String)>,
+}
+
+fn resolve_listed_executable(
+    req: &RustCoverageBatchRequest,
+    exact: bool,
+    kiss_profraw: &std::path::Path,
+    item: crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim::BatchShimListMetadata,
+) -> Result<ResolvedListedExecutable, RustLlvmCovError> {
+    let executable = item
+        .argv
+        .first()
+        .ok_or_else(|| RustLlvmCovError::InvalidRequest("missing list executable".into()))?
+        .clone();
+    let path = std::path::Path::new(&executable);
+    let id = test_binary_id_for_path(path);
+    let digest = digest_test_binary(path)?;
+    let test_names = resolve_listed_test_names(req, kiss_profraw, &item, path, &id)?;
+    let prefix = format!("{id}$");
+    let mut listed_tests = Vec::new();
+    for test_name in &test_names {
+        if let Some(logical_name) = test_name.strip_prefix(&prefix) {
+            listed_tests.push((executable.clone(), logical_name.to_string()));
+        }
+    }
+    let mut selector_hits = Vec::new();
+    for selector in &req.logical_selectors {
+        if test_names
+            .iter()
+            .any(|test_name| selector_matches_test(test_name, selector, exact))
+        {
+            selector_hits.push((selector.clone(), id.clone()));
+        }
+    }
+    Ok(ResolvedListedExecutable {
+        binary: RustTestBinaryIdentity {
+            id,
+            executable,
+            digest,
+        },
+        listed_tests,
+        selector_hits,
     })
+}
+
+fn resolve_listed_test_names(
+    req: &RustCoverageBatchRequest,
+    kiss_profraw: &std::path::Path,
+    item: &crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim::BatchShimListMetadata,
+    path: &std::path::Path,
+    path_id: &str,
+) -> Result<Vec<String>, RustLlvmCovError> {
+    if let Some(names) = remap_list_metadata_test_names(item, path_id) {
+        return Ok(names);
+    }
+    let list_cwd = if !item.cwd.as_os_str().is_empty() {
+        Some(item.cwd.as_path())
+    } else if !req.cwd.as_os_str().is_empty() && req.cwd.exists() {
+        Some(req.cwd.as_path())
+    } else {
+        None
+    };
+    list_test_names_from_executable(path, path_id, kiss_profraw, list_cwd)
+}
+
+fn remap_list_metadata_test_names(
+    item: &crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim::BatchShimListMetadata,
+    path_id: &str,
+) -> Option<Vec<String>> {
+    if item.test_names.is_empty() {
+        return None;
+    }
+    let prefix = format!("{}$", item.binary_id);
+    let remapped: Vec<String> = item
+        .test_names
+        .iter()
+        .filter_map(|name| {
+            let logical = name.strip_prefix(&prefix)?;
+            Some(format!("{path_id}${logical}"))
+        })
+        .collect();
+    if remapped.is_empty() {
+        None
+    } else {
+        Some(remapped)
+    }
 }
 
 fn list_test_names_from_executable(
     path: &std::path::Path,
     binary_id: &str,
     kiss_profraw: &std::path::Path,
+    cwd: Option<&std::path::Path>,
 ) -> Result<Vec<String>, RustLlvmCovError> {
-    crate::rust_llvm_cov_runner::kiss_profraw::ensure_kiss_profraw(kiss_profraw).map_err(RustLlvmCovError::Io)?;
+    crate::rust_llvm_cov_runner::kiss_profraw::ensure_kiss_profraw(kiss_profraw)
+        .map_err(RustLlvmCovError::Io)?;
     let mut command = Command::new(path);
     command.arg("--list");
-    crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim_delegated::scrub_coverage_build_env(&mut command);
+    if let Some(cwd) = cwd {
+        command.current_dir(cwd);
+    }
+    crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim_delegated::scrub_coverage_build_env(
+        &mut command,
+    );
     command.env(
         "LLVM_PROFILE_FILE",
         crate::rust_llvm_cov_runner::kiss_profraw::discard_llvm_profile_path(kiss_profraw),
@@ -154,8 +293,11 @@ fn list_test_names_from_executable(
         .map_err(RustLlvmCovError::Io)?;
     let child_pid = child.id();
     let output = child.wait_with_output().map_err(RustLlvmCovError::Io)?;
-    let cleanup_err =
-        crate::rust_llvm_cov_runner::kiss_profraw::cleanup_kiss_profraw_for_pid(kiss_profraw, child_pid).err();
+    let cleanup_err = crate::rust_llvm_cov_runner::kiss_profraw::cleanup_kiss_profraw_for_pid(
+        kiss_profraw,
+        child_pid,
+    )
+    .err();
     if !output.status.success() {
         return Err(RustLlvmCovError::InvalidRequest(format!(
             "test binary list failed for {}: stdout:\n{}\nstderr:\n{}",
@@ -180,7 +322,9 @@ fn test_name_from_list_line(line: &str, binary_id: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim::{BatchShimListMetadata, SHIM_LIST_SCHEMA};
+    use crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim::{
+        BatchShimListMetadata, SHIM_LIST_SCHEMA,
+    };
 
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
@@ -230,6 +374,7 @@ mod tests {
             binary_id: "unused-by-index".to_string(),
             argv: Vec::new(),
             test_names: Vec::new(),
+            cwd: Default::default(),
         };
         std::fs::write(
             target_runner_output_dir.join("list-a.list.json"),
@@ -267,6 +412,7 @@ mod tests {
             binary_id: "unused-by-index".to_string(),
             argv: vec![bin.to_string_lossy().to_string()],
             test_names: Vec::new(),
+            cwd: Default::default(),
         };
         std::fs::write(
             target_runner_output_dir.join("list-a.list.json"),
@@ -308,7 +454,8 @@ mod tests {
 
         let kiss_profraw = tmp.path().join(".kiss").join("profraw");
         let err =
-            super::list_test_names_from_executable(&bin, "bin-id", &kiss_profraw).unwrap_err();
+            super::list_test_names_from_executable(&bin, "bin-id", &kiss_profraw, Some(tmp.path()))
+                .unwrap_err();
 
         assert!(format!("{err:?}").contains("test binary list failed"));
         assert!(format!("{err:?}").contains("bad"));
@@ -329,9 +476,87 @@ mod tests {
         permissions.set_mode(0o755);
         std::fs::set_permissions(&bin, permissions).unwrap();
 
-        let names = super::list_test_names_from_executable(&bin, "bin-id", &kiss_profraw).unwrap();
+        let names =
+            super::list_test_names_from_executable(&bin, "bin-id", &kiss_profraw, Some(tmp.path()))
+                .unwrap();
         assert_eq!(names, vec!["bin-id$alpha::passes".to_string()]);
         assert!(kiss_profraw.is_dir());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn list_test_names_uses_package_cwd_for_relative_resource_lookup() {
+        let tmp = tempfile::tempdir().unwrap();
+        let package = tmp.path().join("crate_a");
+        std::fs::create_dir_all(package.join("resources")).unwrap();
+        std::fs::write(package.join("resources").join("marker"), b"ok").unwrap();
+        let kiss_profraw = tmp.path().join(".kiss").join("profraw");
+        let bin = tmp.path().join("fixtures-bin");
+        std::fs::write(
+            &bin,
+            "#!/bin/sh\nif [ ! -f resources/marker ]; then echo missing >&2; exit 11; fi\nprintf 'datatest::case: test\\n'\n",
+        )
+        .unwrap();
+        let mut permissions = std::fs::metadata(&bin).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&bin, permissions).unwrap();
+
+        let err =
+            super::list_test_names_from_executable(&bin, "bin-id", &kiss_profraw, Some(tmp.path()))
+                .unwrap_err();
+        assert!(format!("{err:?}").contains("test binary list failed"));
+
+        let names =
+            super::list_test_names_from_executable(&bin, "bin-id", &kiss_profraw, Some(&package))
+                .unwrap();
+        assert_eq!(names, vec!["bin-id$datatest::case".to_string()]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn prefers_list_metadata_test_names_without_relisting_binary() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bin = tmp.path().join("test-bin");
+        std::fs::write(&bin, "#!/bin/sh\necho should-not-run >&2\nexit 9\n").unwrap();
+        let mut permissions = std::fs::metadata(&bin).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&bin, permissions).unwrap();
+
+        let target_runner_output_dir = tmp.path().join("instances");
+        std::fs::create_dir(&target_runner_output_dir).unwrap();
+        let binary_id =
+            crate::rust_llvm_cov_runner::execute_or_reuse::batch_executor_finish::test_binary_id_for_path(
+                &bin,
+            );
+        let metadata = BatchShimListMetadata {
+            schema_version: SHIM_LIST_SCHEMA.to_string(),
+            id: "list-a".to_string(),
+            binary_id: "pkg::fixtures".to_string(),
+            argv: vec![bin.to_string_lossy().to_string()],
+            test_names: vec!["pkg::fixtures$alpha::passes".to_string()],
+            cwd: package_cwd_unused(tmp.path()),
+        };
+        std::fs::write(
+            target_runner_output_dir.join("list-a.list.json"),
+            serde_json::to_vec(&metadata).unwrap(),
+        )
+        .unwrap();
+
+        let mut req = crate::rust_llvm_cov_runner::RustCoverageBatchRequest::witness();
+        req.source_root = tmp.path().to_path_buf();
+        req.logical_selectors = vec!["alpha::passes".to_string()];
+        let mut plan = crate::rust_llvm_cov_runner::RustCoverageBatchPlan::witness();
+        plan.target_runner_output_dir = target_runner_output_dir;
+
+        let index = super::executable_index_from_list_metadata(&req, &plan).unwrap();
+        assert_eq!(
+            index.selector_binary_ids.get("alpha::passes"),
+            Some(&vec![binary_id])
+        );
+    }
+
+    fn package_cwd_unused(root: &std::path::Path) -> std::path::PathBuf {
+        root.join("unused-cwd")
     }
 
     #[test]
@@ -341,18 +566,20 @@ mod tests {
         req.cwd = tmp.path().to_path_buf();
         req.source_root = tmp.path().to_path_buf();
         req.cache_root = tmp.path().join("cache");
-        let tools = crate::rust_llvm_cov_runner::plan::batch_fingerprint::RustCoverageToolIdentity {
-            cargo_version: "c".into(),
-            llvm_cov_version: "l".into(),
-            rustc_version: "r".into(),
-            cargo_nextest_version: "n".into(),
-        };
-        let identity = crate::rust_llvm_cov_runner::plan::batch_fingerprint::RustCoverageBatchIdentity {
-            input_digest: "i".into(),
-            generation_fingerprint: "g".into(),
-            selection_context_fingerprint: "s".into(),
-            ordinary_source_digests: Default::default(),
-        };
+        let tools =
+            crate::rust_llvm_cov_runner::plan::batch_fingerprint::RustCoverageToolIdentity {
+                cargo_version: "c".into(),
+                llvm_cov_version: "l".into(),
+                rustc_version: "r".into(),
+                cargo_nextest_version: "n".into(),
+            };
+        let identity =
+            crate::rust_llvm_cov_runner::plan::batch_fingerprint::RustCoverageBatchIdentity {
+                input_digest: "i".into(),
+                generation_fingerprint: "g".into(),
+                selection_context_fingerprint: "s".into(),
+                ordinary_source_digests: Default::default(),
+            };
         let mut plan = crate::rust_llvm_cov_runner::RustCoverageBatchPlan::witness();
         plan.build_target = tmp.path().join("build");
         plan.target_runner_output_dir = tmp.path().join("runner");

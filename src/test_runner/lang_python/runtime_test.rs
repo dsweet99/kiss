@@ -25,8 +25,9 @@ fn python_runtime_language_dry_run_and_indexable() {
 #[test]
 fn python_accepted_summary_counts_hits() {
     let rt = PythonRuntime;
+    let tmp = tempfile::tempdir().unwrap();
     let req = EnsureRequest {
-        repo_root: PathBuf::from("."),
+        repo_root: tmp.path().to_path_buf(),
         mode: AcceptMode::All,
         lang_filter: Some(kiss::Language::Python),
         ignore: vec![],
@@ -53,10 +54,10 @@ fn python_accepted_summary_counts_hits() {
         covered_lines: BTreeMap::new(),
         complete: true,
         generation_id: "g".into(),
+        raw_statuses: Vec::new(),
     };
-    let summary = rt.accepted_summary(&req, &["a".into()], &witness);
+    let summary = rt.accepted_summary(&req, &["a".into()], &witness).unwrap();
     assert_eq!(summary.cache_hits, 1);
-    let tmp = tempfile::tempdir().unwrap();
     let _ = rt.discover_universe(&req);
     let _ = rt.coverage_snapshot(tmp.path());
     let _ = rt.status_timing_snapshot(tmp.path());
@@ -98,4 +99,9 @@ fn python_runtime_empty_run_and_identity_paths() {
         summary: Default::default(),
     };
     let _ = rt.publish_outcomes(&req, &publish);
+    let covering = PublishBatch {
+        publication_universe: None,
+        ..publish
+    };
+    let _ = rt.publish_outcomes(&req, &covering);
 }

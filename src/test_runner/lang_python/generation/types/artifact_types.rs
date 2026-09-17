@@ -37,6 +37,8 @@ pub(crate) struct PopulationPointer {
     pub(crate) schema_version: String,
     pub(crate) generation_id: String,
     pub(crate) manifest_sha256: String,
+    #[serde(default)]
+    pub(crate) parent_generation_id: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -56,6 +58,8 @@ pub(crate) struct SelectorTimingRecord {
     pub(crate) duration_ns: Option<u64>,
     pub(crate) cache_disposition: TimingCacheDisposition,
     pub(crate) reason: Option<String>,
+    #[serde(default)]
+    pub(crate) test_definition_digest: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

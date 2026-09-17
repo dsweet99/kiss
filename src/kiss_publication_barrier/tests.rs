@@ -2,10 +2,26 @@ use super::test_support::{EnvGuard, temp_dir};
 use super::*;
 use std::fs;
 use std::path::Path;
+use std::process::Command;
 #[cfg(debug_assertions)]
 use std::thread;
 #[cfg(debug_assertions)]
 use std::time::Duration;
+
+fn run_env_body_in_isolated_process(test_name: &str) -> bool {
+    const ENV: &str = "KISS_ISOLATED_BARRIER_ENV_TEST";
+    if std::env::var(ENV).as_deref() == Ok(test_name) {
+        return false;
+    }
+    let full_name = format!("kiss_publication_barrier::tests::{test_name}");
+    let status = Command::new(std::env::current_exe().expect("current test executable"))
+        .args(["--exact", &full_name])
+        .env(ENV, test_name)
+        .status()
+        .expect("spawn isolated barrier test");
+    assert!(status.success(), "isolated barrier test failed: {status}");
+    true
+}
 
 #[cfg(debug_assertions)]
 fn short_policy() -> WaitPolicy {
@@ -18,6 +34,9 @@ fn short_policy() -> WaitPolicy {
 #[cfg(debug_assertions)]
 #[test]
 fn non_target_debug_calls_are_no_ops() {
+    if run_env_body_in_isolated_process("non_target_debug_calls_are_no_ops") {
+        return;
+    }
     let dir = temp_dir();
     let _env = EnvGuard::set(Some(&dir), Some("other:after_sync_before_rename"));
     wait_if_targeted(
@@ -33,6 +52,9 @@ fn non_target_debug_calls_are_no_ops() {
 
 #[test]
 fn public_after_sync_is_noop_without_barrier_dir() {
+    if run_env_body_in_isolated_process("public_after_sync_is_noop_without_barrier_dir") {
+        return;
+    }
     let _env = EnvGuard::set(None, Some("artifact:after_sync_before_rename"));
     after_sync_before_rename(
         "artifact",
@@ -45,6 +67,9 @@ fn public_after_sync_is_noop_without_barrier_dir() {
 #[cfg(debug_assertions)]
 #[test]
 fn configured_barrier_dir_rejects_file_path() {
+    if run_env_body_in_isolated_process("configured_barrier_dir_rejects_file_path") {
+        return;
+    }
     let dir = temp_dir();
     let file = dir.join("not-a-dir");
     fs::write(&file, "").unwrap();
@@ -63,6 +88,11 @@ fn configured_barrier_dir_rejects_file_path() {
 #[cfg(debug_assertions)]
 #[test]
 fn targeted_call_publishes_ready_and_waits_for_matching_release() {
+    if run_env_body_in_isolated_process(
+        "targeted_call_publishes_ready_and_waits_for_matching_release",
+    ) {
+        return;
+    }
     let dir = temp_dir();
     let _env = EnvGuard::set(Some(&dir), Some("artifact:after_sync_before_rename"));
     let dir_for_thread = dir.clone();
@@ -126,6 +156,9 @@ fn malformed_matching_release_fails_clearly() {
 #[cfg(debug_assertions)]
 #[test]
 fn missing_release_times_out_clearly() {
+    if run_env_body_in_isolated_process("missing_release_times_out_clearly") {
+        return;
+    }
     let dir = temp_dir();
     let _env = EnvGuard::set(Some(&dir), Some("artifact:after_rename"));
     let err = wait_if_targeted(
@@ -143,6 +176,9 @@ fn missing_release_times_out_clearly() {
 #[cfg(debug_assertions)]
 #[test]
 fn mismatched_release_name_times_out() {
+    if run_env_body_in_isolated_process("mismatched_release_name_times_out") {
+        return;
+    }
     let dir = temp_dir();
     let _env = EnvGuard::set(Some(&dir), Some("artifact:after_rename"));
     fs::write(
@@ -227,6 +263,11 @@ fn repeated_operations_do_not_collide() {
 #[cfg(debug_assertions)]
 #[test]
 fn release_build_public_calls_are_no_ops_even_when_configured() {
+    if run_env_body_in_isolated_process(
+        "release_build_public_calls_are_no_ops_even_when_configured",
+    ) {
+        return;
+    }
     let dir = temp_dir();
     let _env = EnvGuard::set(Some(&dir), Some("artifact:after_rename"));
     let result = wait_if_targeted(

@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 use crate::rust_llvm_cov_runner::plan::batch_plan::{CoverageOutputMode, RustCoverageBatchRequest};
 use crate::rust_llvm_cov_runner::plan::batch_plan_shim_const::TARGET_RUNNER_SHIM_SUBCOMMAND;
 
+const MAX_REFRESH_NEXTEST_THREADS: usize = 4;
+
 pub(crate) fn build_nextest_config_toml(
     req: &RustCoverageBatchRequest,
     _runner_map_path: &Path,
@@ -32,8 +34,15 @@ pub(crate) fn test_args_request_nocapture(test_args: &[String]) -> bool {
 pub(crate) fn nextest_test_threads(req: &RustCoverageBatchRequest) -> String {
     if test_args_request_nocapture(&req.test_args) {
         "1".to_string()
+    } else if std::env::var_os("KISS_COVERAGE_RUNTIME_REFRESH_ACTIVE").is_some() {
+        req.jobs.min(MAX_REFRESH_NEXTEST_THREADS).to_string()
     } else {
-        req.jobs.to_string()
+        let cfg = crate::test_section_config::TestSectionConfig::load();
+        if let Some(threads) = cfg.num_jobs_llvm_cov_explicit {
+            threads.to_string()
+        } else {
+            req.jobs.to_string()
+        }
     }
 }
 
@@ -88,6 +97,9 @@ pub(crate) fn apply_target_runner_env(
 }
 
 fn build_nextest_default_filter(req: &RustCoverageBatchRequest) -> String {
+    if crate::rust_llvm_cov_runner::plan::batch_plan::is_workspace_list_build(req) {
+        return "all()".to_string();
+    }
     let runnable: Vec<&String> = req
         .logical_selectors
         .iter()
@@ -182,8 +194,8 @@ fn target_runner_argv(req: &RustCoverageBatchRequest, runner_map_path: &Path) ->
 #[cfg(test)]
 mod tests {
     use super::{
-        build_target_runner_cargo_config_toml, escape_nextest_regex, nextest_filter_string,
-        nextest_test_threads, toml_basic_string,
+        MAX_REFRESH_NEXTEST_THREADS, build_target_runner_cargo_config_toml, escape_nextest_regex,
+        nextest_filter_string, nextest_test_threads, toml_basic_string,
     };
     use std::path::Path;
 
@@ -205,7 +217,8 @@ mod tests {
 
     #[test]
     fn target_runner_cargo_config_uses_list_runner_for_platform() {
-        let req = crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
+        let req =
+            crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
         let toml = build_target_runner_cargo_config_toml(&req, Path::new("/tmp/runner-map.json"));
         assert!(toml.contains("[target.\"x86_64-unknown-linux-gnu\"]"));
         assert!(toml.contains("runner = ["));
@@ -213,14 +226,18 @@ mod tests {
 
     #[test]
     fn check_aggregate_large_selector_set_uses_all_filter() {
-        let mut req = crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
-        req.coverage_output_mode = crate::rust_llvm_cov_runner::plan::batch_plan::CoverageOutputMode::CheckAggregate {
-            publication_binary_ids: None,
-            repair_publication: None,
-        };
+        let mut req =
+            crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
+        req.coverage_output_mode =
+            crate::rust_llvm_cov_runner::plan::batch_plan::CoverageOutputMode::CheckAggregate {
+                publication_binary_ids: None,
+                repair_publication: None,
+            };
         req.test_args.clear();
         req.logical_selectors = (0..100).map(|i| format!("test_{i}")).collect();
-        let plan = crate::rust_llvm_cov_runner::plan::batch_plan::build_rust_coverage_batch_plan(&req).unwrap();
+        let plan =
+            crate::rust_llvm_cov_runner::plan::batch_plan::build_rust_coverage_batch_plan(&req)
+                .unwrap();
         assert!(
             plan.generated_config_toml
                 .contains("default-filter = \"all()\""),
@@ -232,12 +249,16 @@ mod tests {
 
     #[test]
     fn check_aggregate_plan_omits_target_runner_and_sets_profile_pool() {
-        let mut req = crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
-        req.coverage_output_mode = crate::rust_llvm_cov_runner::plan::batch_plan::CoverageOutputMode::CheckAggregate {
-            publication_binary_ids: None,
-            repair_publication: None,
-        };
-        let plan = crate::rust_llvm_cov_runner::plan::batch_plan::build_rust_coverage_batch_plan(&req).unwrap();
+        let mut req =
+            crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
+        req.coverage_output_mode =
+            crate::rust_llvm_cov_runner::plan::batch_plan::CoverageOutputMode::CheckAggregate {
+                publication_binary_ids: None,
+                repair_publication: None,
+            };
+        let plan =
+            crate::rust_llvm_cov_runner::plan::batch_plan::build_rust_coverage_batch_plan(&req)
+                .unwrap();
         assert!(
             plan.target_runner_cargo_config_toml.is_empty(),
             "toml={}",
@@ -269,13 +290,17 @@ mod tests {
     }
 
     #[test]
-    fn refresh_guard_does_not_serialize_nextest_threads() {
-        let req = crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
+    fn refresh_guard_bounds_nextest_threads_without_serializing() {
+        let req =
+            crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
 
         unsafe {
             std::env::set_var("KISS_COVERAGE_RUNTIME_REFRESH_ACTIVE", "1");
         }
-        assert_eq!(nextest_test_threads(&req), req.jobs.to_string());
+        assert_eq!(
+            nextest_test_threads(&req),
+            req.jobs.min(MAX_REFRESH_NEXTEST_THREADS).to_string()
+        );
 
         unsafe {
             std::env::remove_var("KISS_COVERAGE_RUNTIME_REFRESH_ACTIVE");
@@ -284,8 +309,31 @@ mod tests {
 
     #[test]
     fn no_capture_serializes_nextest_threads() {
-        let mut req = crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
+        let mut req =
+            crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
         req.test_args = vec!["--nocapture".to_string()];
         assert_eq!(nextest_test_threads(&req), "1");
+    }
+
+    #[test]
+    fn ordinary_nextest_threads_use_num_jobs_llvm_cov() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(tmp.path(), "[test]\nnum_jobs_llvm_cov = 3\n").unwrap();
+        let _guard = crate::config::ConfigPathOverrideGuard::enter(Some(tmp.path()));
+        let mut req =
+            crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
+        req.jobs = 32;
+        assert_eq!(nextest_test_threads(&req), "3");
+    }
+
+    #[test]
+    fn ordinary_nextest_threads_default_to_num_jobs() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(tmp.path(), "[test]\nnum_jobs = 32\n").unwrap();
+        let _guard = crate::config::ConfigPathOverrideGuard::enter(Some(tmp.path()));
+        let mut req =
+            crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
+        req.jobs = 32;
+        assert_eq!(nextest_test_threads(&req), "32");
     }
 }

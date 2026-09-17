@@ -7,6 +7,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::rust_llvm_cov_runner::RustLlvmCovError;
+use crate::rust_llvm_cov_runner::execute_or_reuse::llvm_cov_process_budget::ProcessBudgetBreach;
+use crate::rust_llvm_cov_runner::execute_or_reuse::mem_available::MemoryFloorBreach;
 use crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchPlan;
 
 #[path = "batch_run_cleanup.rs"]
@@ -15,6 +17,8 @@ mod batch_run_cleanup;
 mod batch_run_identity;
 #[path = "batch_run_subprocess.rs"]
 mod batch_run_subprocess;
+#[path = "batch_run_wait.rs"]
+mod batch_run_wait;
 
 pub(crate) use crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::batch_scope_interrupted;
 #[cfg(test)]
@@ -24,8 +28,8 @@ pub(crate) use batch_run_cleanup::{CurrentRunCleanup, FreshBatchRunScope};
 #[allow(unused_imports)]
 pub(crate) use batch_run_identity::{
     BuildIdentityFile, BuildIdentityInput, BuildIdentityPreparation, build_identity_input,
-    build_identity_path, path_size_bytes, prepare_build_target_for_identity,
-    publish_successful_build_identity,
+    build_identity_path, instrumented_depot_likely_fresh, path_size_bytes,
+    prepare_build_target_for_identity, update_build_target_baseline,
 };
 pub(crate) use batch_run_subprocess::run_batch_subprocess;
 
@@ -42,6 +46,26 @@ pub struct BatchSubprocessRunOutcome {
 pub enum BatchSubprocessRunError {
     Spawn { program: String, message: String },
     Interrupted,
+    MemoryFloor { available_kib: u64, floor_kib: u64 },
+    ProcessBudget { live: usize, cap: usize },
+}
+
+impl From<MemoryFloorBreach> for BatchSubprocessRunError {
+    fn from(value: MemoryFloorBreach) -> Self {
+        Self::MemoryFloor {
+            available_kib: value.available_kib,
+            floor_kib: value.floor_kib,
+        }
+    }
+}
+
+impl From<ProcessBudgetBreach> for BatchSubprocessRunError {
+    fn from(value: ProcessBudgetBreach) -> Self {
+        Self::ProcessBudget {
+            live: value.live,
+            cap: value.cap,
+        }
+    }
 }
 
 impl From<BatchSubprocessRunError> for RustLlvmCovError {
@@ -51,6 +75,15 @@ impl From<BatchSubprocessRunError> for RustLlvmCovError {
             BatchSubprocessRunError::Spawn { program, message } => {
                 Self::InvalidRequest(format!("failed to spawn `{program}`: {message}"))
             }
+            BatchSubprocessRunError::MemoryFloor {
+                available_kib,
+                floor_kib,
+            } => Self::InvalidRequest(format!(
+                "MemAvailable {available_kib} KiB is below the {floor_kib} KiB floor; aborting instrumented nextest"
+            )),
+            BatchSubprocessRunError::ProcessBudget { live, cap } => Self::InvalidRequest(format!(
+                "{live} cargo-llvm-cov processes live (cap {cap}); aborting instrumented nextest"
+            )),
         }
     }
 }
@@ -82,6 +115,7 @@ impl BatchSubprocessRunner {
         cwd: &Path,
         plan: &RustCoverageBatchPlan,
     ) -> Result<BatchSubprocessRunOutcome, BatchSubprocessRunError> {
+        crate::rust_llvm_cov_runner::record_cargo_nextest_invocation();
         (self.run)(cwd, plan)
     }
 }
@@ -100,6 +134,53 @@ pub fn prepare_batch_run_layout(plan: &RustCoverageBatchPlan) -> io::Result<Path
     fs::create_dir_all(&run_root)?;
     fs::create_dir_all(&plan.target_runner_output_dir)?;
     Ok(run_root)
+}
+
+pub fn terminate_stale_cache_processes(cache_root: &Path) -> usize {
+    let Some(needle) = stale_cache_cmdline_needle(cache_root) else {
+        return 0;
+    };
+    let self_pid = std::process::id();
+    let mut killed = 0;
+    let Ok(proc_dir) = fs::read_dir("/proc") else {
+        return 0;
+    };
+    for entry in proc_dir.flatten() {
+        let pid = match entry.file_name().to_string_lossy().parse::<u32>() {
+            Ok(pid) if pid > 1 && pid != self_pid => pid,
+            _ => continue,
+        };
+        let Ok(raw) = fs::read(entry.path().join("cmdline")) else {
+            continue;
+        };
+        if raw.is_empty() {
+            continue;
+        }
+        let cmdline = String::from_utf8_lossy(&raw);
+        if !cmdline.contains(&needle) {
+            continue;
+        }
+        #[cfg(unix)]
+        {
+            let _ = unsafe { libc::kill(pid as i32, libc::SIGKILL) };
+            killed += 1;
+        }
+    }
+    killed
+}
+
+fn stale_cache_cmdline_needle(cache_root: &Path) -> Option<String> {
+    let raw = cache_root.to_string_lossy();
+    if !raw.contains("rust_llvm_cov_cache") {
+        return None;
+    }
+    if let Ok(canon) = cache_root.canonicalize() {
+        let canon_s = canon.to_string_lossy();
+        if canon_s.contains("rust_llvm_cov_cache") {
+            return Some(canon_s.into_owned());
+        }
+    }
+    Some(raw.into_owned())
 }
 
 pub fn remove_stale_run_directories(cache_root: &Path, keep_run_root: &Path) -> io::Result<()> {

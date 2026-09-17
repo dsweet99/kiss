@@ -153,6 +153,8 @@ fn cache_shape_records_entry_and_build_target_bytes() {
 
     assert_eq!(metrics.rust_entry_cache_bytes, 3);
     assert_eq!(metrics.rust_build_target_bytes, 4);
+    assert_eq!(metrics.publication_generation_id, "");
+    assert_eq!(metrics.parent_generation_id, "");
 }
 
 #[test]
@@ -209,6 +211,7 @@ fn empty_metrics() -> LocalRubricMetrics {
         rust_external_tmp_metric_error: false,
         rust_concurrency_budget: 1,
         exit_code: 0,
+        ..Default::default()
     }
 }
 

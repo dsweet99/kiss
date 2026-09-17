@@ -222,6 +222,23 @@ fn python_population_phase_uses_discover_universe() {
 }
 
 #[test]
+fn python_population_reuses_planned_selectors_without_rediscovery() {
+    let mut planned = planned();
+    planned.repo_root = PathBuf::from("/nonexistent/repo/for/planned-population");
+    planned.population_required.python = true;
+    planned.sel.python = vec!["tests/cached.py::test_cached".to_string()];
+    let options = options(false);
+    let ctx = RunContext {
+        planned: &planned,
+        options: &options,
+    };
+    assert_eq!(
+        execution_phase(&execution_module_python(&planned), &ctx).unwrap(),
+        ExecutionPhase::Population(vec!["tests/cached.py::test_cached".to_string()])
+    );
+}
+
+#[test]
 fn selective_execution_does_not_require_discoverable_repo() {
     let mut planned = planned();
     planned.repo_root = PathBuf::from("/nonexistent/repo/for/selective");
@@ -334,10 +351,6 @@ fn empty_module_runs_return_default_summaries_without_spawning() {
         options: &options,
     };
 
-    assert_eq!(
-        language_modules::run_rslip_selectors_for_module(&[], &ctx).unwrap(),
-        SelectorExecutionSummary::default()
-    );
     assert_eq!(
         language_modules::run_rust_selectors_for_module(&[], &ctx, None).unwrap(),
         SelectorExecutionSummary::default()

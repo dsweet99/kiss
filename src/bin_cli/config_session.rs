@@ -1,6 +1,10 @@
 use crate::bin_cli::mimic::run_mimic;
 use crate::bin_cli::util::merge_check_ignore_prefixes;
-use kiss::{Config, ConfigLanguage, GateConfig, LanguageTablesPresent, kissconfig_path_from_cwd};
+use kiss::config_gen::generate_gate_stub_toml;
+use kiss::{
+    Config, ConfigLanguage, GateConfig, LanguageTablesPresent, gather_files_by_lang,
+    kissconfig_path_from_cwd,
+};
 use std::path::{Path, PathBuf};
 
 pub fn ensure_default_config_exists() {
@@ -9,19 +13,64 @@ pub fn ensure_default_config_exists() {
 
 pub fn ensure_default_config_from(paths: &[String], ignore: &[String]) {
     let local_config = Path::new(".kissconfig");
-    if local_config.exists() {
+    let roots = config_roots(paths);
+    if !local_config.exists() {
+        write_gate_stub(local_config, ignore);
+    } else if !is_kiss_gate_config(local_config) {
         return;
     }
-    let ignore = merge_check_ignore_prefixes(ignore);
-    let roots = if paths.is_empty() {
-        vec![".".to_string()]
-    } else {
-        vec![paths[0].clone()]
-    };
-    let code = run_mimic(&roots, Some(local_config), None, &ignore);
+    let collect_ignore = ignore_for_collect(local_config, ignore);
+    if !needs_language_tables(local_config, &roots, &collect_ignore) {
+        return;
+    }
+    let code = run_mimic(&roots, Some(local_config), None, &collect_ignore);
     if code != 0 {
         std::process::exit(code);
     }
+}
+
+fn config_roots(paths: &[String]) -> Vec<String> {
+    if paths.is_empty() {
+        vec![".".to_string()]
+    } else {
+        vec![paths[0].clone()]
+    }
+}
+
+fn write_gate_stub(path: &Path, cli_ignore: &[String]) {
+    let stub = generate_gate_stub_toml(cli_ignore);
+    if let Err(err) = std::fs::write(path, stub) {
+        eprintln!("Error writing to {}: {err}", path.display());
+        std::process::exit(1);
+    }
+}
+
+fn is_kiss_gate_config(path: &Path) -> bool {
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    let Ok(table) = content.parse::<toml::Table>() else {
+        return false;
+    };
+    table.contains_key("global") || table.contains_key("test")
+}
+
+fn ignore_for_collect(config_path: &Path, cli_ignore: &[String]) -> Vec<String> {
+    let mut merged = Vec::new();
+    if let Ok(cfg) = kiss::TestSectionConfig::try_load_path_only(config_path) {
+        merged.extend(cfg.ignore);
+    }
+    merged.extend(cli_ignore.iter().cloned());
+    merge_check_ignore_prefixes(&merged)
+}
+
+fn needs_language_tables(config_path: &Path, roots: &[String], ignore: &[String]) -> bool {
+    let tables = LanguageTablesPresent::from_path(config_path);
+    if tables.python && tables.rust {
+        return false;
+    }
+    let (py_files, rs_files) = gather_files_by_lang(roots, None, ignore);
+    tables.missing_language(&py_files, &rs_files).is_some()
 }
 
 pub fn load_language_tables(config_path: Option<&PathBuf>) -> LanguageTablesPresent {
@@ -131,8 +180,12 @@ mod tests {
             "created .kissconfig must disable duplication:\n{created}"
         );
         assert!(
-            created.contains("orphan_module_enabled = false"),
-            "created .kissconfig must disable orphan_module:\n{created}"
+            created.contains("orphan_detection = false"),
+            "created .kissconfig must write orphan_detection = false:\n{created}"
+        );
+        assert!(
+            !created.contains("orphan_module_enabled"),
+            "created .kissconfig must not write orphan_module_enabled:\n{created}"
         );
         assert!(
             created.contains("comment_removal_enabled = false"),
@@ -156,6 +209,14 @@ mod tests {
             "created .kissconfig must set num_jobs = 4:\n{created}"
         );
         assert!(
+            created.contains("num_jobs_pytest = 16"),
+            "created .kissconfig must set num_jobs_pytest = 16:\n{created}"
+        );
+        assert!(
+            created.contains("num_jobs_llvm_cov = 4"),
+            "created .kissconfig must set num_jobs_llvm_cov = 4:\n{created}"
+        );
+        assert!(
             created.contains("pytest_plugins = []"),
             "created .kissconfig must set pytest_plugins = []:\n{created}"
         );
@@ -165,6 +226,46 @@ mod tests {
         );
 
         std::env::set_current_dir(orig_dir).unwrap();
+    }
+
+    #[test]
+    fn ensure_default_fills_missing_language_tables_on_stub() {
+        let _cwd_guard = crate::cwd_test_lock::lock();
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(
+            tmp.path().join("lib.rs"),
+            "pub fn add(a: i32, b: i32) -> i32 { a + b }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            tmp.path().join(".kissconfig"),
+            "\
+[global]
+duplication_enabled = false
+comment_removal_enabled = false
+min_similarity = 0.9
+docs_allowed = [\"./\" ]
+
+[test]
+orphan_detection = false
+test_coverage_threshold = 0
+ignore = [\"vendor\"]
+",
+        )
+        .unwrap();
+        let orig_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+        ensure_default_config_from(&[".".to_string()], &[]);
+        let created = std::fs::read_to_string(".kissconfig").unwrap();
+        std::env::set_current_dir(orig_dir).unwrap();
+        assert!(
+            created.contains("[rust]"),
+            "stub must gain [rust]:\n{created}"
+        );
+        assert!(
+            created.contains("ignore = [\"vendor\"]"),
+            "stub ignore must be preserved:\n{created}"
+        );
     }
 
     #[test]

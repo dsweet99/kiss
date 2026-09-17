@@ -1,20 +1,26 @@
+use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
+
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use crate::rpytest_runner::forkserver_controller::FORKSERVER_CONTROLLER;
 use crate::rpytest_runner::forkserver_wire::{
-    WireBootstrap, WireBootstrapResult, WireRequest, WireResponse, WireShutdown,
+    WireBootstrap, WireBootstrapResult, WireModuleRequest, WireModuleResponse, WireRequest,
+    WireResponse, WireShutdown,
 };
 use crate::rpytest_runner::runner::validate_request;
 use crate::rpytest_runner::{PytestBootstrap, PytestRunError, PytestRunOutcome, PytestRunRequest};
 
 #[cfg(test)]
-pub(crate) const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
+pub(crate) const SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(400);
 
 pub(crate) struct ForkserverController {
     pub(crate) python: PathBuf,
@@ -31,19 +37,21 @@ impl ForkserverController {
         python: &Path,
         bootstrap: &PytestBootstrap,
     ) -> Result<Self, PytestRunError> {
-        let mut child = Command::new(python)
+        let mut command = Command::new(python);
+        command
             .current_dir("/")
             .arg("-u")
             .arg("-c")
             .arg(&*FORKSERVER_CONTROLLER)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|err| PytestRunError::Spawn {
-                program: python.to_path_buf(),
-                message: err.to_string(),
-            })?;
+            .stderr(Stdio::null());
+        #[cfg(unix)]
+        command.process_group(0);
+        let mut child = command.spawn().map_err(|err| PytestRunError::Spawn {
+            program: python.to_path_buf(),
+            message: err.to_string(),
+        })?;
         let stdin = take_stdin(&mut child)?;
         let stdout = take_stdout(&mut child)?;
         let mut controller = Self {
@@ -55,6 +63,7 @@ impl ForkserverController {
             next_id: 0,
             shutting_down: false,
         };
+        register_active_forkserver(controller.child.id());
         controller.bootstrap_parent(bootstrap)?;
         Ok(controller)
     }
@@ -96,6 +105,50 @@ impl ForkserverController {
         self.write_json(&WireRequest::from_request(request_id, &req))?;
         let response: WireResponse = self.read_json()?;
         outcome_from_response(response, request_id, timeout, started)
+    }
+
+    pub(crate) fn run_module_once(
+        &mut self,
+        reqs: &[PytestRunRequest],
+    ) -> Result<Vec<Result<PytestRunOutcome, PytestRunError>>, PytestRunError> {
+        for req in reqs {
+            validate_request(req)?;
+        }
+        let started = Instant::now();
+        let mut tests = Vec::with_capacity(reqs.len());
+        let mut ids = Vec::with_capacity(reqs.len());
+        for req in reqs {
+            let request_id = self.next_id;
+            self.next_id += 1;
+            ids.push((request_id, req.timeout));
+            tests.push(WireRequest::from_request(request_id, req));
+        }
+        let first = reqs.first().expect("module batch is non-empty");
+        self.write_json(&WireModuleRequest {
+            op: "run_module",
+            cwd: first.cwd.to_string_lossy().to_string(),
+            pytest_args: first.pytest_args.clone(),
+            child_preload_modules: first.child_preload_modules.clone(),
+            tests,
+        })?;
+        let response: WireModuleResponse = self.read_json()?;
+        if let Some(error) = response.error {
+            return Err(PytestRunError::Protocol(error));
+        }
+        if response.results.len() != reqs.len() {
+            return Err(PytestRunError::Protocol(format!(
+                "module batch returned {} results for {} requests",
+                response.results.len(),
+                reqs.len()
+            )));
+        }
+        let mut outcomes = Vec::with_capacity(reqs.len());
+        for (response, (request_id, timeout)) in response.results.into_iter().zip(ids) {
+            outcomes.push(outcome_from_response(
+                response, request_id, timeout, started,
+            ));
+        }
+        Ok(outcomes)
     }
 
     pub(crate) fn shutdown(&mut self) {
@@ -153,7 +206,58 @@ impl ForkserverController {
 
 impl Drop for ForkserverController {
     fn drop(&mut self) {
+        unregister_active_forkserver(self.child.id());
         self.shutdown();
+    }
+}
+
+fn active_forkservers() -> &'static Mutex<HashSet<u32>> {
+    static ACTIVE: OnceLock<Mutex<HashSet<u32>>> = OnceLock::new();
+    ACTIVE.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+fn register_active_forkserver(pid: u32) {
+    active_forkservers()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .insert(pid);
+}
+
+fn unregister_active_forkserver(pid: u32) {
+    active_forkservers()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .remove(&pid);
+}
+
+pub fn cancel_active_forkservers() {
+    #[cfg(unix)]
+    {
+        let pids: Vec<u32> = active_forkservers()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .copied()
+            .collect();
+        for pid in &pids {
+            signal_forkserver_group(*pid, libc::SIGTERM);
+        }
+        if !pids.is_empty() {
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        for pid in pids {
+            signal_forkserver_group(pid, libc::SIGKILL);
+        }
+    }
+}
+
+#[cfg(unix)]
+fn signal_forkserver_group(pid: u32, signal: libc::c_int) {
+    let pid = pid as libc::pid_t;
+    if pid > 0 && unsafe { libc::getpgid(pid) } == pid {
+        unsafe {
+            libc::kill(-pid, signal);
+        }
     }
 }
 

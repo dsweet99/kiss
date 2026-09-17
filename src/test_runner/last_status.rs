@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
-use std::fs;
+use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use fs2::FileExt;
 use kiss::Language;
 use serde::{Deserialize, Serialize};
 
@@ -124,6 +125,7 @@ pub(crate) fn record_statuses(
     if statuses.is_empty() {
         return Ok(());
     }
+    let _lock = lock_store(repo_root)?;
     let language = match language {
         Language::Python => "python",
         Language::Rust => "rust",
@@ -152,6 +154,20 @@ pub(crate) fn record_statuses(
             .then_with(|| left.selector.cmp(&right.selector))
     });
     write_store(repo_root, &store)
+}
+
+fn lock_store(repo_root: &Path) -> Result<fs::File, String> {
+    let dir = repo_root.join(".kiss");
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(dir.join("test_last_status.lock"))
+        .map_err(|e| e.to_string())?;
+    file.lock_exclusive().map_err(|e| e.to_string())?;
+    Ok(file)
 }
 
 #[derive(Default, Deserialize, Serialize)]

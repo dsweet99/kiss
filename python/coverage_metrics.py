@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import statistics
@@ -6,11 +5,8 @@ from pathlib import Path
 from typing import NamedTuple
 
 import click
-from scipy.stats import spearmanr
 
-from python.coverage_collect import run_true_coverage
-from python.coverage_kiss import run_kiss_check_all
-from python.coverage_stats import percentile
+from python.coverage_stats import percentile, spearman_correlation
 
 
 class CoverageComparison(NamedTuple):
@@ -55,9 +51,7 @@ def report_metrics(comparison: CoverageComparison) -> None:
     mean_err = statistics.mean(errors_01)
     std_err = statistics.stdev(errors_01) if len(errors_01) > 1 else 0.0
     mean_plus_std = mean_err + std_err
-    corr = spearmanr(comparison.true_vals, comparison.kiss_vals).statistic
-    if corr is None:
-        corr = float("nan")
+    corr = spearman_correlation(comparison.true_vals, comparison.kiss_vals)
 
     n_files = len(comparison.errors)
     print(f"files compared: {n_files}")
@@ -68,6 +62,18 @@ def report_metrics(comparison: CoverageComparison) -> None:
     print(f"p99(c_f):  {percentile(errors_01, 99):.4f}")
     print(f"max(c_f):  {max(errors_01):.4f}")
     print(f"spearman(coverage_true, coverage_kiss): {corr:.4f}")
+
+
+def run_true_coverage(repo: Path) -> dict[str, float]:
+    from python.coverage_collect import run_true_coverage as impl
+
+    return impl(repo)
+
+
+def run_kiss_check_all(repo: Path) -> dict[str, float]:
+    from python.coverage_kiss import run_kiss_check_all as impl
+
+    return impl(repo)
 
 
 def run_comparison(repo: Path) -> None:

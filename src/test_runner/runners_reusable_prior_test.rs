@@ -2,16 +2,15 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use kiss::rpytest_runner::TestStatus;
-use kiss::rust_llvm_cov_runner::RustLineCoverage;
 use tempfile::TempDir;
 
 use crate::test_runner::coverage_decision::{CoverageFreshness, LanguagePlanner, SelectionBasis};
 use crate::test_runner::runners::rust_backer::RustModule;
 use crate::test_runner::runners::{combined_selectors, enumerate_workspace_rust_selectors};
+use crate::test_runner::test_mode_fixtures::clone_warm_demo_repo;
+use crate::test_runner::test_mode_fixtures::with_locked_warm_demo_repo;
 use crate::test_runner::rust_coverage_index::{
-    current_rust_coverage_batch_identity, rebuild_rust_coverage_index,
-    resolve_rust_population_state, write_rust_population_manifest_for_args, write_test_entry,
+    ResolveRustPopulationArgs, resolve_rust_population_state,
 };
 
 #[test]
@@ -39,9 +38,12 @@ fn reusable_prior_real_cache_fixture() {
     .expect("combined selectors");
     let universe = enumerate_workspace_rust_selectors(repo, &[]).unwrap();
     assert_eq!(
-        resolve_rust_population_state(repo, &[], std::slice::from_ref(&cli), &[])
-            .expect("resolved")
-            .freshness(),
+        resolve_rust_population_state(ResolveRustPopulationArgs::for_paths(
+            repo,
+            std::slice::from_ref(&cli),
+        ))
+        .expect("resolved")
+        .freshness(),
         CoverageFreshness::ReusablePrior
     );
     assert!(!plan.population_required.rust);
@@ -52,182 +54,80 @@ fn reusable_prior_real_cache_fixture() {
 
 #[test]
 fn combined_selectors_uses_reusable_prior_after_ordinary_source_edit() {
-    let tmp = TempDir::new().unwrap();
-    let src = tmp.path().join("src");
-    fs::create_dir(&src).unwrap();
-    fs::write(
-        tmp.path().join("Cargo.toml"),
-        "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
-    )
-    .unwrap();
-    let lib = src.join("lib.rs");
-    fs::write(
-        &lib,
-        "pub fn value() -> u32 { 1 }\n#[cfg(test)]\nmod tests { #[test] fn gets_value() { assert_eq!(super::value(), 1); } }\n",
-    )
-    .unwrap();
-    let _ = current_rust_coverage_batch_identity(tmp.path(), &[]);
-    write_test_entry(
-        tmp.path(),
-        "abc",
-        "tests::gets_value",
-        TestStatus::Passed,
-        RustLineCoverage {
-            files: BTreeMap::from([(
-                "src/lib.rs".to_string(),
-                std::collections::BTreeSet::from([1]),
-            )]),
-        },
-    );
-    rebuild_rust_coverage_index(tmp.path()).unwrap();
-    write_rust_population_manifest_for_args(tmp.path(), &["tests::gets_value".to_string()], &[])
+    with_locked_warm_demo_repo(|repo, lib| {
+        let plan = combined_selectors(
+            repo,
+            std::slice::from_ref(&lib),
+            &[],
+            &BTreeMap::new(),
+            &[],
+            None,
+            &[],
+        )
         .unwrap();
-    fs::write(
-        &lib,
-        "pub fn value() -> u32 { 2 }\n#[cfg(test)]\nmod tests { #[test] fn gets_value() { assert_eq!(super::value(), 2); } }\n",
-    )
-    .unwrap();
 
-    let plan = combined_selectors(
-        tmp.path(),
-        std::slice::from_ref(&lib),
-        &[],
-        &BTreeMap::new(),
-        &[],
-        None,
-        &[],
-    )
-    .unwrap();
-
-    assert_eq!(plan.selectors.rust, vec!["tests::gets_value".to_string()]);
-    assert!(!plan.population_required.rust);
-    assert_eq!(plan.selection_basis.rust, SelectionBasis::ReusablePrior);
+        assert_eq!(plan.selectors.rust, vec!["tests::gets_value".to_string()]);
+        assert!(!plan.population_required.rust);
+        assert_eq!(plan.selection_basis.rust, SelectionBasis::ReusablePrior);
+    });
 }
 
 #[test]
 fn reusable_prior_uses_snapshot_delta_instead_of_historical_vcs_sources() {
-    let tmp = TempDir::new().unwrap();
-    let src = tmp.path().join("src");
-    fs::create_dir(&src).unwrap();
-    fs::write(
-        tmp.path().join("Cargo.toml"),
-        "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
-    )
-    .unwrap();
-    let lib = src.join("lib.rs");
-    let historical = src.join("historical.rs");
-    fs::write(
-        &lib,
-        "pub fn value() -> u32 { 1 }\n#[cfg(test)]\nmod tests { #[test] fn gets_value() { assert_eq!(super::value(), 1); } }\n",
-    )
-    .unwrap();
-    fs::write(&historical, "pub fn historical() -> u32 { 1 }\n").unwrap();
-    let _ = current_rust_coverage_batch_identity(tmp.path(), &[]);
-    write_test_entry(
-        tmp.path(),
-        "abc",
-        "tests::gets_value",
-        TestStatus::Passed,
-        RustLineCoverage {
-            files: BTreeMap::from([(
-                "src/lib.rs".to_string(),
-                std::collections::BTreeSet::from([1]),
-            )]),
-        },
-    );
-    rebuild_rust_coverage_index(tmp.path()).unwrap();
-    write_rust_population_manifest_for_args(tmp.path(), &["tests::gets_value".to_string()], &[])
+    crate::test_runner::test_mode_fixtures::with_locked_base_historical_repo(|repo, _baseline, lib| {
+        let historical = repo.join("src").join("historical.rs");
+        let plan = combined_selectors(
+            repo,
+            &[historical, lib.clone()],
+            &[],
+            &BTreeMap::new(),
+            &[],
+            None,
+            &[],
+        )
         .unwrap();
-    fs::write(
-        &lib,
-        "pub fn value() -> u32 { 2 }\n#[cfg(test)]\nmod tests { #[test] fn gets_value() { assert_eq!(super::value(), 2); } }\n",
-    )
-    .unwrap();
 
-    let plan = combined_selectors(
-        tmp.path(),
-        &[historical, lib.clone()],
-        &[],
-        &BTreeMap::new(),
-        &[],
-        None,
-        &[],
-    )
-    .unwrap();
-
-    assert!(!plan.population_required.rust);
-    assert_eq!(plan.selection_basis.rust, SelectionBasis::ReusablePrior);
-    assert_eq!(plan.source_paths.rust, vec![lib]);
-    assert_eq!(plan.vcs_source_paths.rust, 2);
-    assert_eq!(plan.snapshot_delta_modified.rust, 1);
-    assert!(!plan.snapshot_delta_structural.rust);
-    assert_eq!(plan.selectors.rust, vec!["tests::gets_value".to_string()]);
+        assert!(!plan.population_required.rust);
+        assert_eq!(plan.selection_basis.rust, SelectionBasis::ReusablePrior);
+        assert_eq!(plan.source_paths.rust, vec![lib]);
+        assert_eq!(plan.vcs_source_paths.rust, 2);
+        assert_eq!(plan.snapshot_delta_modified.rust, 1);
+        assert!(!plan.snapshot_delta_structural.rust);
+        assert_eq!(plan.selectors.rust, vec!["tests::gets_value".to_string()]);
+    });
 }
 
 #[test]
 fn rust_module_reports_reusable_prior_after_ordinary_source_edit() {
-    let tmp = TempDir::new().unwrap();
-    fs::create_dir_all(tmp.path().join("src")).unwrap();
-    fs::write(
-        tmp.path().join("Cargo.toml"),
-        "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
-    )
-    .unwrap();
-    let lib = tmp.path().join("src").join("lib.rs");
-    fs::write(
-        &lib,
-        "pub fn value() -> u32 { 1 }\n#[cfg(test)] mod tests { #[test] fn gets_value() {} }\n",
-    )
-    .unwrap();
-    let _ = current_rust_coverage_batch_identity(tmp.path(), &[]);
-    write_test_entry(
-        tmp.path(),
-        "value",
-        "tests::gets_value",
-        TestStatus::Passed,
-        RustLineCoverage {
-            files: BTreeMap::from([(
-                lib.to_string_lossy().to_string(),
-                std::collections::BTreeSet::from([1]),
-            )]),
-        },
-    );
-    rebuild_rust_coverage_index(tmp.path()).unwrap();
-    write_rust_population_manifest_for_args(tmp.path(), &["tests::gets_value".to_string()], &[])
-        .unwrap();
-    fs::write(
-        &lib,
-        "pub fn value() -> u32 { 2 }\n#[cfg(test)] mod tests { #[test] fn gets_value() {} }\n",
-    )
-    .unwrap();
-
-    let module = RustModule::new(
-        tmp.path(),
-        std::slice::from_ref(&lib),
-        &BTreeMap::new(),
-        &[],
-        &[],
-        &[],
-        &[],
-    );
-    let universe = module.discover_universe().unwrap();
-    assert_eq!(
-        <RustModule as LanguagePlanner>::freshness(&module, &universe).unwrap(),
-        CoverageFreshness::ReusablePrior
-    );
-    let selection = <RustModule as LanguagePlanner>::select(&module).unwrap();
-    assert!(selection.complete);
-    assert_eq!(
-        selection
-            .selectors
-            .iter()
-            .map(|s| s.id.as_str())
-            .collect::<Vec<_>>(),
-        vec!["tests::gets_value"]
-    );
-    assert_eq!(module.selection_basis(), SelectionBasis::ReusablePrior);
-    let empty_module = RustModule::new(tmp.path(), &[], &BTreeMap::new(), &[], &[], &[], &[]);
-    assert_eq!(empty_module.selection_basis(), SelectionBasis::Current);
+    with_locked_warm_demo_repo(|repo, lib| {
+        let module = RustModule::new(
+            repo,
+            std::slice::from_ref(&lib),
+            &BTreeMap::new(),
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+        let universe = module.discover_universe().unwrap();
+        assert_eq!(
+            <RustModule as LanguagePlanner>::freshness(&module, &universe).unwrap(),
+            CoverageFreshness::ReusablePrior
+        );
+        let selection = <RustModule as LanguagePlanner>::select(&module).unwrap();
+        assert!(selection.complete);
+        assert_eq!(
+            selection
+                .selectors
+                .iter()
+                .map(|s| s.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["tests::gets_value"]
+        );
+        assert_eq!(module.selection_basis(), SelectionBasis::ReusablePrior);
+        let empty_module = RustModule::new(repo, &[], &BTreeMap::new(), &[], &[], &[], &[]);
+        assert_eq!(empty_module.selection_basis(), SelectionBasis::Current);
+    });
 }
 
 #[test]
@@ -256,7 +156,7 @@ fn cargo_toml_invalidator_forces_population_after_warm_snapshot() {
 #[test]
 fn corrupt_prior_index_row_forces_population() {
     let tmp = TempDir::new().unwrap();
-    let lib = warm_demo_repo(tmp.path());
+    let lib = clone_warm_demo_repo(tmp.path());
     fs::write(
         &lib,
         "pub fn value() -> u32 { 2 }\n#[cfg(test)]\nmod tests { #[test] fn gets_value() { assert_eq!(super::value(), 2); } }\n",
@@ -308,32 +208,5 @@ fn renamed_production_rs_path_forces_population() {
 }
 
 fn warm_demo_repo(root: &Path) -> std::path::PathBuf {
-    fs::create_dir_all(root.join("src")).unwrap();
-    fs::write(
-        root.join("Cargo.toml"),
-        "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
-    )
-    .unwrap();
-    let lib = root.join("src").join("lib.rs");
-    fs::write(
-        &lib,
-        "pub fn value() -> u32 { 1 }\n#[cfg(test)]\nmod tests { #[test] fn gets_value() { assert_eq!(super::value(), 1); } }\n",
-    )
-    .unwrap();
-    let _ = current_rust_coverage_batch_identity(root, &[]);
-    write_test_entry(
-        root,
-        "abc",
-        "tests::gets_value",
-        TestStatus::Passed,
-        RustLineCoverage {
-            files: BTreeMap::from([(
-                "src/lib.rs".to_string(),
-                std::collections::BTreeSet::from([1]),
-            )]),
-        },
-    );
-    rebuild_rust_coverage_index(root).unwrap();
-    write_rust_population_manifest_for_args(root, &["tests::gets_value".to_string()], &[]).unwrap();
-    lib
+    clone_warm_demo_repo(root)
 }

@@ -10,9 +10,6 @@ pub fn run_cli_entrypoint() -> i32 {
     run_with_cli(parse_cli())
 }
 
-#[cfg(test)]
-pub use run_cli_entrypoint as run;
-
 pub(crate) fn run_with_cli(cli: Cli) -> i32 {
     let _config_override = kiss::ConfigPathOverrideGuard::enter(cli.config.as_deref());
     if let Commands::RustLlvmCovTargetRunner {

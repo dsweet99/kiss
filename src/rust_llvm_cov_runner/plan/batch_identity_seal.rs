@@ -6,11 +6,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use crate::rust_llvm_cov_runner::plan::batch_fingerprint::{RustCoverageBatchIdentity, RustCoverageToolIdentity};
+use crate::rust_llvm_cov_runner::plan::batch_fingerprint::{
+    RustCoverageBatchIdentity, RustCoverageToolIdentity,
+};
 use crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest;
 use crate::rust_llvm_cov_runner::plan::shared_input::rust_cov_input_files;
 
-const SEAL_SCHEMA_VERSION: &str = "rust-input-mtime-seal-v2";
+const SEAL_SCHEMA_VERSION: &str = "rust-input-mtime-seal-v4";
 const SEAL_FILE_NAME: &str = "input_mtime_seal.json";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -19,6 +21,7 @@ struct SealFileMeta {
     len: u64,
     mtime_ns: u64,
     ctime_ns: u64,
+    content_digest: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -86,21 +89,36 @@ fn collect_file_meta(source_root: &Path) -> io::Result<Vec<SealFileMeta>> {
             })?
             .to_string_lossy()
             .replace('\\', "/");
+        let bytes = fs::read(&file)?;
         out.push(SealFileMeta {
             path: rel,
             len: meta.len(),
             mtime_ns: mtime_ns(&meta).unwrap_or(0),
             ctime_ns: ctime_ns(&meta),
+            content_digest:
+                crate::rust_llvm_cov_runner::plan::shared_input::ordinary_source_content_digest(
+                    &bytes,
+                ),
         });
     }
     Ok(out)
 }
 
-fn file_meta_matches(source_root: &Path, expected: &[SealFileMeta]) -> bool {
-    let Ok(current) = collect_file_meta(source_root) else {
-        return false;
-    };
-    current == expected
+fn matching_file_meta(source_root: &Path, expected: &[SealFileMeta]) -> Option<Vec<SealFileMeta>> {
+    let current = collect_file_meta(source_root).ok()?;
+    (current == expected).then_some(current)
+}
+
+fn ordinary_source_digests_match(
+    current: &[SealFileMeta],
+    stored: &BTreeMap<String, String>,
+) -> bool {
+    stored.iter().all(|(rel, digest)| {
+        current
+            .iter()
+            .find(|meta| meta.path == *rel)
+            .is_some_and(|meta| meta.content_digest == *digest)
+    })
 }
 
 pub fn write_identity_mtime_seal(
@@ -112,7 +130,9 @@ pub fn write_identity_mtime_seal(
 ) -> io::Result<()> {
     let seal = InputMtimeSeal {
         schema_version: SEAL_SCHEMA_VERSION.to_string(),
-        source_root: crate::rust_llvm_cov_runner::rust_cov_cache::normalized_source_root(source_root),
+        source_root: crate::rust_llvm_cov_runner::rust_cov_cache::normalized_source_root(
+            source_root,
+        ),
         runner_map_fingerprint: req.runner_map_fingerprint.clone(),
         cargo_version: tools.cargo_version.clone(),
         llvm_cov_version: tools.llvm_cov_version.clone(),
@@ -156,10 +176,10 @@ pub fn try_identity_from_mtime_seal(
 ) -> Option<RustCoverageBatchIdentity> {
     let bytes = fs::read(seal_path(cache_root)).ok()?;
     let seal: InputMtimeSeal = serde_json::from_slice(&bytes).ok()?;
-    if seal.schema_version != SEAL_SCHEMA_VERSION {
-        return None;
-    }
-    if seal.source_root != crate::rust_llvm_cov_runner::rust_cov_cache::normalized_source_root(source_root) {
+    if seal.schema_version != SEAL_SCHEMA_VERSION
+        || seal.source_root
+            != crate::rust_llvm_cov_runner::rust_cov_cache::normalized_source_root(source_root)
+    {
         return None;
     }
     if seal.runner_map_fingerprint != req.runner_map_fingerprint
@@ -170,16 +190,18 @@ pub fn try_identity_from_mtime_seal(
     {
         return None;
     }
-    if !file_meta_matches(source_root, &seal.files) {
+    let current = matching_file_meta(source_root, &seal.files)?;
+    if !ordinary_source_digests_match(&current, &seal.ordinary_source_digests) {
         return None;
     }
 
-    let live_generation = crate::rust_llvm_cov_runner::plan::batch_fingerprint::generation_fingerprint(
-        &seal.input_digest,
-        req,
-        tools,
-        crate::rust_llvm_cov_runner::BATCH_EXECUTION_POLICY_VERSION,
-    );
+    let live_generation =
+        crate::rust_llvm_cov_runner::plan::batch_fingerprint::generation_fingerprint(
+            &seal.input_digest,
+            req,
+            tools,
+            crate::rust_llvm_cov_runner::BATCH_EXECUTION_POLICY_VERSION,
+        );
     if live_generation != seal.generation_fingerprint {
         return None;
     }
@@ -189,4 +211,53 @@ pub fn try_identity_from_mtime_seal(
         selection_context_fingerprint: seal.selection_context_fingerprint,
         ordinary_source_digests: seal.ordinary_source_digests,
     })
+}
+
+pub fn try_source_matched_seal_identity(
+    cache_root: &Path,
+    source_root: &Path,
+) -> Option<RustCoverageBatchIdentity> {
+    let bytes = fs::read(seal_path(cache_root)).ok()?;
+    let seal: InputMtimeSeal = serde_json::from_slice(&bytes).ok()?;
+    if seal.schema_version != SEAL_SCHEMA_VERSION
+        || seal.source_root
+            != crate::rust_llvm_cov_runner::rust_cov_cache::normalized_source_root(source_root)
+    {
+        return None;
+    }
+    let current = match try_reuse_seal_file_meta(source_root, &seal.files) {
+        Some(meta) => meta,
+        None => collect_file_meta(source_root).ok()?,
+    };
+    if !ordinary_source_digests_match(&current, &seal.ordinary_source_digests) {
+        return None;
+    }
+    Some(RustCoverageBatchIdentity {
+        input_digest: seal.input_digest,
+        generation_fingerprint: seal.generation_fingerprint,
+        selection_context_fingerprint: seal.selection_context_fingerprint,
+        ordinary_source_digests: seal.ordinary_source_digests,
+    })
+}
+
+fn try_reuse_seal_file_meta(
+    source_root: &Path,
+    expected: &[SealFileMeta],
+) -> Option<Vec<SealFileMeta>> {
+    let root = source_root
+        .canonicalize()
+        .unwrap_or_else(|_| source_root.to_path_buf());
+    let mut out = Vec::with_capacity(expected.len());
+    for file in expected {
+        let path = root.join(&file.path);
+        let meta = fs::metadata(&path).ok()?;
+        if meta.len() != file.len
+            || mtime_ns(&meta).unwrap_or(0) != file.mtime_ns
+            || ctime_ns(&meta) != file.ctime_ns
+        {
+            return None;
+        }
+        out.push(file.clone());
+    }
+    Some(out)
 }

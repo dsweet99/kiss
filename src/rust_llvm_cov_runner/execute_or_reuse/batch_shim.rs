@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::{ProcessGroupIdentity, identity_still_valid};
+use crate::rust_llvm_cov_runner::execute_or_reuse::batch_process_tree::{
+    ProcessGroupIdentity, identity_still_valid,
+};
 
 #[path = "batch_shim_child.rs"]
 mod batch_shim_child;
@@ -28,7 +30,7 @@ pub(crate) use batch_shim_write::{write_shim_metadata, write_shim_start_metadata
 pub use crate::rust_llvm_cov_runner::plan::batch_plan_shim_const::TARGET_RUNNER_SHIM_SUBCOMMAND;
 pub(crate) const SHIM_START_SCHEMA: &str = "kiss-rust-llvm-cov-shim-start-v1";
 pub(crate) const DELEGATED_START_SCHEMA: &str = "kiss-rust-llvm-cov-shim-delegated-start-v1";
-pub(crate) const SHIM_LIST_SCHEMA: &str = "kiss-rust-llvm-cov-shim-list-v1";
+pub(crate) const SHIM_LIST_SCHEMA: &str = "kiss-rust-llvm-cov-shim-list-v2";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BatchShimStartMetadata {
@@ -73,6 +75,8 @@ pub struct BatchShimListMetadata {
     pub binary_id: String,
     pub argv: Vec<String>,
     pub test_names: Vec<String>,
+    #[serde(default)]
+    pub cwd: PathBuf,
 }
 
 pub fn run_target_runner_shim(

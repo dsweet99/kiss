@@ -1,4 +1,8 @@
-use crate::common::{generate_lockfile, seed_python_runtime_coverage, seed_rust_runtime_coverage};
+use crate::common::{
+    preserve_toolchain_homes, scrub_parent_coverage_env, seed_python_runtime_coverage,
+    seed_rust_runtime_coverage,
+};
+use crate::support::git::{commit_all, init_git_repo};
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
@@ -7,8 +11,10 @@ use tempfile::TempDir;
 fn mixed_python_and_rust_runtime_line_coverage_can_pass_together() {
     let home = TempDir::new().unwrap();
     let repo = TempDir::new().unwrap();
+    init_git_repo(repo.path());
     write_mixed_runtime_repo(&repo);
-    generate_lockfile(repo.path());
+    // Lockfile not required for seeded kiss check; skip cargo generate-lockfile (~costly).
+    commit_all(repo.path(), "init");
     seed_python_runtime_coverage(
         repo.path(),
         &[("test_app.py::test_py_value", vec![("app.py", vec![1, 2])])],
@@ -21,7 +27,9 @@ fn mixed_python_and_rust_runtime_line_coverage_can_pass_together() {
         )],
     );
 
-    let out = run_kiss_cov_all(&home, &repo);
+    // Coverage gate only: seeded runtimes must satisfy mixed-language threshold without
+    // cold llvm-cov / pytest (kiss test --coverage-all) which is multi-second even warm.
+    let out = run_kiss_check(&home, &repo);
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
 
@@ -41,7 +49,6 @@ fn write_mixed_runtime_repo(repo: &TempDir) {
         repo.path().join(".kissconfig"),
         "[global]\n\
          duplication_enabled = false\n\
-         orphan_module_enabled = false\n\
 \n\
 [test]\n\
          test_coverage_threshold = 100\n\
@@ -81,12 +88,14 @@ fn write_mixed_runtime_repo(repo: &TempDir) {
     .unwrap();
 }
 
-fn run_kiss_cov_all(home: &TempDir, repo: &TempDir) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .arg("__coverage")
-        .arg("--all")
-        .arg(repo.path())
-        .env("HOME", home.path())
+fn run_kiss_check(home: &TempDir, repo: &TempDir) -> std::process::Output {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
+    scrub_parent_coverage_env(&mut cmd);
+    preserve_toolchain_homes(&mut cmd);
+    let _ = home;
+    cmd.current_dir(repo.path())
+        .arg("check")
+        .arg(".")
         .output()
-        .expect("kiss test should run")
+        .expect("kiss check should run")
 }

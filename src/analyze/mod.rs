@@ -1,6 +1,7 @@
 mod cache;
 #[cfg(test)]
 pub(crate) mod cov_cache_test_support;
+pub(crate) mod cov_coverable_cache;
 pub(crate) mod cov_file_list_cache;
 pub(crate) mod cov_records_cache;
 mod coverage;
@@ -16,6 +17,7 @@ mod graph_api;
 mod lang_sides;
 pub(crate) mod line_coverage;
 mod options;
+mod orphan_unit_gate;
 mod parallel;
 mod params;
 mod pipeline;
@@ -46,6 +48,9 @@ pub use graph_api::{
 };
 #[allow(unused_imports)]
 pub use options::{AnalyzeOptions, AnalyzeResult};
+pub(crate) use orphan_unit_gate::{
+    collect_orphan_unit_violations, evaluate_orphan_unit_gate, evaluate_orphan_unit_gate_with_viols,
+};
 #[cfg(test)]
 pub(crate) use pipeline::empty_full_pipeline_result_for_tests;
 #[allow(unused_imports)]

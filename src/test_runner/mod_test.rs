@@ -1,9 +1,12 @@
+use std::fs;
+
 use crate::test_git::TestChangeMode;
 
 use kiss::Language;
 
 #[test]
 fn run_test_returns_nonzero_when_planning_fails_outside_git_repo() {
+    let _cwd = crate::cwd_test_lock::lock();
     let tmp = tempfile::tempdir().unwrap();
     let old = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
@@ -29,21 +32,26 @@ fn run_test_returns_nonzero_when_planning_fails_outside_git_repo() {
 
 #[test]
 fn run_test_dry_run_commit_in_workspace_completes() {
-    let code = crate::test_runner::run_test(crate::test_runner::RunTestCmdArgs {
-        invocation: crate::bin_cli::args::TestInvocation::Commit,
-        main_branch_cli: None,
-        base_branch_cli: None,
-        dry_run: true,
-        force_rerun: false,
-        force_bad: false,
-        metrics: false,
-        jobs: 1,
-        extra: &[],
-        python_extra: &[],
-        ignore: &[],
-        lang_filter: Some(Language::Rust),
-        config_main_branch: None,
-        gate_config: kiss::GateConfig::default(),
+    let _cwd = crate::cwd_test_lock::lock();
+    let tmp = tempfile::tempdir().unwrap();
+    crate::test_runner::test_mode_fixtures::init_git(&tmp);
+    let code = crate::test_runner::test_mode_fixtures::with_cwd(tmp.path(), || {
+        crate::test_runner::run_test(crate::test_runner::RunTestCmdArgs {
+            invocation: crate::bin_cli::args::TestInvocation::Commit,
+            main_branch_cli: None,
+            base_branch_cli: None,
+            dry_run: true,
+            force_rerun: false,
+            force_bad: false,
+            metrics: false,
+            jobs: 1,
+            extra: &[],
+            python_extra: &[],
+            ignore: &[],
+            lang_filter: Some(Language::Rust),
+            config_main_branch: None,
+            gate_config: kiss::GateConfig::default(),
+        })
     });
     assert!(
         code == 0 || code == 1,
@@ -53,22 +61,27 @@ fn run_test_dry_run_commit_in_workspace_completes() {
 
 #[test]
 fn run_test_reports_run_selectors_error_for_unsupported_rust_extra() {
+    let _cwd = crate::cwd_test_lock::lock();
+    let tmp = tempfile::tempdir().unwrap();
+    crate::test_runner::test_mode_fixtures::init_git(&tmp);
     let extra = ["--format".to_string()];
-    let code = crate::test_runner::run_test(crate::test_runner::RunTestCmdArgs {
-        invocation: crate::bin_cli::args::TestInvocation::Commit,
-        main_branch_cli: None,
-        base_branch_cli: None,
-        dry_run: true,
-        force_rerun: false,
-        force_bad: false,
-        metrics: false,
-        jobs: 1,
-        extra: &extra,
-        python_extra: &[],
-        ignore: &[],
-        lang_filter: Some(Language::Rust),
-        config_main_branch: None,
-        gate_config: kiss::GateConfig::default(),
+    let code = crate::test_runner::test_mode_fixtures::with_cwd(tmp.path(), || {
+        crate::test_runner::run_test(crate::test_runner::RunTestCmdArgs {
+            invocation: crate::bin_cli::args::TestInvocation::All,
+            main_branch_cli: None,
+            base_branch_cli: None,
+            dry_run: true,
+            force_rerun: false,
+            force_bad: false,
+            metrics: false,
+            jobs: 1,
+            extra: &extra,
+            python_extra: &[],
+            ignore: &[],
+            lang_filter: Some(Language::Rust),
+            config_main_branch: None,
+            gate_config: kiss::GateConfig::default(),
+        })
     });
     assert_eq!(code, 1);
 }
@@ -194,6 +207,43 @@ fn cold_initialization_population_marks_missing_state_for_both_languages() {
 
 #[test]
 fn plan_all_materializes_nonempty_language_selector_sets() {
+    let _cwd = crate::cwd_test_lock::lock();
+    let tmp = tempfile::TempDir::new().unwrap();
+    let root = tmp.path();
+    crate::test_runner::test_mode_fixtures::init_git(&tmp);
+    fs::create_dir_all(root.join("src")).unwrap();
+    fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname='demo'\nversion='0.1.0'\nedition='2021'\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("src/lib.rs"),
+        "pub fn value() -> u32 { 1 }\n#[cfg(test)]\nmod tests { #[test] fn ok() { assert_eq!(super::value(), 1); } }\n",
+    )
+    .unwrap();
+    fs::write(root.join("app.py"), "def f():\n    return 1\n").unwrap();
+    fs::write(
+        root.join("test_app.py"),
+        "from app import f\n\ndef test_f():\n    assert f() == 1\n",
+    )
+    .unwrap();
+    assert!(
+        crate::test_runner::test_mode_fixtures::git_in(root)
+            .args(["add", "."])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        crate::test_runner::test_mode_fixtures::git_in(root)
+            .args(["commit", "-m", "init"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    let orig = std::env::current_dir().unwrap();
+    std::env::set_current_dir(root).unwrap();
     let both = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::All,
         &[],
@@ -203,11 +253,7 @@ fn plan_all_materializes_nonempty_language_selector_sets() {
         },
         None,
         &kiss::GateConfig::default(),
-    )
-    .unwrap();
-    assert!(!both.sel.python.is_empty());
-    assert!(!both.sel.rust.is_empty());
-
+    );
     let python_only = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::All,
         &[],
@@ -217,12 +263,7 @@ fn plan_all_materializes_nonempty_language_selector_sets() {
         },
         Some(Language::Python),
         &kiss::GateConfig::default(),
-    )
-    .unwrap();
-    assert!(!python_only.population_required.rust);
-    assert!(!python_only.sel.python.is_empty());
-    assert!(python_only.sel.rust.is_empty());
-
+    );
     let rust_only = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::All,
         &[],
@@ -232,8 +273,18 @@ fn plan_all_materializes_nonempty_language_selector_sets() {
         },
         Some(Language::Rust),
         &kiss::GateConfig::default(),
-    )
-    .unwrap();
+    );
+    std::env::set_current_dir(orig).unwrap();
+    let both = both.unwrap();
+    assert!(!both.sel.python.is_empty());
+    assert!(!both.sel.rust.is_empty());
+
+    let python_only = python_only.unwrap();
+    assert!(!python_only.population_required.rust);
+    assert!(!python_only.sel.python.is_empty());
+    assert!(python_only.sel.rust.is_empty());
+
+    let rust_only = rust_only.unwrap();
     assert!(!rust_only.population_required.python);
     assert!(rust_only.sel.python.is_empty());
     assert!(!rust_only.sel.rust.is_empty());
@@ -241,9 +292,38 @@ fn plan_all_materializes_nonempty_language_selector_sets() {
 
 #[test]
 fn plan_repo_root_target_matches_all_via_dot() {
-    let cwd = std::env::current_dir().unwrap();
-    let repo_root = crate::test_git::git_repo_root(&cwd).unwrap();
-    let root = repo_root.canonicalize().unwrap();
+    let _cwd = crate::cwd_test_lock::lock();
+    let tmp = tempfile::TempDir::new().unwrap();
+    let root = tmp.path();
+    crate::test_runner::test_mode_fixtures::init_git(&tmp);
+    fs::create_dir_all(root.join("src")).unwrap();
+    fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname='demo'\nversion='0.1.0'\nedition='2021'\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("src/lib.rs"),
+        "pub fn value() -> u32 { 1 }\n#[cfg(test)]\nmod tests { #[test] fn ok() { assert_eq!(super::value(), 1); } }\n",
+    )
+    .unwrap();
+    assert!(
+        crate::test_runner::test_mode_fixtures::git_in(root)
+            .args(["add", "."])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        crate::test_runner::test_mode_fixtures::git_in(root)
+            .args(["commit", "-m", "init"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    let root = root.canonicalize().unwrap();
+    let orig = std::env::current_dir().unwrap();
+    std::env::set_current_dir(&root).unwrap();
     let via_all = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::All,
         &[],
@@ -253,8 +333,7 @@ fn plan_repo_root_target_matches_all_via_dot() {
         },
         Some(Language::Rust),
         &kiss::GateConfig::default(),
-    )
-    .unwrap();
+    );
     let via_root = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::Targets(&[root.to_string_lossy().into_owned()]),
         &[],
@@ -264,8 +343,7 @@ fn plan_repo_root_target_matches_all_via_dot() {
         },
         Some(Language::Rust),
         &kiss::GateConfig::default(),
-    )
-    .unwrap();
+    );
     let via_dot = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::Targets(&[".".into()]),
         &[],
@@ -275,8 +353,11 @@ fn plan_repo_root_target_matches_all_via_dot() {
         },
         Some(Language::Rust),
         &kiss::GateConfig::default(),
-    )
-    .unwrap();
+    );
+    std::env::set_current_dir(orig).unwrap();
+    let via_all = via_all.unwrap();
+    let via_root = via_root.unwrap();
+    let via_dot = via_dot.unwrap();
     assert_eq!(via_all.sel.rust, via_root.sel.rust);
     assert_eq!(via_all.sel.python, via_root.sel.python);
     assert_eq!(
@@ -306,6 +387,43 @@ fn plan_repo_root_target_matches_all_via_dot() {
 
 #[test]
 fn plan_subdirectory_is_not_workspace_enumerator() {
+    let _cwd = crate::cwd_test_lock::lock();
+    let tmp = tempfile::TempDir::new().unwrap();
+    let root = tmp.path();
+    crate::test_runner::test_mode_fixtures::init_git(&tmp);
+    fs::create_dir_all(root.join("src/bin_cli")).unwrap();
+    fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname='demo'\nversion='0.1.0'\nedition='2021'\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("src/lib.rs"),
+        "pub fn root() -> u32 { 1 }\n#[cfg(test)]\nmod tests { #[test] fn root_ok() { assert_eq!(super::root(), 1); } }\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("src/bin_cli/mod.rs"),
+        "pub fn cli() -> u32 { 1 }\n#[cfg(test)]\nmod tests { #[test] fn cli_ok() { assert_eq!(super::cli(), 1); } }\n",
+    )
+    .unwrap();
+    assert!(
+        crate::test_runner::test_mode_fixtures::git_in(root)
+            .args(["add", "."])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        crate::test_runner::test_mode_fixtures::git_in(root)
+            .args(["commit", "-m", "init"])
+            .status()
+            .unwrap()
+            .success()
+    );
+
+    let orig = std::env::current_dir().unwrap();
+    std::env::set_current_dir(root).unwrap();
     let planned = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::Targets(&["src/bin_cli".into()]),
         &[],
@@ -315,8 +433,7 @@ fn plan_subdirectory_is_not_workspace_enumerator() {
         },
         Some(Language::Rust),
         &kiss::GateConfig::default(),
-    )
-    .unwrap();
+    );
     let all = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::All,
         &[],
@@ -326,8 +443,10 @@ fn plan_subdirectory_is_not_workspace_enumerator() {
         },
         Some(Language::Rust),
         &kiss::GateConfig::default(),
-    )
-    .unwrap();
+    );
+    std::env::set_current_dir(orig).unwrap();
+    let planned = planned.unwrap();
+    let all = all.unwrap();
     assert!(!planned.sel.rust.is_empty());
     assert!(!planned.source_paths.rust.is_empty());
     assert!(planned.coverage_decision_engine_used);
@@ -337,9 +456,39 @@ fn plan_subdirectory_is_not_workspace_enumerator() {
 
 #[test]
 fn plan_dot_all_from_nested_cwd_stays_repo_wide() {
-    let cwd = std::env::current_dir().unwrap();
-    let nested = cwd.join("src/bin_cli");
-    assert!(nested.is_dir());
+    let _cwd = crate::cwd_test_lock::lock();
+    let tmp = tempfile::TempDir::new().unwrap();
+    let root = tmp.path();
+    crate::test_runner::test_mode_fixtures::init_git(&tmp);
+    fs::create_dir_all(root.join("src/nested")).unwrap();
+    fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname='demo'\nversion='0.1.0'\nedition='2021'\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("src/lib.rs"),
+        "pub fn value() -> u32 { 1 }\n#[cfg(test)]\nmod tests { #[test] fn ok() { assert_eq!(super::value(), 1); } }\n",
+    )
+    .unwrap();
+    fs::write(root.join("src/nested/mod.rs"), "pub fn n() -> u32 { 1 }\n").unwrap();
+    assert!(
+        crate::test_runner::test_mode_fixtures::git_in(root)
+            .args(["add", "."])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        crate::test_runner::test_mode_fixtures::git_in(root)
+            .args(["commit", "-m", "init"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    let root = root.canonicalize().unwrap();
+    let nested = root.join("src/nested");
+    let orig = std::env::current_dir().unwrap();
     std::env::set_current_dir(&nested).unwrap();
     let planned = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::All,
@@ -351,8 +500,7 @@ fn plan_dot_all_from_nested_cwd_stays_repo_wide() {
         Some(Language::Rust),
         &kiss::GateConfig::default(),
     );
-    std::env::set_current_dir(&cwd).unwrap();
-    let planned = planned.unwrap();
+    std::env::set_current_dir(&root).unwrap();
     let from_root = crate::test_runner::plan_target_selectors(
         crate::test_runner::TargetPlanKind::All,
         &[],
@@ -362,8 +510,10 @@ fn plan_dot_all_from_nested_cwd_stays_repo_wide() {
         },
         Some(Language::Rust),
         &kiss::GateConfig::default(),
-    )
-    .unwrap();
+    );
+    std::env::set_current_dir(orig).unwrap();
+    let planned = planned.unwrap();
+    let from_root = from_root.unwrap();
     assert_eq!(planned.repo_root, from_root.repo_root);
     assert_eq!(planned.sel.rust, from_root.sel.rust);
 }

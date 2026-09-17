@@ -9,6 +9,8 @@ pub(crate) mod batch_identity_seal_test;
 
 pub(crate) mod batch_plan;
 
+pub(crate) mod batch_plan_skip_llvm;
+
 pub(crate) mod batch_plan_coverage_mode;
 
 pub(crate) mod batch_plan_env;
@@ -30,6 +32,10 @@ pub(crate) mod batch_runner_resolve;
 pub(crate) mod batch_nextest_id;
 
 pub(crate) mod cargo_workspace_metadata;
+
+pub(crate) mod execution_identity;
+
+pub(crate) mod llvm_cov_active;
 
 pub(crate) mod shared_input;
 

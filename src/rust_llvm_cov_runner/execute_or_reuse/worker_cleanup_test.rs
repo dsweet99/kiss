@@ -88,11 +88,16 @@ fn worker_tmp_parent_and_digest_helpers_are_stable() {
         "abcd"
     );
     assert_eq!(
-        crate::rust_llvm_cov_runner::execute_or_reuse::worker::os_str_bytes(std::ffi::OsStr::new("ab")),
+        crate::rust_llvm_cov_runner::execute_or_reuse::worker::os_str_bytes(std::ffi::OsStr::new(
+            "ab"
+        )),
         b"ab".to_vec()
     );
-    let digest = crate::rust_llvm_cov_runner::execute_or_reuse::worker::cache_root_digest(&cache_root);
+    let digest =
+        crate::rust_llvm_cov_runner::execute_or_reuse::worker::cache_root_digest(&cache_root);
     assert_eq!(digest.len(), 64);
-    let attempt = crate::rust_llvm_cov_runner::execute_or_reuse::worker::RustLegacyCleanupAttempt { deferred: false };
+    let attempt = crate::rust_llvm_cov_runner::execute_or_reuse::worker::RustLegacyCleanupAttempt {
+        deferred: false,
+    };
     assert!(!attempt.deferred);
 }

@@ -205,3 +205,11 @@ fn redirect_inherited_uses_kiss_profraw_env() {
         None => unsafe { std::env::remove_var(KISS_PROFRAW_DIR_ENV) },
     }
 }
+
+#[test]
+fn kiss_profraw_process_guard_for_current_process() {
+    let tmp = tempfile::tempdir().unwrap();
+    let guard = KissProfrawProcessGuard::for_current_process(tmp.path());
+    assert_eq!(guard.pid, std::process::id());
+    assert_eq!(guard.kiss_profraw, tmp.path().join(".kiss").join("profraw"));
+}

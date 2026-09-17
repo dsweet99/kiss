@@ -351,3 +351,45 @@ fn load_python_runtime_coverage_honors_session_pytest_extra() {
         "got: {msg}"
     );
 }
+
+#[test]
+fn load_rust_runtime_coverage_and_timings_from_seeded_cache() {
+    use crate::test_runner::test_mode_fixtures::with_locked_warm_committed_repo;
+    use crate::test_runner::unit_test_timing::{
+        TimingCollectOpts, TimingLangInclude, TimingPopulation, collect_current_unit_test_timings,
+    };
+    use kiss::Language;
+
+    with_locked_warm_committed_repo(|repo, _lib| {
+        let cov = load_rust_runtime_coverage(repo, &[], &kiss::GateConfig::default())
+            .expect("seeded rust population must load");
+        assert!(
+            cov.covered_lines.contains_key("src/lib.rs"),
+            "seeded lines: {:?}",
+            cov.covered_lines.keys().collect::<Vec<_>>()
+        );
+        let timings = collect_current_unit_test_timings(TimingCollectOpts {
+            universe: repo,
+            lang_filter: Some(Language::Rust),
+            include: TimingLangInclude {
+                python: false,
+                rust: true,
+            },
+            ignore: &[],
+            pytest_args: &[],
+        });
+        assert!(
+            matches!(timings, TimingPopulation::Complete(ref rows) if !rows.is_empty()),
+            "{timings:?}"
+        );
+    });
+}
+
+#[test]
+fn format_python_coverage_env_formatting() {
+    let mut env = BTreeMap::new();
+    assert_eq!(format_python_coverage_env(&env), "PYTHONPATH unset");
+    env.insert("PYTHONPATH".to_string(), "/path/to/repo".to_string());
+    assert_eq!(format_python_coverage_env(&env), "PYTHONPATH=\"/path/to/repo\"");
+}
+

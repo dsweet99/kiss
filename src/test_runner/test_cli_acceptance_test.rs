@@ -1,42 +1,48 @@
 use crate::bin_cli::args::{
     Cli, Commands, TestInvocation, parse_test_invocation, validate_test_branch_options,
 };
+use crate::test_runner::test_mode_fixtures::with_locked_warm_committed_repo;
 use clap::Parser;
 use std::path::PathBuf;
 use std::process::Command;
 
 fn kiss_bin() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/debug/kiss")
+    option_env!("CARGO_BIN_EXE_kiss")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/debug/kiss"))
 }
 
 #[test]
 fn kiss_test_dot_dry_run_smoke() {
-    let tmp = tempfile::TempDir::new().unwrap();
-    let config = tmp.path().join("builtin.kissconfig");
-    std::fs::write(&config, "[python]\n[rust]\n").unwrap();
-    let output = Command::new(kiss_bin())
-        .args([
-            "--config",
-            config.to_str().unwrap(),
-            "test",
-            ".",
-            "--dry-run",
-            "--lang",
-            "rust",
-        ])
-        .output()
-        .expect("spawn kiss");
-    assert!(
-        output.status.success() || output.status.code() == Some(1),
-        "stdout={}\nstderr={}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        !stderr.contains("validate-selection"),
-        "removed mode must not appear: {stderr}"
-    );
+    let _cwd = crate::cwd_test_lock::lock();
+    with_locked_warm_committed_repo(|repo, _lib| {
+        let config = repo.join("builtin.kissconfig");
+        std::fs::write(&config, "[python]\n[rust]\n").unwrap();
+        let output = Command::new(kiss_bin())
+            .current_dir(repo)
+            .args([
+                "--config",
+                config.to_str().unwrap(),
+                "test",
+                ".",
+                "--dry-run",
+                "--lang",
+                "rust",
+            ])
+            .output()
+            .expect("spawn kiss");
+        assert!(
+            output.status.success() || output.status.code() == Some(1),
+            "stdout={}\nstderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !stderr.contains("validate-selection"),
+            "removed mode must not appear: {stderr}"
+        );
+    });
 }
 
 #[test]

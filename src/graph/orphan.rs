@@ -60,18 +60,40 @@ pub fn collect_orphan_entry_paths(
     py_parsed: &[ParsedFile],
     rs_parsed: &[ParsedRustFile],
     py_graph: Option<&DependencyGraph>,
-    _rs_graph: Option<&DependencyGraph>,
+    rs_graph: Option<&DependencyGraph>,
 ) -> HashSet<PathBuf> {
+    collect_orphan_entry_set(py_parsed, rs_parsed, py_graph, rs_graph).0
+}
+
+pub fn collect_orphan_entry_callables(
+    py_parsed: &[ParsedFile],
+    rs_parsed: &[ParsedRustFile],
+    py_graph: Option<&DependencyGraph>,
+    rs_graph: Option<&DependencyGraph>,
+) -> HashSet<(PathBuf, String)> {
+    collect_orphan_entry_set(py_parsed, rs_parsed, py_graph, rs_graph).1
+}
+
+fn collect_orphan_entry_set(
+    py_parsed: &[ParsedFile],
+    rs_parsed: &[ParsedRustFile],
+    py_graph: Option<&DependencyGraph>,
+    _rs_graph: Option<&DependencyGraph>,
+) -> (HashSet<PathBuf>, HashSet<(PathBuf, String)>) {
     let mut entries = HashSet::new();
+    let mut callables = HashSet::new();
     for parsed in py_parsed {
         if python_has_main_guard(parsed) {
             entries.insert(canonical_path(&parsed.path));
         }
     }
     if let Some(graph) = py_graph {
-        for module in python_manifest_modules(py_parsed) {
+        for (module, callable) in python_manifest_entries(py_parsed) {
             if let Some(path) = path_for_python_module(graph, &module) {
-                entries.insert(path);
+                entries.insert(path.clone());
+                if let Some(name) = callable {
+                    callables.insert((path, name));
+                }
             }
         }
     }
@@ -82,7 +104,7 @@ pub fn collect_orphan_entry_paths(
     }
     let rs_files: Vec<PathBuf> = rs_parsed.iter().map(|p| p.path.clone()).collect();
     entries.extend(crate::code_roles::cargo_entry_src_paths(&rs_files));
-    entries
+    (entries, callables)
 }
 
 fn python_has_main_guard(parsed: &ParsedFile) -> bool {
@@ -134,20 +156,20 @@ fn rust_has_fn_main(ast: &syn::File) -> bool {
     })
 }
 
-fn python_manifest_modules(py_parsed: &[ParsedFile]) -> Vec<String> {
-    let mut modules = Vec::new();
+fn python_manifest_entries(py_parsed: &[ParsedFile]) -> Vec<(String, Option<String>)> {
+    let mut entries = Vec::new();
     for manifest in ancestor_manifests(py_parsed.iter().map(|p| p.path.as_path()), "pyproject.toml")
     {
         if let Ok(text) = std::fs::read_to_string(&manifest) {
-            modules.extend(modules_from_pyproject(&text));
+            entries.extend(modules_from_pyproject(&text));
         }
     }
     for manifest in ancestor_manifests(py_parsed.iter().map(|p| p.path.as_path()), "setup.cfg") {
         if let Ok(text) = std::fs::read_to_string(&manifest) {
-            modules.extend(modules_from_setup_cfg(&text));
+            entries.extend(modules_from_setup_cfg(&text));
         }
     }
-    modules
+    entries
 }
 
 fn ancestor_manifests<'a, I>(files: I, name: &str) -> HashSet<PathBuf>
@@ -166,7 +188,7 @@ where
     out
 }
 
-fn modules_from_pyproject(text: &str) -> Vec<String> {
+fn modules_from_pyproject(text: &str) -> Vec<(String, Option<String>)> {
     let Ok(table) = text.parse::<toml::Table>() else {
         return Vec::new();
     };
@@ -184,20 +206,20 @@ fn modules_from_pyproject(text: &str) -> Vec<String> {
     out
 }
 
-fn collect_script_values(value: Option<&toml::Value>, out: &mut Vec<String>) {
+fn collect_script_values(value: Option<&toml::Value>, out: &mut Vec<(String, Option<String>)>) {
     let Some(table) = value.and_then(|v| v.as_table()) else {
         return;
     };
     for item in table.values() {
         if let Some(raw) = item.as_str()
-            && let Some(module) = module_prefix(raw)
+            && let Some(entry) = parse_script_entry(raw)
         {
-            out.push(module);
+            out.push(entry);
         }
     }
 }
 
-fn modules_from_setup_cfg(text: &str) -> Vec<String> {
+fn modules_from_setup_cfg(text: &str) -> Vec<(String, Option<String>)> {
     let mut in_section = false;
     let mut in_scripts = false;
     let mut out = Vec::new();
@@ -218,28 +240,35 @@ fn modules_from_setup_cfg(text: &str) -> Vec<String> {
             in_scripts = matches!(key, "console_scripts" | "gui_scripts");
             if in_scripts
                 && let Some((_, rest)) = trimmed.split_once('=')
-                && let Some(module) = module_prefix(rest)
+                && let Some(entry) = parse_script_entry(rest)
             {
-                out.push(module);
+                out.push(entry);
             }
             continue;
         }
         if in_scripts {
             let value = trimmed.split_once('=').map_or(trimmed, |(_, rhs)| rhs);
-            if let Some(module) = module_prefix(value) {
-                out.push(module);
+            if let Some(entry) = parse_script_entry(value) {
+                out.push(entry);
             }
         }
     }
     out
 }
 
-fn module_prefix(entry: &str) -> Option<String> {
-    let module = entry.split(':').next()?.trim();
+fn parse_script_entry(entry: &str) -> Option<(String, Option<String>)> {
+    let entry = entry.trim();
+    let (module, callable) = match entry.split_once(':') {
+        Some((module, callable)) => {
+            let name = callable.trim().rsplit('.').next().unwrap_or("").trim();
+            (module.trim(), (!name.is_empty()).then(|| name.to_string()))
+        }
+        None => (entry, None),
+    };
     if module.is_empty() {
         None
     } else {
-        Some(module.to_string())
+        Some((module.to_string(), callable))
     }
 }
 

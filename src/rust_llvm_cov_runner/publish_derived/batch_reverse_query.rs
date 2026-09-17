@@ -1,4 +1,6 @@
-use crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::{EntryState, read_entry_state};
+use crate::rust_llvm_cov_runner::publish_derived::batch_entry_state::{
+    EntryState, read_entry_state,
+};
 use crate::rust_llvm_cov_runner::publish_derived::batch_reverse_build::{
     FileReverseRecord, REVERSE_LINE_INDEX_SCHEMA, ReverseMeta, file_record_name, hex_digest,
 };
@@ -203,6 +205,80 @@ fn selectors_for_wanted(
         }
     }
     Ok(selected)
+}
+
+pub fn query_reverse_covering_files(
+    cache_root: &Path,
+    generation: &str,
+    rels: &[String],
+) -> Option<BTreeSet<String>> {
+    if rels.is_empty() {
+        return Some(BTreeSet::new());
+    }
+    match covering_files_validated(cache_root, generation, rels) {
+        Ok(out) => {
+            record_reverse_hit();
+            Some(out)
+        }
+        Err(reason) => {
+            record_reverse_unavailable(reason);
+            None
+        }
+    }
+}
+
+fn covering_files_validated(
+    cache_root: &Path,
+    generation: &str,
+    rels: &[String],
+) -> Result<BTreeSet<String>, ReverseUnavailableReason> {
+    let needle = load_population_needle(cache_root)?;
+    let reverse = needle
+        .reverse_line_index
+        .as_ref()
+        .ok_or(ReverseUnavailableReason::MissingRecord)?;
+    if reverse.schema_version != REVERSE_LINE_INDEX_SCHEMA {
+        return Err(ReverseUnavailableReason::Schema);
+    }
+    if needle.generation_fingerprint != generation {
+        return Err(ReverseUnavailableReason::Generation);
+    }
+    let state = read_entry_state(cache_root).ok_or(ReverseUnavailableReason::MissingRecord)?;
+    classify_entry_state(&state, &needle, reverse)?;
+    let root = snapshot_path(cache_root, &reverse.snapshot_id);
+    let meta_bytes =
+        fs::read(root.join("meta.json")).map_err(|_| ReverseUnavailableReason::MissingRecord)?;
+    if hex_digest(&meta_bytes) != reverse.meta_digest {
+        return Err(ReverseUnavailableReason::Digest);
+    }
+    let meta: ReverseMeta =
+        serde_json::from_slice(&meta_bytes).map_err(|_| ReverseUnavailableReason::Malformed)?;
+    classify_meta(&meta, &needle, reverse)?;
+    let selectors_bytes = fs::read(root.join("selectors.json"))
+        .map_err(|_| ReverseUnavailableReason::MissingRecord)?;
+    if hex_digest(&selectors_bytes) != meta.selectors_digest {
+        return Err(ReverseUnavailableReason::Digest);
+    }
+    let selectors: Vec<String> = serde_json::from_slice(&selectors_bytes)
+        .map_err(|_| ReverseUnavailableReason::Malformed)?;
+    let mut out = BTreeSet::new();
+    for rel in rels {
+        match meta.files.get(rel) {
+            None => return Err(ReverseUnavailableReason::MissingRecord),
+            Some(file_meta) => {
+                let record = load_validated_record(&root, rel, file_meta)?;
+                for (_start, _end, ids) in &record.ranges {
+                    for id in ids {
+                        let sel = selectors
+                            .get(*id as usize)
+                            .ok_or(ReverseUnavailableReason::Malformed)?;
+                        out.insert(sel.clone());
+                    }
+                }
+            }
+        }
+    }
+    Ok(out)
 }
 
 fn range_overlaps_wanted(start: u32, end: u32, wanted: &BTreeSet<u32>) -> bool {

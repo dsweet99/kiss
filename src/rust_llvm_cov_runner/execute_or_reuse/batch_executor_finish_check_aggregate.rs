@@ -51,9 +51,10 @@ pub(super) fn store_and_publish_check_aggregate(
             files: BTreeMap::new(),
         };
     }
-    if let Err(store_err) = crate::rust_llvm_cov_runner::execute_or_reuse::progress::log_named_step("entry-store", || {
-        store_completed_outcomes(req, tools, identity, &mut completed)
-    }) {
+    if let Err(store_err) = crate::rust_llvm_cov_runner::execute_or_reuse::progress::log_named_step(
+        "entry-store",
+        || store_completed_outcomes(req, tools, identity, &mut completed),
+    ) {
         return Ok(RustCoverageBatchResult {
             completed,
             batch_error: Some(store_err),
@@ -91,13 +92,16 @@ pub(super) fn store_and_publish_check_aggregate(
         &test_binaries,
         binary_line_maps,
     )?;
-    crate::rust_llvm_cov_runner::execute_or_reuse::progress::log_named_step("derived-publish", || {
-        publish_check_aggregate(req, &aggregate)?;
-        crate::rust_llvm_cov_runner::publish_derived::batch_derived::publish_conservative_derived_state_from_check_aggregate(
+    crate::rust_llvm_cov_runner::execute_or_reuse::progress::log_named_step(
+        "derived-publish",
+        || {
+            publish_check_aggregate(req, &aggregate)?;
+            crate::rust_llvm_cov_runner::publish_derived::batch_derived::publish_conservative_derived_state_from_check_aggregate(
             req, tools, identity, &aggregate,
         )?;
-        Ok::<(), RustLlvmCovError>(())
-    })?;
+            Ok::<(), RustLlvmCovError>(())
+        },
+    )?;
     counters.aggregate_binaries = aggregate.binaries.len();
     Ok(RustCoverageBatchResult {
         completed,

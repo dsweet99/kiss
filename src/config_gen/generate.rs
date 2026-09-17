@@ -14,6 +14,7 @@ pub struct GenerateConfigParams<'a> {
     pub py_graph: GraphKeyMaxima,
     pub rs_graph: GraphKeyMaxima,
     pub gate: &'a GateConfig,
+    pub ignore: &'a [String],
 }
 
 const GRAPH_METRIC_IDS: &[&str] = &["cycle_size", "indirect_dependencies", "dependency_depth"];
@@ -25,13 +26,28 @@ fn is_graph_metric_id(metric_id: &str) -> bool {
 pub fn auto_created_gate_config() -> GateConfig {
     GateConfig {
         duplication_enabled: false,
-        orphan_module_enabled: false,
+        orphan_detection: false,
         comment_removal_enabled: false,
         docs_allowed: vec!["./".to_string()],
         test_coverage_threshold: 0,
         max_unit_test_seconds: vec![("*".to_string(), 99999.0)],
         ..GateConfig::default()
     }
+}
+
+pub fn generate_gate_stub_toml(ignore: &[String]) -> String {
+    let gate = auto_created_gate_config();
+    let empty = MetricStats::default();
+    generate_config_toml_by_language(&GenerateConfigParams {
+        py: &empty,
+        rs: &empty,
+        py_n: 0,
+        rs_n: 0,
+        py_graph: GraphKeyMaxima::default(),
+        rs_graph: GraphKeyMaxima::default(),
+        gate: &gate,
+        ignore,
+    })
 }
 
 pub fn generate_config_toml_by_language(p: &GenerateConfigParams<'_>) -> String {
@@ -41,11 +57,6 @@ pub fn generate_config_toml_by_language(p: &GenerateConfigParams<'_>) -> String 
     let _ = writeln!(out, "[global]");
     let _ = writeln!(out, "min_similarity = {}", p.gate.min_similarity);
     let _ = writeln!(out, "duplication_enabled = {}", p.gate.duplication_enabled);
-    let _ = writeln!(
-        out,
-        "orphan_module_enabled = {}",
-        p.gate.orphan_module_enabled
-    );
     let _ = writeln!(
         out,
         "comment_removal_enabled = {}",
@@ -65,11 +76,26 @@ pub fn generate_config_toml_by_language(p: &GenerateConfigParams<'_>) -> String 
         "test_coverage_scope = \"{}\"",
         p.gate.test_coverage_scope
     );
+    let _ = writeln!(out, "orphan_detection = {}", p.gate.orphan_detection);
     let _ = writeln!(out, "max_num_tests = {}", p.gate.max_num_tests);
-    let _ = writeln!(out, "num_jobs = 4");
-    let _ = writeln!(out, "watch_settle_seconds = 1.0");
+    let _ = writeln!(out, "num_jobs = {}", crate::defaults::gate::NUM_JOBS);
+    let _ = writeln!(
+        out,
+        "num_jobs_pytest = {}",
+        crate::defaults::gate::NUM_JOBS_PYTEST
+    );
+    let _ = writeln!(
+        out,
+        "num_jobs_llvm_cov = {}",
+        crate::defaults::gate::NUM_JOBS_LLVM_COV
+    );
+    let _ = writeln!(
+        out,
+        "watch_settle_seconds = {:.1}",
+        crate::defaults::gate::WATCH_SETTLE_SECONDS
+    );
     let _ = writeln!(out, "pytest_plugins = []");
-    let _ = writeln!(out, "ignore = []");
+    write_toml_string_list(&mut out, "ignore", p.ignore);
     let _ = write!(
         out,
         "\n{}",
@@ -161,7 +187,7 @@ mod coverage_witness {
     fn auto_created_gate_disables_static_and_test_gates() {
         let gate = auto_created_gate_config();
         assert!(!gate.duplication_enabled);
-        assert!(!gate.orphan_module_enabled);
+        assert!(!gate.orphan_detection);
         assert!(!gate.comment_removal_enabled);
         assert_eq!(gate.docs_allowed, vec!["./".to_string()]);
         assert_eq!(gate.test_coverage_threshold, 0);
@@ -176,14 +202,19 @@ mod coverage_witness {
             py_graph: GraphKeyMaxima::default(),
             rs_graph: GraphKeyMaxima::default(),
             gate: &gate,
+            ignore: &[],
         });
         assert!(
             toml.contains("duplication_enabled = false"),
             "auto-created global flags:\n{toml}"
         );
         assert!(
-            toml.contains("orphan_module_enabled = false"),
-            "auto-created global flags:\n{toml}"
+            !toml.contains("orphan_module_enabled"),
+            "auto-created config must not write orphan_module_enabled:\n{toml}"
+        );
+        assert!(
+            toml.contains("orphan_detection = false"),
+            "auto-created test flags:\n{toml}"
         );
         assert!(
             toml.contains("comment_removal_enabled = false"),
@@ -221,6 +252,7 @@ mod coverage_witness {
             py_graph: GraphKeyMaxima::default(),
             rs_graph: GraphKeyMaxima::default(),
             gate: &gate,
+            ignore: &[],
         };
         let toml = generate_config_toml_by_language(&p);
         assert!(toml.contains("[global]"));
@@ -238,7 +270,7 @@ mod coverage_witness {
         );
         assert!(
             toml.contains(
-                "test_coverage_threshold = 90\ntest_coverage_scope = \"codebase\"\nmax_num_tests = 999999\n"
+                "test_coverage_threshold = 90\ntest_coverage_scope = \"codebase\"\norphan_detection = false\nmax_num_tests = 999999\n"
             ),
             "test gate emission:\n{toml}"
         );

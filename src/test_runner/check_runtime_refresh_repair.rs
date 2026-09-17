@@ -43,15 +43,21 @@ pub(super) fn try_repair_rust_check_aggregate_labeled(
     ) else {
         return Ok(None);
     };
-    match kiss::rust_llvm_cov_runner::reusable_check_aggregate_delta(
-        repo_root,
-        &prior.ordinary_source_digests,
-        &current_identity.ordinary_source_digests,
-    ) {
-        kiss::rust_llvm_cov_runner::RustSnapshotDelta::StructuralChange => return Ok(None),
-        kiss::rust_llvm_cov_runner::RustSnapshotDelta::Unchanged
-        | kiss::rust_llvm_cov_runner::RustSnapshotDelta::Modified(_) => {}
-    }
+    let forced_replacement_binary_ids =
+        match kiss::rust_llvm_cov_runner::reusable_check_aggregate_delta(
+            repo_root,
+            &prior.ordinary_source_digests,
+            &current_identity.ordinary_source_digests,
+        ) {
+            kiss::rust_llvm_cov_runner::RustSnapshotDelta::StructuralChange => return Ok(None),
+            kiss::rust_llvm_cov_runner::RustSnapshotDelta::Unchanged => BTreeSet::new(),
+            kiss::rust_llvm_cov_runner::RustSnapshotDelta::Modified(paths) => {
+                let Some(binary_ids) = modified_source_binary_ids(repo_root, &prior, &paths) else {
+                    return Ok(None);
+                };
+                binary_ids
+            }
+        };
     let build = crate::test_runner::rust_llvm_cov::build_current_rust_test_executable_index(
         repo_root,
         selectors,
@@ -59,19 +65,12 @@ pub(super) fn try_repair_rust_check_aggregate_labeled(
         jobs,
     )
     .map_err(|err| CoverageRefreshError::discovery("Rust", err))?;
-    let decision = classify_check_aggregate_repair(
+    let decision = classify_check_aggregate_repair_with_replacements(
         selectors,
         &prior,
         &build.index.selector_binary_ids,
         &build.index.test_binaries,
-    );
-    let decision = maybe_downgrade_rerun_when_witness_warm(
-        repo_root,
-        selectors,
-        &current_identity,
-        &prior,
-        &build.index.selector_binary_ids,
-        decision,
+        &forced_replacement_binary_ids,
     );
     match decision {
         CheckAggregateRepairDecision::FullRefresh => Ok(None),
@@ -108,66 +107,34 @@ pub(super) fn try_repair_rust_check_aggregate_labeled(
     }
 }
 
-pub(crate) fn maybe_downgrade_rerun_when_witness_warm(
-    repo_root: &Path,
-    selectors: &[String],
-    current_identity: &kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity,
-    prior: &kiss::rust_llvm_cov_runner::ValidatedCheckAggregate,
-    current_selector_binary_ids: &BTreeMap<String, Vec<String>>,
-    decision: CheckAggregateRepairDecision,
-) -> CheckAggregateRepairDecision {
-    let CheckAggregateRepairDecision::Rerun {
-        prior_generation, ..
-    } = &decision
-    else {
-        return decision;
-    };
-    if crate::test_runner::execution_witness::try_warm_rust_cached_summary(
-        repo_root,
-        selectors,
-        current_identity,
-        &kiss::GateConfig::load_for_repo(repo_root),
-    )
-    .is_none()
-    {
-        return decision;
-    }
-    let current_mapped = current_mapped_binary_ids(current_selector_binary_ids);
-    CheckAggregateRepairDecision::IdentityOnly {
-        prior_generation: prior_generation.clone(),
-        retained_binary_line_maps: retained_maps_ignoring_digest_mismatch(prior, &current_mapped),
-    }
-}
-
-pub(crate) fn retained_maps_ignoring_digest_mismatch(
-    prior: &kiss::rust_llvm_cov_runner::ValidatedCheckAggregate,
-    current_mapped_binary_ids: &BTreeSet<String>,
-) -> BTreeMap<String, kiss::rust_llvm_cov_runner::RustLineCoverage> {
-    prior
-        .binaries
-        .iter()
-        .filter(|(binary_id, _)| current_mapped_binary_ids.contains(*binary_id))
-        .map(|(binary_id, record)| {
-            (
-                binary_id.clone(),
-                kiss::rust_llvm_cov_runner::RustLineCoverage {
-                    files: record.line_map.clone(),
-                },
-            )
-        })
-        .collect()
-}
-
+#[cfg(test)]
 pub(crate) fn classify_check_aggregate_repair(
     selectors: &[String],
     prior: &kiss::rust_llvm_cov_runner::ValidatedCheckAggregate,
     current_selector_binary_ids: &BTreeMap<String, Vec<String>>,
     current_test_binaries: &[kiss::rust_llvm_cov_runner::RustTestBinaryIdentity],
 ) -> CheckAggregateRepairDecision {
+    classify_check_aggregate_repair_with_replacements(
+        selectors,
+        prior,
+        current_selector_binary_ids,
+        current_test_binaries,
+        &BTreeSet::new(),
+    )
+}
+
+pub(crate) fn classify_check_aggregate_repair_with_replacements(
+    selectors: &[String],
+    prior: &kiss::rust_llvm_cov_runner::ValidatedCheckAggregate,
+    current_selector_binary_ids: &BTreeMap<String, Vec<String>>,
+    current_test_binaries: &[kiss::rust_llvm_cov_runner::RustTestBinaryIdentity],
+    forced_replacement_binary_ids: &BTreeSet<String>,
+) -> CheckAggregateRepairDecision {
     let current_binary_digests = current_binary_digests(current_test_binaries);
     let current_mapped_binary_ids = current_mapped_binary_ids(current_selector_binary_ids);
     let mut replacement_binary_ids =
         changed_or_new_binary_ids(prior, &current_binary_digests, &current_mapped_binary_ids);
+    replacement_binary_ids.extend(forced_replacement_binary_ids.iter().cloned());
     if !classify_changed_selector_mappings(
         selectors,
         prior,
@@ -202,6 +169,31 @@ pub(crate) fn classify_check_aggregate_repair(
         replacement_binary_ids,
         retained_binary_line_maps,
     }
+}
+
+fn modified_source_binary_ids(
+    repo_root: &Path,
+    prior: &kiss::rust_llvm_cov_runner::ValidatedCheckAggregate,
+    paths: &[std::path::PathBuf],
+) -> Option<BTreeSet<String>> {
+    let mut binary_ids = BTreeSet::new();
+    for path in paths {
+        let rel = kiss::rust_llvm_cov_runner::repo_relative_coverage_file(
+            repo_root,
+            &path.to_string_lossy(),
+        )?;
+        let covering: Vec<_> = prior
+            .binaries
+            .iter()
+            .filter(|(_, binary)| binary.line_map.contains_key(&rel))
+            .map(|(binary_id, _)| binary_id.clone())
+            .collect();
+        if covering.is_empty() {
+            return None;
+        }
+        binary_ids.extend(covering);
+    }
+    Some(binary_ids)
 }
 
 fn current_binary_digests(

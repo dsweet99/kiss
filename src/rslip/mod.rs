@@ -9,6 +9,7 @@ mod outcomes_load;
 mod runtime;
 
 pub use batch::RslipBatchProgress;
+pub use batch::format_cached_status_dump;
 pub use batch::warm_hit_seal_exists;
 pub(crate) use outcomes_load::rslip_outcome_from_cache;
 pub use outcomes_load::{load_cached_outcomes_many, load_cached_outcomes_many_trusting_population};
@@ -33,6 +34,9 @@ mod cache_cov_edges_test;
 mod cache_test;
 #[cfg(test)]
 mod lock_test;
+#[cfg(test)]
+#[path = "outcomes_load_test.rs"]
+mod outcomes_load_test;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -40,15 +44,15 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use cache::rslip_unique_suffix;
-pub use cache::{is_kiss_rslip_cache_dir, is_rslip_cache_input, should_skip_rslip_dir};
-pub use lock::{LocalRslipLockGuard, lock_rslip_cache_entry, lock_rslip_derived_state};
 use crate::rpytest_runner::{
     PytestRunError, PytestRunOutcome, PytestRunRequest, PytestRunner, RequestedArtifact, TestStatus,
 };
+use cache::rslip_unique_suffix;
+pub use cache::{is_kiss_rslip_cache_dir, is_rslip_cache_input, should_skip_rslip_dir};
+pub use lock::{LocalRslipLockGuard, lock_rslip_cache_entry, lock_rslip_derived_state};
 use serde::{Deserialize, Serialize};
 
-pub const CACHE_SCHEMA_VERSION: &str = "rslip-cache-v3";
+pub const CACHE_SCHEMA_VERSION: &str = "rslip-cache-v4";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RslipRequest {

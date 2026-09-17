@@ -3,15 +3,15 @@ use std::hash::{Hash, Hasher};
 use std::io::{self, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
-use super::lock::{WatchLockGuard, watch_dir, watch_lock_path};
+use super::lock::{watch_dir, watch_lock_path, WatchLockGuard};
 
 pub(crate) const WATCH_SOCKET_TMP_DIR: &str = "/tmp/.kiss-watch";
 
@@ -21,6 +21,8 @@ const CLIENT_SESSION_RETRY: Duration = Duration::from_millis(500);
 const CLIENT_SESSION_SLEEP: Duration = Duration::from_millis(10);
 const REPLY_IMMEDIATE_WAIT: Duration = Duration::from_millis(250);
 
+pub(crate) use super::nudge_kind::NudgeInvocation;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub(crate) struct NudgeRequestMsg {
     #[serde(default)]
@@ -29,6 +31,56 @@ pub(crate) struct NudgeRequestMsg {
     pub force_bad: bool,
     #[serde(default)]
     pub metrics: bool,
+    #[serde(default)]
+    pub invocation: NudgeInvocation,
+    #[serde(default)]
+    pub targets: Vec<String>,
+    #[serde(default)]
+    pub lang: Option<String>,
+    #[serde(default)]
+    pub ignore: Vec<String>,
+    #[serde(default)]
+    pub extra: Vec<String>,
+    #[serde(default)]
+    pub python_extra: Vec<String>,
+}
+
+impl NudgeRequestMsg {
+    pub(crate) fn lang_filter(&self) -> Option<kiss::Language> {
+        match self.lang.as_deref() {
+            Some("python" | "py") => Some(kiss::Language::Python),
+            Some("rust" | "rs") => Some(kiss::Language::Rust),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn progress_line(&self) -> String {
+        let mut line = format!(
+            "kiss test: request force={} force_bad={} metrics={}",
+            self.force, self.force_bad, self.metrics
+        );
+        if !self.invocation.is_all() {
+            line.push_str(" invocation=");
+            line.push_str(self.invocation.as_str());
+        }
+        if !self.targets.is_empty() {
+            line.push_str(" targets=");
+            line.push_str(&self.targets.join(" "));
+        }
+        if let Some(lang) = &self.lang {
+            line.push_str(" lang=");
+            line.push_str(lang);
+        }
+        if !self.ignore.is_empty() {
+            line.push_str(" ignore=");
+            line.push_str(&self.ignore.join(","));
+        }
+        if !self.extra.is_empty() {
+            line.push_str(" extra=");
+            line.push_str(&self.extra.join(" "));
+        }
+        line
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -68,6 +120,7 @@ impl WatchControlServer {
             std::fs::create_dir_all(parent)
                 .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
         }
+        reclaim_stale_watch_sockets(Some(&socket_path));
         if socket_path.exists() {
             let _ = std::fs::remove_file(&socket_path);
         }
@@ -291,6 +344,10 @@ pub(crate) fn watch_socket_path(repo_root: &Path) -> Result<PathBuf, String> {
     )))
 }
 
+#[path = "control_reclaim.rs"]
+mod control_reclaim;
+pub(crate) use control_reclaim::reclaim_stale_watch_sockets;
+
 fn accept_loop(listener: UnixListener, nudge_tx: Sender<NudgeRequest>, shutdown: Arc<AtomicBool>) {
     while !shutdown.load(Ordering::SeqCst) {
         match listener.accept() {
@@ -316,6 +373,7 @@ fn accept_loop(listener: UnixListener, nudge_tx: Sender<NudgeRequest>, shutdown:
 
 fn handle_client(mut stream: UnixStream, nudge_tx: Sender<NudgeRequest>) -> Result<(), String> {
     let msg: NudgeRequestMsg = read_framed_json(&mut stream).map_err(|e| e.to_string())?;
+    crate::test_runner::emit_test_progress(&msg.progress_line());
     let (reply_tx, reply_rx) = mpsc::sync_channel::<NudgeReplyMsg>(1);
     nudge_tx
         .send(NudgeRequest {

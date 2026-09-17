@@ -1,12 +1,12 @@
 use std::path::Path;
 
 use syn::spanned::Spanned;
-use syn::{Attribute, Item, ItemFn};
+use syn::{Item, ItemFn};
 
 use super::model::{DirectTestDef, NamedDefinition, SourceModel};
 use kiss::Language;
 use kiss::ParsedRustFile;
-use kiss::rust_test_refs::{impl_owner_name, rust_test_functions_in};
+use kiss::rust_test_refs::{has_rust_test_attribute, impl_owner_name, rust_test_functions_in};
 
 pub(super) fn build_rust_model(
     path: &Path,
@@ -161,7 +161,7 @@ fn push_fn(
 ) {
     let name = func.sig.ident.to_string();
     let (start_line, end_line) = span_lines(func);
-    let is_test = has_test_attribute(&func.attrs);
+    let is_test = has_rust_test_attribute(&func.attrs);
     let selector = is_test.then(|| {
         if module_prefix.is_empty() {
             name.clone()
@@ -186,7 +186,7 @@ fn push_fn(
 fn push_method(method: &syn::ImplItemFn, owner: &str, definitions: &mut Vec<NamedDefinition>) {
     let name = method.sig.ident.to_string();
     let (start_line, end_line) = span_lines(method);
-    let is_test = has_test_attribute(&method.attrs);
+    let is_test = has_rust_test_attribute(&method.attrs);
     let selector = is_test.then(|| format!("{owner}::{name}"));
     definitions.push(NamedDefinition {
         name: owner.to_string(),
@@ -196,10 +196,6 @@ fn push_method(method: &syn::ImplItemFn, owner: &str, definitions: &mut Vec<Name
         is_unit_test: is_test,
         test_selector: selector,
     });
-}
-
-fn has_test_attribute(attrs: &[Attribute]) -> bool {
-    attrs.iter().any(|attr| attr.path().is_ident("test"))
 }
 
 fn span_lines<T: Spanned>(item: &T) -> (u32, u32) {

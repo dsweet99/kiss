@@ -57,6 +57,54 @@ pub fn aggregate_logical_selectors(
     (outcomes, counters)
 }
 
+pub fn aggregate_logical_selectors_check_aggregate(
+    selectors: &[String],
+    exact: bool,
+    instances: &[InstanceResult],
+) -> (Vec<RustLlvmCovOutcome>, AggregationCounters) {
+    if instances.is_empty() {
+        return aggregate_logical_selectors(selectors, exact, instances);
+    }
+    let index = SelectorMatchIndex::new(selectors, exact);
+    let mut by_selector: BTreeMap<String, Vec<&InstanceResult>> = BTreeMap::new();
+    for instance in instances {
+        for selector in index.matching_selectors(&instance.full_name) {
+            by_selector.entry(selector).or_default().push(instance);
+        }
+    }
+    let counters = AggregationCounters {
+        unmatched_selectors: 0,
+        test_instances: instances.len(),
+    };
+    let mut outcomes = Vec::with_capacity(selectors.len());
+    for selector in selectors {
+        let empty: Vec<&InstanceResult> = Vec::new();
+        let matched = by_selector.get(selector).unwrap_or(&empty);
+        if matched.is_empty() {
+            outcomes.push(unmatched_passed_outcome(selector));
+            continue;
+        }
+        outcomes.push(aggregate_one_selector(selector, matched.as_slice()));
+    }
+    (outcomes, counters)
+}
+
+fn unmatched_passed_outcome(selector: &str) -> RustLlvmCovOutcome {
+    RustLlvmCovOutcome {
+        selector: selector.to_string(),
+        status: TestStatus::Passed,
+        exit_code: Some(0),
+        duration: Duration::ZERO,
+        coverage: RustLineCoverage {
+            files: BTreeMap::new(),
+        },
+        test_binary_ids: Vec::new(),
+        cache_status: RustCovCacheStatus::FreshUnstored,
+        stdout: None,
+        stderr: None,
+    }
+}
+
 fn unmatched_failed_outcome(selector: &str) -> RustLlvmCovOutcome {
     RustLlvmCovOutcome {
         selector: selector.to_string(),
@@ -285,5 +333,31 @@ mod tests {
         };
         assert_eq!(counter.unmatched_selectors, 1);
         assert_eq!(instance.full_name, "pkg::bin$alpha");
+    }
+
+    #[test]
+    fn check_aggregate_with_instances_treats_unmatched_as_passed() {
+        let instances = vec![instance("pkg::bin$alpha", true, 1)];
+        let (outcomes, counters) = aggregate_logical_selectors_check_aggregate(
+            &["alpha".to_string(), "ignored_test".to_string()],
+            false,
+            &instances,
+        );
+        assert_eq!(outcomes.len(), 2);
+        assert_eq!(outcomes[0].status, TestStatus::Passed);
+        assert_eq!(outcomes[1].status, TestStatus::Passed);
+        assert_eq!(outcomes[1].duration, Duration::ZERO);
+        assert!(outcomes[1].coverage.files.is_empty());
+        assert_eq!(counters.unmatched_selectors, 0);
+        assert_eq!(counters.test_instances, 1);
+    }
+
+    #[test]
+    fn check_aggregate_empty_instances_rejects_unmatched() {
+        let (outcomes, counters) =
+            aggregate_logical_selectors_check_aggregate(&["alpha".to_string()], false, &[]);
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(outcomes[0].status, TestStatus::Failed);
+        assert_eq!(counters.unmatched_selectors, 1);
     }
 }

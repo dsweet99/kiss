@@ -1,0 +1,63 @@
+use super::{CovCoverableKey, store_coverable_denoms, try_load_coverable_denoms};
+use crate::analyze::cov_cache_test_support::touch_source;
+use crate::analyze::line_coverage::CoverableDenom;
+use std::fs;
+use std::time::{Duration, SystemTime};
+
+#[test]
+fn coverable_cache_hits_then_misses_on_source_change() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    let py = touch_source(&repo.join("pkg/a.py"), "x = 1\n");
+    let rs = touch_source(&repo.join("src/lib.rs"), "fn f() {}\n");
+    let denoms = vec![CoverableDenom {
+        file: py.clone(),
+        lines: vec![1],
+        mixed: false,
+    }];
+    let key = CovCoverableKey {
+        repo_root: repo,
+        py_files: std::slice::from_ref(&py),
+        rs_files: std::slice::from_ref(&rs),
+        ignore: &[],
+        lang_filter: None,
+    };
+    assert!(try_load_coverable_denoms(&key).is_none());
+    store_coverable_denoms(&key, &denoms);
+    let loaded = try_load_coverable_denoms(&key).expect("facts hit");
+    assert_eq!(loaded, denoms);
+
+    std::thread::sleep(Duration::from_millis(5));
+    fs::write(&py, "x = 2\n").unwrap();
+    let _ = fs::File::options()
+        .write(true)
+        .open(&py)
+        .unwrap()
+        .set_modified(SystemTime::now())
+        .ok();
+    assert!(try_load_coverable_denoms(&key).is_none());
+}
+
+#[test]
+fn coverable_cache_misses_on_content_change_with_preserved_metadata() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    let py = touch_source(&repo.join("pkg/a.py"), "x = 1\n");
+    let key = CovCoverableKey {
+        repo_root: repo,
+        py_files: std::slice::from_ref(&py),
+        rs_files: &[],
+        ignore: &[],
+        lang_filter: None,
+    };
+    store_coverable_denoms(&key, &[]);
+    let modified = fs::metadata(&py).unwrap().modified().unwrap();
+    fs::write(&py, "y = 2\n").unwrap();
+    fs::File::options()
+        .write(true)
+        .open(&py)
+        .unwrap()
+        .set_modified(modified)
+        .unwrap();
+    assert!(try_load_coverable_denoms(&key).is_none());
+}

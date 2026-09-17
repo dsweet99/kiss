@@ -2,6 +2,22 @@ use super::*;
 use crate::config::{ConfigError, get_usize};
 
 #[test]
+fn lenient_merge_ignores_legacy_orphan_module_enabled_without_applying_test() {
+    let mut gate = GateConfig::default();
+    gate.merge_from_toml(
+        "[global]\norphan_module_enabled = false\n[test]\nmax_unit_test_seconds = 90\n",
+    );
+    assert_eq!(
+        gate.max_unit_test_seconds,
+        default_max_unit_test_seconds(),
+        "legacy unknown [global] key must not apply [test] 90s timeouts"
+    );
+    assert!((gate.unit_test_seconds_limit("tests/fast/a.py::t") - 2.0).abs() < f64::EPSILON);
+    assert!((gate.unit_test_seconds_limit("tests/slow/a.py::t") - 2.0).abs() < f64::EPSILON);
+    assert!((gate.unit_test_seconds_limit("rust/foo.rs::t") - 2.0).abs() < f64::EPSILON);
+}
+
+#[test]
 fn test_gate_config_merge_from_toml() {
     let mut gate = GateConfig::default();
     gate.merge_from_toml(
@@ -20,6 +36,7 @@ fn default_gate_config_scope_is_codebase() {
         TestCoverageScope::Codebase
     );
     assert!(!GateConfig::default().comment_removal_enabled);
+    assert!(!GateConfig::default().orphan_detection);
     assert!(GateConfig::default().docs_allowed.is_empty());
     assert!(GateConfig::default().orphan_allowed.is_empty());
 }
@@ -169,7 +186,6 @@ fn try_load_from_content_accepts_all_gate_fields() {
 [global]
 min_similarity = 0.75
 duplication_enabled = false
-orphan_module_enabled = false
 comment_removal_enabled = true
 docs_allowed = [\"docs\", \"src/api\"]
 orphan_allowed = [\"src/plugins\"]
@@ -177,6 +193,7 @@ orphan_allowed = [\"src/plugins\"]
 [test]
 test_coverage_threshold = 91
 test_coverage_scope = \"codebase\"
+orphan_detection = true
 max_unit_test_seconds = 1.5
 max_num_tests = 12
 ",
@@ -189,7 +206,7 @@ max_num_tests = 12
     assert_eq!(gate.max_num_tests, 12);
     assert!((gate.min_similarity - 0.75).abs() < f64::EPSILON);
     assert!(!gate.duplication_enabled);
-    assert!(!gate.orphan_module_enabled);
+    assert!(gate.orphan_detection);
     assert!(gate.comment_removal_enabled);
     assert_eq!(
         gate.docs_allowed,
@@ -208,6 +225,20 @@ max_num_tests = 12
         "err={err:?}"
     );
     assert_eq!(GateConfig::default().max_num_tests, 999_999);
+    let err =
+        GateConfig::try_load_from_content("[global]\norphan_unit_enabled = true").unwrap_err();
+    assert!(
+        matches!(err, ConfigError::UnknownKey { .. }),
+        "orphan_unit_enabled is not a [global] key: {err:?}"
+    );
+    let err =
+        GateConfig::try_load_from_content("[global]\norphan_module_enabled = false").unwrap_err();
+    assert!(
+        matches!(err, ConfigError::UnknownKey { .. }),
+        "orphan_module_enabled is rejected: {err:?}"
+    );
+    let off = GateConfig::try_load_from_content("[test]\norphan_detection = false").unwrap();
+    assert!(!off.orphan_detection);
     let err = GateConfig::try_load_from_content("[global]\ndocs_allowed = \"docs\"").unwrap_err();
     assert!(
         matches!(

@@ -3,8 +3,9 @@ use tempfile::TempDir;
 use crate::test_git::TestChangeMode;
 use crate::test_runner::test_mode_fixtures::{
     PY_COVERING_SELECTOR, RS_COVERING_SELECTOR, edit_python_covered_source,
-    edit_rust_covered_source, git_in, rewrite_python_population_after_edit,
-    warm_committed_rust_demo, warm_multi_branch_rust_demo, warm_python_covering_demo, with_cwd,
+    clone_row_b_committed_repo, clone_warm_committed_repo, edit_rust_covered_source,
+    rewrite_python_population_after_edit, warm_committed_rust_demo, warm_python_covering_demo,
+    with_locked_warm_committed_repo, with_cwd,
 };
 use crate::test_runner::{PlannedSelectors, SelectorRunOptions, plan_selectors, run_selectors};
 
@@ -46,25 +47,25 @@ fn mode_plan_args(mode: TestChangeMode) -> (Option<&'static str>, Option<&'stati
 }
 
 fn assert_rust_covering(mode: TestChangeMode) {
-    let tmp = TempDir::new().unwrap();
-    let lib = warm_committed_rust_demo(&tmp);
-    edit_rust_covered_source(&lib, 2);
-    let (main, base) = mode_plan_args(mode);
-    let planned = with_cwd(tmp.path(), || {
-        plan(mode, main, base, &[], Some(kiss::Language::Rust))
-    })
-    .unwrap_or_else(|e| panic!("{} plan failed: {e}", mode_label(mode)));
-    assert!(
-        !planned.population_required.rust,
-        "{}: rust_population_required must be false",
-        mode_label(mode)
-    );
-    assert_eq!(
-        planned.sel.rust,
-        vec![RS_COVERING_SELECTOR.to_string()],
-        "{}: covering Rust selector contract",
-        mode_label(mode)
-    );
+    with_locked_warm_committed_repo(|repo, lib| {
+        edit_rust_covered_source(&lib, 2);
+        let (main, base) = mode_plan_args(mode);
+        let planned = with_cwd(repo, || {
+            plan(mode, main, base, &[], Some(kiss::Language::Rust))
+        })
+        .unwrap_or_else(|e| panic!("{} plan failed: {e}", mode_label(mode)));
+        assert!(
+            !planned.population_required.rust,
+            "{}: rust_population_required must be false",
+            mode_label(mode)
+        );
+        assert_eq!(
+            planned.sel.rust,
+            vec![RS_COVERING_SELECTOR.to_string()],
+            "{}: covering Rust selector contract",
+            mode_label(mode)
+        );
+    });
 }
 
 fn assert_python_covering(mode: TestChangeMode) {
@@ -112,23 +113,8 @@ fn row_a_main_warm_rust_edit_selects_covering() {
 fn row_b_rust_test_file_only_selects_that_test() {
     let _cwd_guard = crate::cwd_test_lock::lock();
     let tmp = TempDir::new().unwrap();
-    let _lib = warm_multi_branch_rust_demo(&tmp);
+    clone_row_b_committed_repo(tmp.path());
     let test_file = tmp.path().join("src").join("extra_test.rs");
-    std::fs::write(&test_file, "#[test]\nfn only_extra() {}\n").unwrap();
-    assert!(
-        git_in(tmp.path())
-            .args(["add", "src/extra_test.rs"])
-            .status()
-            .unwrap()
-            .success()
-    );
-    assert!(
-        git_in(tmp.path())
-            .args(["commit", "-m", "add-extra-test"])
-            .status()
-            .unwrap()
-            .success()
-    );
     std::fs::write(&test_file, "#[test]\nfn only_extra() { assert!(true); }\n").unwrap();
     let planned = with_cwd(tmp.path(), || {
         plan(
@@ -168,41 +154,41 @@ fn row_c_main_warm_python_edit_selects_covering() {
 #[test]
 fn row_d_empty_diff_dry_run_exits_zero() {
     let _cwd_guard = crate::cwd_test_lock::lock();
-    let tmp = TempDir::new().unwrap();
-    let _ = warm_multi_branch_rust_demo(&tmp);
-    let planned = with_cwd(tmp.path(), || {
-        plan(
-            TestChangeMode::Commit,
-            None,
-            None,
-            &[],
-            Some(kiss::Language::Rust),
-        )
-    })
-    .expect("empty commit plan");
-    assert!(
-        planned.sel.rust.is_empty() && planned.sel.python.is_empty(),
-        "commit: empty diff must yield empty selectors"
-    );
-    let code = with_cwd(tmp.path(), || {
-        run_selectors(
-            &planned,
-            SelectorRunOptions {
-                dry_run: true,
-                force_rerun: false,
-                metrics: false,
-                jobs: 1,
-                extras: crate::test_runner::language_keyed::LanguageKeyed {
-                    python: &[],
-                    rust: &[],
+    with_locked_warm_committed_repo(|repo, _lib| {
+        let planned = with_cwd(repo, || {
+            plan(
+                TestChangeMode::Commit,
+                None,
+                None,
+                &[],
+                Some(kiss::Language::Rust),
+            )
+        })
+        .expect("empty commit plan");
+        assert!(
+            planned.sel.rust.is_empty() && planned.sel.python.is_empty(),
+            "commit: empty diff must yield empty selectors"
+        );
+        let code = with_cwd(repo, || {
+            run_selectors(
+                &planned,
+                SelectorRunOptions {
+                    dry_run: true,
+                    force_rerun: false,
+                    metrics: false,
+                    jobs: 1,
+                    extras: crate::test_runner::language_keyed::LanguageKeyed {
+                        python: &[],
+                        rust: &[],
+                    },
+                    plan_duration: std::time::Duration::ZERO,
+                    gate: kiss::GateConfig::default(),
                 },
-                plan_duration: std::time::Duration::ZERO,
-                gate: kiss::GateConfig::default(),
-            },
-        )
-    })
-    .unwrap();
-    assert_eq!(code, 0, "commit: empty dry-run exit");
+            )
+        })
+        .unwrap();
+        assert_eq!(code, 0, "commit: empty dry-run exit");
+    });
 }
 
 #[test]
@@ -234,7 +220,7 @@ fn row_e_lang_rust_excludes_python_selectors() {
 fn row_e_lang_python_excludes_rust_selectors() {
     let _cwd_guard = crate::cwd_test_lock::lock();
     let tmp = TempDir::new().unwrap();
-    let lib = warm_committed_rust_demo(&tmp);
+    let lib = clone_warm_committed_repo(tmp.path());
     edit_rust_covered_source(&lib, 2);
     let py_only = with_cwd(tmp.path(), || {
         plan(

@@ -12,7 +12,9 @@ use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export::{
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export_resolve::{
     BinaryIdObjectMap, resolve_objects_for_profdata,
 };
-use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export_tools::{ExportTools, resolve_export_tools_from_rustc};
+use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export_tools::{
+    ExportTools, resolve_export_tools_from_rustc,
+};
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim::BatchShimMetadata;
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_shim_lookup::resolve_shim_metadata;
 use crate::rust_llvm_cov_runner::{RustLineCoverage, RustLlvmCovError};
@@ -160,6 +162,7 @@ pub(crate) fn export_check_aggregates_bounded(
     if requests.is_empty() {
         return Ok((BTreeMap::new(), ExportCounters::default()));
     }
+    crate::rust_llvm_cov_runner::record_llvm_export_invocations(requests.len());
     let tools = resolve_export_tools_from_rustc(std::ffi::OsStr::new("rustc"))?;
     let binary_id_map = BinaryIdObjectMap::build_with_jobs(&tools, catalog, jobs)?;
     let exporter = CheckAggregateExporter {

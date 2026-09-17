@@ -17,7 +17,10 @@ use super::memo::{
     clear_python_generation_warm_memo, try_load_pinned_python_generation_warm_memoized,
 };
 use super::publish::publish_python_population_generation;
-use super::repair::{problem_selectors_from_timings, repair_python_population_generation};
+use super::repair::{
+    problem_selectors_from_timings, repair_python_population_generation,
+    restamp_complete_pinned_from_cache,
+};
 use super::types::{GenerationReason, TimingCacheDisposition};
 use crate::test_runner::python_coverage_index::PYTHON_SELECTOR_DISCOVERY_VERSION;
 use crate::test_runner::runners::detect_rslip_versions;
@@ -80,6 +83,10 @@ fn current_helpers_and_identity_fingerprint() {
     ));
     assert!(load_generation_or_stale(repo).is_ok());
     assert!(current_identity_fingerprint(repo, &[]).is_some());
+    assert!(
+        restamp_complete_pinned_from_cache(repo, &[], &|_, _| true, &kiss::GateConfig::default(),)
+            .unwrap()
+    );
 }
 
 #[test]
@@ -177,6 +184,40 @@ fn warm_memo_returns_cached_generation_without_rewrite() {
 }
 
 #[test]
+fn warm_memo_observes_external_pointer_advance() {
+    let tmp = tempdir().unwrap();
+    let repo = tmp.path();
+    fs::create_dir_all(repo.join(".git")).unwrap();
+    fs::write(repo.join("app.py"), b"x = 1\n").unwrap();
+    if detect_rslip_versions(repo).is_err() {
+        return;
+    }
+    let first = publish_one(repo, "t.py::test_a");
+    let cache =
+        crate::test_runner::python_coverage_index::python_coverage_cache_root(repo).unwrap();
+    let pointer = cache.join("population.json");
+    let first_pointer = fs::read(&pointer).unwrap();
+    let second = publish_one(repo, "t.py::test_b");
+    let second_pointer = fs::read(&pointer).unwrap();
+
+    fs::write(&pointer, first_pointer).unwrap();
+    clear_python_generation_warm_memo();
+    assert_eq!(
+        try_load_pinned_python_generation_warm_memoized(repo)
+            .unwrap()
+            .generation_id,
+        first
+    );
+    fs::write(&pointer, second_pointer).unwrap();
+    assert_eq!(
+        try_load_pinned_python_generation_warm_memoized(repo)
+            .unwrap()
+            .generation_id,
+        second
+    );
+}
+
+#[test]
 fn incomplete_timings_list_problem_selectors() {
     use super::types::SelectorTimingRecord;
     let timings = vec![
@@ -187,6 +228,7 @@ fn incomplete_timings_list_problem_selectors() {
             duration_ns: Some(1),
             cache_disposition: TimingCacheDisposition::Hit,
             reason: None,
+            test_definition_digest: String::new(),
         },
         SelectorTimingRecord {
             selector: "b".into(),
@@ -195,6 +237,7 @@ fn incomplete_timings_list_problem_selectors() {
             duration_ns: None,
             cache_disposition: TimingCacheDisposition::MissStored,
             reason: Some("assert".into()),
+            test_definition_digest: String::new(),
         },
         SelectorTimingRecord {
             selector: "c".into(),
@@ -203,6 +246,7 @@ fn incomplete_timings_list_problem_selectors() {
             duration_ns: None,
             cache_disposition: TimingCacheDisposition::Unknown,
             reason: Some("missing".into()),
+            test_definition_digest: String::new(),
         },
     ];
     assert_eq!(

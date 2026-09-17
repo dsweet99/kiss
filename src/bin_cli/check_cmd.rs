@@ -6,6 +6,7 @@ use crate::analyze::run_analyze;
 use crate::bin_cli::util::{merge_check_ignore_prefixes, validate_paths};
 use kiss::Language;
 
+
 pub struct CheckCommandArgs<'a> {
     pub paths: &'a [String],
     pub lang_filter: Option<Language>,
@@ -19,11 +20,56 @@ pub struct CheckCommandArgs<'a> {
 }
 
 pub fn run_check_command(args: &CheckCommandArgs<'_>) -> i32 {
-    #[cfg(not(test))]
     if args.lang_filter.is_none() && std::env::var_os("KISS_CHECK_WORKER").is_none() {
-        return run_split_check(args);
+        if let Some(code) = try_run_cached_check(args) {
+            return code;
+        }
+        if std::env::var_os("KISS_CHECK_SPLIT").is_some() || !cfg!(test) {
+            return run_split_check(args);
+        }
     }
     run_check_in_process(args)
+}
+
+fn try_run_cached_check(args: &CheckCommandArgs<'_>) -> Option<i32> {
+    if args.timing {
+        return None;
+    }
+    let ignore = merge_check_ignore_prefixes(args.ignore);
+    validate_paths(args.paths);
+    let universe = &args.paths[0];
+    let focus = if args.paths.len() > 1 {
+        &args.paths[1..]
+    } else {
+        args.paths
+    };
+    let opts = analyze::AnalyzeOptions {
+        universe,
+        focus_paths: focus,
+        py_config: args.py_config,
+        rs_config: args.rs_config,
+        lang_filter: args.lang_filter,
+        bypass_gate: false,
+        gate_config: args.gate_config,
+        ignore_prefixes: &ignore,
+        show_timing: args.timing,
+        suppress_final_status: false,
+        language_tables: args.language_tables,
+    };
+    let universe_root = Path::new(opts.universe);
+    let (py_files, rs_files) =
+        analyze::gather_files(universe_root, opts.lang_filter, opts.ignore_prefixes);
+    if py_files.is_empty() && rs_files.is_empty() {
+        return None;
+    }
+    let focus_filter = analyze::build_focus_filter(
+        opts.focus_paths,
+        opts.universe,
+        opts.lang_filter,
+        opts.ignore_prefixes,
+    );
+    let ok = crate::analyze_cache::try_run_cached_all(&opts, &py_files, &rs_files, &focus_filter)?;
+    Some(i32::from(!ok))
 }
 
 fn run_check_in_process(args: &CheckCommandArgs<'_>) -> i32 {
@@ -51,12 +97,19 @@ fn run_check_in_process(args: &CheckCommandArgs<'_>) -> i32 {
     i32::from(!run_analyze(&opts))
 }
 
-#[cfg(not(test))]
+pub(crate) fn run_check_in_process_pub(args: &CheckCommandArgs<'_>) -> i32 {
+    run_check_in_process(args)
+}
+
 fn run_split_check(args: &CheckCommandArgs<'_>) -> i32 {
     let Ok(exe) = std::env::current_exe() else {
         return run_check_in_process(args);
     };
-    run_split_check_with_exe(&exe, args)
+    crate::bin_cli::check_shards::run_split_check_sharded(&exe, args)
+}
+
+pub(crate) fn run_split_check_with_exe_legacy(exe: &Path, args: &CheckCommandArgs<'_>) -> i32 {
+    run_split_check_with_exe(exe, args)
 }
 
 fn run_split_check_with_exe(exe: &Path, args: &CheckCommandArgs<'_>) -> i32 {
@@ -135,6 +188,10 @@ fn forward_worker_stderr(bytes: &[u8]) {
     }
 }
 
+pub(crate) fn forward_worker_stderr_pub(bytes: &[u8]) {
+    forward_worker_stderr(bytes);
+}
+
 fn analyzed_add(mut totals: [usize; 5], line: &str) -> Option<[usize; 5]> {
     let rest = line.strip_prefix("Analyzed: ")?;
     let nums: Vec<usize> = rest
@@ -148,6 +205,10 @@ fn analyzed_add(mut totals: [usize; 5], line: &str) -> Option<[usize; 5]> {
         *slot += n;
     }
     Some(totals)
+}
+
+pub(crate) fn analyzed_add_pub(totals: [usize; 5], line: &str) -> Option<[usize; 5]> {
+    analyzed_add(totals, line)
 }
 
 #[cfg(test)]
@@ -255,5 +316,66 @@ mod coverage_witness {
             .collect();
         assert!(forwarded.iter().any(|a| a == "--config"));
         assert!(forwarded.iter().any(|a| a == "/tmp/kiss-extra.toml"));
+    }
+
+    #[test]
+    fn try_run_cached_check_branches() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().to_string_lossy().to_string();
+        let mut args = sample_args(&path);
+
+        args.timing = true;
+        assert_eq!(try_run_cached_check(&args), None);
+
+        args.timing = false;
+        assert_eq!(try_run_cached_check(&args), None);
+
+        std::fs::write(tmp.path().join("a.rs"), "pub fn ok() {}\n").unwrap();
+        let _ = try_run_cached_check(&args);
+
+        let p2 = tmp.path().join("a.rs").to_string_lossy().to_string();
+        let paths = vec![path.clone(), p2];
+        let args_multi = CheckCommandArgs {
+            paths: &paths,
+            ..args
+        };
+        let _ = try_run_cached_check(&args_multi);
+    }
+
+    #[test]
+    fn helper_wrappers_execute() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().to_string_lossy().to_string();
+        let args = sample_args(&path);
+
+        assert_eq!(run_check_in_process_pub(&args), 0);
+        assert_eq!(run_split_check_with_exe_legacy(Path::new("/bin/true"), &args), 0);
+        forward_worker_stderr_pub(b"some stderr\n");
+        assert_eq!(
+            analyzed_add_pub([1, 2, 3, 4, 5], "Analyzed: 1 files, 2 code_units, 3 statements, 4 graph_nodes, 5 graph_edges"),
+            Some([2, 4, 6, 8, 10])
+        );
+    }
+
+    #[test]
+    fn run_check_command_variants() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().to_string_lossy().to_string();
+        let mut args = sample_args(&path);
+        args.timing = false;
+
+        args.lang_filter = Some(kiss::Language::Rust);
+        assert_eq!(run_check_command(&args), 0);
+        args.lang_filter = None;
+
+        unsafe {
+            std::env::set_var("KISS_CHECK_WORKER", "1");
+        }
+        assert_eq!(run_check_command(&args), 0);
+        unsafe {
+            std::env::remove_var("KISS_CHECK_WORKER");
+        }
+
+        let _ = run_split_check(&args);
     }
 }

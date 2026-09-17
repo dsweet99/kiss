@@ -45,11 +45,44 @@ pub(crate) struct CargoMetadataPackage {
 
 #[derive(serde::Deserialize, Default)]
 pub(crate) struct CargoMetadataTarget {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    src_path: String,
     #[allow(dead_code)]
     #[serde(default)]
     kind: Vec<String>,
     #[serde(default)]
     crate_types: Vec<String>,
+}
+
+pub fn workspace_test_target_sources(
+    cwd: &Path,
+    cargo: &Path,
+    cargo_args: &[String],
+) -> Result<Vec<(String, PathBuf)>, RustLlvmCovError> {
+    let metadata = load_cargo_metadata(cwd, cargo, cargo_args)?;
+    let members: BTreeSet<&str> = metadata
+        .workspace_members
+        .iter()
+        .map(String::as_str)
+        .collect();
+    let mut targets = BTreeSet::new();
+    for package in metadata.packages {
+        if !members.is_empty() && !members.contains(package.id.as_str()) {
+            continue;
+        }
+        for target in package.targets {
+            if target.src_path.is_empty() || target.kind.iter().any(|kind| kind == "custom-build") {
+                continue;
+            }
+            targets.insert((
+                target.name.replace('-', "_"),
+                PathBuf::from(target.src_path),
+            ));
+        }
+    }
+    Ok(targets.into_iter().collect())
 }
 
 #[derive(serde::Deserialize, Default)]
@@ -75,8 +108,11 @@ impl CargoMetadata {
     }
 
     pub(crate) fn workspace_packages(&self) -> Vec<WorkspacePackage> {
+        let members: std::collections::BTreeSet<&str> =
+            self.workspace_members.iter().map(String::as_str).collect();
         self.packages
             .iter()
+            .filter(|pkg| members.is_empty() || members.contains(pkg.id.as_str()))
             .map(|pkg| WorkspacePackage {
                 id: pkg.id.clone(),
                 name: pkg.name.clone(),
@@ -112,6 +148,12 @@ pub(crate) fn load_cargo_metadata(
     cargo_args: &[String],
 ) -> Result<CargoMetadata, RustLlvmCovError> {
     let manifest_path = effective_manifest_path(cwd, cargo_args);
+    if !manifest_path.is_file() {
+        return Err(RustLlvmCovError::InvalidRequest(format!(
+            "cargo metadata skipped: missing manifest {}",
+            manifest_path.display()
+        )));
+    }
     let output = Command::new(cargo)
         .args(["metadata", "--format-version", "1", "--manifest-path"])
         .arg(&manifest_path)
@@ -295,7 +337,8 @@ impl WorkspaceMetadata {
         if known {
             return None;
         }
-        let rel = crate::rust_llvm_cov_runner::rust_cov_cache::repo_relative_path(source_root, &nearest)?;
+        let rel =
+            crate::rust_llvm_cov_runner::rust_cov_cache::repo_relative_path(source_root, &nearest)?;
         (!rel.is_empty()).then_some(rel)
     }
 

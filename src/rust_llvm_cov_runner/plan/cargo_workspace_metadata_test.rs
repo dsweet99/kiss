@@ -43,6 +43,33 @@ fn witness_workspace_metadata_struct_fields() {
 }
 
 #[test]
+fn workspace_packages_excludes_registry_dependencies() {
+    let package = |id: &str, name: &str, manifest_path: &str| CargoMetadataPackage {
+        id: id.to_string(),
+        name: name.to_string(),
+        manifest_path: manifest_path.to_string(),
+        targets: Vec::new(),
+        dependencies: Vec::new(),
+    };
+    let metadata = CargoMetadata {
+        packages: vec![
+            package("workspace", "workspace", "/repo/Cargo.toml"),
+            package(
+                "registry-dependency",
+                "dependency",
+                "/cargo/registry/dependency/Cargo.toml",
+            ),
+        ],
+        workspace_members: vec!["workspace".to_string()],
+        workspace_root: Some("/repo".to_string()),
+    };
+
+    let packages = metadata.workspace_packages();
+    assert_eq!(packages.len(), 1);
+    assert_eq!(packages[0].id, "workspace");
+}
+
+#[test]
 fn default_target_and_dependency_structs_are_empty() {
     assert!(CargoMetadataTarget::default().kind.is_empty());
     assert!(CargoMetadataDependency::default().name.is_empty());
@@ -51,26 +78,29 @@ fn default_target_and_dependency_structs_are_empty() {
 
 #[test]
 fn workspace_package_record_fields_are_accessible_to_tests() {
-    let record = crate::rust_llvm_cov_runner::plan::cargo_workspace_metadata::WorkspacePackageRecord {
-        package: workspace_package_for_test("pkg", "name", PathBuf::from("/repo")),
-        has_proc_macro: false,
-    };
+    let record =
+        crate::rust_llvm_cov_runner::plan::cargo_workspace_metadata::WorkspacePackageRecord {
+            package: workspace_package_for_test("pkg", "name", PathBuf::from("/repo")),
+            has_proc_macro: false,
+        };
     assert!(!record.has_proc_macro);
 }
 
 #[test]
 fn effective_manifest_path_supports_split_and_joined_flags() {
-    let joined = crate::rust_llvm_cov_runner::plan::cargo_workspace_metadata::effective_manifest_path(
-        std::path::Path::new("/repo"),
-        &["--manifest-path=/joined/Cargo.toml".to_string()],
-    );
-    let split = crate::rust_llvm_cov_runner::plan::cargo_workspace_metadata::effective_manifest_path(
-        std::path::Path::new("/repo"),
-        &[
-            "--manifest-path".to_string(),
-            "/split/Cargo.toml".to_string(),
-        ],
-    );
+    let joined =
+        crate::rust_llvm_cov_runner::plan::cargo_workspace_metadata::effective_manifest_path(
+            std::path::Path::new("/repo"),
+            &["--manifest-path=/joined/Cargo.toml".to_string()],
+        );
+    let split =
+        crate::rust_llvm_cov_runner::plan::cargo_workspace_metadata::effective_manifest_path(
+            std::path::Path::new("/repo"),
+            &[
+                "--manifest-path".to_string(),
+                "/split/Cargo.toml".to_string(),
+            ],
+        );
     assert_eq!(joined, std::path::PathBuf::from("/joined/Cargo.toml"));
     assert_eq!(split, std::path::PathBuf::from("/split/Cargo.toml"));
 }
@@ -97,12 +127,13 @@ fn temp_repo_ordinary_lib_rs_classifies_as_non_compile_time() {
     )
     .unwrap();
     std::fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
-    let metadata = crate::rust_llvm_cov_runner::plan::cargo_workspace_metadata::workspace_metadata_from_cargo(
-        tmp.path(),
-        std::path::Path::new("cargo"),
-        &[],
-    )
-    .expect("metadata");
+    let metadata =
+        crate::rust_llvm_cov_runner::plan::cargo_workspace_metadata::workspace_metadata_from_cargo(
+            tmp.path(),
+            std::path::Path::new("cargo"),
+            &[],
+        )
+        .expect("metadata");
     assert_eq!(
         metadata.rs_compile_time_classification(tmp.path(), &tmp.path().join("src/lib.rs")),
         Some(false)
@@ -112,12 +143,13 @@ fn temp_repo_ordinary_lib_rs_classifies_as_non_compile_time() {
 #[test]
 fn nested_non_member_crate_sources_are_detected() {
     let tmp = write_nested_non_member_fixture();
-    let metadata = crate::rust_llvm_cov_runner::plan::cargo_workspace_metadata::workspace_metadata_from_cargo(
-        tmp.path(),
-        std::path::Path::new("cargo"),
-        &[],
-    )
-    .expect("metadata");
+    let metadata =
+        crate::rust_llvm_cov_runner::plan::cargo_workspace_metadata::workspace_metadata_from_cargo(
+            tmp.path(),
+            std::path::Path::new("cargo"),
+            &[],
+        )
+        .expect("metadata");
     let nested_lib = tmp.path().join("nested/src/lib.rs");
     let member_lib = tmp.path().join("member/src/lib.rs");
     assert!(metadata.is_non_member_local_crate_source(tmp.path(), &nested_lib));
@@ -161,11 +193,12 @@ fn cargo_metadata_accessors_expose_workspace_fields() {
     assert_eq!(metadata.workspace_member_ids(), &["pkg-id".to_string()]);
     assert_eq!(metadata.workspace_packages().len(), 1);
     assert_eq!(metadata.workspace_packages()[0].name, "pkg");
-    let package = crate::rust_llvm_cov_runner::plan::cargo_workspace_metadata::workspace_package_for_test(
-        "pkg-id",
-        "pkg",
-        PathBuf::from("/repo"),
-    );
+    let package =
+        crate::rust_llvm_cov_runner::plan::cargo_workspace_metadata::workspace_package_for_test(
+            "pkg-id",
+            "pkg",
+            PathBuf::from("/repo"),
+        );
     assert_eq!(package.id, "pkg-id");
     assert_eq!(package.name, "pkg");
     assert_eq!(package.manifest_dir, PathBuf::from("/repo"));
@@ -285,12 +318,13 @@ fn current_package_id_matches_workspace_manifest() {
     .unwrap();
     std::fs::create_dir_all(tmp.path().join("src")).unwrap();
     std::fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
-    let metadata = crate::rust_llvm_cov_runner::plan::cargo_workspace_metadata::load_cargo_metadata(
-        tmp.path(),
-        std::path::Path::new("cargo"),
-        &[],
-    )
-    .expect("metadata");
+    let metadata =
+        crate::rust_llvm_cov_runner::plan::cargo_workspace_metadata::load_cargo_metadata(
+            tmp.path(),
+            std::path::Path::new("cargo"),
+            &[],
+        )
+        .expect("metadata");
     let package_id = metadata
         .current_package_id(tmp.path(), &[])
         .expect("current package");

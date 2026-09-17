@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use crate::rust_llvm_cov_runner::plan::batch_plan::rewrite_plan_argv_skip_llvm_cov_wrapper;
+use crate::rust_llvm_cov_runner::plan::batch_plan_env::effective_coverage_build_jobs;
 use crate::rust_llvm_cov_runner::{
     RustCoverageBatchPlan, RustCoverageBatchRequest, build_rust_coverage_batch_plan,
     publish_generated_nextest_config,
@@ -38,27 +40,80 @@ fn batch_request_public_data_contract_preserves_every_field() {
 #[test]
 fn batch_plan_uses_one_shared_build_target_and_bounded_nextest_jobs() {
     let plan = build_rust_coverage_batch_plan(&request()).unwrap();
-    let build_target = "/repo/target";
+    let build_target = "/repo/.kiss/rust_llvm_cov_cache/build/target";
 
     assert_eq!(plan.build_target, PathBuf::from(build_target));
     assert_eq!(plan.env["CARGO_TARGET_DIR"], build_target);
     assert_eq!(plan.env["CARGO_LLVM_COV_TARGET_DIR"], build_target);
     assert_eq!(plan.env["CARGO_LLVM_COV_BUILD_DIR"], build_target);
+    assert_eq!(plan.env["CARGO_INCREMENTAL"], "0");
+    assert_eq!(
+        plan.env[crate::rust_llvm_cov_runner::plan::llvm_cov_active::KISS_LLVM_COV_ACTIVE_ENV],
+        "1"
+    );
     assert_eq!(plan.env["NEXTEST_EXPERIMENTAL_LIBTEST_JSON"], "1");
     assert_eq!(plan.env["KEEP_ME"], "1");
     assert!(
         plan.target_runner_cargo_config_toml
             .contains("__rust-llvm-cov-target-runner")
     );
+    let expected_build = effective_coverage_build_jobs(4).to_string();
     assert!(
         plan.argv
             .windows(2)
-            .any(|args| args == ["--build-jobs", "4"])
+            .any(|args| args == ["--build-jobs", expected_build.as_str()])
     );
     assert!(
         plan.argv
             .windows(2)
             .any(|args| args == ["--test-threads", "4"])
+    );
+}
+
+#[test]
+fn batch_plan_ignores_inherited_values_for_plan_owned_environment() {
+    let base = build_rust_coverage_batch_plan(&request()).unwrap();
+    let mut req = request();
+    for key in [
+        "CARGO_TARGET_DIR",
+        "CARGO_LLVM_COV_TARGET_DIR",
+        "CARGO_LLVM_COV_BUILD_DIR",
+        "CARGO_INCREMENTAL",
+        "NEXTEST_EXPERIMENTAL_LIBTEST_JSON",
+        "KISS_RUST_COVERAGE_PROFILE_POOL",
+    ] {
+        req.env.insert(key.to_string(), "inherited".to_string());
+    }
+
+    let with_inherited = build_rust_coverage_batch_plan(&req).unwrap();
+
+    assert_eq!(with_inherited.env, base.env);
+}
+
+#[test]
+fn batch_plan_keeps_build_jobs_at_least_num_jobs() {
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(tmp.path(), "[test]\nnum_jobs_llvm_cov = 3\n").unwrap();
+    let _guard = crate::config::ConfigPathOverrideGuard::enter(Some(tmp.path()));
+    let mut req = request();
+    req.jobs = 32;
+
+    let plan = build_rust_coverage_batch_plan(&req).unwrap();
+    let expected_build = effective_coverage_build_jobs(32).to_string();
+
+    assert!(
+        plan.argv
+            .windows(2)
+            .any(|args| args == ["--build-jobs", expected_build.as_str()])
+    );
+    assert!(
+        plan.argv
+            .windows(2)
+            .any(|args| args == ["--test-threads", "3"])
+    );
+    assert!(
+        expected_build.parse::<usize>().unwrap() >= 32,
+        "configured jobs must remain a lower bound for --build-jobs"
     );
 }
 
@@ -69,11 +124,12 @@ fn batch_plan_uses_serial_nextest_threads_when_nocapture_is_requested() {
         req.test_args = vec![no_capture_arg.to_string()];
 
         let plan = build_rust_coverage_batch_plan(&req).unwrap();
+        let expected_build = effective_coverage_build_jobs(4).to_string();
 
         assert!(
             plan.argv
                 .windows(2)
-                .any(|args| args == ["--build-jobs", "4"])
+                .any(|args| args == ["--build-jobs", expected_build.as_str()])
         );
         assert!(
             plan.argv
@@ -90,7 +146,10 @@ fn batch_plan_public_data_contract_preserves_every_field() {
 
     assert_eq!(cloned, plan);
     assert!(format!("{plan:?}").contains("RustCoverageBatchPlan"));
-    assert_eq!(plan.build_target, PathBuf::from("/repo/target"));
+    assert_eq!(
+        plan.build_target,
+        PathBuf::from("/repo/.kiss/rust_llvm_cov_cache/build/target")
+    );
     assert_eq!(
         plan.target_runner_output_dir,
         PathBuf::from("/repo/.kiss/rust_llvm_cov_cache/runs/run-witness/instances")
@@ -138,6 +197,38 @@ fn batch_plan_constructs_nextest_command_without_legacy_no_clean() {
         &plan.argv[plan.argv.len() - 3..],
         ["--workspace", "--", "--exact"]
     );
+}
+
+#[test]
+fn rewrite_plan_argv_skip_llvm_cov_wrapper_switches_to_nextest_run() {
+    let mut plan = build_rust_coverage_batch_plan(&request()).unwrap();
+    rewrite_plan_argv_skip_llvm_cov_wrapper(&mut plan);
+    assert_eq!(plan.argv[0..3], ["cargo", "nextest", "run"]);
+    assert!(!plan.argv.contains(&"--no-report".to_string()));
+    assert!(plan.argv.contains(&"--cargo-message-format".to_string()));
+    assert_eq!(
+        &plan.argv[plan.argv.len() - 3..],
+        ["--workspace", "--", "--exact"]
+    );
+}
+
+#[test]
+fn rewrite_plan_argv_skip_llvm_cov_wrapper_remaps_check_aggregate_profile_pool() {
+    let mut req = request();
+    req.coverage_output_mode =
+        crate::rust_llvm_cov_runner::plan::batch_plan::CoverageOutputMode::CheckAggregate {
+            publication_binary_ids: None,
+            repair_publication: None,
+        };
+    let mut plan = build_rust_coverage_batch_plan(&req).unwrap();
+    let name = plan.env["LLVM_PROFILE_FILE_NAME"].clone();
+    let rustflags_before = plan.env.get("RUSTFLAGS").cloned();
+    rewrite_plan_argv_skip_llvm_cov_wrapper(&mut plan);
+    assert_eq!(
+        plan.env["LLVM_PROFILE_FILE"],
+        plan.build_target.join(name).to_string_lossy()
+    );
+    assert_eq!(plan.env.get("RUSTFLAGS"), rustflags_before.as_ref());
 }
 
 #[test]
@@ -207,6 +298,16 @@ fn batch_plan_rejects_zero_jobs_and_empty_selectors_before_mutation() {
         build_rust_coverage_batch_plan(&no_selectors)
             .unwrap_err()
             .contains("selectors")
+    );
+
+    let mut list_build = request();
+    list_build.logical_selectors.clear();
+    list_build.population_publication_selectors = Some(Vec::new());
+    let list_plan = build_rust_coverage_batch_plan(&list_build).expect("list-build");
+    assert!(
+        list_plan.generated_config_toml.contains("all()"),
+        "workspace list-build must compile the full suite: {}",
+        list_plan.generated_config_toml
     );
 
     let mut empty_selector = request();

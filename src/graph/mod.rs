@@ -8,10 +8,12 @@ mod dependency_graph {
 
     include!("dependency_graph_body.rs");
 }
-mod graph_analyze;
-mod graph_build;
-mod graph_python;
+pub(crate) mod graph_analyze;
+pub(crate) mod graph_build;
+pub(crate) mod graph_python;
 mod orphan;
+mod orphan_unit;
+mod unused;
 
 pub use context::{
     ContextDependencyGraph, EdgeOrigin, RoleDependencyGraphs, module_name_for_path,
@@ -24,12 +26,15 @@ pub use dependency_graph::{
 pub use graph_analyze::{
     GraphKeyMaxima, analyze_graph, compute_cyclomatic_complexity, graph_key_maxima,
 };
+pub(crate) use graph_build::resolve_import;
 pub use graph_build::{build_dependency_graph, build_python_context_graph};
 pub(crate) use graph_python::{
-    extract_dynamic_import_module, extract_imports_for_cache, is_dunder_import,
-    is_importlib_import_module,
+    extract_dynamic_import_module, extract_imports_for_cache, extract_imports_spanned,
+    is_dunder_import, is_importlib_import_module,
 };
-pub use orphan::{collect_orphan_entry_paths, orphan_violations};
+pub use orphan::{collect_orphan_entry_callables, collect_orphan_entry_paths, orphan_violations};
+pub use orphan_unit::{OrphanCoverage, OrphanUnitInput, orphan_unit_violations};
+pub(crate) use unused::GraphIsolation;
 
 #[cfg(test)]
 pub(crate) use dependency_graph::{bare_module_name, is_crate_root_aggregator, is_orphan};
@@ -40,7 +45,7 @@ pub(crate) use graph_analyze::{
 #[cfg(test)]
 pub(crate) use graph_build::{
     ImportListPass, build_dependency_graph_from_import_lists, parent_prefix_match, resolve_bare,
-    resolve_dotted, resolve_import,
+    resolve_dotted,
 };
 #[cfg(test)]
 pub(crate) use graph_python::{

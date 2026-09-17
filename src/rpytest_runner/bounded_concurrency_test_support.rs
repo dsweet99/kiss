@@ -121,7 +121,9 @@ pub(crate) fn read_max_active(max_path: &Path) -> usize {
     fs::read_to_string(max_path).unwrap().parse().unwrap()
 }
 
-pub(crate) fn assert_passed_outcomes(outcomes: &[Result<PytestRunOutcome, crate::rpytest_runner::PytestRunError>]) {
+pub(crate) fn assert_passed_outcomes(
+    outcomes: &[Result<PytestRunOutcome, crate::rpytest_runner::PytestRunError>],
+) {
     for outcome in outcomes {
         let outcome = outcome.as_ref().unwrap();
         assert_eq!(
@@ -143,7 +145,8 @@ pub(crate) fn assert_bounded_concurrency(
     run_bounded: &dyn Fn(
         Vec<PytestRunRequest>,
         usize,
-    ) -> Vec<Result<PytestRunOutcome, crate::rpytest_runner::PytestRunError>>,
+    )
+        -> Vec<Result<PytestRunOutcome, crate::rpytest_runner::PytestRunError>>,
 ) {
     let requests: Vec<_> = nodeids
         .iter()

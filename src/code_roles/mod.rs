@@ -25,12 +25,12 @@ pub use fingerprint::{
     ROLE_SCHEMA_VERSION, role_input_fingerprint, workspace_preflight_fingerprint,
 };
 pub use index::{
-    SourceRoleIndex, contexts_at, contexts_for_span, is_test_only_file, production_line_count,
-    skip_syn,
+    SourceRoleIndex, contains_file, contexts_at, contexts_for_span, is_test_only_file,
+    production_line_count, skip_syn,
 };
 pub use python::classify_python;
 pub use python_path::{is_default_pytest_collect_candidate, is_python_test_module_path};
-pub use rust::classify_rust;
+pub use rust::{classify_rust, reachable_workspace_rust_sources};
 pub(crate) use rust_cargo::cargo_entry_src_paths;
 pub(crate) use rust_modules::declared_mod_path;
 pub use span::{SourcePosition, SourceSpan};

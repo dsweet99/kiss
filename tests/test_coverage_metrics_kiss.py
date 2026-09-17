@@ -46,7 +46,7 @@ def test_run_kiss_check_all_bad_rc_raises(tmp_path: Path, monkeypatch: pytest.Mo
         return subprocess.CompletedProcess(cmd, 2, "boom", "err")
 
     monkeypatch.setattr(coverage_kiss.subprocess, "run", fake_run)
-    with pytest.raises(RuntimeError, match="kiss __coverage --all failed"):
+    with pytest.raises(RuntimeError, match="kiss test --coverage-all failed"):
         coverage_kiss.run_kiss_check_all(repo)
 
 

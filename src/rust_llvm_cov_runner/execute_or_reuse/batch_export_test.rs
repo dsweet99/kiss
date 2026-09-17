@@ -1,6 +1,6 @@
 use super::{
     InstanceExportRequest, SubprocessInstanceExporter, export_instances_bounded_with,
-    object_paths_for_executable,
+    export_worker_count, max_export_workers_for_host, object_paths_for_executable,
 };
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_events::BatchCompilerArtifact;
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export_catalog::object_paths_from_artifacts;
@@ -15,6 +15,16 @@ use std::sync::Arc;
 
 pub struct FakeInstanceExporter {
     coverage_by_id: BTreeMap<String, RustLineCoverage>,
+}
+
+#[test]
+fn export_worker_count_respects_job_and_host_bounds() {
+    assert_eq!(export_worker_count(0), 1);
+    assert!(export_worker_count(2) <= 2);
+    let host_bound = max_export_workers_for_host();
+    assert_eq!(export_worker_count(usize::MAX), host_bound);
+    let available = crate::shared_helpers::host_cpu_count(1);
+    assert_eq!(host_bound, available.div_ceil(2).max(1));
 }
 
 impl FakeInstanceExporter {
@@ -171,6 +181,31 @@ fn bounded_export_pool_never_exceeds_jobs() {
     assert_eq!(results.len(), 6);
     assert_eq!(counters.export_jobs, 6);
     assert!(counters.max_active_exports <= 2);
+
+    let requests = (0..6)
+        .map(|index| InstanceExportRequest {
+            instance_id: format!("cap-{index}"),
+            profile_path: profile.clone(),
+            objects: vec![PathBuf::from("/tmp/a.o")],
+        })
+        .collect::<Vec<_>>();
+    let fake = Arc::new(FakeInstanceExporter::new(BTreeMap::new()));
+    let (results, counters) = export_instances_bounded_with(
+        8,
+        tmp.path(),
+        &[PathBuf::from("/tmp/a.o")],
+        requests,
+        Arc::new(move |request, source_root, _catalog, _seed_objects| {
+            fake.export_instance(request, source_root, &[], &[])
+        }),
+    )
+    .unwrap();
+    assert_eq!(results.len(), 6);
+    assert!(
+        counters.max_active_exports <= max_export_workers_for_host(),
+        "nested LLVM exporters must stay bounded, got {}",
+        counters.max_active_exports
+    );
 }
 
 #[test]

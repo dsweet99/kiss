@@ -1,6 +1,8 @@
 use crate::rust_llvm_cov_runner::publish_derived::batch_derived::POPULATION_SCHEMA_VERSION;
 use crate::rust_llvm_cov_runner::publish_derived::batch_derived_index::load_current_population_state;
-use crate::rust_llvm_cov_runner::test_support::{published_alpha_derived_fixture, tamper_json_file};
+use crate::rust_llvm_cov_runner::test_support::{
+    published_alpha_derived_fixture, tamper_json_file,
+};
 
 #[test]
 fn load_current_population_state_rejects_mismatched_source_root() {
@@ -113,6 +115,9 @@ fn load_current_population_state_rejects_index_fingerprint_mismatch() {
 
 #[test]
 fn load_current_population_state_rejects_malformed_source_digest_records() {
+    let fixture = published_alpha_derived_fixture();
+    let population_path = fixture.req.cache_root.join("population.json");
+    let pristine = std::fs::read(&population_path).unwrap();
     for records in [
         serde_json::json!([{ "path": "/abs.rs", "digest": "aaaaaaaaaaaaaaaa" }]),
         serde_json::json!([{ "path": "../escape.rs", "digest": "aaaaaaaaaaaaaaaa" }]),
@@ -128,7 +133,7 @@ fn load_current_population_state_rejects_malformed_source_digest_records() {
             { "path": "src/a.rs", "digest": "bbbbbbbbbbbbbbbb" }
         ]),
     ] {
-        let fixture = published_alpha_derived_fixture();
+        std::fs::write(&population_path, &pristine).unwrap();
         tamper_json_file(&fixture.req.cache_root, "population.json", |value| {
             value["ordinary_source_digests"] = records.clone();
         });
@@ -151,10 +156,15 @@ fn load_current_population_state_accepts_inc_source_digest_records() {
         value["ordinary_source_digests"] =
             serde_json::json!([{ "path": "src/fragment.inc", "digest": "aaaaaaaaaaaaaaaa" }]);
     });
+    let mut identity = fixture.identity.clone();
+    identity.ordinary_source_digests = std::collections::BTreeMap::from([(
+        "src/fragment.inc".to_string(),
+        "aaaaaaaaaaaaaaaa".to_string(),
+    )]);
     let state = load_current_population_state(
         &fixture.req.cache_root,
         fixture.repo.path(),
-        &fixture.identity,
+        &identity,
         Some(&["alpha".to_string()]),
     )
     .unwrap();

@@ -51,7 +51,6 @@ fn witness_changed_line_selection_ignores_retained_prior_generation_entries() {
         "pub fn a() {}\npub fn b() {}\n#[cfg(test)] mod tests { #[test] fn test_current_line() {} #[test] fn test_stale_line() {} }\n",
     )
     .unwrap();
-    let _ = super::current_rust_coverage_batch_identity(tmp.path(), &[]);
     super::test_support::write_test_entry(
         tmp.path(),
         "current",
@@ -61,13 +60,8 @@ fn witness_changed_line_selection_ignores_retained_prior_generation_entries() {
             files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([2]))]),
         },
     );
+    // rebuild publishes the population from entry selectors; no second publish.
     rebuild_rust_coverage_index(tmp.path()).unwrap();
-    write_rust_population_manifest_for_args(
-        tmp.path(),
-        &["tests::test_current_line".to_string()],
-        &[],
-    )
-    .unwrap();
     let stale_path = rust_coverage_cache_root(tmp.path())
         .join("entries")
         .join("stale.json");

@@ -8,8 +8,11 @@ mod coverage_decision;
 pub(crate) mod coverage_index;
 pub(crate) mod duration;
 pub(crate) mod ensure_runtime;
+mod execution_generation;
 pub(crate) mod execution_witness;
-mod final_summary;
+pub(crate) mod force_bad;
+pub(crate) use force_bad::apply_force_bad;
+pub(crate) mod final_summary;
 pub(crate) mod lang_iface;
 pub(crate) mod lang_python;
 pub(crate) mod lang_rust;
@@ -27,22 +30,31 @@ mod rust_report_id_cache;
 mod selector_ids;
 mod status_labels;
 mod targets;
+pub(crate) use targets::expand_target_operands;
+pub(crate) mod tests_remaining;
 pub(crate) mod unit_test_timing;
+mod kiss_test_report;
 mod watch;
 #[cfg(test)]
 pub(crate) use planned_selectors::should_force_cold_initialization;
+pub(crate) use planned_selectors::{PlannedSelectors, SelectorRunOptions, empty_planned};
+#[cfg(test)]
 pub(crate) use planned_selectors::{
-    PlannedSelectors, SelectorRunOptions, apply_cold_initialization_population,
-    apply_force_all_population,
+    apply_cold_initialization_population, apply_force_all_population,
 };
 pub(crate) use rust_batch_interrupt::consume_rust_batch_interrupted;
+#[cfg(test)]
+pub(crate) use rust_batch_interrupt::note_rust_batch_interrupted;
+pub(crate) use kiss_test_report::{clone_run_args, run_kiss_test_report, KISS_TEST_ALLOW_REFRESH};
 
 pub(crate) use lang_rust::llvm_cov as rust_llvm_cov;
 
 use kiss::Language;
 
 use crate::bin_cli::args::TestInvocation;
+#[cfg(test)]
 use crate::test_git::TestChangeMode;
+#[cfg(test)]
 pub(crate) use run_logic::run_selectors;
 
 #[cfg(test)]
@@ -87,40 +99,6 @@ pub struct RunTestCmdArgs<'a> {
     pub gate_config: kiss::GateConfig,
 }
 
-pub(crate) fn apply_force_bad(
-    a: &RunTestCmdArgs<'_>,
-    planned: &mut PlannedSelectors,
-) -> Result<(), String> {
-    if !a.force_bad {
-        return Ok(());
-    }
-    let py_bad =
-        runners::prior_failures_for_language(&planned.repo_root, Language::Python, a.python_extra)?;
-    let rs_bad = runners::prior_failures_for_language(&planned.repo_root, Language::Rust, a.extra)?;
-    let mut py = planned.prior_failure_selectors.python.clone();
-    py.extend(py_bad.into_iter().map(|s| s.id));
-    py.sort();
-    py.dedup();
-    planned.prior_failure_selectors.python = py;
-    let mut rs = planned.prior_failure_selectors.rust.clone();
-    rs.extend(rs_bad.into_iter().map(|s| s.id));
-    rs.sort();
-    rs.dedup();
-    planned.prior_failure_selectors.rust = rs;
-
-    for sel in &planned.prior_failure_selectors.python {
-        if !planned.sel.python.iter().any(|s| s == sel) {
-            planned.sel.python.push(sel.clone());
-        }
-    }
-    for sel in &planned.prior_failure_selectors.rust {
-        if !planned.sel.rust.iter().any(|s| s == sel) {
-            planned.sel.rust.push(sel.clone());
-        }
-    }
-    Ok(())
-}
-
 #[derive(Debug, PartialEq, Eq)]
 pub enum RunTestOnceOutcome {
     Code(i32),
@@ -135,21 +113,14 @@ pub fn run_test(a: RunTestCmdArgs<'_>) -> i32 {
 }
 
 pub(crate) fn emit_test_progress(message: &str) {
-    #[cfg(unix)]
-    {
-        let mut line = Vec::with_capacity(message.len() + 1);
-        line.extend_from_slice(message.as_bytes());
-        line.push(b'\n');
-        unsafe {
-            let _ = libc::write(libc::STDOUT_FILENO, line.as_ptr().cast(), line.len());
-        }
+    if !crate::test_runner::check_runtime_refresh::test_runner_stdout_enabled() {
+        return;
     }
-    #[cfg(not(unix))]
-    {
-        use std::io::Write;
-        println!("{message}");
-        let _ = std::io::stdout().flush();
-    }
+    emit_test_status(message);
+}
+
+pub(crate) fn emit_test_status(message: &str) {
+    kiss::rust_llvm_cov_runner::emit_progress(message);
 }
 
 pub(crate) fn emit_stage_time(stage: &str, duration: std::time::Duration) {
@@ -160,51 +131,17 @@ pub(crate) fn emit_stage_time(stage: &str, duration: std::time::Duration) {
 }
 
 pub(crate) fn run_test_once(a: RunTestCmdArgs<'_>) -> RunTestOnceOutcome {
-    let dry_run = a.dry_run;
-    let force_rerun = a.force_rerun;
-    let metrics = a.metrics;
-    let jobs = a.jobs;
-    let extra = a.extra;
-    let python_extra = a.python_extra;
-
     crate::test_runner::runners::clear_python_collect_memo();
 
+    let process_started = std::time::Instant::now();
+    let _progress_watchdog = kiss::rust_llvm_cov_runner::ProgressWatchdog::start();
     emit_test_progress("kiss test: Planning ...");
-    let plan_started = std::time::Instant::now();
-    match plan_for_invocation(&a) {
-        Ok(mut planned) => {
-            apply_cold_initialization_population(&a, &mut planned);
-            apply_force_all_population(&a, &mut planned);
-            if let Err(e) = apply_force_bad(&a, &mut planned) {
-                eprintln!("{e}");
-                return RunTestOnceOutcome::Code(1);
-            }
-            match run_selectors(
-                &planned,
-                SelectorRunOptions {
-                    dry_run,
-                    force_rerun,
-                    metrics,
-                    jobs,
-                    extras: crate::test_runner::language_keyed::LanguageKeyed {
-                        python: python_extra,
-                        rust: extra,
-                    },
-                    plan_duration: plan_started.elapsed(),
-                    gate: a.gate_config.clone(),
-                },
-            ) {
-                Ok(c) => RunTestOnceOutcome::Code(c),
-                Err(e) => {
-                    if rust_batch_interrupt::consume_rust_batch_interrupted() {
-                        return RunTestOnceOutcome::Interrupted;
-                    }
-                    eprintln!("{e}");
-                    RunTestOnceOutcome::Code(1)
-                }
-            }
-        }
+    match pipeline::run_overlapped_test(&a, process_started) {
+        Ok(c) => RunTestOnceOutcome::Code(c),
         Err(e) => {
+            if rust_batch_interrupt::consume_rust_batch_interrupted() {
+                return RunTestOnceOutcome::Interrupted;
+            }
             eprintln!("{e}");
             RunTestOnceOutcome::Code(1)
         }
@@ -213,10 +150,14 @@ pub(crate) fn run_test_once(a: RunTestCmdArgs<'_>) -> RunTestOnceOutcome {
 
 #[cfg(unix)]
 pub(crate) use watch::control::{
-    NudgeRequestMsg, nudge_watcher_with_retry_on_wait, probe_live_watcher,
+    NudgeInvocation, NudgeRequestMsg, nudge_watcher_with_retry_on_wait, probe_live_watcher,
 };
+#[cfg(not(unix))]
+pub(crate) use watch::nudge_kind::NudgeInvocation;
 pub(crate) use watch::{WatchCoverageParams, WatchCoverageResult, WatchReloadSeed, run_test_watch};
 
+#[cfg(test)]
+#[allow(dead_code)]
 fn plan_for_invocation(a: &RunTestCmdArgs<'_>) -> Result<PlannedSelectors, String> {
     match &a.invocation {
         TestInvocation::Commit => plan_selectors(PlanSelectorsRequest {
@@ -278,8 +219,11 @@ fn plan_for_invocation(a: &RunTestCmdArgs<'_>) -> Result<PlannedSelectors, Strin
     }
 }
 
+mod pipeline;
 mod plan;
-mod workspace_selector_cache;
+mod rust_list_build;
+pub(crate) mod workspace_selector_cache;
+#[cfg(test)]
 pub(crate) use plan::{
     PlanSelectorsRequest, TargetPlanKind, plan_selectors, plan_target_selectors,
 };
@@ -320,12 +264,24 @@ mod test_change_modes_b_test;
 mod mod_test;
 
 #[cfg(test)]
-#[path = "mod_test_b.rs"]
-mod mod_test_b;
+#[path = "force_bad_test.rs"]
+mod force_bad_test;
+
+#[cfg(test)]
+#[path = "retry_bad_e2e_test.rs"]
+mod retry_bad_e2e_test;
 
 #[cfg(test)]
 #[path = "planning_heartbeat_test.rs"]
 mod planning_heartbeat_test;
+
+#[cfg(test)]
+#[path = "pipeline_progress_test.rs"]
+mod pipeline_progress_test;
+
+#[cfg(test)]
+#[path = "pipeline_barrier_test.rs"]
+mod pipeline_barrier_test;
 
 #[cfg(test)]
 #[path = "mod_run_api_test.rs"]
@@ -367,3 +323,7 @@ mod rust_batch_witness_derived_test;
 #[cfg(test)]
 #[path = "test_cli_acceptance_test.rs"]
 mod test_cli_acceptance_test;
+
+#[cfg(test)]
+#[path = "kt_target_types_test.rs"]
+mod kt_target_types_test;

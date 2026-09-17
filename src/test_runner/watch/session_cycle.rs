@@ -8,8 +8,9 @@ use super::coverage::WatchCoverageResult;
 use super::event_source::WatchEventSource;
 use super::filter::WatchPathFilter;
 use super::reload::{CycleForceFlags, WatchLiveConfig};
-use super::session_idle::{QueuedCycle, drain_into_machine};
+use super::session_idle::{drain_into_machine, QueuedCycle};
 use super::settle::SettleMachine;
+use crate::bin_cli::args::TestInvocation;
 use crate::test_runner::{RunTestCmdArgs, RunTestOnceOutcome};
 
 pub(crate) const EXIT_INTERRUPTED: i32 = 130;
@@ -21,13 +22,14 @@ pub(crate) enum CycleOutcome {
 }
 
 pub(crate) struct WatchCycleCtx<'a, F, C> {
-    pub live: &'a WatchLiveConfig,
+    pub live: &'a mut WatchLiveConfig,
     pub queued: &'a mut Option<QueuedCycle>,
     pub source: &'a mut dyn WatchEventSource,
     pub filter: &'a mut WatchPathFilter,
     pub machine: &'a mut SettleMachine,
     pub repo_root: &'a Path,
     pub last_reply: &'a mut Option<NudgeReplyMsg>,
+    pub suite: &'a mut kiss::rust_llvm_cov_runner::WatchSuiteReport,
     pub run_cycle: &'a mut F,
     pub run_cov: &'a mut C,
 }
@@ -37,29 +39,49 @@ where
     F: FnMut(RunTestCmdArgs<'_>) -> RunTestOnceOutcome,
     C: FnMut(&RunTestCmdArgs<'_>, &WatchLiveConfig) -> WatchCoverageResult,
 {
-    let (cycle_args, replies) = take_queued_cycle_args(ctx.live, ctx.queued);
-    let test_outcome = (ctx.run_cycle)(clone_args(&cycle_args));
-    let test_exit = match test_outcome {
-        RunTestOnceOutcome::Interrupted => {
-            reply_all(&replies, EXIT_INTERRUPTED, None);
-            return CycleOutcome::Interrupted;
+    crate::test_runner::emit_test_progress("kiss test: Starting");
+    apply_queued_filters(ctx.live, ctx.queued);
+    let live = &*ctx.live;
+    let (cycle_args, replies) = take_queued_cycle_args(live, ctx.queued);
+    let scoped = !matches!(cycle_args.invocation, TestInvocation::All);
+    let report = crate::test_runner::run_kiss_test_report(
+        crate::test_runner::clone_run_args(&cycle_args),
+        &mut *ctx.run_cycle,
+        |args| (ctx.run_cov)(args, live),
+    );
+    if scoped {
+        ctx.suite.merge_lines(&report.lines);
+    } else {
+        ctx.suite.merge_unscoped_lines(&report.lines);
+    }
+    if report.interrupted {
+        *ctx.last_reply = Some(reply_all(
+            &replies,
+            EXIT_INTERRUPTED,
+            None,
+            nonempty_report(ctx.suite.format()),
+        ));
+        return CycleOutcome::Interrupted;
+    }
+    reply_all(
+        &replies,
+        report.exit_code,
+        report.error.clone(),
+        ensure_green_gate_line(report.exit_code, report.output),
+    );
+    if !scoped || ctx.last_reply.is_none() {
+        if report.exit_code == 0 {
+            ctx.suite.merge_lines(&["NO VIOLATIONS".into()]);
         }
-        RunTestOnceOutcome::Code(code) => code,
-    };
-    match run_cov_step_after_tests(CovStepOpts {
-        test_exit,
-        dry_run: cycle_args.dry_run,
-        run_cov: &mut *ctx.run_cov,
-        cycle_args: &cycle_args,
-        live: ctx.live,
-    }) {
-        CovStep::Interrupted => {
-            reply_all(&replies, EXIT_INTERRUPTED, None);
-            return CycleOutcome::Interrupted;
-        }
-        CovStep::Done { exit_code, error } => {
-            *ctx.last_reply = Some(reply_all(&replies, exit_code, error));
-        }
+        *ctx.last_reply = Some(NudgeReplyMsg {
+            exit_code: kiss::rust_llvm_cov_runner::merge_watch_exit(
+                report.exit_code,
+                ctx.suite.test_exit_code(),
+            ),
+            pid: std::process::id(),
+            error: report.error,
+            output: nonempty_report(ctx.suite.format()),
+        });
     }
     if let Some(msg) = drain_into_machine(
         ctx.source,
@@ -74,40 +96,15 @@ where
     CycleOutcome::Continue
 }
 
-enum CovStep {
-    Interrupted,
-    Done {
-        exit_code: i32,
-        error: Option<String>,
-    },
-}
-
-struct CovStepOpts<'a, C> {
-    test_exit: i32,
-    dry_run: bool,
-    run_cov: &'a mut C,
-    cycle_args: &'a RunTestCmdArgs<'a>,
-    live: &'a WatchLiveConfig,
-}
-
-fn run_cov_step_after_tests<C>(opts: CovStepOpts<'_, C>) -> CovStep
-where
-    C: FnMut(&RunTestCmdArgs<'_>, &WatchLiveConfig) -> WatchCoverageResult,
-{
-    if opts.test_exit != 0 || opts.dry_run {
-        return CovStep::Done {
-            exit_code: opts.test_exit,
-            error: None,
-        };
-    }
-    let cov = (opts.run_cov)(opts.cycle_args, opts.live);
-    if cov.interrupted {
-        CovStep::Interrupted
-    } else {
-        CovStep::Done {
-            exit_code: cov.exit_code,
-            error: cov.error,
-        }
+pub(crate) fn apply_queued_filters(live: &mut WatchLiveConfig, queued: &Option<QueuedCycle>) {
+    match queued {
+        Some(q) => live.apply_nudge_filters(
+            q.lang_filter,
+            q.ignore.clone(),
+            q.extra.clone(),
+            q.python_extra.clone(),
+        ),
+        None => live.clear_nudge_filters(),
     }
 }
 
@@ -121,21 +118,54 @@ pub(crate) fn take_queued_cycle_args<'a>(
         force.force_rerun = q.force;
         force.force_bad = q.force_bad;
         force.metrics = q.metrics;
+        if !q.unscoped_force {
+            force.targets = q.targets;
+            force.invocation = q.invocation;
+        }
         replies = q.replies;
     }
     (live.cycle_args(force), replies)
+}
+
+fn nonempty_report(text: String) -> Option<String> {
+    if text.is_empty() {
+        None
+    } else {
+        Some(text)
+    }
+}
+
+fn ensure_green_gate_line(exit_code: i32, output: Option<String>) -> Option<String> {
+    let text = output.unwrap_or_default();
+    if exit_code != 0 {
+        return nonempty_report(text);
+    }
+    if text.contains("NO VIOLATIONS") || text.contains("VIOLATION:") {
+        return nonempty_report(text);
+    }
+    if let Some((head, summary)) = text.rsplit_once('\n')
+        && summary.contains(" passed · ")
+    {
+        return nonempty_report(format!("{head}\nNO VIOLATIONS\n{summary}"));
+    }
+    if text.is_empty() {
+        return Some("NO VIOLATIONS".into());
+    }
+    nonempty_report(format!("{text}\nNO VIOLATIONS"))
 }
 
 fn reply_all(
     replies: &[SyncSender<NudgeReplyMsg>],
     exit_code: i32,
     error: Option<String>,
+    output: Option<String>,
 ) -> NudgeReplyMsg {
+    let output = output.filter(|s| !s.is_empty());
     let msg = NudgeReplyMsg {
         exit_code,
         pid: std::process::id(),
         error,
-        output: None,
+        output,
     };
     for reply in replies {
         let _ = reply.send(msg.clone());
@@ -143,29 +173,36 @@ fn reply_all(
     msg
 }
 
-fn clone_args<'a>(args: &RunTestCmdArgs<'a>) -> RunTestCmdArgs<'a> {
-    RunTestCmdArgs {
-        invocation: args.invocation.clone(),
-        main_branch_cli: args.main_branch_cli,
-        base_branch_cli: args.base_branch_cli,
-        dry_run: args.dry_run,
-        force_rerun: args.force_rerun,
-        force_bad: args.force_bad,
-        metrics: args.metrics,
-        jobs: args.jobs,
-        extra: args.extra,
-        python_extra: args.python_extra,
-        ignore: args.ignore,
-        lang_filter: args.lang_filter,
-        config_main_branch: args.config_main_branch,
-        gate_config: args.gate_config.clone(),
+#[cfg(test)]
+mod ensure_green_gate_line_tests {
+    use super::ensure_green_gate_line;
+
+    #[test]
+    fn inserts_no_violations_before_summary_on_green() {
+        let out = ensure_green_gate_line(
+            0,
+            Some("PASS (cached): 3 selectors\n✓ 3 passed · 0 failed · 0 timed out · 0.1s total · 0s max pass".into()),
+        )
+        .unwrap();
+        assert!(out.contains("NO VIOLATIONS"), "{out}");
+        let clean = out.find("NO VIOLATIONS").unwrap();
+        let summary = out.find("✓ 3 passed").unwrap();
+        assert!(clean < summary, "{out}");
+    }
+
+    #[test]
+    fn leaves_failing_output_unchanged() {
+        let raw = "✗ 0 passed · 1 failed · 0 timed out · 0.1s total · 0s max pass";
+        let out = ensure_green_gate_line(1, Some(raw.into())).unwrap();
+        assert_eq!(out, raw);
+        assert!(!out.contains("NO VIOLATIONS"));
     }
 }
 
 #[cfg(not(unix))]
-pub(crate) use nudge_stub::NudgeRequest;
-#[cfg(not(unix))]
 use nudge_stub::*;
+#[cfg(not(unix))]
+pub(crate) use nudge_stub::{NudgeReplyMsg, NudgeRequest};
 #[cfg(not(unix))]
 mod nudge_stub {
     use std::sync::mpsc::SyncSender;
@@ -182,6 +219,18 @@ mod nudge_stub {
         pub force: bool,
         pub force_bad: bool,
         pub metrics: bool,
+        pub invocation: crate::test_runner::watch::nudge_kind::NudgeInvocation,
+        pub targets: Vec<String>,
+        pub lang: Option<String>,
+        pub ignore: Vec<String>,
+        pub extra: Vec<String>,
+        pub python_extra: Vec<String>,
+    }
+
+    impl NudgeRequestMsg {
+        pub(crate) fn lang_filter(&self) -> Option<kiss::Language> {
+            None
+        }
     }
 
     pub(crate) struct NudgeRequest {

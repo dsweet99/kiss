@@ -125,12 +125,6 @@ fn write_fake_python_tree(root: &Path) {
     seed_all_python(root, "tests/test_app.py::test_app");
 }
 
-fn reclamp_message(language: &str) -> String {
-    format!(
-        "Error: found {language} files but .kissconfig has no [{language}] table. Delete .kissconfig and run `kiss check` to generate language thresholds."
-    )
-}
-
 fn rust_too_many_args() -> &'static str {
     "pub fn too_many(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32, g: i32, h: i32, i: i32) -> i32 { a }\n"
 }
@@ -187,7 +181,8 @@ fn clamp_then_check_is_green() {
     );
     assert!(
         config.contains("duplication_enabled = false")
-            && config.contains("orphan_module_enabled = false")
+            && config.contains("orphan_detection = false")
+            && !config.contains("orphan_module_enabled")
             && config.contains("comment_removal_enabled = false")
             && config.contains(r#"docs_allowed = ["./"]"#)
             && config.contains("test_coverage_threshold = 0")
@@ -229,37 +224,21 @@ fn python_only_clamp_omits_rust() {
     fs::create_dir_all(root.join("src")).unwrap();
     fs::write(root.join("src/lib.rs"), rust_too_many_args()).unwrap();
 
+    // Second check must auto-fill [rust]; avoid a third kiss subprocess.
     let check = run_kiss(root, &["check", "."]);
     let text = combined(&check);
-    assert!(!check.status.success(), "check must fail: {text}");
     assert!(
-        text.contains(&reclamp_message("rust")),
-        "expected re-clamp message; output:\n{text}"
+        check.status.success(),
+        "check must auto-fill missing [rust] from maxima: {text}"
+    );
+    let filled = fs::read_to_string(root.join(".kissconfig")).unwrap();
+    assert!(
+        filled.contains("[rust]"),
+        "missing [rust] must be written:\n{filled}"
     );
     assert!(
-        !text.contains("VIOLATION:positional_args"),
-        "must not score rust with stock arguments=8; output:\n{text}"
-    );
-
-    let stats = run_kiss(root, &["stats", "."]);
-    let stats_text = combined(&stats);
-    assert!(!stats.status.success(), "stats must fail: {stats_text}");
-    assert!(
-        stats_text.contains(&reclamp_message("rust")),
-        "stats output:\n{stats_text}"
-    );
-    assert!(!stats_text.contains("VIOLATION:positional_args"));
-
-    let viz = run_kiss(root, &["viz", "graph.mmd", "."]);
-    let viz_text = combined(&viz);
-    assert!(!viz.status.success(), "viz must fail: {viz_text}");
-    assert!(
-        viz_text.contains(&reclamp_message("rust")),
-        "viz output:\n{viz_text}"
-    );
-    assert!(
-        !viz_text.contains("Error: Error:"),
-        "viz must not double Error prefix:\n{viz_text}"
+        filled.contains("[python]"),
+        "existing [python] must be kept:\n{filled}"
     );
 }
 
@@ -283,32 +262,32 @@ fn rust_only_clamp_omits_python() {
 
     let check = run_kiss(root, &["check", "."]);
     let text = combined(&check);
-    assert!(!check.status.success(), "check must fail: {text}");
     assert!(
-        text.contains(&reclamp_message("python")),
-        "expected re-clamp message; output:\n{text}"
+        check.status.success(),
+        "check must auto-fill missing [python] from maxima: {text}"
+    );
+    let filled = fs::read_to_string(root.join(".kissconfig")).unwrap();
+    assert!(
+        filled.contains("[python]"),
+        "missing [python] must be written:\n{filled}"
     );
     assert!(
-        !text.contains("VIOLATION:positional_args"),
-        "must not score python with stock positional_args=3; output:\n{text}"
+        filled.contains("[rust]"),
+        "existing [rust] must be kept:\n{filled}"
     );
 
     let stats = run_kiss(root, &["stats", "."]);
-    let stats_text = combined(&stats);
-    assert!(!stats.status.success());
-    assert!(stats_text.contains(&reclamp_message("python")));
-    assert!(!stats_text.contains("VIOLATION:positional_args"));
+    assert!(
+        stats.status.success(),
+        "stats after auto-fill: {}",
+        combined(&stats)
+    );
 
     let viz = run_kiss(root, &["viz", "graph.mmd", "."]);
-    let viz_text = combined(&viz);
-    assert!(!viz.status.success(), "viz must fail: {viz_text}");
     assert!(
-        viz_text.contains(&reclamp_message("python")),
-        "viz output:\n{viz_text}"
-    );
-    assert!(
-        !viz_text.contains("Error: Error:"),
-        "viz must not double Error prefix:\n{viz_text}"
+        viz.status.success(),
+        "viz after auto-fill: {}",
+        combined(&viz)
     );
 }
 
@@ -418,6 +397,62 @@ fn check_ignore_is_applied_when_auto_creating_config() {
         table_usize(&config, "python", "positional_args"),
         Some(1),
         "auto-create must honor --ignore:\n{config}"
+    );
+    assert!(
+        config.contains("ignore = [\"vendor\"]"),
+        "CLI --ignore must be seeded into stub [test].ignore:\n{config}"
+    );
+}
+
+#[test]
+fn stub_gate_config_survives_parse_failure_then_fills_after_ignore() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+    fs::create_dir_all(root.join("bad")).unwrap();
+    fs::write(root.join("ok.py"), "def ok():\n    return 1\n").unwrap();
+    fs::write(root.join("bad/broken.py"), "def broken(\n").unwrap();
+
+    let first = run_kiss(root, &["check", "."]);
+    assert!(
+        !first.status.success(),
+        "parse failure must fail first check: {}",
+        combined(&first)
+    );
+    assert!(
+        root.join(".kissconfig").exists(),
+        "gate stub must be written before stats/collect failure: {}",
+        combined(&first)
+    );
+    let stub = fs::read_to_string(root.join(".kissconfig")).unwrap();
+    assert!(
+        stub.contains("[global]") && stub.contains("[test]"),
+        "stub:\n{stub}"
+    );
+    assert!(
+        !stub.contains("[python]"),
+        "failed first pass must not write [python]:\n{stub}"
+    );
+
+    let mut patched = stub.replace("ignore = []", "ignore = [\"bad\"]");
+    if !patched.contains("ignore = [\"bad\"]") {
+        patched.push_str("\nignore = [\"bad\"]\n");
+    }
+    fs::write(root.join(".kissconfig"), patched).unwrap();
+
+    let second = run_kiss(root, &["check", "."]);
+    assert!(
+        second.status.success(),
+        "second check with stub ignore must fill language tables: {}",
+        combined(&second)
+    );
+    let filled = fs::read_to_string(root.join(".kissconfig")).unwrap();
+    assert!(
+        filled.contains("[python]"),
+        "language thresholds must be filled:\n{filled}"
+    );
+    assert!(
+        filled.contains("ignore = [\"bad\"]"),
+        "operator ignore must be preserved:\n{filled}"
     );
 }
 
