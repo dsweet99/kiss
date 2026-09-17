@@ -3,7 +3,9 @@ mod model;
 mod model_python;
 mod model_rust;
 mod parse;
+mod python_nodeid_cache;
 mod resolve;
+mod resolve_hydrate;
 
 use std::path::Path;
 

@@ -116,7 +116,6 @@ fn is_executable(meta: &fs::Metadata) -> bool {
     }
 }
 
-pub(crate) const COVERAGE_BUILD_JOBS_HOST_CAP: usize = 16;
 pub(crate) const COVERAGE_CODEGEN_UNITS_FLAG: &str = "-Ccodegen-units=16";
 
 pub fn effective_coverage_build_jobs(configured_jobs: usize) -> usize {
@@ -124,7 +123,7 @@ pub fn effective_coverage_build_jobs(configured_jobs: usize) -> usize {
     let host = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(configured);
-    configured.max(host.min(COVERAGE_BUILD_JOBS_HOST_CAP))
+    configured.max(host)
 }
 
 pub(crate) fn ensure_coverage_link_build_id(env: &mut BTreeMap<String, String>) {
@@ -162,6 +161,18 @@ fn append_rustflag_unless_present(env: &mut BTreeMap<String, String>, marker: &s
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn effective_coverage_build_jobs_tracks_host_without_fixed_ceiling() {
+        let host = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1);
+        assert_eq!(effective_coverage_build_jobs(1), host.max(1));
+        assert_eq!(
+            effective_coverage_build_jobs(host.saturating_mul(2).max(2)),
+            host.saturating_mul(2).max(2)
+        );
+    }
 
     #[test]
     fn resolved_identity_tools_respects_empty_path_entry_as_cwd() {

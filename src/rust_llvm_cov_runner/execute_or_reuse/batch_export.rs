@@ -13,8 +13,7 @@ use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export_resolve::{
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export_tools::ExportTools;
 use crate::rust_llvm_cov_runner::{RustLineCoverage, RustLlvmCovError};
 
-const MAX_PARALLEL_LLVM_EXPORTS: usize = 8;
-const ESTIMATED_CPUS_PER_LLVM_EXPORT: usize = 4;
+const ESTIMATED_CPUS_PER_LLVM_EXPORT: usize = 2;
 
 pub(crate) use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export_merge::{
     export_instance_coverage, merge_profiles,
@@ -250,12 +249,15 @@ pub(crate) fn export_instances_bounded_with(
     Ok((results, counters))
 }
 
-fn export_worker_count(jobs: usize) -> usize {
+fn max_export_workers_for_host() -> usize {
     let available = std::thread::available_parallelism()
         .map(|count| count.get())
         .unwrap_or(1);
-    let cpu_bound = available.div_ceil(ESTIMATED_CPUS_PER_LLVM_EXPORT);
-    jobs.clamp(1, MAX_PARALLEL_LLVM_EXPORTS.min(cpu_bound.max(1)))
+    available.div_ceil(ESTIMATED_CPUS_PER_LLVM_EXPORT).max(1)
+}
+
+fn export_worker_count(jobs: usize) -> usize {
+    jobs.clamp(1, max_export_workers_for_host())
 }
 
 struct ExportDrainState<'a> {

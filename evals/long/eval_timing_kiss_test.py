@@ -85,7 +85,10 @@ def timing_kiss_test() -> None:
     """
     assert KISS.is_file(), f"local binary missing: {KISS}"
     assert RUFF_REPO.is_dir(), f"ruff repo missing: {RUFF_REPO}"
-    assert EVAL_CONFIG.is_file(), f"eval config missing: {EVAL_CONFIG}"
+    # RuntimeError (not AssertionError): report_eval swallows asserts and would
+    # exit 0 with empty timing metrics if this fixture were missing.
+    if not EVAL_CONFIG.is_file():
+        raise RuntimeError(f"eval config missing: {EVAL_CONFIG}")
     env = os.environ.copy()
     env["PYTHONPATH"] = str(RUFF_REPO)
     env.pop("RUSTFLAGS", None)

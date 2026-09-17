@@ -5,7 +5,6 @@ use crate::bin_cli::check_cmd::CheckCommandArgs;
 use kiss::Language;
 
 pub const SHARD_ENV: &str = "KISS_CHECK_GATHER_ROOTS";
-const MAX_SHARDS: usize = 24;
 
 pub(crate) fn gather_roots_from_env() -> Option<Vec<PathBuf>> {
     let raw = std::env::var_os(SHARD_ENV)?;
@@ -68,7 +67,7 @@ fn rust_shard_count(file_count: usize) -> usize {
     let cpus = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(4)
-        .clamp(1, MAX_SHARDS);
+        .max(1);
     cpus.min(file_count.max(1)).max(1)
 }
 
@@ -193,9 +192,13 @@ mod tests {
     }
 
     #[test]
-    fn rust_shard_count_clamps() {
+    fn rust_shard_count_follows_host_parallelism() {
         assert_eq!(rust_shard_count(0), 1);
-        assert!(rust_shard_count(10_000) <= MAX_SHARDS);
+        let host = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4)
+            .max(1);
+        assert_eq!(rust_shard_count(10_000), host);
     }
 
     use std::os::unix::process::ExitStatusExt;

@@ -10,10 +10,8 @@ use kiss::code_roles::{
 use super::model::{SourceModel, load_source_model};
 use super::model_python::attach_python_nodeids;
 use super::parse::{ParsedTestTarget, parse_test_target};
-use crate::test_runner::runners::collect_python_nodeids_for_targets;
-use crate::test_runner::workspace_selector_cache::{
-    load_cached_python_workspace_selectors, python_selectors_for_rel_path,
-};
+use crate::test_runner::workspace_selector_cache::load_cached_python_workspace_selectors;
+use super::resolve_hydrate::{hydrate_python_models, python_nodeids_for_model};
 #[derive(Clone, Debug, Default)]
 pub(crate) struct TargetSelectionQuery {
     pub direct_python: BTreeSet<String>,
@@ -42,6 +40,7 @@ pub(crate) fn resolve_target_operands(
     };
     let mut python_selector_cache =
         load_python_target_cache(repo_root, ignore, pytest_args, lang_filter);
+    let mut pending: Vec<(ParsedTestTarget, PathBuf)> = Vec::new();
     for raw in operands {
         if !seen_raw.insert(raw.clone()) {
             continue;
@@ -56,18 +55,27 @@ pub(crate) fn resolve_target_operands(
             continue;
         }
         if !models.contains_key(&abs) {
-            let mut model = load_source_model(&abs, parsed.language)?;
-            if parsed.language == Language::Python {
-                attach_python_tests(
-                    repo_root,
-                    &mut model,
-                    pytest_args,
-                    python_selector_cache.as_deref(),
-                )?;
-            }
+            let model = load_source_model(&abs, parsed.language)?;
             models.insert(abs.clone(), model);
         }
-        let model = models.get(&abs).expect("model inserted above");
+        pending.push((parsed, abs));
+    }
+    hydrate_python_models(
+        repo_root,
+        &mut models,
+        pytest_args,
+        python_selector_cache.as_deref(),
+    )?;
+    for (parsed, abs) in pending {
+        let model = models.get_mut(&abs).expect("model inserted above");
+        if parsed.language == Language::Python {
+            attach_python_tests(
+                repo_root,
+                model,
+                pytest_args,
+                python_selector_cache.as_deref(),
+            )?;
+        }
         apply_parsed_target(&mut query, model, &parsed, &abs, &mut roles)?;
         if parsed.language == Language::Python && python_selector_cache.is_none() {
             python_selector_cache =
@@ -280,31 +288,6 @@ fn attach_python_tests(
         }
     }
     Ok(())
-}
-
-fn python_nodeids_for_model(
-    repo_root: &Path,
-    model: &SourceModel,
-    rel: &str,
-    pytest_args: &[String],
-    cached_selectors: Option<&[String]>,
-) -> Result<Vec<String>, String> {
-    if let Some(cached) = cached_selectors {
-        let from_cache = python_selectors_for_rel_path(cached, rel);
-        if !from_cache.is_empty() {
-            return Ok(from_cache);
-        }
-        let has_named_tests = is_python_test_module_path(&model.path)
-            && model.direct_tests.iter().any(|test| !test.name.is_empty());
-        if !has_named_tests {
-            return Ok(from_cache);
-        }
-    }
-    collect_python_nodeids_for_targets(
-        repo_root,
-        Some(std::slice::from_ref(&model.path)),
-        pytest_args,
-    )
 }
 
 fn canonicalize_target_path(

@@ -149,7 +149,7 @@ pub(crate) fn parse_py_files_pooled(files: &[PathBuf]) -> Result<Vec<ParsedFile>
     let n = std::thread::available_parallelism()
         .map(|p| p.get())
         .unwrap_or(8)
-        .clamp(1, 8);
+        .max(1);
     rayon::ThreadPoolBuilder::new()
         .num_threads(n)
         .build()
