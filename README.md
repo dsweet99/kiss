@@ -38,7 +38,7 @@ In your repo root, run:
 ```bash
 kiss check
 ```
-If `.kissconfig` is missing, `kiss check` will write one with threshold set so that your repo *just* passes `kiss check`. Any future code complexity increases will be prevented.
+If `.kissconfig` is missing, `kiss check` will write one with thresholds set so that your repo *just* passes `kiss check`. Any future code complexity increases will be flagged as violations.
 
 When your LLM runs `kiss check` it will see whether any of the code it has written has violated a constraint. For example:
 ```
@@ -58,13 +58,13 @@ VIOLATION:duplication:src/users.py:10:create_user: 80% similar, 2 copies: [src/u
 
 ## `kiss test`
 
-`kiss test` runs your unit tests, then enforces line-level code coverage, and limits running time of unit tests. Install the [toolchains above](#installation) before relying on Rust or Python coverage runs. `kiss test` is designed to be an efficient and robust unit test runner for both Python and Rust. It supports
+`kiss test` runs your unit tests, then enforces line-level code coverage, and flags too-long-running unit tests as violations.
+`kiss test` is designed to be an efficient and robust unit test runner for both Python and Rust. It supports
 - Caching, to avoid reruns of working tests
 - Parallelization, to speed up test running
 - Separate interpreters for each Python test, to reduce test flakiness and failures of the test runner
-- Timeouts with feedback for your agent so that it will write faster tests
-- `kiss test --watch`: keep a long-lived watcher; a later `kiss test` can ask it for results (immediate reuse when nothing changed, otherwise a cache-aware rerun)
-- `kiss test --retry-bad TARGET`: rerun only the FAIL and TIMEOUT tests in that TARGET subset
+- Timeouts with feedback for your agent to motivate it to write faster tests
+- Watcher: `kiss test --watch` will rerun affected unit tests as your agent codes so that when an agent requests `kiss test`, the result will be more likely to already be cached.
 
 
 ---
@@ -124,6 +124,3 @@ RULE: [Python] [positional_args <= 3] positional_args is the maximum number of p
 Complexity and size maxima print `<= N` because a value equal to the configured maximum is legal.
 
 
-## Support
-
-If this project helps you, please consider [sponsoring](https://github.com/sponsors/dsweet99) or see [SUPPORT.md](./SUPPORT.md).
