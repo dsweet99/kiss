@@ -1,7 +1,7 @@
 use crate::bin_cli::args::{TestInvocation, parse_test_invocation};
 use crate::bin_cli::{TestCommandArgs, finish_with_coverage};
 use crate::test_runner::test_mode_fixtures::{
-    checkout_branch, git_in, init_git, with_cwd, with_locked_warm_committed_repo,
+    checkout_branch, git_in, init_git, with_cloned_warm_committed_repo, with_cwd,
     with_locked_warm_python_repo,
 };
 use crate::test_runner::{RunTestCmdArgs, TargetPlanKind, plan_target_selectors};
@@ -255,8 +255,9 @@ fn no_post_test_gate(code: i32) {
     );
 }
 
-fn coverage_gate_on_locked_warm(invocation: TestInvocation) {
-    with_locked_warm_committed_repo(|repo, _lib| {
+fn coverage_gate_on_cloned_warm(invocation: TestInvocation) {
+    // Nested kiss-test work must not hold the shared warm-committed lock (TIMEOUT under -j 16).
+    with_cloned_warm_committed_repo(|repo, _lib| {
         no_post_test_gate(after_tests_pass_coverage(repo, invocation));
     });
 }
@@ -264,25 +265,25 @@ fn coverage_gate_on_locked_warm(invocation: TestInvocation) {
 #[test]
 fn type_dot() {
     no_false_lang(dry_mode(workspace_repo().path(), TestInvocation::All));
-    coverage_gate_on_locked_warm(TestInvocation::All);
+    coverage_gate_on_cloned_warm(TestInvocation::All);
 }
 
 #[test]
 fn type_commit() {
     no_false_lang(dry_mode(workspace_repo().path(), TestInvocation::Commit));
-    coverage_gate_on_locked_warm(TestInvocation::Commit);
+    coverage_gate_on_cloned_warm(TestInvocation::Commit);
 }
 
 #[test]
 fn type_base() {
     no_false_lang(dry_mode(workspace_repo().path(), TestInvocation::Base));
-    coverage_gate_on_locked_warm(TestInvocation::Base);
+    coverage_gate_on_cloned_warm(TestInvocation::Base);
 }
 
 #[test]
 fn type_main() {
     no_false_lang(dry_mode(workspace_repo().path(), TestInvocation::Main));
-    coverage_gate_on_locked_warm(TestInvocation::Main);
+    coverage_gate_on_cloned_warm(TestInvocation::Main);
 }
 
 #[test]
