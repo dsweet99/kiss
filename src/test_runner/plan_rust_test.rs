@@ -75,6 +75,25 @@ fn rust_plan_selectors_does_not_require_population_when_manifest_matches() {
 }
 
 #[test]
+fn rust_plan_selectors_does_not_require_population_after_ordinary_source_edit() {
+    let tmp = tempfile::tempdir().unwrap();
+    demo_lib(&tmp);
+    crate::test_runner::rust_coverage_index::write_rust_population_manifest_for_args(
+        tmp.path(),
+        &["a".into()],
+        &[],
+    )
+    .unwrap();
+    std::fs::write(tmp.path().join("src").join("lib.rs"), "pub fn y() {}\n").unwrap();
+    let plan = rust_plan_selectors(tmp.path(), vec!["a".into()], &GateConfig::default());
+    assert!(
+        !plan.population_required,
+        "ordinary source digest drift must not force a full Rust population"
+    );
+    assert_eq!(plan.planned, vec!["a".to_string()]);
+}
+
+#[test]
 fn rust_plan_selectors_requires_population_when_manifest_selectors_differ() {
     let tmp = tempfile::tempdir().unwrap();
     demo_lib(&tmp);

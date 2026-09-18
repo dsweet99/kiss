@@ -13,49 +13,81 @@ impl WatchSuiteReport {
     }
 }
 
-fn merge_into(suite: &mut WatchSuiteReport, lines: &[String], unscoped: bool) {
-    let mut cycle_named = BTreeMap::new();
-    let mut collapsed = [0usize; 3];
-    let mut summary = None;
-    for line in lines {
-        match parse_watch_line(line) {
-            ParsedWatchLine::Named { selector, outcome } => {
-                cycle_named.insert(selector, outcome);
-            }
-            ParsedWatchLine::Collapsed { outcome, count } => {
-                collapsed[collapsed_index(outcome)] = count;
-            }
-            ParsedWatchLine::Summary {
-                passed,
-                failed,
-                timed_out,
-                total,
-                max_pass,
-            } => {
-                summary = Some((passed, failed, timed_out, total, max_pass));
-            }
-            ParsedWatchLine::Violation(text) => {
-                suite.gates_clean = false;
-                if !suite.violations.iter().any(|v| v == &text) {
-                    suite.violations.push(text);
-                }
-            }
-            ParsedWatchLine::NoViolations => {
-                suite.gates_clean = true;
-                suite.violations.clear();
-            }
-            ParsedWatchLine::Ignore => {}
+struct CycleParse {
+    named: BTreeMap<String, SuiteOutcome>,
+    collapsed: [usize; 3],
+    lang_collapsed: [[usize; 3]; 2],
+    saw_lang: [bool; 2],
+    summary: Option<(usize, usize, usize, String, String)>,
+}
+
+fn apply_parsed_line(suite: &mut WatchSuiteReport, line: &str, parsed: &mut CycleParse) {
+    match parse_watch_line(line) {
+        ParsedWatchLine::Named { selector, outcome } => {
+            parsed.named.insert(selector, outcome);
         }
+        ParsedWatchLine::Collapsed { outcome, count } => {
+            parsed.collapsed[collapsed_index(outcome)] = count;
+        }
+        ParsedWatchLine::LangCollapsed {
+            lang,
+            outcome,
+            count,
+        } => {
+            let i = lang_slot(lang);
+            parsed.saw_lang[i] = true;
+            parsed.lang_collapsed[i][collapsed_index(outcome)] += count;
+        }
+        ParsedWatchLine::Summary {
+            passed,
+            failed,
+            timed_out,
+            total,
+            max_pass,
+        } => {
+            parsed.summary = Some((passed, failed, timed_out, total, max_pass));
+        }
+        ParsedWatchLine::Violation(text) => {
+            suite.gates_clean = false;
+            if !suite.violations.iter().any(|v| v == &text) {
+                suite.violations.push(text);
+            }
+        }
+        ParsedWatchLine::NoViolations => {
+            suite.gates_clean = true;
+            suite.violations.clear();
+        }
+        ParsedWatchLine::Ignore => {}
+    }
+}
+
+fn merge_into(suite: &mut WatchSuiteReport, lines: &[String], unscoped: bool) {
+    let mut parsed = CycleParse {
+        named: BTreeMap::new(),
+        collapsed: [0; 3],
+        lang_collapsed: [[0; 3]; 2],
+        saw_lang: [false; 2],
+        summary: None,
+    };
+    for line in lines {
+        apply_parsed_line(suite, line, &mut parsed);
     }
     let prior_passed = suite.passed();
-    for (selector, outcome) in &cycle_named {
+    for (selector, outcome) in &parsed.named {
         apply_named(suite, selector.clone(), *outcome);
     }
-    if unscoped && should_prune_absent_problems(summary.as_ref(), prior_passed, &cycle_named) {
-        prune_absent_problems(suite, &cycle_named);
+    if unscoped && should_prune_absent_problems(parsed.summary.as_ref(), prior_passed, &parsed.named)
+    {
+        prune_absent_problems(suite, &parsed.named);
     }
-    apply_anonymous_counts(suite, &cycle_named, collapsed, summary.as_ref().map(|s| s.0));
-    if let Some((_, _, _, total, max_pass)) = summary {
+    apply_anonymous_counts(
+        suite,
+        &parsed.named,
+        parsed.collapsed,
+        parsed.summary.as_ref().map(|s| s.0),
+    );
+    apply_lang_collapsed(suite, parsed.saw_lang, parsed.lang_collapsed);
+    if let Some((_, _, _, total, max_pass)) = parsed.summary {
         suite.total_label = total;
         suite.max_pass_label = max_pass;
     }
@@ -68,6 +100,26 @@ fn prune_absent_problems(suite: &mut WatchSuiteReport, cycle_named: &BTreeMap<St
     });
     suite.anonymous_failed = 0;
     suite.anonymous_timed_out = 0;
+    suite.lang_failed = [0, 0];
+    suite.lang_timed_out = [0, 0];
+}
+
+fn apply_lang_collapsed(suite: &mut WatchSuiteReport, saw: [bool; 2], counts: [[usize; 3]; 2]) {
+    for (i, seen) in saw.into_iter().enumerate() {
+        if !seen {
+            continue;
+        }
+        suite.lang_passed[i] = counts[i][0];
+        suite.lang_failed[i] = counts[i][1];
+        suite.lang_timed_out[i] = counts[i][2];
+    }
+}
+
+fn lang_slot(lang: crate::Language) -> usize {
+    match lang {
+        crate::Language::Python => 0,
+        crate::Language::Rust => 1,
+    }
 }
 
 fn apply_named(suite: &mut WatchSuiteReport, selector: String, outcome: SuiteOutcome) {
@@ -157,6 +209,11 @@ enum ParsedWatchLine {
         outcome: SuiteOutcome,
         count: usize,
     },
+    LangCollapsed {
+        lang: crate::Language,
+        outcome: SuiteOutcome,
+        count: usize,
+    },
     Summary {
         passed: usize,
         failed: usize,
@@ -177,8 +234,33 @@ fn parse_watch_line(message: &str) -> ParsedWatchLine {
     if line == "NO VIOLATIONS" {
         return ParsedWatchLine::NoViolations;
     }
+    if let Some(parsed) = parse_lang_collapsed(line) {
+        return parsed;
+    }
     parse_summary_line(line)
         .unwrap_or_else(|| parse_status_line(line).unwrap_or(ParsedWatchLine::Ignore))
+}
+
+fn parse_lang_collapsed(line: &str) -> Option<ParsedWatchLine> {
+    let rest = line.strip_prefix("kiss test: lang_collapsed ")?;
+    let mut parts = rest.split_whitespace();
+    let lang = match parts.next()? {
+        "python" | "py" => crate::Language::Python,
+        "rust" | "rs" => crate::Language::Rust,
+        _ => return None,
+    };
+    let outcome = match parts.next()? {
+        "pass" => SuiteOutcome::Pass,
+        "fail" => SuiteOutcome::Fail,
+        "timeout" => SuiteOutcome::Timeout,
+        _ => return None,
+    };
+    let count = parts.next()?.parse().ok()?;
+    Some(ParsedWatchLine::LangCollapsed {
+        lang,
+        outcome,
+        count,
+    })
 }
 
 fn parse_summary_line(line: &str) -> Option<ParsedWatchLine> {

@@ -11,8 +11,8 @@ use super::session_cycle::{CycleOutcome, EXIT_INTERRUPTED, WatchCycleCtx, run_on
 #[cfg(not(unix))]
 use super::session_cycle::{NudgeReplyMsg, NudgeRequest};
 use super::session_idle::{
-    QueuedCycle, coalesce_nudges, force_ready_if_pending, reply_all_queued, try_reply_idle_nudge,
-    wait_until_next_cycle,
+    LastReplies, QueuedCycle, coalesce_nudges, force_ready_if_pending, reply_all_queued,
+    try_reply_idle_nudge, wait_until_next_cycle,
 };
 use super::settle::SettleMachine;
 use crate::test_runner::runners::clear_python_collect_memo;
@@ -119,7 +119,7 @@ where
     );
     let mut machine = SettleMachine::new(live.settle);
     let mut queued: Option<QueuedCycle> = None;
-    let mut last_reply = None;
+    let mut last_reply = LastReplies::default();
     let mut suite = kiss::rust_llvm_cov_runner::WatchSuiteReport::default();
     let mut initial = true;
     loop {
@@ -145,7 +145,7 @@ where
         }) {
             CycleOutcome::Interrupted => {
                 coalesce_nudges(nudge_rx, &mut queued);
-                let msg = last_reply.clone().unwrap_or(NudgeReplyMsg {
+                let msg = last_reply.clone_any().unwrap_or(NudgeReplyMsg {
                     exit_code: EXIT_INTERRUPTED,
                     pid: std::process::id(),
                     error: None,
@@ -162,7 +162,7 @@ where
         if let Some(q) = queued.as_mut() {
             q.stamp_filter_override(&live);
         }
-        if !try_reply_idle_nudge(&mut queued, last_reply.as_ref(), machine.has_pending_work())
+        if !try_reply_idle_nudge(&mut queued, &last_reply, machine.has_pending_work())
             && queued.is_some()
         {
             force_ready_if_pending(&mut machine, repo_root);
@@ -175,7 +175,7 @@ where
             repo_root,
             nudge_rx,
             &mut queued,
-            last_reply.as_ref(),
+            &last_reply,
             &live,
         ) {
             return code;

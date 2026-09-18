@@ -8,7 +8,7 @@ use super::coverage::WatchCoverageResult;
 use super::event_source::WatchEventSource;
 use super::filter::WatchPathFilter;
 use super::reload::{CycleForceFlags, WatchLiveConfig};
-use super::session_idle::{drain_into_machine, QueuedCycle};
+use super::session_idle::{LastReplies, drain_into_machine, QueuedCycle};
 use super::settle::SettleMachine;
 use crate::bin_cli::args::TestInvocation;
 use crate::test_runner::{RunTestCmdArgs, RunTestOnceOutcome};
@@ -28,7 +28,7 @@ pub(crate) struct WatchCycleCtx<'a, F, C> {
     pub filter: &'a mut WatchPathFilter,
     pub machine: &'a mut SettleMachine,
     pub repo_root: &'a Path,
-    pub last_reply: &'a mut Option<NudgeReplyMsg>,
+    pub last_reply: &'a mut LastReplies,
     pub suite: &'a mut kiss::rust_llvm_cov_runner::WatchSuiteReport,
     pub run_cycle: &'a mut F,
     pub run_cov: &'a mut C,
@@ -40,49 +40,50 @@ where
     C: FnMut(&RunTestCmdArgs<'_>, &WatchLiveConfig) -> WatchCoverageResult,
 {
     crate::test_runner::emit_test_progress("kiss test: Starting");
+    let lang_nudge = ctx
+        .queued
+        .as_ref()
+        .is_some_and(|q| q.lang_filter.is_some());
     apply_queued_filters(ctx.live, ctx.queued);
     let live = &*ctx.live;
     let (cycle_args, replies) = take_queued_cycle_args(live, ctx.queued);
-    let scoped = !matches!(cycle_args.invocation, TestInvocation::All);
+    let target_scoped = !matches!(cycle_args.invocation, TestInvocation::All);
+    let reuse_cov = lang_nudge && ctx.last_reply.get(None).is_some();
     let report = crate::test_runner::run_kiss_test_report(
         crate::test_runner::clone_run_args(&cycle_args),
         &mut *ctx.run_cycle,
-        |args| (ctx.run_cov)(args, live),
+        |args| {
+            if reuse_cov {
+                WatchCoverageResult::ok(0)
+            } else {
+                (ctx.run_cov)(args, live)
+            }
+        },
     );
-    if scoped {
+    if target_scoped || cycle_args.lang_filter.is_some() {
         ctx.suite.merge_lines(&report.lines);
     } else {
         ctx.suite.merge_unscoped_lines(&report.lines);
     }
     if report.interrupted {
-        *ctx.last_reply = Some(reply_all(
-            &replies,
-            EXIT_INTERRUPTED,
-            None,
-            nonempty_report(ctx.suite.format()),
-        ));
+        store_interrupted_reply(ctx.last_reply, &replies, ctx.suite, cycle_args.lang_filter);
         return CycleOutcome::Interrupted;
     }
-    reply_all(
+    let waiter = reply_all(
         &replies,
         report.exit_code,
         report.error.clone(),
         ensure_green_gate_line(report.exit_code, report.output),
     );
-    if !scoped || ctx.last_reply.is_none() {
-        if report.exit_code == 0 {
-            ctx.suite.merge_lines(&["NO VIOLATIONS".into()]);
-        }
-        *ctx.last_reply = Some(NudgeReplyMsg {
-            exit_code: kiss::rust_llvm_cov_runner::merge_watch_exit(
-                report.exit_code,
-                ctx.suite.test_exit_code(),
-            ),
-            pid: std::process::id(),
-            error: report.error,
-            output: nonempty_report(ctx.suite.format()),
-        });
-    }
+    store_cycle_replies(
+        ctx.last_reply,
+        ctx.suite,
+        &cycle_args,
+        live.lang_filter,
+        report.exit_code,
+        report.error,
+        waiter,
+    );
     if let Some(msg) = drain_into_machine(
         ctx.source,
         ctx.filter,
@@ -125,6 +126,69 @@ pub(crate) fn take_queued_cycle_args<'a>(
         replies = q.replies;
     }
     (live.cycle_args(force), replies)
+}
+
+fn store_interrupted_reply(
+    last: &mut LastReplies,
+    replies: &[SyncSender<NudgeReplyMsg>],
+    suite: &kiss::rust_llvm_cov_runner::WatchSuiteReport,
+    lang_filter: Option<kiss::Language>,
+) {
+    let msg = reply_all(
+        replies,
+        EXIT_INTERRUPTED,
+        None,
+        nonempty_report(suite.format()),
+    );
+    last.store(None, msg.clone());
+    if let Some(lang) = lang_filter {
+        last.store(Some(lang), msg);
+    }
+}
+
+fn store_cycle_replies(
+    last: &mut LastReplies,
+    suite: &mut kiss::rust_llvm_cov_runner::WatchSuiteReport,
+    cycle_args: &RunTestCmdArgs<'_>,
+    live_lang: Option<kiss::Language>,
+    exit_code: i32,
+    error: Option<String>,
+    waiter: NudgeReplyMsg,
+) {
+    let target_scoped = !matches!(cycle_args.invocation, TestInvocation::All);
+    if let Some(lang) = cycle_args.lang_filter {
+        last.store(Some(lang), waiter);
+        let foreign_lang = cycle_args.lang_filter != live_lang;
+        if last.get(None).is_some() && target_scoped {
+            return;
+        }
+        if last.get(None).is_some() && foreign_lang {
+            store_full_suite_reply(last, suite, exit_code, error);
+            return;
+        }
+    } else if target_scoped && last.get(None).is_some() {
+        return;
+    }
+    if exit_code == 0 {
+        suite.merge_lines(&["NO VIOLATIONS".into()]);
+    }
+    store_full_suite_reply(last, suite, exit_code, error);
+}
+
+fn store_full_suite_reply(
+    last: &mut LastReplies,
+    suite: &kiss::rust_llvm_cov_runner::WatchSuiteReport,
+    exit_code: i32,
+    error: Option<String>,
+) {
+    let bilingual = NudgeReplyMsg {
+        exit_code: kiss::rust_llvm_cov_runner::merge_watch_exit(exit_code, suite.test_exit_code()),
+        pid: std::process::id(),
+        error,
+        output: nonempty_report(suite.format()),
+    };
+    last.store(None, bilingual.clone());
+    last.store_named_language_slices(suite, &bilingual);
 }
 
 fn nonempty_report(text: String) -> Option<String> {

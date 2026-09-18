@@ -16,6 +16,9 @@ pub struct WatchSuiteReport {
     pub(crate) anonymous_passed: usize,
     pub(crate) anonymous_failed: usize,
     pub(crate) anonymous_timed_out: usize,
+    pub(crate) lang_passed: [usize; 2],
+    pub(crate) lang_failed: [usize; 2],
+    pub(crate) lang_timed_out: [usize; 2],
     pub(crate) total_label: String,
     pub(crate) max_pass_label: String,
     pub(crate) violations: Vec<String>,
@@ -37,6 +40,52 @@ impl WatchSuiteReport {
 
     pub fn test_exit_code(&self) -> i32 {
         i32::from(self.failed() + self.timed_out() > 0)
+    }
+
+    pub fn try_format_language(&self, lang: crate::Language) -> Option<(i32, String)> {
+        let (lp, lf, lt) = self.lang_counts(lang);
+        let has_lang = lp + lf + lt > 0;
+        let untagged = self.anonymous_passed + self.anonymous_failed + self.anonymous_timed_out > 0;
+        if untagged && !has_lang {
+            return None;
+        }
+        let mut slice = Self {
+            gates_clean: self.gates_clean,
+            violations: self.violations.clone(),
+            total_label: self.total_label.clone(),
+            max_pass_label: self.max_pass_label.clone(),
+            anonymous_passed: lp,
+            anonymous_failed: lf,
+            anonymous_timed_out: lt,
+            ..Self::default()
+        };
+        for (selector, outcome) in &self.named {
+            let path_part = selector.split_once("::").map_or(selector.as_str(), |(p, _)| p);
+            if crate::Language::from_path(std::path::Path::new(path_part)) != Some(lang) {
+                continue;
+            }
+            slice.named.insert(selector.clone(), *outcome);
+        }
+        if !slice.named.is_empty() {
+            slice.anonymous_passed = 0;
+            slice.anonymous_failed = 0;
+            slice.anonymous_timed_out = 0;
+        } else if !has_lang {
+            return None;
+        }
+        Some((slice.recap_exit_code(), slice.format()))
+    }
+
+    fn recap_exit_code(&self) -> i32 {
+        i32::from(self.failed() + self.timed_out() > 0 || !self.violations.is_empty())
+    }
+
+    fn lang_counts(&self, lang: crate::Language) -> (usize, usize, usize) {
+        let i = match lang {
+            crate::Language::Python => 0,
+            crate::Language::Rust => 1,
+        };
+        (self.lang_passed[i], self.lang_failed[i], self.lang_timed_out[i])
     }
 
     pub fn format(&self) -> String {
@@ -351,5 +400,112 @@ mod tests {
         assert!(recap.contains("0s total"), "{recap}");
         assert!(recap.contains("0s max pass"), "{recap}");
         assert!(recap.contains("PASS (cached): 70 selectors"), "{recap}");
+    }
+
+    #[test]
+    fn try_format_language_splits_named_selectors() {
+        let mut suite = WatchSuiteReport::default();
+        suite.merge_lines(&[
+            "PASS: tests/a.py::test_a (0.01s)".into(),
+            "PASS: src/lib.rs::a_ok (0.01s)".into(),
+            "✓ 2 passed · 0 failed · 0 timed out · 1s total · 0s max pass".into(),
+        ]);
+        let (py_code, py) = suite
+            .try_format_language(crate::Language::Python)
+            .expect("python slice");
+        let (rs_code, rs) = suite
+            .try_format_language(crate::Language::Rust)
+            .expect("rust slice");
+        assert_eq!(py_code, 0);
+        assert_eq!(rs_code, 0);
+        assert!(py.contains("tests/a.py::test_a") && !py.contains("src/lib.rs::a_ok"), "{py}");
+        assert!(rs.contains("src/lib.rs::a_ok") && !rs.contains("tests/a.py::test_a"), "{rs}");
+        assert!(suite.try_format_language(crate::Language::Python).is_some());
+        suite.anonymous_passed = 3;
+        assert!(suite.try_format_language(crate::Language::Rust).is_none());
+    }
+
+    #[test]
+    fn try_format_language_uses_lang_collapsed_tags() {
+        let mut suite = WatchSuiteReport::default();
+        suite.merge_lines(&[
+            "PASS (cached): 8634 selectors".into(),
+            "kiss test: lang_collapsed python pass 8634".into(),
+            "PASS (cached): 2753 selectors".into(),
+            "kiss test: lang_collapsed rust pass 2753".into(),
+            "✓ 11387 passed · 0 failed · 0 timed out · 1s total · 0s max pass".into(),
+        ]);
+        let (py_code, py) = suite
+            .try_format_language(crate::Language::Python)
+            .expect("python collapsed");
+        let (rs_code, rs) = suite
+            .try_format_language(crate::Language::Rust)
+            .expect("rust collapsed");
+        assert_eq!(py_code, 0);
+        assert_eq!(rs_code, 0);
+        assert!(
+            py.contains("8634") && !py.contains("2753"),
+            "python slice={py}"
+        );
+        assert!(
+            rs.contains("2753") && !rs.contains("8634"),
+            "rust slice={rs}"
+        );
+    }
+
+    #[test]
+    fn try_format_language_sums_same_lang_collapsed_pass_groups() {
+        let mut suite = WatchSuiteReport::default();
+        suite.merge_lines(&[
+            "PASS (cached): 7861 selectors".into(),
+            "kiss test: lang_collapsed python pass 7861".into(),
+            "PASS (cached): 773 selectors".into(),
+            "kiss test: lang_collapsed python pass 773".into(),
+            "PASS (cached): 2753 selectors".into(),
+            "kiss test: lang_collapsed rust pass 2753".into(),
+            "✓ 11387 passed · 0 failed · 0 timed out · 1s total · 0s max pass".into(),
+        ]);
+        let (_, py) = suite
+            .try_format_language(crate::Language::Python)
+            .expect("python collapsed");
+        let (_, rs) = suite
+            .try_format_language(crate::Language::Rust)
+            .expect("rust collapsed");
+        assert!(
+            py.contains("8634") && !py.contains("773") && !py.contains("7861"),
+            "python slice must be 7861+773=8634; py={py}"
+        );
+        assert!(
+            rs.contains("2753") && !rs.contains("8634"),
+            "rust slice={rs}"
+        );
+    }
+
+    #[test]
+    fn try_format_language_exit_follows_slice_violations_not_other_lang_fails() {
+        let mut suite = WatchSuiteReport::default();
+        suite.merge_lines(&[
+            "PASS (cached): 8634 selectors".into(),
+            "kiss test: lang_collapsed python pass 8634".into(),
+            "FAIL: src/lib.rs::a_ok (0.01s)".into(),
+            "kiss test: lang_collapsed rust fail 1".into(),
+            "✗ 8634 passed · 1 failed · 0 timed out · 1s total · 0s max pass".into(),
+        ]);
+        let (py_code, _) = suite
+            .try_format_language(crate::Language::Python)
+            .expect("python");
+        let (rs_code, _) = suite
+            .try_format_language(crate::Language::Rust)
+            .expect("rust");
+        assert_eq!(py_code, 0);
+        assert_eq!(rs_code, 1);
+        suite.merge_lines(&[
+            "VIOLATION:test_coverage: codebase coverage 50% below 90% threshold".into(),
+        ]);
+        let (py_code, py) = suite
+            .try_format_language(crate::Language::Python)
+            .expect("python with gate");
+        assert_eq!(py_code, 1);
+        assert!(py.contains("VIOLATION:test_coverage:"), "{py}");
     }
 }

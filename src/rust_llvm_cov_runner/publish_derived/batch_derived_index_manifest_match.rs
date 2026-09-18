@@ -3,8 +3,18 @@ use std::fs;
 use std::path::Path;
 
 use crate::rust_llvm_cov_runner::plan::batch_fingerprint::RustCoverageBatchIdentity;
+use crate::rust_llvm_cov_runner::publish_derived::batch_derived_index_types::PopulationManifestOnDisk;
 
 use super::{RustPopulationState, current_test_binaries_match, read_population_manifest};
+
+fn generation_context_matches(
+    manifest: &PopulationManifestOnDisk,
+    identity: &RustCoverageBatchIdentity,
+) -> bool {
+    manifest.input_fingerprint == identity.input_digest
+        && manifest.generation_fingerprint == identity.generation_fingerprint
+        && manifest.selection_context_fingerprint == identity.selection_context_fingerprint
+}
 
 pub fn current_population_manifest_matches_identity(
     cache_root: &Path,
@@ -12,9 +22,7 @@ pub fn current_population_manifest_matches_identity(
 ) -> Option<bool> {
     let manifest = read_population_manifest(cache_root)?;
     Some(
-        manifest.input_fingerprint == identity.input_digest
-            && manifest.generation_fingerprint == identity.generation_fingerprint
-            && manifest.selection_context_fingerprint == identity.selection_context_fingerprint
+        generation_context_matches(&manifest, identity)
             && manifest.ordinary_source_digests == identity.ordinary_source_digests,
     )
 }
@@ -24,10 +32,10 @@ pub fn current_population_manifest_matches_universe(
     identity: &RustCoverageBatchIdentity,
     selectors: &[String],
 ) -> Option<bool> {
-    if !current_population_manifest_matches_identity(cache_root, identity)? {
+    let manifest = read_population_manifest(cache_root)?;
+    if !generation_context_matches(&manifest, identity) {
         return Some(false);
     }
-    let manifest = read_population_manifest(cache_root)?;
     let mut expected = selectors.to_vec();
     expected.sort();
     expected.dedup();
@@ -60,10 +68,7 @@ pub fn current_population_manifest_test_binaries_match(
     identity: &RustCoverageBatchIdentity,
 ) -> Option<bool> {
     let manifest = read_population_manifest(cache_root)?;
-    if manifest.input_fingerprint != identity.input_digest
-        || manifest.generation_fingerprint != identity.generation_fingerprint
-        || manifest.selection_context_fingerprint != identity.selection_context_fingerprint
-    {
+    if !generation_context_matches(&manifest, identity) {
         return Some(false);
     }
     let population = RustPopulationState {

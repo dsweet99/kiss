@@ -1,4 +1,24 @@
+use std::cell::Cell;
 use std::sync::{Mutex, OnceLock};
+
+thread_local! {
+    static PROGRESS_LANG: Cell<Option<crate::Language>> = const { Cell::new(None) };
+}
+
+pub struct ProgressLanguageGuard;
+
+impl ProgressLanguageGuard {
+    pub fn enter(lang: crate::Language) -> Self {
+        PROGRESS_LANG.set(Some(lang));
+        Self
+    }
+}
+
+impl Drop for ProgressLanguageGuard {
+    fn drop(&mut self) {
+        PROGRESS_LANG.set(None);
+    }
+}
 
 fn watch_report_lines() -> &'static Mutex<Option<Vec<String>>> {
     static LINES: OnceLock<Mutex<Option<Vec<String>>>> = OnceLock::new();
@@ -33,7 +53,34 @@ pub(crate) fn record_watch_report_line(message: &str) {
     };
     if is_watch_report_line(message) {
         lines.push(message.to_string());
+        if let Some(tag) = lang_collapsed_tag(message) {
+            lines.push(tag);
+        }
     }
+}
+
+fn lang_collapsed_tag(message: &str) -> Option<String> {
+    let lang = PROGRESS_LANG.get()?;
+    let line = strip_ansi_prefix(message.trim());
+    if line.starts_with("kiss test: lang_collapsed ") {
+        return None;
+    }
+    let (label, rest) = if let Some(rest) = line.strip_prefix("PASS") {
+        ("pass", rest)
+    } else if let Some(rest) = line.strip_prefix("TIMEOUT") {
+        ("timeout", rest)
+    } else {
+        ("fail", line.strip_prefix("FAIL")?)
+    };
+    let count = rest
+        .strip_prefix(" (cached): ")?
+        .strip_suffix(" selectors")?
+        .parse::<usize>()
+        .ok()?;
+    Some(format!(
+        "kiss test: lang_collapsed {} {label} {count}",
+        lang.label()
+    ))
 }
 
 pub(crate) fn strip_ansi_prefix(message: &str) -> &str {
@@ -133,5 +180,17 @@ mod tests {
         assert!(compact.contains("TIMEOUT:"));
         let via_transcript = transcript_from_lines(&lines).expect("transcript");
         assert!(via_transcript.len() <= WATCH_REPORT_BUDGET);
+    }
+
+    #[test]
+    fn record_watch_report_line_tags_collapsed_with_progress_language() {
+        begin_watch_report_capture();
+        let _guard = ProgressLanguageGuard::enter(crate::Language::Rust);
+        record_watch_report_line("PASS (cached): 2753 selectors");
+        let lines = take_watch_report_lines().expect("lines");
+        assert!(
+            lines.iter().any(|line| line == "kiss test: lang_collapsed rust pass 2753"),
+            "{lines:?}"
+        );
     }
 }

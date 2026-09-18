@@ -4,6 +4,8 @@ use std::time::{Duration, Instant};
 
 #[cfg(unix)]
 use super::control::{NudgeReplyMsg, NudgeRequest};
+#[cfg(not(unix))]
+use super::session_cycle::NudgeReplyMsg;
 use super::event_source::WatchEventSource;
 use super::filter::WatchPathFilter;
 use super::nudge_kind::NudgeInvocation;
@@ -30,8 +32,7 @@ pub(super) struct QueuedCycle {
 
 impl QueuedCycle {
     pub(super) fn stamp_filter_override(&mut self, live: &WatchLiveConfig) {
-        self.filter_override = (self.lang_filter.is_some() && self.lang_filter != live.lang_filter)
-            || (!self.extra.is_empty() && self.extra != live.extra)
+        self.filter_override = (!self.extra.is_empty() && self.extra != live.extra)
             || (!self.ignore.is_empty() && self.ignore != live.ignore);
     }
 
@@ -42,6 +43,59 @@ impl QueuedCycle {
             || !self.targets.is_empty()
             || !self.invocation.is_all()
             || self.filter_override
+    }
+}
+
+#[derive(Clone, Default)]
+pub(super) struct LastReplies {
+    all: Option<NudgeReplyMsg>,
+    python: Option<NudgeReplyMsg>,
+    rust: Option<NudgeReplyMsg>,
+}
+
+impl LastReplies {
+    pub(super) fn get(&self, lang: Option<kiss::Language>) -> Option<&NudgeReplyMsg> {
+        match lang {
+            None => self.all.as_ref(),
+            Some(kiss::Language::Python) => self.python.as_ref(),
+            Some(kiss::Language::Rust) => self.rust.as_ref(),
+        }
+    }
+
+    pub(super) fn store(&mut self, lang: Option<kiss::Language>, msg: NudgeReplyMsg) {
+        match lang {
+            None => self.all = Some(msg),
+            Some(kiss::Language::Python) => self.python = Some(msg),
+            Some(kiss::Language::Rust) => self.rust = Some(msg),
+        }
+    }
+
+    pub(super) fn clone_any(&self) -> Option<NudgeReplyMsg> {
+        self.all
+            .clone()
+            .or_else(|| self.python.clone())
+            .or_else(|| self.rust.clone())
+    }
+
+    pub(super) fn store_named_language_slices(
+        &mut self,
+        suite: &kiss::rust_llvm_cov_runner::WatchSuiteReport,
+        bilingual: &NudgeReplyMsg,
+    ) {
+        for lang in [kiss::Language::Python, kiss::Language::Rust] {
+            let Some((exit_code, output)) = suite.try_format_language(lang) else {
+                continue;
+            };
+            self.store(
+                Some(lang),
+                NudgeReplyMsg {
+                    exit_code,
+                    pid: bilingual.pid,
+                    error: bilingual.error.clone(),
+                    output: Some(output),
+                },
+            );
+        }
     }
 }
 
@@ -59,7 +113,7 @@ pub(super) fn wait_until_next_cycle(
     repo_root: &Path,
     nudge_rx: Option<&std::sync::mpsc::Receiver<NudgeRequest>>,
     queued: &mut Option<QueuedCycle>,
-    last_reply: Option<&NudgeReplyMsg>,
+    last_reply: &LastReplies,
     live: &WatchLiveConfig,
 ) -> Option<i32> {
     crate::test_runner::emit_test_progress("kiss test: Waiting");
@@ -100,7 +154,7 @@ pub(super) fn reply_all_queued(queued: &mut Option<QueuedCycle>, msg: &NudgeRepl
 
 pub(super) fn try_reply_idle_nudge(
     queued: &mut Option<QueuedCycle>,
-    last_reply: Option<&NudgeReplyMsg>,
+    last_reply: &LastReplies,
     pending_files: bool,
 ) -> bool {
     let Some(q) = queued.as_ref() else {
@@ -109,9 +163,10 @@ pub(super) fn try_reply_idle_nudge(
     if q.wants_new_cycle() || pending_files {
         return false;
     }
-    let Some(last) = last_reply else {
+    let Some(last) = last_reply.get(q.lang_filter) else {
         return false;
     };
+    let last = last.clone();
     let Some(q) = queued.take() else {
         return false;
     };

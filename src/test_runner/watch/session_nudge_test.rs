@@ -175,6 +175,35 @@ fn forwarded_extra_overrides_watcher_and_starts_new_cycle() {
     );
 }
 
+#[test]
+fn lang_filter_alone_does_not_force_new_cycle() {
+    use crate::test_runner::watch::control::NudgeRequestMsg as Msg;
+    let (tx, rx) = mpsc::channel::<NudgeRequest>();
+    let (reply, _wait) = mpsc::sync_channel(1);
+    tx.send(NudgeRequest {
+        msg: Msg {
+            lang: Some("rust".into()),
+            ..Default::default()
+        },
+        reply,
+    })
+    .unwrap();
+    let mut queued = None;
+    coalesce_nudges(Some(&rx), &mut queued);
+    let mut args = py_dry_args();
+    args.lang_filter = None;
+    args.invocation = TestInvocation::All;
+    let live = live_from_args_disabled(args, Duration::from_secs(1), Path::new("."));
+    queued
+        .as_mut()
+        .expect("queued")
+        .stamp_filter_override(&live);
+    assert!(
+        !queued.as_ref().expect("queued").wants_new_cycle(),
+        "--lang must look up a cached recap when files have not changed"
+    );
+}
+
 fn watcher_running_invocations() -> Vec<TestInvocation> {
     vec![
         TestInvocation::Commit,
@@ -1128,6 +1157,514 @@ fn unscoped_idle_nudge_after_target_still_recaps_full_suite() {
         tests.load(std::sync::atomic::Ordering::SeqCst),
         2,
         "unscoped idle after TARGET must not start a third cycle"
+    );
+}
+
+#[test]
+fn unscoped_idle_nudge_after_lang_rust_recaps_full_suite() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_git(&tmp);
+    commit_a_py(&tmp);
+
+    let (tx, rx) = mpsc::channel::<NudgeRequest>();
+    let (reply_rust_tx, reply_rust_rx) = mpsc::sync_channel(1);
+    let (reply_idle_tx, reply_idle_rx) = mpsc::sync_channel(1);
+    let tests = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let tests_nudge = std::sync::Arc::clone(&tests);
+    let sender = std::thread::spawn(move || {
+        while tests_nudge.load(std::sync::atomic::Ordering::SeqCst) < 1 {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        std::thread::sleep(Duration::from_millis(20));
+        tx.send(NudgeRequest {
+            msg: NudgeRequestMsg {
+                lang: Some("rust".into()),
+                ..Default::default()
+            },
+            reply: reply_rust_tx,
+        })
+        .unwrap();
+        let rust = reply_rust_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        tx.send(NudgeRequest {
+            msg: NudgeRequestMsg::default(),
+            reply: reply_idle_tx,
+        })
+        .unwrap();
+        let idle = reply_idle_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        (rust, idle)
+    });
+
+    let tests_run = std::sync::Arc::clone(&tests);
+    let mut src = NudgeScript {
+        steps: timeout_steps(16),
+    };
+    let mut args = py_dry_args();
+    args.dry_run = false;
+    args.invocation = TestInvocation::All;
+    args.lang_filter = None;
+    let code = run_watch_loop_with(
+        args,
+        Duration::from_secs(3600),
+        tmp.path(),
+        &mut src,
+        Some(&rx),
+        move |cycle_args| {
+            let n = tests_run.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if n == 0 {
+                kiss::rust_llvm_cov_runner::emit_progress("PASS: tests/a.py::test_a (0.01s)");
+                kiss::rust_llvm_cov_runner::emit_progress("PASS: src/lib.rs::a_ok (0.01s)");
+                kiss::rust_llvm_cov_runner::emit_progress(
+                    "✓ 2 passed · 0 failed · 0 timed out · 1s total · 0s max pass",
+                );
+            } else {
+                kiss::rust_llvm_cov_runner::emit_progress("PASS: src/lib.rs::a_ok (0.01s)");
+                kiss::rust_llvm_cov_runner::emit_progress(
+                    "✓ 1 passed · 0 failed · 0 timed out · 0.01s total · 0s max pass",
+                );
+            }
+            let _ = cycle_args;
+            RunTestOnceOutcome::Code(0)
+        },
+        |_args| WatchCoverageResult::ok(0),
+    );
+    let (rust, idle) = sender.join().unwrap();
+    assert_eq!(code, 1);
+    let rust_out = rust.output.clone().unwrap_or_default();
+    let idle_out = idle.output.clone().unwrap_or_default();
+    assert!(
+        rust_out.contains("src/lib.rs::a_ok") && !rust_out.contains("tests/a.py::test_a"),
+        "--lang rust must recap rust only; rust={rust_out:?}"
+    );
+    assert!(
+        idle_out.contains("2 passed")
+            && idle_out.contains("tests/a.py::test_a")
+            && idle_out.contains("src/lib.rs::a_ok"),
+        "bare kiss test after --lang rust must recap both languages; idle={idle_out:?}"
+    );
+    assert_eq!(
+        tests.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "cached --lang rust and bare idle must not start another cycle"
+    );
+}
+
+#[test]
+fn lang_rust_nudge_reuses_cached_rust_recap() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_git(&tmp);
+    commit_a_py(&tmp);
+
+    let (tx, rx) = mpsc::channel::<NudgeRequest>();
+    let (reply_first_tx, reply_first_rx) = mpsc::sync_channel(1);
+    let (reply_second_tx, reply_second_rx) = mpsc::sync_channel(1);
+    let tests = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let tests_nudge = std::sync::Arc::clone(&tests);
+    let sender = std::thread::spawn(move || {
+        while tests_nudge.load(std::sync::atomic::Ordering::SeqCst) < 1 {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        std::thread::sleep(Duration::from_millis(20));
+        tx.send(NudgeRequest {
+            msg: NudgeRequestMsg {
+                lang: Some("rust".into()),
+                ..Default::default()
+            },
+            reply: reply_first_tx,
+        })
+        .unwrap();
+        let first = reply_first_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        tx.send(NudgeRequest {
+            msg: NudgeRequestMsg {
+                lang: Some("rust".into()),
+                ..Default::default()
+            },
+            reply: reply_second_tx,
+        })
+        .unwrap();
+        let second = reply_second_rx
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap();
+        (first, second)
+    });
+
+    let tests_run = std::sync::Arc::clone(&tests);
+    let mut src = NudgeScript {
+        steps: timeout_steps(16),
+    };
+    let mut args = py_dry_args();
+    args.dry_run = false;
+    args.invocation = TestInvocation::All;
+    args.lang_filter = None;
+    let code = run_watch_loop_with(
+        args,
+        Duration::from_secs(3600),
+        tmp.path(),
+        &mut src,
+        Some(&rx),
+        move |_args| {
+            tests_run.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            kiss::rust_llvm_cov_runner::emit_progress("PASS: tests/a.py::test_a (0.01s)");
+            kiss::rust_llvm_cov_runner::emit_progress("PASS: src/lib.rs::a_ok (0.01s)");
+            kiss::rust_llvm_cov_runner::emit_progress(
+                "✓ 2 passed · 0 failed · 0 timed out · 1s total · 0s max pass",
+            );
+            RunTestOnceOutcome::Code(0)
+        },
+        |_args| WatchCoverageResult::ok(0),
+    );
+    let (first, second) = sender.join().unwrap();
+    assert_eq!(code, 1);
+    let first_out = first.output.clone().unwrap_or_default();
+    let second_out = second.output.clone().unwrap_or_default();
+    assert!(
+        first_out.contains("src/lib.rs::a_ok") && !first_out.contains("tests/a.py::test_a"),
+        "first --lang rust={first_out:?}"
+    );
+    assert_eq!(
+        first_out, second_out,
+        "second --lang rust must replay the cached rust recap"
+    );
+    assert_eq!(
+        tests.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "--lang rust cache hit must not start another cycle"
+    );
+}
+
+#[test]
+fn collapsed_bilingual_lang_rust_idles_without_new_cycle() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_git(&tmp);
+    commit_a_py(&tmp);
+
+    let (tx, rx) = mpsc::channel::<NudgeRequest>();
+    let (reply_rust_tx, reply_rust_rx) = mpsc::sync_channel(1);
+    let tests = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let tests_nudge = std::sync::Arc::clone(&tests);
+    let sender = std::thread::spawn(move || {
+        while tests_nudge.load(std::sync::atomic::Ordering::SeqCst) < 1 {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        std::thread::sleep(Duration::from_millis(20));
+        tx.send(NudgeRequest {
+            msg: NudgeRequestMsg {
+                lang: Some("rust".into()),
+                ..Default::default()
+            },
+            reply: reply_rust_tx,
+        })
+        .unwrap();
+        reply_rust_rx.recv_timeout(Duration::from_secs(5)).unwrap()
+    });
+
+    let tests_run = std::sync::Arc::clone(&tests);
+    let mut src = NudgeScript {
+        steps: timeout_steps(16),
+    };
+    let mut args = py_dry_args();
+    args.dry_run = false;
+    args.invocation = TestInvocation::All;
+    args.lang_filter = None;
+    let code = run_watch_loop_with(
+        args,
+        Duration::from_secs(3600),
+        tmp.path(),
+        &mut src,
+        Some(&rx),
+        move |_args| {
+            tests_run.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            kiss::rust_llvm_cov_runner::emit_progress("PASS (cached): 8634 selectors");
+            kiss::rust_llvm_cov_runner::emit_progress("kiss test: lang_collapsed python pass 8634");
+            kiss::rust_llvm_cov_runner::emit_progress("PASS (cached): 2753 selectors");
+            kiss::rust_llvm_cov_runner::emit_progress("kiss test: lang_collapsed rust pass 2753");
+            kiss::rust_llvm_cov_runner::emit_progress(
+                "✓ 11387 passed · 0 failed · 0 timed out · 1s total · 0s max pass",
+            );
+            RunTestOnceOutcome::Code(0)
+        },
+        |_args| WatchCoverageResult::ok(0),
+    );
+    let rust = sender.join().unwrap();
+    assert_eq!(code, 1);
+    let rust_out = rust.output.clone().unwrap_or_default();
+    assert!(
+        rust_out.contains("2753") && !rust_out.contains("8634"),
+        "first --lang rust after collapsed bilingual must recap rust only; rust={rust_out:?}"
+    );
+    assert_eq!(
+        tests.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "collapsed bilingual --lang rust must idle without another cycle"
+    );
+}
+
+#[test]
+fn collapsed_split_python_lang_python_idles_full_count() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_git(&tmp);
+    commit_a_py(&tmp);
+
+    let (tx, rx) = mpsc::channel::<NudgeRequest>();
+    let (reply_first_tx, reply_first_rx) = mpsc::sync_channel(1);
+    let (reply_second_tx, reply_second_rx) = mpsc::sync_channel(1);
+    let tests = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let tests_nudge = std::sync::Arc::clone(&tests);
+    let sender = std::thread::spawn(move || {
+        while tests_nudge.load(std::sync::atomic::Ordering::SeqCst) < 1 {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        std::thread::sleep(Duration::from_millis(20));
+        tx.send(NudgeRequest {
+            msg: NudgeRequestMsg {
+                lang: Some("python".into()),
+                ..Default::default()
+            },
+            reply: reply_first_tx,
+        })
+        .unwrap();
+        let first = reply_first_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        tx.send(NudgeRequest {
+            msg: NudgeRequestMsg {
+                lang: Some("python".into()),
+                ..Default::default()
+            },
+            reply: reply_second_tx,
+        })
+        .unwrap();
+        let second = reply_second_rx
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap();
+        (first, second)
+    });
+
+    let tests_run = std::sync::Arc::clone(&tests);
+    let mut src = NudgeScript {
+        steps: timeout_steps(16),
+    };
+    let mut args = py_dry_args();
+    args.dry_run = false;
+    args.invocation = TestInvocation::All;
+    args.lang_filter = None;
+    let code = run_watch_loop_with(
+        args,
+        Duration::from_secs(3600),
+        tmp.path(),
+        &mut src,
+        Some(&rx),
+        move |_args| {
+            tests_run.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            kiss::rust_llvm_cov_runner::emit_progress("PASS (cached): 7861 selectors");
+            kiss::rust_llvm_cov_runner::emit_progress("kiss test: lang_collapsed python pass 7861");
+            kiss::rust_llvm_cov_runner::emit_progress("PASS (cached): 773 selectors");
+            kiss::rust_llvm_cov_runner::emit_progress("kiss test: lang_collapsed python pass 773");
+            kiss::rust_llvm_cov_runner::emit_progress("PASS (cached): 2753 selectors");
+            kiss::rust_llvm_cov_runner::emit_progress("kiss test: lang_collapsed rust pass 2753");
+            kiss::rust_llvm_cov_runner::emit_progress(
+                "✓ 11387 passed · 0 failed · 0 timed out · 1s total · 0s max pass",
+            );
+            RunTestOnceOutcome::Code(0)
+        },
+        |_args| WatchCoverageResult::ok(0),
+    );
+    let (first, second) = sender.join().unwrap();
+    assert_eq!(code, 1);
+    let first_out = first.output.clone().unwrap_or_default();
+    let second_out = second.output.clone().unwrap_or_default();
+    assert!(
+        first_out.contains("8634") && !first_out.contains("773") && !first_out.contains("2753"),
+        "first --lang python after split collapsed groups must recap 8634; first={first_out:?}"
+    );
+    assert_eq!(
+        first_out, second_out,
+        "second --lang python must replay the full python recap, not 773"
+    );
+    assert_eq!(
+        tests.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "split python collapsed --lang python must idle without another cycle"
+    );
+}
+
+#[test]
+fn bare_idle_after_forced_lang_rust_fail_recaps_failure() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_git(&tmp);
+    commit_a_py(&tmp);
+
+    let (tx, rx) = mpsc::channel::<NudgeRequest>();
+    let (reply_rust_tx, reply_rust_rx) = mpsc::sync_channel(1);
+    let (reply_idle_tx, reply_idle_rx) = mpsc::sync_channel(1);
+    let tests = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let tests_nudge = std::sync::Arc::clone(&tests);
+    let sender = std::thread::spawn(move || {
+        while tests_nudge.load(std::sync::atomic::Ordering::SeqCst) < 1 {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        std::thread::sleep(Duration::from_millis(20));
+        tx.send(NudgeRequest {
+            msg: NudgeRequestMsg {
+                lang: Some("rust".into()),
+                force: true,
+                ..Default::default()
+            },
+            reply: reply_rust_tx,
+        })
+        .unwrap();
+        let rust = reply_rust_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        tx.send(NudgeRequest {
+            msg: NudgeRequestMsg::default(),
+            reply: reply_idle_tx,
+        })
+        .unwrap();
+        let idle = reply_idle_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        (rust, idle)
+    });
+
+    let tests_run = std::sync::Arc::clone(&tests);
+    let mut src = NudgeScript {
+        steps: timeout_steps(16),
+    };
+    let mut args = py_dry_args();
+    args.dry_run = false;
+    args.invocation = TestInvocation::All;
+    args.lang_filter = None;
+    let code = run_watch_loop_with(
+        args,
+        Duration::from_secs(3600),
+        tmp.path(),
+        &mut src,
+        Some(&rx),
+        move |_args| {
+            let n = tests_run.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if n == 0 {
+                kiss::rust_llvm_cov_runner::emit_progress("PASS (cached): 8634 selectors");
+                kiss::rust_llvm_cov_runner::emit_progress(
+                    "kiss test: lang_collapsed python pass 8634",
+                );
+                kiss::rust_llvm_cov_runner::emit_progress("PASS (cached): 2753 selectors");
+                kiss::rust_llvm_cov_runner::emit_progress("kiss test: lang_collapsed rust pass 2753");
+                kiss::rust_llvm_cov_runner::emit_progress(
+                    "✓ 11387 passed · 0 failed · 0 timed out · 1s total · 0s max pass",
+                );
+                return RunTestOnceOutcome::Code(0);
+            }
+            kiss::rust_llvm_cov_runner::emit_progress("FAIL: src/lib.rs::a_ok (0.01s)");
+            kiss::rust_llvm_cov_runner::emit_progress(
+                "✗ 0 passed · 1 failed · 0 timed out · 0.01s total · 0s max pass",
+            );
+            RunTestOnceOutcome::Code(1)
+        },
+        |_args| WatchCoverageResult::ok(0),
+    );
+    let (rust, idle) = sender.join().unwrap();
+    assert_eq!(code, 1);
+    let rust_out = rust.output.clone().unwrap_or_default();
+    let idle_out = idle.output.clone().unwrap_or_default();
+    assert!(
+        rust_out.contains("src/lib.rs::a_ok") && rust_out.contains("failed"),
+        "--lang rust fail={rust_out:?}"
+    );
+    assert!(
+        idle.exit_code != 0 && idle_out.contains("failed") && idle_out.contains("src/lib.rs::a_ok"),
+        "bare kiss test after failing --lang rust must recap the failure; idle={idle_out:?}"
+    );
+    assert_eq!(
+        tests.load(std::sync::atomic::Ordering::SeqCst),
+        2,
+        "force --lang rust runs once after the bilingual cycle"
+    );
+}
+
+#[test]
+fn lang_python_idle_after_rust_fail_keeps_python_exit_zero() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_git(&tmp);
+    commit_a_py(&tmp);
+
+    let (tx, rx) = mpsc::channel::<NudgeRequest>();
+    let (reply_rust_tx, reply_rust_rx) = mpsc::sync_channel(1);
+    let (reply_py_tx, reply_py_rx) = mpsc::sync_channel(1);
+    let tests = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let tests_nudge = std::sync::Arc::clone(&tests);
+    let sender = std::thread::spawn(move || {
+        while tests_nudge.load(std::sync::atomic::Ordering::SeqCst) < 1 {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        std::thread::sleep(Duration::from_millis(20));
+        tx.send(NudgeRequest {
+            msg: NudgeRequestMsg {
+                lang: Some("rust".into()),
+                force: true,
+                ..Default::default()
+            },
+            reply: reply_rust_tx,
+        })
+        .unwrap();
+        let rust = reply_rust_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        tx.send(NudgeRequest {
+            msg: NudgeRequestMsg {
+                lang: Some("python".into()),
+                ..Default::default()
+            },
+            reply: reply_py_tx,
+        })
+        .unwrap();
+        let py = reply_py_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        (rust, py)
+    });
+
+    let tests_run = std::sync::Arc::clone(&tests);
+    let mut src = NudgeScript {
+        steps: timeout_steps(16),
+    };
+    let mut args = py_dry_args();
+    args.dry_run = false;
+    args.invocation = TestInvocation::All;
+    args.lang_filter = None;
+    let code = run_watch_loop_with(
+        args,
+        Duration::from_secs(3600),
+        tmp.path(),
+        &mut src,
+        Some(&rx),
+        move |_args| {
+            let n = tests_run.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if n == 0 {
+                kiss::rust_llvm_cov_runner::emit_progress("PASS (cached): 8634 selectors");
+                kiss::rust_llvm_cov_runner::emit_progress(
+                    "kiss test: lang_collapsed python pass 8634",
+                );
+                kiss::rust_llvm_cov_runner::emit_progress("PASS (cached): 2753 selectors");
+                kiss::rust_llvm_cov_runner::emit_progress("kiss test: lang_collapsed rust pass 2753");
+                kiss::rust_llvm_cov_runner::emit_progress(
+                    "✓ 11387 passed · 0 failed · 0 timed out · 1s total · 0s max pass",
+                );
+                return RunTestOnceOutcome::Code(0);
+            }
+            kiss::rust_llvm_cov_runner::emit_progress("FAIL: src/lib.rs::a_ok (0.01s)");
+            kiss::rust_llvm_cov_runner::emit_progress(
+                "✗ 0 passed · 1 failed · 0 timed out · 0.01s total · 0s max pass",
+            );
+            RunTestOnceOutcome::Code(1)
+        },
+        |_args| WatchCoverageResult::ok(0),
+    );
+    let (_rust, py) = sender.join().unwrap();
+    assert_eq!(code, 1);
+    let py_out = py.output.clone().unwrap_or_default();
+    assert_eq!(
+        py.exit_code, 0,
+        "--lang python after rust fail must keep python exit 0; py={py_out:?} exit={}",
+        py.exit_code
+    );
+    assert!(
+        py_out.contains("8634") && !py_out.contains("src/lib.rs::a_ok"),
+        "python idle must recap python only; py={py_out:?}"
+    );
+    assert_eq!(
+        tests.load(std::sync::atomic::Ordering::SeqCst),
+        2,
+        "--lang python must idle after the forced rust fail"
     );
 }
 

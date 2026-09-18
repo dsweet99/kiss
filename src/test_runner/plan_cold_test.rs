@@ -297,3 +297,159 @@ fn dirty_all_keeps_both_rust_tests_after_one_file_change() {
         planned.sel.rust
     );
 }
+
+#[test]
+fn all_mode_ordinary_edit_keeps_universe_without_population() {
+    let _cwd = crate::cwd_test_lock::lock();
+    let tmp = TempDir::new().unwrap();
+    crate::test_runner::test_mode_fixtures::init_git(&tmp);
+    fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname='all_ordinary'\nversion='0.1.0'\nedition='2021'\n",
+    )
+    .unwrap();
+    fs::create_dir_all(tmp.path().join("src")).unwrap();
+    fs::write(
+        tmp.path().join("src/lib.rs"),
+        "pub fn a() -> u8 { 1 }\npub fn b() -> u8 { 2 }\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn a_ok() { assert_eq!(super::a(), 1); }\n    #[test]\n    fn b_ok() { assert_eq!(super::b(), 2); }\n}\n",
+    )
+    .unwrap();
+    fs::write(
+        tmp.path().join("src/extra_test.rs"),
+        "#[test]\nfn only_extra() { assert!(true); }\n",
+    )
+    .unwrap();
+    let mut lib = fs::read_to_string(tmp.path().join("src/lib.rs")).unwrap();
+    lib.push_str("#[cfg(test)]\nmod extra_test;\n");
+    fs::write(tmp.path().join("src/lib.rs"), lib).unwrap();
+    crate::test_runner::rust_coverage_index::write_test_entry(
+        tmp.path(),
+        "a_ok",
+        "tests::a_ok",
+        kiss::rpytest_runner::TestStatus::Passed,
+        kiss::rust_llvm_cov_runner::RustLineCoverage {
+            files: std::collections::BTreeMap::from([(
+                "src/lib.rs".to_string(),
+                std::collections::BTreeSet::from([1]),
+            )]),
+        },
+    );
+    crate::test_runner::rust_coverage_index::write_test_entry(
+        tmp.path(),
+        "b_ok",
+        "tests::b_ok",
+        kiss::rpytest_runner::TestStatus::Passed,
+        kiss::rust_llvm_cov_runner::RustLineCoverage {
+            files: std::collections::BTreeMap::from([(
+                "src/lib.rs".to_string(),
+                std::collections::BTreeSet::from([2]),
+            )]),
+        },
+    );
+    crate::test_runner::rust_coverage_index::write_test_entry(
+        tmp.path(),
+        "only_extra",
+        "only_extra",
+        kiss::rpytest_runner::TestStatus::Passed,
+        kiss::rust_llvm_cov_runner::RustLineCoverage {
+            files: std::collections::BTreeMap::from([(
+                "src/extra_test.rs".to_string(),
+                std::collections::BTreeSet::from([2]),
+            )]),
+        },
+    );
+    crate::test_runner::rust_coverage_index::rebuild_rust_coverage_index(tmp.path()).unwrap();
+    let executable = tmp.path().join("test-bin");
+    std::fs::write(&executable, b"binary").unwrap();
+    let binary_digest = b"binary"
+        .iter()
+        .fold(0xcbf2_9ce4_8422_2325u64, |hash, byte| {
+            (hash ^ u64::from(*byte)).wrapping_mul(0x100_0000_01b3)
+        });
+    let selectors = vec![
+        "only_extra".to_string(),
+        "tests::a_ok".to_string(),
+        "tests::b_ok".to_string(),
+    ];
+    let (mut req, tools) =
+        crate::test_runner::rust_coverage_index::resolved_rust_batch_request_parts(tmp.path(), &[])
+            .unwrap();
+    req.logical_selectors = selectors.clone();
+    req.population_publication_selectors = Some(selectors.clone());
+    let identity = kiss::rust_llvm_cov_runner::batch_identity(&req, &tools).unwrap();
+    kiss::rust_llvm_cov_runner::publish_derived_state_with_binaries(
+        &req,
+        &tools,
+        &identity,
+        &selectors,
+        &[kiss::rust_llvm_cov_runner::RustTestBinaryIdentity {
+            id: "test-bin".into(),
+            executable: executable.to_string_lossy().to_string(),
+            digest: format!("{binary_digest:016x}"),
+        }],
+        true,
+    )
+    .unwrap();
+    kiss::rust_llvm_cov_runner::write_ordinary_source_snapshot(
+        &req.cache_root,
+        tmp.path(),
+        &identity,
+    )
+    .unwrap();
+    assert!(
+        crate::test_runner::test_mode_fixtures::git_in(tmp.path())
+            .args(["add", "."])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        crate::test_runner::test_mode_fixtures::git_in(tmp.path())
+            .args(["commit", "-m", "init"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    fs::write(
+        tmp.path().join("src/lib.rs"),
+        "pub fn a() -> u8 { 3 }\npub fn b() -> u8 { 2 }\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn a_ok() { assert_eq!(super::a(), 3); }\n    #[test]\n    fn b_ok() { assert_eq!(super::b(), 2); }\n}\n#[cfg(test)]\nmod extra_test;\n",
+    )
+    .unwrap();
+    let orig = std::env::current_dir().unwrap();
+    std::env::set_current_dir(tmp.path()).unwrap();
+    let planned = plan_all(Some(Language::Rust));
+    std::env::set_current_dir(orig).unwrap();
+    assert!(
+        planned.sel.rust.iter().any(|s| s.contains("a_ok")),
+        "All must keep a_ok: {:?}",
+        planned.sel.rust
+    );
+    assert!(
+        planned.sel.rust.iter().any(|s| s.contains("b_ok")),
+        "All must keep b_ok: {:?}",
+        planned.sel.rust
+    );
+    assert!(
+        planned.sel.rust.iter().any(|s| s == "only_extra"),
+        "All must keep only_extra: {:?}",
+        planned.sel.rust
+    );
+    assert!(
+        !planned.population_required.rust,
+        "ordinary lib.rs edit must not require a full Rust population"
+    );
+    let misses = crate::test_runner::lang_rust::rust_source_delta_misses(
+        tmp.path(),
+        &planned.sel.rust,
+        &[],
+    )
+    .expect("source-delta misses");
+    assert!(
+        misses.iter().any(|s| s.contains("a_ok")),
+        "changed line must miss a_ok: {misses:?}"
+    );
+    assert!(
+        !misses.iter().any(|s| s == "only_extra"),
+        "uncorrelated test must stay cached: {misses:?}"
+    );
+}

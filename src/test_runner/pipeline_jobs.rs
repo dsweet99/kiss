@@ -243,6 +243,7 @@ fn language_job(job: LanguageJob<'_>) -> Result<(), String> {
         outcome_out,
         first_error,
     } = job;
+    let _progress_lang = kiss::rust_llvm_cov_runner::ProgressLanguageGuard::enter(language);
     let planned = match run_covering(a, prefix, language, share.covering(language)) {
         Ok(planned) => planned,
         Err(err) => return fail_language_job(language, first_error, err),
