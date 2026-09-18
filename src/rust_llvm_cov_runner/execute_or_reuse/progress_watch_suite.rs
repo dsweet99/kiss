@@ -403,6 +403,32 @@ mod tests {
     }
 
     #[test]
+    fn named_recap_aliases_rust_logical_ids_with_report_ids() {
+        let mut suite = WatchSuiteReport::default();
+        suite.merge_unscoped_lines(&[
+            "PASS: test_lib.py::test_0 (0.01s)".into(),
+            "PASS: src/lib.rs::test_0 (0.01s)".into(),
+            "PASS: src/lib.rs::test_1 (0.01s)".into(),
+            "✓ 3 passed · 0 failed · 0 timed out · 1s total · 0s max pass".into(),
+        ]);
+        suite.merge_unscoped_lines(&[
+            "PASS (cached): test_lib.py::test_0".into(),
+            "PASS (cached): tests::test_0".into(),
+            "PASS (cached): tests::test_1".into(),
+            "✓ 3 passed · 0 failed · 0 timed out · 0.05s total · 0s max pass".into(),
+        ]);
+        assert_eq!(suite.passed(), 3, "recap={}", suite.format());
+        let recap = suite.format();
+        assert!(recap.contains("3 passed"), "{recap}");
+        assert!(recap.contains("src/lib.rs::test_0"), "{recap}");
+        assert!(!recap.contains("tests::test_0"), "{recap}");
+        let (_, rs) = suite
+            .try_format_language(crate::Language::Rust)
+            .expect("rust slice");
+        assert!(rs.contains("2 passed"), "{rs}");
+    }
+
+    #[test]
     fn try_format_language_splits_named_selectors() {
         let mut suite = WatchSuiteReport::default();
         suite.merge_lines(&[

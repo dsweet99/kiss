@@ -130,6 +130,8 @@ mod stress_break_kiss;
 mod stress_break_kiss_2;
 #[path = "cases/sync_stats_check.rs"]
 mod sync_stats_check;
+#[path = "cases/watch_bilingual_counts.rs"]
+mod watch_bilingual_counts;
 #[path = "cases/watch_client.rs"]
 mod watch_client;
 #[path = "cases/watch_client_violations.rs"]

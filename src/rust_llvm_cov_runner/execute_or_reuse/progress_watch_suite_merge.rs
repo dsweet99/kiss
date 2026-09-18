@@ -1,7 +1,14 @@
 use std::collections::BTreeMap;
+use std::path::Path;
 
 use super::super::progress_watch_report::strip_ansi_prefix;
 use super::{SuiteOutcome, WatchSuiteReport};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RustIdKind {
+    Report,
+    Logical,
+}
 
 impl WatchSuiteReport {
     pub fn merge_lines(&mut self, lines: &[String]) {
@@ -123,6 +130,9 @@ fn lang_slot(lang: crate::Language) -> usize {
 }
 
 fn apply_named(suite: &mut WatchSuiteReport, selector: String, outcome: SuiteOutcome) {
+    if apply_rust_id_alias(suite, &selector, outcome) {
+        return;
+    }
     if suite.named.insert(selector, outcome).is_some() {
         return;
     }
@@ -134,6 +144,41 @@ fn apply_named(suite: &mut WatchSuiteReport, selector: String, outcome: SuiteOut
             suite.anonymous_passed -= 1;
         }
         _ => {}
+    }
+}
+
+fn apply_rust_id_alias(
+    suite: &mut WatchSuiteReport,
+    selector: &str,
+    outcome: SuiteOutcome,
+) -> bool {
+    let Some(existing) = rust_alias_key(suite, selector) else {
+        return false;
+    };
+    if classify_rust_id(selector).is_some_and(|(_, kind)| kind == RustIdKind::Report) {
+        suite.named.remove(&existing);
+        suite.named.insert(selector.to_string(), outcome);
+    } else {
+        suite.named.insert(existing, outcome);
+    }
+    true
+}
+
+fn rust_alias_key(suite: &WatchSuiteReport, selector: &str) -> Option<String> {
+    let (name, kind) = classify_rust_id(selector)?;
+    suite.named.keys().find_map(|key| {
+        let (other_name, other_kind) = classify_rust_id(key)?;
+        (other_name == name && other_kind != kind).then(|| key.clone())
+    })
+}
+
+fn classify_rust_id(selector: &str) -> Option<(&str, RustIdKind)> {
+    let (head, name) = selector.rsplit_once("::")?;
+    let path_part = head.split_once("::").map_or(head, |(path, _)| path);
+    match crate::Language::from_path(Path::new(path_part)) {
+        Some(crate::Language::Python) => None,
+        Some(crate::Language::Rust) => Some((name, RustIdKind::Report)),
+        None => Some((name, RustIdKind::Logical)),
     }
 }
 
