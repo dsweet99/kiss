@@ -38,6 +38,9 @@ fn rust_summary_from_witness(
     planned: &[String],
     witness: &ExecutionWitness,
 ) -> SelectorExecutionSummary {
+    if !kiss::time_gate_uses_path_prefixes(&request.gate.max_unit_test_seconds) {
+        return summary_from_accepted_witness(planned, witness, str::to_string);
+    }
     let report_ids = crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
         &request.repo_root,
         &[],
@@ -53,6 +56,14 @@ fn rust_summary_from_witness_statuses(
     planned: &[String],
     witness: &ExecutionWitness,
 ) -> SelectorExecutionSummary {
+    if !kiss::time_gate_uses_path_prefixes(&request.gate.max_unit_test_seconds) {
+        return crate::test_runner::lang_iface::summary_from_witness_statuses(
+            planned,
+            witness,
+            str::to_string,
+            false,
+        );
+    }
     let report_ids = crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
         &request.repo_root,
         &[],

@@ -327,10 +327,11 @@ pub(crate) fn try_warm_rust_cached_summary(
         .map(String::as_str)
         .zip(witness.statuses.iter().copied())
         .collect();
-    if planned.len() > 64
-        && planned.iter().all(|selector| {
-            status_by_selector.get(selector.as_str()) == Some(&WitnessStatus::Passed)
-        })
+    if !rust_time_gate_needs_report_ids(gate)
+        || (planned.len() > 64
+            && planned.iter().all(|selector| {
+                status_by_selector.get(selector.as_str()) == Some(&WitnessStatus::Passed)
+            }))
     {
         return Some(summary_from_accepted_witness(
             &planned,
