@@ -354,13 +354,14 @@ fn load_python_runtime_coverage_honors_session_pytest_extra() {
 
 #[test]
 fn load_rust_runtime_coverage_and_timings_from_seeded_cache() {
-    use crate::test_runner::test_mode_fixtures::with_locked_warm_committed_repo;
+    use crate::test_runner::test_mode_fixtures::with_cloned_warm_committed_repo;
     use crate::test_runner::unit_test_timing::{
         TimingCollectOpts, TimingLangInclude, TimingPopulation, collect_current_unit_test_timings,
     };
     use kiss::Language;
 
-    with_locked_warm_committed_repo(|repo, _lib| {
+    // Clone (brief lock) so coverage/timing work does not queue behind other fixture holders.
+    with_cloned_warm_committed_repo(|repo, _lib| {
         let cov = load_rust_runtime_coverage(repo, &[], &kiss::GateConfig::default())
             .expect("seeded rust population must load");
         assert!(

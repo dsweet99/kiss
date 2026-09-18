@@ -158,7 +158,6 @@ pub(crate) fn publish_lib_population(root: &Path) {
 
 /// After `clone_warm_committed_repo`, restamp cached entries for the clone's identity
 /// without rewriting coverage payloads or rebuilding the line index from scratch.
-#[allow(dead_code)]
 pub(crate) fn republish_cloned_lib_population(root: &Path) {
     let test_args: &[String] = &[];
     let identity = crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(
@@ -252,6 +251,16 @@ pub(crate) fn clone_warm_committed_repo(dst: &Path) -> PathBuf {
     dst.join("src").join("lib.rs")
 }
 
+/// Clone the warm committed fixture, restamp identity, then run `f` **without** holding the
+/// shared fixture lock. Prefer this over [`with_locked_warm_committed_repo`] for tests that only
+/// need a private copy (avoids queueing behind other lock holders under high `-j`).
+pub(crate) fn with_cloned_warm_committed_repo<T>(f: impl FnOnce(&Path, PathBuf) -> T) -> T {
+    let tmp = tempfile::tempdir().expect("warm committed clone tempdir");
+    let lib = clone_warm_committed_repo(tmp.path());
+    republish_cloned_lib_population(tmp.path());
+    f(tmp.path(), lib)
+}
+
 struct RestoreLibSource {
     path: PathBuf,
     contents: String,
@@ -264,6 +273,7 @@ impl Drop for RestoreLibSource {
 }
 
 /// Use the persistent warm committed fixture in-process (no clone/republish).
+/// Holds the shared fixture lock for the entire callback — keep callbacks short.
 pub(crate) fn with_locked_warm_committed_repo<T>(
     f: impl FnOnce(&Path, PathBuf) -> T,
 ) -> T {
