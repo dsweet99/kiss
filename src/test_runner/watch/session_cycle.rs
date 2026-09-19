@@ -34,6 +34,7 @@ pub(crate) struct WatchCycleCtx<'a, F, C> {
     pub suite: &'a mut WatchSuiteReport,
     pub run_cycle: &'a mut F,
     pub run_cov: &'a mut C,
+    pub reuse_suite: bool,
 }
 
 fn merge_cycle_suite(
@@ -67,7 +68,7 @@ where
     let (cycle_args, replies) = take_queued_cycle_args(live, ctx.queued);
     let target_scoped = !matches!(cycle_args.invocation, TestInvocation::All);
     let reuse_cov = lang_nudge && ctx.last_reply.get(None).is_some();
-    let report = crate::test_runner::run_kiss_test_report(
+    let report = crate::test_runner::run_kiss_test_report_reuse(
         crate::test_runner::clone_run_args(&cycle_args),
         &mut *ctx.run_cycle,
         |args| {
@@ -77,6 +78,8 @@ where
                 (ctx.run_cov)(args, live)
             }
         },
+        ctx.reuse_suite,
+        Some(ctx.repo_root),
     );
     merge_cycle_suite(
         ctx.suite,

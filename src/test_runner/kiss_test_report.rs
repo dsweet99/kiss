@@ -2,6 +2,9 @@ use kiss::rust_llvm_cov_runner::WatchSuiteTotals;
 
 use super::{RunTestCmdArgs, RunTestOnceOutcome, WatchCoverageResult};
 
+#[path = "suite_report.rs"]
+mod suite_report;
+
 pub(crate) const EXIT_INTERRUPTED: i32 = 130;
 
 pub(crate) const KISS_TEST_ALLOW_REFRESH: bool = false;
@@ -18,13 +21,31 @@ pub(crate) struct KissTestReport {
 
 pub(crate) fn run_kiss_test_report<F, C>(
     args: RunTestCmdArgs<'_>,
-    mut run_tests: F,
-    mut run_cov: C,
+    run_tests: F,
+    run_cov: C,
 ) -> KissTestReport
 where
     F: FnMut(RunTestCmdArgs<'_>) -> RunTestOnceOutcome,
     C: FnMut(&RunTestCmdArgs<'_>) -> WatchCoverageResult,
 {
+    run_kiss_test_report_reuse(args, run_tests, run_cov, true, None)
+}
+
+pub(crate) fn run_kiss_test_report_reuse<F, C>(
+    args: RunTestCmdArgs<'_>,
+    mut run_tests: F,
+    mut run_cov: C,
+    reuse: bool,
+    repo_root: Option<&std::path::Path>,
+) -> KissTestReport
+where
+    F: FnMut(RunTestCmdArgs<'_>) -> RunTestOnceOutcome,
+    C: FnMut(&RunTestCmdArgs<'_>) -> WatchCoverageResult,
+{
+    if reuse && let Some(hit) = suite_report::load_fresh_suite_report(&args, repo_root) {
+        suite_report::replay_suite_report(&hit);
+        return hit;
+    }
     kiss::rust_llvm_cov_runner::begin_watch_report_capture();
     let (exit_code, error, interrupted) = {
         let _defer = crate::test_runner::final_summary::RecapDeferGuard::enter();
@@ -44,7 +65,9 @@ where
     if interrupted {
         interrupted_report()
     } else {
-        finish_report(exit_code, error)
+        let report = finish_report(exit_code, error);
+        suite_report::persist_suite_report(&args, &report, repo_root);
+        report
     }
 }
 

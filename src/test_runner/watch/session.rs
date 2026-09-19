@@ -126,6 +126,7 @@ where
         if !initial {
             clear_python_collect_memo();
         }
+        let reuse_suite = initial;
         initial = false;
         if let Err(msg) = live.maybe_reload(repo_root, &mut machine, &mut filter) {
             eprintln!("error: kiss test --watch: {msg}");
@@ -142,6 +143,7 @@ where
             suite: &mut suite,
             run_cycle: &mut run_cycle,
             run_cov: &mut run_cov,
+            reuse_suite,
         }) {
             CycleOutcome::Interrupted => {
                 coalesce_nudges(nudge_rx, &mut queued);

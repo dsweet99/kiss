@@ -2,12 +2,22 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use ignore::gitignore::{Gitignore, GitignoreBuilder};
+
 use crate::analyze_cache::fnv1a64;
 
 use super::digest::{flush_persisted_digests, hash_file_contents};
 use super::{LangFingerprints, fresh};
 
-fn should_skip_dir(name: &str) -> bool {
+pub(crate) fn watch_support_gitignore(repo: &Path) -> Gitignore {
+    let mut builder = GitignoreBuilder::new(repo);
+    for name in [".gitignore", ".kissignore", ".git/info/exclude"] {
+        let _ = builder.add(repo.join(name));
+    }
+    builder.build().unwrap_or_else(|_| Gitignore::empty())
+}
+
+pub(crate) fn should_skip_dir(name: &str) -> bool {
     matches!(
         name,
         ".git"

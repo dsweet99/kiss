@@ -45,7 +45,9 @@ pub(crate) use planned_selectors::{
 pub(crate) use rust_batch_interrupt::consume_rust_batch_interrupted;
 #[cfg(test)]
 pub(crate) use rust_batch_interrupt::note_rust_batch_interrupted;
-pub(crate) use kiss_test_report::{clone_run_args, run_kiss_test_report, KISS_TEST_ALLOW_REFRESH};
+pub(crate) use kiss_test_report::{
+    clone_run_args, run_kiss_test_report, run_kiss_test_report_reuse, KISS_TEST_ALLOW_REFRESH,
+};
 
 pub(crate) use lang_rust::llvm_cov as rust_llvm_cov;
 
