@@ -66,5 +66,7 @@ pub(super) fn timeout_steps(n: usize) -> VecDeque<Result<Vec<NormalizedWatchEven
 mod cov_tests;
 #[path = "session_nudge_default_test.rs"]
 mod default_tests;
+#[path = "session_nudge_scenario_test.rs"]
+mod scenario_tests;
 #[path = "session_nudge_test.rs"]
 mod tests;

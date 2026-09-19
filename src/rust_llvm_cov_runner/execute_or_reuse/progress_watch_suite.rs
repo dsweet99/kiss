@@ -66,11 +66,7 @@ impl WatchSuiteReport {
             }
             slice.named.insert(selector.clone(), *outcome);
         }
-        if !slice.named.is_empty() {
-            slice.anonymous_passed = 0;
-            slice.anonymous_failed = 0;
-            slice.anonymous_timed_out = 0;
-        } else if !has_lang {
+        if slice.named.is_empty() && !has_lang {
             return None;
         }
         Some((slice.recap_exit_code(), slice.format()))
@@ -449,6 +445,43 @@ mod tests {
         assert!(suite.try_format_language(crate::Language::Python).is_some());
         suite.anonymous_passed = 3;
         assert!(suite.try_format_language(crate::Language::Rust).is_none());
+    }
+
+    #[test]
+    fn try_format_language_keeps_collapsed_counts_when_named_exist() {
+        let mut suite = WatchSuiteReport::default();
+        suite.merge_lines(&[
+            "PASS (cached): 8557 selectors".into(),
+            "kiss test: lang_collapsed python pass 8557".into(),
+            "PASS (cached): 620 selectors".into(),
+            "kiss test: lang_collapsed python pass 620".into(),
+            "FAIL: tests/slow/ops/test_ops.py::test_ops_eval_measurement_model (3.24s)".into(),
+            "TIMEOUT: tests/slow/ops/test_observability.py::test_observability (90.00s)".into(),
+            "PASS (cached): 2633 selectors".into(),
+            "kiss test: lang_collapsed rust pass 2633".into(),
+            "✗ 11815 passed · 2 failed · 2 timed out · 96s total · 8s max pass".into(),
+        ]);
+        let (py_code, py) = suite
+            .try_format_language(crate::Language::Python)
+            .expect("python slice");
+        let (rs_code, rs) = suite
+            .try_format_language(crate::Language::Rust)
+            .expect("rust slice");
+        assert_eq!(py_code, 1);
+        assert_eq!(rs_code, 0);
+        assert!(
+            py.contains("9177 passed") && py.contains("1 failed") && py.contains("1 timed out"),
+            "python slice must keep collapsed passes plus named problems; py={py}"
+        );
+        assert!(
+            py.contains("test_ops_eval_measurement_model")
+                && !py.contains("2633"),
+            "python slice={py}"
+        );
+        assert!(
+            rs.contains("2633 passed") && !rs.contains("8557") && !rs.contains("test_ops"),
+            "rust slice={rs}"
+        );
     }
 
     #[test]
