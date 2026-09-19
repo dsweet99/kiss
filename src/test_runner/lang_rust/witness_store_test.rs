@@ -160,8 +160,8 @@ fn publish_load_round_trip_and_warm_accept() {
         &identity,
         &kiss::GateConfig::default(),
     ) {
-        RustWarmDecision::Miss => {}
-        other => panic!("expected Miss without binary authority, got {other:?}"),
+        RustWarmDecision::RunMisses(misses) => assert_eq!(misses, vec!["c".to_string()]),
+        other => panic!("expected RunMisses for the unknown selector, got {other:?}"),
     }
     match rust_warm_or_miss_selectors(
         tmp.path(),
@@ -169,8 +169,8 @@ fn publish_load_round_trip_and_warm_accept() {
         &identity,
         &kiss::GateConfig::default(),
     ) {
-        RustWarmDecision::Miss => {}
-        other => panic!("expected Miss without binary authority, got {other:?}"),
+        RustWarmDecision::Warm(summary) => assert_eq!(summary.total, 2),
+        other => panic!("unchanged sources must reuse the witness without binaries, got {other:?}"),
     }
     maybe_bootstrap_rust_witness(tmp.path(), &selectors, &identity);
     cover_warm_selector_invalidation(tmp.path(), &identity);
@@ -561,7 +561,7 @@ fn rust_warm_or_miss_is_miss_without_witness() {
 }
 
 #[test]
-fn warm_rejects_when_generation_drifts_with_same_input() {
+fn warm_reuses_when_generation_drifts_with_same_input() {
     let tmp = tempfile::tempdir().unwrap();
     write_minimal_repo(tmp.path());
     let identity = sample_identity();
@@ -589,6 +589,6 @@ fn warm_rejects_when_generation_drifts_with_same_input() {
             &drifted,
             &kiss::GateConfig::default()
         )
-        .is_none()
+        .is_some()
     );
 }

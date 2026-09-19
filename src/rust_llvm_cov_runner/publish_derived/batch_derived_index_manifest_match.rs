@@ -42,6 +42,41 @@ pub fn current_population_manifest_matches_universe(
     Some(manifest.selectors == expected)
 }
 
+pub fn current_population_manifest_matches_source_universe(
+    cache_root: &Path,
+    identity: &RustCoverageBatchIdentity,
+    selectors: &[String],
+) -> Option<bool> {
+    let manifest = read_population_manifest(cache_root)?;
+    if manifest.input_fingerprint != identity.input_digest {
+        return Some(false);
+    }
+    let mut expected = selectors.to_vec();
+    expected.sort();
+    expected.dedup();
+    Some(manifest.selectors == expected)
+}
+
+pub fn population_state_for_unchanged_source(
+    cache_root: &Path,
+    identity: &RustCoverageBatchIdentity,
+) -> Option<RustPopulationState> {
+    let manifest = read_population_manifest(cache_root)?;
+    if manifest.input_fingerprint != identity.input_digest {
+        return None;
+    }
+    Some(RustPopulationState {
+        input_fingerprint: manifest.input_fingerprint,
+        generation_fingerprint: manifest.generation_fingerprint,
+        selection_context_fingerprint: manifest.selection_context_fingerprint,
+        entries_fingerprint: manifest.entries_fingerprint,
+        selectors: manifest.selectors,
+        line_index: BTreeMap::new(),
+        ordinary_source_digests: manifest.ordinary_source_digests,
+        test_binaries: manifest.test_binaries,
+    })
+}
+
 pub fn current_population_manifest_state(
     cache_root: &Path,
     identity: &RustCoverageBatchIdentity,

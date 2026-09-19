@@ -4,6 +4,7 @@ mod generation_publish;
 pub(crate) mod llvm_cov;
 mod publish_merge;
 mod runtime;
+mod witness_identity;
 mod witness_memo;
 mod witness_store;
 mod witness_warm;
@@ -12,6 +13,7 @@ pub(crate) mod workspace;
 pub(crate) use bootstrap::maybe_bootstrap_rust_witness;
 #[cfg(test)]
 pub(crate) use witness_store::rust_miss_selectors;
+pub(crate) use witness_identity::rust_live_miss_selectors;
 pub(crate) use witness_store::{
     PublishRustWitness, publish_rust_execution_witness, rust_identity_digest_from_batch,
     try_load_rust_execution_witness, try_warm_rust_cached_summary,
@@ -27,6 +29,10 @@ pub(crate) use runtime::RustRuntime;
 #[cfg(test)]
 #[path = "witness_store_test.rs"]
 mod witness_store_test;
+
+#[cfg(test)]
+#[path = "witness_warm_reuse_test.rs"]
+mod witness_warm_reuse_test;
 
 #[cfg(test)]
 #[path = "bootstrap_test.rs"]

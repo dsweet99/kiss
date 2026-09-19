@@ -1,3 +1,5 @@
+use kiss::rust_llvm_cov_runner::WatchSuiteTotals;
+
 use super::{RunTestCmdArgs, RunTestOnceOutcome, WatchCoverageResult};
 
 pub(crate) const EXIT_INTERRUPTED: i32 = 130;
@@ -9,6 +11,7 @@ pub(crate) struct KissTestReport {
     pub exit_code: i32,
     pub output: Option<String>,
     pub lines: Vec<String>,
+    pub totals: Option<WatchSuiteTotals>,
     pub error: Option<String>,
     pub interrupted: bool,
 }
@@ -46,31 +49,34 @@ where
 }
 
 fn interrupted_report() -> KissTestReport {
-    let (lines, output) = take_transcript();
+    let (lines, output, totals) = take_transcript();
     KissTestReport {
         exit_code: EXIT_INTERRUPTED,
         output,
         lines,
+        totals,
         error: None,
         interrupted: true,
     }
 }
 
 fn finish_report(exit_code: i32, error: Option<String>) -> KissTestReport {
-    let (lines, output) = take_transcript();
+    let (lines, output, totals) = take_transcript();
     KissTestReport {
         exit_code,
         output,
         lines,
+        totals,
         error,
         interrupted: false,
     }
 }
 
-fn take_transcript() -> (Vec<String>, Option<String>) {
-    let lines = kiss::rust_llvm_cov_runner::take_watch_report_lines().unwrap_or_default();
+fn take_transcript() -> (Vec<String>, Option<String>, Option<WatchSuiteTotals>) {
+    let (lines, totals) =
+        kiss::rust_llvm_cov_runner::take_watch_report_parts().unwrap_or((Vec::new(), None));
     let output = kiss::rust_llvm_cov_runner::transcript_from_lines(&lines);
-    (lines, output)
+    (lines, output, totals)
 }
 
 pub(crate) fn clone_run_args<'a>(args: &RunTestCmdArgs<'a>) -> RunTestCmdArgs<'a> {

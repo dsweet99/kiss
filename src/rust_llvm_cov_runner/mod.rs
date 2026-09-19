@@ -72,8 +72,9 @@ pub use execute_or_reuse::progress_prepared_hits::{
     emit_prepared_rust_cache_hits, install_prepared_rust_cache_hits_hook,
 };
 pub use execute_or_reuse::progress_watch_report::{
-    ProgressLanguageGuard, begin_watch_report_capture, take_watch_report_capture,
-    take_watch_report_lines, transcript_from_lines,
+    ProgressLanguageGuard, WatchSuiteTotals, begin_watch_report_capture, record_watch_suite_totals,
+    take_watch_report_capture, take_watch_report_lines, take_watch_report_parts,
+    transcript_from_lines,
 };
 pub use execute_or_reuse::progress_watch_suite::{WatchSuiteReport, merge_watch_exit};
 pub(crate) use execute_or_reuse::worker;
@@ -155,8 +156,9 @@ pub use batch_derived_incremental::{
 };
 pub use batch_derived_index::{
     RustGenerationCoverageSnapshot, RustPopulationState, RustSnapshotDelta,
-    current_population_manifest_matches_identity, current_population_manifest_matches_universe,
-    current_population_manifest_state, current_population_manifest_test_binaries_match,
+    current_population_manifest_matches_identity, current_population_manifest_matches_source_universe,
+    current_population_manifest_matches_universe, current_population_manifest_state,
+    current_population_manifest_test_binaries_match, population_state_for_unchanged_source,
     current_test_binaries_match, is_check_aggregate_population,
     load_current_generation_coverage_from_passing_entries,
     load_current_generation_coverage_snapshot, load_current_generation_line_index,

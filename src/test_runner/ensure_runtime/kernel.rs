@@ -100,6 +100,21 @@ fn timed_reclassify_witness(
     Ok(())
 }
 
+fn rust_or_default_misses(
+    module: &dyn LanguageRuntime,
+    request: &EnsureRequest,
+    planned: &[String],
+    identity: &str,
+    witness: Option<&crate::test_runner::lang_iface::ExecutionWitness>,
+) -> Vec<String> {
+    if module.language() == Language::Rust {
+        return crate::test_runner::lang_rust::rust_live_miss_selectors(
+            request, planned, identity, witness,
+        );
+    }
+    miss_selectors_for_repair(request.mode, planned, identity, witness, request.force)
+}
+
 fn timed_compute_misses(
     request: &EnsureRequest,
     module: &dyn LanguageRuntime,
@@ -108,13 +123,7 @@ fn timed_compute_misses(
     witness: &Option<crate::test_runner::lang_iface::ExecutionWitness>,
 ) -> Result<Vec<String>, String> {
     let started = std::time::Instant::now();
-    let mut misses = miss_selectors_for_repair(
-        request.mode,
-        planned,
-        identity,
-        witness.as_ref(),
-        request.force,
-    );
+    let mut misses = rust_or_default_misses(module, request, planned, identity, witness.as_ref());
     crate::test_runner::lang_iface::union_force_selectors_into_misses(
         planned,
         &mut misses,

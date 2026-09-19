@@ -10,6 +10,8 @@ use super::filter::WatchPathFilter;
 use super::reload::{CycleForceFlags, WatchLiveConfig};
 use super::session_idle::{LastReplies, drain_into_machine, QueuedCycle};
 use super::settle::SettleMachine;
+use kiss::rust_llvm_cov_runner::{WatchSuiteReport, WatchSuiteTotals};
+
 use crate::bin_cli::args::TestInvocation;
 use crate::test_runner::{RunTestCmdArgs, RunTestOnceOutcome};
 
@@ -29,9 +31,25 @@ pub(crate) struct WatchCycleCtx<'a, F, C> {
     pub machine: &'a mut SettleMachine,
     pub repo_root: &'a Path,
     pub last_reply: &'a mut LastReplies,
-    pub suite: &'a mut kiss::rust_llvm_cov_runner::WatchSuiteReport,
+    pub suite: &'a mut WatchSuiteReport,
     pub run_cycle: &'a mut F,
     pub run_cov: &'a mut C,
+}
+
+fn merge_cycle_suite(
+    suite: &mut WatchSuiteReport,
+    lines: &[String],
+    totals: Option<&WatchSuiteTotals>,
+    scoped: bool,
+) {
+    if scoped {
+        suite.merge_lines(lines);
+        return;
+    }
+    suite.merge_unscoped_lines(lines);
+    if let Some(totals) = totals {
+        suite.apply_totals(totals);
+    }
 }
 
 pub(crate) fn run_one_watch_cycle<F, C>(ctx: WatchCycleCtx<'_, F, C>) -> CycleOutcome
@@ -60,11 +78,12 @@ where
             }
         },
     );
-    if target_scoped || cycle_args.lang_filter.is_some() {
-        ctx.suite.merge_lines(&report.lines);
-    } else {
-        ctx.suite.merge_unscoped_lines(&report.lines);
-    }
+    merge_cycle_suite(
+        ctx.suite,
+        &report.lines,
+        report.totals.as_ref(),
+        target_scoped || cycle_args.lang_filter.is_some(),
+    );
     if report.interrupted {
         store_interrupted_reply(ctx.last_reply, &replies, ctx.suite, cycle_args.lang_filter);
         return CycleOutcome::Interrupted;
@@ -239,7 +258,7 @@ fn reply_all(
 
 #[cfg(test)]
 mod ensure_green_gate_line_tests {
-    use super::ensure_green_gate_line;
+    use super::{WatchSuiteReport, WatchSuiteTotals, ensure_green_gate_line, merge_cycle_suite};
 
     #[test]
     fn inserts_no_violations_before_summary_on_green() {
@@ -260,6 +279,65 @@ mod ensure_green_gate_line_tests {
         let out = ensure_green_gate_line(1, Some(raw.into())).unwrap();
         assert_eq!(out, raw);
         assert!(!out.contains("NO VIOLATIONS"));
+    }
+
+    #[test]
+    fn unscoped_structured_totals_win_over_last_collapsed() {
+        let mut suite = WatchSuiteReport::default();
+        merge_cycle_suite(
+            &mut suite,
+            &["PASS (cached): 2633 selectors".into()],
+            Some(&WatchSuiteTotals {
+                passed: 11816,
+                failed: 2,
+                timed_out: 1,
+                total_label: "69.33s".into(),
+                max_pass_label: "0s".into(),
+            }),
+            false,
+        );
+        assert_eq!(suite.passed(), 11816);
+        assert_eq!(suite.failed(), 2);
+        assert_eq!(suite.timed_out(), 1);
+        let recap = suite.format();
+        assert!(recap.contains("11816 passed") && recap.contains("69.33s total"), "{recap}");
+        assert!(!recap.contains("2633 passed"), "{recap}");
+    }
+
+    #[test]
+    fn scoped_merge_does_not_apply_totals() {
+        let mut suite = WatchSuiteReport::default();
+        merge_cycle_suite(
+            &mut suite,
+            &[
+                "PASS (cached): 11816 selectors".into(),
+                "✓ 11816 passed · 0 failed · 0 timed out · 1s total · 0s max pass".into(),
+            ],
+            Some(&WatchSuiteTotals {
+                passed: 11816,
+                failed: 0,
+                timed_out: 0,
+                total_label: "1s".into(),
+                max_pass_label: "0s".into(),
+            }),
+            false,
+        );
+        merge_cycle_suite(
+            &mut suite,
+            &[
+                "PASS: tests/a.py::t (0.01s)".into(),
+                "✓ 1 passed · 0 failed · 0 timed out · 0.01s total · 0s max pass".into(),
+            ],
+            Some(&WatchSuiteTotals {
+                passed: 1,
+                failed: 0,
+                timed_out: 0,
+                total_label: "0.01s".into(),
+                max_pass_label: "0s".into(),
+            }),
+            true,
+        );
+        assert_eq!(suite.passed(), 11816, "{}", suite.format());
     }
 }
 

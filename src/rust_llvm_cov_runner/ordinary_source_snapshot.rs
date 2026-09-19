@@ -210,7 +210,8 @@ fn stored_ordinary_source_digests_from_manifest(
     let manifest = crate::rust_llvm_cov_runner::publish_derived::batch_derived_index::read_population_manifest(
         cache_root,
     )?;
-    (manifest.generation_fingerprint == identity.generation_fingerprint)
+    (manifest.generation_fingerprint == identity.generation_fingerprint
+        || manifest.input_fingerprint == identity.input_digest)
         .then_some(manifest.ordinary_source_digests)
 }
 

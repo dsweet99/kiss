@@ -2,6 +2,8 @@ use std::cell::{Cell, RefCell};
 use std::io::IsTerminal;
 use std::time::Duration;
 
+use kiss::rust_llvm_cov_runner::WatchSuiteTotals;
+
 use super::duration::format_test_duration;
 use super::runners::SelectorExecutionSummary;
 
@@ -71,6 +73,24 @@ fn recap_with_violations(
         Some((first, rest)) => format!("{first}{suffix}\n{rest}"),
         None => format!("{text}{suffix}"),
     }
+}
+
+fn watch_suite_totals(summary: &FinalTestSummary, total_duration: Duration) -> WatchSuiteTotals {
+    let timed_out = summary.timed_out_selectors.len();
+    WatchSuiteTotals {
+        passed: summary.passed,
+        failed: summary.failed.saturating_sub(timed_out),
+        timed_out,
+        total_label: format_test_duration(total_duration),
+        max_pass_label: format_max_pass_duration(summary.max_passing_run_duration),
+    }
+}
+
+fn record_watch_suite_totals(summary: &FinalTestSummary, total_duration: Duration) {
+    kiss::rust_llvm_cov_runner::record_watch_suite_totals(watch_suite_totals(
+        summary,
+        total_duration,
+    ));
 }
 
 fn flush_final_test_summary() {
@@ -189,6 +209,7 @@ pub(crate) fn print_final_test_summary(summary: &FinalTestSummary, total_duratio
     if let Some(msg) = coverage_skip_for_failures_message(summary) {
         crate::test_runner::emit_test_progress(msg);
     }
+    record_watch_suite_totals(summary, total_duration);
     if DEFER_RECAP.get() {
         PENDING_RECAP.with(|slot| {
             *slot.borrow_mut() = Some((summary.clone(), total_duration));

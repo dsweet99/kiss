@@ -82,3 +82,47 @@ fn shared_report_puts_recap_after_coverage_violations() {
     assert_eq!(report.exit_code, 1);
 }
 
+#[test]
+fn shared_report_carries_structured_totals() {
+    let mut args = dry_args();
+    args.dry_run = false;
+    let report = run_kiss_test_report(
+        args,
+        |_a| {
+            crate::test_runner::emit_test_progress("PASS (cached): 2633 selectors");
+            crate::test_runner::final_summary::print_final_test_summary(
+                &crate::test_runner::final_summary::FinalTestSummary {
+                    passed: 11816,
+                    failed: 3,
+                    failed_selectors: vec![
+                        "tests/slow/ops/test_argus.py::test_argus_subscribe_counts_published_pings"
+                            .into(),
+                        "tests/slow/ops/test_ops.py::test_ops_eval_measurement_model".into(),
+                    ],
+                    timed_out_selectors: vec![
+                        "tests/slow/ops/test_observability.py::test_observability".into(),
+                    ],
+                    max_passing_run_duration: std::time::Duration::ZERO,
+                },
+                std::time::Duration::from_secs_f64(69.33),
+            );
+            RunTestOnceOutcome::Code(1)
+        },
+        |_a| WatchCoverageResult::ok(0),
+    );
+    let totals = report.totals.expect("structured totals");
+    assert_eq!(totals.passed, 11816);
+    assert_eq!(totals.failed, 2);
+    assert_eq!(totals.timed_out, 1);
+    let mut suite = kiss::rust_llvm_cov_runner::WatchSuiteReport::default();
+    suite.merge_unscoped_lines(&report.lines);
+    suite.apply_totals(&totals);
+    let recap = suite.format();
+    assert_eq!(suite.passed(), 11816, "{recap}");
+    assert!(
+        recap.contains("11816 passed") && recap.contains("2 failed") && recap.contains("1 timed out"),
+        "{recap}"
+    );
+    assert!(!recap.contains("2633 passed"), "{recap}");
+}
+

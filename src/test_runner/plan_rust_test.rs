@@ -94,6 +94,32 @@ fn rust_plan_selectors_does_not_require_population_after_ordinary_source_edit() 
 }
 
 #[test]
+fn rust_plan_selectors_does_not_require_population_when_only_generation_drifts() {
+    let tmp = tempfile::tempdir().unwrap();
+    demo_lib(&tmp);
+    crate::test_runner::rust_coverage_index::write_rust_population_manifest_for_args(
+        tmp.path(),
+        &["a".into()],
+        &[],
+    )
+    .unwrap();
+    let cache = tmp
+        .path()
+        .join(".kiss")
+        .join("rust_llvm_cov_cache")
+        .join("population.json");
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&cache).unwrap()).unwrap();
+    value["generation_fingerprint"] = serde_json::Value::String("drifted-generation".into());
+    std::fs::write(&cache, serde_json::to_vec(&value).unwrap()).unwrap();
+    let plan = rust_plan_selectors(tmp.path(), vec!["a".into()], &GateConfig::default());
+    assert!(
+        !plan.population_required,
+        "generation-only drift must not force a rust population rebuild"
+    );
+}
+
+#[test]
 fn rust_plan_selectors_requires_population_when_manifest_selectors_differ() {
     let tmp = tempfile::tempdir().unwrap();
     demo_lib(&tmp);

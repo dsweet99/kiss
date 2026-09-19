@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cell::Cell;
 use std::sync::{Mutex, OnceLock};
 
@@ -20,23 +21,54 @@ impl Drop for ProgressLanguageGuard {
     }
 }
 
-fn watch_report_lines() -> &'static Mutex<Option<Vec<String>>> {
-    static LINES: OnceLock<Mutex<Option<Vec<String>>>> = OnceLock::new();
-    LINES.get_or_init(|| Mutex::new(None))
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct WatchSuiteTotals {
+    pub passed: usize,
+    pub failed: usize,
+    pub timed_out: usize,
+    pub total_label: String,
+    pub max_pass_label: String,
+}
+
+struct WatchReportCapture {
+    lines: Vec<String>,
+    totals: Option<WatchSuiteTotals>,
+}
+
+fn watch_report_slot() -> &'static Mutex<Option<WatchReportCapture>> {
+    static SLOT: OnceLock<Mutex<Option<WatchReportCapture>>> = OnceLock::new();
+    SLOT.get_or_init(|| Mutex::new(None))
+}
+
+fn lock_watch_report() -> std::sync::MutexGuard<'static, Option<WatchReportCapture>> {
+    watch_report_slot()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 pub fn begin_watch_report_capture() {
-    *watch_report_lines()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Vec::new());
+    *lock_watch_report() = Some(WatchReportCapture {
+        lines: Vec::new(),
+        totals: None,
+    });
+}
+
+pub fn record_watch_suite_totals(totals: WatchSuiteTotals) {
+    if let Some(capture) = lock_watch_report().as_mut() {
+        capture.totals = Some(totals);
+    }
+}
+
+#[must_use]
+pub fn take_watch_report_parts() -> Option<(Vec<String>, Option<WatchSuiteTotals>)> {
+    lock_watch_report()
+        .take()
+        .map(|capture| (capture.lines, capture.totals))
 }
 
 #[must_use]
 pub fn take_watch_report_lines() -> Option<Vec<String>> {
-    watch_report_lines()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .take()
+    take_watch_report_parts().map(|(lines, _)| lines)
 }
 
 #[must_use]
@@ -45,23 +77,21 @@ pub fn take_watch_report_capture() -> Option<String> {
 }
 
 pub(crate) fn record_watch_report_line(message: &str) {
-    let mut slot = watch_report_lines()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let Some(lines) = slot.as_mut() else {
+    let mut slot = lock_watch_report();
+    let Some(capture) = slot.as_mut() else {
         return;
     };
     if is_watch_report_line(message) {
-        lines.push(message.to_string());
+        capture.lines.push(message.to_string());
         if let Some(tag) = lang_collapsed_tag(message) {
-            lines.push(tag);
+            capture.lines.push(tag);
         }
     }
 }
 
 fn lang_collapsed_tag(message: &str) -> Option<String> {
     let lang = PROGRESS_LANG.get()?;
-    let line = strip_ansi_prefix(message.trim());
+    let line = strip_ansi(message.trim());
     if line.starts_with("kiss test: lang_collapsed ") {
         return None;
     }
@@ -83,12 +113,30 @@ fn lang_collapsed_tag(message: &str) -> Option<String> {
     ))
 }
 
-pub(crate) fn strip_ansi_prefix(message: &str) -> &str {
-    let mut rest = message;
-    while let Some(stripped) = rest.strip_prefix("\x1b[") {
-        rest = stripped.split_once('m').map_or(rest, |(_, tail)| tail);
+pub(crate) fn strip_ansi(message: &str) -> Cow<'_, str> {
+    if !message.contains('\x1b') {
+        return Cow::Borrowed(message);
     }
-    rest
+    let mut out = String::with_capacity(message.len());
+    let mut rest = message;
+    while let Some(esc) = rest.find('\x1b') {
+        out.push_str(&rest[..esc]);
+        rest = &rest[esc..];
+        let Some(csi) = rest.strip_prefix("\x1b[") else {
+            out.push('\x1b');
+            rest = &rest[1..];
+            continue;
+        };
+        match csi.find('m') {
+            Some(end) => rest = &csi[end + 1..],
+            None => {
+                out.push('\x1b');
+                rest = &rest[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    Cow::Owned(out)
 }
 
 pub fn transcript_from_lines(lines: &[String]) -> Option<String> {
@@ -104,7 +152,7 @@ pub fn transcript_from_lines(lines: &[String]) -> Option<String> {
 }
 
 fn is_watch_report_line(message: &str) -> bool {
-    !strip_ansi_prefix(message.trim()).is_empty()
+    !strip_ansi(message.trim()).is_empty()
 }
 
 const WATCH_REPORT_BUDGET: usize = 200 * 1024;
@@ -118,7 +166,7 @@ fn compact_watch_report(lines: &[String]) -> String {
         .iter()
         .map(String::as_str)
         .filter(|line| {
-            let text = strip_ansi_prefix(line.trim());
+            let text = strip_ansi(line.trim());
             !text.starts_with("PASS")
         })
         .collect();
@@ -183,6 +231,16 @@ mod tests {
     }
 
     #[test]
+    fn strip_ansi_removes_color_around_summary_icon() {
+        let colored = "\x1b[31m✗\x1b[0m 11816 passed · 2 failed · 1 timed out · 69.33s total · 0s max pass";
+        assert_eq!(
+            strip_ansi(colored).as_ref(),
+            "✗ 11816 passed · 2 failed · 1 timed out · 69.33s total · 0s max pass"
+        );
+        assert_eq!(strip_ansi("✓ 1 passed").as_ref(), "✓ 1 passed");
+    }
+
+    #[test]
     fn record_watch_report_line_tags_collapsed_with_progress_language() {
         begin_watch_report_capture();
         let _guard = ProgressLanguageGuard::enter(crate::Language::Rust);
@@ -192,5 +250,25 @@ mod tests {
             lines.iter().any(|line| line == "kiss test: lang_collapsed rust pass 2753"),
             "{lines:?}"
         );
+    }
+
+    #[test]
+    fn take_watch_report_parts_keeps_recorded_totals() {
+        begin_watch_report_capture();
+        record_watch_report_line("PASS (cached): 2633 selectors");
+        record_watch_suite_totals(WatchSuiteTotals {
+            passed: 11816,
+            failed: 2,
+            timed_out: 1,
+            total_label: "69.33s".into(),
+            max_pass_label: "0s".into(),
+        });
+        let (lines, totals) = take_watch_report_parts().expect("capture");
+        assert!(lines.iter().any(|line| line.contains("2633")), "{lines:?}");
+        let totals = totals.expect("totals");
+        assert_eq!(totals.passed, 11816);
+        assert_eq!(totals.failed, 2);
+        assert_eq!(totals.timed_out, 1);
+        assert!(take_watch_report_parts().is_none());
     }
 }

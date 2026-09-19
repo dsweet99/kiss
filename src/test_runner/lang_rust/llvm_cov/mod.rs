@@ -124,21 +124,13 @@ pub(crate) fn cached_rust_check_aggregate_selectors(
             crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(
                 repo_root, extra,
             )?;
-        let binaries_are_current =
-            kiss::rust_llvm_cov_runner::current_population_manifest_test_binaries_match(
-                &cache_root,
+        if let Some(summary) =
+            crate::test_runner::execution_witness::try_warm_rust_cached_summary(
                 repo_root,
+                selectors,
                 &identity,
+                gate,
             )
-            .unwrap_or(false);
-        if binaries_are_current
-            && let Some(summary) =
-                crate::test_runner::execution_witness::try_warm_rust_cached_summary(
-                    repo_root,
-                    selectors,
-                    &identity,
-                    gate,
-                )
         {
             return Ok(Some(summary));
         }

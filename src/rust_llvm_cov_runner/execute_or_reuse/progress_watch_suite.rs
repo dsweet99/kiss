@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use super::progress_watch_report::WatchSuiteTotals;
+
 #[path = "progress_watch_suite_merge.rs"]
 mod merge;
 
@@ -100,6 +102,16 @@ impl WatchSuiteReport {
 
     fn named_count(&self, outcome: SuiteOutcome) -> usize {
         self.named.values().filter(|item| **item == outcome).count()
+    }
+
+    pub fn apply_totals(&mut self, totals: &WatchSuiteTotals) {
+        self.anonymous_passed = totals.passed.saturating_sub(self.named_count(SuiteOutcome::Pass));
+        self.anonymous_failed = totals.failed.saturating_sub(self.named_count(SuiteOutcome::Fail));
+        self.anonymous_timed_out = totals
+            .timed_out
+            .saturating_sub(self.named_count(SuiteOutcome::Timeout));
+        self.total_label = totals.total_label.clone();
+        self.max_pass_label = totals.max_pass_label.clone();
     }
 }
 
@@ -382,6 +394,75 @@ mod tests {
         assert_eq!(suite.test_exit_code(), 1);
         assert_eq!(merge_watch_exit(0, 1), 1);
         assert_eq!(merge_watch_exit(130, 1), 130);
+    }
+
+    #[test]
+    fn apply_totals_overrides_last_collapsed_pass() {
+        let mut suite = WatchSuiteReport::default();
+        suite.merge_unscoped_lines(&[
+            "PASS (cached): 8557 selectors".into(),
+            "kiss test: lang_collapsed python pass 8557".into(),
+            "PASS (cached): 620 selectors".into(),
+            "kiss test: lang_collapsed python pass 620".into(),
+            "FAIL: tests/slow/ops/test_argus.py::test_argus_subscribe_counts_published_pings (1.00s)"
+                .into(),
+            "FAIL: tests/slow/ops/test_ops.py::test_ops_eval_measurement_model (3.24s)".into(),
+            "TIMEOUT: tests/slow/ops/test_observability.py::test_observability (90.00s)".into(),
+            "PASS (cached): 2633 selectors".into(),
+            "kiss test: lang_collapsed rust pass 2633".into(),
+        ]);
+        assert_eq!(suite.passed(), 2633, "{}", suite.format());
+        suite.apply_totals(&WatchSuiteTotals {
+            passed: 11816,
+            failed: 2,
+            timed_out: 1,
+            total_label: "69.33s".into(),
+            max_pass_label: "0s".into(),
+        });
+        let recap = suite.format();
+        assert_eq!(suite.passed(), 11816, "{recap}");
+        assert!(
+            recap.contains("11816 passed")
+                && recap.contains("2 failed")
+                && recap.contains("1 timed out")
+                && recap.contains("69.33s total"),
+            "{recap}"
+        );
+        assert!(
+            !recap.contains("2633 passed"),
+            "structured totals must not keep the last rust collapsed count; {recap}"
+        );
+    }
+
+    #[test]
+    fn merge_tty_colored_summary_keeps_bilingual_pass_count() {
+        let mut suite = WatchSuiteReport::default();
+        suite.merge_unscoped_lines(&[
+            "PASS (cached): 8557 selectors".into(),
+            "kiss test: lang_collapsed python pass 8557".into(),
+            "PASS (cached): 620 selectors".into(),
+            "kiss test: lang_collapsed python pass 620".into(),
+            "FAIL: tests/slow/ops/test_argus.py::test_argus_subscribe_counts_published_pings (1.00s)"
+                .into(),
+            "FAIL: tests/slow/ops/test_ops.py::test_ops_eval_measurement_model (3.24s)".into(),
+            "TIMEOUT: tests/slow/ops/test_observability.py::test_observability (90.00s)".into(),
+            "PASS (cached): 2633 selectors".into(),
+            "kiss test: lang_collapsed rust pass 2633".into(),
+            "\x1b[31m✗\x1b[0m 11816 passed · 2 failed · 1 timed out · 69.33s total · 0s max pass\n\x1b[31mFAIL\x1b[0m tests/slow/ops/test_argus.py::test_argus_subscribe_counts_published_pings\n\x1b[31mTIMEOUT\x1b[0m tests/slow/ops/test_observability.py::test_observability\n\x1b[31mFAIL\x1b[0m tests/slow/ops/test_ops.py::test_ops_eval_measurement_model".into(),
+        ]);
+        let recap = suite.format();
+        assert_eq!(suite.passed(), 11816, "{recap}");
+        assert!(
+            recap.contains("11816 passed")
+                && recap.contains("2 failed")
+                && recap.contains("1 timed out"),
+            "{recap}"
+        );
+        assert!(
+            !recap.contains("2633 passed"),
+            "idle recap must not fall back to the last rust collapsed count; {recap}"
+        );
+        assert!(recap.contains("69.33s total"), "{recap}");
     }
 
     #[test]

@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use super::super::progress_watch_report::strip_ansi_prefix;
+use super::super::progress_watch_report::strip_ansi;
 use super::{SuiteOutcome, WatchSuiteReport};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -272,7 +272,8 @@ enum ParsedWatchLine {
 }
 
 fn parse_watch_line(message: &str) -> ParsedWatchLine {
-    let line = strip_ansi_prefix(message.trim());
+    let line = strip_ansi(message.trim());
+    let line = line.as_ref();
     if line.contains("VIOLATION:") {
         return ParsedWatchLine::Violation(line.to_string());
     }

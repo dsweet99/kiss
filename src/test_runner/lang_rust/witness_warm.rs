@@ -6,7 +6,10 @@ use kiss::rust_llvm_cov_runner::{
     OrdinarySourceInvalidation, RustCoverageBatchIdentity, classify_ordinary_source_delta,
 };
 
-use super::witness_store::{rust_miss_selectors, try_warm_rust_cached_summary};
+use super::witness_store::{
+    rust_identity_digest_from_batch, rust_miss_selectors, rust_source_identity_covers,
+    try_load_rust_execution_witness, try_warm_rust_cached_summary,
+};
 use crate::test_runner::runners::SelectorExecutionSummary;
 use crate::test_runner::rust_coverage_index::rust_coverage_cache_root;
 
@@ -24,6 +27,9 @@ pub(crate) fn rust_source_delta_misses(
         &identity,
     )
     .or_else(|| {
+        kiss::rust_llvm_cov_runner::population_state_for_unchanged_source(&cache_root, &identity)
+    })
+    .or_else(|| {
         kiss::rust_llvm_cov_runner::load_current_population_state(
             &cache_root,
             repo_root,
@@ -31,30 +37,9 @@ pub(crate) fn rust_source_delta_misses(
             None,
         )
     });
-    let invalidation = match population.as_ref() {
-        Some(pop) => {
-            if kiss::rust_llvm_cov_runner::current_test_binaries_match(repo_root, pop) {
-                classify_ordinary_source_delta(&cache_root, repo_root, &identity)
-            } else {
-                OrdinarySourceInvalidation::All
-            }
-        }
-        None => {
-            match kiss::rust_llvm_cov_runner::current_population_manifest_test_binaries_match(
-                &cache_root,
-                repo_root,
-                &identity,
-            ) {
-                Some(false) => OrdinarySourceInvalidation::All,
-                Some(true) | None => {
-                    classify_ordinary_source_delta(&cache_root, repo_root, &identity)
-                }
-            }
-        }
-    };
+    let invalidation = rust_effective_source_invalidation(repo_root, &identity);
     let mut misses = planned_misses_for(planned_selectors, invalidation);
-    if let Some(population) = population.as_ref()
-        && kiss::rust_llvm_cov_runner::current_test_binaries_match(repo_root, population)
+    if !rust_witness_source_covers(repo_root, &identity) && let Some(population) = population.as_ref()
     {
         let planned: BTreeSet<_> = planned_selectors.iter().map(String::as_str).collect();
         misses.extend(
@@ -66,6 +51,31 @@ pub(crate) fn rust_source_delta_misses(
     misses.sort();
     misses.dedup();
     Ok(misses)
+}
+
+fn rust_witness_source_covers(repo_root: &Path, identity: &RustCoverageBatchIdentity) -> bool {
+    let Ok(witness) = try_load_rust_execution_witness(repo_root) else {
+        return false;
+    };
+    witness.identity_digest.starts_with("rs:")
+        && rust_source_identity_covers(
+            &witness.identity_digest,
+            &rust_identity_digest_from_batch(identity),
+        )
+}
+
+fn rust_effective_source_invalidation(
+    repo_root: &Path,
+    identity: &RustCoverageBatchIdentity,
+) -> OrdinarySourceInvalidation {
+    let cache_root = rust_coverage_cache_root(repo_root);
+    let mut invalidation = classify_ordinary_source_delta(&cache_root, repo_root, identity);
+    if matches!(invalidation, OrdinarySourceInvalidation::All)
+        && rust_witness_source_covers(repo_root, identity)
+    {
+        invalidation = OrdinarySourceInvalidation::None;
+    }
+    invalidation
 }
 
 pub(crate) fn planned_misses_for(
@@ -89,22 +99,13 @@ pub(crate) fn rust_warm_or_miss_selectors(
     identity: &RustCoverageBatchIdentity,
     gate: &GateConfig,
 ) -> RustWarmDecision {
-    let cache_root = rust_coverage_cache_root(repo_root);
-    if !kiss::rust_llvm_cov_runner::current_population_manifest_test_binaries_match(
-        &cache_root,
-        repo_root,
-        identity,
-    )
-    .unwrap_or(false)
-    {
-        return RustWarmDecision::Miss;
-    }
+    let invalidation = rust_effective_source_invalidation(repo_root, identity);
     apply_warm_invalidation(
         repo_root,
         planned_selectors,
         identity,
         gate,
-        classify_ordinary_source_delta(&cache_root, repo_root, identity),
+        invalidation,
     )
 }
 
@@ -134,7 +135,15 @@ pub(crate) fn apply_warm_invalidation(
         return RustWarmDecision::Warm(Box::new(summary));
     }
     match rust_miss_selectors(repo_root, planned_selectors, identity, gate) {
-        Some(misses) if !misses.is_empty() && misses.len() < planned_selectors.len() => {
+        Some(misses) if misses.is_empty() => try_warm_rust_cached_summary(
+            repo_root,
+            planned_selectors,
+            identity,
+            gate,
+        )
+        .map(|summary| RustWarmDecision::Warm(Box::new(summary)))
+        .unwrap_or(RustWarmDecision::Miss),
+        Some(misses) if misses.len() < planned_selectors.len() => {
             RustWarmDecision::RunMisses(misses)
         }
         _ => RustWarmDecision::Miss,

@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::test_runner::lang_iface::{
     AcceptDecision, AcceptMode, ExecutionWitness, WitnessScope, WitnessStatus, accept_witness,
-    identity_covers, reclassify_statuses_with_gate, summary_from_accepted_witness,
+    reclassify_statuses_with_gate, summary_from_accepted_witness,
 };
 use crate::test_runner::runners::SelectorExecutionSummary;
 use crate::test_runner::rust_coverage_index::{
@@ -38,14 +38,9 @@ struct OnDiskRustWitness {
     content_sha256: String,
 }
 
-pub(crate) fn rust_identity_digest_from_batch(identity: &RustCoverageBatchIdentity) -> String {
-    format!(
-        "rs:{}:{}:{}",
-        identity.input_digest,
-        identity.generation_fingerprint,
-        identity.selection_context_fingerprint
-    )
-}
+pub(crate) use super::witness_identity::{
+    rust_identity_digest_from_batch, rust_source_identity_covers,
+};
 
 pub(crate) fn witness_path(repo_root: &Path) -> PathBuf {
     rust_coverage_cache_root(repo_root).join("execution_witness.json")
@@ -266,7 +261,7 @@ pub(crate) fn rust_miss_selectors(
     let Ok(mut witness) = try_load_rust_execution_witness(repo_root) else {
         return None;
     };
-    if !identity_covers(
+    if !rust_source_identity_covers(
         &witness.identity_digest,
         &rust_identity_digest_from_batch(identity),
     ) {
@@ -305,6 +300,9 @@ pub(crate) fn try_warm_rust_cached_summary(
     };
     reclassify_rust_witness_with_report_ids(repo_root, &mut witness, gate);
     let current = rust_identity_digest_from_batch(identity);
+    if !rust_source_identity_covers(&witness.identity_digest, &current) {
+        return None;
+    }
     let mut planned = planned_selectors.to_vec();
     planned.sort();
     planned.dedup();
@@ -313,7 +311,12 @@ pub(crate) fn try_warm_rust_cached_summary(
     } else {
         AcceptMode::Subset
     };
-    if accept_witness(mode, &planned, &current, &witness) != AcceptDecision::Accept {
+    let cover_id = witness.identity_digest.clone();
+    let accepted = accept_witness(mode, &planned, &cover_id, &witness) == AcceptDecision::Accept
+        || (mode == AcceptMode::All
+            && accept_witness(AcceptMode::Subset, &planned, &cover_id, &witness)
+                == AcceptDecision::Accept);
+    if !accepted {
         return None;
     }
     super::witness_memo::stash_published_witness(

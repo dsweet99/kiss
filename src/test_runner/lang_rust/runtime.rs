@@ -5,7 +5,7 @@ use kiss::Language;
 
 use crate::test_runner::lang_iface::{
     AcceptMode, EnsureRequest, ExecutionWitness, LanguageRuntime, OutcomeBatch, PublishBatch,
-    SourceDeltaMisses, WitnessScope, summary_from_accepted_witness,
+    SourceDeltaMisses, WitnessScope,
 };
 use crate::test_runner::runners::SelectorExecutionSummary;
 use crate::test_runner::rust_coverage_index::{
@@ -13,6 +13,7 @@ use crate::test_runner::rust_coverage_index::{
 };
 use crate::test_runner::selector_ids::report_string_for_logical_string;
 
+use super::witness_identity::{rust_source_identity_covers, rust_witness_overlap};
 use super::witness_store::{
     PublishRustWitness, publish_rust_execution_witness, rust_identity_digest_from_batch,
     try_load_rust_execution_witness,
@@ -33,22 +34,16 @@ fn rust_population_publication_selectors(
     }
 }
 
-fn rust_summary_from_witness(
-    request: &EnsureRequest,
-    planned: &[String],
-    witness: &ExecutionWitness,
-) -> SelectorExecutionSummary {
-    if !kiss::time_gate_uses_path_prefixes(&request.gate.max_unit_test_seconds) {
-        return summary_from_accepted_witness(planned, witness, str::to_string);
-    }
-    let report_ids = crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
-        &request.repo_root,
-        &[],
+fn rust_source_stable_witness(request: &EnsureRequest, witness: &ExecutionWitness) -> bool {
+    let Ok(identity) =
+        current_rust_coverage_batch_identity(&request.repo_root, &request.extras.rust)
+    else {
+        return true;
+    };
+    rust_source_identity_covers(
+        &witness.identity_digest,
+        &rust_identity_digest_from_batch(&identity),
     )
-    .unwrap_or_default();
-    summary_from_accepted_witness(planned, witness, |selector| {
-        report_string_for_logical_string(&report_ids, selector)
-    })
 }
 
 fn rust_summary_from_witness_statuses(
@@ -223,8 +218,11 @@ impl LanguageRuntime for RustRuntime {
         planned: &[String],
         witness: &ExecutionWitness,
     ) -> Result<SelectorExecutionSummary, String> {
-        let mut summary = rust_summary_from_witness(request, planned, witness);
-        if population_repair::repair_stale_population_on_all_mode_accept(request, planned)? {
+        let planned = rust_witness_overlap(planned, witness);
+        let mut summary = rust_summary_from_witness_statuses(request, &planned, witness);
+        if !rust_source_stable_witness(request, witness)
+            && population_repair::repair_stale_population_on_all_mode_accept(request, &planned)?
+        {
             summary.rust_derived_repair = true;
         }
         Ok(summary)
@@ -236,7 +234,8 @@ impl LanguageRuntime for RustRuntime {
         planned: &[String],
         witness: &ExecutionWitness,
     ) -> SelectorExecutionSummary {
-        rust_summary_from_witness_statuses(request, planned, witness)
+        let planned = rust_witness_overlap(planned, witness);
+        rust_summary_from_witness_statuses(request, &planned, witness)
     }
 
     fn selectors_for_time_gate(

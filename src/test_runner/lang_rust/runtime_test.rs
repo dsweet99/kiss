@@ -311,3 +311,90 @@ fn time_gate_report_ids(ignore: &[String]) -> Result<Vec<String>, String> {
     };
     rt.selectors_for_time_gate(&req, &["tests::case".into()])
 }
+
+#[test]
+fn ensure_reuses_source_stable_incomplete_fail_witness_without_llvm_cov() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+    std::fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname='demo'\nversion='0.1.0'\nedition='2021'\n",
+    )
+    .unwrap();
+    std::fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
+    let current =
+        crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(tmp.path(), &[])
+            .expect("identity");
+    let drifted = kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity {
+        input_digest: current.input_digest.clone(),
+        generation_fingerprint: "watch-dead-gen".into(),
+        selection_context_fingerprint: "watch-dead-sel".into(),
+        ordinary_source_digests: current.ordinary_source_digests.clone(),
+    };
+    crate::test_runner::lang_rust::publish_rust_execution_witness(
+        crate::test_runner::lang_rust::PublishRustWitness {
+            repo_root: tmp.path(),
+            identity: &drifted,
+            scope: WitnessScope::Full,
+            selectors: &["pass".into(), "fail".into(), "unresolved".into()],
+            statuses: &[
+                WitnessStatus::Passed,
+                WitnessStatus::Failed,
+                WitnessStatus::Unresolved,
+            ],
+            durations_ns: &[Some(10), Some(20), None],
+            covered_lines: &BTreeMap::new(),
+            complete: false,
+            jobs: 1,
+        },
+    )
+    .expect("publish");
+    let req = EnsureRequest {
+        repo_root: tmp.path().to_path_buf(),
+        mode: AcceptMode::All,
+        lang_filter: Some(kiss::Language::Rust),
+        ignore: vec![],
+        force: false,
+        force_selectors: Vec::new(),
+        jobs: 1,
+        gate: kiss::GateConfig {
+            max_unit_test_seconds: vec![],
+            ..kiss::GateConfig::default()
+        },
+        extras: crate::test_runner::language_keyed::LanguageKeyed {
+            python: vec![],
+            rust: vec![],
+        },
+        planned: crate::test_runner::language_keyed::LanguageKeyed {
+            python: vec![],
+            rust: vec![
+                "pass".into(),
+                "fail".into(),
+                "unresolved".into(),
+                "extra".into(),
+            ],
+        },
+    };
+    let identity = RustRuntime.current_identity(&req).expect("current identity");
+    let witness = RustRuntime
+        .load_full_witness(tmp.path())
+        .expect("load witness");
+    assert!(
+        crate::test_runner::lang_rust::rust_live_miss_selectors(
+            &req,
+            &req.planned.rust,
+            &identity,
+            Some(&witness),
+        )
+        .is_empty(),
+        "source-stable rust must not miss-compile"
+    );
+    let result = crate::test_runner::ensure_runtime::ensure_languages_runtime(&req)
+        .expect("ensure");
+    let rust = result.rust().expect("rust result");
+    assert!(!rust.published, "must not publish a fresh llvm-cov batch");
+    assert_eq!(rust.summary.total, 2);
+    assert_eq!(rust.summary.cache_hits, 2);
+    assert_eq!(rust.summary.cache_misses, 0);
+    assert_eq!(rust.summary.failed, 1);
+}
