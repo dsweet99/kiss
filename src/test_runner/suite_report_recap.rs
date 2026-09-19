@@ -54,6 +54,12 @@ pub(super) fn language_recap_body(suite: &StoredSuite, lang: &str) -> String {
 }
 
 pub(super) fn fill_language_recap(suite: &StoredSuite, lang: &str) -> Option<StoredLangRecap> {
+    let has_counts = lang_index(lang).is_some_and(|i| {
+        suite.lang_passed[i] + suite.lang_failed[i] + suite.lang_timed_out[i] > 0
+    });
+    if !has_counts && !suite.named.iter().any(|row| row.lang == lang) {
+        return None;
+    }
     let output = language_recap_body(suite, lang);
     if output.is_empty() {
         return None;

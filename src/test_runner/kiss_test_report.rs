@@ -9,6 +9,25 @@ pub(crate) const EXIT_INTERRUPTED: i32 = 130;
 
 pub(crate) const KISS_TEST_ALLOW_REFRESH: bool = false;
 
+pub(crate) fn durable_lang_reply(
+    repo: &std::path::Path,
+    lang: kiss::Language,
+    ignore: &[String],
+    extra: &[String],
+    python_extra: &[String],
+) -> Option<(i32, String)> {
+    suite_report::durable_lang_reply(repo, lang, ignore, extra, python_extra)
+}
+
+pub(crate) fn durable_all_reply(
+    repo: &std::path::Path,
+    ignore: &[String],
+    extra: &[String],
+    python_extra: &[String],
+) -> Option<(i32, String)> {
+    suite_report::durable_all_reply(repo, ignore, extra, python_extra)
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct KissTestReport {
     pub exit_code: i32,

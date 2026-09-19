@@ -119,19 +119,27 @@ where
     );
     let mut machine = SettleMachine::new(live.settle);
     let mut queued: Option<QueuedCycle> = None;
-    let mut last_reply = LastReplies::default();
+    let mut last_reply = LastReplies::for_session(repo_root, &live);
     let mut suite = kiss::rust_llvm_cov_runner::WatchSuiteReport::default();
     let mut initial = true;
     loop {
         if !initial {
             clear_python_collect_memo();
         }
-        let reuse_suite = initial;
         initial = false;
-        if let Err(msg) = live.maybe_reload(repo_root, &mut machine, &mut filter) {
-            eprintln!("error: kiss test --watch: {msg}");
-            return 1;
-        }
+        let reuse_suite = match reuse_after_reload(
+            &mut live,
+            repo_root,
+            &mut machine,
+            &mut filter,
+            &mut last_reply,
+        ) {
+            Ok(reuse) => reuse,
+            Err(msg) => {
+                eprintln!("error: kiss test --watch: {msg}");
+                return 1;
+            }
+        };
         match run_one_watch_cycle(WatchCycleCtx {
             live: &mut live,
             queued: &mut queued,
@@ -183,6 +191,20 @@ where
             return code;
         }
     }
+}
+
+fn reuse_after_reload(
+    live: &mut WatchLiveConfig,
+    repo_root: &Path,
+    machine: &mut SettleMachine,
+    filter: &mut WatchPathFilter,
+    last_reply: &mut LastReplies,
+) -> Result<bool, String> {
+    let reloaded = live.maybe_reload(repo_root, machine, filter)?;
+    if reloaded {
+        last_reply.stamp_session(&live.ignore, &live.extra, &live.python_extra);
+    }
+    Ok(!reloaded)
 }
 
 #[cfg(test)]

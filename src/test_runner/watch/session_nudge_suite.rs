@@ -68,6 +68,8 @@ mod cov_tests;
 mod default_tests;
 #[path = "session_nudge_scenario_test.rs"]
 mod scenario_tests;
+#[path = "session_nudge_identity_test.rs"]
+mod identity_tests;
 #[path = "session_nudge_suite_report_test.rs"]
 mod suite_report_tests;
 #[path = "session_nudge_test.rs"]

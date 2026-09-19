@@ -86,6 +86,60 @@ fn persist_error(err: impl std::fmt::Display) {
     eprintln!("error: kiss test: failed to persist suite report: {err}");
 }
 
+pub(crate) fn durable_lang_reply(
+    repo: &Path,
+    lang: kiss::Language,
+    ignore: &[String],
+    extra: &[String],
+    python_extra: &[String],
+) -> Option<(i32, String)> {
+    let stored = matching_store(repo, ignore, extra, python_extra)?;
+    let recap = match lang {
+        kiss::Language::Python => stored.recaps.python,
+        kiss::Language::Rust => stored.recaps.rust,
+    }?;
+    Some((recap.exit_code, recap.output))
+}
+
+pub(crate) fn durable_all_reply(
+    repo: &Path,
+    ignore: &[String],
+    extra: &[String],
+    python_extra: &[String],
+) -> Option<(i32, String)> {
+    let stored = matching_store(repo, ignore, extra, python_extra)?;
+    let recap = stored.recaps.all?;
+    let counts = stored.suite.anonymous_passed
+        + stored.suite.anonymous_failed
+        + stored.suite.anonymous_timed_out
+        + stored.suite.lang_passed.iter().sum::<usize>()
+        + stored.suite.lang_failed.iter().sum::<usize>()
+        + stored.suite.lang_timed_out.iter().sum::<usize>()
+        + stored.suite.named.len();
+    if counts == 0 {
+        return None;
+    }
+    Some((stored.suite.exit_code, recap.output))
+}
+
+fn matching_store(
+    repo: &Path,
+    ignore: &[String],
+    extra: &[String],
+    python_extra: &[String],
+) -> Option<DurableSuiteRecap> {
+    let stored = read_store(repo)?;
+    identity_matches(
+        &stored,
+        &FilterIdentity {
+            ignore,
+            extra,
+            python_extra,
+        },
+    )
+    .then_some(stored)
+}
+
 pub(super) fn replay_suite_report(report: &KissTestReport) {
     let Some(output) = report.output.as_deref() else {
         return;
@@ -108,7 +162,22 @@ fn reuse_eligible(args: &RunTestCmdArgs<'_>) -> bool {
 }
 
 fn persist_eligible(args: &RunTestCmdArgs<'_>, report: &KissTestReport) -> bool {
-    matches!(args.invocation, TestInvocation::All) && !args.dry_run && !report.interrupted
+    matches!(args.invocation, TestInvocation::All)
+        && !args.dry_run
+        && !report.interrupted
+        && !report_vacuous(report)
+}
+
+fn report_vacuous(report: &KissTestReport) -> bool {
+    let totals = report
+        .totals
+        .as_ref()
+        .map_or(0, |item| item.passed + item.failed + item.timed_out);
+    totals == 0
+        && report.named.is_empty()
+        && report.lang_passed == [0, 0]
+        && report.lang_failed == [0, 0]
+        && report.lang_timed_out == [0, 0]
 }
 
 struct SourceKey {

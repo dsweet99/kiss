@@ -177,6 +177,9 @@ fn store_cycle_replies(
     error: Option<String>,
     waiter: NudgeReplyMsg,
 ) {
+    if !last.matches_args(cycle_args) {
+        return;
+    }
     let target_scoped = !matches!(cycle_args.invocation, TestInvocation::All);
     if let Some(lang) = cycle_args.lang_filter {
         last.store(Some(lang), waiter);
@@ -203,11 +206,28 @@ fn store_full_suite_reply(
     exit_code: i32,
     error: Option<String>,
 ) {
-    let bilingual = NudgeReplyMsg {
-        exit_code: kiss::rust_llvm_cov_runner::merge_watch_exit(exit_code, suite.test_exit_code()),
-        pid: std::process::id(),
-        error,
-        output: nonempty_report(suite.format()),
+    let bilingual = if let Some((exit_code, output)) = crate::test_runner::durable_all_reply(
+        &last.repo,
+        &last.ignore,
+        &last.extra,
+        &last.python_extra,
+    ) {
+        NudgeReplyMsg {
+            exit_code,
+            pid: std::process::id(),
+            error,
+            output: Some(output),
+        }
+    } else {
+        NudgeReplyMsg {
+            exit_code: kiss::rust_llvm_cov_runner::merge_watch_exit(
+                exit_code,
+                suite.test_exit_code(),
+            ),
+            pid: std::process::id(),
+            error,
+            output: nonempty_report(suite.format()),
+        }
     };
     last.store(None, bilingual.clone());
     last.store_named_language_slices(suite, &bilingual);
