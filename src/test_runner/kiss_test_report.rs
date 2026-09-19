@@ -1,4 +1,4 @@
-use kiss::rust_llvm_cov_runner::WatchSuiteTotals;
+use kiss::rust_llvm_cov_runner::{WatchNamed, WatchSuiteTotals};
 
 use super::{RunTestCmdArgs, RunTestOnceOutcome, WatchCoverageResult};
 
@@ -9,7 +9,7 @@ pub(crate) const EXIT_INTERRUPTED: i32 = 130;
 
 pub(crate) const KISS_TEST_ALLOW_REFRESH: bool = false;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct KissTestReport {
     pub exit_code: i32,
     pub output: Option<String>,
@@ -17,6 +17,10 @@ pub(crate) struct KissTestReport {
     pub totals: Option<WatchSuiteTotals>,
     pub error: Option<String>,
     pub interrupted: bool,
+    pub named: Vec<WatchNamed>,
+    pub lang_passed: [usize; 2],
+    pub lang_failed: [usize; 2],
+    pub lang_timed_out: [usize; 2],
 }
 
 pub(crate) fn run_kiss_test_report<F, C>(
@@ -72,34 +76,42 @@ where
 }
 
 fn interrupted_report() -> KissTestReport {
-    let (lines, output, totals) = take_transcript();
-    KissTestReport {
-        exit_code: EXIT_INTERRUPTED,
-        output,
-        lines,
-        totals,
-        error: None,
-        interrupted: true,
-    }
+    report_from_taken(
+        EXIT_INTERRUPTED,
+        None,
+        true,
+        kiss::rust_llvm_cov_runner::take_watch_report_taken().unwrap_or_default(),
+    )
 }
 
 fn finish_report(exit_code: i32, error: Option<String>) -> KissTestReport {
-    let (lines, output, totals) = take_transcript();
+    report_from_taken(
+        exit_code,
+        error,
+        false,
+        kiss::rust_llvm_cov_runner::take_watch_report_taken().unwrap_or_default(),
+    )
+}
+
+fn report_from_taken(
+    exit_code: i32,
+    error: Option<String>,
+    interrupted: bool,
+    taken: kiss::rust_llvm_cov_runner::WatchReportTaken,
+) -> KissTestReport {
+    let output = kiss::rust_llvm_cov_runner::transcript_from_lines(&taken.lines);
     KissTestReport {
         exit_code,
         output,
-        lines,
-        totals,
+        lines: taken.lines,
+        totals: taken.totals,
         error,
-        interrupted: false,
+        interrupted,
+        named: taken.named,
+        lang_passed: taken.lang_passed,
+        lang_failed: taken.lang_failed,
+        lang_timed_out: taken.lang_timed_out,
     }
-}
-
-fn take_transcript() -> (Vec<String>, Option<String>, Option<WatchSuiteTotals>) {
-    let (lines, totals) =
-        kiss::rust_llvm_cov_runner::take_watch_report_parts().unwrap_or((Vec::new(), None));
-    let output = kiss::rust_llvm_cov_runner::transcript_from_lines(&lines);
-    (lines, output, totals)
 }
 
 pub(crate) fn clone_run_args<'a>(args: &RunTestCmdArgs<'a>) -> RunTestCmdArgs<'a> {

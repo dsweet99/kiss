@@ -6,7 +6,7 @@ use super::progress_watch_report::WatchSuiteTotals;
 mod merge;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum SuiteOutcome {
+pub enum SuiteOutcome {
     Pass,
     Fail,
     Timeout,

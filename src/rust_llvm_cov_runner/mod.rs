@@ -72,11 +72,14 @@ pub use execute_or_reuse::progress_prepared_hits::{
     emit_prepared_rust_cache_hits, install_prepared_rust_cache_hits_hook,
 };
 pub use execute_or_reuse::progress_watch_report::{
-    ProgressLanguageGuard, WatchSuiteTotals, begin_watch_report_capture, record_watch_suite_totals,
-    take_watch_report_capture, take_watch_report_lines, take_watch_report_parts,
+    ProgressLanguageGuard, WatchNamed, WatchNamedOutcome, WatchReportTaken, WatchSuiteTotals,
+    begin_watch_report_capture, record_watch_suite_totals, take_watch_report_capture,
+    take_watch_report_lines, take_watch_report_parts, take_watch_report_taken,
     transcript_from_lines,
 };
-pub use execute_or_reuse::progress_watch_suite::{WatchSuiteReport, merge_watch_exit};
+pub use execute_or_reuse::progress_watch_suite::{
+    SuiteOutcome, WatchSuiteReport, merge_watch_exit,
+};
 pub(crate) use execute_or_reuse::worker;
 #[cfg(test)]
 pub(crate) use execute_or_reuse::worker_cleanup_test;

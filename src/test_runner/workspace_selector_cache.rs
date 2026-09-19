@@ -99,6 +99,14 @@ fn identity_cache_name(
     format!("{stem}.{h:016x}.json")
 }
 
+pub(crate) fn workspace_lang_file_fingerprints(
+    repo_root: &Path,
+    ignore: &[String],
+) -> io::Result<(String, String)> {
+    let fps = workspace_lang_fingerprints(repo_root, ignore)?;
+    Ok((fps.python, fps.rust))
+}
+
 pub(super) fn workspace_lang_fingerprints(
     repo_root: &Path,
     ignore: &[String],

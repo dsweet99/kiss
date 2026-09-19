@@ -1,6 +1,10 @@
 use std::borrow::Cow;
 use std::cell::Cell;
+use std::collections::BTreeMap;
 use std::sync::{Mutex, OnceLock};
+
+#[path = "progress_watch_capture_lang.rs"]
+mod capture_lang;
 
 thread_local! {
     static PROGRESS_LANG: Cell<Option<crate::Language>> = const { Cell::new(None) };
@@ -30,9 +34,38 @@ pub struct WatchSuiteTotals {
     pub max_pass_label: String,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WatchNamedOutcome {
+    Pass,
+    Fail,
+    Timeout,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WatchNamed {
+    pub lang: crate::Language,
+    pub selector: String,
+    pub outcome: WatchNamedOutcome,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct WatchReportTaken {
+    pub lines: Vec<String>,
+    pub totals: Option<WatchSuiteTotals>,
+    pub named: Vec<WatchNamed>,
+    pub lang_passed: [usize; 2],
+    pub lang_failed: [usize; 2],
+    pub lang_timed_out: [usize; 2],
+}
+
+#[derive(Default)]
 struct WatchReportCapture {
     lines: Vec<String>,
     totals: Option<WatchSuiteTotals>,
+    named: BTreeMap<(crate::Language, String), WatchNamedOutcome>,
+    lang_passed: [usize; 2],
+    lang_failed: [usize; 2],
+    lang_timed_out: [usize; 2],
 }
 
 fn watch_report_slot() -> &'static Mutex<Option<WatchReportCapture>> {
@@ -47,10 +80,11 @@ fn lock_watch_report() -> std::sync::MutexGuard<'static, Option<WatchReportCaptu
 }
 
 pub fn begin_watch_report_capture() {
-    *lock_watch_report() = Some(WatchReportCapture {
-        lines: Vec::new(),
-        totals: None,
-    });
+    *lock_watch_report() = Some(WatchReportCapture::default());
+}
+
+fn progress_lang() -> Option<crate::Language> {
+    PROGRESS_LANG.get()
 }
 
 pub fn record_watch_suite_totals(totals: WatchSuiteTotals) {
@@ -60,10 +94,13 @@ pub fn record_watch_suite_totals(totals: WatchSuiteTotals) {
 }
 
 #[must_use]
+pub fn take_watch_report_taken() -> Option<WatchReportTaken> {
+    lock_watch_report().take().map(WatchReportCapture::into_taken)
+}
+
+#[must_use]
 pub fn take_watch_report_parts() -> Option<(Vec<String>, Option<WatchSuiteTotals>)> {
-    lock_watch_report()
-        .take()
-        .map(|capture| (capture.lines, capture.totals))
+    take_watch_report_taken().map(|taken| (taken.lines, taken.totals))
 }
 
 #[must_use]
@@ -83,8 +120,30 @@ pub(crate) fn record_watch_report_line(message: &str) {
     };
     if is_watch_report_line(message) {
         capture.lines.push(message.to_string());
+        capture_lang::apply(capture, message);
         if let Some(tag) = lang_collapsed_tag(message) {
             capture.lines.push(tag);
+        }
+    }
+}
+
+impl WatchReportCapture {
+    fn into_taken(self) -> WatchReportTaken {
+        WatchReportTaken {
+            lines: self.lines,
+            totals: self.totals,
+            named: self
+                .named
+                .into_iter()
+                .map(|((lang, selector), outcome)| WatchNamed {
+                    lang,
+                    selector,
+                    outcome,
+                })
+                .collect(),
+            lang_passed: self.lang_passed,
+            lang_failed: self.lang_failed,
+            lang_timed_out: self.lang_timed_out,
         }
     }
 }
@@ -111,6 +170,17 @@ fn lang_collapsed_tag(message: &str) -> Option<String> {
         "kiss test: lang_collapsed {} {label} {count}",
         lang.label()
     ))
+}
+
+pub(crate) fn strip_trailing_duration(body: &str) -> &str {
+    let Some(idx) = body.rfind(" (") else {
+        return body;
+    };
+    if body.ends_with(')') {
+        &body[..idx]
+    } else {
+        body
+    }
 }
 
 pub(crate) fn strip_ansi(message: &str) -> Cow<'_, str> {
@@ -270,5 +340,22 @@ mod tests {
         assert_eq!(totals.failed, 2);
         assert_eq!(totals.timed_out, 1);
         assert!(take_watch_report_parts().is_none());
+    }
+
+    #[test]
+    fn progress_lang_increments_named_and_collapsed() {
+        begin_watch_report_capture();
+        {
+            let _guard = ProgressLanguageGuard::enter(crate::Language::Python);
+            record_watch_report_line("PASS (cached): 2 selectors");
+            record_watch_report_line("FAIL: tests/a.py::t (0.01s)");
+        }
+        record_watch_report_line("PASS (cached): 9 selectors");
+        let taken = take_watch_report_taken().expect("taken");
+        assert_eq!(taken.lang_passed, [2, 0]);
+        assert_eq!(taken.lang_failed, [1, 0]);
+        assert_eq!(taken.named.len(), 1);
+        assert_eq!(taken.named[0].selector, "tests/a.py::t");
+        assert_eq!(taken.named[0].outcome, WatchNamedOutcome::Fail);
     }
 }

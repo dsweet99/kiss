@@ -23,6 +23,35 @@ fn live_all_args() -> RunTestCmdArgs<'static> {
     }
 }
 
+fn python_all_args() -> RunTestCmdArgs<'static> {
+    let mut args = live_all_args();
+    args.lang_filter = Some(kiss::Language::Python);
+    args
+}
+
+fn emit_bilingual_run() -> RunTestOnceOutcome {
+    crate::test_runner::emit_test_progress("kiss test: rslip prepared hits=2 misses=0");
+    crate::test_runner::emit_test_progress("kiss test: tests_remaining=2");
+    {
+        let _guard =
+            kiss::rust_llvm_cov_runner::ProgressLanguageGuard::enter(kiss::Language::Python);
+        crate::test_runner::emit_test_progress("PASS (cached): 2 selectors");
+    }
+    {
+        let _guard = kiss::rust_llvm_cov_runner::ProgressLanguageGuard::enter(kiss::Language::Rust);
+        crate::test_runner::emit_test_progress("PASS (cached): 3 selectors");
+    }
+    crate::test_runner::final_summary::print_final_test_summary(
+        &crate::test_runner::final_summary::FinalTestSummary {
+            passed: 5,
+            failed: 0,
+            ..crate::test_runner::final_summary::FinalTestSummary::default()
+        },
+        std::time::Duration::from_millis(10),
+    );
+    RunTestOnceOutcome::Code(0)
+}
+
 fn emit_sample_run() -> RunTestOnceOutcome {
     crate::test_runner::emit_test_progress("kiss test: rslip prepared hits=2 misses=0");
     crate::test_runner::emit_test_progress("kiss test: tests_remaining=2");
@@ -286,6 +315,54 @@ fn gitignored_inc_does_not_rerun() {
         );
         assert_eq!(runs.load(Ordering::SeqCst), 1);
         assert_eq!(second.exit_code, 0);
+    });
+}
+
+#[test]
+fn unscoped_then_python_then_unscoped_skips_engine() {
+    let _cwd = crate::cwd_test_lock::lock();
+    let tmp = tempfile::tempdir().unwrap();
+    seed_repo(&tmp);
+    with_cwd(tmp.path(), || {
+        let runs = AtomicUsize::new(0);
+        let first = run_kiss_test_report(
+            live_all_args(),
+            |_a| {
+                runs.fetch_add(1, Ordering::SeqCst);
+                emit_bilingual_run()
+            },
+            |_a| WatchCoverageResult::ok(0),
+        );
+        assert_eq!(runs.load(Ordering::SeqCst), 1);
+        assert_eq!(first.exit_code, 0);
+        let python = run_kiss_test_report(
+            python_all_args(),
+            |_a| {
+                runs.fetch_add(1, Ordering::SeqCst);
+                panic!("lang-scoped oneshot must not re-enter the engine")
+            },
+            |_a| panic!("lang-scoped oneshot must not run coverage"),
+        );
+        assert_eq!(runs.load(Ordering::SeqCst), 1);
+        assert_eq!(python.exit_code, 0);
+        let python_out = python.output.unwrap_or_default();
+        assert!(python_out.contains("2 passed"), "{python_out}");
+        assert!(!python_out.contains("rslip prepared"), "{python_out}");
+        assert!(!python_out.contains("tests_remaining"), "{python_out}");
+        let third = run_kiss_test_report(
+            live_all_args(),
+            |_a| {
+                runs.fetch_add(1, Ordering::SeqCst);
+                panic!("source-stable oneshot must not re-enter the engine")
+            },
+            |_a| panic!("source-stable oneshot must not run coverage"),
+        );
+        assert_eq!(runs.load(Ordering::SeqCst), 1);
+        assert_eq!(third.exit_code, 0);
+        let replayed = third.output.unwrap_or_default();
+        assert!(replayed.contains("5 passed"), "{replayed}");
+        assert!(!replayed.contains("rslip prepared"), "{replayed}");
+        assert!(!replayed.contains("tests_remaining"), "{replayed}");
     });
 }
 

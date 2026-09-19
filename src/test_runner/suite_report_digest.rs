@@ -6,15 +6,28 @@ use ignore::gitignore::Gitignore;
 
 use crate::analyze_cache::fnv1a64;
 use crate::test_runner::workspace_selector_cache::{
-    should_skip_dir, watch_support_gitignore, workspace_files_fingerprint_for_cache,
+    should_skip_dir, watch_support_gitignore,
 };
 
 const SUPPORT_SEED: &[u8] = b"suite-report-watch-support-v3";
 
-pub(super) fn suite_source_digest(repo: &Path, ignore: &[String]) -> io::Result<String> {
-    let base = workspace_files_fingerprint_for_cache(repo, ignore)?;
+pub(super) struct SuiteDigests {
+    pub all: String,
+    pub python: String,
+    pub rust: String,
+}
+
+pub(super) fn suite_source_digests(repo: &Path, ignore: &[String]) -> io::Result<SuiteDigests> {
+    let (python, rust) =
+        crate::test_runner::workspace_selector_cache::workspace_lang_file_fingerprints(
+            repo, ignore,
+        )?;
     let support = watch_support_fingerprint(repo, ignore)?;
-    Ok(format!("{base}:{support}"))
+    Ok(SuiteDigests {
+        all: format!("{python}:{rust}:{support}"),
+        python: format!("{python}:{support}"),
+        rust: format!("{rust}:{support}"),
+    })
 }
 
 fn watch_support_fingerprint(repo: &Path, ignore: &[String]) -> io::Result<String> {

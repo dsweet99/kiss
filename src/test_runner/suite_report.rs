@@ -1,45 +1,24 @@
-use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
-
 use crate::bin_cli::args::TestInvocation;
-use crate::test_runner::rust_coverage_index::{create_new_file, unique_suffix};
 use crate::test_runner::RunTestCmdArgs;
-use kiss::rust_llvm_cov_runner::{WatchSuiteReport, WatchSuiteTotals};
 
 use super::KissTestReport;
 
 #[path = "suite_report_digest.rs"]
 mod digest;
-use digest::suite_source_digest;
+#[path = "suite_report_store.rs"]
+mod store;
+#[path = "suite_report_recap.rs"]
+mod recap;
+#[path = "suite_report_apply.rs"]
+mod apply;
 
-const SCHEMA_VERSION: &str = "kiss-suite-report-v4";
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-struct StoredTotals {
-    passed: usize,
-    failed: usize,
-    timed_out: usize,
-    total_label: String,
-    max_pass_label: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-struct StoredSuiteReport {
-    schema_version: String,
-    source_digest: String,
-    lang: Option<String>,
-    ignore: Vec<String>,
-    extra: Vec<String>,
-    python_extra: Vec<String>,
-    exit_code: i32,
-    error: Option<String>,
-    output: String,
-    lines: Vec<String>,
-    totals: Option<StoredTotals>,
-}
+use apply::{apply_scoped, apply_unscoped, replay_all, replay_lang};
+use digest::suite_source_digests;
+use store::{
+    identity_matches, read_store, write_store, DurableSuiteRecap, FilterIdentity, SCHEMA_VERSION,
+};
 
 pub(super) fn load_fresh_suite_report(
     args: &RunTestCmdArgs<'_>,
@@ -50,10 +29,13 @@ pub(super) fn load_fresh_suite_report(
     }
     let (repo, key) = repo_and_key(args, repo_root)?;
     let stored = read_store(&repo)?;
-    if !key_matches(&stored, &key) {
+    if !identity_matches(&stored, &key.identity()) {
         return None;
     }
-    Some(report_from_stored(stored))
+    match key.lang.as_deref() {
+        None => replay_all(&stored, &key.digests.all),
+        Some(lang) => replay_lang(&stored, lang, key.lang_digest(lang)?),
+    }
 }
 
 pub(super) fn persist_suite_report(
@@ -68,24 +50,33 @@ pub(super) fn persist_suite_report(
         persist_error("cannot compute source key");
         return;
     };
-    let output = compact_recap(report);
-    if output.is_empty() {
-        persist_error("empty recap");
+    if let Some(existing) = read_store(&repo)
+        && existing.schema_version == SCHEMA_VERSION
+        && !identity_matches(&existing, &key.identity())
+    {
         return;
     }
-    let stored = StoredSuiteReport {
-        schema_version: SCHEMA_VERSION.to_string(),
-        source_digest: key.source_digest,
-        lang: key.lang,
-        ignore: key.ignore,
-        extra: key.extra,
-        python_extra: key.python_extra,
-        exit_code: report.exit_code,
-        error: report.error.clone(),
-        output,
-        lines: report.lines.clone(),
-        totals: report.totals.as_ref().map(stored_totals),
+    let mut stored = read_store(&repo)
+        .filter(|item| identity_matches(item, &key.identity()))
+        .unwrap_or_else(|| DurableSuiteRecap {
+            schema_version: SCHEMA_VERSION.to_string(),
+            ignore: key.ignore.clone(),
+            extra: key.extra.clone(),
+            python_extra: key.python_extra.clone(),
+            ..DurableSuiteRecap::default()
+        });
+    stored.schema_version = SCHEMA_VERSION.to_string();
+    stored.ignore = key.ignore.clone();
+    stored.extra = key.extra.clone();
+    stored.python_extra = key.python_extra.clone();
+    let result = match key.lang.as_deref() {
+        None => apply_unscoped(&mut stored, report, &key.digests),
+        Some(lang) => apply_scoped(&mut stored, report, lang, &key.digests),
     };
+    if let Err(err) = result {
+        persist_error(err);
+        return;
+    }
     if let Err(err) = write_store(&repo, &stored) {
         persist_error(err);
     }
@@ -121,11 +112,29 @@ fn persist_eligible(args: &RunTestCmdArgs<'_>, report: &KissTestReport) -> bool 
 }
 
 struct SourceKey {
-    source_digest: String,
+    digests: digest::SuiteDigests,
     lang: Option<String>,
     ignore: Vec<String>,
     extra: Vec<String>,
     python_extra: Vec<String>,
+}
+
+impl SourceKey {
+    fn identity(&self) -> FilterIdentity<'_> {
+        FilterIdentity {
+            ignore: &self.ignore,
+            extra: &self.extra,
+            python_extra: &self.python_extra,
+        }
+    }
+
+    fn lang_digest(&self, lang: &str) -> Option<&str> {
+        match lang {
+            "python" => Some(self.digests.python.as_str()),
+            "rust" => Some(self.digests.rust.as_str()),
+            _ => None,
+        }
+    }
 }
 
 fn repo_and_key(
@@ -139,89 +148,17 @@ fn repo_and_key(
             crate::test_git::require_git_repo_root(&cwd).ok()?
         }
     };
-    let source_digest = suite_source_digest(&repo, args.ignore).ok()?;
+    let digests = suite_source_digests(&repo, args.ignore).ok()?;
     Some((
         repo,
         SourceKey {
-            source_digest,
+            digests,
             lang: args.lang_filter.map(|lang| lang.label().to_string()),
             ignore: args.ignore.to_vec(),
             extra: args.extra.to_vec(),
             python_extra: args.python_extra.to_vec(),
         },
     ))
-}
-
-fn key_matches(stored: &StoredSuiteReport, key: &SourceKey) -> bool {
-    stored.schema_version == SCHEMA_VERSION
-        && stored.source_digest == key.source_digest
-        && stored.lang == key.lang
-        && stored.ignore == key.ignore
-        && stored.extra == key.extra
-        && stored.python_extra == key.python_extra
-}
-
-fn compact_recap(report: &KissTestReport) -> String {
-    let mut suite = WatchSuiteReport::default();
-    suite.merge_unscoped_lines(&report.lines);
-    if let Some(totals) = &report.totals {
-        suite.apply_totals(totals);
-    }
-    if report.exit_code == 0 {
-        suite.merge_lines(&["NO VIOLATIONS".into()]);
-    }
-    suite.format()
-}
-
-fn stored_totals(totals: &WatchSuiteTotals) -> StoredTotals {
-    StoredTotals {
-        passed: totals.passed,
-        failed: totals.failed,
-        timed_out: totals.timed_out,
-        total_label: totals.total_label.clone(),
-        max_pass_label: totals.max_pass_label.clone(),
-    }
-}
-
-fn report_from_stored(stored: StoredSuiteReport) -> KissTestReport {
-    KissTestReport {
-        exit_code: stored.exit_code,
-        output: Some(stored.output),
-        lines: stored.lines,
-        totals: stored.totals.map(|totals| WatchSuiteTotals {
-            passed: totals.passed,
-            failed: totals.failed,
-            timed_out: totals.timed_out,
-            total_label: totals.total_label,
-            max_pass_label: totals.max_pass_label,
-        }),
-        error: stored.error,
-        interrupted: false,
-    }
-}
-
-fn suite_report_path(repo_root: &Path) -> PathBuf {
-    repo_root.join(".kiss").join("suite_report.json")
-}
-
-fn read_store(repo_root: &Path) -> Option<StoredSuiteReport> {
-    let bytes = fs::read(suite_report_path(repo_root)).ok()?;
-    serde_json::from_slice(&bytes).ok()
-}
-
-fn write_store(repo_root: &Path, stored: &StoredSuiteReport) -> Result<(), String> {
-    let path = suite_report_path(repo_root);
-    let parent = path
-        .parent()
-        .ok_or_else(|| "error: kiss test: suite report path has no parent".to_string())?;
-    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    let tmp_path = parent.join(format!(".suite_report.{}.tmp", unique_suffix()));
-    let mut file = create_new_file(&tmp_path).map_err(|e| e.to_string())?;
-    serde_json::to_writer(&mut file, stored).map_err(|e| e.to_string())?;
-    file.write_all(b"\n").map_err(|e| e.to_string())?;
-    file.sync_all().map_err(|e| e.to_string())?;
-    drop(file);
-    fs::rename(tmp_path, path).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

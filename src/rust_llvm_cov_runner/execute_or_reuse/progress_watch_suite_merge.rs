@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use super::super::progress_watch_report::strip_ansi;
+use super::super::progress_watch_report::{strip_ansi, strip_trailing_duration};
 use super::{SuiteOutcome, WatchSuiteReport};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -365,15 +365,4 @@ fn parse_status_line(line: &str) -> Option<ParsedWatchLine> {
         selector: selector.to_string(),
         outcome,
     })
-}
-
-fn strip_trailing_duration(body: &str) -> &str {
-    let Some(idx) = body.rfind(" (") else {
-        return body;
-    };
-    if body.ends_with(')') {
-        &body[..idx]
-    } else {
-        body
-    }
 }
