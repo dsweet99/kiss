@@ -14,7 +14,7 @@ mod recap;
 #[path = "suite_report_apply.rs"]
 mod apply;
 
-use apply::{apply_scoped, apply_unscoped, replay_all, replay_lang};
+use apply::{apply_scoped, apply_unscoped, replay_all, replay_lang, scoped_report_has_lang};
 use digest::suite_source_digests;
 use store::{
     identity_matches, read_store, write_store, DurableSuiteRecap, FilterIdentity, SCHEMA_VERSION,
@@ -165,7 +165,11 @@ fn persist_eligible(args: &RunTestCmdArgs<'_>, report: &KissTestReport) -> bool 
     matches!(args.invocation, TestInvocation::All)
         && !args.dry_run
         && !report.interrupted
+        && !report.engine_aborted
         && !report_vacuous(report)
+        && args
+            .lang_filter
+            .is_none_or(|lang| scoped_report_has_lang(report, lang.label()))
 }
 
 fn report_vacuous(report: &KissTestReport) -> bool {

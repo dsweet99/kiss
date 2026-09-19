@@ -242,7 +242,8 @@ pub use kiss_profraw::{
 };
 pub use ordinary_source_snapshot::{
     OrdinarySourceInvalidation, classify_ordinary_source_delta, load_ordinary_source_line_hashes,
-    load_ordinary_source_snapshot, remap_covered_file_lines, write_ordinary_source_snapshot,
+    load_ordinary_source_snapshot, ordinary_source_digests_differ, remap_covered_file_lines,
+    write_ordinary_source_snapshot,
 };
 pub use plan::batch_plan_shim_const::TARGET_RUNNER_SHIM_SUBCOMMAND;
 pub use plan::execution_identity::{

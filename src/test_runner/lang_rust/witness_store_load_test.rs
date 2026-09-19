@@ -196,6 +196,42 @@ fn incomplete_publication_supersedes_older_complete_generation() {
 }
 
 #[test]
+fn covering_generation_still_loads_full_disk_witness_complement() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_minimal_repo(tmp.path());
+    write_body(
+        tmp.path(),
+        &disk_body("full", &["a", "b"], &["passed", "passed"]),
+    );
+    super::super::generation_publish::publish_current_witness_generation(
+        tmp.path(),
+        "rs:input:gen:sel",
+        &["a".into()],
+        &[WitnessStatus::Passed],
+        &[Some(3)],
+        &Default::default(),
+        super::super::generation_publish::WitnessGenerationState {
+            timing_context_digest: "timing",
+            complete: false,
+        },
+    )
+    .unwrap();
+    super::super::witness_memo::clear_published_witness_memo_for_tests();
+    let loaded = try_load_rust_execution_witness(tmp.path()).unwrap();
+    assert!(
+        loaded.selectors.iter().any(|s| s == "a"),
+        "covering generation selector must remain: {:?}",
+        loaded.selectors
+    );
+    assert!(
+        loaded.selectors.iter().any(|s| s == "b"),
+        "disk complement must survive a covering generation: {:?}",
+        loaded.selectors
+    );
+    assert_eq!(loaded.selectors.len(), 2);
+}
+
+#[test]
 fn broken_generation_pointer_does_not_fall_back_to_legacy_sidecar() {
     let tmp = tempfile::tempdir().unwrap();
     write_minimal_repo(tmp.path());

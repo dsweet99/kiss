@@ -101,12 +101,14 @@ pub(super) fn bilingual_recap(
     Ok(output)
 }
 
+pub(super) fn lang_has_work(suite: &StoredSuite, lang: &str) -> bool {
+    lang_index(lang).is_some_and(|i| {
+        suite.lang_passed[i] + suite.lang_failed[i] + suite.lang_timed_out[i] > 0
+    }) || suite.named.iter().any(|row| row.lang == lang)
+}
+
 pub(super) fn has_lang(suite: &StoredSuite, recap: Option<&StoredLangRecap>, lang: &str) -> bool {
-    recap.is_some()
-        || lang_index(lang).is_some_and(|i| {
-            suite.lang_passed[i] + suite.lang_failed[i] + suite.lang_timed_out[i] > 0
-        })
-        || suite.named.iter().any(|row| row.lang == lang)
+    recap.is_some() || lang_has_work(suite, lang)
 }
 
 pub(super) fn totals_from_suite(suite: &StoredSuite) -> WatchSuiteTotals {

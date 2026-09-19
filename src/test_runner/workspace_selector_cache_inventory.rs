@@ -160,6 +160,22 @@ fn hash_rel_list(seed: &[u8], repo_root: &Path, rels: &[String]) -> io::Result<S
     Ok(format!("{h:016x}"))
 }
 
+fn hash_rel_list_full(seed: &[u8], repo_root: &Path, rels: &[String]) -> io::Result<String> {
+    let mut h = fnv1a64(0xcbf2_9ce4_8422_2325, seed);
+    for rel in rels {
+        h = super::digest::hash_file_full_contents(h, rel, &repo_root.join(rel))?;
+    }
+    Ok(format!("{h:016x}"))
+}
+
+pub(crate) fn rust_full_source_fingerprint(
+    repo_root: &Path,
+    ignore: &[String],
+) -> io::Result<String> {
+    let rels = fresh::rust_source_rels(repo_root, ignore)?;
+    hash_rel_list_full(b"workspace-coverage-fp-v1-rs", repo_root, &rels)
+}
+
 pub(super) fn workspace_lang_fingerprints_git(
     repo_root: &Path,
     ignore: &[String],

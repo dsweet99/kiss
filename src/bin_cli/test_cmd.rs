@@ -8,7 +8,7 @@ use crate::bin_cli::args::TestInvocation;
 use crate::bin_cli::cov_cmd::{CovCommandArgs, run_cov_command_impl};
 use crate::test_runner::{
     RunTestCmdArgs, RunTestOnceOutcome, WatchCoverageParams, WatchCoverageResult,
-    KISS_TEST_ALLOW_REFRESH, run_kiss_test_report, run_test, run_test_watch,
+    KISS_TEST_ALLOW_REFRESH, run_kiss_test_report, run_test_once, run_test_watch,
 };
 
 pub struct TestCommandArgs<'a> {
@@ -45,7 +45,7 @@ pub(crate) fn set_client_result_override_for_test(value: Option<Result<Option<i3
 }
 
 pub fn run_test_command(args: TestCommandArgs<'_>) -> i32 {
-    run_test_command_with(args, run_test)
+    run_test_command_with_runner(args, run_test_once)
 }
 
 fn reject_test_universe_languages(args: &TestCommandArgs<'_>) -> Result<(), i32> {
@@ -59,9 +59,17 @@ fn reject_test_universe_languages(args: &TestCommandArgs<'_>) -> Result<(), i32>
     crate::bin_cli::util::reject_unconfigured_languages(&py_files, &rs_files, args.language_tables)
 }
 
+#[cfg(test)]
 pub(crate) fn run_test_command_with(
     args: TestCommandArgs<'_>,
     run_local: impl FnOnce(RunTestCmdArgs<'_>) -> i32,
+) -> i32 {
+    run_test_command_with_runner(args, |a| RunTestOnceOutcome::Code(run_local(a)))
+}
+
+fn run_test_command_with_runner(
+    args: TestCommandArgs<'_>,
+    run_local: impl FnOnce(RunTestCmdArgs<'_>) -> RunTestOnceOutcome,
 ) -> i32 {
     let python_extra_owned =
         kiss::effective_python_pytest_args(&args.test_cfg.pytest_plugins, args.extra);
@@ -129,18 +137,22 @@ fn run_watch_tests(args: &TestCommandArgs<'_>, run_args: RunTestCmdArgs<'_>) -> 
 fn run_dry_tests(
     args: &TestCommandArgs<'_>,
     run_args: RunTestCmdArgs<'_>,
-    run_local: impl FnOnce(RunTestCmdArgs<'_>) -> i32,
+    run_local: impl FnOnce(RunTestCmdArgs<'_>) -> RunTestOnceOutcome,
 ) -> i32 {
     if let Err(code) = reject_test_universe_languages(args) {
         return code;
     }
-    run_local(run_args)
+    match run_local(run_args) {
+        RunTestOnceOutcome::Code(code) => code,
+        RunTestOnceOutcome::Interrupted => 130,
+        RunTestOnceOutcome::EngineError(_) => 1,
+    }
 }
 
 fn run_local_tests_after_client(
     args: &TestCommandArgs<'_>,
     run_args: RunTestCmdArgs<'_>,
-    run_local: impl FnOnce(RunTestCmdArgs<'_>) -> i32,
+    run_local: impl FnOnce(RunTestCmdArgs<'_>) -> RunTestOnceOutcome,
 ) -> i32 {
     if let Err(code) = reject_unresolved_targets(args) {
         return code;
@@ -154,7 +166,7 @@ fn run_local_tests_after_client(
     let mut run_local = Some(run_local);
     let report = run_kiss_test_report(
         run_args,
-        |a| RunTestOnceOutcome::Code(run_local.take().expect("kiss test runner")(a)),
+        |a| run_local.take().expect("kiss test runner")(a),
         |_| coverage_after_kiss_test(args),
     );
     report.exit_code

@@ -36,6 +36,7 @@ pub(crate) struct KissTestReport {
     pub totals: Option<WatchSuiteTotals>,
     pub error: Option<String>,
     pub interrupted: bool,
+    pub engine_aborted: bool,
     pub named: Vec<WatchNamed>,
     pub lang_passed: [usize; 2],
     pub lang_failed: [usize; 2],
@@ -70,17 +71,20 @@ where
         return hit;
     }
     kiss::rust_llvm_cov_runner::begin_watch_report_capture();
-    let (exit_code, error, interrupted) = {
+    let (exit_code, error, interrupted, engine_aborted) = {
         let _defer = crate::test_runner::final_summary::RecapDeferGuard::enter();
         match run_tests(clone_run_args(&args)) {
-            RunTestOnceOutcome::Interrupted => (EXIT_INTERRUPTED, None, true),
-            RunTestOnceOutcome::Code(code) if code != 0 || args.dry_run => (code, None, false),
+            RunTestOnceOutcome::Interrupted => (EXIT_INTERRUPTED, None, true, false),
+            RunTestOnceOutcome::EngineError(msg) => (1, Some(msg), false, true),
+            RunTestOnceOutcome::Code(code) if code != 0 || args.dry_run => {
+                (code, None, false, false)
+            }
             RunTestOnceOutcome::Code(_) => {
                 let cov = run_cov(&args);
                 if cov.interrupted {
-                    (EXIT_INTERRUPTED, None, true)
+                    (EXIT_INTERRUPTED, None, true, false)
                 } else {
-                    (cov.exit_code, cov.error, false)
+                    (cov.exit_code, cov.error, false, false)
                 }
             }
         }
@@ -88,7 +92,7 @@ where
     if interrupted {
         interrupted_report()
     } else {
-        let report = finish_report(exit_code, error);
+        let report = finish_report(exit_code, error, engine_aborted);
         suite_report::persist_suite_report(&args, &report, repo_root);
         report
     }
@@ -103,13 +107,15 @@ fn interrupted_report() -> KissTestReport {
     )
 }
 
-fn finish_report(exit_code: i32, error: Option<String>) -> KissTestReport {
-    report_from_taken(
+fn finish_report(exit_code: i32, error: Option<String>, engine_aborted: bool) -> KissTestReport {
+    let mut report = report_from_taken(
         exit_code,
         error,
         false,
         kiss::rust_llvm_cov_runner::take_watch_report_taken().unwrap_or_default(),
-    )
+    );
+    report.engine_aborted = engine_aborted;
+    report
 }
 
 fn report_from_taken(
@@ -126,6 +132,7 @@ fn report_from_taken(
         totals: taken.totals,
         error,
         interrupted,
+        engine_aborted: false,
         named: taken.named,
         lang_passed: taken.lang_passed,
         lang_failed: taken.lang_failed,

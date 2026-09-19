@@ -363,6 +363,56 @@ fn rust_accept_under_fake_runs_zero_exports_and_delta_publish() {
     assert_eq!(observed.cargo_invocations, 0);
 }
 
+fn rust_covering_miss_recaps_witness_complement(mode: AcceptMode) {
+    let state = Rc::new(RefCell::new(FakeState {
+        witness: Some(ExecutionWitness {
+            language: "rust".into(),
+            scope: WitnessScope::Full,
+            identity_digest: "rs:old:g:s".into(),
+            selectors: vec!["a".into(), "b".into()],
+            statuses: vec![WitnessStatus::Passed, WitnessStatus::Passed],
+            durations_ns: vec![Some(1), Some(2)],
+            covered_lines: BTreeMap::new(),
+            complete: true,
+            generation_id: "g".into(),
+            raw_statuses: Vec::new(),
+        }),
+        identity: Some("rs:new:g:s".into()),
+        run_exit_code: 0,
+        ..Default::default()
+    }));
+    let runtime = FakeRuntime {
+        language: Language::Rust,
+        state: Rc::clone(&state),
+    };
+    let mut req = rust_request(vec!["a".into()]);
+    req.mode = mode;
+    let out = crate::test_runner::capture_stdout::capture_stdout(|| {
+        let result = ensure_runtime_cache(&req, &[&runtime]).expect("ensure");
+        let rust = result.by_language.rust.expect("rust result");
+        assert_eq!(
+            rust.summary.total, 2,
+            "covering miss of a must still recap witness b (mode {mode:?})"
+        );
+        assert_eq!(rust.summary.cache_hits, 1);
+    });
+    assert_eq!(state.borrow().run_calls, vec![vec!["a".to_string()]]);
+    assert!(
+        out.contains("cached"),
+        "unaffected rust witness hits must emit as cached:\n{out}"
+    );
+}
+
+#[test]
+fn rust_covering_subset_miss_recaps_witness_complement() {
+    rust_covering_miss_recaps_witness_complement(AcceptMode::Subset);
+}
+
+#[test]
+fn rust_covering_all_mode_subset_recaps_witness_complement() {
+    rust_covering_miss_recaps_witness_complement(AcceptMode::All);
+}
+
 #[test]
 fn rust_miss_emits_rust_identity_before_pass() {
     let state = Rc::new(RefCell::new(FakeState::default()));

@@ -15,7 +15,9 @@ thread_local! {
 
 pub(crate) fn llvm_cov_nextest_process_cap() -> usize {
     let cfg = crate::test_section_config::TestSectionConfig::load();
-    crate::rust_llvm_cov_runner::effective_coverage_build_jobs(cfg.num_jobs)
+    let compile_width = crate::rust_llvm_cov_runner::effective_coverage_build_jobs(cfg.num_jobs);
+    compile_width
+        .saturating_add(compile_width)
         + cfg.num_jobs_llvm_cov
         + LLVM_COV_PROCESS_SLACK
 }
@@ -158,8 +160,22 @@ mod tests {
         let compile_width = crate::rust_llvm_cov_runner::effective_coverage_build_jobs(48);
         assert_eq!(
             llvm_cov_nextest_process_cap(),
-            compile_width + 3 + 16
+            compile_width.saturating_add(compile_width) + 3 + 16
         );
         assert!(compile_width >= 48);
+    }
+
+    #[test]
+    fn process_budget_allows_lingering_compile_wrappers_above_one_width() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(tmp.path(), "[test]\nnum_jobs = 48\nnum_jobs_llvm_cov = 3\n").unwrap();
+        let _guard = crate::config::ConfigPathOverrideGuard::enter(Some(tmp.path()));
+        let compile_width = crate::rust_llvm_cov_runner::effective_coverage_build_jobs(48);
+        let one_width_cap = compile_width + 3 + 16;
+        let live = one_width_cap + 13;
+        let _live = ProcessCountOverrideGuard::enter(Some(live));
+        check_llvm_cov_nextest_budget().expect(
+            "covering rustc wrappers plus lingering compile processes must fit the budget",
+        );
     }
 }

@@ -95,12 +95,12 @@ fn load_ordinary_source_snapshot_file(
         .then_some(parsed)
 }
 
-pub fn classify_ordinary_source_delta(
+fn stored_ordinary_source_digests(
     cache_root: &Path,
     source_root: &Path,
     identity: &RustCoverageBatchIdentity,
-) -> OrdinarySourceInvalidation {
-    let stored = stored_ordinary_source_digests_from_manifest(cache_root, identity)
+) -> Option<BTreeMap<String, String>> {
+    stored_ordinary_source_digests_from_manifest(cache_root, identity)
         .or_else(|| {
             crate::rust_llvm_cov_runner::load_current_population_state(
                 cache_root,
@@ -110,8 +110,24 @@ pub fn classify_ordinary_source_delta(
             )
             .map(|state| state.ordinary_source_digests)
         })
-        .or_else(|| load_ordinary_source_snapshot(cache_root, &identity.generation_fingerprint));
-    let Some(stored) = stored else {
+        .or_else(|| load_ordinary_source_snapshot(cache_root, &identity.generation_fingerprint))
+}
+
+pub fn ordinary_source_digests_differ(
+    cache_root: &Path,
+    source_root: &Path,
+    identity: &RustCoverageBatchIdentity,
+) -> bool {
+    stored_ordinary_source_digests(cache_root, source_root, identity)
+        .is_some_and(|stored| stored != identity.ordinary_source_digests)
+}
+
+pub fn classify_ordinary_source_delta(
+    cache_root: &Path,
+    source_root: &Path,
+    identity: &RustCoverageBatchIdentity,
+) -> OrdinarySourceInvalidation {
+    let Some(stored) = stored_ordinary_source_digests(cache_root, source_root, identity) else {
         return OrdinarySourceInvalidation::All;
     };
     if stored == identity.ordinary_source_digests {

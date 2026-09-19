@@ -20,6 +20,12 @@ use crate::test_runner::selector_ids::report_string_for_logical_string;
 
 #[path = "witness_store_persist.rs"]
 mod persist;
+#[path = "witness_store_load.rs"]
+mod load;
+
+pub(crate) use load::try_load_rust_execution_witness;
+#[cfg(test)]
+pub(super) use load::load_witness_from_disk;
 
 const SCHEMA_VERSION: &str = "kiss-rust-execution-witness-v1";
 
@@ -167,89 +173,6 @@ pub(crate) fn prune_removed_rust_witness_selectors(
     }
     crate::test_runner::lang_iface::prune_witness_to_known_selectors(witness, &keep);
     Ok(())
-}
-
-pub(crate) fn try_load_rust_execution_witness(
-    repo_root: &Path,
-) -> Result<ExecutionWitness, String> {
-    let cache_root = rust_coverage_cache_root(repo_root);
-    let memo_path = witness_path(repo_root);
-    if let Some(mut witness) = super::witness_memo::memo_witness(repo_root, &memo_path) {
-        prune_removed_rust_witness_selectors(repo_root, &mut witness)?;
-        return Ok(witness);
-    }
-    if crate::test_runner::execution_generation::read_pointer(&cache_root)?.is_some() {
-        let mut witness = super::generation_publish::load_full_generation_witness(repo_root)?;
-        super::witness_memo::stash_published_witness(repo_root, &memo_path, witness.clone());
-        prune_removed_rust_witness_selectors(repo_root, &mut witness)?;
-        return Ok(witness);
-    }
-    load_witness_from_disk(repo_root)
-}
-
-fn load_witness_from_disk(repo_root: &Path) -> Result<ExecutionWitness, String> {
-    let path = witness_path(repo_root);
-    let bytes = fs::read(&path).map_err(|e| {
-        format!(
-            "error: kiss: failed to read rust execution witness {}: {e}",
-            path.display()
-        )
-    })?;
-    let disk: OnDiskRustWitness = serde_json::from_slice(&bytes).map_err(|e| {
-        format!(
-            "error: kiss: failed to parse rust execution witness {}: {e}",
-            path.display()
-        )
-    })?;
-    if disk.schema_version != SCHEMA_VERSION {
-        return Err(format!(
-            "error: kiss: unsupported rust execution witness schema {}",
-            disk.schema_version
-        ));
-    }
-    let expected = content_digest(&OnDiskRustWitness {
-        content_sha256: String::new(),
-        ..disk.clone()
-    })?;
-    if disk.content_sha256 != expected {
-        return Err("error: kiss: rust execution witness checksum mismatch".into());
-    }
-    if disk.selectors.len() != disk.statuses.len()
-        || disk.selectors.len() != disk.durations_ns.len()
-    {
-        return Err("error: kiss: rust execution witness shape mismatch".into());
-    }
-    let scope = match disk.scope.as_str() {
-        "full" => WitnessScope::Full,
-        "subset" => WitnessScope::Subset,
-        other => {
-            return Err(format!(
-                "error: kiss: unknown rust execution witness scope {other}"
-            ));
-        }
-    };
-    let mut witness = ExecutionWitness {
-        language: "rust".into(),
-        scope,
-        identity_digest: disk.identity_digest,
-        selectors: disk.selectors,
-        statuses: disk
-            .statuses
-            .iter()
-            .map(|s| WitnessStatus::parse(s))
-            .collect(),
-        durations_ns: disk.durations_ns,
-        covered_lines: disk.covered_lines,
-        complete: disk.complete,
-        generation_id: disk.generation_id,
-        raw_statuses: disk
-            .statuses
-            .iter()
-            .map(|s| WitnessStatus::parse(s))
-            .collect(),
-    };
-    prune_removed_rust_witness_selectors(repo_root, &mut witness)?;
-    Ok(witness)
 }
 
 pub(crate) fn rust_miss_selectors(

@@ -106,12 +106,15 @@ pub struct RunTestCmdArgs<'a> {
 pub enum RunTestOnceOutcome {
     Code(i32),
     Interrupted,
+    EngineError(String),
 }
 
+#[cfg(test)]
 pub fn run_test(a: RunTestCmdArgs<'_>) -> i32 {
     match run_test_once(a) {
         RunTestOnceOutcome::Code(code) => code,
         RunTestOnceOutcome::Interrupted => 130,
+        RunTestOnceOutcome::EngineError(_) => 1,
     }
 }
 
@@ -146,7 +149,7 @@ pub(crate) fn run_test_once(a: RunTestCmdArgs<'_>) -> RunTestOnceOutcome {
                 return RunTestOnceOutcome::Interrupted;
             }
             eprintln!("{e}");
-            RunTestOnceOutcome::Code(1)
+            RunTestOnceOutcome::EngineError(e)
         }
     }
 }

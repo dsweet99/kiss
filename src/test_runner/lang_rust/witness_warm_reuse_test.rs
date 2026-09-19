@@ -66,6 +66,49 @@ fn rust_warm_reuses_witness_when_generation_drifts() {
 }
 
 #[test]
+fn rust_warm_misses_when_ordinary_source_bytes_change() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_minimal_repo(tmp.path());
+    let before = crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(
+        tmp.path(),
+        &[],
+    )
+    .unwrap();
+    let cache_root = crate::test_runner::rust_coverage_index::rust_coverage_cache_root(tmp.path());
+    kiss::rust_llvm_cov_runner::write_ordinary_source_snapshot(
+        &cache_root,
+        tmp.path(),
+        &before,
+    )
+    .unwrap();
+    publish_ab(tmp.path(), &before, true);
+    std::fs::write(tmp.path().join("src").join("lib.rs"), "pub fn y() {}\n").unwrap();
+    kiss::rust_llvm_cov_runner::refresh_identity_memo();
+    let after = crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(
+        tmp.path(),
+        &[],
+    )
+    .unwrap();
+    assert_eq!(
+        before.input_digest, after.input_digest,
+        "ordinary source bytes must not change input_digest"
+    );
+    assert_ne!(
+        before.ordinary_source_digests, after.ordinary_source_digests,
+        "ordinary source bytes must change file digests"
+    );
+    match rust_warm_or_miss_selectors(
+        tmp.path(),
+        &["a".into(), "b".into()],
+        &after,
+        &kiss::GateConfig::default(),
+    ) {
+        RustWarmDecision::Miss | RustWarmDecision::RunMisses(_) => {}
+        other => panic!("ordinary rust source edit must not stay warm, got {other:?}"),
+    }
+}
+
+#[test]
 fn rust_warm_misses_when_source_digest_changes() {
     let tmp = tempfile::tempdir().unwrap();
     write_minimal_repo(tmp.path());

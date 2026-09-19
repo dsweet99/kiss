@@ -281,6 +281,13 @@ pub(super) fn hash_file_contents(
     Ok(fnv1a64(acc, &digest.to_le_bytes()))
 }
 
+pub(super) fn hash_file_full_contents(h: u64, rel: &str, path: &Path) -> io::Result<u64> {
+    let bytes = fs::read(path)?;
+    let digest = fnv1a64(0xcbf2_9ce4_8422_2325, &bytes);
+    let acc = fnv1a64(h, rel.as_bytes());
+    Ok(fnv1a64(acc, &digest.to_le_bytes()))
+}
+
 pub(super) fn flush_persisted_digests(repo_root: &Path) {
     let key = repo_root.to_path_buf();
     let Some(files) = disk_maps()

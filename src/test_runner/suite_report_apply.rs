@@ -2,8 +2,8 @@ use kiss::rust_llvm_cov_runner::{WatchNamed, WatchNamedOutcome};
 
 use super::digest::SuiteDigests;
 use super::recap::{
-    bilingual_recap, fill_language_recap, has_lang, language_recap_body, language_recap_exit,
-    lang_index, problem_sig, scoped_suite_exit, totals_from_suite,
+    bilingual_recap, fill_language_recap, has_lang, lang_has_work, language_recap_body,
+    language_recap_exit, lang_index, problem_sig, scoped_suite_exit, totals_from_suite,
 };
 use super::store::{DurableSuiteRecap, StoredLangRecap, StoredNamed, StoredRecap, StoredSuite};
 use super::KissTestReport;
@@ -17,19 +17,46 @@ pub(super) fn apply_unscoped(
     stored.digest_python = digests.python.clone();
     stored.digest_rust = digests.rust.clone();
     stored.suite.named = live_named(&report.named);
-    stored.suite.lang_passed = report.lang_passed;
-    stored.suite.lang_failed = report.lang_failed;
-    stored.suite.lang_timed_out = report.lang_timed_out;
-    let output = bilingual_recap(
-        &mut stored.suite,
-        report.totals.as_ref(),
-        report.exit_code,
-        false,
-    )?;
+    let kept_stored_lang = keep_unattributed_lang_counts(stored, report);
+    let live_totals = if kept_stored_lang {
+        None
+    } else {
+        report.totals.as_ref()
+    };
+    let output = bilingual_recap(&mut stored.suite, live_totals, report.exit_code, false)?;
     stored.recaps.all = Some(StoredRecap { output });
     stored.recaps.python = fill_language_recap(&stored.suite, "python");
     stored.recaps.rust = fill_language_recap(&stored.suite, "rust");
     Ok(())
+}
+
+fn keep_unattributed_lang_counts(stored: &mut DurableSuiteRecap, report: &KissTestReport) -> bool {
+    let mut lang_passed = report.lang_passed;
+    let mut lang_failed = report.lang_failed;
+    let mut lang_timed_out = report.lang_timed_out;
+    let mut kept = false;
+    for lang in ["python", "rust"] {
+        let Some(i) = lang_index(lang) else {
+            continue;
+        };
+        if scoped_report_has_lang(report, lang) || !lang_has_work(&stored.suite, lang) {
+            continue;
+        }
+        lang_passed[i] = stored.suite.lang_passed[i];
+        lang_failed[i] = stored.suite.lang_failed[i];
+        lang_timed_out[i] = stored.suite.lang_timed_out[i];
+        kept = true;
+    }
+    stored.suite.lang_passed = lang_passed;
+    stored.suite.lang_failed = lang_failed;
+    stored.suite.lang_timed_out = lang_timed_out;
+    kept
+}
+
+pub(super) fn scoped_report_has_lang(report: &KissTestReport, lang: &str) -> bool {
+    lang_index(lang).is_some_and(|i| {
+        report.lang_passed[i] + report.lang_failed[i] + report.lang_timed_out[i] > 0
+    }) || report.named.iter().any(|row| row.lang.label() == lang)
 }
 
 pub(super) fn apply_scoped(
@@ -38,6 +65,9 @@ pub(super) fn apply_scoped(
     lang: &str,
     digests: &SuiteDigests,
 ) -> Result<(), String> {
+    if !scoped_report_has_lang(report, lang) {
+        return Ok(());
+    }
     let old_sig = problem_sig(&stored.suite);
     let old_exit = stored.suite.exit_code;
     replace_lang_named(&mut stored.suite, lang, &report.named);
@@ -70,6 +100,9 @@ pub(super) fn replay_all(stored: &DurableSuiteRecap, digest_all: &str) -> Option
     if stored.digest_all != digest_all {
         return None;
     }
+    if vacuous_lang_recap(stored, "python") || vacuous_lang_recap(stored, "rust") {
+        return None;
+    }
     let output = match &stored.recaps.all {
         Some(recap) => recap.output.clone(),
         None => bilingual_recap(&mut stored.suite.clone(), None, stored.suite.exit_code, true).ok()?,
@@ -90,6 +123,9 @@ pub(super) fn replay_lang(
     digest: &str,
 ) -> Option<KissTestReport> {
     if stored_lang_digest(stored, lang)? != digest {
+        return None;
+    }
+    if vacuous_lang_recap(stored, lang) {
         return None;
     }
     let recap = stored_lang_recap(stored, lang);
@@ -153,6 +189,10 @@ fn set_lang_recap(stored: &mut DurableSuiteRecap, lang: &str, exit_code: i32, ou
 fn nonempty_body(suite: &StoredSuite, lang: &str) -> Option<String> {
     let output = language_recap_body(suite, lang);
     (!output.is_empty()).then_some(output)
+}
+
+fn vacuous_lang_recap(stored: &DurableSuiteRecap, lang: &str) -> bool {
+    stored_lang_recap(stored, lang).is_some() && !lang_has_work(&stored.suite, lang)
 }
 
 fn stored_lang_digest<'a>(stored: &'a DurableSuiteRecap, lang: &str) -> Option<&'a str> {

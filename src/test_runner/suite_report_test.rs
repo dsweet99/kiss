@@ -29,6 +29,12 @@ fn python_all_args() -> RunTestCmdArgs<'static> {
     args
 }
 
+fn rust_all_args() -> RunTestCmdArgs<'static> {
+    let mut args = live_all_args();
+    args.lang_filter = Some(kiss::Language::Rust);
+    args
+}
+
 fn emit_bilingual_run() -> RunTestOnceOutcome {
     crate::test_runner::emit_test_progress("kiss test: rslip prepared hits=2 misses=0");
     crate::test_runner::emit_test_progress("kiss test: tests_remaining=2");
@@ -131,6 +137,48 @@ fn source_edit_misses_and_reruns() {
             |_a| WatchCoverageResult::ok(0),
         );
         assert_eq!(runs.load(Ordering::SeqCst), 2);
+    });
+}
+
+#[test]
+fn rust_body_edit_misses_and_reruns() {
+    let _cwd = crate::cwd_test_lock::lock();
+    let tmp = tempfile::tempdir().unwrap();
+    seed_repo(&tmp);
+    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+    std::fs::write(
+        tmp.path().join("src/lib.rs"),
+        "pub fn add(a: i32, b: i32) -> i32 { a + b }\n",
+    )
+    .unwrap();
+    with_cwd(tmp.path(), || {
+        let runs = AtomicUsize::new(0);
+        let _ = run_kiss_test_report(
+            live_all_args(),
+            |_a| {
+                runs.fetch_add(1, Ordering::SeqCst);
+                emit_sample_run()
+            },
+            |_a| WatchCoverageResult::ok(0),
+        );
+        std::fs::write(
+            tmp.path().join("src/lib.rs"),
+            "pub fn add(a: i32, b: i32) -> i32 { a + b + 0 }\n",
+        )
+        .unwrap();
+        let _ = run_kiss_test_report(
+            live_all_args(),
+            |_a| {
+                runs.fetch_add(1, Ordering::SeqCst);
+                emit_sample_run()
+            },
+            |_a| WatchCoverageResult::ok(0),
+        );
+        assert_eq!(
+            runs.load(Ordering::SeqCst),
+            2,
+            "rust function-body edit must miss DurableSuiteRecap"
+        );
     });
 }
 
@@ -363,6 +411,203 @@ fn unscoped_then_python_then_unscoped_skips_engine() {
         assert!(replayed.contains("5 passed"), "{replayed}");
         assert!(!replayed.contains("rslip prepared"), "{replayed}");
         assert!(!replayed.contains("tests_remaining"), "{replayed}");
+    });
+}
+
+fn emit_python_only_covering_miss() -> RunTestOnceOutcome {
+    crate::test_runner::emit_test_progress("kiss test: rslip prepared hits=2 misses=0");
+    {
+        let _guard =
+            kiss::rust_llvm_cov_runner::ProgressLanguageGuard::enter(kiss::Language::Python);
+        crate::test_runner::emit_test_progress("PASS (cached): 2 selectors");
+    }
+    crate::test_runner::final_summary::print_final_test_summary(
+        &crate::test_runner::final_summary::FinalTestSummary {
+            passed: 2,
+            failed: 0,
+            ..crate::test_runner::final_summary::FinalTestSummary::default()
+        },
+        std::time::Duration::from_millis(10),
+    );
+    RunTestOnceOutcome::Code(0)
+}
+
+fn emit_covering_abort() -> RunTestOnceOutcome {
+    crate::test_runner::emit_test_progress("kiss test: rslip prepared hits=2 misses=0");
+    {
+        let _guard =
+            kiss::rust_llvm_cov_runner::ProgressLanguageGuard::enter(kiss::Language::Python);
+        crate::test_runner::emit_test_progress("PASS (cached): 2 selectors");
+    }
+    {
+        let _guard = kiss::rust_llvm_cov_runner::ProgressLanguageGuard::enter(kiss::Language::Rust);
+        crate::test_runner::emit_test_progress("PASS (cached): 2 selectors");
+    }
+    crate::test_runner::final_summary::print_final_test_summary(
+        &crate::test_runner::final_summary::FinalTestSummary {
+            passed: 4,
+            failed: 0,
+            ..crate::test_runner::final_summary::FinalTestSummary::default()
+        },
+        std::time::Duration::from_millis(10),
+    );
+    RunTestOnceOutcome::EngineError(
+        "error: kiss test: rust llvm-cov failed: InvalidRequest(\"95 cargo-llvm-cov processes live (cap 84); aborting instrumented nextest\")".into(),
+    )
+}
+
+#[test]
+fn unscoped_covering_miss_without_rust_counts_does_not_wipe_bilingual() {
+    let _cwd = crate::cwd_test_lock::lock();
+    let tmp = tempfile::tempdir().unwrap();
+    seed_repo(&tmp);
+    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+    std::fs::write(tmp.path().join("src/lib.rs"), "pub fn add(a: i32, b: i32) -> i32 { a + b }\n")
+        .unwrap();
+    with_cwd(tmp.path(), || {
+        let runs = AtomicUsize::new(0);
+        let first = run_kiss_test_report(
+            live_all_args(),
+            |_a| {
+                runs.fetch_add(1, Ordering::SeqCst);
+                emit_bilingual_run()
+            },
+            |_a| WatchCoverageResult::ok(0),
+        );
+        assert_eq!(runs.load(Ordering::SeqCst), 1);
+        assert_eq!(first.exit_code, 0);
+        std::fs::write(
+            tmp.path().join("src/lib.rs"),
+            "pub fn add(a: i32, b: i32) -> i32 { a + b }\n// covering-miss\n",
+        )
+        .unwrap();
+        let _ = run_kiss_test_report(
+            live_all_args(),
+            |_a| {
+                runs.fetch_add(1, Ordering::SeqCst);
+                emit_python_only_covering_miss()
+            },
+            |_a| WatchCoverageResult::ok(0),
+        );
+        let retry = run_kiss_test_report(
+            live_all_args(),
+            |_a| {
+                runs.fetch_add(1, Ordering::SeqCst);
+                panic!("unattributed rust covering miss must not replace the bilingual recap")
+            },
+            |_a| panic!("unattributed rust covering miss must not run coverage"),
+        );
+        assert_eq!(runs.load(Ordering::SeqCst), 2);
+        assert_eq!(retry.exit_code, 0);
+        let replayed = retry.output.unwrap_or_default();
+        assert!(
+            replayed.contains("5 passed"),
+            "bilingual rust counts must survive an unscoped covering miss with rust 0\n{replayed}"
+        );
+    });
+}
+
+#[test]
+fn rust_covering_abort_does_not_persist_partial_recap() {
+    let _cwd = crate::cwd_test_lock::lock();
+    let tmp = tempfile::tempdir().unwrap();
+    seed_repo(&tmp);
+    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+    std::fs::write(tmp.path().join("src/lib.rs"), "pub fn add(a: i32, b: i32) -> i32 { a + b }\n")
+        .unwrap();
+    with_cwd(tmp.path(), || {
+        let runs = AtomicUsize::new(0);
+        let first = run_kiss_test_report(
+            live_all_args(),
+            |_a| {
+                runs.fetch_add(1, Ordering::SeqCst);
+                emit_bilingual_run()
+            },
+            |_a| WatchCoverageResult::ok(0),
+        );
+        assert_eq!(runs.load(Ordering::SeqCst), 1);
+        assert_eq!(first.exit_code, 0);
+        std::fs::write(
+            tmp.path().join("src/lib.rs"),
+            "pub fn add(a: i32, b: i32) -> i32 { a + b }\n// covering-abort\n",
+        )
+        .unwrap();
+        let abort = run_kiss_test_report(
+            live_all_args(),
+            |_a| {
+                runs.fetch_add(1, Ordering::SeqCst);
+                emit_covering_abort()
+            },
+            |_a| WatchCoverageResult::ok(0),
+        );
+        assert_eq!(abort.exit_code, 1);
+        let retry = run_kiss_test_report(
+            live_all_args(),
+            |_a| {
+                runs.fetch_add(1, Ordering::SeqCst);
+                emit_bilingual_run()
+            },
+            |_a| WatchCoverageResult::ok(0),
+        );
+        assert_eq!(
+            runs.load(Ordering::SeqCst),
+            3,
+            "covering abort must not persist a recap for the edited rust digest"
+        );
+        assert_eq!(retry.exit_code, 0);
+        let replayed = retry.output.unwrap_or_default();
+        assert!(
+            replayed.contains("5 passed"),
+            "retry after covering abort must run the suite, not replay rust 2 / 4 passed\n{replayed}"
+        );
+    });
+}
+
+#[test]
+fn rust_scoped_unattributed_persist_does_not_wipe_bilingual() {
+    let _cwd = crate::cwd_test_lock::lock();
+    let tmp = tempfile::tempdir().unwrap();
+    seed_repo(&tmp);
+    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+    std::fs::write(tmp.path().join("src/lib.rs"), "pub fn add(a: i32, b: i32) -> i32 { a + b }\n")
+        .unwrap();
+    with_cwd(tmp.path(), || {
+        let runs = AtomicUsize::new(0);
+        let first = run_kiss_test_report(
+            live_all_args(),
+            |_a| {
+                runs.fetch_add(1, Ordering::SeqCst);
+                emit_bilingual_run()
+            },
+            |_a| WatchCoverageResult::ok(0),
+        );
+        assert_eq!(runs.load(Ordering::SeqCst), 1);
+        assert_eq!(first.exit_code, 0);
+        let mut rust_forced = rust_all_args();
+        rust_forced.force_rerun = true;
+        let _ = run_kiss_test_report(
+            rust_forced,
+            |_a| {
+                runs.fetch_add(1, Ordering::SeqCst);
+                emit_sample_run()
+            },
+            |_a| WatchCoverageResult::ok(0),
+        );
+        let third = run_kiss_test_report(
+            live_all_args(),
+            |_a| {
+                runs.fetch_add(1, Ordering::SeqCst);
+                panic!("unattributed rust persist must not replace the bilingual recap")
+            },
+            |_a| panic!("unattributed rust persist must not run coverage"),
+        );
+        assert_eq!(runs.load(Ordering::SeqCst), 2);
+        assert_eq!(third.exit_code, 0);
+        let replayed = third.output.unwrap_or_default();
+        assert!(
+            replayed.contains("5 passed"),
+            "bilingual rust counts must survive an unattributed rust-scoped persist\n{replayed}"
+        );
     });
 }
 

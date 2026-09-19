@@ -18,10 +18,13 @@ pub(super) struct SuiteDigests {
 }
 
 pub(super) fn suite_source_digests(repo: &Path, ignore: &[String]) -> io::Result<SuiteDigests> {
-    let (python, rust) =
+    let (python, _) =
         crate::test_runner::workspace_selector_cache::workspace_lang_file_fingerprints(
             repo, ignore,
         )?;
+    let rust = crate::test_runner::workspace_selector_cache::rust_full_source_fingerprint(
+        repo, ignore,
+    )?;
     let support = watch_support_fingerprint(repo, ignore)?;
     Ok(SuiteDigests {
         all: format!("{python}:{rust}:{support}"),

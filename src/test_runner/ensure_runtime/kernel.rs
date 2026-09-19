@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use crate::test_runner::lang_iface::{
     AcceptMode, EnsureRequest, EnsureRuntimeResult, LanguageEnsureResult, LanguageRuntime,
     OutcomeBatch, PublishBatch, all_misses_warm_skippable, miss_selectors_for_repair,
@@ -248,6 +250,29 @@ fn try_accept_or_warm_report(
     Ok(None)
 }
 
+fn cached_selectors_for_run(
+    language: Language,
+    planned: &[String],
+    misses: &[String],
+    witness: Option<&crate::test_runner::lang_iface::ExecutionWitness>,
+) -> Vec<String> {
+    let mut cached: BTreeSet<String> = planned
+        .iter()
+        .filter(|selector| !misses.iter().any(|miss| miss == *selector))
+        .cloned()
+        .collect();
+    if language == Language::Rust
+        && let Some(stored) = witness
+    {
+        for selector in &stored.selectors {
+            if !misses.iter().any(|miss| miss == selector) {
+                cached.insert(selector.clone());
+            }
+        }
+    }
+    cached.into_iter().collect()
+}
+
 fn run_misses_and_maybe_publish(
     request: &EnsureRequest,
     module: &dyn LanguageRuntime,
@@ -255,11 +280,12 @@ fn run_misses_and_maybe_publish(
     witness: Option<crate::test_runner::lang_iface::ExecutionWitness>,
     misses: &[String],
 ) -> Result<LanguageEnsureResult, String> {
-    let cached_selectors: Vec<String> = planned
-        .iter()
-        .filter(|s| !misses.contains(s))
-        .cloned()
-        .collect();
+    let cached_selectors = cached_selectors_for_run(
+        module.language(),
+        planned,
+        misses,
+        witness.as_ref(),
+    );
     if !cached_selectors.is_empty()
         && let Some(w) = witness.as_ref()
     {
@@ -285,14 +311,14 @@ fn run_misses_and_maybe_publish(
 
     module.publish_outcomes(request, &publish)?;
     Ok(LanguageEnsureResult {
-        summary: merge_accept_and_run(planned, witness.as_ref(), &batch),
+        summary: merge_accept_and_run(&cached_selectors, witness.as_ref(), &batch),
         published: true,
         generation_id: None,
     })
 }
 
 fn merge_accept_and_run(
-    planned: &[String],
+    cached_selectors: &[String],
     prior: Option<&crate::test_runner::lang_iface::ExecutionWitness>,
     batch: &OutcomeBatch,
 ) -> crate::test_runner::runners::SelectorExecutionSummary {
@@ -300,7 +326,7 @@ fn merge_accept_and_run(
     let Some(prior) = prior else {
         return summary;
     };
-    for selector in planned {
+    for selector in cached_selectors {
         if batch.selectors.contains(selector) {
             continue;
         }

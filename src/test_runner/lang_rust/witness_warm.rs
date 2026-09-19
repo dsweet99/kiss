@@ -4,6 +4,7 @@ use std::path::Path;
 use kiss::GateConfig;
 use kiss::rust_llvm_cov_runner::{
     OrdinarySourceInvalidation, RustCoverageBatchIdentity, classify_ordinary_source_delta,
+    ordinary_source_digests_differ,
 };
 
 use super::witness_store::{
@@ -72,6 +73,7 @@ fn rust_effective_source_invalidation(
     let mut invalidation = classify_ordinary_source_delta(&cache_root, repo_root, identity);
     if matches!(invalidation, OrdinarySourceInvalidation::All)
         && rust_witness_source_covers(repo_root, identity)
+        && !ordinary_source_digests_differ(&cache_root, repo_root, identity)
     {
         invalidation = OrdinarySourceInvalidation::None;
     }
