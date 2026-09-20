@@ -262,6 +262,23 @@ fn start_publishes_session_well_before_client_retry() {
 }
 
 #[test]
+fn handle_client_empty_hangup_is_not_an_error() {
+    let (client, server) = UnixStream::pair().unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+    drop(client);
+    let result = handle_client(server, tx);
+    assert_eq!(
+        result,
+        Ok(()),
+        "reclaim-style hangup must not be a control client error"
+    );
+    assert!(
+        rx.try_recv().is_err(),
+        "empty hangup must not enqueue a nudge"
+    );
+}
+
+#[test]
 fn reclaim_stale_watch_sockets_removes_dead_socks_keeps_live() {
     let _ = std::fs::create_dir_all(WATCH_SOCKET_TMP_DIR);
     let dead = std::path::PathBuf::from(format!(

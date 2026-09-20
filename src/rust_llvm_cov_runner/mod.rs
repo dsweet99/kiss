@@ -267,7 +267,7 @@ pub use subprocess_observer::{
 pub use worker::rust_cov_cache_tmp_parent;
 
 pub const CACHE_SCHEMA_VERSION: &str = "rust-llvm-cov-cache-v5";
-pub const BATCH_EXECUTION_POLICY_VERSION: &str = "rust-batch-execution-v3";
+pub const BATCH_EXECUTION_POLICY_VERSION: &str = "rust-batch-execution-v4";
 pub const CACHE_POLICY_SCHEMA_VERSION: &str = "kiss-test-cache-policy-v1";
 
 pub use llvm_cov_json::RustLineCoverage;

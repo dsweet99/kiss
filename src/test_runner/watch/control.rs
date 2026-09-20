@@ -372,7 +372,11 @@ fn accept_loop(listener: UnixListener, nudge_tx: Sender<NudgeRequest>, shutdown:
 }
 
 fn handle_client(mut stream: UnixStream, nudge_tx: Sender<NudgeRequest>) -> Result<(), String> {
-    let msg: NudgeRequestMsg = read_framed_json(&mut stream).map_err(|e| e.to_string())?;
+    let msg: NudgeRequestMsg = match read_framed_json(&mut stream) {
+        Ok(msg) => msg,
+        Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(()),
+        Err(e) => return Err(e.to_string()),
+    };
     crate::test_runner::emit_test_progress(&msg.progress_line());
     let (reply_tx, reply_rx) = mpsc::sync_channel::<NudgeReplyMsg>(1);
     nudge_tx

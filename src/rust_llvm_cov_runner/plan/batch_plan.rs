@@ -196,7 +196,7 @@ pub(crate) fn effective_coverage_environment(
         build_target_value.clone(),
     );
     env.insert("CARGO_LLVM_COV_BUILD_DIR".to_string(), build_target_value);
-    env.insert("CARGO_INCREMENTAL".to_string(), "0".to_string());
+    env.insert("CARGO_INCREMENTAL".to_string(), "1".to_string());
     let runner_map_path = super::batch_plan_nextest_config::runner_map_path_for_request(req);
     super::batch_plan_nextest_config::apply_target_runner_env(&mut env, req, &runner_map_path);
     env
