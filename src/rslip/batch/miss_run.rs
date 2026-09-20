@@ -27,6 +27,7 @@ pub(super) fn run_rslip_misses(
     out: &mut [Option<Result<RslipOutcome, RslipError>>],
     on_progress: &mut impl FnMut(RslipBatchProgress),
 ) {
+    on_progress(RslipBatchProgress::TestsRemaining { remaining });
     let groups = coalesce_rslip_miss_candidates(misses);
     let mut seen = slot_filled_mask(out);
     let groups = brief_lock_filter_rslip_miss_groups(groups, out);

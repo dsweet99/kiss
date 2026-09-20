@@ -20,6 +20,15 @@ fn python_runtime_language_dry_run_and_indexable() {
     );
     let root = PathBuf::from(".");
     let _ = rt.is_indexable_source(Path::new("app.py"), &root);
+    let src = include_str!("runtime.rs");
+    assert!(
+        src.contains("kiss test: Running python_generation_publish"),
+        "generation publish must announce Running before the work"
+    );
+    assert!(
+        src.contains("kiss test: Running selective_index_repair"),
+        "index repair must announce Running before the work"
+    );
 }
 
 #[test]

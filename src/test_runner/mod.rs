@@ -138,6 +138,7 @@ pub(crate) fn emit_stage_time(stage: &str, duration: std::time::Duration) {
 
 pub(crate) fn run_test_once(a: RunTestCmdArgs<'_>) -> RunTestOnceOutcome {
     crate::test_runner::runners::clear_python_collect_memo();
+    crate::test_runner::tests_remaining::reset_tests_remaining();
 
     let process_started = std::time::Instant::now();
     let _progress_watchdog = kiss::rust_llvm_cov_runner::ProgressWatchdog::start();

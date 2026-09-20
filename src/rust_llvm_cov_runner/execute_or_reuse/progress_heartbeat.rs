@@ -67,6 +67,23 @@ pub(crate) fn set_work_status(status: &str) {
 }
 
 pub(crate) fn note_work_status(message: &str) {
+    if let Some(rest) = message.strip_prefix("kiss test: tests_remaining=") {
+        if current_work_status().starts_with("Running ") {
+            return;
+        }
+        if rest == "0" {
+            set_work_status(DEFAULT_WORK_KIND);
+            return;
+        }
+        set_work_status("tests_remaining");
+        return;
+    }
+    if let Some(rest) = message.strip_prefix("kiss test: stage ")
+        && let Some(name) = rest.split_whitespace().next()
+    {
+        set_work_status(name);
+        return;
+    }
     if let Some(status) = work_status_from_message(message) {
         set_work_status(status);
     }
@@ -104,7 +121,6 @@ fn work_status_from_message(message: &str) -> Option<&str> {
         ("kiss test: refreshing", "refreshing coverage"),
         ("kiss test: waiting for", "waiting for coverage refresh"),
         ("kiss test: rslip", "rslip"),
-        ("kiss test: tests_remaining", "tests_remaining"),
     ];
     KINDS
         .iter()
@@ -206,10 +222,28 @@ mod tests {
         assert_eq!(super::current_work_status(), super::DEFAULT_WORK_KIND);
         super::note_work_status("kiss test: tests_remaining=3");
         assert_eq!(super::current_work_status(), "tests_remaining");
+        super::note_work_status("kiss test: tests_remaining=0");
+        assert_eq!(
+            super::current_work_status(),
+            super::DEFAULT_WORK_KIND,
+            "remaining=0 must not leave heartbeat on tests_remaining"
+        );
         super::note_work_status("kiss test: Running cargo");
         assert_eq!(super::current_work_status(), "Running cargo");
+        super::note_work_status("kiss test: tests_remaining=3");
+        assert_eq!(
+            super::current_work_status(),
+            "Running cargo",
+            "remaining must not overwrite an active Running status"
+        );
         super::note_work_status("FAIL: tests/b.py::test_b (0.01s)");
         assert_eq!(super::current_work_status(), "Running cargo");
+        super::note_work_status("kiss test: stage selective_index_repair 4919ms");
+        assert_eq!(
+            super::current_work_status(),
+            "selective_index_repair",
+            "stage lines must reclassify heartbeat"
+        );
         super::note_work_status("kiss test: Planning ...");
         assert_eq!(super::current_work_status(), "Planning");
         super::note_work_status("kiss test: rslip prepared hits=0 misses=1");

@@ -169,11 +169,10 @@ pub(super) fn install_live_rust_status_hook(
         &report_ids,
     );
     debug_assert_eq!(banned, banned_count);
-    if banned > 0 {
-        crate::test_runner::tests_remaining::emit_tests_remaining(
-            LIVE_REMAINING.load(Ordering::SeqCst),
-        );
-    }
+    crate::test_runner::tests_remaining::set_language_remaining(
+        kiss::Language::Rust,
+        LIVE_REMAINING.load(Ordering::SeqCst),
+    );
     Ok(())
 }
 
@@ -215,9 +214,8 @@ fn persist_zero_sla_rust_timeouts_before_batch(
 }
 
 pub(super) fn finish_live_rust_remaining() {
-    if LIVE_REMAINING.swap(0, Ordering::SeqCst) > 0 {
-        crate::test_runner::tests_remaining::emit_tests_remaining(0);
-    }
+    LIVE_REMAINING.store(0, Ordering::SeqCst);
+    crate::test_runner::tests_remaining::set_language_remaining(kiss::Language::Rust, 0);
 }
 
 struct LiveEmitState<'a> {
@@ -308,7 +306,10 @@ fn emit_prepared_cache_hit_statuses(
         LIVE_REMAINING.store(*state.remaining, Ordering::SeqCst);
     }
     if !outcomes.is_empty() {
-        crate::test_runner::tests_remaining::emit_tests_remaining(*state.remaining);
+        crate::test_runner::tests_remaining::set_language_remaining(
+            kiss::Language::Rust,
+            *state.remaining,
+        );
     }
 }
 
@@ -356,7 +357,10 @@ fn emit_one_live_status(
     maybe_record_last_status(state, logical, status);
     *state.remaining = state.remaining.saturating_sub(1);
     LIVE_REMAINING.store(*state.remaining, Ordering::SeqCst);
-    crate::test_runner::tests_remaining::emit_tests_remaining(*state.remaining);
+    crate::test_runner::tests_remaining::set_language_remaining(
+        kiss::Language::Rust,
+        *state.remaining,
+    );
 }
 
 fn kiss_id_for_libtest(report_ids: &BTreeMap<String, String>, name: &str) -> Option<String> {
@@ -441,12 +445,14 @@ mod live_status_test {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    fn begin_live_status_serial() -> MutexGuard<'static, ()> {
+    fn begin_live_status_serial() -> (std::sync::MutexGuard<'static, ()>, MutexGuard<'static, ()>) {
+        let remaining = crate::test_runner::tests_remaining::remaining_test_guard();
         let guard = live_status_serial_guard();
         kiss::rust_llvm_cov_runner::clear_live_rust_test_hook();
         clear_live_rust_witness();
         LIVE_REMAINING.store(0, Ordering::SeqCst);
-        guard
+        crate::test_runner::tests_remaining::reset_tests_remaining();
+        (remaining, guard)
     }
 
     #[allow(clippy::too_many_arguments)]

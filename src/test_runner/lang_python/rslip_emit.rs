@@ -26,7 +26,10 @@ pub(super) fn handle_rslip_batch_progress(
             emit_cached_hit_outcomes(&outcomes, gate);
         }
         RslipBatchProgress::TestsRemaining { remaining } => {
-            crate::test_runner::tests_remaining::emit_tests_remaining(remaining);
+            crate::test_runner::tests_remaining::set_language_remaining(
+                kiss::Language::Python,
+                remaining,
+            );
         }
     }
 }

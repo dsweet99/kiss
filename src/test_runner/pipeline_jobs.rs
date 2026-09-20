@@ -107,6 +107,12 @@ pub(super) fn spawn_language_jobs(
         rust: prefix.rust_may_work && a.lang_filter != Some(Language::Python),
     };
     let share = JobShare::new(a.jobs, spawn.python && spawn.rust);
+    if spawn.python {
+        crate::test_runner::tests_remaining::expect_language_remaining(Language::Python);
+    }
+    if spawn.rust {
+        crate::test_runner::tests_remaining::expect_language_remaining(Language::Rust);
+    }
     std::thread::scope(|scope| join_language_scope(scope, a, prefix, &share, spawn, slots))
 }
 
@@ -249,22 +255,26 @@ fn language_job(job: LanguageJob<'_>) -> Result<(), String> {
         Err(err) => return fail_language_job(language, first_error, err),
     };
     if has_recorded_error(first_error) {
+        crate::test_runner::tests_remaining::set_language_remaining(language, 0);
         return Ok(());
     }
     *planned_out
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(planned.clone());
     if a.dry_run || has_recorded_error(first_error) {
+        crate::test_runner::tests_remaining::set_language_remaining(language, 0);
         return Ok(());
     }
     invoke_execute_hook(language);
     if stub_language_execute() || !language_has_work(&planned, language) {
+        crate::test_runner::tests_remaining::set_language_remaining(language, 0);
         return Ok(());
     }
     let turn = share.acquire_execute(language);
     if let Err(err) = execute_planned(a, turn.jobs, language, &planned, outcome_out) {
         return fail_language_job(language, first_error, err);
     }
+    crate::test_runner::tests_remaining::set_language_remaining(language, 0);
     Ok(())
 }
 
@@ -273,6 +283,7 @@ fn fail_language_job(
     first_error: &Mutex<Option<String>>,
     err: String,
 ) -> Result<(), String> {
+    crate::test_runner::tests_remaining::set_language_remaining(language, 0);
     record_first_error(first_error, err.clone());
     cancel_peer(language);
     Err(err)

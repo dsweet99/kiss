@@ -131,6 +131,7 @@ impl LanguageRuntime for PythonRuntime {
             repo_relative_coverage_file(repo_root, &path.to_string_lossy()).is_some()
         };
         if let Some(universe) = batch.publication_universe.as_ref() {
+            crate::test_runner::emit_test_progress("kiss test: Running python_generation_publish");
             let started = std::time::Instant::now();
             let restamped = !request.force
                 && crate::test_runner::lang_python::generation::try_restamp_matching_pinned_universe(
@@ -155,6 +156,7 @@ impl LanguageRuntime for PythonRuntime {
             let started = std::time::Instant::now();
             let misses = &batch.summary.cache_miss_selectors;
             if !misses.is_empty() {
+                crate::test_runner::emit_test_progress("kiss test: Running selective_index_repair");
                 let deltas = selector_deltas_from_fresh_outcomes(
                     &request.repo_root,
                     misses,

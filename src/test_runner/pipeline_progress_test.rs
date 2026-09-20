@@ -32,6 +32,11 @@ fn spawn_language_jobs_honors_configured_jobs() {
     let share = include_str!("pipeline_job_share.rs");
     let src = include_str!("pipeline.rs");
     assert!(
+        jobs.contains("expect_language_remaining(Language::Python)")
+            && jobs.contains("expect_language_remaining(Language::Rust)"),
+        "spawned languages must be expected so remaining=0 waits for the peer"
+    );
+    assert!(
         jobs.contains("share.acquire_execute(language)"),
         "execute must use its fixed share without waiting for the peer language"
     );

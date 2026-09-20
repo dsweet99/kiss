@@ -442,6 +442,8 @@ fn print_rslip_outcome_accepts_all_status_cache_shapes() {
 #[cfg(unix)]
 #[test]
 fn rslip_selectors_stdout_streams_outcomes_and_tests_remaining() {
+    let _remaining = crate::test_runner::tests_remaining::remaining_test_guard();
+    crate::test_runner::tests_remaining::reset_tests_remaining();
     let tmp = tempfile::tempdir().unwrap();
     fs::write(tmp.path().join("app.py"), "x = 1\n").unwrap();
     fs::write(
@@ -542,6 +544,8 @@ def test_b():\n    assert True\n",
 
 #[test]
 fn rslip_progress_error_and_stderr_paths_are_covered() {
+    let _remaining = crate::test_runner::tests_remaining::remaining_test_guard();
+    crate::test_runner::tests_remaining::reset_tests_remaining();
     let gate = kiss::GateConfig::default();
     handle_rslip_batch_progress(
         RslipBatchProgress::Prepared {
