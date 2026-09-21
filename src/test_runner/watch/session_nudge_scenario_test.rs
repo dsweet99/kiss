@@ -6,7 +6,7 @@ use crate::bin_cli::args::TestInvocation;
 use crate::test_runner::RunTestOnceOutcome;
 use crate::test_runner::last_status::{python_last_status_identity, record_statuses};
 use crate::test_runner::test_mode_fixtures::init_git;
-use crate::test_runner::watch::control::{NudgeReplyMsg, NudgeRequestMsg};
+use crate::test_runner::watch::control::{NudgeInvocation, NudgeReplyMsg, NudgeRequestMsg};
 use crate::test_runner::watch::event_source::NormalizedWatchEvent;
 use kiss::rpytest_runner::TestStatus;
 use std::collections::VecDeque;
@@ -21,6 +21,23 @@ fn emit_full_suite() {
     kiss::rust_llvm_cov_runner::emit_progress("TIMEOUT: src/lib.rs::t_slow (0.01s)");
     kiss::rust_llvm_cov_runner::emit_progress(
         "✗ 1 passed · 1 failed · 1 timed out · 1s total · 0s max pass",
+    );
+}
+
+fn emit_bilingual_full() {
+    kiss::rust_llvm_cov_runner::emit_progress("PASS: tests/a.py::test_a (0.01s)");
+    kiss::rust_llvm_cov_runner::emit_progress("PASS: tests/b.py::test_b (0.01s)");
+    kiss::rust_llvm_cov_runner::emit_progress("PASS: src/lib.rs::t_ok (0.01s)");
+    kiss::rust_llvm_cov_runner::emit_progress("TIMEOUT: src/lib.rs::t_slow (0.01s)");
+    kiss::rust_llvm_cov_runner::emit_progress(
+        "✗ 3 passed · 0 failed · 1 timed out · 1s total · 0s max pass",
+    );
+}
+
+fn emit_one_pass(selector: &str) {
+    kiss::rust_llvm_cov_runner::emit_progress(&format!("PASS: {selector} (0.01s)"));
+    kiss::rust_llvm_cov_runner::emit_progress(
+        "✓ 1 passed · 0 failed · 0 timed out · 0.01s total · 0s max pass",
     );
 }
 
@@ -213,7 +230,7 @@ fn scenario_2_files_changed() {
     let (rx, sender) = nudge_after_cycles(
         Arc::clone(&tests),
         1,
-        vec![NudgeRequestMsg::default()],
+        vec![NudgeRequestMsg::default(), NudgeRequestMsg::default()],
     );
     let tests_run = Arc::clone(&tests);
     let mut steps = VecDeque::new();
@@ -260,17 +277,79 @@ fn scenario_2_files_changed() {
             && !out.contains("src/lib.rs::t_slow"),
         "oneshot must recap the post-edit cycle, not the first-cycle suite; out={out:?}"
     );
+    let later = replies[1].output.clone().unwrap_or_default();
+    assert!(
+        later.contains("src/lib.rs::t_slow") && later.contains("tests/b.py::test_b"),
+        "later idle must keep full-suite TIMEOUT/FAIL siblings; later={later:?}"
+    );
+    assert_eq!(
+        tests.load(Ordering::SeqCst),
+        2,
+        "later idle after a green incremental must not start a third cycle"
+    );
+}
+
+#[test]
+fn scenario_2_lang_then_bare_after_file_change() {
+    for lang in ["rust", "python"] {
+        let tmp = tempfile::tempdir().unwrap();
+        init_git(&tmp);
+        let file = commit_a_py(&tmp);
+        let tests = Arc::new(AtomicUsize::new(0));
+        let (rx, sender) = nudge_after_cycles(
+            Arc::clone(&tests),
+            1,
+            vec![
+                NudgeRequestMsg {
+                    lang: Some(lang.into()),
+                    ..Default::default()
+                },
+                NudgeRequestMsg::default(),
+            ],
+        );
+        let tests_run = Arc::clone(&tests);
+        let mut steps = VecDeque::new();
+        steps.push_back(Ok(vec![NormalizedWatchEvent::Paths(vec![file])]));
+        steps.extend(timeout_steps(16));
+        let mut src = NudgeScript { steps };
+        let code = run_watch_loop_with(
+            watch_args(),
+            Duration::from_secs(30),
+            tmp.path(),
+            &mut src,
+            Some(&rx),
+            move |_args| {
+                let n = tests_run.fetch_add(1, Ordering::SeqCst);
+                if n == 0 {
+                    emit_full_suite();
+                    return RunTestOnceOutcome::Code(1);
+                }
+                kiss::rust_llvm_cov_runner::emit_progress("PASS: tests/a.py::test_a (0.01s)");
+                kiss::rust_llvm_cov_runner::emit_progress(
+                    "✓ 1 passed · 0 failed · 0 timed out · 0.01s total · 0s max pass",
+                );
+                RunTestOnceOutcome::Code(0)
+            },
+            |_args| WatchCoverageResult::ok(0),
+        );
+        assert_eq!(code, 1, "lang={lang}");
+        assert_eq!(
+            tests.load(Ordering::SeqCst),
+            3,
+            "--lang {lang} after a file change must leave pending so bare kiss test starts a third cycle"
+        );
+        let later = sender.join().unwrap()[1].output.clone().unwrap_or_default();
+        assert!(
+            later.contains("tests/a.py::test_a"),
+            "bare oneshot after --lang {lang} plus pending must recap the unscoped incremental; later={later:?}"
+        );
+    }
 }
 
 #[test]
 fn scenario_3_target_while_watcher_on_full_suite() {
-    let tmp = tempfile::tempdir().unwrap();
-    init_git(&tmp);
-    commit_a_py(&tmp);
-    let tests = Arc::new(AtomicUsize::new(0));
-    let (rx, sender) = nudge_after_cycles(
-        Arc::clone(&tests),
-        1,
+    let (replies, cycles) = run_full_then_target_then_idle(
+        watch_args(),
         vec![
             NudgeRequestMsg {
                 targets: vec!["tests/a.py::test_a".into()],
@@ -278,37 +357,8 @@ fn scenario_3_target_while_watcher_on_full_suite() {
             },
             NudgeRequestMsg::default(),
         ],
+        "tests/a.py::test_a",
     );
-    let tests_run = Arc::clone(&tests);
-    let mut src = NudgeScript {
-        steps: timeout_steps(16),
-    };
-    let code = run_watch_loop_with(
-        watch_args(),
-        Duration::from_secs(3600),
-        tmp.path(),
-        &mut src,
-        Some(&rx),
-        move |_args| {
-            let n = tests_run.fetch_add(1, Ordering::SeqCst);
-            if n == 0 {
-                kiss::rust_llvm_cov_runner::emit_progress("PASS: tests/a.py::test_a (0.01s)");
-                kiss::rust_llvm_cov_runner::emit_progress("PASS: tests/b.py::test_b (0.01s)");
-                kiss::rust_llvm_cov_runner::emit_progress(
-                    "✓ 2 passed · 0 failed · 0 timed out · 1s total · 0s max pass",
-                );
-            } else {
-                kiss::rust_llvm_cov_runner::emit_progress("PASS: tests/a.py::test_a (0.01s)");
-                kiss::rust_llvm_cov_runner::emit_progress(
-                    "✓ 1 passed · 0 failed · 0 timed out · 0.01s total · 0s max pass",
-                );
-            }
-            RunTestOnceOutcome::Code(0)
-        },
-        |_args| WatchCoverageResult::ok(0),
-    );
-    let replies = sender.join().unwrap();
-    assert_eq!(code, 1);
     let targeted = replies[0].output.clone().unwrap_or_default();
     let idle = replies[1].output.clone().unwrap_or_default();
     assert!(
@@ -318,14 +368,270 @@ fn scenario_3_target_while_watcher_on_full_suite() {
         "TARGET recap must omit siblings; targeted={targeted:?}"
     );
     assert!(
-        idle.contains("2 passed") && idle.contains("tests/b.py::test_b"),
+        idle.contains("tests/b.py::test_b") && idle.contains("src/lib.rs::t_slow"),
         "later bare kiss test must keep the full-suite recap; idle={idle:?}"
     );
     assert_eq!(
-        tests.load(Ordering::SeqCst),
-        2,
-        "bare kiss test after TARGET must not start a third cycle"
+        cycles, 1,
+        "named TARGET must idle; bare kiss test must not start another cycle"
     );
+}
+
+fn run_full_then_target_then_idle(
+    watch: crate::test_runner::RunTestCmdArgs<'static>,
+    msgs: Vec<NudgeRequestMsg>,
+    target: &'static str,
+) -> (Vec<NudgeReplyMsg>, usize) {
+    let tmp = tempfile::tempdir().unwrap();
+    init_git(&tmp);
+    commit_a_py(&tmp);
+    let tests = Arc::new(AtomicUsize::new(0));
+    let (rx, sender) = nudge_after_cycles(Arc::clone(&tests), 1, msgs);
+    let tests_run = Arc::clone(&tests);
+    let mut src = NudgeScript {
+        steps: timeout_steps(16),
+    };
+    let code = run_watch_loop_with(
+        watch,
+        Duration::from_secs(3600),
+        tmp.path(),
+        &mut src,
+        Some(&rx),
+        move |_args| {
+            let n = tests_run.fetch_add(1, Ordering::SeqCst);
+            if n == 0 {
+                emit_bilingual_full();
+            } else {
+                emit_one_pass(target);
+            }
+            RunTestOnceOutcome::Code(0)
+        },
+        |_args| WatchCoverageResult::ok(0),
+    );
+    assert_eq!(code, 1);
+    let replies = sender.join().unwrap();
+    (replies, tests.load(Ordering::SeqCst))
+}
+
+#[test]
+fn scenario_3_lang_target_keeps_python_idle_slice() {
+    let (replies, cycles) = run_full_then_target_then_idle(
+        watch_args(),
+        vec![
+            NudgeRequestMsg {
+                targets: vec!["tests/a.py::test_a".into()],
+                lang: Some("python".into()),
+                ..Default::default()
+            },
+            NudgeRequestMsg {
+                lang: Some("python".into()),
+                ..Default::default()
+            },
+            NudgeRequestMsg::default(),
+        ],
+        "tests/a.py::test_a",
+    );
+    let targeted = replies[0].output.clone().unwrap_or_default();
+    let lang_idle = replies[1].output.clone().unwrap_or_default();
+    let bare = replies[2].output.clone().unwrap_or_default();
+    assert!(
+        targeted.contains("1 passed")
+            && !targeted.contains("2 passed")
+            && !targeted.contains("tests/b.py::test_b"),
+        "TARGET recap must omit siblings; targeted={targeted:?}"
+    );
+    assert!(
+        lang_idle.contains("tests/b.py::test_b") && lang_idle.contains("2 passed"),
+        "later --lang python must keep the full python recap; lang_idle={lang_idle:?}"
+    );
+    assert!(
+        bare.contains("tests/b.py::test_b") && bare.contains("src/lib.rs::t_slow"),
+        "later bare kiss test must keep the full-suite recap; bare={bare:?}"
+    );
+    assert_eq!(
+        cycles, 1,
+        "named TARGET must idle; later --lang python and bare must not start extra cycles"
+    );
+}
+
+#[test]
+fn scenario_3_watch_lang_inherits_onto_target_without_clobbering_slice() {
+    let mut watch = watch_args();
+    watch.lang_filter = Some(kiss::Language::Python);
+    let (replies, cycles) = run_full_then_target_then_idle(
+        watch,
+        vec![
+            NudgeRequestMsg {
+                targets: vec!["tests/a.py::test_a".into()],
+                ..Default::default()
+            },
+            NudgeRequestMsg {
+                lang: Some("python".into()),
+                ..Default::default()
+            },
+        ],
+        "tests/a.py::test_a",
+    );
+    let targeted = replies[0].output.clone().unwrap_or_default();
+    let lang_idle = replies[1].output.clone().unwrap_or_default();
+    assert!(
+        targeted.contains("1 passed")
+            && !targeted.contains("2 passed")
+            && !targeted.contains("tests/b.py::test_b"),
+        "TARGET recap must omit siblings; targeted={targeted:?}"
+    );
+    assert!(
+        lang_idle.contains("tests/b.py::test_b") && lang_idle.contains("2 passed"),
+        "later --lang python must keep the full python recap after inherited-lang TARGET; lang_idle={lang_idle:?}"
+    );
+    assert_eq!(
+        cycles, 1,
+        "named TARGET must idle; later --lang python must not start another cycle"
+    );
+}
+
+#[test]
+fn scenario_3_lang_target_keeps_rust_idle_slice() {
+    let (replies, cycles) = run_full_then_target_then_idle(
+        watch_args(),
+        vec![
+            NudgeRequestMsg {
+                targets: vec!["src/lib.rs::t_ok".into()],
+                lang: Some("rust".into()),
+                ..Default::default()
+            },
+            NudgeRequestMsg {
+                lang: Some("rust".into()),
+                ..Default::default()
+            },
+            NudgeRequestMsg::default(),
+        ],
+        "src/lib.rs::t_ok",
+    );
+    let targeted = replies[0].output.clone().unwrap_or_default();
+    let lang_idle = replies[1].output.clone().unwrap_or_default();
+    let bare = replies[2].output.clone().unwrap_or_default();
+    assert!(
+        targeted.contains("1 passed")
+            && !targeted.contains("src/lib.rs::t_slow")
+            && !targeted.contains("tests/b.py::test_b"),
+        "TARGET recap must omit rust and python siblings; targeted={targeted:?}"
+    );
+    assert!(
+        lang_idle.contains("src/lib.rs::t_slow") && !lang_idle.contains("tests/b.py::test_b"),
+        "later --lang rust must keep the full rust recap; lang_idle={lang_idle:?}"
+    );
+    assert!(
+        bare.contains("src/lib.rs::t_slow") && bare.contains("tests/b.py::test_b"),
+        "later bare kiss test must keep the full-suite recap; bare={bare:?}"
+    );
+    assert_eq!(
+        cycles, 1,
+        "named TARGET must idle; later --lang rust and bare must not start extra cycles"
+    );
+}
+
+fn run_scoped_then_file_change(first: NudgeRequestMsg) -> (String, String, String, usize) {
+    let tmp = tempfile::tempdir().unwrap();
+    init_git(&tmp);
+    let file = commit_a_py(&tmp);
+    let tests = Arc::new(AtomicUsize::new(0));
+    let (rx, sender) = nudge_after_cycles(
+        Arc::clone(&tests),
+        1,
+        vec![
+            first,
+            NudgeRequestMsg::default(),
+            NudgeRequestMsg::default(),
+        ],
+    );
+    let tests_run = Arc::clone(&tests);
+    let mut steps = VecDeque::new();
+    steps.push_back(Ok(vec![NormalizedWatchEvent::Paths(vec![file])]));
+    steps.extend(timeout_steps(16));
+    let mut src = NudgeScript { steps };
+    let code = run_watch_loop_with(
+        watch_args(),
+        Duration::from_secs(30),
+        tmp.path(),
+        &mut src,
+        Some(&rx),
+        move |cycle_args| {
+            tests_run.fetch_add(1, Ordering::SeqCst);
+            if !matches!(cycle_args.invocation, TestInvocation::All) {
+                emit_one_pass("tests/a.py::test_a");
+                return RunTestOnceOutcome::Code(0);
+            }
+            if tests_run.load(Ordering::SeqCst) == 1 {
+                emit_bilingual_full();
+                return RunTestOnceOutcome::Code(0);
+            }
+            kiss::rust_llvm_cov_runner::emit_progress("FAIL: tests/a.py::test_a (0.01s)");
+            kiss::rust_llvm_cov_runner::emit_progress(
+                "✗ 0 passed · 1 failed · 0 timed out · 0.01s total · 0s max pass",
+            );
+            RunTestOnceOutcome::Code(1)
+        },
+        |_args| WatchCoverageResult::ok(0),
+    );
+    assert_eq!(code, 1);
+    let replies = sender.join().unwrap();
+    (
+        replies[0].output.clone().unwrap_or_default(),
+        replies[1].output.clone().unwrap_or_default(),
+        replies[2].output.clone().unwrap_or_default(),
+        tests.load(Ordering::SeqCst),
+    )
+}
+
+fn assert_scoped_then_file_change(
+    targeted: String,
+    after: String,
+    later: String,
+    cycles: usize,
+) {
+    assert!(
+        targeted.contains("1 passed") && !targeted.contains("tests/b.py::test_b"),
+        "scoped recap must omit siblings; targeted={targeted:?}"
+    );
+    assert!(
+        after.contains("FAIL")
+            && after.contains("tests/a.py::test_a")
+            && !after.contains("1 passed"),
+        "oneshot after scoped cycle plus file change must recap the new cycle; after={after:?}"
+    );
+    assert!(
+        later.contains("src/lib.rs::t_slow") && later.contains("tests/b.py::test_b"),
+        "later idle must keep full-suite TIMEOUT/PASS siblings; later={later:?}"
+    );
+    assert_eq!(
+        cycles, 3,
+        "scoped cycle then file change must run a third cycle"
+    );
+}
+
+#[test]
+fn scenario_3_target_then_file_change_uses_new_cycle() {
+    let (targeted, after, later, cycles) = run_scoped_then_file_change(NudgeRequestMsg {
+        targets: vec!["tests/a.py::test_a".into()],
+        ..Default::default()
+    });
+    assert_scoped_then_file_change(targeted, after, later, cycles);
+}
+
+#[test]
+fn scenario_3_commit_base_main_then_file_change_uses_new_cycle() {
+    for invocation in [
+        NudgeInvocation::Commit,
+        NudgeInvocation::Base,
+        NudgeInvocation::Main,
+    ] {
+        let (targeted, after, later, cycles) = run_scoped_then_file_change(NudgeRequestMsg {
+            invocation,
+            ..Default::default()
+        });
+        assert_scoped_then_file_change(targeted, after, later, cycles);
+    }
 }
 
 #[test]

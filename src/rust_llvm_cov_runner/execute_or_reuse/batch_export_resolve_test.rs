@@ -1,4 +1,4 @@
-use super::{BinaryIdObjectMap, resolve_objects_for_profdata};
+use super::{BinaryIdObjectMap, resolve_objects_for_profdata, unresolved_catalog_binary_id};
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export_tools::{
     ExportTools, objects_satisfy_profile,
 };
@@ -220,10 +220,10 @@ fn resolve_objects_for_profdata_rejects_unresolved_profile_binary_ids() {
 
     let message = format!("{err:?}");
     assert!(
-        message.contains("no catalog object matched profile binary id `deadbeef`")
-            || message.contains("seed-filtered object resolve produced no objects"),
+        message.contains("no catalog object matched profile binary id `deadbeef`"),
         "unexpected error: {err:?}"
     );
+    assert!(unresolved_catalog_binary_id(&err));
 }
 
 #[test]
@@ -265,6 +265,91 @@ fn resolve_objects_for_profdata_resolves_profile_binary_ids() {
         .expect("resolved");
     assert_eq!(resolved, vec![integration]);
     assert!(objects_satisfy_profile(&tools, &profdata, &resolved));
+}
+
+#[test]
+#[cfg(unix)]
+fn resolve_objects_for_profdata_uses_profile_ids_when_seeds_do_not_overlap() {
+    let tmp = tempfile::tempdir().unwrap();
+    let catalog_bin = tmp.path().join("catalog-bin");
+    let seed_bin = tmp.path().join("seed-bin");
+    std::fs::write(&catalog_bin, b"catalog").unwrap();
+    std::fs::write(&seed_bin, b"seed").unwrap();
+    let llvm_profdata = write_executable(
+        tmp.path().join("llvm-profdata"),
+        "#!/bin/sh\nif [ \"$1\" = show ]; then printf 'Binary IDs:\\ndeadbeef\\n'; exit 0; fi\nexit 1\n",
+    );
+    let llvm_cov = write_executable(
+        tmp.path().join("llvm-cov"),
+        "#!/bin/sh\nif echo \"$@\" | grep -q -- -check-binary-ids; then exit 0; fi\nexit 1\n",
+    );
+    let llvm_readobj = write_executable(
+        tmp.path().join("llvm-readobj"),
+        "#!/bin/sh\ncase \"$2\" in *seed-bin*) printf 'Build ID: cafebabe\\n' ;; *) printf 'Build ID: deadbeef\\n' ;; esac\nexit 0\n",
+    );
+    let tools = ExportTools {
+        llvm_profdata,
+        llvm_cov,
+        llvm_readobj,
+    };
+    let profdata = tmp.path().join("instances").join("test_show_config.profdata");
+    std::fs::create_dir_all(profdata.parent().unwrap()).unwrap();
+    std::fs::write(&profdata, b"profile").unwrap();
+    let catalog = vec![catalog_bin.clone()];
+    let map = BinaryIdObjectMap::build(&tools, &catalog).expect("binary id map");
+    let resolved = resolve_objects_for_profdata(
+        &tools,
+        &profdata,
+        &catalog,
+        std::slice::from_ref(&seed_bin),
+        Some(&map),
+    )
+    .expect("disjoint seed ids must not drop instance profile objects");
+    assert_eq!(resolved, vec![catalog_bin]);
+}
+
+#[test]
+#[cfg(unix)]
+fn resolve_objects_for_profdata_keeps_all_instance_ids_when_one_seed_hits() {
+    let tmp = tempfile::tempdir().unwrap();
+    let seed_bin = tmp.path().join("seed-bin");
+    let extra_bin = tmp.path().join("extra-bin");
+    std::fs::write(&seed_bin, b"seed").unwrap();
+    std::fs::write(&extra_bin, b"extra").unwrap();
+    let llvm_profdata = write_executable(
+        tmp.path().join("llvm-profdata"),
+        "#!/bin/sh\nif [ \"$1\" = show ]; then printf 'Binary IDs:\\naaaaaaaa\\ndeadbeef\\n'; exit 0; fi\nexit 1\n",
+    );
+    let llvm_cov = write_executable(
+        tmp.path().join("llvm-cov"),
+        "#!/bin/sh\nif echo \"$@\" | grep -q -- -check-binary-ids; then exit 0; fi\nexit 1\n",
+    );
+    let llvm_readobj = write_executable(
+        tmp.path().join("llvm-readobj"),
+        "#!/bin/sh\ncase \"$2\" in *seed-bin*) printf 'Build ID: aaaaaaaa\\n' ;; *) printf 'Build ID: deadbeef\\n' ;; esac\nexit 0\n",
+    );
+    let tools = ExportTools {
+        llvm_profdata,
+        llvm_cov,
+        llvm_readobj,
+    };
+    let profdata = tmp.path().join("instances").join("mixed.profdata");
+    std::fs::create_dir_all(profdata.parent().unwrap()).unwrap();
+    std::fs::write(&profdata, b"profile").unwrap();
+    let catalog = vec![seed_bin.clone(), extra_bin.clone()];
+    let map = BinaryIdObjectMap::build(&tools, &catalog).expect("binary id map");
+    let mut resolved = resolve_objects_for_profdata(
+        &tools,
+        &profdata,
+        &catalog,
+        std::slice::from_ref(&seed_bin),
+        Some(&map),
+    )
+    .expect("instance profiles must keep non-seed ids");
+    resolved.sort();
+    let mut expected = vec![seed_bin, extra_bin];
+    expected.sort();
+    assert_eq!(resolved, expected);
 }
 
 #[test]

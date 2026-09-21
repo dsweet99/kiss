@@ -4,19 +4,25 @@ use std::time::{Duration, Instant};
 
 #[cfg(unix)]
 use super::control::{NudgeReplyMsg, NudgeRequest};
-#[cfg(not(unix))]
-use super::session_cycle::NudgeReplyMsg;
 use super::event_source::WatchEventSource;
 use super::filter::WatchPathFilter;
 use super::nudge_kind::NudgeInvocation;
 use super::reload::WatchLiveConfig;
+#[cfg(not(unix))]
+use super::session_cycle::NudgeReplyMsg;
 use super::settle::{PathSignature, SettleMachine, SettlePoll};
 use super::{apply_normalized_event, print_cycle_summary};
+
+pub(super) use super::session_replies::LastReplies;
+
+#[path = "session_idle_target.rs"]
+mod target;
+use target::slice_or_expand_recap;
 
 pub(super) const NUDGE_POLL_SLICE: Duration = Duration::from_millis(100);
 
 pub(super) struct QueuedCycle {
-    pub replies: Vec<SyncSender<NudgeReplyMsg>>,
+    pub replies: Vec<(Option<kiss::Language>, SyncSender<NudgeReplyMsg>)>,
     pub force: bool,
     pub force_bad: bool,
     pub metrics: bool,
@@ -28,6 +34,7 @@ pub(super) struct QueuedCycle {
     pub extra: Vec<String>,
     pub python_extra: Vec<String>,
     pub filter_override: bool,
+    pub next: Option<Box<QueuedCycle>>,
 }
 
 impl QueuedCycle {
@@ -40,115 +47,73 @@ impl QueuedCycle {
         self.force
             || self.force_bad
             || self.metrics
-            || !self.targets.is_empty()
             || !self.invocation.is_all()
             || self.filter_override
     }
-}
 
-#[derive(Clone, Default)]
-pub(super) struct LastReplies {
-    pub(super) repo: PathBuf,
-    pub(super) ignore: Vec<String>,
-    pub(super) extra: Vec<String>,
-    pub(super) python_extra: Vec<String>,
-    all: Option<NudgeReplyMsg>,
-    python: Option<NudgeReplyMsg>,
-    rust: Option<NudgeReplyMsg>,
-}
+    pub(super) fn is_target_scoped(&self) -> bool {
+        !self.unscoped_force
+            && (!self.targets.is_empty()
+                || !self.invocation.is_all()
+                || self.lang_filter.is_some())
+    }
 
-impl LastReplies {
-    pub(super) fn for_repo(repo: &Path) -> Self {
+    #[cfg(unix)]
+    fn can_merge(&self, msg: &super::control::NudgeRequestMsg) -> bool {
+        let incoming_force = msg.force && msg.targets.is_empty() && msg.invocation.is_all();
+        if incoming_force || self.unscoped_force {
+            return true;
+        }
+        let in_lang = msg.lang_filter();
+        if self.lang_filter != in_lang && (self.lang_filter.is_some() || in_lang.is_some()) {
+            return false;
+        }
+        let in_scoped = !msg.targets.is_empty() || !msg.invocation.is_all();
+        let self_scoped = !self.targets.is_empty()
+            || !self.invocation.is_all()
+            || self.lang_filter.is_some();
+        self_scoped == in_scoped
+    }
+
+    #[cfg(unix)]
+    fn from_req(req: NudgeRequest) -> Self {
+        let lang_filter = req.msg.lang_filter();
         Self {
-            repo: repo.to_path_buf(),
-            ..Self::default()
+            replies: vec![(lang_filter, req.reply)],
+            force: req.msg.force,
+            force_bad: req.msg.force_bad,
+            metrics: req.msg.metrics,
+            invocation: req.msg.invocation,
+            unscoped_force: req.msg.force
+                && req.msg.targets.is_empty()
+                && req.msg.invocation.is_all(),
+            targets: req.msg.targets,
+            lang_filter,
+            ignore: req.msg.ignore,
+            extra: req.msg.extra,
+            python_extra: req.msg.python_extra,
+            filter_override: false,
+            next: None,
         }
     }
 
-    pub(super) fn for_session(repo: &Path, live: &WatchLiveConfig) -> Self {
-        let mut last = Self::for_repo(repo);
-        last.stamp_session(&live.ignore, &live.extra, &live.python_extra);
-        last
-    }
-
-    pub(super) fn stamp_session(
-        &mut self,
-        ignore: &[String],
-        extra: &[String],
-        python_extra: &[String],
-    ) {
-        let changed = self.ignore != ignore
-            || self.extra != extra
-            || self.python_extra != python_extra;
-        self.ignore = ignore.to_vec();
-        self.extra = extra.to_vec();
-        self.python_extra = python_extra.to_vec();
-        if changed {
-            self.all = None;
-            self.python = None;
-            self.rust = None;
+    #[cfg(unix)]
+    fn merge_req(&mut self, req: NudgeRequest) {
+        self.force |= req.msg.force;
+        self.force_bad |= req.msg.force_bad;
+        self.metrics |= req.msg.metrics;
+        if self.invocation.is_all() && req.msg.targets.is_empty() {
+            self.invocation = req.msg.invocation;
         }
-    }
-
-    pub(super) fn matches_args(&self, args: &crate::test_runner::RunTestCmdArgs<'_>) -> bool {
-        self.ignore == args.ignore
-            && self.extra == args.extra
-            && self.python_extra == args.python_extra
-    }
-}
-
-impl LastReplies {
-    pub(super) fn get(&self, lang: Option<kiss::Language>) -> Option<&NudgeReplyMsg> {
-        match lang {
-            None => self.all.as_ref(),
-            Some(kiss::Language::Python) => self.python.as_ref(),
-            Some(kiss::Language::Rust) => self.rust.as_ref(),
-        }
-    }
-
-    pub(super) fn store(&mut self, lang: Option<kiss::Language>, msg: NudgeReplyMsg) {
-        match lang {
-            None => self.all = Some(msg),
-            Some(kiss::Language::Python) => self.python = Some(msg),
-            Some(kiss::Language::Rust) => self.rust = Some(msg),
-        }
-    }
-
-    pub(super) fn clone_any(&self) -> Option<NudgeReplyMsg> {
-        self.all
-            .clone()
-            .or_else(|| self.python.clone())
-            .or_else(|| self.rust.clone())
-    }
-
-    pub(super) fn store_named_language_slices(
-        &mut self,
-        suite: &kiss::rust_llvm_cov_runner::WatchSuiteReport,
-        bilingual: &NudgeReplyMsg,
-    ) {
-        for lang in [kiss::Language::Python, kiss::Language::Rust] {
-            let sliced = suite.try_format_language(lang).or_else(|| {
-                crate::test_runner::durable_lang_reply(
-                    &self.repo,
-                    lang,
-                    &self.ignore,
-                    &self.extra,
-                    &self.python_extra,
-                )
-            });
-            let Some((exit_code, output)) = sliced else {
-                continue;
-            };
-            self.store(
-                Some(lang),
-                NudgeReplyMsg {
-                    exit_code,
-                    pid: bilingual.pid,
-                    error: bilingual.error.clone(),
-                    output: Some(output),
-                },
-            );
-        }
+        merge_nudge_targets(self, req.msg.force, &req.msg.targets);
+        merge_nudge_filters(
+            self,
+            req.msg.lang_filter(),
+            &req.msg.ignore,
+            &req.msg.extra,
+            &req.msg.python_extra,
+        );
+        self.replies.push((req.msg.lang_filter(), req.reply));
     }
 }
 
@@ -180,7 +145,7 @@ pub(super) fn wait_until_next_cycle(
             continue;
         }
         if queued.is_some() {
-            force_ready_if_pending(machine, repo_root);
+            force_ready_if_pending(queued, machine, repo_root);
             return None;
         }
         match wait_for_settled_batch(source, filter, machine, repo_root, nudge_rx) {
@@ -198,14 +163,27 @@ pub(super) fn wait_until_next_cycle(
 }
 
 pub(super) fn reply_all_queued(queued: &mut Option<QueuedCycle>, msg: &NudgeReplyMsg) {
-    if let Some(q) = queued.take() {
-        for reply in q.replies {
+    while let Some(q) = queued.take() {
+        for (_, reply) in q.replies {
             let _ = reply.send(msg.clone());
         }
+        *queued = q.next.map(|b| *b);
     }
 }
 
 pub(super) fn try_reply_idle_nudge(
+    queued: &mut Option<QueuedCycle>,
+    last_reply: &LastReplies,
+    pending_files: bool,
+) -> bool {
+    let mut replied = false;
+    while idle_head(queued, last_reply, pending_files) {
+        replied = true;
+    }
+    replied
+}
+
+fn idle_head(
     queued: &mut Option<QueuedCycle>,
     last_reply: &LastReplies,
     pending_files: bool,
@@ -216,17 +194,73 @@ pub(super) fn try_reply_idle_nudge(
     if q.wants_new_cycle() || pending_files {
         return false;
     }
-    let Some(last) = last_reply.get(q.lang_filter) else {
+    if q.replies.iter().any(|(lang, _)| last_reply.get(*lang).is_none()) {
+        return false;
+    }
+    if !q.targets.is_empty()
+        && !q.replies.iter().all(|(lang, _)| {
+            last_reply
+                .get(*lang)
+                .and_then(|msg| msg.output.as_deref())
+                .and_then(|out| slice_or_expand_recap(last_reply, out, &q.targets))
+                .is_some()
+        })
+    {
+        return false;
+    }
+    let Some(mut q) = queued.take() else {
         return false;
     };
-    let last = last.clone();
-    let Some(q) = queued.take() else {
-        return false;
-    };
-    for reply in q.replies {
-        let _ = reply.send(last.clone());
+    *queued = q.next.take().map(|b| *b);
+    for (lang, reply) in q.replies {
+        let mut last = idle_cached_reply(last_reply.get(lang).cloned().unwrap_or_default());
+        if !q.targets.is_empty()
+            && let Some(sliced) = last
+                .output
+                .as_deref()
+                .and_then(|out| slice_or_expand_recap(last_reply, out, &q.targets))
+        {
+            last.output = Some(sliced);
+            last = idle_cached_reply(last);
+        }
+        last.idle_cache = Some(true);
+        let _ = reply.send(last);
     }
     true
+}
+
+pub(crate) fn idle_cached_reply(mut last: NudgeReplyMsg) -> NudgeReplyMsg {
+    let recap = last.output.as_deref().is_some_and(|s| !s.is_empty());
+    let keep_cov_gate = last.error.as_deref().is_some_and(|e| e.contains("coverage gate failed"));
+    if recap && !keep_cov_gate {
+        last.error = None;
+    }
+    let output = last.output.as_deref().unwrap_or("");
+    if recap && recap_has_cached_status(output, "TIMEOUT") {
+        last.exit_code = 124;
+    } else if recap
+        && (keep_cov_gate
+            || recap_has_cached_status(output, "FAIL")
+            || recap_has_cached_status(output, "VIOLATION"))
+    {
+        last.exit_code = 1;
+    } else if recap {
+        last.exit_code = 0;
+    }
+    last
+}
+
+pub(crate) fn oneshot_client_reply(reply: NudgeReplyMsg, waited: bool) -> NudgeReplyMsg {
+    match reply.idle_cache {
+        Some(true) => idle_cached_reply(reply),
+        Some(false) => reply,
+        None if waited => reply,
+        None => idle_cached_reply(reply),
+    }
+}
+
+fn recap_has_cached_status(output: &str, label: &str) -> bool {
+    output.lines().any(|line| line.trim_start().starts_with(label))
 }
 
 fn merge_nudge_targets(q: &mut QueuedCycle, force: bool, targets: &[String]) {
@@ -262,6 +296,23 @@ fn merge_nudge_filters(
     }
 }
 
+#[cfg(unix)]
+fn enqueue_nudge(queued: &mut Option<QueuedCycle>, req: NudgeRequest) {
+    let Some(head) = queued.as_mut() else {
+        *queued = Some(QueuedCycle::from_req(req));
+        return;
+    };
+    let mut cur = head;
+    while !cur.can_merge(&req.msg) {
+        if cur.next.is_none() {
+            cur.next = Some(Box::new(QueuedCycle::from_req(req)));
+            return;
+        }
+        cur = cur.next.as_mut().unwrap();
+    }
+    cur.merge_req(req);
+}
+
 pub(super) fn coalesce_nudges(
     nudge_rx: Option<&std::sync::mpsc::Receiver<NudgeRequest>>,
     queued: &mut Option<QueuedCycle>,
@@ -270,48 +321,16 @@ pub(super) fn coalesce_nudges(
         return;
     };
     while let Ok(req) = rx.try_recv() {
-        match queued {
-            Some(q) => {
-                q.force |= req.msg.force;
-                q.force_bad |= req.msg.force_bad;
-                q.metrics |= req.msg.metrics;
-                if q.invocation.is_all() && req.msg.targets.is_empty() {
-                    q.invocation = req.msg.invocation;
-                }
-                merge_nudge_targets(q, req.msg.force, &req.msg.targets);
-                merge_nudge_filters(
-                    q,
-                    req.msg.lang_filter(),
-                    &req.msg.ignore,
-                    &req.msg.extra,
-                    &req.msg.python_extra,
-                );
-                q.replies.push(req.reply);
-            }
-            None => {
-                let lang_filter = req.msg.lang_filter();
-                *queued = Some(QueuedCycle {
-                    replies: vec![req.reply],
-                    force: req.msg.force,
-                    force_bad: req.msg.force_bad,
-                    metrics: req.msg.metrics,
-                    invocation: req.msg.invocation,
-                    unscoped_force: req.msg.force
-                        && req.msg.targets.is_empty()
-                        && req.msg.invocation.is_all(),
-                    targets: req.msg.targets,
-                    lang_filter,
-                    ignore: req.msg.ignore,
-                    extra: req.msg.extra,
-                    python_extra: req.msg.python_extra,
-                    filter_override: false,
-                });
-            }
-        }
+        enqueue_nudge(queued, req);
     }
 }
 
-pub(super) fn force_ready_if_pending(machine: &mut SettleMachine, repo_root: &Path) {
+pub(super) fn force_ready_if_pending(
+    queued: &Option<QueuedCycle>, machine: &mut SettleMachine, repo_root: &Path,
+) {
+    if queued.as_ref().is_some_and(QueuedCycle::is_target_scoped) {
+        return;
+    }
     let _ = machine.force_ready(Instant::now(), |path| {
         PathSignature::from_path(&repo_root.join(path))
     });

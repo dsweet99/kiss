@@ -75,7 +75,13 @@ impl WatchSuiteReport {
     }
 
     fn recap_exit_code(&self) -> i32 {
-        i32::from(self.failed() + self.timed_out() > 0 || !self.violations.is_empty())
+        if self.timed_out() > 0 {
+            124
+        } else if self.failed() > 0 || !self.violations.is_empty() {
+            1
+        } else {
+            0
+        }
     }
 
     fn lang_counts(&self, lang: crate::Language) -> (usize, usize, usize) {
@@ -322,6 +328,48 @@ mod tests {
     }
 
     #[test]
+    fn unscoped_incremental_green_keeps_prior_timeout() {
+        let mut suite = WatchSuiteReport::default();
+        suite.merge_lines(&[
+            "PASS: tests/a.py::test_a (0.01s)".into(),
+            "FAIL: tests/b.py::test_b (0.01s)".into(),
+            "TIMEOUT: src/lib.rs::t_slow (0.01s)".into(),
+            "✗ 1 passed · 1 failed · 1 timed out · 1s total · 0s max pass".into(),
+        ]);
+        suite.merge_unscoped_lines(&[
+            "PASS: tests/a.py::test_a (0.01s)".into(),
+            "✓ 1 passed · 0 failed · 0 timed out · 0.01s total · 0s max pass".into(),
+        ]);
+        let recap = suite.format();
+        assert!(
+            recap.contains("src/lib.rs::t_slow") && recap.contains("tests/b.py::test_b"),
+            "{recap}"
+        );
+    }
+
+    #[test]
+    fn unscoped_incremental_fail_keeps_prior_timeout() {
+        let mut suite = WatchSuiteReport::default();
+        suite.merge_lines(&[
+            "PASS: tests/a.py::test_a (0.01s)".into(),
+            "PASS: tests/b.py::test_b (0.01s)".into(),
+            "PASS: src/lib.rs::t_ok (0.01s)".into(),
+            "TIMEOUT: src/lib.rs::t_slow (0.01s)".into(),
+            "✗ 3 passed · 0 failed · 1 timed out · 1s total · 0s max pass".into(),
+        ]);
+        suite.merge_unscoped_lines(&[
+            "FAIL: tests/a.py::test_a (0.01s)".into(),
+            "✗ 0 passed · 1 failed · 0 timed out · 0.01s total · 0s max pass".into(),
+            "FAIL tests/a.py::test_a".into(),
+        ]);
+        let recap = suite.format();
+        assert!(
+            recap.contains("src/lib.rs::t_slow") && recap.contains("tests/b.py::test_b"),
+            "{recap}"
+        );
+    }
+
+    #[test]
     fn suite_recap_uses_collapsed_pass_count_as_baseline() {
         let mut suite = WatchSuiteReport::default();
         suite.merge_lines(&[
@@ -548,7 +596,7 @@ mod tests {
         let (rs_code, rs) = suite
             .try_format_language(crate::Language::Rust)
             .expect("rust slice");
-        assert_eq!(py_code, 1);
+        assert_eq!(py_code, 124);
         assert_eq!(rs_code, 0);
         assert!(
             py.contains("9177 passed") && py.contains("1 failed") && py.contains("1 timed out"),

@@ -160,6 +160,7 @@ where
                     pid: std::process::id(),
                     error: None,
                     output: None,
+                    idle_cache: Some(false),
                 });
                 reply_all_queued(&mut queued, &msg);
                 return EXIT_INTERRUPTED;
@@ -175,7 +176,7 @@ where
         if !try_reply_idle_nudge(&mut queued, &last_reply, machine.has_pending_work())
             && queued.is_some()
         {
-            force_ready_if_pending(&mut machine, repo_root);
+            force_ready_if_pending(&queued, &mut machine, repo_root);
             continue;
         }
         if let Some(code) = wait_until_next_cycle(

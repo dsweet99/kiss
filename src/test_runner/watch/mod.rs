@@ -11,6 +11,7 @@ mod session;
 mod session_cycle;
 mod session_entry;
 mod session_idle;
+mod session_replies;
 mod settle;
 
 pub(crate) use coverage::{WatchCoverageParams, WatchCoverageResult};
@@ -27,6 +28,7 @@ pub(crate) use roots::resolve_watch_registrations;
 #[allow(unused_imports)]
 pub(crate) use session::{run_watch_loop, run_watch_loop_with};
 pub(crate) use session_entry::run_test_watch;
+pub(crate) use session_idle::oneshot_client_reply;
 #[allow(unused_imports)]
 pub(crate) use settle::{PathSignature, SettleMachine, SettlePoll};
 

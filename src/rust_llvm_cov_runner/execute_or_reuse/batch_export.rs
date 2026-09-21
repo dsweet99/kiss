@@ -8,7 +8,7 @@ use std::time::Duration;
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_events::BatchCompilerArtifact;
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export_merge::merge_instance_profile;
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export_resolve::{
-    BinaryIdObjectMap, resolve_objects_for_profdata,
+    BinaryIdObjectMap, resolve_objects_for_profdata, unresolved_catalog_binary_id,
 };
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export_tools::ExportTools;
 use crate::rust_llvm_cov_runner::{RustLineCoverage, RustLlvmCovError};
@@ -107,13 +107,21 @@ impl SubprocessInstanceExporter {
                 files: BTreeMap::new(),
             });
         }
-        let objects = resolve_objects_for_profdata(
+        let objects = match resolve_objects_for_profdata(
             &self.tools,
             &profdata_path,
             catalog,
             seed_objects,
             self.binary_id_map.as_ref(),
-        )?;
+        ) {
+            Ok(objects) => objects,
+            Err(err) if unresolved_catalog_binary_id(&err) => {
+                return Ok(RustLineCoverage {
+                    files: BTreeMap::new(),
+                });
+            }
+            Err(err) => return Err(err),
+        };
         export_instance_coverage(
             &self.tools,
             &profdata_path,

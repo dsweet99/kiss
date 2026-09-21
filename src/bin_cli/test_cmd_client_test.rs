@@ -47,6 +47,53 @@ fn python_oneshot_args<'a>(
     }
 }
 
+#[test]
+fn watcher_client_error_does_not_double_prefix() {
+    assert_eq!(
+        super::format_watcher_client_error(
+            "error: kiss test: rust llvm-cov failed: InvalidRequest(\"stale\")"
+        ),
+        "error: kiss test: rust llvm-cov failed: InvalidRequest(\"stale\")"
+    );
+    assert_eq!(
+        super::format_watcher_client_error("coverage gate failed"),
+        "error: kiss test: coverage gate failed"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn oneshot_client_reply_strips_only_when_not_waited() {
+    let src = crate::test_runner::NudgeReplyMsg {
+        exit_code: 1,
+        pid: 1,
+        error: Some("error: kiss test: rust llvm-cov failed: stale".into()),
+        output: Some("PASS (cached): 1 selectors\n✓ 1 passed · 0 failed · 0 timed out\n".into()),
+        idle_cache: None,
+    };
+    let waited = crate::test_runner::oneshot_client_reply(src.clone(), true);
+    assert_eq!(waited.error, src.error);
+    assert_eq!(waited.exit_code, 1);
+    let idle = crate::test_runner::oneshot_client_reply(src, false);
+    assert!(idle.error.is_none(), "{:?}", idle.error);
+    assert_eq!(idle.exit_code, 0);
+}
+
+#[cfg(unix)]
+#[test]
+fn oneshot_client_reply_keeps_fresh_cycle_without_wait() {
+    let src = crate::test_runner::NudgeReplyMsg {
+        exit_code: 1,
+        pid: 1,
+        error: Some("error: kiss test: rust llvm-cov failed: stale".into()),
+        output: Some("PASS (cached): 1 selectors\n✓ 1 passed · 0 failed · 0 timed out\n".into()),
+        idle_cache: Some(false),
+    };
+    let msg = crate::test_runner::oneshot_client_reply(src.clone(), false);
+    assert_eq!(msg.error, src.error);
+    assert_eq!(msg.exit_code, 1);
+}
+
 #[cfg(unix)]
 #[test]
 fn injected_client_result_is_used() {

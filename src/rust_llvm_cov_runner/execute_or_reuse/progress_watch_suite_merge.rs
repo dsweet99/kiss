@@ -80,10 +80,17 @@ fn merge_into(suite: &mut WatchSuiteReport, lines: &[String], unscoped: bool) {
         apply_parsed_line(suite, line, &mut parsed);
     }
     let prior_passed = suite.passed();
+    let prior_named = suite.named.len();
     for (selector, outcome) in &parsed.named {
         apply_named(suite, selector.clone(), *outcome);
     }
-    if unscoped && should_prune_absent_problems(parsed.summary.as_ref(), prior_passed, &parsed.named)
+    if unscoped
+        && should_prune_absent_problems(
+            parsed.summary.as_ref(),
+            prior_passed,
+            prior_named,
+            &parsed.named,
+        )
     {
         prune_absent_problems(suite, &parsed.named);
     }
@@ -232,17 +239,19 @@ fn collapsed_index(outcome: SuiteOutcome) -> usize {
 fn should_prune_absent_problems(
     summary: Option<&(usize, usize, usize, String, String)>,
     prior_passed: usize,
+    prior_named: usize,
     cycle_named: &BTreeMap<String, SuiteOutcome>,
 ) -> bool {
     if let Some((passed, failed, timed_out, _, _)) = summary {
         if *failed == 0 && *timed_out == 0 {
-            return *passed >= prior_passed;
+            return *passed >= prior_passed && *passed >= prior_named.max(1);
         }
-        return true;
+        return *passed + *failed + *timed_out >= prior_named.max(1);
     }
     cycle_named
         .values()
         .any(|outcome| matches!(outcome, SuiteOutcome::Fail | SuiteOutcome::Timeout))
+        && cycle_named.len() >= prior_named.max(1)
 }
 
 enum ParsedWatchLine {

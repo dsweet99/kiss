@@ -257,6 +257,7 @@ fn try_wait_out_live_watcher(args: &TestCommandArgs<'_>) -> Result<Option<i32>, 
             }
         },
     )?;
+    let reply = crate::test_runner::oneshot_client_reply(reply, printed_waiting);
     if let Some(output) = reply.output.as_deref()
         && !output.is_empty()
     {
@@ -266,9 +267,17 @@ fn try_wait_out_live_watcher(args: &TestCommandArgs<'_>) -> Result<Option<i32>, 
         }
     }
     if let Some(error) = reply.error.as_deref() {
-        eprintln!("error: kiss test: {error}");
+        eprintln!("{}", format_watcher_client_error(error));
     }
     Ok(Some(reply.exit_code))
+}
+
+fn format_watcher_client_error(error: &str) -> String {
+    if error.starts_with("error: ") {
+        error.to_string()
+    } else {
+        format!("error: kiss test: {error}")
+    }
 }
 
 struct AfterTestCoverage<'a> {

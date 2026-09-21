@@ -184,8 +184,11 @@ fn resolve_objects_by_binary_ids(
     }
     let mut resolved = Vec::new();
     let mut unmatched = Vec::new();
+    let seed_hits_profile = !is_instance_profdata(profdata)
+        && !seed_ids.is_empty()
+        && profile_ids.iter().any(|id| seed_ids.contains(id));
     for id in profile_ids {
-        if !seed_ids.is_empty() && !seed_ids.contains(id) {
+        if seed_hits_profile && !seed_ids.contains(id) {
             continue;
         }
         match try_resolve_object_for_binary_id(tools, catalog, seed_objects, binary_id_map, id)? {
@@ -198,8 +201,7 @@ fn resolve_objects_by_binary_ids(
     if unmatched.is_empty() {
         if resolved.is_empty() {
             return Err(RustLlvmCovError::InvalidRequest(format!(
-                "seed-filtered object resolve produced no objects for {}; \
-                 seed build-ids may be absent from the merged profile (stale pools?)",
+                "object resolve produced no objects for {}",
                 profdata.display()
             )));
         }
@@ -215,6 +217,13 @@ fn resolve_objects_by_binary_ids(
         resolved,
         &unmatched,
     )
+}
+
+fn is_instance_profdata(profdata: &Path) -> bool {
+    profdata
+        .parent()
+        .and_then(|parent| parent.file_name())
+        .is_some_and(|name| name == "instances")
 }
 
 fn resolve_with_orphan_profile_ids(
@@ -245,6 +254,14 @@ fn resolve_with_orphan_profile_ids(
     resolved.sort();
     resolved.dedup();
     Ok(resolved)
+}
+
+pub(crate) fn unresolved_catalog_binary_id(err: &RustLlvmCovError) -> bool {
+    matches!(
+        err,
+        RustLlvmCovError::InvalidRequest(msg)
+            if msg.contains("no catalog object matched profile binary id")
+    )
 }
 
 fn try_resolve_object_for_binary_id(

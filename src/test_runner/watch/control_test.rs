@@ -41,6 +41,7 @@ fn handle_client_logs_received_request() {
             pid: std::process::id(),
             error: None,
             output: None,
+            idle_cache: None,
         });
         drop(control);
     });
@@ -84,6 +85,7 @@ fn protocol_round_trip_on_socket() {
                 pid: 42,
                 error: None,
                 output: Some("FAIL tests/a.py::t".into()),
+                idle_cache: None,
             },
         )
         .unwrap();
@@ -107,6 +109,7 @@ fn protocol_round_trip_on_socket() {
             pid: 42,
             error: None,
             output: Some("FAIL tests/a.py::t".into()),
+            idle_cache: None,
         }
     );
     server.join().unwrap();
@@ -147,6 +150,7 @@ fn lock_held_missing_session_retries_then_ok() {
             pid: std::process::id(),
             error: None,
             output: None,
+            idle_cache: None,
         });
         thread::sleep(Duration::from_millis(50));
         drop(control);

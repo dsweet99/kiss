@@ -137,7 +137,7 @@ pub(crate) fn take_queued_cycle_args<'a>(
 ) -> (RunTestCmdArgs<'a>, Vec<SyncSender<NudgeReplyMsg>>) {
     let mut force = CycleForceFlags::default();
     let mut replies = Vec::new();
-    if let Some(q) = queued.take() {
+    if let Some(mut q) = queued.take() {
         force.force_rerun = q.force;
         force.force_bad = q.force_bad;
         force.metrics = q.metrics;
@@ -145,7 +145,8 @@ pub(crate) fn take_queued_cycle_args<'a>(
             force.targets = q.targets;
             force.invocation = q.invocation;
         }
-        replies = q.replies;
+        replies = q.replies.into_iter().map(|(_, tx)| tx).collect();
+        *queued = q.next.take().map(|b| *b);
     }
     (live.cycle_args(force), replies)
 }
@@ -181,18 +182,16 @@ fn store_cycle_replies(
         return;
     }
     let target_scoped = !matches!(cycle_args.invocation, TestInvocation::All);
+    if target_scoped && last.get(None).is_some() {
+        return;
+    }
     if let Some(lang) = cycle_args.lang_filter {
         last.store(Some(lang), waiter);
         let foreign_lang = cycle_args.lang_filter != live_lang;
-        if last.get(None).is_some() && target_scoped {
-            return;
-        }
         if last.get(None).is_some() && foreign_lang {
             store_full_suite_reply(last, suite, exit_code, error);
             return;
         }
-    } else if target_scoped && last.get(None).is_some() {
-        return;
     }
     if exit_code == 0 {
         suite.merge_lines(&["NO VIOLATIONS".into()]);
@@ -206,20 +205,22 @@ fn store_full_suite_reply(
     exit_code: i32,
     error: Option<String>,
 ) {
-    let bilingual = if let Some((exit_code, output)) = crate::test_runner::durable_all_reply(
+    let bilingual = match crate::test_runner::durable_all_reply(
         &last.repo,
         &last.ignore,
         &last.extra,
         &last.python_extra,
     ) {
-        NudgeReplyMsg {
-            exit_code,
-            pid: std::process::id(),
-            error,
-            output: Some(output),
+        Some((exit_code, output)) if durable_covers_suite_problems(suite, &output) => {
+            NudgeReplyMsg {
+                exit_code,
+                pid: std::process::id(),
+                error,
+                output: Some(output),
+                idle_cache: Some(false),
+            }
         }
-    } else {
-        NudgeReplyMsg {
+        _ => NudgeReplyMsg {
             exit_code: kiss::rust_llvm_cov_runner::merge_watch_exit(
                 exit_code,
                 suite.test_exit_code(),
@@ -227,10 +228,42 @@ fn store_full_suite_reply(
             pid: std::process::id(),
             error,
             output: nonempty_report(suite.format()),
-        }
+            idle_cache: Some(false),
+        },
     };
     last.store(None, bilingual.clone());
     last.store_named_language_slices(suite, &bilingual);
+}
+
+fn durable_covers_suite_problems(
+    suite: &kiss::rust_llvm_cov_runner::WatchSuiteReport,
+    output: &str,
+) -> bool {
+    suite.format().lines().all(|line| {
+        problem_selector(line).is_none_or(|selector| output.contains(selector))
+    })
+}
+
+fn problem_selector(line: &str) -> Option<&str> {
+    let line = line.trim_start();
+    for prefix in [
+        "FAIL (cached): ",
+        "TIMEOUT (cached): ",
+        "FAIL: ",
+        "TIMEOUT: ",
+        "FAIL ",
+        "TIMEOUT ",
+    ] {
+        let Some(rest) = line.strip_prefix(prefix) else {
+            continue;
+        };
+        let selector = rest.split([' ', '(']).next().unwrap_or(rest);
+        if selector.is_empty() || selector.chars().all(|c| c.is_ascii_digit()) {
+            return None;
+        }
+        return Some(selector);
+    }
+    None
 }
 
 fn nonempty_report(text: String) -> Option<String> {
@@ -272,6 +305,7 @@ fn reply_all(
         pid: std::process::id(),
         error,
         output,
+        idle_cache: Some(false),
     };
     for reply in replies {
         let _ = reply.send(msg.clone());
@@ -362,6 +396,101 @@ mod ensure_green_gate_line_tests {
         );
         assert_eq!(suite.passed(), 11816, "{}", suite.format());
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn store_full_suite_prefers_merged_when_durable_omits_timeout() {
+        use super::{LastReplies, store_full_suite_reply};
+        use crate::bin_cli::args::TestInvocation;
+        use crate::test_runner::test_mode_fixtures::{init_git, python_dry_run_args};
+        use crate::test_runner::{RunTestOnceOutcome, WatchCoverageResult, run_kiss_test_report_reuse};
+        let tmp = tempfile::tempdir().unwrap();
+        init_git(&tmp);
+        std::fs::write(tmp.path().join("a.py"), "x=1\n").unwrap();
+        let mut args = python_dry_run_args(vec!["a.py".into()]);
+        args.dry_run = false;
+        args.invocation = TestInvocation::All;
+        args.lang_filter = None;
+        let mut last = LastReplies::for_repo(tmp.path());
+        last.stamp_session(args.ignore, args.extra, args.python_extra);
+        run_kiss_test_report_reuse(
+            args,
+            |_a| {
+                kiss::rust_llvm_cov_runner::emit_progress("PASS: tests/a.py::test_a (0.01s)");
+                crate::test_runner::final_summary::print_final_test_summary(
+                    &crate::test_runner::final_summary::FinalTestSummary {
+                        passed: 1,
+                        ..crate::test_runner::final_summary::FinalTestSummary::default()
+                    },
+                    std::time::Duration::from_millis(10),
+                );
+                RunTestOnceOutcome::Code(0)
+            },
+            |_a| WatchCoverageResult::ok(0),
+            true,
+            Some(tmp.path()),
+        );
+        let mut suite = WatchSuiteReport::default();
+        suite.merge_lines(&[
+            "PASS: tests/a.py::test_a (0.01s)".into(),
+            "FAIL: tests/b.py::test_b (0.01s)".into(),
+            "TIMEOUT: src/lib.rs::t_slow (0.01s)".into(),
+            "✗ 1 passed · 1 failed · 1 timed out · 1s total · 0s max pass".into(),
+        ]);
+        store_full_suite_reply(&mut last, &suite, 1, None);
+        let out = last.get(None).unwrap().output.clone().unwrap_or_default();
+        assert!(
+            out.contains("src/lib.rs::t_slow") && out.contains("tests/b.py::test_b"),
+            "merged suite must win when durable omits TIMEOUT/FAIL; out={out:?}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn store_full_suite_prefers_merged_when_durable_fail_is_different_selector() {
+        use super::{LastReplies, store_full_suite_reply};
+        use crate::bin_cli::args::TestInvocation;
+        use crate::test_runner::test_mode_fixtures::{init_git, python_dry_run_args};
+        use crate::test_runner::{RunTestOnceOutcome, WatchCoverageResult, run_kiss_test_report_reuse};
+        let tmp = tempfile::tempdir().unwrap();
+        init_git(&tmp);
+        std::fs::write(tmp.path().join("a.py"), "x=1\n").unwrap();
+        let mut args = python_dry_run_args(vec!["a.py".into()]);
+        args.dry_run = false;
+        args.invocation = TestInvocation::All;
+        args.lang_filter = None;
+        let mut last = LastReplies::for_repo(tmp.path());
+        last.stamp_session(args.ignore, args.extra, args.python_extra);
+        run_kiss_test_report_reuse(
+            args,
+            |_a| {
+                kiss::rust_llvm_cov_runner::emit_progress("FAIL: tests/a.py::test_a (0.01s)");
+                crate::test_runner::final_summary::print_final_test_summary(
+                    &crate::test_runner::final_summary::FinalTestSummary {
+                        failed: 1,
+                        ..crate::test_runner::final_summary::FinalTestSummary::default()
+                    },
+                    std::time::Duration::from_millis(10),
+                );
+                RunTestOnceOutcome::Code(1)
+            },
+            |_a| WatchCoverageResult::ok(0),
+            true,
+            Some(tmp.path()),
+        );
+        let mut suite = WatchSuiteReport::default();
+        suite.merge_lines(&[
+            "FAIL: tests/a.py::test_a (0.01s)".into(),
+            "FAIL: tests/b.py::test_b (0.01s)".into(),
+            "✗ 0 passed · 2 failed · 0 timed out · 1s total · 0s max pass".into(),
+        ]);
+        store_full_suite_reply(&mut last, &suite, 1, None);
+        let out = last.get(None).unwrap().output.clone().unwrap_or_default();
+        assert!(
+            out.contains("tests/b.py::test_b"),
+            "merged suite must win when durable FAIL is a different selector; out={out:?}"
+        );
+    }
 }
 
 #[cfg(not(unix))]
@@ -378,6 +507,7 @@ mod nudge_stub {
         pub pid: u32,
         pub error: Option<String>,
         pub output: Option<String>,
+        pub idle_cache: Option<bool>,
     }
 
     pub(crate) struct NudgeRequestMsg {

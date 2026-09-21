@@ -83,7 +83,7 @@ impl NudgeRequestMsg {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub(crate) struct NudgeReplyMsg {
     pub exit_code: i32,
     pub pid: u32,
@@ -91,6 +91,8 @@ pub(crate) struct NudgeReplyMsg {
     pub error: Option<String>,
     #[serde(default)]
     pub output: Option<String>,
+    #[serde(default)]
+    pub idle_cache: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
