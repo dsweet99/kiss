@@ -240,15 +240,17 @@ fn durable_covers_suite_problems(
     output: &str,
 ) -> bool {
     suite.format().lines().all(|line| {
-        problem_selector(line).is_none_or(|selector| output.contains(selector))
+        named_recap_selector(line).is_none_or(|selector| output.contains(selector))
     })
 }
 
-fn problem_selector(line: &str) -> Option<&str> {
+fn named_recap_selector(line: &str) -> Option<&str> {
     let line = line.trim_start();
     for prefix in [
+        "PASS (cached): ",
         "FAIL (cached): ",
         "TIMEOUT (cached): ",
+        "PASS: ",
         "FAIL: ",
         "TIMEOUT: ",
         "FAIL ",

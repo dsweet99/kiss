@@ -3,9 +3,6 @@ use super::{
 };
 
 pub(super) fn apply(capture: &mut WatchReportCapture, message: &str) {
-    let Some(lang) = progress_lang() else {
-        return;
-    };
     let line = strip_ansi(message.trim());
     if line.starts_with("kiss test: lang_collapsed ") {
         return;
@@ -18,13 +15,32 @@ pub(super) fn apply(capture: &mut WatchReportCapture, message: &str) {
         .strip_suffix(" selectors")
         .and_then(|n| n.parse::<usize>().ok())
     {
-        add_count(capture, lang, outcome, count);
+        if let Some(lang) = progress_lang() {
+            add_count(capture, lang, outcome, count);
+        }
         return;
     }
     if selector.is_empty() {
         return;
     }
-    insert_named(capture, lang, selector, outcome);
+    if let Some(lang) = resolve_status_lang(outcome, selector) {
+        insert_named(capture, lang, selector, outcome);
+    }
+}
+
+fn resolve_status_lang(outcome: WatchNamedOutcome, selector: &str) -> Option<crate::Language> {
+    if let Some(lang) = progress_lang() {
+        return Some(lang);
+    }
+    match outcome {
+        WatchNamedOutcome::Fail | WatchNamedOutcome::Timeout => lang_from_selector(selector),
+        WatchNamedOutcome::Pass => None,
+    }
+}
+
+fn lang_from_selector(selector: &str) -> Option<crate::Language> {
+    let path = selector.split_once("::").map_or(selector, |(p, _)| p);
+    crate::Language::from_path(std::path::Path::new(path))
 }
 
 fn status_body(line: &str) -> Option<(WatchNamedOutcome, &str)> {
@@ -37,6 +53,14 @@ fn status_body(line: &str) -> Option<(WatchNamedOutcome, &str)> {
     };
     rest.strip_prefix(" (cached): ")
         .or_else(|| rest.strip_prefix(": "))
+        .or_else(|| {
+            let body = rest.strip_prefix(' ')?;
+            if body.is_empty() || body.starts_with('(') {
+                None
+            } else {
+                Some(body)
+            }
+        })
         .map(|body| (outcome, body))
 }
 

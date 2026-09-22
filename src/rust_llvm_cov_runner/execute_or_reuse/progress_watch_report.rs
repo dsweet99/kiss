@@ -118,10 +118,13 @@ pub(crate) fn record_watch_report_line(message: &str) {
     let Some(capture) = slot.as_mut() else {
         return;
     };
-    if is_watch_report_line(message) {
-        capture.lines.push(message.to_string());
-        capture_lang::apply(capture, message);
-        if let Some(tag) = lang_collapsed_tag(message) {
+    for line in message.split('\n') {
+        if !is_watch_report_line(line) {
+            continue;
+        }
+        capture.lines.push(line.to_string());
+        capture_lang::apply(capture, line);
+        if let Some(tag) = lang_collapsed_tag(line) {
             capture.lines.push(tag);
         }
     }
@@ -357,5 +360,46 @@ mod tests {
         assert_eq!(taken.named.len(), 1);
         assert_eq!(taken.named[0].selector, "tests/a.py::t");
         assert_eq!(taken.named[0].outcome, WatchNamedOutcome::Fail);
+    }
+
+    #[test]
+    fn timeout_without_progress_lang_is_named_from_selector_path() {
+        begin_watch_report_capture();
+        record_watch_report_line(
+            "TIMEOUT: src/rpytest_runner/collector.rs::witness_collect_subprocess_paths (3.00s)",
+        );
+        record_watch_report_line("PASS: src/counts/tests.rs::test_violation_builder (0.02s)");
+        let taken = take_watch_report_taken().expect("taken");
+        assert_eq!(taken.named.len(), 1, "PASS without lang must stay anonymous; {taken:?}");
+        assert_eq!(
+            taken.named[0].selector,
+            "src/rpytest_runner/collector.rs::witness_collect_subprocess_paths"
+        );
+        assert_eq!(taken.named[0].outcome, WatchNamedOutcome::Timeout);
+        assert_eq!(taken.lang_timed_out, [0, 1]);
+    }
+
+    #[test]
+    fn multiline_final_summary_footers_become_named() {
+        begin_watch_report_capture();
+        record_watch_report_line(
+            "✗ 1 passed · 1 failed · 1 timed out · 1s total · 0s max pass\n\
+             FAIL tests/a.py::test_a\n\
+             TIMEOUT src/lib.rs::t_slow",
+        );
+        let taken = take_watch_report_taken().expect("taken");
+        assert_eq!(taken.named.len(), 2, "{taken:?}");
+        assert!(
+            taken.named.iter().any(|row| {
+                row.selector == "tests/a.py::test_a" && row.outcome == WatchNamedOutcome::Fail
+            }),
+            "{taken:?}"
+        );
+        assert!(
+            taken.named.iter().any(|row| {
+                row.selector == "src/lib.rs::t_slow" && row.outcome == WatchNamedOutcome::Timeout
+            }),
+            "{taken:?}"
+        );
     }
 }

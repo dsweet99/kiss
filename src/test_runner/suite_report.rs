@@ -173,15 +173,10 @@ fn persist_eligible(args: &RunTestCmdArgs<'_>, report: &KissTestReport) -> bool 
 }
 
 fn report_vacuous(report: &KissTestReport) -> bool {
-    let totals = report
+    report
         .totals
         .as_ref()
-        .map_or(0, |item| item.passed + item.failed + item.timed_out);
-    totals == 0
-        && report.named.is_empty()
-        && report.lang_passed == [0, 0]
-        && report.lang_failed == [0, 0]
-        && report.lang_timed_out == [0, 0]
+        .is_none_or(|item| item.passed + item.failed + item.timed_out == 0)
 }
 
 struct SourceKey {

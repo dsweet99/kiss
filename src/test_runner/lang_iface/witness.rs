@@ -374,6 +374,20 @@ fn emit_cached_witness_lines(records: &[(String, TestStatus, Duration)]) {
     print_cached_total("PASS", passed);
     print_cached_total("FAIL", failed);
     print_cached_total("TIMEOUT", timed_out);
+    for (report, status, duration) in records {
+        match status {
+            TestStatus::Failed | TestStatus::TimedOut => {
+                crate::test_runner::status_labels::print_classified_status_line(
+                    *status,
+                    report,
+                    *duration,
+                    Some("cached"),
+                    false,
+                );
+            }
+            TestStatus::Passed => {}
+        }
+    }
 }
 
 fn count_test_statuses(records: &[(String, TestStatus, Duration)]) -> (usize, usize, usize) {

@@ -627,3 +627,91 @@ fn target_scoped_run_does_not_persist() {
         assert!(!tmp.path().join(".kiss").join("suite_report.json").exists());
     });
 }
+
+#[test]
+fn warm_replay_lists_cached_fail_and_timeout_names_without_pass_names() {
+    let _cwd = crate::cwd_test_lock::lock();
+    let tmp = tempfile::tempdir().unwrap();
+    seed_repo(&tmp);
+    with_cwd(tmp.path(), || {
+        let runs = AtomicUsize::new(0);
+        let first = run_kiss_test_report(
+            live_all_args(),
+            |_a| {
+                runs.fetch_add(1, Ordering::SeqCst);
+                {
+                    let _guard = kiss::rust_llvm_cov_runner::ProgressLanguageGuard::enter(
+                        kiss::Language::Python,
+                    );
+                    crate::test_runner::emit_test_progress("PASS (cached): 40 selectors");
+                }
+                {
+                    let _guard = kiss::rust_llvm_cov_runner::ProgressLanguageGuard::enter(
+                        kiss::Language::Rust,
+                    );
+                    crate::test_runner::emit_test_progress("PASS (cached): 30 selectors");
+                }
+                crate::test_runner::emit_test_progress("FAIL: tests/b.py::test_b (0.01s)");
+                crate::test_runner::emit_test_progress("TIMEOUT: src/lib.rs::t_slow (3.00s)");
+                crate::test_runner::final_summary::print_final_test_summary(
+                    &crate::test_runner::final_summary::FinalTestSummary {
+                        passed: 70,
+                        failed: 2,
+                        failed_selectors: vec!["tests/b.py::test_b".into()],
+                        timed_out_selectors: vec!["src/lib.rs::t_slow".into()],
+                        ..crate::test_runner::final_summary::FinalTestSummary::default()
+                    },
+                    std::time::Duration::from_millis(10),
+                );
+                RunTestOnceOutcome::Code(1)
+            },
+            |_a| WatchCoverageResult::ok(0),
+        );
+        assert_eq!(runs.load(Ordering::SeqCst), 1);
+        assert_eq!(first.exit_code, 1);
+        assert!(
+            first
+                .named
+                .iter()
+                .any(|row| row.selector == "tests/b.py::test_b"
+                    && row.outcome == kiss::rust_llvm_cov_runner::WatchNamedOutcome::Fail),
+            "cold capture must name FAIL without ProgressLanguageGuard; named={:?}",
+            first.named
+        );
+        assert!(
+            first
+                .named
+                .iter()
+                .any(|row| row.selector == "src/lib.rs::t_slow"
+                    && row.outcome == kiss::rust_llvm_cov_runner::WatchNamedOutcome::Timeout),
+            "cold capture must name TIMEOUT without ProgressLanguageGuard; named={:?}",
+            first.named
+        );
+
+        let second = run_kiss_test_report(
+            live_all_args(),
+            |_a| {
+                runs.fetch_add(1, Ordering::SeqCst);
+                panic!("warm kiss test must replay durable suite report")
+            },
+            |_a| panic!("warm kiss test must not run coverage"),
+        );
+        assert_eq!(runs.load(Ordering::SeqCst), 1);
+        assert_eq!(second.exit_code, 1);
+        let replayed = second.output.unwrap_or_default();
+        assert!(
+            replayed.contains("FAIL tests/b.py::test_b")
+                && replayed.contains("TIMEOUT src/lib.rs::t_slow"),
+            "warm recap must list cached FAIL/TIMEOUT names; replayed={replayed}"
+        );
+        assert!(
+            !replayed.contains("PASS (cached): tests/")
+                && !replayed.contains("PASS (cached): src/"),
+            "warm recap must not list cached PASS names; replayed={replayed}"
+        );
+        assert!(
+            replayed.contains("1 failed") && replayed.contains("1 timed out"),
+            "warm recap must keep problem counts; replayed={replayed}"
+        );
+    });
+}

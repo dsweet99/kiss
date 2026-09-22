@@ -17,7 +17,26 @@ fn format_cached_status_totals(outcomes: &[RslipOutcome]) -> String {
     append_cached_total(&mut body, "PASS", passed);
     append_cached_total(&mut body, "FAIL", failed);
     append_cached_total(&mut body, "TIMEOUT", timed_out);
+    append_cached_problem_names(&mut body, outcomes);
     body
+}
+
+fn append_cached_problem_names(body: &mut String, outcomes: &[RslipOutcome]) {
+    for outcome in outcomes {
+        match outcome.status {
+            crate::rpytest_runner::TestStatus::Failed => {
+                body.push_str("FAIL (cached): ");
+                body.push_str(&outcome.nodeid);
+                body.push('\n');
+            }
+            crate::rpytest_runner::TestStatus::TimedOut => {
+                body.push_str("TIMEOUT (cached): ");
+                body.push_str(&outcome.nodeid);
+                body.push('\n');
+            }
+            crate::rpytest_runner::TestStatus::Passed => {}
+        }
+    }
 }
 
 fn format_cached_status_each(outcomes: &[RslipOutcome]) -> String {
@@ -135,9 +154,27 @@ mod tests {
         }
         assert!(outcomes.len() > 32);
         let body = format_cached_status_dump(&outcomes);
-        assert_eq!(
-            body,
-            "PASS (cached): 20 selectors\nFAIL (cached): 10 selectors\nTIMEOUT (cached): 5 selectors\n"
+        assert!(
+            body.starts_with(
+                "PASS (cached): 20 selectors\nFAIL (cached): 10 selectors\nTIMEOUT (cached): 5 selectors\n"
+            ),
+            "totals must lead; body={body}"
+        );
+        for i in 0..10 {
+            assert!(
+                body.contains(&format!("FAIL (cached): f::{i}")),
+                "must name FAIL f::{i}; body={body}"
+            );
+        }
+        for i in 0..5 {
+            assert!(
+                body.contains(&format!("TIMEOUT (cached): t::{i}")),
+                "must name TIMEOUT t::{i}; body={body}"
+            );
+        }
+        assert!(
+            !body.contains("PASS (cached): p::"),
+            "must not list cached PASS names; body={body}"
         );
     }
 
