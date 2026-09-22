@@ -148,21 +148,24 @@ pub fn print_no_files_message(lang_filter: Option<Language>, root: &Path) {
     println!("{} in {}", msg, root.display());
 }
 
+pub fn format_violation(v: &Violation) -> String {
+    format!(
+        "VIOLATION:{}:{}:{}:{}: {} {}",
+        v.metric,
+        v.file.display(),
+        v.line,
+        v.unit_name,
+        v.message,
+        v.suggestion
+    )
+}
+
 pub fn print_violations(viols: &[Violation]) {
     use std::io::Write;
     let stdout = std::io::stdout();
     let mut w = std::io::BufWriter::new(stdout.lock());
     for v in viols {
-        let _ = writeln!(
-            w,
-            "VIOLATION:{}:{}:{}:{}: {} {}",
-            v.metric,
-            v.file.display(),
-            v.line,
-            v.unit_name,
-            v.message,
-            v.suggestion
-        );
+        let _ = writeln!(w, "{}", format_violation(v));
     }
 }
 

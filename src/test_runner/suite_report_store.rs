@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::test_runner::rust_coverage_index::{create_new_file, unique_suffix};
 
-pub(super) const SCHEMA_VERSION: &str = "kiss-suite-report-v5";
+pub(super) const SCHEMA_VERSION: &str = "kiss-suite-report-v6";
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub(super) struct DurableSuiteRecap {

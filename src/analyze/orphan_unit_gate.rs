@@ -33,7 +33,9 @@ pub(crate) fn evaluate_orphan_unit_gate_with_viols(
         return (true, Vec::new());
     };
     crate::test_runner::final_summary::note_violation_kind("orphan", viols.len());
-    kiss::cli_output::print_violations(&viols);
+    for v in &viols {
+        kiss::rust_llvm_cov_runner::emit_progress(&kiss::cli_output::format_violation(v));
+    }
     (!viols.is_empty(), viols)
 }
 

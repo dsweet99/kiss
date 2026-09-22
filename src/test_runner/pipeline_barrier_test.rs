@@ -59,7 +59,7 @@ fn status_printers_use_emit_test_progress() {
     assert!(!rslip.contains("writeln!(stdout"));
     assert!(!rslip.contains("writeln!(out,"));
     assert!(!rslip.contains("write_all(body"));
-    let witness = include_str!("lang_iface/witness.rs");
+    let witness = include_str!("lang_iface/witness_summary.rs");
     assert!(witness.contains("emit_test_progress(&format!(\"{label} (cached)"));
     assert!(!witness.contains("println!(\"{label} (cached)"));
     let dry = include_str!("run_logic/language_executor.rs");

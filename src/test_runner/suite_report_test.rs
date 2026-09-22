@@ -715,3 +715,61 @@ fn warm_replay_lists_cached_fail_and_timeout_names_without_pass_names() {
         );
     });
 }
+
+#[test]
+fn unscoped_violations_persist_across_replay() {
+    let _cwd = crate::cwd_test_lock::lock();
+    let tmp = tempfile::tempdir().unwrap();
+    seed_repo(&tmp);
+    with_cwd(tmp.path(), || {
+        let runs = AtomicUsize::new(0);
+        let first = run_kiss_test_report(
+            live_all_args(),
+            |_a| {
+                runs.fetch_add(1, Ordering::SeqCst);
+                crate::test_runner::final_summary::print_final_test_summary(
+                    &crate::test_runner::final_summary::FinalTestSummary {
+                        passed: 3,
+                        failed: 0,
+                        ..crate::test_runner::final_summary::FinalTestSummary::default()
+                    },
+                    std::time::Duration::from_millis(10),
+                );
+                RunTestOnceOutcome::Code(0)
+            },
+            |_a| {
+                crate::test_runner::final_summary::note_violation_kind("test_coverage", 1);
+                crate::test_runner::emit_test_progress(
+                    "VIOLATION:test_coverage:foo.py:1:foo: 0% covered (0/4). Need 3 more lines to reach 75%.",
+                );
+                WatchCoverageResult::failed(1, "coverage gate failed")
+            },
+        );
+        assert_eq!(runs.load(Ordering::SeqCst), 1);
+        assert_eq!(first.exit_code, 1);
+        let first_out = first.output.clone().unwrap_or_default();
+        assert!(
+            first_out.contains("VIOLATION:test_coverage:"),
+            "cold run must show violations; out={first_out}"
+        );
+        let second = run_kiss_test_report(
+            live_all_args(),
+            |_a| {
+                runs.fetch_add(1, Ordering::SeqCst);
+                panic!("source-stable oneshot must not re-enter the engine")
+            },
+            |_a| panic!("source-stable oneshot must not run coverage"),
+        );
+        assert_eq!(runs.load(Ordering::SeqCst), 1);
+        assert_eq!(second.exit_code, 1);
+        let replayed = second.output.unwrap_or_default();
+        assert!(
+            replayed.contains("VIOLATION:test_coverage:"),
+            "warm recap must preserve violations; replayed={replayed}"
+        );
+        assert!(
+            !replayed.contains("NO VIOLATIONS"),
+            "warm recap must not claim clean when violations exist; replayed={replayed}"
+        );
+    });
+}

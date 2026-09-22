@@ -193,7 +193,7 @@ fn store_cycle_replies(
             return;
         }
     }
-    if exit_code == 0 {
+    if exit_code == 0 && cycle_args.lang_filter.is_none() && !target_scoped {
         suite.merge_lines(&["NO VIOLATIONS".into()]);
     }
     store_full_suite_reply(last, suite, exit_code, error);
@@ -223,7 +223,7 @@ fn store_full_suite_reply(
         _ => NudgeReplyMsg {
             exit_code: kiss::rust_llvm_cov_runner::merge_watch_exit(
                 exit_code,
-                suite.test_exit_code(),
+                suite_exit_with_violations(suite),
             ),
             pid: std::process::id(),
             error,
@@ -235,11 +235,36 @@ fn store_full_suite_reply(
     last.store_named_language_slices(suite, &bilingual);
 }
 
+fn suite_exit_with_violations(suite: &kiss::rust_llvm_cov_runner::WatchSuiteReport) -> i32 {
+    let test_exit = suite.test_exit_code();
+    if test_exit != 0 {
+        test_exit
+    } else if suite.format().contains("VIOLATION:") {
+        1
+    } else {
+        0
+    }
+}
+
 fn durable_covers_suite_problems(
     suite: &kiss::rust_llvm_cov_runner::WatchSuiteReport,
     output: &str,
 ) -> bool {
-    suite.format().lines().all(|line| {
+    let formatted = suite.format();
+    let suite_violations: Vec<&str> = formatted
+        .lines()
+        .filter(|line| line.contains("VIOLATION:"))
+        .collect();
+    if !suite_violations.is_empty() {
+        if !suite_violations.iter().all(|line| output.contains(line)) {
+            return false;
+        }
+    } else if formatted.lines().any(|line| line.trim() == "NO VIOLATIONS")
+        && output.contains("VIOLATION:")
+    {
+        return false;
+    }
+    formatted.lines().all(|line| {
         named_recap_selector(line).is_none_or(|selector| output.contains(selector))
     })
 }
@@ -492,6 +517,55 @@ mod ensure_green_gate_line_tests {
             out.contains("tests/b.py::test_b"),
             "merged suite must win when durable FAIL is a different selector; out={out:?}"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn store_full_suite_prefers_merged_when_durable_omits_violations() {
+        use super::{LastReplies, store_full_suite_reply};
+        use crate::bin_cli::args::TestInvocation;
+        use crate::test_runner::test_mode_fixtures::{init_git, python_dry_run_args};
+        use crate::test_runner::{RunTestOnceOutcome, WatchCoverageResult, run_kiss_test_report_reuse};
+        let tmp = tempfile::tempdir().unwrap();
+        init_git(&tmp);
+        std::fs::write(tmp.path().join("a.py"), "x=1\n").unwrap();
+        let mut args = python_dry_run_args(vec!["a.py".into()]);
+        args.dry_run = false;
+        args.invocation = TestInvocation::All;
+        args.lang_filter = None;
+        let mut last = LastReplies::for_repo(tmp.path());
+        last.stamp_session(args.ignore, args.extra, args.python_extra);
+        run_kiss_test_report_reuse(
+            args,
+            |_a| {
+                kiss::rust_llvm_cov_runner::emit_progress("PASS: tests/a.py::test_a (0.01s)");
+                crate::test_runner::final_summary::print_final_test_summary(
+                    &crate::test_runner::final_summary::FinalTestSummary {
+                        passed: 1,
+                        ..crate::test_runner::final_summary::FinalTestSummary::default()
+                    },
+                    std::time::Duration::from_millis(10),
+                );
+                RunTestOnceOutcome::Code(0)
+            },
+            |_a| WatchCoverageResult::ok(0),
+            true,
+            Some(tmp.path()),
+        );
+        let mut suite = WatchSuiteReport::default();
+        suite.merge_lines(&[
+            "PASS: tests/a.py::test_a (0.01s)".into(),
+            "VIOLATION:test_coverage:foo.py:1:foo: 0% covered (0/4). Need 3 more lines to reach 75%.".into(),
+            "✓ 1 passed · 0 failed · 0 timed out · 1s total · 0s max pass".into(),
+        ]);
+        store_full_suite_reply(&mut last, &suite, 1, None);
+        let stored = last.get(None).unwrap();
+        let out = stored.output.clone().unwrap_or_default();
+        assert!(
+            out.contains("VIOLATION:test_coverage:"),
+            "merged suite must win when durable omits VIOLATION; out={out:?}"
+        );
+        assert_eq!(stored.exit_code, 1, "exit must reflect violations; out={out:?}");
     }
 }
 

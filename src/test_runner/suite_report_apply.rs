@@ -17,6 +17,7 @@ pub(super) fn apply_unscoped(
     stored.digest_python = digests.python.clone();
     stored.digest_rust = digests.rust.clone();
     stored.suite.named = live_named(&report.named);
+    stored.suite.violations = extract_violations(&report.lines);
     let kept_stored_lang = keep_unattributed_lang_counts(stored, report);
     let live_totals = if kept_stored_lang {
         None
@@ -76,12 +77,15 @@ pub(super) fn apply_scoped(
         stored.suite.lang_failed[i] = report.lang_failed[i];
         stored.suite.lang_timed_out[i] = report.lang_timed_out[i];
     }
+    merge_scoped_violations(&mut stored.suite, report, lang);
     set_lang_digest(stored, lang, digests);
-    if let Some(mut body) = nonempty_body(&stored.suite, lang) {
-        if report.exit_code == 0 && !body.contains("NO VIOLATIONS") {
-            body.push_str("\nNO VIOLATIONS");
-        }
-        set_lang_recap(stored, lang, report.exit_code, body);
+    if let Some(body) = nonempty_body(&stored.suite, lang) {
+        set_lang_recap(
+            stored,
+            lang,
+            language_recap_exit(&stored.suite, lang),
+            body,
+        );
     }
     let output = bilingual_recap(&mut stored.suite, None, report.exit_code, true)?;
     if !stored.digest_all.is_empty() {
@@ -246,6 +250,39 @@ fn replay_report(exit_code: i32, output: String, totals: kiss::rust_llvm_cov_run
         totals: Some(totals),
         ..KissTestReport::default()
     }
+}
+
+fn extract_violations(lines: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in lines {
+        if line.contains("VIOLATION:") && !out.contains(line) {
+            out.push(line.clone());
+        }
+    }
+    out
+}
+
+fn merge_scoped_violations(suite: &mut StoredSuite, report: &KissTestReport, lang: &str) {
+    let scoped = extract_violations(&report.lines);
+    let other = match lang {
+        "python" => "rust",
+        "rust" => "python",
+        _ => return,
+    };
+    if !lang_has_work(suite, other) {
+        suite.gates_clean = report.exit_code == 0 && scoped.is_empty();
+        suite.violations = scoped;
+        return;
+    }
+    if scoped.is_empty() {
+        return;
+    }
+    for line in scoped {
+        if !suite.violations.contains(&line) {
+            suite.violations.push(line);
+        }
+    }
+    suite.gates_clean = false;
 }
 
 fn outcome_label(outcome: WatchNamedOutcome) -> &'static str {

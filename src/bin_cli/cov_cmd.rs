@@ -21,7 +21,7 @@ use crate::test_runner::check_line_coverage::{
 };
 use crate::test_runner::unit_test_timing::RuntimeGateEval;
 use kiss::Language;
-use kiss::cli_output::{print_no_files_message, print_violations};
+use kiss::cli_output::print_no_files_message;
 use std::path::Path;
 use std::time::Instant;
 
@@ -57,7 +57,9 @@ fn evaluate_coverage_gate(
         return !result.success;
     }
     let viols = analyze::collect_line_coverage_viols(records, focus, bypass_gate);
-    print_violations(&viols);
+    for v in &viols {
+        kiss::rust_llvm_cov_runner::emit_progress(&kiss::cli_output::format_violation(v));
+    }
     !viols.is_empty()
 }
 
@@ -158,7 +160,9 @@ fn try_evaluate_records_with_cached_orphans(
     let orphan_failed = if ctx.args.gate_config.orphan_detection && !ctx.args.bypass_gate {
         if !orphan_viols.is_empty() {
             crate::test_runner::final_summary::note_violation_kind("orphan", orphan_viols.len());
-            kiss::cli_output::print_violations(orphan_viols);
+            for v in orphan_viols {
+                kiss::rust_llvm_cov_runner::emit_progress(&kiss::cli_output::format_violation(v));
+            }
             true
         } else {
             false

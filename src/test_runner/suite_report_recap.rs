@@ -24,7 +24,7 @@ pub(super) fn language_recap_exit(suite: &StoredSuite, lang: &str) -> i32 {
         .any(|row| row.lang == lang && row.outcome == "fail");
     if suite.lang_timed_out[i] > 0 || named_timeout {
         124
-    } else if suite.lang_failed[i] > 0 || named_fail {
+    } else if suite.lang_failed[i] > 0 || named_fail || !suite.violations.is_empty() {
         1
     } else {
         0
@@ -47,7 +47,9 @@ pub(super) fn language_recap_body(suite: &StoredSuite, lang: &str) -> String {
         total_label: suite.total_label.clone(),
         max_pass_label: suite.max_pass_label.clone(),
     });
-    if language_recap_exit(suite, lang) == 0 {
+    if !suite.violations.is_empty() {
+        report.merge_lines(&suite.violations);
+    } else if language_recap_exit(suite, lang) == 0 {
         report.merge_lines(&["NO VIOLATIONS".into()]);
     }
     report.format()
@@ -84,7 +86,9 @@ pub(super) fn bilingual_recap(
         live_totals.cloned().unwrap_or_else(|| lang_sum_totals(suite))
     };
     report.apply_totals(&totals);
-    if !scoped && live_exit == 0 {
+    if !suite.violations.is_empty() {
+        report.merge_lines(&suite.violations);
+    } else if (!scoped && live_exit == 0) || (scoped && suite.gates_clean) {
         report.merge_lines(&["NO VIOLATIONS".into()]);
     }
     sync_anonymous(suite, &totals);
@@ -122,7 +126,9 @@ pub(super) fn totals_from_suite(suite: &StoredSuite) -> WatchSuiteTotals {
     }
 }
 
-pub(super) fn problem_sig(suite: &StoredSuite) -> (usize, usize, Vec<(String, String, String)>) {
+pub(super) type ProblemSig = (usize, usize, Vec<(String, String, String)>, Vec<String>);
+
+pub(super) fn problem_sig(suite: &StoredSuite) -> ProblemSig {
     let failed = suite.lang_failed[0] + suite.lang_failed[1];
     let timed_out = suite.lang_timed_out[0] + suite.lang_timed_out[1];
     let mut rows: Vec<(String, String, String)> = suite
@@ -132,7 +138,9 @@ pub(super) fn problem_sig(suite: &StoredSuite) -> (usize, usize, Vec<(String, St
         .map(|row| (row.lang.clone(), row.selector.clone(), row.outcome.clone()))
         .collect();
     rows.sort();
-    (failed, timed_out, rows)
+    let mut violations = suite.violations.clone();
+    violations.sort();
+    (failed, timed_out, rows, violations)
 }
 
 pub(super) fn scoped_suite_exit(suite: &StoredSuite) -> i32 {
@@ -142,7 +150,7 @@ pub(super) fn scoped_suite_exit(suite: &StoredSuite) -> i32 {
     let named_fail = suite.named.iter().any(|row| row.outcome == "fail");
     if timed_out > 0 || named_timeout {
         124
-    } else if failed > 0 || named_fail {
+    } else if failed > 0 || named_fail || !suite.violations.is_empty() {
         1
     } else {
         0

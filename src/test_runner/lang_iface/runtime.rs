@@ -5,7 +5,8 @@ use kiss::GateConfig;
 use kiss::Language;
 
 use super::source_delta::SourceDeltaMisses;
-use super::witness::{AcceptMode, ExecutionWitness, WitnessStatus, summary_from_witness_statuses};
+use super::witness::{AcceptMode, ExecutionWitness, WitnessStatus};
+use super::witness_summary::summary_from_witness_statuses;
 use crate::test_runner::language_keyed::LanguageKeyed;
 use crate::test_runner::runners::SelectorExecutionSummary;
 
