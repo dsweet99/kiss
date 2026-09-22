@@ -137,7 +137,7 @@ fn publish_sharded_outputs(python: &Output, rust_outs: &[Output]) -> i32 {
         for line in String::from_utf8_lossy(&out.stdout).lines() {
             if let Some(next) = crate::bin_cli::check_cmd::analyzed_add_pub(totals, line) {
                 totals = next;
-            } else if line != "NO VIOLATIONS" {
+            } else if line != "NO VIOLATIONS" && !crate::is_cli_wall_timing_line(line) {
                 println!("{line}");
             }
         }

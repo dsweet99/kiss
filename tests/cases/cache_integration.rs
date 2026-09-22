@@ -66,7 +66,8 @@ fn check_cache_hit_replays_on_second_run() {
         String::from_utf8_lossy(&out2.stderr)
     );
     assert_eq!(
-        stdout2, stdout1,
+        crate::common::without_cli_wall_timing(&stdout2),
+        crate::common::without_cli_wall_timing(&stdout1),
         "cache-hit output should match exactly.\n--stdout1--\n{stdout1}\n--stdout2--\n{stdout2}"
     );
 }
@@ -104,7 +105,8 @@ fn check_cache_is_not_invalidated_when_runtime_coverage_changes() {
         String::from_utf8_lossy(&out2.stderr)
     );
     assert_eq!(
-        stdout2, stdout1,
+        crate::common::without_cli_wall_timing(&stdout2),
+        crate::common::without_cli_wall_timing(&stdout1),
         "unchanged source with changed runtime coverage should preserve the static check cache"
     );
 }
@@ -127,7 +129,8 @@ fn check_cache_invalidates_when_sources_unreadable() {
     let out2 = run_python_check(repo.path(), home.path());
     let stdout2 = String::from_utf8_lossy(&out2.stdout).to_string();
     assert_ne!(
-        stdout2, stdout1,
+        crate::common::without_cli_wall_timing(&stdout2),
+        crate::common::without_cli_wall_timing(&stdout1),
         "unreadable sources must not replay cached output.\n--stdout1--\n{stdout1}\n--stdout2--\n{stdout2}"
     );
 }
@@ -153,7 +156,8 @@ fn check_cache_invalidates_on_mtime_or_size_change() {
 
     let stdout2 = String::from_utf8_lossy(&out2.stdout).to_string();
     assert_ne!(
-        stdout2, stdout1,
+        crate::common::without_cli_wall_timing(&stdout2),
+        crate::common::without_cli_wall_timing(&stdout1),
         "after source change, cached output must not be replayed.\n--stdout1--\n{stdout1}\n--stdout2--\n{stdout2}"
     );
 }
@@ -186,7 +190,8 @@ fn check_cache_invalidates_on_same_size_content_change() {
     let out2 = run_python_check(repo.path(), home.path());
     let stdout2 = String::from_utf8_lossy(&out2.stdout).to_string();
     assert_ne!(
-        stdout2, stdout1,
+        crate::common::without_cli_wall_timing(&stdout2),
+        crate::common::without_cli_wall_timing(&stdout1),
         "same-size content change with preserved mtime must not replay stale cache.\n\
          --stdout1--\n{stdout1}\n--stdout2--\n{stdout2}"
     );
@@ -205,7 +210,7 @@ fn run_mixed_cmd(home: &Path, repo: &Path, args: &[&str]) -> Output {
 fn sorted_stdout_lines(out: &Output) -> Vec<String> {
     let mut lines: Vec<String> = String::from_utf8_lossy(&out.stdout)
         .lines()
-        .filter(|line| !line.is_empty())
+        .filter(|line| !line.is_empty() && !crate::common::is_cli_wall_timing_line(line))
         .map(str::to_string)
         .collect();
     lines.sort_unstable();
@@ -250,8 +255,8 @@ fn mixed_workspace_cached_check_and_stats_match_uncached() {
 
     let (check1, check2) = replay_cmd(home.path(), repo.path(), &["check"]);
     assert_eq!(
-        String::from_utf8_lossy(&check1.stdout),
-        String::from_utf8_lossy(&check2.stdout),
+        crate::common::without_cli_wall_timing(&String::from_utf8_lossy(&check1.stdout)),
+        crate::common::without_cli_wall_timing(&String::from_utf8_lossy(&check2.stdout)),
         "cached kiss check must replay the uncached production dataset"
     );
 
@@ -379,8 +384,8 @@ fn rust_inline_and_external_tests_cached_check_and_stats_match_uncached() {
         String::from_utf8_lossy(&check1.stderr)
     );
     assert_eq!(
-        check1_out.as_ref(),
-        String::from_utf8_lossy(&check2.stdout).as_ref(),
+        crate::common::without_cli_wall_timing(check1_out.as_ref()),
+        crate::common::without_cli_wall_timing(&String::from_utf8_lossy(&check2.stdout)),
         "cached kiss check must replay the uncached rust production dataset"
     );
 

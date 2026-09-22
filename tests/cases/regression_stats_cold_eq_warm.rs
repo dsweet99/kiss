@@ -50,11 +50,11 @@ fn regression_stats_cold_and_warm_are_identical() {
             let warm_out = String::from_utf8_lossy(&warm.stdout);
             let mut left = cold_out
                 .lines()
-                .filter(|line| !line.is_empty())
+                .filter(|line| !line.is_empty() && !crate::common::is_cli_wall_timing_line(line))
                 .collect::<Vec<_>>();
             let mut right = warm_out
                 .lines()
-                .filter(|line| !line.is_empty())
+                .filter(|line| !line.is_empty() && !crate::common::is_cli_wall_timing_line(line))
                 .collect::<Vec<_>>();
             left.sort_unstable();
             right.sort_unstable();

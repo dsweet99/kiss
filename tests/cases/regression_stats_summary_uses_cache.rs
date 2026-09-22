@@ -37,11 +37,11 @@ fn regression_stats_summary_replays_warm_output() {
             let warm_out = String::from_utf8_lossy(&warm.stdout);
             let mut cold_lines = cold_out
                 .lines()
-                .filter(|line| !line.is_empty())
+                .filter(|line| !line.is_empty() && !crate::common::is_cli_wall_timing_line(line))
                 .collect::<Vec<_>>();
             let mut warm_lines = warm_out
                 .lines()
-                .filter(|line| !line.is_empty())
+                .filter(|line| !line.is_empty() && !crate::common::is_cli_wall_timing_line(line))
                 .collect::<Vec<_>>();
             cold_lines.sort_unstable();
             warm_lines.sort_unstable();

@@ -163,7 +163,7 @@ fn publish_worker_outputs(python: &Output, rust: &Output) -> i32 {
         for line in String::from_utf8_lossy(out).lines() {
             if let Some(next) = analyzed_add(totals, line) {
                 totals = next;
-            } else if line != "NO VIOLATIONS" {
+            } else if line != "NO VIOLATIONS" && !crate::is_cli_wall_timing_line(line) {
                 println!("{line}");
             }
         }
@@ -278,12 +278,12 @@ mod coverage_witness {
     fn publish_merges_clean_workers() {
         let python = output(
             true,
-            "Analyzed: 2 files, 3 code_units, 4 statements, 2 graph_nodes, 1 graph_edges\nNO VIOLATIONS\n",
+            "Analyzed: 2 files, 3 code_units, 4 statements, 2 graph_nodes, 1 graph_edges\nNO VIOLATIONS\nkiss: 1.00s\n",
             "[TIMING] py=1\nkiss: 1.00s\n",
         );
         let rust = output(
             true,
-            "Analyzed: 1 files, 1 code_units, 1 statements, 1 graph_nodes, 1 graph_edges\nNO VIOLATIONS\n",
+            "Analyzed: 1 files, 1 code_units, 1 statements, 1 graph_nodes, 1 graph_edges\nNO VIOLATIONS\nkiss: 2.00s\n",
             "kiss: 2.00s\n",
         );
         assert_eq!(publish_worker_outputs(&python, &rust), 0);

@@ -372,3 +372,22 @@ fn cli_viz_zoom_near_one_is_not_collapsed() {
         "expected zoom=0.99 to keep at least 2 nodes. mmd:\n{mmd}"
     );
 }
+
+#[test]
+fn cli_wall_timing_goes_to_stdout_not_stderr() {
+    let output = kiss_binary().arg("rules").output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "rules should succeed. stderr:\n{stderr}\nstdout:\n{stdout}"
+    );
+    let on_stdout = stdout
+        .lines()
+        .any(|line| line.starts_with("kiss: ") && (line.ends_with("ms") || line.ends_with('s')));
+    let on_stderr = stderr
+        .lines()
+        .any(|line| line.starts_with("kiss: ") && (line.ends_with("ms") || line.ends_with('s')));
+    assert!(on_stdout, "wall-clock line must be on stdout. stdout:\n{stdout}");
+    assert!(!on_stderr, "wall-clock line must not be on stderr. stderr:\n{stderr}");
+}

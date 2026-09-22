@@ -54,5 +54,8 @@ fn regression_check_default_writes_cache_and_replays() {
 
     let warm_stdout = String::from_utf8_lossy(&warm.stdout).to_string();
     assert_eq!(cold.status.code(), warm.status.code());
-    assert_eq!(cold_stdout, warm_stdout);
+    assert_eq!(
+        crate::common::without_cli_wall_timing(&cold_stdout),
+        crate::common::without_cli_wall_timing(&warm_stdout)
+    );
 }

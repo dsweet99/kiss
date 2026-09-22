@@ -15,6 +15,20 @@ use python_seed_helpers::{
     python_source_input_fingerprint,
 };
 
+pub fn is_cli_wall_timing_line(line: &str) -> bool {
+    let Some(rest) = line.strip_prefix("kiss: ") else {
+        return false;
+    };
+    rest.ends_with("ms") || (rest.ends_with('s') && rest.contains('.'))
+}
+
+pub fn without_cli_wall_timing(s: &str) -> String {
+    s.lines()
+        .filter(|line| !is_cli_wall_timing_line(line))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Prefer tmpfs for TempDir-backed publish barriers (ext4 /tmp fsync is slow).
 pub fn prefer_tmpfs_tmpdir() {
     static ONCE: Once = Once::new();
