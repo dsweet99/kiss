@@ -10,6 +10,7 @@ use std::sync::mpsc;
 struct MutationEvents<F> {
     edit: Option<F>,
     root: PathBuf,
+    changed: PathBuf,
     stage: usize,
     nudge: mpsc::Sender<NudgeRequest>,
     reply: mpsc::SyncSender<NudgeReplyMsg>,
@@ -22,9 +23,7 @@ impl<F: FnOnce(&Path)> WatchEventSource for MutationEvents<F> {
         match self.stage {
             1 => {
                 self.edit.take().unwrap()(&self.root);
-                Ok(vec![NormalizedWatchEvent::Paths(vec![
-                    self.root.join("test_edit.py"),
-                ])])
+                Ok(vec![NormalizedWatchEvent::Paths(vec![self.changed.clone()])])
             }
             2 => Err(RecvTimeout::Timeout),
             3 => {
@@ -57,15 +56,27 @@ fn mutation_reply_for_request(
     edit: impl FnOnce(&Path),
     request: NudgeRequestMsg,
 ) -> NudgeReplyMsg {
+    mutation_reply_from_files(&[("test_edit.py", source)], "test_edit.py", edit, request)
+}
+
+fn mutation_reply_from_files(
+    files: &[(&str, &str)],
+    changed: &str,
+    edit: impl FnOnce(&Path),
+    request: NudgeRequestMsg,
+) -> NudgeReplyMsg {
     let _cwd = crate::cwd_test_lock::lock();
     let tmp = tempfile::tempdir().unwrap();
     init_git(&tmp);
-    std::fs::write(tmp.path().join("test_edit.py"), source).unwrap();
+    for (name, contents) in files {
+        std::fs::write(tmp.path().join(name), contents).unwrap();
+    }
     let (tx, rx) = mpsc::channel();
     let (reply, replies) = mpsc::sync_channel(1);
     let mut events = MutationEvents {
         edit: Some(edit),
         root: tmp.path().into(),
+        changed: tmp.path().join(changed),
         stage: 0,
         nudge: tx,
         reply,
@@ -294,4 +305,93 @@ fn real_engine_watcher_deletes_final_test_file() {
         std::fs::remove_file(root.join("test_edit.py")).unwrap();
     });
     assert_current(reply, &[]);
+}
+
+#[test]
+fn real_engine_watcher_deletes_one_file_keeps_sibling() {
+    let reply = mutation_reply_from_files(
+        &[
+            ("test_edit.py", "def test_old():\n    assert True\n"),
+            ("test_keep.py", "def test_keep():\n    assert True\n"),
+        ],
+        "test_edit.py",
+        |root| std::fs::remove_file(root.join("test_edit.py")).unwrap(),
+        NudgeRequestMsg::default(),
+    );
+    assert!(!reply.output.as_ref().unwrap().contains("test_old"), "{reply:?}");
+    assert_current(reply, &["test_keep.py::test_keep"]);
+}
+
+#[test]
+fn real_engine_watcher_promotes_function_to_class() {
+    let reply = mutation_reply_from_source("def test_keep():\n    assert True\n", |root| {
+        std::fs::write(
+            root.join("test_edit.py"),
+            "class TestKeep:\n    def test_keep(self):\n        assert True\n",
+        )
+        .unwrap();
+    });
+    assert!(
+        !reply
+            .output
+            .as_ref()
+            .unwrap()
+            .contains("test_edit.py::test_keep"),
+        "{reply:?}"
+    );
+    assert_current(reply, &["test_edit.py::TestKeep::test_keep"]);
+}
+
+#[test]
+fn real_engine_watcher_replaces_parameter_ids() {
+    let reply = mutation_reply_from_source(
+        "import pytest\n@pytest.mark.parametrize('x', [1, 2])\ndef test_case(x):\n    assert x in (1, 2)\n",
+        |root| {
+            std::fs::write(
+                root.join("test_edit.py"),
+                "import pytest\n@pytest.mark.parametrize('x', [3, 4])\ndef test_case(x):\n    assert x in (3, 4)\n",
+            )
+            .unwrap();
+        },
+    );
+    let output = reply.output.as_ref().unwrap();
+    assert!(!output.contains("test_case[1]"), "{reply:?}");
+    assert!(!output.contains("test_case[2]"), "{reply:?}");
+    assert_current(reply, &["test_case[3]", "test_case[4]"]);
+}
+
+#[test]
+fn real_engine_watcher_pass_to_fail_preserving_size_and_mtime() {
+    let reply = mutation_reply_from_source("def test_keep():\n    assert 1\n", |root| {
+        let path = root.join("test_edit.py");
+        let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
+        std::fs::write(&path, "def test_keep():\n    assert 0\n").unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(modified)
+            .unwrap();
+    });
+    let output = reply.output.as_deref().unwrap_or("");
+    assert!(output.contains("test_keep"), "{reply:?}");
+    assert!(output.contains("1 failed") || output.contains("FAIL"), "{reply:?}");
+    assert!(!output.contains("1 passed"), "{reply:?}");
+    assert_eq!(reply.exit_code, 1, "{reply:?}");
+}
+
+#[test]
+fn real_engine_watcher_deletes_class_method() {
+    let reply = mutation_reply_from_source(
+        "class TestKeep:\n    def test_old(self):\n        assert True\n    def test_keep(self):\n        assert True\n",
+        |root| {
+            std::fs::write(
+                root.join("test_edit.py"),
+                "class TestKeep:\n    def test_keep(self):\n        assert True\n",
+            )
+            .unwrap();
+        },
+    );
+    assert!(!reply.output.as_ref().unwrap().contains("test_old"), "{reply:?}");
+    assert_current(reply, &["test_edit.py::TestKeep::test_keep"]);
 }
