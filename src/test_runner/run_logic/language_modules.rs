@@ -94,6 +94,7 @@ fn ensure_python_via_kernel(
     use crate::test_runner::ensure_runtime::{
         ensure_languages_runtime, ensure_request_from_planned,
     };
+    assert!(ctx.options.jobs > 0, "jobs must be greater than zero");
     let mut planned = ctx.planned.clone();
     planned.sel.python = selectors.to_vec();
     planned.sel.rust.clear();

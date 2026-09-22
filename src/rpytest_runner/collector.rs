@@ -10,6 +10,7 @@ const PYTEST_COLLECT_MAIN: &str = r#"
 import json
 import os
 import sys
+import tempfile
 
 os.environ.pop("PYTEST_ADDOPTS", None)
 os.environ["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
@@ -68,7 +69,11 @@ def main():
     ]
     args.extend(config.get("pytest_args", []))
     args.extend(config.get("paths", []))
-    raise SystemExit(pytest.main(args, plugins=[_KissCollectReporter()]))
+    # Collection must not reuse timestamp-based bytecode after a same-size edit.
+    with tempfile.TemporaryDirectory(prefix="kiss-collect-") as cache:
+        sys.pycache_prefix = cache
+        sys.dont_write_bytecode = True
+        raise SystemExit(pytest.main(args, plugins=[_KissCollectReporter()]))
 
 import pytest
 

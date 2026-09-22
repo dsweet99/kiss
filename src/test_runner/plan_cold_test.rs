@@ -238,11 +238,11 @@ fn python_all_plan_keeps_provided_universe_and_requires_population_without_index
         "tests/test_b.py::test_b".into(),
     ];
     let (sel, required) =
-        super::plan_vcs::python_all_plan(tmp.path(), &[], &[], provided.clone(), true);
+        super::plan_vcs::python_all_plan(tmp.path(), &[], provided.clone(), true);
     assert_eq!(sel, provided);
     assert!(required);
     let (skipped, skip_required) =
-        super::plan_vcs::python_all_plan(tmp.path(), &[], &[], provided, false);
+        super::plan_vcs::python_all_plan(tmp.path(), &[], provided, false);
     assert!(skipped.is_empty());
     assert!(!skip_required);
 }

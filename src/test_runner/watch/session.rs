@@ -209,6 +209,14 @@ fn reuse_after_reload(
 }
 
 #[cfg(test)]
+#[path = "session_mutation_test.rs"]
+mod mutation_tests;
+
+#[cfg(test)]
+#[path = "session_inventory_test.rs"]
+mod inventory_tests;
+
+#[cfg(test)]
 #[path = "session_test.rs"]
 mod tests;
 

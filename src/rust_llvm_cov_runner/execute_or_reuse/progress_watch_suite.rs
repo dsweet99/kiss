@@ -25,6 +25,8 @@ pub struct WatchSuiteReport {
     pub(crate) max_pass_label: String,
     pub(crate) violations: Vec<String>,
     pub(crate) gates_clean: bool,
+    pub(crate) inventory_empty: [bool; 2],
+    pub(crate) inventory_named: [bool; 2],
 }
 
 impl WatchSuiteReport {
@@ -45,33 +47,26 @@ impl WatchSuiteReport {
     }
 
     pub fn try_format_language(&self, lang: crate::Language) -> Option<(i32, String)> {
-        let (lp, lf, lt) = self.lang_counts(lang);
-        let has_lang = lp + lf + lt > 0;
-        let untagged = self.anonymous_passed + self.anonymous_failed + self.anonymous_timed_out > 0;
-        if untagged && !has_lang {
-            return None;
-        }
-        let mut slice = Self {
-            gates_clean: self.gates_clean,
-            violations: self.violations.clone(),
-            total_label: self.total_label.clone(),
-            max_pass_label: self.max_pass_label.clone(),
-            anonymous_passed: lp,
-            anonymous_failed: lf,
-            anonymous_timed_out: lt,
-            ..Self::default()
-        };
-        for (selector, outcome) in &self.named {
-            let path_part = selector.split_once("::").map_or(selector.as_str(), |(p, _)| p);
-            if crate::Language::from_path(std::path::Path::new(path_part)) != Some(lang) {
-                continue;
-            }
-            slice.named.insert(selector.clone(), *outcome);
-        }
-        if slice.named.is_empty() && !has_lang {
-            return None;
-        }
+        let slice = language_slice(self, lang)?;
         Some((slice.recap_exit_code(), slice.format()))
+    }
+
+    pub fn apply_language_totals(
+        &mut self,
+        previous: &Self,
+        lang: crate::Language,
+        totals: &WatchSuiteTotals,
+    ) {
+        let Some(prior) = language_slice(previous, lang) else {
+            return;
+        };
+        self.apply_totals(&WatchSuiteTotals {
+            passed: previous.passed().saturating_sub(prior.passed()) + totals.passed,
+            failed: previous.failed().saturating_sub(prior.failed()) + totals.failed,
+            timed_out: previous.timed_out().saturating_sub(prior.timed_out()) + totals.timed_out,
+            total_label: totals.total_label.clone(),
+            max_pass_label: totals.max_pass_label.clone(),
+        });
     }
 
     fn recap_exit_code(&self) -> i32 {
@@ -84,17 +79,11 @@ impl WatchSuiteReport {
         }
     }
 
-    fn lang_counts(&self, lang: crate::Language) -> (usize, usize, usize) {
-        let i = match lang {
-            crate::Language::Python => 0,
-            crate::Language::Rust => 1,
-        };
-        (self.lang_passed[i], self.lang_failed[i], self.lang_timed_out[i])
-    }
-
     pub fn format(&self) -> String {
         let mut lines = status_lines(self);
-        if lines.is_empty() && self.violations.is_empty() && !self.gates_clean {
+        if lines.is_empty() && self.violations.is_empty() && !self.gates_clean
+            && !self.inventory_empty.iter().any(|empty| *empty)
+        {
             return String::new();
         }
         lines.extend(failure_footers(self));
@@ -119,6 +108,41 @@ impl WatchSuiteReport {
         self.total_label = totals.total_label.clone();
         self.max_pass_label = totals.max_pass_label.clone();
     }
+}
+
+fn language_slice(suite: &WatchSuiteReport, lang: crate::Language) -> Option<WatchSuiteReport> {
+    let i = match lang {
+        crate::Language::Python => 0,
+        crate::Language::Rust => 1,
+    };
+    let (lp, lf, lt) = (suite.lang_passed[i], suite.lang_failed[i], suite.lang_timed_out[i]);
+    let has_lang = lp + lf + lt > 0;
+    let untagged = suite.anonymous_passed + suite.anonymous_failed + suite.anonymous_timed_out > 0;
+    let known_empty = suite.inventory_empty[i];
+    if untagged && !has_lang && !known_empty && !suite.inventory_named[i] {
+        return None;
+    }
+    let mut slice = WatchSuiteReport {
+        inventory_empty: suite.inventory_empty,
+        gates_clean: suite.gates_clean,
+        violations: suite.violations.clone(),
+        total_label: suite.total_label.clone(),
+        max_pass_label: suite.max_pass_label.clone(),
+        anonymous_passed: lp,
+        anonymous_failed: lf,
+        anonymous_timed_out: lt,
+        ..WatchSuiteReport::default()
+    };
+    for (selector, outcome) in &suite.named {
+        let path_part = selector.split_once("::").map_or(selector.as_str(), |(p, _)| p);
+        if crate::Language::from_path(std::path::Path::new(path_part)) == Some(lang) {
+            slice.named.insert(selector.clone(), *outcome);
+        }
+    }
+    if slice.named.is_empty() && !has_lang && !known_empty {
+        return None;
+    }
+    Some(slice)
 }
 
 fn outcome_label(outcome: SuiteOutcome) -> &'static str {
@@ -235,6 +259,46 @@ pub fn merge_watch_exit(cycle_exit: i32, suite_exit: i32) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn language_totals_replace_only_refreshed_language_outcomes() {
+        let mut previous = WatchSuiteReport::default();
+        previous.merge_lines(&[
+            "PASS (cached): 5 selectors".into(),
+            "kiss test: lang_collapsed python pass 2".into(),
+            "kiss test: lang_collapsed rust pass 3".into(),
+            "FAIL (cached): 3 selectors".into(),
+            "kiss test: lang_collapsed python fail 1".into(),
+            "kiss test: lang_collapsed rust fail 2".into(),
+            "TIMEOUT (cached): 3 selectors".into(),
+            "kiss test: lang_collapsed python timeout 2".into(),
+            "kiss test: lang_collapsed rust timeout 1".into(),
+        ]);
+        let mut current = WatchSuiteReport::default();
+        current.apply_language_totals(&previous, crate::Language::Python, &WatchSuiteTotals {
+            passed: 1,
+            failed: 0,
+            timed_out: 0,
+            total_label: "1s".into(),
+            max_pass_label: "1s".into(),
+        });
+        assert_eq!((current.passed(), current.failed(), current.timed_out()), (4, 2, 1));
+    }
+
+    #[test]
+    fn language_totals_do_not_guess_unattributed_results() {
+        let mut suite = WatchSuiteReport::default();
+        suite.merge_lines(&["PASS (cached): 5 selectors".into()]);
+        let previous = suite.clone();
+        suite.apply_language_totals(&previous, crate::Language::Python, &WatchSuiteTotals {
+            passed: 1,
+            failed: 0,
+            timed_out: 0,
+            total_label: "1s".into(),
+            max_pass_label: "1s".into(),
+        });
+        assert_eq!(suite, previous);
+    }
 
     #[test]
     fn suite_recap_keeps_prior_failures_after_one_cached_pass() {

@@ -118,7 +118,6 @@ pub(crate) fn plan_selectors_from_workspace(
 
 pub(crate) fn python_all_plan(
     repo_root: &std::path::Path,
-    ignore: &[String],
     python_extra: &[String],
     py_sel: Vec<String>,
     cover_python: bool,
@@ -126,13 +125,6 @@ pub(crate) fn python_all_plan(
     if !cover_python {
         return (Vec::new(), false);
     }
-    let stored = crate::test_runner::python_coverage_index::stored_python_universe_selectors(
-        repo_root,
-        python_extra,
-        ignore,
-        crate::test_runner::python_coverage_index::PYTHON_COVERAGE_ENV_KEYS,
-    );
-    let py_sel = stored.unwrap_or(py_sel);
     if py_sel.is_empty() {
         return (py_sel, false);
     }

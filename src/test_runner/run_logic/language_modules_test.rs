@@ -206,7 +206,9 @@ fn dry_run_lines_report_population_and_selector_commands() {
 
 #[test]
 fn language_executor_non_empty_runs_validate_jobs_before_spawning() {
-    let planned = planned();
+    let tmp = tempfile::tempdir().unwrap();
+    let mut planned = planned();
+    planned.repo_root = tmp.path().to_path_buf();
     let mut options = super::dry_run_selector_options();
     options.jobs = 0;
     let ctx = crate::test_runner::coverage_decision::RunContext {

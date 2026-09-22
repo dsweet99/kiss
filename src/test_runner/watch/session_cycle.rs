@@ -81,12 +81,31 @@ where
         ctx.reuse_suite,
         Some(ctx.repo_root),
     );
+    let previous_language_suite = cycle_args.lang_filter
+        .filter(|_| !target_scoped && !cycle_args.force_bad && !report.engine_aborted && !report.interrupted)
+        .map(|lang| (lang, ctx.suite.clone()));
+    if !reconcile_inventory(ctx.suite, ctx.last_reply, &cycle_args) {
+        return CycleOutcome::Error;
+    }
     merge_cycle_suite(
         ctx.suite,
         &report.lines,
         report.totals.as_ref(),
         target_scoped || cycle_args.lang_filter.is_some(),
     );
+    if !reconcile_inventory(ctx.suite, ctx.last_reply, &cycle_args) {
+        return CycleOutcome::Error;
+    }
+    if !target_scoped && cycle_args.lang_filter.is_none()
+        && let Some(totals) = report.totals.as_ref()
+    {
+        ctx.suite.apply_totals(totals);
+    }
+    if let Some((lang, previous)) = previous_language_suite
+        && let Some(totals) = report.totals.as_ref()
+    {
+        ctx.suite.apply_language_totals(&previous, lang, totals);
+    }
     if report.interrupted {
         store_interrupted_reply(ctx.last_reply, &replies, ctx.suite, cycle_args.lang_filter);
         return CycleOutcome::Interrupted;
@@ -118,6 +137,10 @@ where
     }
     CycleOutcome::Continue
 }
+
+#[path = "session_inventory.rs"]
+mod inventory;
+pub(super) use inventory::reconcile_inventory;
 
 pub(crate) fn apply_queued_filters(live: &mut WatchLiveConfig, queued: &Option<QueuedCycle>) {
     match queued {

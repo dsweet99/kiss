@@ -191,7 +191,6 @@ mod tests {
         );
     }
 
-    #[cfg(windows)]
     #[test]
     fn resolved_identity_tools_uses_pathext() {
         let tmp = tempfile::tempdir().unwrap();
@@ -209,7 +208,7 @@ mod tests {
 
         assert_eq!(
             tools.get("cmake").map(String::as_str),
-            Some(cmake.to_str().unwrap())
+            cfg!(windows).then(|| cmake.to_str().unwrap())
         );
     }
 

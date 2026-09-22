@@ -97,7 +97,7 @@ fn dry_run_lines_omit_ignored_fixture_selectors() {
 }
 
 #[test]
-fn stored_universe_with_pytest_args_skips_collect_of_extra_tests() {
+fn discovery_with_pytest_args_does_not_reuse_historical_population() {
     let _lock = crate::cwd_test_lock::lock();
     reset_python_collect_memo_for_tests();
     let tmp = TempDir::new().unwrap();
@@ -119,7 +119,8 @@ fn stored_universe_with_pytest_args_skips_collect_of_extra_tests() {
     std::fs::write(tmp.path().join("stale.py"), "x = 2\n").unwrap();
 
     let enumerated = enumerate_workspace_python_selectors(tmp.path(), &[], &pytest_args).unwrap();
-    assert_eq!(enumerated, vec![selector.clone()]);
+    let expected = vec!["tests/test_extra.py::test_extra".to_string()];
+    assert_eq!(enumerated, expected);
 
     let module = PythonModule::for_execution_with_args(tmp.path(), &[], &pytest_args);
     let discovered = module
@@ -128,5 +129,5 @@ fn stored_universe_with_pytest_args_skips_collect_of_extra_tests() {
         .into_iter()
         .map(|item| item.id)
         .collect::<Vec<_>>();
-    assert_eq!(discovered, vec![selector]);
+    assert_eq!(discovered, expected);
 }

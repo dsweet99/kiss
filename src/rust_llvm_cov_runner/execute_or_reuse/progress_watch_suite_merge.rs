@@ -11,6 +11,50 @@ enum RustIdKind {
 }
 
 impl WatchSuiteReport {
+    pub fn retain_rust_selectors(
+        &mut self,
+        selectors: &[String],
+        report_ids: &BTreeMap<String, String>,
+    ) {
+        self.named = std::mem::take(&mut self.named)
+            .into_iter()
+            .map(|(id, outcome)| (report_ids.get(&id).cloned().unwrap_or(id), outcome))
+            .collect();
+        let current: Vec<_> = selectors.iter()
+            .map(|id| report_ids.get(id).unwrap_or(id).clone())
+            .collect();
+        self.retain_language_selectors(crate::Language::Rust, &current);
+    }
+
+    pub fn retain_language_selectors(&mut self, lang: crate::Language, selectors: &[String]) {
+        let i = lang_slot(lang);
+        self.inventory_empty[i] = selectors.is_empty();
+        let current: std::collections::BTreeSet<&str> =
+            selectors.iter().map(String::as_str).collect();
+        self.named.retain(|selector, _| {
+            let path = selector.split_once("::").map_or(selector.as_str(), |(p, _)| p);
+            let selector_lang = crate::Language::from_path(Path::new(path))
+                .unwrap_or(crate::Language::Rust);
+            selector_lang != lang || current.contains(selector.as_str())
+        });
+        self.inventory_named[i] = selectors.iter().all(|selector| self.named.contains_key(selector));
+        if self.inventory_named[i] {
+            let mut named = [0; 3];
+            for selector in &current {
+                named[collapsed_index(self.named[*selector])] += 1;
+            }
+            self.anonymous_passed = self.anonymous_passed
+                .saturating_sub(self.lang_passed[i].saturating_sub(named[0]));
+            self.anonymous_failed = self.anonymous_failed
+                .saturating_sub(self.lang_failed[i].saturating_sub(named[1]));
+            self.anonymous_timed_out = self.anonymous_timed_out
+                .saturating_sub(self.lang_timed_out[i].saturating_sub(named[2]));
+            self.lang_passed[i] = 0;
+            self.lang_failed[i] = 0;
+            self.lang_timed_out[i] = 0;
+        }
+    }
+
     pub fn merge_lines(&mut self, lines: &[String]) {
         merge_into(self, lines, false);
     }

@@ -94,6 +94,14 @@ pub(crate) fn durable_lang_reply(
     python_extra: &[String],
 ) -> Option<(i32, String)> {
     let stored = matching_store(repo, ignore, extra, python_extra)?;
+    let digests = suite_source_digests(repo, ignore).ok()?;
+    let fresh = match lang {
+        kiss::Language::Python => stored.digest_python == digests.python,
+        kiss::Language::Rust => stored.digest_rust == digests.rust,
+    };
+    if !fresh {
+        return None;
+    }
     let recap = match lang {
         kiss::Language::Python => stored.recaps.python,
         kiss::Language::Rust => stored.recaps.rust,
@@ -108,6 +116,9 @@ pub(crate) fn durable_all_reply(
     python_extra: &[String],
 ) -> Option<(i32, String)> {
     let stored = matching_store(repo, ignore, extra, python_extra)?;
+    if stored.digest_all != suite_source_digests(repo, ignore).ok()?.all {
+        return None;
+    }
     let recap = stored.recaps.all?;
     let counts = stored.suite.anonymous_passed
         + stored.suite.anonymous_failed

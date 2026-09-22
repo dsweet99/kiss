@@ -157,21 +157,10 @@ pub(crate) fn cover_all_language(
         None => {
             let (py_sel, rs_sel) = match language {
                 Language::Python => {
-                    if crate::test_runner::python_coverage_index::stored_python_universe_selectors(
-                        repo_root,
-                        python_extra,
-                        ignore,
-                        crate::test_runner::python_coverage_index::PYTHON_COVERAGE_ENV_KEYS,
-                    )
-                    .is_some()
-                    {
-                        (Vec::new(), Vec::new())
-                    } else {
-                        let (py_sel, py_elapsed) =
-                            timed_python_selectors(repo_root, ignore, python_extra);
-                        crate::test_runner::emit_stage_time("plan_python", py_elapsed);
-                        (py_sel?, Vec::new())
-                    }
+                    let (py_sel, py_elapsed) =
+                        timed_python_selectors(repo_root, ignore, python_extra);
+                    crate::test_runner::emit_stage_time("plan_python", py_elapsed);
+                    (py_sel?, Vec::new())
                 }
                 Language::Rust => {
                     let (rs_sel, rs_elapsed) = timed_rust_selectors(repo_root, ignore);
@@ -235,14 +224,6 @@ fn timed_python_selectors(
     python_extra: &[String],
 ) -> (Result<Vec<String>, String>, std::time::Duration) {
     let started = std::time::Instant::now();
-    if let Some(stored) = crate::test_runner::python_coverage_index::stored_python_universe_selectors(
-        repo_root,
-        python_extra,
-        ignore,
-        crate::test_runner::python_coverage_index::PYTHON_COVERAGE_ENV_KEYS,
-    ) {
-        return (Ok(stored), started.elapsed());
-    }
     if let Some(cached) = super::workspace_selector_cache::load_cached_python_workspace_selectors(
         repo_root,
         ignore,
@@ -319,7 +300,7 @@ fn planned_all(
 ) -> PlannedSelectors {
     let cover_python = rs_sel.is_empty() || !py_sel.is_empty();
     let (py_sel, python_population_required) =
-        plan_vcs::python_all_plan(repo_root, ignore, python_extra, py_sel, cover_python);
+        plan_vcs::python_all_plan(repo_root, python_extra, py_sel, cover_python);
     let rust_plan = rust_plan_selectors(repo_root, rs_sel, gate);
     PlannedSelectors {
         repo_root: repo_root.to_path_buf(),

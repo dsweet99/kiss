@@ -231,11 +231,8 @@ pub fn enumerate_workspace_python_selectors(
     ignore: &[String],
     pytest_args: &[String],
 ) -> Result<Vec<String>, String> {
-    if let Some(selectors) = stored_python_universe_selectors(
-        repo_root,
-        pytest_args,
-        ignore,
-        PYTHON_COVERAGE_ENV_KEYS,
+    if let Some(selectors) = super::workspace_selector_cache::load_cached_python_workspace_selectors(
+        repo_root, ignore, pytest_args,
     ) {
         return filter_ignored_python_selectors(selectors, ignore);
     }
