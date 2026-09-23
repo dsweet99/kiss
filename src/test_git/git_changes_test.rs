@@ -310,6 +310,31 @@ diff --git \"a/caf\\303\\251.py\" \"b/caf\\303\\251.py\"
 }
 
 #[test]
+fn parse_unified_diff_ignores_triple_plus_content_line() {
+    let diff = "\
+diff --git a/a.py b/a.py
+--- a/a.py
++++ b/a.py
+@@ -2 +2 @@ line1
+-line2
++++ b/evil.py
+@@ -4 +4 @@ line3
+-line4
++CHANGED
+";
+    let lines = parse_changed_lines_from_unified_diff(diff);
+    assert_eq!(
+        lines.get("a.py"),
+        Some(&BTreeSet::from([2, 4])),
+        "added ++ content must not steal later hunks, got {lines:?}"
+    );
+    assert!(
+        !lines.contains_key("evil.py"),
+        "spoof +++ path must not become a file key, got {lines:?}"
+    );
+}
+
+#[test]
 fn changed_lines_commit_reports_new_line_numbers() {
     let tmp = TempDir::new().unwrap();
     init_repo(&tmp);

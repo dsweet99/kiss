@@ -174,47 +174,56 @@ fn changed_paths_from_diff(
 }
 
 pub fn changed_lines_commit(repo: &Path) -> Result<BTreeMap<String, BTreeSet<u32>>, String> {
-    changed_lines_for_diff(
-        repo,
-        &["diff", "--no-renames", "--unified=0", "--diff-filter=AM", "HEAD"],
-    )
+    changed_lines_for_diff(repo, "HEAD")
 }
 
 pub fn changed_lines_since(
     repo: &Path,
     rev: &str,
 ) -> Result<BTreeMap<String, BTreeSet<u32>>, String> {
-    changed_lines_for_diff(
+    changed_lines_for_diff(repo, rev)
+}
+
+fn changed_lines_for_diff(
+    repo: &Path,
+    rev: &str,
+) -> Result<BTreeMap<String, BTreeSet<u32>>, String> {
+    let diff = git_output(
         repo,
         &[
             "diff",
+            "--no-color",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--src-prefix=a/",
+            "--dst-prefix=b/",
             "--no-renames",
             "--unified=0",
             "--diff-filter=AM",
             rev,
         ],
-    )
-}
-
-fn changed_lines_for_diff(
-    repo: &Path,
-    args: &[&str],
-) -> Result<BTreeMap<String, BTreeSet<u32>>, String> {
-    let diff = git_output(repo, args)?;
+    )?;
     Ok(parse_changed_lines_from_unified_diff(&diff))
 }
 
 pub(crate) fn parse_changed_lines_from_unified_diff(diff: &str) -> BTreeMap<String, BTreeSet<u32>> {
     let mut out = BTreeMap::new();
     let mut current_file: Option<String> = None;
+    let mut accept_plus_header = true;
     for line in diff.lines() {
-        if let Some(path) = line.strip_prefix("+++ ") {
+        if line.starts_with("diff --git ") {
+            current_file = None;
+            accept_plus_header = true;
+            continue;
+        }
+        if accept_plus_header && let Some(path) = line.strip_prefix("+++ ") {
             current_file = diff_paths::plus_line_path(path);
             continue;
         }
         if !line.starts_with("@@") {
             continue;
         }
+        accept_plus_header = false;
         let Some(file) = current_file.as_ref() else {
             continue;
         };
@@ -347,3 +356,7 @@ mod git_changes_test;
 #[cfg(test)]
 #[path = "test_git/git_changes_b_test.rs"]
 mod git_changes_b_test;
+
+#[cfg(test)]
+#[path = "test_git/git_changes_c_test.rs"]
+mod git_changes_c_test;
