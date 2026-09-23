@@ -246,7 +246,7 @@ fn try_wait_out_live_watcher(args: &TestCommandArgs<'_>) -> Result<Option<i32>, 
     };
     let pid = session.pid;
     let mut printed_waiting = false;
-    let reply = nudge_watcher_with_retry_on_wait(
+    let reply = match nudge_watcher_with_retry_on_wait(
         &repo_root,
         &session,
         &nudge_request_from_test_args(args),
@@ -256,7 +256,14 @@ fn try_wait_out_live_watcher(args: &TestCommandArgs<'_>) -> Result<Option<i32>, 
                 println!("kiss test: waiting for watcher (pid {pid})");
             }
         },
-    )?;
+    ) {
+        Ok(reply) => reply,
+        Err(err) if err.contains("cannot connect") || err.contains("Broken pipe") => {
+            crate::test_runner::reclaim_stale_watch_session(&repo_root);
+            return Ok(None);
+        }
+        Err(err) => return Err(err),
+    };
     let reply = crate::test_runner::oneshot_client_reply(reply, printed_waiting);
     if let Some(output) = reply.output.as_deref()
         && !output.is_empty()

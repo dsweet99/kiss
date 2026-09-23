@@ -44,6 +44,9 @@ fn protocol_batch_missing_is_quiet_timeout() {
     assert!(rslip_protocol_is_quiet_timeout(&RslipError::Runner(
         kiss::rpytest_runner::PytestRunError::Protocol("module batch timed out".to_string())
     )));
+    assert!(rslip_protocol_is_quiet_timeout(&RslipError::Runner(
+        kiss::rpytest_runner::PytestRunError::Protocol("Broken pipe (os error 32)".to_string())
+    )));
     assert!(!rslip_protocol_is_quiet_timeout(
         &RslipError::InvalidRequest("bad selector".to_string())
     ));

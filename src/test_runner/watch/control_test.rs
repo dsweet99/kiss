@@ -3,7 +3,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use super::*;
-use crate::test_runner::watch::lock::{watch_lock_path, WatchLockGuard};
+use crate::test_runner::watch::lock::{WatchLockGuard, watch_lock_path};
 
 #[test]
 fn nudge_request_progress_line_includes_fields() {
@@ -128,6 +128,48 @@ fn stale_session_ignored_when_lock_free() {
     .unwrap();
     let result = try_client_nudge(tmp.path(), &NudgeRequestMsg::default()).unwrap();
     assert!(result.is_none(), "free lock means no client path");
+}
+
+#[test]
+fn stale_session_file_removed_when_lock_free() {
+    let tmp = tempfile::tempdir().unwrap();
+    let session_path = session_file_path(tmp.path());
+    write_session_file(
+        &session_path,
+        &SessionFile {
+            pid: 4_294_967_294,
+            socket: "/tmp/kiss-watch-stale-nope.sock".into(),
+        },
+    )
+    .unwrap();
+    let result = try_client_nudge(tmp.path(), &NudgeRequestMsg::default()).unwrap();
+    assert!(result.is_none(), "dead watcher must not be a client path");
+    assert!(
+        !session_path.is_file(),
+        "next kiss test must reclaim stale session.json"
+    );
+}
+
+#[test]
+fn dead_session_pid_ignored_while_lock_held() {
+    let tmp = tempfile::tempdir().unwrap();
+    let lock_path = watch_lock_path(tmp.path());
+    let _lock = WatchLockGuard::lock(&lock_path).unwrap();
+    let session_path = session_file_path(tmp.path());
+    write_session_file(
+        &session_path,
+        &SessionFile {
+            pid: 4_294_967_294,
+            socket: "/tmp/kiss-watch-dead-held.sock".into(),
+        },
+    )
+    .unwrap();
+    let result = try_client_nudge(tmp.path(), &NudgeRequestMsg::default()).unwrap();
+    assert!(result.is_none(), "dead pid must not be nudged");
+    assert!(
+        !session_path.is_file(),
+        "dead session.json must be reclaimed while the lock is leftover"
+    );
 }
 
 #[test]

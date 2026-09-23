@@ -3,22 +3,22 @@ use std::hash::{Hash, Hasher};
 use std::io::{self, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
-use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
-use super::lock::{watch_dir, watch_lock_path, WatchLockGuard};
+use super::lock::{WatchLockGuard, watch_dir, watch_lock_path};
 
 pub(crate) const WATCH_SOCKET_TMP_DIR: &str = "/tmp/.kiss-watch";
 
 const SESSION_FILE_NAME: &str = "session.json";
 const MAX_FRAME_LEN: u32 = 256 * 1024;
-const CLIENT_SESSION_RETRY: Duration = Duration::from_millis(500);
-const CLIENT_SESSION_SLEEP: Duration = Duration::from_millis(10);
+pub(super) const CLIENT_SESSION_RETRY: Duration = Duration::from_millis(500);
+pub(super) const CLIENT_SESSION_SLEEP: Duration = Duration::from_millis(10);
 const REPLY_IMMEDIATE_WAIT: Duration = Duration::from_millis(250);
 
 pub(crate) use super::nudge_kind::NudgeInvocation;
@@ -194,7 +194,10 @@ fn acquire_exclusive_watch_lock(repo_root: &Path) -> Result<WatchLockGuard, Stri
             Ok(Some(guard)) => return Ok(guard),
             Ok(None) => {
                 if let Ok(Some(session)) = read_session_file(repo_root) {
-                    return Err(format!("watcher already running (pid {})", session.pid));
+                    if session_pid_is_live(session.pid) {
+                        return Err(format!("watcher already running (pid {})", session.pid));
+                    }
+                    reclaim_stale_watch_session(repo_root);
                 }
                 if Instant::now() >= deadline {
                     return Err("watcher already running".into());
@@ -206,15 +209,6 @@ fn acquire_exclusive_watch_lock(repo_root: &Path) -> Result<WatchLockGuard, Stri
     }
 }
 
-pub(crate) fn probe_live_watcher(repo_root: &Path) -> Result<Option<SessionFile>, String> {
-    let lock_path = watch_lock_path(repo_root);
-    match WatchLockGuard::try_lock_shared(&lock_path) {
-        Ok(Some(_guard)) => Ok(None),
-        Ok(None) => Ok(Some(wait_for_session(repo_root)?)),
-        Err(e) => Err(format!("cannot probe watch lock: {e}")),
-    }
-}
-
 #[cfg(test)]
 pub(crate) fn try_client_nudge(
     repo_root: &Path,
@@ -222,25 +216,14 @@ pub(crate) fn try_client_nudge(
 ) -> Result<Option<NudgeReplyMsg>, String> {
     match probe_live_watcher(repo_root)? {
         None => Ok(None),
-        Some(session) => Ok(Some(nudge_watcher_with_retry_on_wait(
-            repo_root,
-            &session,
-            msg,
-            &mut || {},
-        )?)),
-    }
-}
-
-fn wait_for_session(repo_root: &Path) -> Result<SessionFile, String> {
-    let deadline = Instant::now() + CLIENT_SESSION_RETRY;
-    loop {
-        match read_session_file(repo_root)? {
-            Some(session) => return Ok(session),
-            None if Instant::now() < deadline => {
-                thread::sleep(CLIENT_SESSION_SLEEP);
-            }
-            None => {
-                return Err("watcher lock held but session is not ready; try again shortly".into());
+        Some(session) => {
+            match nudge_watcher_with_retry_on_wait(repo_root, &session, msg, &mut || {}) {
+                Ok(reply) => Ok(Some(reply)),
+                Err(err) if watcher_socket_unreachable(&err) => {
+                    reclaim_stale_watch_session(repo_root);
+                    Ok(None)
+                }
+                Err(err) => Err(err),
             }
         }
     }
@@ -267,6 +250,14 @@ pub(crate) fn nudge_watcher_with_retry_on_wait(
             Err(e) => return Err(e),
         }
     }
+}
+
+#[cfg(test)]
+fn watcher_socket_unreachable(err: &str) -> bool {
+    err.contains("cannot connect")
+        || err.contains("Broken pipe")
+        || err.contains("nudge read failed")
+        || err.contains("nudge write failed")
 }
 
 fn nudge_watcher_on_wait(
@@ -348,7 +339,10 @@ pub(crate) fn watch_socket_path(repo_root: &Path) -> Result<PathBuf, String> {
 
 #[path = "control_reclaim.rs"]
 mod control_reclaim;
-pub(crate) use control_reclaim::reclaim_stale_watch_sockets;
+pub(crate) use control_reclaim::{
+    probe_live_watcher, reclaim_stale_watch_session, reclaim_stale_watch_sockets,
+    session_pid_is_live,
+};
 
 fn accept_loop(listener: UnixListener, nudge_tx: Sender<NudgeRequest>, shutdown: Arc<AtomicBool>) {
     while !shutdown.load(Ordering::SeqCst) {

@@ -1,6 +1,4 @@
-use kiss::rslip::{
-    CacheStatus as PyCacheStatus, RslipBatchProgress, RslipError, RslipOutcome,
-};
+use kiss::rslip::{CacheStatus as PyCacheStatus, RslipBatchProgress, RslipError, RslipOutcome};
 
 use super::rslip_request::timeout_for_selector_with_gate;
 
@@ -128,6 +126,7 @@ pub(super) fn rslip_protocol_is_quiet_timeout(err: &RslipError) -> bool {
         RslipError::Runner(kiss::rpytest_runner::PytestRunError::Protocol(message))
             if message.contains("module batch result missing")
                 || message.contains("module batch timed out")
+                || message.contains("Broken pipe")
     )
 }
 

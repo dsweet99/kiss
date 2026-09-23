@@ -96,16 +96,44 @@ pub(crate) fn run_with_reused_controller(
     controller: &mut Option<ForkserverController>,
     req: PytestRunRequest,
 ) -> Result<PytestRunOutcome, PytestRunError> {
+    start_controller_for(controller, &req)?;
+    match controller
+        .as_mut()
+        .expect("controller initialized")
+        .run(req.clone())
+    {
+        Ok(outcome) => Ok(outcome),
+        Err(err) if controller_pipe_is_dead(&err) => {
+            *controller = None;
+            start_controller_for(controller, &req)?;
+            controller
+                .as_mut()
+                .expect("controller initialized")
+                .run(req)
+        }
+        Err(err) => Err(err),
+    }
+}
+
+fn start_controller_for(
+    controller: &mut Option<ForkserverController>,
+    req: &PytestRunRequest,
+) -> Result<(), PytestRunError> {
     let needs_controller = controller.as_ref().is_none_or(|existing| {
         existing.python != req.python || existing.bootstrap != req.bootstrap
     });
     if needs_controller {
         *controller = Some(ForkserverController::start(&req.python, &req.bootstrap)?);
     }
-    controller
-        .as_mut()
-        .expect("controller initialized")
-        .run(req)
+    Ok(())
+}
+
+fn controller_pipe_is_dead(err: &PytestRunError) -> bool {
+    matches!(
+        err,
+        PytestRunError::Protocol(message)
+            if message.contains("Broken pipe") || message.contains("controller exited")
+    )
 }
 
 fn take_same_module_batch(
@@ -254,8 +282,8 @@ fn round_robin_requests(
 
 #[cfg(test)]
 mod partition_tests {
-    use super::{module_key, partition_requests_by_module};
-    use crate::rpytest_runner::PytestRunRequest;
+    use super::{controller_pipe_is_dead, module_key, partition_requests_by_module};
+    use crate::rpytest_runner::{PytestRunError, PytestRunRequest};
     use std::collections::BTreeMap;
     use std::path::PathBuf;
 
@@ -309,6 +337,29 @@ mod partition_tests {
         ];
         let parts = partition_requests_by_module(reqs, 2);
         assert_eq!(parts.len(), 2);
+    }
+
+    #[test]
+    fn reused_controller_restarts_after_broken_pipe() {
+        let src = include_str!("forkserver.rs");
+        let body = src
+            .split("fn run_with_reused_controller")
+            .nth(1)
+            .expect("run_with_reused_controller");
+        assert!(
+            body.contains("controller_pipe_is_dead"),
+            "a dead controller pipe must be recognized before retry"
+        );
+        assert!(
+            body.contains("*controller = None;"),
+            "broken pipe must drop the dead controller before retry"
+        );
+        assert!(
+            controller_pipe_is_dead(&PytestRunError::Protocol(
+                "Broken pipe (os error 32)".into()
+            )),
+            "watcher-kill broken pipe must restart the controller"
+        );
     }
 
     #[test]

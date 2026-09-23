@@ -158,6 +158,7 @@ pub(crate) fn run_test_once(a: RunTestCmdArgs<'_>) -> RunTestOnceOutcome {
 #[cfg(unix)]
 pub(crate) use watch::control::{
     NudgeInvocation, NudgeRequestMsg, nudge_watcher_with_retry_on_wait, probe_live_watcher,
+    reclaim_stale_watch_session,
 };
 #[cfg(all(unix, test))]
 pub(crate) use watch::control::NudgeReplyMsg;
