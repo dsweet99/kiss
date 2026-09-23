@@ -9,7 +9,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 #[cfg(unix)]
-use crate::test_runner::capture_stdout::capture_stdout;
+use crate::test_runner::capture_stdout::{capture_stdout, capture_stdout_stderr};
 
 fn assert_mixed_miss_summary(summary: &SelectorExecutionSummary) {
     assert_eq!(summary.total, 2);
@@ -47,6 +47,11 @@ fn protocol_batch_missing_is_quiet_timeout() {
     assert!(rslip_protocol_is_quiet_timeout(&RslipError::Runner(
         kiss::rpytest_runner::PytestRunError::Protocol("Broken pipe (os error 32)".to_string())
     )));
+    assert!(rslip_protocol_is_quiet_timeout(&RslipError::Runner(
+        kiss::rpytest_runner::PytestRunError::Protocol(
+            "controller exited before response".to_string(),
+        )
+    )));
     assert!(!rslip_protocol_is_quiet_timeout(
         &RslipError::InvalidRequest("bad selector".to_string())
     ));
@@ -78,6 +83,48 @@ fn emit_finalized_outcomes_maps_protocol_batch_missing_to_timeout() {
         "protocol batch miss must print TIMEOUT: {out}"
     );
     assert!(!out.contains("FAIL:"));
+}
+
+#[cfg(unix)]
+#[test]
+fn emit_finalized_outcomes_does_not_print_bug_report_2_rslip_error() {
+    let selector =
+        "tests/fast/networking/test_contract_cache_load_tester.py::test_enqueue_trial";
+    let gate = kiss::GateConfig {
+        max_unit_test_seconds: vec![("*".into(), 7.0)],
+        ..kiss::GateConfig::default()
+    };
+    let fail_line = format!("FAIL: {selector} (rslip error)");
+    for message in [
+        "Broken pipe (os error 32)",
+        "controller exited before response",
+    ] {
+        let protocol = || {
+            RslipError::Runner(kiss::rpytest_runner::PytestRunError::Protocol(
+                message.to_string(),
+            ))
+        };
+        let (stdout, stderr) = capture_stdout_stderr(|| {
+            emit_finalized_outcomes(
+                vec![(0, Err(protocol()))],
+                &[selector.to_string()],
+                &gate,
+            );
+        });
+        let error_line = format_rslip_error(protocol());
+        assert!(
+            !stdout.contains(&fail_line),
+            "bug_report-2.md FAIL line must not print for {message}: {stdout}"
+        );
+        assert!(
+            !stderr.contains(&error_line),
+            "bug_report-2.md error line must not print for {message}: {stderr}"
+        );
+        assert!(
+            stdout.contains(&format!("TIMEOUT: {selector} (7.00s)")),
+            "dead controller pipe must print TIMEOUT for {message}: {stdout}"
+        );
+    }
 }
 
 #[test]
