@@ -256,6 +256,60 @@ diff --git a/src/main.rs b/src/main.rs
 }
 
 #[test]
+fn parse_unified_diff_strips_trailing_tab_on_spaced_path() {
+    let diff = "\
+diff --git a/my file.py b/my file.py
+--- a/my file.py\t
++++ b/my file.py\t
+@@ -1 +1 @@
+-x=1
++x=2
+";
+    let lines = parse_changed_lines_from_unified_diff(diff);
+    assert_eq!(
+        lines.get("my file.py"),
+        Some(&BTreeSet::from([1])),
+        "+++ path with a trailing tab must map to the real relative path, got {lines:?}"
+    );
+}
+
+#[test]
+fn parse_unified_diff_unquotes_c_escaped_path() {
+    let diff = "\
+diff --git \"a/tab\\tfile.py\" \"b/tab\\tfile.py\"
+--- \"a/tab\\tfile.py\"
++++ \"b/tab\\tfile.py\"
+@@ -1 +1 @@
+-z=1
++z=2
+";
+    let lines = parse_changed_lines_from_unified_diff(diff);
+    assert_eq!(
+        lines.get("tab\tfile.py"),
+        Some(&BTreeSet::from([1])),
+        "quoted +++ path must unquote C escapes, got {lines:?}"
+    );
+}
+
+#[test]
+fn parse_unified_diff_unquotes_octal_utf8_path() {
+    let diff = "\
+diff --git \"a/caf\\303\\251.py\" \"b/caf\\303\\251.py\"
+--- \"a/caf\\303\\251.py\"
++++ \"b/caf\\303\\251.py\"
+@@ -1 +1 @@
+-x=1
++x=2
+";
+    let lines = parse_changed_lines_from_unified_diff(diff);
+    assert_eq!(
+        lines.get("café.py"),
+        Some(&BTreeSet::from([1])),
+        "quoted +++ octal UTF-8 path must decode to café.py, got {lines:?}"
+    );
+}
+
+#[test]
 fn changed_lines_commit_reports_new_line_numbers() {
     let tmp = TempDir::new().unwrap();
     init_repo(&tmp);

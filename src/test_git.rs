@@ -146,13 +146,8 @@ pub fn auto_detect_fork_commit(repo: &Path) -> Result<String, String> {
 pub fn changed_paths_commit(repo: &Path) -> Result<Vec<String>, String> {
     let mut names = BTreeSet::new();
     names.extend(changed_paths_from_diff(repo, &["diff"], Some("HEAD"))?);
-    let u = git_output(repo, &["ls-files", "--others", "--exclude-standard"])?;
-    names.extend(
-        u.lines()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(String::from),
-    );
+    let u = git_output(repo, &["ls-files", "-z", "--others", "--exclude-standard"])?;
+    names.extend(diff_paths::nul_paths(&u));
     Ok(names.into_iter().collect())
 }
 
@@ -168,30 +163,37 @@ fn changed_paths_from_diff(
     let mut names = BTreeSet::new();
     for filter in ["AM", "D"] {
         let mut args: Vec<&str> = diff_prefix.to_vec();
-        args.extend(["--name-only", "--diff-filter", filter]);
+        args.extend(["--no-renames", "-z", "--name-only", "--diff-filter", filter]);
         if let Some(rev) = rev {
             args.push(rev);
         }
         let out = git_output(repo, &args)?;
-        names.extend(
-            out.lines()
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(String::from),
-        );
+        names.extend(diff_paths::nul_paths(&out));
     }
     Ok(names.into_iter().collect())
 }
 
 pub fn changed_lines_commit(repo: &Path) -> Result<BTreeMap<String, BTreeSet<u32>>, String> {
-    changed_lines_for_diff(repo, &["diff", "--unified=0", "--diff-filter=AM", "HEAD"])
+    changed_lines_for_diff(
+        repo,
+        &["diff", "--no-renames", "--unified=0", "--diff-filter=AM", "HEAD"],
+    )
 }
 
 pub fn changed_lines_since(
     repo: &Path,
     rev: &str,
 ) -> Result<BTreeMap<String, BTreeSet<u32>>, String> {
-    changed_lines_for_diff(repo, &["diff", "--unified=0", "--diff-filter=AM", rev])
+    changed_lines_for_diff(
+        repo,
+        &[
+            "diff",
+            "--no-renames",
+            "--unified=0",
+            "--diff-filter=AM",
+            rev,
+        ],
+    )
 }
 
 fn changed_lines_for_diff(
@@ -207,10 +209,7 @@ pub(crate) fn parse_changed_lines_from_unified_diff(diff: &str) -> BTreeMap<Stri
     let mut current_file: Option<String> = None;
     for line in diff.lines() {
         if let Some(path) = line.strip_prefix("+++ ") {
-            current_file = path
-                .strip_prefix("b/")
-                .filter(|path| *path != "/dev/null")
-                .map(str::to_string);
+            current_file = diff_paths::plus_line_path(path);
             continue;
         }
         if !line.starts_with("@@") {
@@ -338,6 +337,8 @@ pub fn resolve_diff_target(
         ),
     }
 }
+
+mod diff_paths;
 
 #[cfg(test)]
 #[path = "test_git/git_changes_test.rs"]

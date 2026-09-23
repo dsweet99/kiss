@@ -23,13 +23,31 @@ pub fn resolve_export_tools_from_env() -> Result<ExportTools, RustLlvmCovError> 
 }
 
 pub fn resolve_export_tools_from_rustc(rustc: &OsStr) -> Result<ExportTools, RustLlvmCovError> {
-    if let Ok(tools) = resolve_export_tools_from_env()
-        && tools.llvm_cov.is_file()
-        && tools.llvm_profdata.is_file()
-        && tools.llvm_readobj.is_file()
+    if let Some(tools) = explicit_env_export_tools() {
+        return Ok(tools);
+    }
+    if let Ok(tools) = rustc_sysroot_export_tools(rustc)
+        && export_tools_exist(&tools)
     {
         return Ok(tools);
     }
+    let tools = resolve_export_tools_from_env()?;
+    if export_tools_exist(&tools) {
+        return Ok(tools);
+    }
+    rustc_sysroot_export_tools(rustc)
+}
+
+fn explicit_env_export_tools() -> Option<ExportTools> {
+    let tools = ExportTools {
+        llvm_cov: env_tool_path("LLVM_COV")?,
+        llvm_profdata: env_tool_path("LLVM_PROFDATA")?,
+        llvm_readobj: env_tool_path("LLVM_READOBJ")?,
+    };
+    export_tools_exist(&tools).then_some(tools)
+}
+
+fn rustc_sysroot_export_tools(rustc: &OsStr) -> Result<ExportTools, RustLlvmCovError> {
     let output = Command::new(rustc)
         .arg("--print")
         .arg("target-libdir")
@@ -50,6 +68,10 @@ pub fn resolve_export_tools_from_rustc(rustc: &OsStr) -> Result<ExportTools, Rus
         llvm_profdata: bin_dir.join("llvm-profdata"),
         llvm_readobj: bin_dir.join("llvm-readobj"),
     })
+}
+
+fn export_tools_exist(tools: &ExportTools) -> bool {
+    tools.llvm_cov.is_file() && tools.llvm_profdata.is_file() && tools.llvm_readobj.is_file()
 }
 
 fn env_tool_path(name: &str) -> Option<PathBuf> {
@@ -195,6 +217,31 @@ mod id_tests {
             "expected llvm-readobj at {}",
             tools.llvm_readobj.display()
         );
+    }
+
+    #[test]
+    fn resolve_export_tools_from_rustc_prefers_sysroot_over_path() {
+        if std::env::var_os("LLVM_PROFDATA").is_some()
+            || std::env::var_os("LLVM_COV").is_some()
+            || std::env::var_os("LLVM_READOBJ").is_some()
+        {
+            return;
+        }
+        let tools = resolve_export_tools_from_rustc(OsStr::new("rustc")).unwrap();
+        let output = std::process::Command::new("rustc")
+            .args(["--print", "target-libdir"])
+            .output()
+            .expect("rustc --print target-libdir");
+        assert!(output.status.success(), "rustc --print target-libdir");
+        let libdir = std::path::PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
+        let bin = libdir.parent().expect("target-libdir parent").join("bin");
+        assert_eq!(
+            tools.llvm_profdata,
+            bin.join("llvm-profdata"),
+            "unset LLVM_* must use rustc sysroot llvm-profdata, not PATH"
+        );
+        assert_eq!(tools.llvm_cov, bin.join("llvm-cov"));
+        assert_eq!(tools.llvm_readobj, bin.join("llvm-readobj"));
     }
 
     #[test]
