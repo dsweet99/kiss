@@ -99,3 +99,28 @@ fn prior_belongs_to_target_keeps_planned_covering_test_for_source_file() {
         "tests/other.py::unrelated"
     ));
 }
+
+#[test]
+fn retry_bad_single_selector_excludes_sibling_prior() {
+    let wanted = "path/to/test.py::one_test";
+    let other = "path/to/other.py::other_test";
+    let targets = TestInvocation::Targets(vec![wanted.into()]);
+    let planned = [wanted.to_string(), other.to_string()];
+    assert!(prior_belongs_to_target(&targets, &planned, wanted));
+    assert!(
+        !prior_belongs_to_target(&targets, &planned, other),
+        "--retry-bad path/to/test.py::one_test must not rerun other bad tests"
+    );
+}
+
+#[test]
+fn selector_in_target_matches_pytest_single_colon() {
+    assert!(selector_in_target(
+        "path/to/test.py::one_test",
+        "path/to/test.py:one_test"
+    ));
+    assert!(!selector_in_target(
+        "path/to/other.py::other_test",
+        "path/to/test.py:one_test"
+    ));
+}

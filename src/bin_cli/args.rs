@@ -141,10 +141,25 @@ fn parse_path_or_directory_targets(
             "reserved action '{operand}' cannot be mixed with PATH / PATH::symbol targets"
         ));
     }
-    for operand in operands {
+    let operands: Vec<String> = operands.iter().map(|raw| colon_to_nodeid(raw)).collect();
+    for operand in &operands {
         validate_target_operand_shape(operand)?;
     }
-    Ok(TestInvocation::Targets(operands.to_vec()))
+    Ok(TestInvocation::Targets(operands))
+}
+
+fn colon_to_nodeid(raw: &str) -> String {
+    if raw.contains("::") {
+        return raw.to_string();
+    }
+    match raw.rsplit_once(':') {
+        Some((path, name))
+            if !name.is_empty() && !name.contains('/') && path_has_source_ext(path) =>
+        {
+            format!("{path}::{name}")
+        }
+        _ => raw.to_string(),
+    }
 }
 
 fn validate_target_operand_shape(raw: &str) -> Result<(), String> {

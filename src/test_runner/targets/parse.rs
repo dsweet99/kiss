@@ -16,6 +16,13 @@ pub(crate) fn parse_test_target(raw: &str) -> Result<ParsedTestTarget, String> {
     if raw.is_empty() {
         return Err("target must be non-empty".to_string());
     }
+    if !raw.contains("::")
+        && let Some((path_part, symbol_part)) = raw.rsplit_once(':')
+        && !symbol_part.is_empty()
+        && detect_test_target_language(Path::new(path_part)).is_ok()
+    {
+        return parse_test_target(&format!("{path_part}::{symbol_part}"));
+    }
     if let Some((path_part, symbol_part)) = raw.split_once("::") {
         if path_part.is_empty() || symbol_part.is_empty() {
             return Err("target path and symbol must both be non-empty".to_string());

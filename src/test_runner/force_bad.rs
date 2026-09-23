@@ -67,8 +67,11 @@ pub(crate) fn prior_belongs_to_target(
     match invocation {
         TestInvocation::All => true,
         TestInvocation::Targets(targets) => {
-            planned_sel.iter().any(|s| s == selector)
-                || targets.iter().any(|t| selector_in_target(selector, t))
+            if targets.iter().any(|t| selector_in_target(selector, t)) {
+                return true;
+            }
+            targets.iter().all(|t| !target_names_a_test(t))
+                && planned_sel.iter().any(|s| s == selector)
         }
         TestInvocation::Commit | TestInvocation::Base | TestInvocation::Main => {
             planned_sel.iter().any(|s| s == selector)
@@ -76,9 +79,31 @@ pub(crate) fn prior_belongs_to_target(
     }
 }
 
+fn target_names_a_test(target: &str) -> bool {
+    target.contains("::") || source_file_colon_symbol(target).is_some()
+}
+
+fn source_file_colon_symbol(target: &str) -> Option<(&str, &str)> {
+    if target.contains("::") {
+        return None;
+    }
+    let (path, name) = target.rsplit_once(':')?;
+    if name.is_empty() || name.contains('/') {
+        return None;
+    }
+    if path.ends_with(".py") || path.ends_with(".rs") {
+        Some((path, name))
+    } else {
+        None
+    }
+}
+
 pub(crate) fn selector_in_target(selector: &str, target: &str) -> bool {
     if selector == target {
         return true;
+    }
+    if let Some((path, name)) = source_file_colon_symbol(target) {
+        return selector_in_target(selector, &format!("{path}::{name}"));
     }
     if target.contains("::") {
         return selector.starts_with(&format!("{target}::"))

@@ -33,6 +33,10 @@ fn parse_test_target_accepts_path_and_symbol_forms() {
         class_test.python_nodeid.as_deref(),
         Some("tests/test_x.py::TestBox::test_method")
     );
+
+    let single_colon = parse_test_target("path/to/test.py:one_test").unwrap();
+    assert_eq!(single_colon.symbol.as_deref(), Some("one_test"));
+    assert_eq!(single_colon.path, std::path::PathBuf::from("path/to/test.py"));
 }
 
 #[test]
