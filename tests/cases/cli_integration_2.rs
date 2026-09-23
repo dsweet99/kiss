@@ -205,3 +205,55 @@ fn cli_viz_rejects_zoom_and_num_nodes_together() {
         "stderr should mention the conflict. stderr:\n{stderr}"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn target_runner_list_stdout_has_no_cli_wall_timing() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let tmp = TempDir::new().unwrap();
+    let output_dir = tmp.path().join("instances");
+    fs::create_dir_all(&output_dir).unwrap();
+    let runner_map = tmp.path().join("runner-map.json");
+    fs::write(&runner_map, b"{\"x86_64-unknown-linux-gnu\":[]}").unwrap();
+    let script = tmp.path().join("list-child.sh");
+    fs::write(
+        &script,
+        "#!/bin/sh\nprintf 'core_sources_do_not_depend_on_python_boundary_types: test\\n'\nexit 0\n",
+    )
+    .unwrap();
+    let mut permissions = fs::metadata(&script).unwrap().permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&script, permissions).unwrap();
+
+    let output = kiss_binary()
+        .args([
+            kiss::rust_llvm_cov_runner::TARGET_RUNNER_SHIM_SUBCOMMAND,
+            "--output-dir",
+        ])
+        .arg(&output_dir)
+        .arg("--runner-map")
+        .arg(&runner_map)
+        .arg("--platform")
+        .arg("x86_64-unknown-linux-gnu")
+        .arg(&script)
+        .env("NEXTEST_TEST_PHASE", "list")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "target runner list should succeed. stderr:\n{stderr}\nstdout:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("core_sources_do_not_depend_on_python_boundary_types: test"),
+        "list stdout must keep the child test line. stdout:\n{stdout}"
+    );
+    for line in stdout.lines().filter(|line| !line.is_empty()) {
+        assert!(
+            line.ends_with(": test") || line.ends_with(": benchmark"),
+            "bug_report.md: nextest rejects list line {line:?} in {stdout:?}"
+        );
+    }
+}

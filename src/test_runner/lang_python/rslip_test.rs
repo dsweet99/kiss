@@ -44,10 +44,10 @@ fn protocol_batch_missing_is_quiet_timeout() {
     assert!(rslip_protocol_is_quiet_timeout(&RslipError::Runner(
         kiss::rpytest_runner::PytestRunError::Protocol("module batch timed out".to_string())
     )));
-    assert!(rslip_protocol_is_quiet_timeout(&RslipError::Runner(
+    assert!(!rslip_protocol_is_quiet_timeout(&RslipError::Runner(
         kiss::rpytest_runner::PytestRunError::Protocol("Broken pipe (os error 32)".to_string())
     )));
-    assert!(rslip_protocol_is_quiet_timeout(&RslipError::Runner(
+    assert!(!rslip_protocol_is_quiet_timeout(&RslipError::Runner(
         kiss::rpytest_runner::PytestRunError::Protocol(
             "controller exited before response".to_string(),
         )
@@ -87,7 +87,7 @@ fn emit_finalized_outcomes_maps_protocol_batch_missing_to_timeout() {
 
 #[cfg(unix)]
 #[test]
-fn emit_finalized_outcomes_does_not_print_bug_report_2_rslip_error() {
+fn emit_finalized_outcomes_reports_leftover_pipe_death_as_fail() {
     let selector =
         "tests/fast/networking/test_contract_cache_load_tester.py::test_enqueue_trial";
     let gate = kiss::GateConfig {
@@ -113,16 +113,16 @@ fn emit_finalized_outcomes_does_not_print_bug_report_2_rslip_error() {
         });
         let error_line = format_rslip_error(protocol());
         assert!(
-            !stdout.contains(&fail_line),
-            "bug_report-2.md FAIL line must not print for {message}: {stdout}"
+            stdout.contains(&fail_line),
+            "leftover pipe death must print FAIL, not TIMEOUT, for {message}: {stdout}"
         );
         assert!(
-            !stderr.contains(&error_line),
-            "bug_report-2.md error line must not print for {message}: {stderr}"
+            stderr.contains(&error_line),
+            "leftover pipe death must print the rslip error for {message}: {stderr}"
         );
         assert!(
-            stdout.contains(&format!("TIMEOUT: {selector} (7.00s)")),
-            "dead controller pipe must print TIMEOUT for {message}: {stdout}"
+            !stdout.contains("TIMEOUT:"),
+            "pipe death is not a timeout for {message}: {stdout}"
         );
     }
 }

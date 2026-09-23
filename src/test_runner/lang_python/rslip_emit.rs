@@ -126,8 +126,6 @@ pub(super) fn rslip_protocol_is_quiet_timeout(err: &RslipError) -> bool {
         RslipError::Runner(kiss::rpytest_runner::PytestRunError::Protocol(message))
             if message.contains("module batch result missing")
                 || message.contains("module batch timed out")
-                || message.contains("Broken pipe")
-                || message.contains("controller exited")
     )
 }
 
