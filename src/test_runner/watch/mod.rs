@@ -1,5 +1,9 @@
 #[cfg(unix)]
 pub(crate) mod control;
+#[cfg(unix)]
+mod oneshot_lock;
+#[cfg(unix)]
+pub(crate) use oneshot_lock::{OneshotPeer, wait_oneshot_peer};
 mod nudge_kind;
 mod coverage;
 mod event_source;

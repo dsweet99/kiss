@@ -164,6 +164,8 @@ pub(crate) use watch::control::{
 pub(crate) use watch::control::NudgeReplyMsg;
 #[cfg(not(unix))]
 pub(crate) use watch::nudge_kind::NudgeInvocation;
+#[cfg(unix)]
+pub(crate) use watch::{OneshotPeer, WatchLockGuard, wait_oneshot_peer};
 pub(crate) use watch::{
     WatchCoverageParams, WatchCoverageResult, WatchReloadSeed, oneshot_client_reply,
     run_test_watch,

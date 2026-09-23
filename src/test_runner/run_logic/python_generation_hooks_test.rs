@@ -123,6 +123,64 @@ fn hook_helpers_detect_current_generation_and_indexable_paths() {
 }
 
 #[test]
+fn population_manifest_replaces_removed_selector_after_cached_run() {
+    use crate::test_runner::coverage_decision::LanguageExecutor;
+    use crate::test_runner::python_coverage_index::try_load_pinned_python_generation;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    std::fs::create_dir_all(repo.join(".git")).unwrap();
+    std::fs::write(
+        repo.join("t.py"),
+        "def test_current():\n    assert 2 + 2 == 4\n",
+    )
+    .unwrap();
+    let old = "t.py::test_removed".to_string();
+    let old_plan = population_plan_for_selectors(repo, &[old], &[]).unwrap();
+    let evidence = PopulationEvidence::from_ordered_selectors(&old_plan.selectors);
+    publish_python_population_generation(repo, &old_plan, &evidence, GenerationReason::ColdCov)
+        .unwrap();
+    let current = vec!["t.py::test_current".to_string()];
+    let gate = kiss::GateConfig::default();
+    let summary = crate::test_runner::runners::run_rslip_selectors(
+        repo,
+        &current,
+        &[],
+        false,
+        &[],
+        1,
+        None,
+        &gate,
+    )
+    .unwrap();
+    assert_eq!(summary.exit_code, 0);
+    let mut planned = planned(repo);
+    planned.sel.python = current.clone();
+    planned.population_required.python = true;
+    let options = SelectorRunOptions {
+        dry_run: false,
+        force_rerun: false,
+        metrics: false,
+        jobs: 1,
+        extras: crate::test_runner::language_keyed::LanguageKeyed {
+            python: &[],
+            rust: &[],
+        },
+        plan_duration: Duration::ZERO,
+        gate,
+    };
+    let ctx = RunContext {
+        planned: &planned,
+        options: &options,
+    };
+    let module = PythonModule::new(repo, &[], &BTreeMap::new(), &[], &[], &[], &[]);
+    LanguageExecutor::write_manifest(&module, &current, &ctx).unwrap();
+    let pinned = try_load_pinned_python_generation(repo).unwrap();
+    assert_eq!(pinned.plan.selectors, current);
+    assert!(pinned.complete);
+}
+
+#[test]
 fn rebuild_skips_when_selective_index_flag_set() {
     let tmp = tempfile::tempdir().unwrap();
     let repo = tmp.path();

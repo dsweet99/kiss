@@ -38,6 +38,8 @@ mod cli_integration;
 mod cli_integration_2;
 #[path = "cases/cli_kiss_test_smoke.rs"]
 mod cli_kiss_test_smoke;
+#[path = "cases/cli_kiss_test_wait.rs"]
+mod cli_kiss_test_wait;
 #[path = "cases/comment_removal_check.rs"]
 mod comment_removal_check;
 #[path = "cases/config_tests.rs"]

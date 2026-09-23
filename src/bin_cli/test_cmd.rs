@@ -44,6 +44,11 @@ pub(crate) fn set_client_result_override_for_test(value: Option<Result<Option<i3
     CLIENT_RESULT_OVERRIDE.with(|c| c.set(value));
 }
 
+#[cfg(unix)]
+fn take_client_result_override() -> Option<Result<Option<i32>, String>> {
+    CLIENT_RESULT_OVERRIDE.with(Cell::take)
+}
+
 pub fn run_test_command(args: TestCommandArgs<'_>) -> i32 {
     run_test_command_with_runner(args, run_test_once)
 }
@@ -149,6 +154,10 @@ fn run_dry_tests(
     }
 }
 
+#[cfg(unix)]
+#[path = "test_cmd_lock.rs"]
+mod test_cmd_lock;
+
 fn run_local_tests_after_client(
     args: &TestCommandArgs<'_>,
     run_args: RunTestCmdArgs<'_>,
@@ -157,6 +166,12 @@ fn run_local_tests_after_client(
     if let Err(code) = reject_unresolved_targets(args) {
         return code;
     }
+    #[cfg(unix)]
+    let _oneshot_lock = match test_cmd_lock::take_oneshot_lock(args) {
+        Ok(guard) => guard,
+        Err(code) => return code,
+    };
+    #[cfg(not(unix))]
     if let Some(code) = wait_out_live_watcher(args) {
         return code;
     }
@@ -192,6 +207,7 @@ fn reject_unresolved_targets(args: &TestCommandArgs<'_>) -> Result<(), i32> {
     Ok(())
 }
 
+#[cfg(not(unix))]
 fn wait_out_live_watcher(args: &TestCommandArgs<'_>) -> Option<i32> {
     #[cfg(unix)]
     let result = match try_wait_out_live_watcher(args) {

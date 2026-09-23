@@ -57,8 +57,7 @@ impl LanguageExecutor for PythonModule {
     }
 
     fn write_manifest(&self, selectors: &[String], ctx: &RunContext<'_, '_>) -> Result<(), String> {
-        let _ = (self, selectors, ctx);
-        Ok(())
+        python_generation_hooks::write_python_manifest(self, selectors, ctx)
     }
 
     fn is_indexable_source(&self, path: &std::path::Path, repo_root: &std::path::Path) -> bool {
