@@ -612,6 +612,58 @@ fn rust_scoped_unattributed_persist_does_not_wipe_bilingual() {
 }
 
 #[test]
+fn persist_skips_deleted_but_indexed_rust_file() {
+    let _cwd = crate::cwd_test_lock::lock();
+    let tmp = tempfile::tempdir().unwrap();
+    seed_repo(&tmp);
+    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+    let rust = tmp.path().join("src/evaluate.rs");
+    std::fs::write(&rust, "pub fn evaluate() {}\n").unwrap();
+    assert!(
+        crate::test_runner::test_mode_fixtures::git_in(tmp.path())
+            .args(["add", "src/evaluate.rs"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    std::fs::remove_file(&rust).unwrap();
+    let listed = crate::test_runner::test_mode_fixtures::git_stdout(
+        tmp.path(),
+        &["ls-files", "-c", "--", "src/evaluate.rs"],
+    );
+    assert_eq!(listed, "src/evaluate.rs");
+    with_cwd(tmp.path(), || {
+        let runs = AtomicUsize::new(0);
+        let (_, stderr) = crate::test_runner::capture_stdout::capture_stdout_stderr(|| {
+            let first = run_kiss_test_report(
+                live_all_args(),
+                |_a| {
+                    runs.fetch_add(1, Ordering::SeqCst);
+                    emit_sample_run()
+                },
+                |_a| WatchCoverageResult::ok(0),
+            );
+            assert_eq!(first.exit_code, 0);
+            let second = run_kiss_test_report(
+                live_all_args(),
+                |_a| {
+                    runs.fetch_add(1, Ordering::SeqCst);
+                    panic!("deleted-but-indexed rust must not block suite-report persist")
+                },
+                |_a| panic!("deleted-but-indexed rust must not block suite-report persist"),
+            );
+            assert_eq!(second.exit_code, 0);
+        });
+        assert_eq!(runs.load(Ordering::SeqCst), 1);
+        assert!(
+            !stderr.contains("cannot compute source key"),
+            "persist must skip a missing indexed rust path: {stderr}"
+        );
+        assert!(tmp.path().join(".kiss").join("suite_report.json").is_file());
+    });
+}
+
+#[test]
 fn target_scoped_run_does_not_persist() {
     let _cwd = crate::cwd_test_lock::lock();
     let tmp = tempfile::tempdir().unwrap();

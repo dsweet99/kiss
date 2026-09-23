@@ -276,13 +276,21 @@ pub(super) fn hash_file_contents(
     repo_root: &Path,
     path: &Path,
 ) -> io::Result<u64> {
-    let digest = content_digest(repo_root, rel, path)?;
+    let digest = match content_digest(repo_root, rel, path) {
+        Ok(digest) => digest,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(h),
+        Err(err) => return Err(err),
+    };
     let acc = fnv1a64(h, rel.as_bytes());
     Ok(fnv1a64(acc, &digest.to_le_bytes()))
 }
 
 pub(super) fn hash_file_full_contents(h: u64, rel: &str, path: &Path) -> io::Result<u64> {
-    let bytes = fs::read(path)?;
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(h),
+        Err(err) => return Err(err),
+    };
     let digest = fnv1a64(0xcbf2_9ce4_8422_2325, &bytes);
     let acc = fnv1a64(h, rel.as_bytes());
     Ok(fnv1a64(acc, &digest.to_le_bytes()))
