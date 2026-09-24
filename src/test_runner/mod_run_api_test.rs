@@ -7,12 +7,20 @@ impl RunTestCmdArgs<'_> {
     fn dry_run_commit() -> Self {
         Self {
             invocation: crate::bin_cli::args::TestInvocation::Commit,
+            target_request: crate::test_runner::target_request::request_from_focus(
+                crate::test_runner::target_request::TargetFocus::Git(
+                    crate::test_runner::target_request::GitFocus::Commit,
+                ),
+                None,
+                &[],
+            ),
             main_branch_cli: None,
             base_branch_cli: None,
             dry_run: true,
             force_rerun: false,
             force_bad: false,
             metrics: false,
+            coverage_all: false,
             jobs: 1,
             extra: &[],
             python_extra: &[],
@@ -139,6 +147,7 @@ mod plan_tests {
     use tempfile::TempDir;
 
     use super::*;
+    use crate::test_git::TestChangeMode;
 
     fn git_in(dir: &Path) -> Command {
         crate::test_git::git_command(dir)

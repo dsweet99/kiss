@@ -23,12 +23,18 @@ fn force_all_population_helper_keeps_targets_selective() {
     planned.sel.python = vec!["tests/a.py::only".to_string()];
     let args = crate::test_runner::RunTestCmdArgs {
         invocation: crate::bin_cli::args::TestInvocation::Targets(vec!["tests/a.py::only".into()]),
+        target_request: crate::test_runner::target_request::operands_request(
+            &["tests/a.py::only".into()],
+            Some(Language::Python),
+            &[],
+        ),
         main_branch_cli: None,
         base_branch_cli: None,
         dry_run: true,
         force_rerun: true,
         force_bad: false,
         metrics: false,
+        coverage_all: false,
         jobs: 1,
         extra: &[],
         python_extra: &[],
@@ -56,12 +62,17 @@ fn force_all_population_helper_sets_population_for_all() {
     planned.sel.python = vec!["tests/a.py::only".to_string()];
     let args = crate::test_runner::RunTestCmdArgs {
         invocation: crate::bin_cli::args::TestInvocation::All,
+        target_request: crate::test_runner::target_request::workspace_request(
+            Some(Language::Python),
+            &[],
+        ),
         main_branch_cli: None,
         base_branch_cli: None,
         dry_run: true,
         force_rerun: true,
         force_bad: false,
         metrics: false,
+        coverage_all: false,
         jobs: 1,
         extra: &[],
         python_extra: &[],

@@ -5,38 +5,7 @@ use crate::rslip::{RslipError, RslipOutcome};
 use super::RslipBatchProgress;
 
 pub fn format_cached_status_dump(outcomes: &[RslipOutcome]) -> String {
-    if outcomes.len() > 32 {
-        return format_cached_status_totals(outcomes);
-    }
     format_cached_status_each(outcomes)
-}
-
-fn format_cached_status_totals(outcomes: &[RslipOutcome]) -> String {
-    let (passed, failed, timed_out) = count_cached_statuses(outcomes);
-    let mut body = String::new();
-    append_cached_total(&mut body, "PASS", passed);
-    append_cached_total(&mut body, "FAIL", failed);
-    append_cached_total(&mut body, "TIMEOUT", timed_out);
-    append_cached_problem_names(&mut body, outcomes);
-    body
-}
-
-fn append_cached_problem_names(body: &mut String, outcomes: &[RslipOutcome]) {
-    for outcome in outcomes {
-        match outcome.status {
-            crate::rpytest_runner::TestStatus::Failed => {
-                body.push_str("FAIL (cached): ");
-                body.push_str(&outcome.nodeid);
-                body.push('\n');
-            }
-            crate::rpytest_runner::TestStatus::TimedOut => {
-                body.push_str("TIMEOUT (cached): ");
-                body.push_str(&outcome.nodeid);
-                body.push('\n');
-            }
-            crate::rpytest_runner::TestStatus::Passed => {}
-        }
-    }
 }
 
 fn format_cached_status_each(outcomes: &[RslipOutcome]) -> String {
@@ -49,31 +18,11 @@ fn format_cached_status_each(outcomes: &[RslipOutcome]) -> String {
     body
 }
 
-fn count_cached_statuses(outcomes: &[RslipOutcome]) -> (usize, usize, usize) {
-    let mut passed = 0usize;
-    let mut failed = 0usize;
-    let mut timed_out = 0usize;
-    for outcome in outcomes {
-        match outcome.status {
-            crate::rpytest_runner::TestStatus::Passed => passed += 1,
-            crate::rpytest_runner::TestStatus::Failed => failed += 1,
-            crate::rpytest_runner::TestStatus::TimedOut => timed_out += 1,
-        }
-    }
-    (passed, failed, timed_out)
-}
-
-fn append_cached_total(body: &mut String, label: &str, count: usize) {
-    if count > 0 {
-        body.push_str(&format!("{label} (cached): {count} selectors\n"));
-    }
-}
-
 fn cached_status_label(status: crate::rpytest_runner::TestStatus) -> &'static str {
     match status {
-        crate::rpytest_runner::TestStatus::Passed => "PASS (cached): ",
-        crate::rpytest_runner::TestStatus::Failed => "FAIL (cached): ",
-        crate::rpytest_runner::TestStatus::TimedOut => "TIMEOUT (cached): ",
+        crate::rpytest_runner::TestStatus::Passed => "PASS ",
+        crate::rpytest_runner::TestStatus::Failed => "FAIL ",
+        crate::rpytest_runner::TestStatus::TimedOut => "TIMEOUT ",
     }
 }
 
@@ -135,13 +84,13 @@ mod tests {
             outcome("b::t", TestStatus::Failed),
             outcome("c::t", TestStatus::TimedOut),
         ]);
-        assert!(body.contains("PASS (cached): a::t"));
-        assert!(body.contains("FAIL (cached): b::t"));
-        assert!(body.contains("TIMEOUT (cached): c::t"));
+        assert!(body.contains("PASS a::t"));
+        assert!(body.contains("FAIL b::t"));
+        assert!(body.contains("TIMEOUT c::t"));
     }
 
     #[test]
-    fn format_cached_status_dump_collapses_large_batches() {
+    fn format_cached_status_dump_lists_every_large_batch_selector() {
         let mut outcomes = Vec::new();
         for i in 0..20 {
             outcomes.push(outcome(&format!("p::{i}"), TestStatus::Passed));
@@ -156,25 +105,25 @@ mod tests {
         let body = format_cached_status_dump(&outcomes);
         assert!(
             body.starts_with(
-                "PASS (cached): 20 selectors\nFAIL (cached): 10 selectors\nTIMEOUT (cached): 5 selectors\n"
+                "PASS p::0\nPASS p::1\nPASS p::2\n"
             ),
             "totals must lead; body={body}"
         );
         for i in 0..10 {
             assert!(
-                body.contains(&format!("FAIL (cached): f::{i}")),
+                body.contains(&format!("FAIL f::{i}")),
                 "must name FAIL f::{i}; body={body}"
             );
         }
         for i in 0..5 {
             assert!(
-                body.contains(&format!("TIMEOUT (cached): t::{i}")),
+                body.contains(&format!("TIMEOUT t::{i}")),
                 "must name TIMEOUT t::{i}; body={body}"
             );
         }
         assert!(
-            !body.contains("PASS (cached): p::"),
-            "must not list cached PASS names; body={body}"
+            body.contains("PASS p::19"),
+            "must list every cached selector; body={body}"
         );
     }
 

@@ -45,11 +45,41 @@ pub(crate) struct UnitRef {
     pub trait_impl: bool,
 }
 
+#[derive(Clone, Debug)]
+pub struct OrphanUnitFinding {
+    pub file: PathBuf,
+    pub unit_name: String,
+    pub start_line: usize,
+    pub end_line: usize,
+}
+
 #[must_use]
 pub fn orphan_unit_violations(input: &OrphanUnitInput<'_>) -> Vec<Violation> {
-    let Some(coverage) = input.coverage else {
+    let Some((candidates, orphans)) = evaluate(input) else {
         return Vec::new();
     };
+    let orphan_refs: Vec<&UnitRef> = orphans.iter().collect();
+    report::to_violations(&candidates, &orphan_refs)
+}
+
+#[must_use]
+pub fn orphan_unit_findings(input: &OrphanUnitInput<'_>) -> Vec<OrphanUnitFinding> {
+    let Some((_, orphans)) = evaluate(input) else {
+        return Vec::new();
+    };
+    orphans
+        .into_iter()
+        .map(|unit| OrphanUnitFinding {
+            file: unit.file,
+            unit_name: unit.name,
+            start_line: unit.start_line,
+            end_line: unit.end_line,
+        })
+        .collect()
+}
+
+fn evaluate(input: &OrphanUnitInput<'_>) -> Option<(Vec<UnitRef>, Vec<UnitRef>)> {
+    let coverage = input.coverage?;
     let units = extract::collect_units(input.py, input.rs);
     let edges =
         unit_edges::edges_from_units(&units, input.py, input.rs, input.py_ctx, input.rs_ctx);
@@ -73,12 +103,12 @@ pub fn orphan_unit_violations(input: &OrphanUnitInput<'_>) -> Vec<Violation> {
         .map(|(i, _)| i)
         .collect();
     let candidates: Vec<UnitRef> = cand_idx.iter().map(|&i| units[i].clone()).collect();
-    let orphans: Vec<&UnitRef> = cand_idx
+    let orphans: Vec<UnitRef> = cand_idx
         .iter()
         .filter(|&&i| !reached[i])
-        .map(|&i| &units[i])
+        .map(|&i| units[i].clone())
         .collect();
-    report::to_violations(&candidates, &orphans)
+    Some((candidates, orphans))
 }
 
 #[cfg(test)]

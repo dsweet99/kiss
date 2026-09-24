@@ -1,8 +1,6 @@
 use kiss::Language;
 
-use crate::bin_cli::args::TestInvocation;
-
-use super::runners;
+use super::target_request::TargetFocus;
 use super::{PlannedSelectors, RunTestCmdArgs};
 
 pub(crate) fn apply_force_bad(
@@ -12,42 +10,80 @@ pub(crate) fn apply_force_bad(
     if !a.force_bad {
         return Ok(());
     }
-    let py_bad = runners::current_prior_failures(
-        &planned.repo_root,
-        Language::Python,
-        a.python_extra,
-        &planned.ignore,
-    )?;
-    let rs_bad = runners::current_prior_failures(
-        &planned.repo_root,
-        Language::Rust,
-        a.extra,
-        &planned.ignore,
-    )?;
-    merge_target_priors(
-        &a.invocation,
-        &mut planned.sel.python,
-        &mut planned.prior_failure_selectors.python,
-        py_bad.into_iter().map(|s| s.id),
-    );
-    merge_target_priors(
-        &a.invocation,
-        &mut planned.sel.rust,
-        &mut planned.prior_failure_selectors.rust,
-        rs_bad.into_iter().map(|s| s.id),
-    );
+    let (python, rust) = typed_retry_by_lang(a, planned);
+    merge_lang_priors(a, planned, Language::Python, python);
+    merge_lang_priors(a, planned, Language::Rust, rust);
     Ok(())
 }
 
+fn merge_lang_priors(
+    a: &RunTestCmdArgs<'_>,
+    planned: &mut PlannedSelectors,
+    lang: Language,
+    typed: Vec<String>,
+) {
+    let (sel, prior_sel) = match lang {
+        Language::Python => (
+            &mut planned.sel.python,
+            &mut planned.prior_failure_selectors.python,
+        ),
+        Language::Rust => (
+            &mut planned.sel.rust,
+            &mut planned.prior_failure_selectors.rust,
+        ),
+    };
+    merge_target_priors(
+        &super::target_request::request_from_run_args(a).focus,
+        sel,
+        prior_sel,
+        typed,
+    );
+}
+
+fn typed_retry_by_lang(
+    a: &RunTestCmdArgs<'_>,
+    planned: &PlannedSelectors,
+) -> (Vec<String>, Vec<String>) {
+    let request = super::target_request::request_from_run_args(a);
+    let Ok(resolved) = super::target_request::resolve_only(&planned.repo_root, &request) else {
+        return (Vec::new(), Vec::new());
+    };
+    let (projection, complete) =
+        super::target_request::build_slice_projection(&planned.repo_root, &request, &resolved);
+    let mut selectors = projection.selectors();
+    selectors.extend(resolved.direct_selectors.iter().cloned());
+    selectors.extend(planned.sel.python.iter().cloned());
+    selectors.extend(planned.sel.rust.iter().cloned());
+    let scope =
+        super::target_request::ReportScope::from_membership(resolved.regions, selectors, complete);
+    let rows = super::target_request::available_rows(&planned.repo_root, &scope);
+    let mut python = Vec::new();
+    let mut rust = Vec::new();
+    for selector in
+        super::target_request::plan_from_available_rows(&scope, &rows, true, false).retry_bad
+    {
+        match rows
+            .iter()
+            .find(|row| row.selector == selector)
+            .map(|row| row.language.as_str())
+        {
+            Some("python") => python.push(selector),
+            Some("rust") => rust.push(selector),
+            _ => {}
+        }
+    }
+    (python, rust)
+}
+
 fn merge_target_priors(
-    invocation: &TestInvocation,
+    focus: &TargetFocus,
     planned_sel: &mut Vec<String>,
     prior_sel: &mut Vec<String>,
     bad: impl IntoIterator<Item = String>,
 ) {
     let extras: Vec<String> = bad
         .into_iter()
-        .filter(|id| prior_belongs_to_target(invocation, planned_sel, id))
+        .filter(|id| prior_belongs_to_target(focus, planned_sel, id))
         .collect();
     prior_sel.extend(extras.iter().cloned());
     prior_sel.sort();
@@ -60,22 +96,25 @@ fn merge_target_priors(
 }
 
 pub(crate) fn prior_belongs_to_target(
-    invocation: &TestInvocation,
+    focus: &TargetFocus,
     planned_sel: &[String],
     selector: &str,
 ) -> bool {
-    match invocation {
-        TestInvocation::All => true,
-        TestInvocation::Targets(targets) => {
-            if targets.iter().any(|t| selector_in_target(selector, t)) {
+    match focus {
+        TargetFocus::Workspace => true,
+        TargetFocus::Operands(operands) => {
+            if operands
+                .iter()
+                .any(|operand| selector_in_target(selector, &operand.raw))
+            {
                 return true;
             }
-            targets.iter().all(|t| !target_names_a_test(t))
+            operands
+                .iter()
+                .all(|operand| !target_names_a_test(&operand.raw))
                 && planned_sel.iter().any(|s| s == selector)
         }
-        TestInvocation::Commit | TestInvocation::Base | TestInvocation::Main => {
-            planned_sel.iter().any(|s| s == selector)
-        }
+        TargetFocus::Git(_) => planned_sel.iter().any(|s| s == selector),
     }
 }
 

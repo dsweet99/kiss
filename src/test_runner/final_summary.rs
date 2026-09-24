@@ -13,19 +13,33 @@ thread_local! {
     static VIOLATION_COUNTS: RefCell<Vec<(String, usize)>> = const { RefCell::new(Vec::new()) };
 }
 
-pub(crate) struct RecapDeferGuard;
+pub(crate) struct RecapDeferGuard {
+    discard: Cell<bool>,
+}
 
 impl RecapDeferGuard {
     pub(crate) fn enter() -> Self {
         DEFER_RECAP.set(true);
         PENDING_RECAP.with(|slot| *slot.borrow_mut() = None);
         VIOLATION_COUNTS.with(|slot| slot.borrow_mut().clear());
-        Self
+        Self {
+            discard: Cell::new(false),
+        }
+    }
+
+    pub(crate) fn discard(&self) {
+        self.discard.set(true);
     }
 }
 
 impl Drop for RecapDeferGuard {
     fn drop(&mut self) {
+        if self.discard.get() {
+            DEFER_RECAP.set(false);
+            PENDING_RECAP.with(|slot| *slot.borrow_mut() = None);
+            VIOLATION_COUNTS.with(|slot| slot.borrow_mut().clear());
+            return;
+        }
         flush_final_test_summary();
     }
 }
@@ -95,16 +109,12 @@ fn record_watch_suite_totals(summary: &FinalTestSummary, total_duration: Duratio
 
 fn flush_final_test_summary() {
     DEFER_RECAP.set(false);
-    let Some((summary, total_duration)) = PENDING_RECAP.with(|slot| slot.borrow_mut().take()) else {
+    let Some((summary, total_duration)) = PENDING_RECAP.with(|slot| slot.borrow_mut().take())
+    else {
         return;
     };
     let counts = take_violation_counts();
-    let text = recap_with_violations(
-        &summary,
-        total_duration,
-        stdout_color_enabled(),
-        &counts,
-    );
+    let text = recap_with_violations(&summary, total_duration, stdout_color_enabled(), &counts);
     crate::test_runner::emit_test_progress(&text);
 }
 

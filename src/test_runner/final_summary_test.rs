@@ -238,7 +238,8 @@ fn deferred_recap_prints_after_violations_with_counts() {
         "recap must count violation types:\n{out}"
     );
     assert!(
-        out.trim_end().ends_with("· 2 test_coverage · 4 max_unit_test_seconds"),
+        out.trim_end()
+            .ends_with("· 2 test_coverage · 4 max_unit_test_seconds"),
         "recap must be last:\n{out}"
     );
 }

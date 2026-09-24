@@ -398,8 +398,8 @@ fn rust_covering_miss_recaps_witness_complement(mode: AcceptMode) {
     });
     assert_eq!(state.borrow().run_calls, vec![vec!["a".to_string()]]);
     assert!(
-        out.contains("cached"),
-        "unaffected rust witness hits must emit as cached:\n{out}"
+        out.contains("PASS b"),
+        "unaffected rust witness hits must emit their canonical status:\n{out}"
     );
 }
 

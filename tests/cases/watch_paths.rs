@@ -80,7 +80,10 @@ fn watcher_observes_normalized_mixed_targets_and_nested_config() {
     symlink("src/lib.py", tmp.path().join("link.py")).unwrap();
     crate::common::seed_python_runtime_coverage(
         tmp.path(),
-        &[("suite/test_counter.py::test_counter", vec![("src/lib.py", vec![1])])],
+        &[(
+            "suite/test_counter.py::test_counter",
+            vec![("src/lib.py", vec![1])],
+        )],
     );
     commit_all(tmp.path(), "init");
 
@@ -118,7 +121,10 @@ fn watcher_reloads_parent_relative_config_outside_repo() {
     write_python_fixture(&repo);
     crate::common::seed_python_runtime_coverage(
         &repo,
-        &[("suite/test_counter.py::test_counter", vec![("src/lib.py", vec![1])])],
+        &[(
+            "suite/test_counter.py::test_counter",
+            vec![("src/lib.py", vec![1])],
+        )],
     );
     let config = tmp.path().join("watch.toml");
     write_config(&config, 0.01);

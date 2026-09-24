@@ -1,8 +1,11 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use super::super::progress_watch_report::{strip_ansi, strip_trailing_duration};
 use super::{SuiteOutcome, WatchSuiteReport};
+
+#[path = "progress_watch_suite_parse.rs"]
+mod parse;
+use parse::{ParsedWatchLine, parse_watch_line};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RustIdKind {
@@ -20,7 +23,8 @@ impl WatchSuiteReport {
             .into_iter()
             .map(|(id, outcome)| (report_ids.get(&id).cloned().unwrap_or(id), outcome))
             .collect();
-        let current: Vec<_> = selectors.iter()
+        let current: Vec<_> = selectors
+            .iter()
             .map(|id| report_ids.get(id).unwrap_or(id).clone())
             .collect();
         self.retain_language_selectors(crate::Language::Rust, &current);
@@ -32,22 +36,29 @@ impl WatchSuiteReport {
         let current: std::collections::BTreeSet<&str> =
             selectors.iter().map(String::as_str).collect();
         self.named.retain(|selector, _| {
-            let path = selector.split_once("::").map_or(selector.as_str(), |(p, _)| p);
-            let selector_lang = crate::Language::from_path(Path::new(path))
-                .unwrap_or(crate::Language::Rust);
+            let path = selector
+                .split_once("::")
+                .map_or(selector.as_str(), |(p, _)| p);
+            let selector_lang =
+                crate::Language::from_path(Path::new(path)).unwrap_or(crate::Language::Rust);
             selector_lang != lang || current.contains(selector.as_str())
         });
-        self.inventory_named[i] = selectors.iter().all(|selector| self.named.contains_key(selector));
+        self.inventory_named[i] = selectors
+            .iter()
+            .all(|selector| self.named.contains_key(selector));
         if self.inventory_named[i] {
             let mut named = [0; 3];
             for selector in &current {
                 named[collapsed_index(self.named[*selector])] += 1;
             }
-            self.anonymous_passed = self.anonymous_passed
+            self.anonymous_passed = self
+                .anonymous_passed
                 .saturating_sub(self.lang_passed[i].saturating_sub(named[0]));
-            self.anonymous_failed = self.anonymous_failed
+            self.anonymous_failed = self
+                .anonymous_failed
                 .saturating_sub(self.lang_failed[i].saturating_sub(named[1]));
-            self.anonymous_timed_out = self.anonymous_timed_out
+            self.anonymous_timed_out = self
+                .anonymous_timed_out
                 .saturating_sub(self.lang_timed_out[i].saturating_sub(named[2]));
             self.lang_passed[i] = 0;
             self.lang_failed[i] = 0;
@@ -151,7 +162,10 @@ fn merge_into(suite: &mut WatchSuiteReport, lines: &[String], unscoped: bool) {
     }
 }
 
-fn prune_absent_problems(suite: &mut WatchSuiteReport, cycle_named: &BTreeMap<String, SuiteOutcome>) {
+fn prune_absent_problems(
+    suite: &mut WatchSuiteReport,
+    cycle_named: &BTreeMap<String, SuiteOutcome>,
+) {
     suite.named.retain(|selector, outcome| match outcome {
         SuiteOutcome::Pass => true,
         SuiteOutcome::Fail | SuiteOutcome::Timeout => cycle_named.contains_key(selector),
@@ -269,7 +283,11 @@ fn take_collapsed_if_new(
 }
 
 fn named_count(suite: &WatchSuiteReport, outcome: SuiteOutcome) -> usize {
-    suite.named.values().filter(|item| **item == outcome).count()
+    suite
+        .named
+        .values()
+        .filter(|item| **item == outcome)
+        .count()
 }
 
 fn collapsed_index(outcome: SuiteOutcome) -> usize {
@@ -296,126 +314,4 @@ fn should_prune_absent_problems(
         .values()
         .any(|outcome| matches!(outcome, SuiteOutcome::Fail | SuiteOutcome::Timeout))
         && cycle_named.len() >= prior_named.max(1)
-}
-
-enum ParsedWatchLine {
-    Named {
-        selector: String,
-        outcome: SuiteOutcome,
-    },
-    Collapsed {
-        outcome: SuiteOutcome,
-        count: usize,
-    },
-    LangCollapsed {
-        lang: crate::Language,
-        outcome: SuiteOutcome,
-        count: usize,
-    },
-    Summary {
-        passed: usize,
-        failed: usize,
-        timed_out: usize,
-        total: String,
-        max_pass: String,
-    },
-    Violation(String),
-    NoViolations,
-    Ignore,
-}
-
-fn parse_watch_line(message: &str) -> ParsedWatchLine {
-    let line = strip_ansi(message.trim());
-    let line = line.as_ref();
-    if line.contains("VIOLATION:") {
-        return ParsedWatchLine::Violation(line.to_string());
-    }
-    if line == "NO VIOLATIONS" {
-        return ParsedWatchLine::NoViolations;
-    }
-    if let Some(parsed) = parse_lang_collapsed(line) {
-        return parsed;
-    }
-    parse_summary_line(line)
-        .unwrap_or_else(|| parse_status_line(line).unwrap_or(ParsedWatchLine::Ignore))
-}
-
-fn parse_lang_collapsed(line: &str) -> Option<ParsedWatchLine> {
-    let rest = line.strip_prefix("kiss test: lang_collapsed ")?;
-    let mut parts = rest.split_whitespace();
-    let lang = match parts.next()? {
-        "python" | "py" => crate::Language::Python,
-        "rust" | "rs" => crate::Language::Rust,
-        _ => return None,
-    };
-    let outcome = match parts.next()? {
-        "pass" => SuiteOutcome::Pass,
-        "fail" => SuiteOutcome::Fail,
-        "timeout" => SuiteOutcome::Timeout,
-        _ => return None,
-    };
-    let count = parts.next()?.parse().ok()?;
-    Some(ParsedWatchLine::LangCollapsed {
-        lang,
-        outcome,
-        count,
-    })
-}
-
-fn parse_summary_line(line: &str) -> Option<ParsedWatchLine> {
-    let rest = line
-        .strip_prefix("✓ ")
-        .or_else(|| line.strip_prefix("✗ "))?;
-    if !rest.contains(" passed · ") {
-        return None;
-    }
-    let parts: Vec<&str> = rest.split(" · ").collect();
-    if parts.len() < 3 {
-        return None;
-    }
-    Some(ParsedWatchLine::Summary {
-        passed: parse_count_word(parts[0], "passed")?,
-        failed: parse_count_word(parts[1], "failed")?,
-        timed_out: parse_count_word(parts[2], "timed out")?,
-        total: part_suffix(parts.get(3).copied(), " total"),
-        max_pass: part_suffix(parts.get(4).copied(), " max pass"),
-    })
-}
-
-fn parse_count_word(part: &str, word: &str) -> Option<usize> {
-    part.strip_suffix(word)?.trim().parse().ok()
-}
-
-fn part_suffix(part: Option<&str>, suffix: &str) -> String {
-    part.and_then(|text| text.strip_suffix(suffix))
-        .unwrap_or("0s")
-        .to_string()
-}
-
-fn parse_status_line(line: &str) -> Option<ParsedWatchLine> {
-    let (outcome, rest) = if let Some(rest) = line.strip_prefix("PASS") {
-        (SuiteOutcome::Pass, rest)
-    } else if let Some(rest) = line.strip_prefix("TIMEOUT") {
-        (SuiteOutcome::Timeout, rest)
-    } else {
-        (SuiteOutcome::Fail, line.strip_prefix("FAIL")?)
-    };
-    let body = rest
-        .strip_prefix(" (cached): ")
-        .or_else(|| rest.strip_prefix(": "))
-        .or_else(|| rest.strip_prefix(' '))?;
-    let selector = strip_trailing_duration(body);
-    if let Some(count) = selector
-        .strip_suffix(" selectors")
-        .and_then(|n| n.parse::<usize>().ok())
-    {
-        return Some(ParsedWatchLine::Collapsed { outcome, count });
-    }
-    if selector.is_empty() {
-        return None;
-    }
-    Some(ParsedWatchLine::Named {
-        selector: selector.to_string(),
-        outcome,
-    })
 }

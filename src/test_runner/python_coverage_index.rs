@@ -35,7 +35,8 @@ pub(crate) use population_durations::{
 
 pub(crate) mod coverage_snapshot;
 pub(crate) use coverage_snapshot::{
-    try_load_python_coverage_snapshot, write_python_coverage_snapshot,
+    python_coverage_snapshot_generation_id, try_load_python_coverage_snapshot,
+    write_python_coverage_snapshot,
 };
 
 pub(crate) mod storage;
@@ -62,6 +63,29 @@ pub(crate) use generation::{
     try_load_pinned_python_generation, try_load_pinned_python_generation_warm,
     try_migrate_complete_v1_generation,
 };
+
+pub(crate) fn publish_python_generation_from_cached_selectors(
+    repo_root: &Path,
+    selectors: &[String],
+    test_args: &[String],
+    gate: &kiss::GateConfig,
+) -> Result<(), String> {
+    if selectors.is_empty() {
+        return Ok(());
+    }
+    let is_indexable = |path: &Path, root: &Path| {
+        repo_relative_coverage_file(root, &path.to_string_lossy()).is_some()
+    };
+    generation::materialize_and_publish_from_cached_outcomes(
+        repo_root,
+        selectors,
+        test_args,
+        GenerationReason::IncompleteRepair,
+        &is_indexable,
+        gate,
+    )?;
+    Ok(())
+}
 
 pub(crate) type PythonCoverageIndex = BTreeMap<String, BTreeSet<String>>;
 

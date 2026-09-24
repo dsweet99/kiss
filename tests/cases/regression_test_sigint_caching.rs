@@ -129,7 +129,8 @@ fn kiss_test_sigint_caches_passed_tests_as_it_goes() {
         "restart must exit 0; stdout={stdout2} stderr={stderr2}"
     );
     assert!(
-        stdout2.contains("PASS (cached)")
+        stdout2.contains("kiss test: rslip prepared hits=1 misses=0")
+            && stdout2.contains("PASS ")
             && (stdout2.contains("test_fast") || stdout2.contains("test_lib.py")),
         "expected test_fast to be cached on second run, stdout={stdout2}, stderr={stderr2}"
     );

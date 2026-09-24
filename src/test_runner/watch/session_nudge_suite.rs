@@ -53,6 +53,93 @@ pub(super) fn commit_a_py(tmp: &tempfile::TempDir) -> PathBuf {
     file
 }
 
+pub(super) fn publish_workspace_rows(
+    repo: &std::path::Path,
+    rows: &[(
+        &str,
+        &str,
+        crate::test_runner::target_request::EffectiveStatus,
+    )],
+    exit_code: i32,
+) {
+    publish_rows_for_request(
+        repo,
+        &crate::test_runner::target_request::workspace_request(None, &[]),
+        rows,
+        exit_code,
+    );
+}
+
+pub(super) fn publish_rows_for_request(
+    repo: &std::path::Path,
+    request: &crate::test_runner::target_request::TargetRequest,
+    rows: &[(
+        &str,
+        &str,
+        crate::test_runner::target_request::EffectiveStatus,
+    )],
+    exit_code: i32,
+) {
+    use crate::test_runner::target_request::{
+        EffectiveStatus, ReportScope, SelectorRow, TargetReport, publish_report, resolve_only,
+        slice_for,
+    };
+    use crate::test_runner::workspace_selector_cache::{
+        store_python_workspace_selectors, store_rust_workspace_selectors,
+    };
+    assert!(store_python_workspace_selectors(repo, &[], &[], &[]));
+    assert!(store_rust_workspace_selectors(repo, &[], &[]));
+    let stamp = match resolve_only(repo, request) {
+        Ok(resolved) => slice_for(repo, request, &resolved),
+        Err(_) => {
+            let workspace = crate::test_runner::target_request::workspace_request(None, &[]);
+            let resolved = resolve_only(repo, &workspace).expect("resolve workspace");
+            slice_for(repo, &workspace, &resolved)
+        }
+    };
+    let built_rows: Vec<SelectorRow> = rows
+        .iter()
+        .map(|(lang, sel, status)| SelectorRow {
+            language: (*lang).into(),
+            selector: (*sel).into(),
+            raw: match status {
+                EffectiveStatus::Pass => "passed",
+                EffectiveStatus::Fail => "failed",
+                EffectiveStatus::Timeout => "timed_out",
+            }
+            .into(),
+            effective: *status,
+            duration_ns: None,
+            provenance: "witness".into(),
+        })
+        .collect();
+    let selectors: Vec<String> = built_rows.iter().map(|row| row.selector.clone()).collect();
+    let scope = ReportScope::from_membership(Vec::new(), selectors, stamp.complete);
+    let mut built =
+        TargetReport::assembled_in(repo, request, scope, built_rows, stamp, exit_code, false);
+    built.stamp.complete = true;
+    publish_report(repo, request, &built).expect("publish request report");
+}
+
+pub(super) fn publish_pass_count(repo: &std::path::Path, n: usize) {
+    let owned: Vec<(String, String)> = (0..n).map(|i| ("python".into(), format!("t{i}"))).collect();
+    let rows: Vec<(
+        &str,
+        &str,
+        crate::test_runner::target_request::EffectiveStatus,
+    )> = owned
+        .iter()
+        .map(|(lang, sel)| {
+            (
+                lang.as_str(),
+                sel.as_str(),
+                crate::test_runner::target_request::EffectiveStatus::Pass,
+            )
+        })
+        .collect();
+    publish_workspace_rows(repo, &rows, 0);
+}
+
 pub(super) fn timeout_steps(n: usize) -> VecDeque<Result<Vec<NormalizedWatchEvent>, RecvTimeout>> {
     let mut steps = VecDeque::new();
     for _ in 0..n {
@@ -66,10 +153,10 @@ pub(super) fn timeout_steps(n: usize) -> VecDeque<Result<Vec<NormalizedWatchEven
 mod cov_tests;
 #[path = "session_nudge_default_test.rs"]
 mod default_tests;
-#[path = "session_nudge_scenario_test.rs"]
-mod scenario_tests;
 #[path = "session_nudge_identity_test.rs"]
 mod identity_tests;
+#[path = "session_nudge_scenario_test.rs"]
+mod scenario_tests;
 #[path = "session_nudge_suite_report_test.rs"]
 mod suite_report_tests;
 #[path = "session_nudge_test.rs"]

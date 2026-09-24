@@ -18,14 +18,14 @@ use crate::test_runner::rust_coverage_index::{
 use crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached;
 use crate::test_runner::selector_ids::report_string_for_logical_string;
 
-#[path = "witness_store_persist.rs"]
-mod persist;
 #[path = "witness_store_load.rs"]
 mod load;
+#[path = "witness_store_persist.rs"]
+mod persist;
 
-pub(crate) use load::try_load_rust_execution_witness;
 #[cfg(test)]
 pub(super) use load::load_witness_from_disk;
+pub(crate) use load::try_load_rust_execution_witness;
 
 const SCHEMA_VERSION: &str = "kiss-rust-execution-witness-v1";
 
@@ -277,7 +277,11 @@ fn rust_time_gate_needs_report_ids(gate: &GateConfig) -> bool {
     kiss::time_gate_uses_path_prefixes(&gate.max_unit_test_seconds)
 }
 
-fn rust_time_gate_selectors(repo_root: &Path, selectors: &[String], gate: &GateConfig) -> Vec<String> {
+fn rust_time_gate_selectors(
+    repo_root: &Path,
+    selectors: &[String],
+    gate: &GateConfig,
+) -> Vec<String> {
     if !rust_time_gate_needs_report_ids(gate) {
         return selectors.to_vec();
     }

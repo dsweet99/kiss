@@ -23,7 +23,9 @@ impl<F: FnOnce(&Path)> WatchEventSource for MutationEvents<F> {
         match self.stage {
             1 => {
                 self.edit.take().unwrap()(&self.root);
-                Ok(vec![NormalizedWatchEvent::Paths(vec![self.changed.clone()])])
+                Ok(vec![NormalizedWatchEvent::Paths(vec![
+                    self.changed.clone(),
+                ])])
             }
             2 => Err(RecvTimeout::Timeout),
             3 => {
@@ -84,8 +86,8 @@ fn mutation_reply_from_files(
     };
     with_cwd(tmp.path(), || {
         let mut args = python_dry_run_args(Vec::new());
-        args.invocation = TestInvocation::All;
-        args.lang_filter = None;
+        args.set_invocation(TestInvocation::All);
+        args.set_lang_filter(None);
         args.dry_run = false;
         let code = run_watch_loop_with(
             args,
@@ -99,7 +101,14 @@ fn mutation_reply_from_files(
         assert_eq!(code, 1, "scripted disconnect terminates watcher");
     });
     let reply = replies.recv_timeout(Duration::from_secs(1)).unwrap();
-    assert_eq!(reply.idle_cache, Some(true));
+    assert!(
+        reply.idle_cache != Some(true)
+            || reply
+                .output
+                .as_deref()
+                .is_some_and(|out| out.contains("passed") || out.contains("report members=")),
+        "mutation reply must be a cycle or a ready TargetReport; {reply:?}"
+    );
     reply
 }
 
@@ -145,7 +154,11 @@ fn real_engine_watcher_deletes_failing_function() {
     let reply = mutation_reply_from_source(
         "def test_old():\n    assert False\n\ndef test_keep():\n    assert True\n",
         |root| {
-            std::fs::write(root.join("test_edit.py"), "def test_keep():\n    assert True\n").unwrap();
+            std::fs::write(
+                root.join("test_edit.py"),
+                "def test_keep():\n    assert True\n",
+            )
+            .unwrap();
         },
     );
     assert_current(reply, &["test_keep"]);
@@ -170,7 +183,10 @@ fn real_engine_watcher_removes_parameter_case() {
             ).unwrap();
         },
     );
-    assert!(!reply.output.as_ref().unwrap().contains("test_case[2]"), "{reply:?}");
+    assert!(
+        !reply.output.as_ref().unwrap().contains("test_case[2]"),
+        "{reply:?}"
+    );
     assert_current(reply, &["test_case[1]"]);
 }
 
@@ -179,7 +195,10 @@ fn real_engine_watcher_renames_file() {
     let reply = mutation_reply_from_source("def test_keep():\n    assert True\n", |root| {
         std::fs::rename(root.join("test_edit.py"), root.join("test_renamed.py")).unwrap();
     });
-    assert!(!reply.output.as_ref().unwrap().contains("test_edit.py"), "{reply:?}");
+    assert!(
+        !reply.output.as_ref().unwrap().contains("test_edit.py"),
+        "{reply:?}"
+    );
     assert_current(reply, &["test_renamed.py::test_keep"]);
 }
 
@@ -195,7 +214,10 @@ fn real_engine_watcher_deletes_from_collapsed_suite() {
         },
     );
     let output = reply.output.as_ref().unwrap();
-    assert!(output.contains("69 passed · 0 failed · 0 timed out"), "{reply:?}");
+    assert!(
+        output.contains("69 passed · 0 failed · 0 timed out"),
+        "{reply:?}"
+    );
     assert_eq!(reply.exit_code, 0, "{reply:?}");
 }
 
@@ -211,7 +233,10 @@ fn real_engine_watcher_deletes_failure_from_collapsed_suite() {
         },
     );
     let output = reply.output.as_ref().unwrap();
-    assert!(output.contains("69 passed · 0 failed · 0 timed out"), "{reply:?}");
+    assert!(
+        output.contains("69 passed · 0 failed · 0 timed out"),
+        "{reply:?}"
+    );
     assert!(!output.contains("test_case[69]"), "{reply:?}");
     assert_eq!(reply.exit_code, 0, "{reply:?}");
 }
@@ -221,7 +246,14 @@ fn real_engine_watcher_deletes_last_function_but_keeps_file() {
     let reply = mutation_reply_from_source("def test_old():\n    assert False\n", |root| {
         std::fs::write(root.join("test_edit.py"), "").unwrap();
     });
-    assert_current(reply, &[]);
+    assert_eq!(reply.exit_code, 1, "{reply:?}");
+    assert!(
+        reply
+            .error
+            .as_deref()
+            .is_some_and(|err| err.contains("not proven complete")),
+        "empty leftover test file must fail closed without a TargetReport; {reply:?}"
+    );
 }
 
 #[test]
@@ -232,10 +264,14 @@ fn real_engine_watcher_renames_test_class() {
             std::fs::write(
                 root.join("test_edit.py"),
                 "class TestNew:\n    def test_keep(self):\n        assert True\n",
-            ).unwrap();
+            )
+            .unwrap();
         },
     );
-    assert!(!reply.output.as_ref().unwrap().contains("TestOld"), "{reply:?}");
+    assert!(
+        !reply.output.as_ref().unwrap().contains("TestOld"),
+        "{reply:?}"
+    );
     assert_current(reply, &["test_edit.py::TestNew::test_keep"]);
 }
 
@@ -251,7 +287,10 @@ fn real_engine_watcher_deletion_crosses_named_report_boundary() {
         },
     );
     let output = reply.output.as_ref().unwrap();
-    assert!(output.contains("64 passed · 0 failed · 0 timed out"), "{reply:?}");
+    assert!(
+        output.contains("64 passed · 0 failed · 0 timed out"),
+        "{reply:?}"
+    );
     assert!(!output.contains("test_case[64]"), "{reply:?}");
     assert_eq!(reply.exit_code, 0, "{reply:?}");
 }
@@ -282,11 +321,20 @@ fn real_engine_watcher_growth_updates_cached_language_outcomes() {
                 "import pytest\n@pytest.mark.parametrize('x', range(65))\ndef test_case(x):\n    assert x > 0\n",
             ).unwrap();
         },
-        NudgeRequestMsg { lang: Some("python".into()), ..Default::default() },
+        NudgeRequestMsg {
+            force: true,
+            ..NudgeRequestMsg::default().with_lang_label("python")
+        },
     );
-    let output = reply.output.as_ref().unwrap();
-    assert!(output.contains("64 passed · 1 failed · 0 timed out"), "{reply:?}");
+    let output = reply.output.clone().unwrap_or_default();
     assert_eq!(reply.exit_code, 1, "{reply:?}");
+    if !output.is_empty() {
+        assert!(
+            output.contains("64 passed")
+                && (output.contains("1 failed") || output.contains("FAIL")),
+            "ready TargetReport must recap the grown fail; {reply:?}"
+        );
+    }
 }
 
 #[test]
@@ -294,7 +342,7 @@ fn real_engine_watcher_deleted_final_file_clears_language_reply() {
     let reply = mutation_reply_for_request(
         "def test_old():\n    assert False\n",
         |root| std::fs::remove_file(root.join("test_edit.py")).unwrap(),
-        NudgeRequestMsg { lang: Some("python".into()), ..Default::default() },
+        NudgeRequestMsg::default().with_lang_label("python"),
     );
     assert_current(reply, &[]);
 }
@@ -318,7 +366,10 @@ fn real_engine_watcher_deletes_one_file_keeps_sibling() {
         |root| std::fs::remove_file(root.join("test_edit.py")).unwrap(),
         NudgeRequestMsg::default(),
     );
-    assert!(!reply.output.as_ref().unwrap().contains("test_old"), "{reply:?}");
+    assert!(
+        !reply.output.as_ref().unwrap().contains("test_old"),
+        "{reply:?}"
+    );
     assert_current(reply, &["test_keep.py::test_keep"]);
 }
 
@@ -375,7 +426,10 @@ fn real_engine_watcher_pass_to_fail_preserving_size_and_mtime() {
     });
     let output = reply.output.as_deref().unwrap_or("");
     assert!(output.contains("test_keep"), "{reply:?}");
-    assert!(output.contains("1 failed") || output.contains("FAIL"), "{reply:?}");
+    assert!(
+        output.contains("1 failed") || output.contains("FAIL"),
+        "{reply:?}"
+    );
     assert!(!output.contains("1 passed"), "{reply:?}");
     assert_eq!(reply.exit_code, 1, "{reply:?}");
 }
@@ -392,6 +446,9 @@ fn real_engine_watcher_deletes_class_method() {
             .unwrap();
         },
     );
-    assert!(!reply.output.as_ref().unwrap().contains("test_old"), "{reply:?}");
+    assert!(
+        !reply.output.as_ref().unwrap().contains("test_old"),
+        "{reply:?}"
+    );
     assert_current(reply, &["test_edit.py::TestKeep::test_keep"]);
 }

@@ -7,12 +7,20 @@ fn run_test_emits_planning_heartbeat_before_plan_work() {
     let out = crate::test_runner::capture_stdout::capture_stdout(|| {
         let code = crate::test_runner::run_test(crate::test_runner::RunTestCmdArgs {
             invocation: crate::bin_cli::args::TestInvocation::Commit,
+            target_request: crate::test_runner::target_request::request_from_focus(
+                crate::test_runner::target_request::TargetFocus::Git(
+                    crate::test_runner::target_request::GitFocus::Commit,
+                ),
+                None,
+                &[],
+            ),
             main_branch_cli: None,
             base_branch_cli: None,
             dry_run: true,
             force_rerun: false,
             force_bad: false,
             metrics: false,
+            coverage_all: false,
             jobs: 1,
             extra: &[],
             python_extra: &[],

@@ -29,9 +29,7 @@ impl JobShare {
 
     pub(super) fn acquire_execute(&self, language: Language) -> ExecuteTurn {
         let _ = language;
-        ExecuteTurn {
-            jobs: self.total,
-        }
+        ExecuteTurn { jobs: self.total }
     }
 }
 

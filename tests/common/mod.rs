@@ -11,8 +11,8 @@ use tree_sitter::Node;
 
 mod python_seed_helpers;
 use python_seed_helpers::{
-    python_entries_fingerprint, python_rslip_cache_root_for_repo, python_seeded_population_is_current,
-    python_source_input_fingerprint,
+    python_entries_fingerprint, python_rslip_cache_root_for_repo,
+    python_seeded_population_is_current, python_source_input_fingerprint,
 };
 
 pub fn is_cli_wall_timing_line(line: &str) -> bool {
@@ -52,10 +52,7 @@ fn ensure_tmpfs() {
 /// After seeding runtime coverage, apply a repo change and assert the population
 /// identity no longer matches (equivalent to `load_python_runtime_coverage` failing
 /// closed with a stale/missing population rather than reusing the seed).
-pub fn assert_seeded_python_runtime_coverage_stale_after(
-    repo: &Path,
-    apply_change: impl FnOnce(),
-) {
+pub fn assert_seeded_python_runtime_coverage_stale_after(repo: &Path, apply_change: impl FnOnce()) {
     assert!(
         python_seeded_population_is_current(repo),
         "seeded population must be current before the source edit"
@@ -294,7 +291,11 @@ pub fn persistent_python_failure_repo() -> PathBuf {
 pub fn copy_repo_tree(src: &Path, dst: &Path) {
     fs::create_dir_all(dst).expect("copy destination");
     let status = Command::new("cp")
-        .args(["-a", &format!("{}/.", src.display()), &format!("{}/", dst.display())])
+        .args([
+            "-a",
+            &format!("{}/.", src.display()),
+            &format!("{}/", dst.display()),
+        ])
         .status()
         .expect("copy_repo_tree");
     assert!(status.success(), "copy_repo_tree failed");
@@ -365,7 +366,7 @@ pub fn persistent_python_coverage_gap_repo() -> PathBuf {
         assert!(init.status.success(), "git init failed");
         for kv in [("user.email", "t@t.t"), ("user.name", "t")] {
             kiss::scrubbed_git_command(&root)
-            .args(["config", kv.0, kv.1])
+                .args(["config", kv.0, kv.1])
                 .status()
                 .expect("git config");
         }
@@ -500,7 +501,7 @@ pub fn persistent_seeded_python_watch_repo() -> PathBuf {
         assert!(init.status.success(), "git init failed");
         for kv in [("user.email", "t@t.t"), ("user.name", "t")] {
             kiss::scrubbed_git_command(&root)
-            .args(["config", kv.0, kv.1])
+                .args(["config", kv.0, kv.1])
                 .status()
                 .expect("git config");
         }
@@ -570,10 +571,7 @@ pub fn seed_python_runtime_coverage(repo: &Path, entries: &[PythonRuntimeCoverag
     seed_python_runtime_coverage_with_status(repo, entries, "Passed", 0);
 }
 
-pub fn seed_python_failed_runtime_coverage(
-    repo: &Path,
-    entries: &[PythonRuntimeCoverageSeed<'_>],
-) {
+pub fn seed_python_failed_runtime_coverage(repo: &Path, entries: &[PythonRuntimeCoverageSeed<'_>]) {
     seed_python_runtime_coverage_with_status(repo, entries, "Failed", 1);
 }
 

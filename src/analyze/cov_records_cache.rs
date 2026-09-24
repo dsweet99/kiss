@@ -50,35 +50,38 @@ pub(crate) fn try_load_cov_records(
 
 pub(crate) fn try_load_cov_records_with_orphan_violations(
     key: &CovRecordsCacheKey<'_>,
-) -> Option<(Vec<LineCoverageRecord>, String, Option<Vec<kiss::Violation>>)> {
+) -> Option<(
+    Vec<LineCoverageRecord>,
+    String,
+    Option<Vec<kiss::Violation>>,
+)> {
     let fingerprint = cov_records_fingerprint(key)?;
     let raw = fs::read(cache_path(key.repo_root)).ok()?;
     let cache: CovRecordsCache = serde_json::from_slice(&raw).ok()?;
     if cache.schema_version != SCHEMA_VERSION || cache.fingerprint != fingerprint {
         return None;
     }
-    let (orphan_clean_policy, orphan_violations) = if cache.orphan_clean_records_digest
-        == records_digest(&cache.records)
-    {
-        let viols = cache
-            .orphan_violations
-            .map(|viols| {
-                viols
-                    .into_iter()
-                    .map(CachedViolation::into_violation)
-                    .collect()
-            })
-            .or_else(|| {
-                if !cache.orphan_clean_policy.is_empty() {
-                    Some(Vec::new())
-                } else {
-                    None
-                }
-            });
-        (cache.orphan_clean_policy, viols)
-    } else {
-        (String::default(), None)
-    };
+    let (orphan_clean_policy, orphan_violations) =
+        if cache.orphan_clean_records_digest == records_digest(&cache.records) {
+            let viols = cache
+                .orphan_violations
+                .map(|viols| {
+                    viols
+                        .into_iter()
+                        .map(CachedViolation::into_violation)
+                        .collect()
+                })
+                .or_else(|| {
+                    if !cache.orphan_clean_policy.is_empty() {
+                        Some(Vec::new())
+                    } else {
+                        None
+                    }
+                });
+            (cache.orphan_clean_policy, viols)
+        } else {
+            (String::default(), None)
+        };
     Some((
         line_records_from_cache(&cache.records),
         orphan_clean_policy,

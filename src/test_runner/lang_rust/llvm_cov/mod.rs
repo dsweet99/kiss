@@ -18,8 +18,8 @@ mod timeout;
 use timeout::selector_timeout_millis_for_batch;
 
 mod finish;
-mod live_witness;
 mod live_status;
+mod live_witness;
 mod witness;
 pub(crate) use finish::{
     cached_summary_from_check_aggregate_population, finish_rust_coverage_batch_result,
@@ -124,14 +124,9 @@ pub(crate) fn cached_rust_check_aggregate_selectors(
             crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(
                 repo_root, extra,
             )?;
-        if let Some(summary) =
-            crate::test_runner::execution_witness::try_warm_rust_cached_summary(
-                repo_root,
-                selectors,
-                &identity,
-                gate,
-            )
-        {
+        if let Some(summary) = crate::test_runner::execution_witness::try_warm_rust_cached_summary(
+            repo_root, selectors, &identity, gate,
+        ) {
             return Ok(Some(summary));
         }
     }

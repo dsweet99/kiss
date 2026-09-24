@@ -90,7 +90,8 @@ fn ensure_python_attempts_incomplete_repair_for_problem_selectors() {
         .expect_err("incomplete");
     assert_eq!(err.problem_selectors, vec!["t.py::bad".to_string()]);
     // Drive ensure's incomplete-repair branch (covers check_runtime_refresh_python.rs:29–30).
-    let ensure_err = ensure_python_runtime_coverage(repo, &[], 1, &[], &kiss::GateConfig::default());
+    let ensure_err =
+        ensure_python_runtime_coverage(repo, &[], 1, &[], &kiss::GateConfig::default());
     assert!(
         ensure_err.is_err(),
         "incomplete repair should attempt ensure and fail without a runnable suite"

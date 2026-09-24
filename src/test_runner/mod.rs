@@ -29,12 +29,19 @@ mod rust_coverage_index;
 mod rust_report_id_cache;
 mod selector_ids;
 mod status_labels;
+pub(crate) mod target_request;
 mod targets;
 pub(crate) use targets::expand_target_operands;
+mod kiss_test_report;
 pub(crate) mod tests_remaining;
 pub(crate) mod unit_test_timing;
-mod kiss_test_report;
 mod watch;
+pub(crate) use kiss_test_report::{
+    KissTestReport, clone_run_args, kiss_report_from_ensure_outcome, kiss_report_from_ensure_query,
+    repo_can_assemble_reports,
+};
+#[cfg(test)]
+pub(crate) use kiss_test_report::{run_kiss_test_report, run_kiss_test_report_reuse};
 #[cfg(test)]
 pub(crate) use planned_selectors::should_force_cold_initialization;
 pub(crate) use planned_selectors::{PlannedSelectors, SelectorRunOptions, empty_planned};
@@ -45,18 +52,12 @@ pub(crate) use planned_selectors::{
 pub(crate) use rust_batch_interrupt::consume_rust_batch_interrupted;
 #[cfg(test)]
 pub(crate) use rust_batch_interrupt::note_rust_batch_interrupted;
-pub(crate) use kiss_test_report::{
-    clone_run_args, durable_all_reply, durable_lang_reply, run_kiss_test_report,
-    run_kiss_test_report_reuse, KISS_TEST_ALLOW_REFRESH,
-};
 
 pub(crate) use lang_rust::llvm_cov as rust_llvm_cov;
 
 use kiss::Language;
 
 use crate::bin_cli::args::TestInvocation;
-#[cfg(test)]
-use crate::test_git::TestChangeMode;
 #[cfg(test)]
 pub(crate) use run_logic::run_selectors;
 
@@ -86,13 +87,16 @@ impl Drop for TestEnvVarGuard {
 }
 
 pub struct RunTestCmdArgs<'a> {
+    #[cfg_attr(not(test), allow(dead_code))]
     pub invocation: TestInvocation,
+    pub(crate) target_request: target_request::TargetRequest,
     pub main_branch_cli: Option<&'a str>,
     pub base_branch_cli: Option<&'a str>,
     pub dry_run: bool,
     pub force_rerun: bool,
     pub force_bad: bool,
     pub metrics: bool,
+    pub coverage_all: bool,
     pub jobs: usize,
     pub extra: &'a [String],
     pub python_extra: &'a [String],
@@ -100,6 +104,37 @@ pub struct RunTestCmdArgs<'a> {
     pub lang_filter: Option<Language>,
     pub config_main_branch: Option<&'a str>,
     pub gate_config: kiss::GateConfig,
+}
+
+#[cfg(test)]
+impl<'a> RunTestCmdArgs<'a> {
+    pub(crate) fn set_invocation(&mut self, invocation: TestInvocation) {
+        self.invocation = invocation;
+        self.refresh_target_request();
+    }
+
+    pub(crate) fn set_lang_filter(&mut self, lang_filter: Option<Language>) {
+        self.lang_filter = lang_filter;
+        self.refresh_target_request();
+    }
+
+    pub(crate) fn set_ignore(&mut self, ignore: &'a [String]) {
+        self.ignore = ignore;
+        self.refresh_target_request();
+    }
+
+    fn refresh_target_request(&mut self) {
+        let request = target_request::request_from_invocation(
+            &self.invocation,
+            self.main_branch_cli,
+            self.base_branch_cli,
+            self.config_main_branch,
+            self.lang_filter,
+            self.ignore,
+        );
+        self.invocation = target_request::to_compat_invocation(&request);
+        self.target_request = request;
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -137,100 +172,77 @@ pub(crate) fn emit_stage_time(stage: &str, duration: std::time::Duration) {
 }
 
 pub(crate) fn run_test_once(a: RunTestCmdArgs<'_>) -> RunTestOnceOutcome {
-    crate::test_runner::runners::clear_python_collect_memo();
-    crate::test_runner::tests_remaining::reset_tests_remaining();
-
-    let process_started = std::time::Instant::now();
-    let _progress_watchdog = kiss::rust_llvm_cov_runner::ProgressWatchdog::start();
-    emit_test_progress("kiss test: Planning ...");
-    match pipeline::run_overlapped_test(&a, process_started) {
-        Ok(c) => RunTestOnceOutcome::Code(c),
-        Err(e) => {
-            if rust_batch_interrupt::consume_rust_batch_interrupted() {
-                return RunTestOnceOutcome::Interrupted;
-            }
-            eprintln!("{e}");
-            RunTestOnceOutcome::EngineError(e)
+    match target_request::bind_and_prepare(&a) {
+        Err(err) => {
+            eprintln!("{err}");
+            RunTestOnceOutcome::EngineError(err)
         }
+        Ok(target_request::BindDecision::Finished(code)) => RunTestOnceOutcome::Code(code),
+        Ok(target_request::BindDecision::Interrupted) => RunTestOnceOutcome::Interrupted,
     }
 }
 
-#[cfg(unix)]
-pub(crate) use watch::control::{
-    NudgeInvocation, NudgeRequestMsg, nudge_watcher_with_retry_on_wait, probe_live_watcher,
-    reclaim_stale_watch_session,
-};
+pub(crate) fn run_live_overlapped_test(
+    a: &RunTestCmdArgs<'_>,
+    process_started: std::time::Instant,
+) -> Result<i32, String> {
+    crate::test_runner::runners::clear_python_collect_memo();
+    crate::test_runner::tests_remaining::reset_tests_remaining();
+    let _progress_watchdog = kiss::rust_llvm_cov_runner::ProgressWatchdog::start();
+    emit_test_progress("kiss test: Planning ...");
+    pipeline::run_overlapped_test(a, process_started)
+}
+
 #[cfg(all(unix, test))]
 pub(crate) use watch::control::NudgeReplyMsg;
-#[cfg(not(unix))]
-pub(crate) use watch::nudge_kind::NudgeInvocation;
+#[cfg(unix)]
+pub(crate) use watch::control::{
+    NudgeRequestMsg, nudge_watcher_with_retry_on_wait, probe_live_watcher,
+    reclaim_stale_watch_session,
+};
 #[cfg(unix)]
 pub(crate) use watch::{OneshotPeer, WatchLockGuard, wait_oneshot_peer};
 pub(crate) use watch::{
-    WatchCoverageParams, WatchCoverageResult, WatchReloadSeed, oneshot_client_reply,
-    run_test_watch,
+    WatchCoverageParams, WatchCoverageResult, WatchReloadSeed, oneshot_client_reply, run_test_watch,
 };
 
 #[cfg(test)]
-#[allow(dead_code)]
 fn plan_for_invocation(a: &RunTestCmdArgs<'_>) -> Result<PlannedSelectors, String> {
-    match &a.invocation {
-        TestInvocation::Commit => plan_selectors(PlanSelectorsRequest {
-            mode: TestChangeMode::Commit,
+    use crate::test_runner::target_request::{
+        TargetFocus, change_mode_from_focus, operand_raws, request_from_run_args,
+    };
+    let request = request_from_run_args(a);
+    let extras = crate::test_runner::language_keyed::LanguageKeyed {
+        python: a.python_extra,
+        rust: a.extra,
+    };
+    match &request.focus {
+        TargetFocus::Git(_) => plan_selectors(PlanSelectorsRequest {
+            mode: change_mode_from_focus(&request.focus),
             main_branch_cli: a.main_branch_cli,
             base_branch_cli: a.base_branch_cli,
             ignore: a.ignore,
-            extras: crate::test_runner::language_keyed::LanguageKeyed {
-                python: a.python_extra,
-                rust: a.extra,
-            },
+            extras,
             lang_filter: a.lang_filter,
             config_main_branch: a.config_main_branch,
         }),
-        TestInvocation::Base => plan_selectors(PlanSelectorsRequest {
-            mode: TestChangeMode::Base,
-            main_branch_cli: a.main_branch_cli,
-            base_branch_cli: a.base_branch_cli,
-            ignore: a.ignore,
-            extras: crate::test_runner::language_keyed::LanguageKeyed {
-                python: a.python_extra,
-                rust: a.extra,
-            },
-            lang_filter: a.lang_filter,
-            config_main_branch: a.config_main_branch,
-        }),
-        TestInvocation::Main => plan_selectors(PlanSelectorsRequest {
-            mode: TestChangeMode::Main,
-            main_branch_cli: a.main_branch_cli,
-            base_branch_cli: a.base_branch_cli,
-            ignore: a.ignore,
-            extras: crate::test_runner::language_keyed::LanguageKeyed {
-                python: a.python_extra,
-                rust: a.extra,
-            },
-            lang_filter: a.lang_filter,
-            config_main_branch: a.config_main_branch,
-        }),
-        TestInvocation::All => plan_target_selectors(
+        TargetFocus::Workspace => plan_target_selectors(
             TargetPlanKind::All,
             a.ignore,
-            crate::test_runner::language_keyed::LanguageKeyed {
-                python: a.python_extra,
-                rust: a.extra,
-            },
+            extras,
             a.lang_filter,
             &a.gate_config,
         ),
-        TestInvocation::Targets(targets) => plan_target_selectors(
-            TargetPlanKind::Targets(targets.as_slice()),
-            a.ignore,
-            crate::test_runner::language_keyed::LanguageKeyed {
-                python: a.python_extra,
-                rust: a.extra,
-            },
-            a.lang_filter,
-            &a.gate_config,
-        ),
+        TargetFocus::Operands(_) => {
+            let targets = operand_raws(&request.focus).unwrap_or_default();
+            plan_target_selectors(
+                TargetPlanKind::Targets(targets.as_slice()),
+                a.ignore,
+                extras,
+                a.lang_filter,
+                &a.gate_config,
+            )
+        }
     }
 }
 

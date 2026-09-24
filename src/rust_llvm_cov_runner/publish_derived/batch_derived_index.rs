@@ -393,7 +393,8 @@ pub use generation::load_current_generation_coverage_from_passing_entries;
 mod manifest_match;
 pub(crate) use manifest_match::read_population_generation;
 pub use manifest_match::{
-    current_population_manifest_matches_identity, current_population_manifest_matches_source_universe,
+    current_population_manifest_matches_identity,
+    current_population_manifest_matches_source_universe,
     current_population_manifest_matches_universe, current_population_manifest_state,
     current_population_manifest_test_binaries_match, population_state_for_unchanged_source,
 };

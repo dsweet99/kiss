@@ -33,27 +33,28 @@ fn rust_runtime_coverage_reseed_after_edit_publishes_covering_selector() {
 fn seed_incremental_coverage(repo: &std::path::Path) {
     seed_rust_runtime_coverage(
         repo,
-        &[(
-            "covers_lib_first",
-            vec![("covered/src/lib.rs", vec![1])],
-        )],
+        &[("covers_lib_first", vec![("covered/src/lib.rs", vec![1])])],
     );
 }
 
 fn init_git_repo(repo: &std::path::Path) {
     assert!(git_command(repo).args(["init"]).status().unwrap().success());
     for kv in [("user.email", "t@t.t"), ("user.name", "t")] {
-        assert!(git_command(repo)
-            .args(["config", kv.0, kv.1])
+        assert!(
+            git_command(repo)
+                .args(["config", kv.0, kv.1])
+                .status()
+                .unwrap()
+                .success()
+        );
+    }
+    assert!(
+        git_command(repo)
+            .args(["commit", "--allow-empty", "-m", "init"])
             .status()
             .unwrap()
-            .success());
-    }
-    assert!(git_command(repo)
-        .args(["commit", "--allow-empty", "-m", "init"])
-        .status()
-        .unwrap()
-        .success());
+            .success()
+    );
 }
 
 fn passed_selector_entry_count(repo: &std::path::Path) -> usize {

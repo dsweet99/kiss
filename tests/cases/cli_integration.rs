@@ -388,6 +388,12 @@ fn cli_wall_timing_goes_to_stdout_not_stderr() {
     let on_stderr = stderr
         .lines()
         .any(|line| line.starts_with("kiss: ") && (line.ends_with("ms") || line.ends_with('s')));
-    assert!(on_stdout, "wall-clock line must be on stdout. stdout:\n{stdout}");
-    assert!(!on_stderr, "wall-clock line must not be on stderr. stderr:\n{stderr}");
+    assert!(
+        on_stdout,
+        "wall-clock line must be on stdout. stdout:\n{stdout}"
+    );
+    assert!(
+        !on_stderr,
+        "wall-clock line must not be on stderr. stderr:\n{stderr}"
+    );
 }

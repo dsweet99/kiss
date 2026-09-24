@@ -241,7 +241,13 @@ fn time_limit_reclassify_forces_miss_on_affected_selector() {
         AcceptDecision::Miss("non_passed")
     );
     assert_eq!(
-        miss_selectors_for_repair(AcceptMode::All, &["a".into(), "b".into()], "id", Some(&w), false),
+        miss_selectors_for_repair(
+            AcceptMode::All,
+            &["a".into(), "b".into()],
+            "id",
+            Some(&w),
+            false
+        ),
         vec!["a".to_string(), "b".to_string()]
     );
 }
@@ -454,7 +460,13 @@ fn gate_derived_timeout_is_repair_miss_like_raw_timeout() {
     );
     w.raw_statuses = vec![WitnessStatus::Passed, WitnessStatus::Passed];
     assert_eq!(
-        miss_selectors_for_repair(AcceptMode::All, &["a".into(), "b".into()], "id", Some(&w), false),
+        miss_selectors_for_repair(
+            AcceptMode::All,
+            &["a".into(), "b".into()],
+            "id",
+            Some(&w),
+            false
+        ),
         vec!["a".to_string()]
     );
 }

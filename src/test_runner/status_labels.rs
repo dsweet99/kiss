@@ -62,6 +62,7 @@ pub(crate) fn format_status_line(
         TestStatus::TimedOut => "TIMEOUT",
     };
     let head = match cache_tag {
+        Some("cached") => format!("{label} {selector}"),
         Some(tag) => format!("{label} ({tag}): {selector}"),
         None => format!("{label}: {selector}"),
     };

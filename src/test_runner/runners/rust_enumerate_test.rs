@@ -65,11 +65,9 @@ fn source_for_listed_test_prefers_non_lib_matching_target() {
     let other = PathBuf::from("/repo/src/foo.rs");
     let exe = PathBuf::from("/repo/target/debug/deps/demo-abc123");
     let mut index = HashMap::new();
-    index.insert(
-        "demo".to_string(),
-        vec![lib.clone(), other.clone()],
-    );
-    let got = super::source_for_listed_test(&exe, "foo::bar", &[lib.clone(), other.clone()], &index);
+    index.insert("demo".to_string(), vec![lib.clone(), other.clone()]);
+    let got =
+        super::source_for_listed_test(&exe, "foo::bar", &[lib.clone(), other.clone()], &index);
     assert_eq!(got, other);
 }
 
@@ -82,7 +80,11 @@ fn defining_source_for_selector_maps_module_file() {
     let module = src.join("widget.rs");
     std::fs::write(&lib, "").unwrap();
     std::fs::write(&module, "").unwrap();
-    let got = super::defining_source_for_selector(&lib, "widget::test_it", &[lib.clone(), module.clone()]);
+    let got = super::defining_source_for_selector(
+        &lib,
+        "widget::test_it",
+        &[lib.clone(), module.clone()],
+    );
     assert_eq!(got, module);
 }
 
@@ -110,9 +112,7 @@ fn flatten_parsed_entries_skips_errors_when_policy_skip() {
     let entries =
         super::flatten_parsed_entries(vec![ok, err], super::ParseErrorPolicy::Skip).unwrap();
     assert_eq!(entries.len(), 2);
-    let hard = super::flatten_parsed_entries(
-        vec![Err("boom".into())],
-        super::ParseErrorPolicy::Fail,
-    );
+    let hard =
+        super::flatten_parsed_entries(vec![Err("boom".into())], super::ParseErrorPolicy::Fail);
     assert!(hard.is_err());
 }

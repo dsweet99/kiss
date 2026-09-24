@@ -6,7 +6,6 @@ use crate::analyze::run_analyze;
 use crate::bin_cli::util::{merge_check_ignore_prefixes, validate_paths};
 use kiss::Language;
 
-
 pub struct CheckCommandArgs<'a> {
     pub paths: &'a [String],
     pub lang_filter: Option<Language>,
@@ -349,10 +348,16 @@ mod coverage_witness {
         let args = sample_args(&path);
 
         assert_eq!(run_check_in_process_pub(&args), 0);
-        assert_eq!(run_split_check_with_exe_legacy(Path::new("/bin/true"), &args), 0);
+        assert_eq!(
+            run_split_check_with_exe_legacy(Path::new("/bin/true"), &args),
+            0
+        );
         forward_worker_stderr_pub(b"some stderr\n");
         assert_eq!(
-            analyzed_add_pub([1, 2, 3, 4, 5], "Analyzed: 1 files, 2 code_units, 3 statements, 4 graph_nodes, 5 graph_edges"),
+            analyzed_add_pub(
+                [1, 2, 3, 4, 5],
+                "Analyzed: 1 files, 2 code_units, 3 statements, 4 graph_nodes, 5 graph_edges"
+            ),
             Some([2, 4, 6, 8, 10])
         );
     }

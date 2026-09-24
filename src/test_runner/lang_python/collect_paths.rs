@@ -2,10 +2,7 @@ use std::path::{Path, PathBuf};
 
 use kiss::code_roles::is_default_pytest_collect_candidate;
 
-pub(crate) fn workspace_python_collect_paths(
-    repo_root: &Path,
-    ignore: &[String],
-) -> Vec<PathBuf> {
+pub(crate) fn workspace_python_collect_paths(repo_root: &Path, ignore: &[String]) -> Vec<PathBuf> {
     let tests_root = repo_root.join("tests");
     if tests_dir_is_collect_root(&tests_root, ignore) {
         return tests_root_collect_paths(repo_root, ignore, tests_root);

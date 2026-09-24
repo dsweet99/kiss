@@ -751,7 +751,11 @@ fn try_evaluate_records_with_cached_orphans_evaluates_correctly() {
         args: &args_bypass,
         ..ctx
     };
-    let res = try_evaluate_records_with_cached_orphans(&records, &ctx_bypass, std::slice::from_ref(&viol));
+    let res = try_evaluate_records_with_cached_orphans(
+        &records,
+        &ctx_bypass,
+        std::slice::from_ref(&viol),
+    );
     assert_eq!(res, Some(0));
 }
 
@@ -807,8 +811,7 @@ fn run_cov_command_ignores_python_test_module_paths() {
         ));
     });
     assert!(
-        !out
-            .lines()
+        !out.lines()
             .any(|line| line.contains("VIOLATION") && line.contains("tests/test_lib.py")),
         "test modules must not appear in coverage violations: {out}"
     );

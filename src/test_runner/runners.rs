@@ -15,9 +15,7 @@ use kiss::rust_llvm_cov_runner::{
 mod decision;
 #[cfg(test)]
 pub(crate) use decision::combined_selectors;
-pub(crate) use decision::{
-    CombinedSelectorInput, SelectorPlan, combined_selectors_with_direct, current_prior_failures,
-};
+pub(crate) use decision::{CombinedSelectorInput, SelectorPlan, combined_selectors_with_direct};
 
 #[path = "runners/rust_enumerate.rs"]
 mod rust_enumerate;
@@ -232,7 +230,9 @@ pub fn enumerate_workspace_python_selectors(
     pytest_args: &[String],
 ) -> Result<Vec<String>, String> {
     if let Some(selectors) = super::workspace_selector_cache::load_cached_python_workspace_selectors(
-        repo_root, ignore, pytest_args,
+        repo_root,
+        ignore,
+        pytest_args,
     ) {
         return filter_ignored_python_selectors(selectors, ignore);
     }

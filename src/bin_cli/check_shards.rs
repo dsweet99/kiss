@@ -15,11 +15,7 @@ pub(crate) fn gather_roots_from_env() -> Option<Vec<PathBuf>> {
         .filter(|s| !s.is_empty())
         .map(PathBuf::from)
         .collect();
-    if roots.is_empty() {
-        None
-    } else {
-        Some(roots)
-    }
+    if roots.is_empty() { None } else { Some(roots) }
 }
 
 pub(crate) fn run_split_check_sharded(exe: &Path, args: &CheckCommandArgs<'_>) -> i32 {
@@ -73,7 +69,10 @@ fn partition_paths(mut paths: Vec<PathBuf>, shards: usize) -> Vec<Vec<PathBuf>> 
     let mut weighted: Vec<(u64, PathBuf)> = paths
         .into_iter()
         .map(|path| {
-            let bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(1).max(1);
+            let bytes = std::fs::metadata(&path)
+                .map(|m| m.len())
+                .unwrap_or(1)
+                .max(1);
             (bytes, path)
         })
         .collect();
@@ -185,7 +184,11 @@ mod tests {
         let bins = partition_paths(vec![big.clone(), small_a.clone(), small_b.clone()], 2);
         assert_eq!(bins.len(), 2);
         let big_shard = bins.iter().find(|b| b.contains(&big)).unwrap();
-        assert_eq!(big_shard.len(), 1, "largest file should sit alone when peers are tiny");
+        assert_eq!(
+            big_shard.len(),
+            1,
+            "largest file should sit alone when peers are tiny"
+        );
     }
 
     #[test]

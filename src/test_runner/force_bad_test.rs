@@ -1,8 +1,29 @@
 use crate::bin_cli::args::TestInvocation;
-use crate::test_runner::force_bad::{
-    apply_force_bad, prior_belongs_to_target, selector_in_target,
-};
 use crate::test_runner::empty_planned;
+use crate::test_runner::force_bad::{apply_force_bad, prior_belongs_to_target, selector_in_target};
+use crate::test_runner::target_request::{GitFocus, TargetFocus, focus_from_invocation};
+
+fn focus(invocation: TestInvocation) -> TargetFocus {
+    focus_from_invocation(&invocation, None, None, None)
+}
+
+#[test]
+fn force_bad_focus_uses_focus_from_invocation() {
+    assert!(matches!(focus(TestInvocation::All), TargetFocus::Workspace));
+    assert!(matches!(
+        focus(TestInvocation::Commit),
+        TargetFocus::Git(GitFocus::Commit)
+    ));
+    assert_eq!(
+        focus(TestInvocation::Targets(vec!["tests/a.py".into()])),
+        focus_from_invocation(
+            &TestInvocation::Targets(vec!["tests/a.py".into()]),
+            None,
+            None,
+            None
+        )
+    );
+}
 
 #[test]
 fn apply_force_bad_noop_when_flag_off_and_merges_when_on() {
@@ -11,12 +32,14 @@ fn apply_force_bad_noop_when_flag_off_and_merges_when_on() {
     planned.sel.python = vec!["tests/a.py::t".into()];
     let args = crate::test_runner::RunTestCmdArgs {
         invocation: TestInvocation::All,
+        target_request: crate::test_runner::target_request::workspace_request(None, &[]),
         main_branch_cli: None,
         base_branch_cli: None,
         dry_run: true,
         force_rerun: false,
         force_bad: false,
         metrics: false,
+        coverage_all: false,
         jobs: 1,
         extra: &[],
         python_extra: &[],
@@ -41,10 +64,7 @@ fn selector_in_target_matches_file_dir_symbol_and_nodeid() {
     assert!(selector_in_target("tests/a.py::t", "tests"));
     assert!(selector_in_target("tests/a.py::t", "tests/a.py::t"));
     assert!(selector_in_target("tests/a.py::t[0]", "tests/a.py::t"));
-    assert!(selector_in_target(
-        "tests/a.py::C.test_m",
-        "tests/a.py::C"
-    ));
+    assert!(selector_in_target("tests/a.py::C.test_m", "tests/a.py::C"));
     assert!(!selector_in_target("tests/b.py::t", "tests/a.py"));
     assert!(!selector_in_target("tests/a.py::other", "tests/a.py::t"));
     assert!(!selector_in_target("tests/a.py::t", "src/lib.rs"));
@@ -56,20 +76,20 @@ fn prior_belongs_to_target_keeps_all_on_dot_and_filters_path_targets() {
     let outside = "tests/b.py::fail";
     let planned = [in_target.to_string()];
     assert!(prior_belongs_to_target(
-        &TestInvocation::All,
+        &focus(TestInvocation::All),
         &planned,
         outside
     ));
-    let targets = TestInvocation::Targets(vec!["tests/a.py".into()]);
+    let targets = focus(TestInvocation::Targets(vec!["tests/a.py".into()]));
     assert!(prior_belongs_to_target(&targets, &planned, in_target));
     assert!(!prior_belongs_to_target(&targets, &planned, outside));
     assert!(prior_belongs_to_target(
-        &TestInvocation::Commit,
+        &focus(TestInvocation::Commit),
         &planned,
         in_target
     ));
     assert!(!prior_belongs_to_target(
-        &TestInvocation::Commit,
+        &focus(TestInvocation::Commit),
         &planned,
         outside
     ));
@@ -77,7 +97,7 @@ fn prior_belongs_to_target_keeps_all_on_dot_and_filters_path_targets() {
 
 #[test]
 fn prior_belongs_to_target_includes_path_matched_failure_absent_from_plan() {
-    let targets = TestInvocation::Targets(vec!["tests/a.py".into()]);
+    let targets = focus(TestInvocation::Targets(vec!["tests/a.py".into()]));
     assert!(prior_belongs_to_target(
         &targets,
         &[],
@@ -87,7 +107,7 @@ fn prior_belongs_to_target_includes_path_matched_failure_absent_from_plan() {
 
 #[test]
 fn prior_belongs_to_target_keeps_planned_covering_test_for_source_file() {
-    let targets = TestInvocation::Targets(vec!["src/lib.rs".into()]);
+    let targets = focus(TestInvocation::Targets(vec!["src/lib.rs".into()]));
     assert!(prior_belongs_to_target(
         &targets,
         &["tests/cover.py::test_lib".into()],
@@ -104,7 +124,7 @@ fn prior_belongs_to_target_keeps_planned_covering_test_for_source_file() {
 fn retry_bad_single_selector_excludes_sibling_prior() {
     let wanted = "path/to/test.py::one_test";
     let other = "path/to/other.py::other_test";
-    let targets = TestInvocation::Targets(vec![wanted.into()]);
+    let targets = focus(TestInvocation::Targets(vec![wanted.into()]));
     let planned = [wanted.to_string(), other.to_string()];
     assert!(prior_belongs_to_target(&targets, &planned, wanted));
     assert!(

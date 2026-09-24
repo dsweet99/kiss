@@ -166,7 +166,9 @@ pub(super) fn persistent_bare_repair_repo() -> std::path::PathBuf {
             std::fs::create_dir_all(&root).expect("bare repair fixture root");
             bare_crate_with_lib_at(&root);
             let target_dir = {
-                let dir = std::env::temp_dir().join("kiss-test-targets").join("bare-repair");
+                let dir = std::env::temp_dir()
+                    .join("kiss-test-targets")
+                    .join("bare-repair");
                 std::fs::create_dir_all(&dir).unwrap();
                 dir
             };

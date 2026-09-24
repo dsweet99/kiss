@@ -54,12 +54,12 @@ num_jobs = 1\n\
 
 #[test]
 fn stale_definition_digest_fail_closed_without_refresh() {
+    use crate::test_runner::python_coverage_index::GenerationReason;
+    use crate::test_runner::python_coverage_index::clear_python_generation_warm_memo;
     use crate::test_runner::python_coverage_index::generation::{
         PopulationEvidence, SelectorEvidence, TimingCacheDisposition,
         population_plan_for_selectors, publish_python_population_generation,
     };
-    use crate::test_runner::python_coverage_index::GenerationReason;
-    use crate::test_runner::python_coverage_index::clear_python_generation_warm_memo;
     use kiss::rpytest_runner::TestStatus;
     use std::collections::BTreeMap;
     use std::time::Duration;
@@ -88,13 +88,8 @@ fn stale_definition_digest_fail_closed_without_refresh() {
     for row in &mut evidence.timings {
         row.test_definition_digest = "stale-definition-digest".into();
     }
-    publish_python_population_generation(
-        _tmp.path(),
-        &plan,
-        &evidence,
-        GenerationReason::Complete,
-    )
-    .unwrap();
+    publish_python_population_generation(_tmp.path(), &plan, &evidence, GenerationReason::Complete)
+        .unwrap();
     clear_python_generation_warm_memo();
     assert!(
         matches!(
@@ -149,16 +144,10 @@ fn fingerprint_only_drift_restamps_without_allow_refresh() {
         coverage: BTreeMap::from([("app.py".into(), [1u32].into_iter().collect())]),
     });
     for row in &mut evidence.timings {
-        row.test_definition_digest =
-            python_selector_definition_digest(_tmp.path(), &row.selector);
+        row.test_definition_digest = python_selector_definition_digest(_tmp.path(), &row.selector);
     }
-    publish_python_population_generation(
-        _tmp.path(),
-        &plan,
-        &evidence,
-        GenerationReason::Complete,
-    )
-    .unwrap();
+    publish_python_population_generation(_tmp.path(), &plan, &evidence, GenerationReason::Complete)
+        .unwrap();
     clear_python_generation_warm_memo();
     assert!(
         load_or_refresh_snapshot(

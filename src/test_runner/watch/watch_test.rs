@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use crate::bin_cli::args::TestInvocation;
+use crate::test_runner::target_request::{operands_request, workspace_request};
 use crate::test_runner::watch::event_source::{
     FakeWatchEventSource, NormalizedWatchEvent, WatchEventSource,
 };
@@ -81,9 +82,23 @@ fn filter_exact_file_target() {
         tmp.path(),
         &[],
         None,
-        &TestInvocation::Targets(vec!["src/a.py".into()]),
+        &operands_request(&["src/a.py".into()], None, &[]),
     );
     assert!(f.is_relevant(std::path::Path::new("src/a.py")));
+    assert!(!f.is_relevant(std::path::Path::new("src/b.py")));
+}
+
+#[test]
+fn filter_exact_file_target_sorts_operands_request() {
+    let tmp = tempfile::tempdir().unwrap();
+    let f = WatchPathFilter::build(
+        tmp.path(),
+        &[],
+        None,
+        &operands_request(&["src/z.py".into(), "src/a.py".into()], None, &[]),
+    );
+    assert!(f.is_relevant(std::path::Path::new("src/a.py")));
+    assert!(f.is_relevant(std::path::Path::new("src/z.py")));
     assert!(!f.is_relevant(std::path::Path::new("src/b.py")));
 }
 
@@ -170,16 +185,21 @@ fn native_watcher_observes_create_modify_rename_delete() {
 
 #[test]
 fn invocation_label_covers_modes() {
+    use crate::test_runner::target_request::{
+        GitFocus, TargetFocus, operands_request, workspace_request,
+    };
     assert_eq!(
-        crate::test_runner::watch::invocation_label(&TestInvocation::All),
+        crate::test_runner::watch::invocation_label(&workspace_request(None, &[]).focus),
         "."
     );
     assert_eq!(
-        crate::test_runner::watch::invocation_label(&TestInvocation::Commit),
+        crate::test_runner::watch::invocation_label(&TargetFocus::Git(GitFocus::Commit)),
         "commit"
     );
     assert_eq!(
-        crate::test_runner::watch::invocation_label(&TestInvocation::Targets(vec!["a.py".into()])),
+        crate::test_runner::watch::invocation_label(
+            &operands_request(&["a.py".into()], None, &[]).focus
+        ),
         "a.py"
     );
 }
@@ -193,7 +213,7 @@ fn print_cycle_summary_is_silent() {
 #[test]
 fn apply_event_notes_relevant_paths() {
     let tmp = tempfile::tempdir().unwrap();
-    let filter = WatchPathFilter::build(tmp.path(), &[], None, &TestInvocation::All);
+    let filter = WatchPathFilter::build(tmp.path(), &[], None, &workspace_request(None, &[]));
     let mut machine = SettleMachine::new(Duration::from_millis(10));
     crate::test_runner::watch::apply_normalized_event(
         NormalizedWatchEvent::Paths(vec![tmp.path().join("a.py")]),
@@ -214,7 +234,7 @@ fn apply_event_notes_relevant_paths() {
 #[test]
 fn apply_event_error_is_terminal() {
     let tmp = tempfile::tempdir().unwrap();
-    let filter = WatchPathFilter::build(tmp.path(), &[], None, &TestInvocation::All);
+    let filter = WatchPathFilter::build(tmp.path(), &[], None, &workspace_request(None, &[]));
     let mut machine = SettleMachine::new(Duration::from_millis(10));
     let err = crate::test_runner::watch::apply_normalized_event(
         NormalizedWatchEvent::Error("watcher broke".into()),
@@ -236,12 +256,14 @@ fn run_test_watch_requires_git() {
     std::env::set_current_dir(tmp.path()).unwrap();
     let args = RunTestCmdArgs {
         invocation: TestInvocation::All,
+        target_request: crate::test_runner::target_request::workspace_request(None, &[]),
         main_branch_cli: None,
         base_branch_cli: None,
         dry_run: false,
         force_rerun: false,
         force_bad: false,
         metrics: false,
+        coverage_all: false,
         jobs: 1,
         extra: &[],
         python_extra: &[],

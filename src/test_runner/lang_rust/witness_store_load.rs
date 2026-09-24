@@ -47,10 +47,7 @@ fn merge_rust_witness_layers(
     }
     Some(ExecutionWitness {
         language: last.language,
-        scope: if layers
-            .iter()
-            .any(|layer| layer.scope == WitnessScope::Full)
-        {
+        scope: if layers.iter().any(|layer| layer.scope == WitnessScope::Full) {
             WitnessScope::Full
         } else {
             last.scope
@@ -97,13 +94,10 @@ pub(crate) fn try_load_rust_execution_witness(
             rust_source_identity_covers(&disk.identity_digest, &generation.identity_digest)
                 || disk.identity_digest == generation.identity_digest
         });
-        let mut witness = merge_rust_witness_layers(disk.into_iter().chain(std::iter::once(generation)))
-            .ok_or_else(|| "error: kiss: rust execution witness merge empty".to_string())?;
-        super::super::witness_memo::stash_published_witness(
-            repo_root,
-            &memo_path,
-            witness.clone(),
-        );
+        let mut witness =
+            merge_rust_witness_layers(disk.into_iter().chain(std::iter::once(generation)))
+                .ok_or_else(|| "error: kiss: rust execution witness merge empty".to_string())?;
+        super::super::witness_memo::stash_published_witness(repo_root, &memo_path, witness.clone());
         prune_removed_rust_witness_selectors(repo_root, &mut witness)?;
         return Ok(witness);
     }

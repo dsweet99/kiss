@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+#[cfg(test)]
 use crate::bin_cli::args::TestInvocation;
+use crate::test_runner::target_request::{GitFocus, TargetFocus};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
@@ -10,27 +12,36 @@ pub(crate) enum NudgeInvocation {
     Commit,
     Base,
     Main,
+    Targets,
 }
 
 impl NudgeInvocation {
+    #[cfg(test)]
     pub(crate) fn from_test(invocation: &TestInvocation) -> Self {
         match invocation {
             TestInvocation::Commit => Self::Commit,
             TestInvocation::Base => Self::Base,
             TestInvocation::Main => Self::Main,
-            TestInvocation::All | TestInvocation::Targets(_) => Self::All,
+            TestInvocation::All => Self::All,
+            TestInvocation::Targets(_) => Self::Targets,
         }
     }
 
-    pub(crate) fn to_test(self) -> Option<TestInvocation> {
-        match self {
-            Self::All => None,
-            Self::Commit => Some(TestInvocation::Commit),
-            Self::Base => Some(TestInvocation::Base),
-            Self::Main => Some(TestInvocation::Main),
+    pub(crate) fn from_focus(focus: &TargetFocus) -> Self {
+        match focus {
+            TargetFocus::Workspace => Self::All,
+            TargetFocus::Git(GitFocus::Commit) => Self::Commit,
+            TargetFocus::Git(GitFocus::AutomaticBase | GitFocus::ExplicitBase { .. }) => Self::Base,
+            TargetFocus::Git(
+                GitFocus::DefaultMain
+                | GitFocus::ConfiguredMain { .. }
+                | GitFocus::ExplicitMain { .. },
+            ) => Self::Main,
+            TargetFocus::Operands(_) => Self::Targets,
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn is_all(self) -> bool {
         matches!(self, Self::All)
     }
@@ -41,6 +52,7 @@ impl NudgeInvocation {
             Self::Commit => "commit",
             Self::Base => "base",
             Self::Main => "main",
+            Self::Targets => "targets",
         }
     }
 }

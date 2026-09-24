@@ -23,24 +23,26 @@ pub(crate) fn rust_source_delta_misses(
         repo_root, test_args,
     )?;
     let cache_root = rust_coverage_cache_root(repo_root);
-    let population = kiss::rust_llvm_cov_runner::current_population_manifest_state(
-        &cache_root,
-        &identity,
-    )
-    .or_else(|| {
-        kiss::rust_llvm_cov_runner::population_state_for_unchanged_source(&cache_root, &identity)
-    })
-    .or_else(|| {
-        kiss::rust_llvm_cov_runner::load_current_population_state(
-            &cache_root,
-            repo_root,
-            &identity,
-            None,
-        )
-    });
+    let population =
+        kiss::rust_llvm_cov_runner::current_population_manifest_state(&cache_root, &identity)
+            .or_else(|| {
+                kiss::rust_llvm_cov_runner::population_state_for_unchanged_source(
+                    &cache_root,
+                    &identity,
+                )
+            })
+            .or_else(|| {
+                kiss::rust_llvm_cov_runner::load_current_population_state(
+                    &cache_root,
+                    repo_root,
+                    &identity,
+                    None,
+                )
+            });
     let invalidation = rust_effective_source_invalidation(repo_root, &identity);
     let mut misses = planned_misses_for(planned_selectors, invalidation);
-    if !rust_witness_source_covers(repo_root, &identity) && let Some(population) = population.as_ref()
+    if !rust_witness_source_covers(repo_root, &identity)
+        && let Some(population) = population.as_ref()
     {
         let planned: BTreeSet<_> = planned_selectors.iter().map(String::as_str).collect();
         misses.extend(
@@ -102,13 +104,7 @@ pub(crate) fn rust_warm_or_miss_selectors(
     gate: &GateConfig,
 ) -> RustWarmDecision {
     let invalidation = rust_effective_source_invalidation(repo_root, identity);
-    apply_warm_invalidation(
-        repo_root,
-        planned_selectors,
-        identity,
-        gate,
-        invalidation,
-    )
+    apply_warm_invalidation(repo_root, planned_selectors, identity, gate, invalidation)
 }
 
 pub(crate) fn apply_warm_invalidation(
@@ -137,14 +133,11 @@ pub(crate) fn apply_warm_invalidation(
         return RustWarmDecision::Warm(Box::new(summary));
     }
     match rust_miss_selectors(repo_root, planned_selectors, identity, gate) {
-        Some(misses) if misses.is_empty() => try_warm_rust_cached_summary(
-            repo_root,
-            planned_selectors,
-            identity,
-            gate,
-        )
-        .map(|summary| RustWarmDecision::Warm(Box::new(summary)))
-        .unwrap_or(RustWarmDecision::Miss),
+        Some(misses) if misses.is_empty() => {
+            try_warm_rust_cached_summary(repo_root, planned_selectors, identity, gate)
+                .map(|summary| RustWarmDecision::Warm(Box::new(summary)))
+                .unwrap_or(RustWarmDecision::Miss)
+        }
         Some(misses) if misses.len() < planned_selectors.len() => {
             RustWarmDecision::RunMisses(misses)
         }

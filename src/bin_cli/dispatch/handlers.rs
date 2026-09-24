@@ -1,11 +1,11 @@
 use crate::analyze;
 use crate::analyze::DryRunParams;
 use crate::bin_cli::check_cmd;
-use crate::bin_cli::stats::{run_stats, RunStatsArgs};
+use crate::bin_cli::stats::{RunStatsArgs, run_stats};
 use crate::bin_cli::test_cmd::run_test_command;
 use crate::bin_cli::util;
 use crate::rules::run_rules;
-use crate::viz::{run_viz, VizCoarsen};
+use crate::viz::{VizCoarsen, run_viz};
 
 use super::options::{
     CheckDispatchOptions, DryDispatchOptions, RulesDispatchOptions, StatsDispatchOptions,

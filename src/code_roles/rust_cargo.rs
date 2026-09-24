@@ -139,7 +139,12 @@ fn metadata_memo() -> &'static Mutex<HashMap<PathBuf, Vec<CargoRoot>>> {
 fn manifest_cache_key(workspace_manifest: &Path) -> Option<u64> {
     let mut h = 0xcbf2_9ce4_8422_2325_u64;
     let meta = std::fs::metadata(workspace_manifest).ok()?;
-    let modified = meta.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_nanos();
+    let modified = meta
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_nanos();
     h ^= meta.len();
     h = h.wrapping_mul(0x0100_0000_01b3);
     h ^= modified as u64;

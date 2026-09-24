@@ -76,7 +76,7 @@ fn oneshot_client_reply_strips_only_when_not_waited() {
     assert_eq!(waited.exit_code, 1);
     let idle = crate::test_runner::oneshot_client_reply(src, false);
     assert!(idle.error.is_none(), "{:?}", idle.error);
-    assert_eq!(idle.exit_code, 0);
+    assert_eq!(idle.exit_code, 1);
 }
 
 #[cfg(unix)]
@@ -189,12 +189,17 @@ fn evaluate_watch_coverage_threshold_zero_fails_closed_without_snapshot() {
     };
     let cycle = crate::test_runner::RunTestCmdArgs {
         invocation: TestInvocation::All,
+        target_request: crate::test_runner::target_request::workspace_request(
+            Some(kiss::Language::Python),
+            &[],
+        ),
         main_branch_cli: None,
         base_branch_cli: None,
         dry_run: true,
         force_rerun: false,
         force_bad: false,
         metrics: false,
+        coverage_all: false,
         jobs: 1,
         extra: &[],
         python_extra: &[],
@@ -228,11 +233,13 @@ fn isolated_python_repo_with_git(init_git: bool) -> IsolatedPythonRepo {
     let tmp = tempfile::tempdir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
     if init_git {
-        assert!(kiss::scrubbed_git_command(tmp.path())
-            .arg("init")
-            .status()
-            .unwrap()
-            .success());
+        assert!(
+            kiss::scrubbed_git_command(tmp.path())
+                .arg("init")
+                .status()
+                .unwrap()
+                .success()
+        );
     } else {
         std::fs::create_dir_all(tmp.path().join(".git")).unwrap();
     }
@@ -357,12 +364,17 @@ fn evaluate_watch_coverage_fails_when_language_table_missing() {
     };
     let cycle = crate::test_runner::RunTestCmdArgs {
         invocation: TestInvocation::All,
+        target_request: crate::test_runner::target_request::workspace_request(
+            Some(kiss::Language::Python),
+            &[],
+        ),
         main_branch_cli: None,
         base_branch_cli: None,
         dry_run: true,
         force_rerun: false,
         force_bad: false,
         metrics: false,
+        coverage_all: false,
         jobs: 1,
         extra: &[],
         python_extra: &[],
@@ -394,12 +406,17 @@ fn evaluate_watch_coverage_fails_closed_without_snapshot_even_with_tables() {
     };
     let cycle = crate::test_runner::RunTestCmdArgs {
         invocation: TestInvocation::All,
+        target_request: crate::test_runner::target_request::workspace_request(
+            Some(kiss::Language::Python),
+            &[],
+        ),
         main_branch_cli: None,
         base_branch_cli: None,
         dry_run: true,
         force_rerun: false,
         force_bad: false,
         metrics: false,
+        coverage_all: false,
         jobs: 1,
         extra: &[],
         python_extra: &[],

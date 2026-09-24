@@ -70,13 +70,13 @@ fn load_rust_duration_pairs_uncached(repo_root: &Path) -> Option<Vec<DurationPai
     {
         return Some(pairs);
     }
-    if let Some(sealed) = kiss::rust_llvm_cov_runner::try_source_matched_seal_identity(
-        &cache_root,
-        repo_root,
-    ) && kiss::rust_llvm_cov_runner::current_population_manifest_matches_identity(
-        &cache_root, &sealed,
-    )
-    .unwrap_or(false)
+    if let Some(sealed) =
+        kiss::rust_llvm_cov_runner::try_source_matched_seal_identity(&cache_root, repo_root)
+        && kiss::rust_llvm_cov_runner::current_population_manifest_matches_identity(
+            &cache_root,
+            &sealed,
+        )
+        .unwrap_or(false)
     {
         if let Some(pairs) = load_rust_duration_pairs_from_witness(repo_root, &sealed) {
             return Some(pairs);
@@ -104,12 +104,7 @@ fn load_rust_duration_pairs_via_batch(
         return Some(pairs);
     }
     kiss::rust_llvm_cov_runner::load_current_population_durations(
-        cache_root,
-        repo_root,
-        &identity,
-        &req,
-        &tools,
-        None,
+        cache_root, repo_root, &identity, &req, &tools, None,
     )
     .filter(|pairs| !pairs.is_empty())
 }
@@ -159,8 +154,14 @@ mod tests {
             *memo.borrow_mut() = Some((
                 path.to_path_buf(),
                 vec![
-                    ("tests/ignored/t.rs::test_x".to_string(), Duration::from_secs(10)),
-                    ("tests/kept/t.rs::test_y".to_string(), Duration::from_secs(2)),
+                    (
+                        "tests/ignored/t.rs::test_x".to_string(),
+                        Duration::from_secs(10),
+                    ),
+                    (
+                        "tests/kept/t.rs::test_y".to_string(),
+                        Duration::from_secs(2),
+                    ),
                 ],
             ));
         });
@@ -212,9 +213,7 @@ mod tests {
     #[test]
     fn load_rust_duration_pairs_from_witness_present_returns_pairs() {
         use crate::test_runner::execution_witness::{WitnessScope, WitnessStatus};
-        use crate::test_runner::lang_rust::{
-            PublishRustWitness, publish_rust_execution_witness,
-        };
+        use crate::test_runner::lang_rust::{PublishRustWitness, publish_rust_execution_witness};
 
         let tmp = tempfile::tempdir().unwrap();
         let identity = kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity {
@@ -248,4 +247,3 @@ mod tests {
         assert_eq!(pairs[0].1, Duration::from_secs(2));
     }
 }
-

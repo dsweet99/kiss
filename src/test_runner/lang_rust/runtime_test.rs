@@ -322,9 +322,11 @@ fn ensure_reuses_source_stable_incomplete_fail_witness_without_llvm_cov() {
     )
     .unwrap();
     std::fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
-    let current =
-        crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(tmp.path(), &[])
-            .expect("identity");
+    let current = crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(
+        tmp.path(),
+        &[],
+    )
+    .expect("identity");
     let drifted = kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity {
         input_digest: current.input_digest.clone(),
         generation_fingerprint: "watch-dead-gen".into(),
@@ -375,7 +377,9 @@ fn ensure_reuses_source_stable_incomplete_fail_witness_without_llvm_cov() {
             ],
         },
     };
-    let identity = RustRuntime.current_identity(&req).expect("current identity");
+    let identity = RustRuntime
+        .current_identity(&req)
+        .expect("current identity");
     let witness = RustRuntime
         .load_full_witness(tmp.path())
         .expect("load witness");
@@ -389,8 +393,8 @@ fn ensure_reuses_source_stable_incomplete_fail_witness_without_llvm_cov() {
         .is_empty(),
         "source-stable rust must not miss-compile"
     );
-    let result = crate::test_runner::ensure_runtime::ensure_languages_runtime(&req)
-        .expect("ensure");
+    let result =
+        crate::test_runner::ensure_runtime::ensure_languages_runtime(&req).expect("ensure");
     let rust = result.rust().expect("rust result");
     assert!(!rust.published, "must not publish a fresh llvm-cov batch");
     assert_eq!(rust.summary.total, 2);

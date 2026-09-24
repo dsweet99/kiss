@@ -2,7 +2,9 @@
 
 use std::process::Command;
 
-use crate::support::watch_proc::{start_watch, wait_watch_idle_cycle, write_kissconfig_with_threshold};
+use crate::support::watch_proc::{
+    start_watch, wait_watch_idle_cycle, write_kissconfig_with_threshold,
+};
 
 #[test]
 fn oneshot_surfaces_watcher_coverage_violations() {

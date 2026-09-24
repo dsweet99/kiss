@@ -95,7 +95,9 @@ pub fn record_watch_suite_totals(totals: WatchSuiteTotals) {
 
 #[must_use]
 pub fn take_watch_report_taken() -> Option<WatchReportTaken> {
-    lock_watch_report().take().map(WatchReportCapture::into_taken)
+    lock_watch_report()
+        .take()
+        .map(WatchReportCapture::into_taken)
 }
 
 #[must_use]
@@ -305,7 +307,8 @@ mod tests {
 
     #[test]
     fn strip_ansi_removes_color_around_summary_icon() {
-        let colored = "\x1b[31m✗\x1b[0m 11816 passed · 2 failed · 1 timed out · 69.33s total · 0s max pass";
+        let colored =
+            "\x1b[31m✗\x1b[0m 11816 passed · 2 failed · 1 timed out · 69.33s total · 0s max pass";
         assert_eq!(
             strip_ansi(colored).as_ref(),
             "✗ 11816 passed · 2 failed · 1 timed out · 69.33s total · 0s max pass"
@@ -320,7 +323,9 @@ mod tests {
         record_watch_report_line("PASS (cached): 2753 selectors");
         let lines = take_watch_report_lines().expect("lines");
         assert!(
-            lines.iter().any(|line| line == "kiss test: lang_collapsed rust pass 2753"),
+            lines
+                .iter()
+                .any(|line| line == "kiss test: lang_collapsed rust pass 2753"),
             "{lines:?}"
         );
     }
@@ -370,7 +375,11 @@ mod tests {
         );
         record_watch_report_line("PASS: src/counts/tests.rs::test_violation_builder (0.02s)");
         let taken = take_watch_report_taken().expect("taken");
-        assert_eq!(taken.named.len(), 1, "PASS without lang must stay anonymous; {taken:?}");
+        assert_eq!(
+            taken.named.len(),
+            1,
+            "PASS without lang must stay anonymous; {taken:?}"
+        );
         assert_eq!(
             taken.named[0].selector,
             "src/rpytest_runner/collector.rs::witness_collect_subprocess_paths"

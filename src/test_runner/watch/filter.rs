@@ -4,7 +4,9 @@ use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use kiss::Language;
 
 use super::roots::{is_source_file_operand, resolve_target_abs};
-use crate::bin_cli::args::TestInvocation;
+use crate::test_runner::target_request::{GitFocus, TargetFocus, TargetRequest};
+#[cfg(test)]
+use crate::test_runner::target_request::{operands_request, request_from_focus, workspace_request};
 
 const HARD_EXCLUDED_DIRS: &[&str] = &[
     ".git",
@@ -23,7 +25,7 @@ pub(crate) struct WatchPathFilter {
     gitignore: Gitignore,
     cli_ignore: Vec<String>,
     lang_filter: Option<Language>,
-    invocation: TestInvocation,
+    request: TargetRequest,
     target_scope: Option<WatchTargetScope>,
     watched_config: PathBuf,
 }
@@ -49,13 +51,13 @@ impl WatchPathFilter {
         repo_root: &Path,
         cli_ignore: &[String],
         lang_filter: Option<Language>,
-        invocation: &TestInvocation,
+        request: &TargetRequest,
     ) -> Self {
         Self::build_with_config(
             repo_root,
             cli_ignore,
             lang_filter,
-            invocation,
+            request,
             Path::new(".kissconfig"),
         )
     }
@@ -64,7 +66,7 @@ impl WatchPathFilter {
         repo_root: &Path,
         cli_ignore: &[String],
         lang_filter: Option<Language>,
-        invocation: &TestInvocation,
+        request: &TargetRequest,
         config_path: &Path,
     ) -> Self {
         Self {
@@ -72,8 +74,8 @@ impl WatchPathFilter {
             gitignore: build_gitignore(repo_root),
             cli_ignore: kiss::normalize_ignore_prefixes(cli_ignore),
             lang_filter,
-            invocation: invocation.clone(),
-            target_scope: target_scope(repo_root, invocation),
+            request: request.clone(),
+            target_scope: target_scope(repo_root, &request.focus),
             watched_config: config_rel_for_watch(repo_root, config_path),
         }
     }
@@ -83,7 +85,7 @@ impl WatchPathFilter {
             &self.repo_root,
             &self.cli_ignore,
             self.lang_filter,
-            &self.invocation,
+            &self.request,
             &self.watched_config,
         )
     }
@@ -102,7 +104,7 @@ impl WatchPathFilter {
             return true;
         }
         if is_hard_excluded(rel) {
-            return is_git_support_path(rel, &self.invocation);
+            return is_git_support_path(rel, &self.request.focus);
         }
         if kiss::path_ignored_by_prefixes(&rel.to_string_lossy(), &self.cli_ignore) {
             return false;
@@ -121,7 +123,7 @@ impl WatchPathFilter {
     fn is_support_or_source(&self, rel: &Path) -> bool {
         if self.is_ignore_file(rel)
             || self.is_watched_config(rel)
-            || is_git_support_path(rel, &self.invocation)
+            || is_git_support_path(rel, &self.request.focus)
             || is_support_input(rel)
         {
             return true;
@@ -133,16 +135,16 @@ impl WatchPathFilter {
     }
 }
 
-fn target_scope(repo_root: &Path, invocation: &TestInvocation) -> Option<WatchTargetScope> {
-    let TestInvocation::Targets(targets) = invocation else {
+fn target_scope(repo_root: &Path, focus: &TargetFocus) -> Option<WatchTargetScope> {
+    let TargetFocus::Operands(operands) = focus else {
         return None;
     };
     let mut scope = WatchTargetScope {
         files: Vec::new(),
         dirs: Vec::new(),
     };
-    for raw in targets {
-        let path_part = raw.split_once("::").map_or(raw.as_str(), |(path, _)| path);
+    for raw in operands.iter().map(|operand| operand.raw.as_str()) {
+        let path_part = raw.split_once("::").map_or(raw, |(path, _)| path);
         let absolute = resolve_target_abs(repo_root, Path::new(path_part));
         let path = normalize_target_path(repo_root, &absolute);
         if is_source_file_operand(Path::new(path_part), &absolute) {
@@ -193,20 +195,17 @@ pub(crate) fn is_hard_excluded(rel: &Path) -> bool {
     })
 }
 
-pub(crate) fn is_git_support_path(rel: &Path, invocation: &TestInvocation) -> bool {
+pub(crate) fn is_git_support_path(rel: &Path, focus: &TargetFocus) -> bool {
     if rel == Path::new(".git/info/exclude") {
         return true;
     }
-    if !matches!(
-        invocation,
-        TestInvocation::Commit | TestInvocation::Base | TestInvocation::Main
-    ) {
+    let TargetFocus::Git(git) = focus else {
         return false;
-    }
+    };
     if rel == Path::new(".git/HEAD") || rel == Path::new(".git/index") {
         return true;
     }
-    matches!(invocation, TestInvocation::Base | TestInvocation::Main)
+    !matches!(git, GitFocus::Commit)
         && (rel.starts_with(".git/refs/heads") || rel == Path::new(".git/packed-refs"))
 }
 
@@ -222,10 +221,10 @@ pub(crate) fn is_watch_ignore_file(rel: &Path) -> bool {
 
 pub(crate) fn path_should_enter_watch_queue(
     rel: &Path,
-    invocation: &TestInvocation,
+    focus: &TargetFocus,
     watched_config: &Path,
 ) -> bool {
-    if is_git_support_path(rel, invocation) || rel == watched_config {
+    if is_git_support_path(rel, focus) || rel == watched_config {
         return true;
     }
     if is_hard_excluded(rel) {
@@ -265,10 +264,33 @@ fn is_source_ext(rel: &Path) -> bool {
 mod tests {
     use super::*;
 
+    fn operands(raws: &[&str]) -> TargetRequest {
+        operands_request(
+            &raws
+                .iter()
+                .map(|raw| (*raw).to_string())
+                .collect::<Vec<_>>(),
+            None,
+            &[],
+        )
+    }
+
+    fn commit_request() -> TargetRequest {
+        request_from_focus(TargetFocus::Git(GitFocus::Commit), None, &[])
+    }
+
+    #[test]
+    fn filter_operands_helper_uses_operands_request() {
+        assert_eq!(
+            operands(&["z.py", "a.py"]),
+            operands_request(&["z.py".into(), "a.py".into()], None, &[])
+        );
+    }
+
     #[test]
     fn excludes_kiss_and_target() {
         let tmp = tempfile::tempdir().unwrap();
-        let f = WatchPathFilter::build(tmp.path(), &[], None, &TestInvocation::All);
+        let f = WatchPathFilter::build(tmp.path(), &[], None, &workspace_request(None, &[]));
         assert!(!f.is_relevant(Path::new(".kiss/cache")));
         assert!(!f.is_relevant(Path::new("target/debug/foo")));
         assert!(f.is_relevant(Path::new("src/lib.rs")));
@@ -278,7 +300,7 @@ mod tests {
     #[test]
     fn kissconfig_is_relevant_support_file() {
         let tmp = tempfile::tempdir().unwrap();
-        let f = WatchPathFilter::build(tmp.path(), &[], None, &TestInvocation::All);
+        let f = WatchPathFilter::build(tmp.path(), &[], None, &workspace_request(None, &[]));
         assert!(f.is_kissconfig_file(Path::new(".kissconfig")));
         assert!(f.is_relevant(Path::new(".kissconfig")));
         assert!(!f.is_kissconfig_file(Path::new("nested/.kissconfig")));
@@ -288,11 +310,12 @@ mod tests {
     #[test]
     fn config_override_file_is_watch_relevant() {
         let tmp = tempfile::tempdir().unwrap();
+        let workspace = workspace_request(None, &[]);
         let f = WatchPathFilter::build_with_config(
             tmp.path(),
             &[],
             None,
-            &TestInvocation::All,
+            &workspace,
             Path::new("custom.toml"),
         );
         assert!(f.is_kissconfig_file(Path::new("custom.toml")));
@@ -305,7 +328,7 @@ mod tests {
             tmp.path(),
             &[],
             None,
-            &TestInvocation::All,
+            &workspace,
             Path::new("custom.toml"),
         );
         assert!(
@@ -318,7 +341,7 @@ mod tests {
     fn gitignored_kissconfig_is_still_relevant() {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(tmp.path().join(".gitignore"), ".kissconfig\n").unwrap();
-        let f = WatchPathFilter::build(tmp.path(), &[], None, &TestInvocation::All);
+        let f = WatchPathFilter::build(tmp.path(), &[], None, &workspace_request(None, &[]));
         assert!(
             f.is_relevant(Path::new(".kissconfig")),
             "H2: gitignored .kissconfig must remain watch-relevant"
@@ -328,7 +351,7 @@ mod tests {
     #[test]
     fn support_inputs_reuse_cache_helpers() {
         let tmp = tempfile::tempdir().unwrap();
-        let f = WatchPathFilter::build(tmp.path(), &[], None, &TestInvocation::All);
+        let f = WatchPathFilter::build(tmp.path(), &[], None, &workspace_request(None, &[]));
         assert!(f.is_relevant(Path::new("pytest.ini")));
         assert!(f.is_relevant(Path::new("Cargo.toml")));
         assert!(f.is_relevant(Path::new("rust-toolchain.toml")));
@@ -336,12 +359,7 @@ mod tests {
         assert!(f.is_relevant(Path::new("foo.inc")));
         assert!(f.is_relevant(Path::new("conftest.py")));
 
-        let exact = WatchPathFilter::build(
-            tmp.path(),
-            &[],
-            None,
-            &TestInvocation::Targets(vec!["src/a.py".into()]),
-        );
+        let exact = WatchPathFilter::build(tmp.path(), &[], None, &operands(&["src/a.py"]));
         assert!(exact.is_relevant(Path::new("src/a.py")));
         assert!(!exact.is_relevant(Path::new("src/b.py")));
         assert!(exact.is_relevant(Path::new("pytest.ini")));
@@ -355,7 +373,7 @@ mod tests {
             tmp.path(),
             &[],
             None,
-            &TestInvocation::Targets(vec![target.to_string_lossy().into_owned()]),
+            &operands(&[&target.to_string_lossy()]),
         );
         assert!(f.is_relevant(Path::new("src/a.py")));
         assert!(!f.is_relevant(Path::new("src/b.py")));
@@ -367,12 +385,7 @@ mod tests {
         std::fs::create_dir_all(tmp.path().join("src")).unwrap();
         std::fs::create_dir_all(tmp.path().join("tests")).unwrap();
         std::fs::write(tmp.path().join("tests/a.py"), "x = 1\n").unwrap();
-        let f = WatchPathFilter::build(
-            tmp.path(),
-            &[],
-            None,
-            &TestInvocation::Targets(vec!["src/../tests/a.py".into()]),
-        );
+        let f = WatchPathFilter::build(tmp.path(), &[], None, &operands(&["src/../tests/a.py"]));
         assert!(f.is_relevant(Path::new("tests/a.py")));
         assert!(!f.is_relevant(Path::new("tests/b.py")));
     }
@@ -385,12 +398,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(tmp.path().join("real.py"), "x = 1\n").unwrap();
         symlink("real.py", tmp.path().join("link.py")).unwrap();
-        let f = WatchPathFilter::build(
-            tmp.path(),
-            &[],
-            None,
-            &TestInvocation::Targets(vec!["link.py".into()]),
-        );
+        let f = WatchPathFilter::build(tmp.path(), &[], None, &operands(&["link.py"]));
         assert!(f.is_relevant(Path::new("real.py")));
         assert!(!f.is_relevant(Path::new("link.py")));
     }
@@ -398,12 +406,7 @@ mod tests {
     #[test]
     fn mixed_file_and_directory_targets_keep_both_scopes() {
         let tmp = tempfile::tempdir().unwrap();
-        let f = WatchPathFilter::build(
-            tmp.path(),
-            &[],
-            None,
-            &TestInvocation::Targets(vec!["src/a.py".into(), "tests".into()]),
-        );
+        let f = WatchPathFilter::build(tmp.path(), &[], None, &operands(&["src/a.py", "tests"]));
         assert!(f.is_relevant(Path::new("src/a.py")));
         assert!(!f.is_relevant(Path::new("src/b.py")));
         assert!(f.is_relevant(Path::new("tests/test_b.py")));
@@ -414,20 +417,19 @@ mod tests {
     fn extension_suffixed_existing_directory_keeps_directory_scope() {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::create_dir(tmp.path().join("suite.py")).unwrap();
-        let f = WatchPathFilter::build(
-            tmp.path(),
-            &[],
-            None,
-            &TestInvocation::Targets(vec!["suite.py".into()]),
-        );
+        let f = WatchPathFilter::build(tmp.path(), &[], None, &operands(&["suite.py"]));
         assert!(f.is_relevant(Path::new("suite.py/test_child.py")));
     }
 
     #[test]
     fn cli_ignore_uses_shared_prefix_matcher() {
         let tmp = tempfile::tempdir().unwrap();
-        let fake =
-            WatchPathFilter::build(tmp.path(), &["fake_".into()], None, &TestInvocation::All);
+        let fake = WatchPathFilter::build(
+            tmp.path(),
+            &["fake_".into()],
+            None,
+            &workspace_request(None, &["fake_".into()]),
+        );
         assert!(!fake.is_relevant(Path::new("tests/fake_python/test_x.py")));
         assert!(fake.is_relevant(Path::new("tests/test_app.py")));
 
@@ -435,7 +437,7 @@ mod tests {
             tmp.path(),
             &["tests/slow".into()],
             None,
-            &TestInvocation::All,
+            &workspace_request(None, &["tests/slow".into()]),
         );
         assert!(!slow.is_relevant(Path::new("tests/slow/test_b.py")));
         assert!(slow.is_relevant(Path::new("tests/fast/test_a.py")));
@@ -444,11 +446,47 @@ mod tests {
     #[test]
     fn basename_exclude_is_not_an_ignore_support_file() {
         let tmp = tempfile::tempdir().unwrap();
-        let f = WatchPathFilter::build(tmp.path(), &[], None, &TestInvocation::All);
+        let f = WatchPathFilter::build(tmp.path(), &[], None, &workspace_request(None, &[]));
         assert!(!f.is_ignore_file(Path::new("vendor/exclude")));
         assert!(!f.is_ignore_file(Path::new("exclude")));
         assert!(f.is_ignore_file(Path::new(".git/info/exclude")));
         assert!(f.is_ignore_file(Path::new(".gitignore")));
         assert!(f.is_ignore_file(Path::new("nested/.gitignore")));
+    }
+
+    #[test]
+    fn watch_path_filter_build_takes_target_request() {
+        let tmp = tempfile::tempdir().unwrap();
+        let workspace =
+            WatchPathFilter::build(tmp.path(), &[], None, &workspace_request(None, &[]));
+        let commit = commit_request();
+        let git = WatchPathFilter::build(tmp.path(), &[], None, &commit);
+        assert!(!workspace.is_relevant(Path::new(".git/HEAD")));
+        assert!(git.is_relevant(Path::new(".git/HEAD")));
+    }
+
+    #[test]
+    fn commit_request_watches_git_head_workspace_does_not() {
+        let tmp = tempfile::tempdir().unwrap();
+        let workspace = workspace_request(None, &[]);
+        let commit = commit_request();
+        let all = WatchPathFilter::build_with_config(
+            tmp.path(),
+            &[],
+            None,
+            &workspace,
+            Path::new(".kissconfig"),
+        );
+        let git = WatchPathFilter::build_with_config(
+            tmp.path(),
+            &[],
+            None,
+            &commit,
+            Path::new(".kissconfig"),
+        );
+        assert!(!all.is_relevant(Path::new(".git/HEAD")));
+        assert!(git.is_relevant(Path::new(".git/HEAD")));
+        assert!(all.is_relevant(Path::new(".git/info/exclude")));
+        assert!(git.is_relevant(Path::new(".git/info/exclude")));
     }
 }

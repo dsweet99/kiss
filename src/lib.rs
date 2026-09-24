@@ -98,15 +98,16 @@ pub use duplication::{
 };
 pub use gate_config::{
     GateConfig, MatchedUnitTestSecondsRule, TestCoverageScope, catch_all_limit, exceeds_limit,
-    time_gate_uses_path_prefixes,
     format_nested_toml_table, limit_for_selector, matched_rule_for_selector,
+    time_gate_uses_path_prefixes,
 };
 pub use graph::{
     ContextDependencyGraph, CycleInfo, DependencyGraph, EdgeOrigin, GraphKeyMaxima,
-    ModuleGraphMetrics, OrphanCoverage, OrphanUnitInput, RoleDependencyGraphs, analyze_graph,
-    build_dependency_graph, build_python_context_graph, collect_orphan_entry_callables,
-    collect_orphan_entry_paths, compute_cyclomatic_complexity, graph_key_maxima,
-    module_name_for_path, orphan_unit_violations, orphan_violations, path_for_module_name,
+    ModuleGraphMetrics, OrphanCoverage, OrphanUnitFinding, OrphanUnitInput, RoleDependencyGraphs,
+    analyze_graph, build_dependency_graph, build_python_context_graph,
+    collect_orphan_entry_callables, collect_orphan_entry_paths, compute_cyclomatic_complexity,
+    graph_key_maxima, module_name_for_path, orphan_unit_findings, orphan_unit_violations,
+    orphan_violations, path_for_module_name,
 };
 pub use layout_cycles::{CycleBreakSuggestion, LayoutCycleAnalysis, analyze_cycles};
 pub use layout_layers::{LayerInfo, compute_layers};

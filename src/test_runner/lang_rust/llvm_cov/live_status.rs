@@ -10,9 +10,9 @@ use kiss::rust_llvm_cov_runner::{RustCoverageBatchIdentity, RustLlvmCovOutcome};
 use crate::test_runner::execution_witness::WitnessStatus;
 use crate::test_runner::last_status::{LastStatusIdentity, record_statuses};
 
-pub(super) use super::live_witness::flush_live_rust_witness;
 #[cfg(test)]
 pub(super) use super::live_witness::clear_live_rust_witness;
+pub(super) use super::live_witness::flush_live_rust_witness;
 use super::live_witness::{
     LiveWitnessCache, record_live_rust_non_pass, record_live_rust_pass, seed_live_witness_cache,
 };
@@ -133,14 +133,10 @@ pub(super) fn install_live_rust_status_hook(
     let seen = std::sync::Arc::new(Mutex::new(HashSet::new()));
     let remaining_slot = std::sync::Arc::new(Mutex::new(remaining));
     let pending_failures = std::sync::Arc::new(Mutex::new(
-        crate::test_runner::last_status::prior_failures(
-            repo_root,
-            kiss::Language::Rust,
-            identity,
-        )
-        .unwrap_or_default()
-        .into_iter()
-        .collect::<HashSet<_>>(),
+        crate::test_runner::last_status::prior_failures(repo_root, kiss::Language::Rust, identity)
+            .unwrap_or_default()
+            .into_iter()
+            .collect::<HashSet<_>>(),
     ));
     let shared = LiveHookShared {
         report_ids: report_ids.clone(),
@@ -175,7 +171,6 @@ pub(super) fn install_live_rust_status_hook(
     );
     Ok(())
 }
-
 
 fn persist_zero_sla_rust_timeouts_before_batch(
     repo_root: &Path,
@@ -225,11 +220,7 @@ struct LiveEmitState<'a> {
     persist: Option<(&'a Path, &'a LastStatusIdentity)>,
 }
 
-fn maybe_record_last_status(
-    state: &mut LiveEmitState<'_>,
-    logical: &str,
-    status: TestStatus,
-) {
+fn maybe_record_last_status(state: &mut LiveEmitState<'_>, logical: &str, status: TestStatus) {
     let Some((repo_root, identity)) = state.persist else {
         return;
     };
@@ -381,7 +372,11 @@ fn kiss_id_for_libtest(report_ids: &BTreeMap<String, String>, name: &str) -> Opt
         return Some(candidates[0].1.clone());
     }
 
-    let max_len = candidates.iter().map(|(key, _)| key.len()).max().unwrap_or(0);
+    let max_len = candidates
+        .iter()
+        .map(|(key, _)| key.len())
+        .max()
+        .unwrap_or(0);
     candidates.retain(|(key, _)| key.len() == max_len);
     if candidates.len() == 1 {
         return Some(candidates[0].1.clone());
@@ -399,7 +394,9 @@ fn source_path_matches_logical(id: &str, logical: &str) -> bool {
     let file_path = id.split_once("::").map_or(id, |(path, _)| path);
     let path = Path::new(file_path);
     let name = if path.file_name().and_then(|s| s.to_str()) == Some("mod.rs") {
-        path.parent().and_then(|p| p.file_name()).and_then(|s| s.to_str())
+        path.parent()
+            .and_then(|p| p.file_name())
+            .and_then(|s| s.to_str())
     } else {
         path.file_stem().and_then(|s| s.to_str())
     };
@@ -434,8 +431,8 @@ mod live_status_test {
     use kiss::rpytest_runner::TestStatus;
     use std::collections::{BTreeMap, BTreeSet, HashSet};
     use std::path::Path;
-    use std::sync::{Mutex, MutexGuard};
     use std::sync::atomic::Ordering;
+    use std::sync::{Mutex, MutexGuard};
     use std::time::Duration;
 
     fn live_status_serial_guard() -> MutexGuard<'static, ()> {
@@ -893,10 +890,7 @@ mod live_status_test {
                 selectors: &["seeded".into(), "extra".into()],
                 statuses: &[WitnessStatus::Passed, WitnessStatus::Failed],
                 durations_ns: &[Some(1), Some(2)],
-                covered_lines: &BTreeMap::from([(
-                    "src/lib.rs".into(),
-                    BTreeSet::from([1u32]),
-                )]),
+                covered_lines: &BTreeMap::from([("src/lib.rs".into(), BTreeSet::from([1u32]))]),
                 complete: false,
                 jobs: 1,
             },
@@ -945,7 +939,10 @@ mod live_status_test {
                 tmp.path(),
             )
             .expect("load full generation witness");
-        assert_eq!(loaded.selectors, vec!["alpha".to_string(), "beta".to_string()]);
+        assert_eq!(
+            loaded.selectors,
+            vec!["alpha".to_string(), "beta".to_string()]
+        );
         assert_eq!(loaded.statuses[0], WitnessStatus::Passed);
         assert_eq!(loaded.statuses[1], WitnessStatus::Failed);
         assert!(!loaded.complete);
@@ -961,13 +958,8 @@ mod live_status_test {
             selection_context_fingerprint: "ctx-all-pass".into(),
             ordinary_source_digests: BTreeMap::new(),
         };
-        let mut cache = LiveWitnessCache::new(
-            tmp.path(),
-            &identity,
-            None,
-            &["a".into(), "b".into()],
-            2,
-        );
+        let mut cache =
+            LiveWitnessCache::new(tmp.path(), &identity, None, &["a".into(), "b".into()], 2);
         cache.record_pass("a", "a", Duration::from_millis(1));
         cache.record_pass("b", "b", Duration::from_millis(2));
         cache.persist();
@@ -1026,7 +1018,10 @@ mod live_status_test {
                 tmp.path(),
             )
             .expect("load full generation witness after flush");
-        assert_eq!(loaded.selectors, vec!["fast".to_string(), "slow".to_string()]);
+        assert_eq!(
+            loaded.selectors,
+            vec!["fast".to_string(), "slow".to_string()]
+        );
         assert_eq!(loaded.statuses[0], WitnessStatus::Passed);
         assert_eq!(loaded.durations_ns[0], Some(15_000_000));
         assert_eq!(loaded.statuses[1], WitnessStatus::Unresolved);
@@ -1099,7 +1094,10 @@ mod live_status_test {
             "map",
         );
         let selectors = vec!["banned".to_string(), "runnable".to_string()];
-        let timeouts = BTreeMap::from([("banned".to_string(), 0u64), ("runnable".to_string(), 5_000)]);
+        let timeouts = BTreeMap::from([
+            ("banned".to_string(), 0u64),
+            ("runnable".to_string(), 5_000),
+        ]);
         let out = crate::test_runner::capture_stdout::capture_stdout(|| {
             install_live_rust_status_hook(
                 tmp.path(),
@@ -1192,6 +1190,8 @@ mod live_status_test {
             "prepare-time cache hits must apply time gate for retry-bad before miss batch"
         );
         assert_eq!(remaining, 1);
-        assert!(kiss::rust_llvm_cov_runner::live_rust_was_printed("cached_over"));
+        assert!(kiss::rust_llvm_cov_runner::live_rust_was_printed(
+            "cached_over"
+        ));
     }
 }

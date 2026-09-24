@@ -3,9 +3,8 @@ use std::time::Duration;
 
 use kiss::Language;
 
-use crate::bin_cli::args::TestInvocation;
-
 use super::RunTestCmdArgs;
+use super::target_request::{GitFocus, TargetFocus};
 
 #[derive(Clone)]
 pub(crate) struct PlannedSelectors {
@@ -83,8 +82,16 @@ pub(crate) fn should_force_cold_initialization(
     a: &RunTestCmdArgs<'_>,
     repo_root: &std::path::Path,
 ) -> bool {
-    matches!(a.invocation, TestInvocation::Base | TestInvocation::Main)
-        && !a.dry_run
+    matches!(
+        super::target_request::request_from_run_args(a).focus,
+        TargetFocus::Git(
+            GitFocus::AutomaticBase
+                | GitFocus::ExplicitBase { .. }
+                | GitFocus::DefaultMain
+                | GitFocus::ConfiguredMain { .. }
+                | GitFocus::ExplicitMain { .. }
+        )
+    ) && !a.dry_run
         && !a.force_rerun
         && !a.metrics
         && a.extra.is_empty()
@@ -108,7 +115,10 @@ pub(crate) fn apply_force_all_population(a: &RunTestCmdArgs<'_>, planned: &mut P
     if !a.force_rerun {
         return;
     }
-    if !matches!(a.invocation, TestInvocation::All) {
+    if !matches!(
+        super::target_request::request_from_run_args(a).focus,
+        TargetFocus::Workspace
+    ) {
         return;
     }
     match a.lang_filter {
@@ -145,13 +155,22 @@ mod tests {
         lang: Option<Language>,
     ) -> RunTestCmdArgs<'static> {
         RunTestCmdArgs {
-            invocation,
+            invocation: invocation.clone(),
+            target_request: crate::test_runner::target_request::request_from_invocation(
+                &invocation,
+                None,
+                None,
+                None,
+                lang,
+                &[],
+            ),
             main_branch_cli: None,
             base_branch_cli: None,
             dry_run: false,
             force_rerun: force,
             force_bad: false,
             metrics: false,
+            coverage_all: false,
             jobs: 1,
             extra: &[],
             python_extra: &[],
@@ -171,6 +190,14 @@ mod tests {
 
         let cold = args(TestInvocation::Base, false, None);
         assert!(should_force_cold_initialization(&cold, tmp.path()));
+        assert!(!should_force_cold_initialization(
+            &args(TestInvocation::Commit, false, None),
+            tmp.path()
+        ));
+        assert!(!should_force_cold_initialization(
+            &args(TestInvocation::All, false, None),
+            tmp.path()
+        ));
         apply_cold_initialization_population(&cold, &mut planned);
         assert!(planned.population_required.python);
         assert!(planned.population_required.rust);

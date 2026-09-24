@@ -85,8 +85,8 @@ pub(crate) fn remaining_test_guard() -> std::sync::MutexGuard<'static, ()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        emit_tests_remaining, expect_language_remaining, remaining_test_guard, reset_tests_remaining,
-        set_language_remaining,
+        emit_tests_remaining, expect_language_remaining, remaining_test_guard,
+        reset_tests_remaining, set_language_remaining,
     };
 
     #[cfg(unix)]

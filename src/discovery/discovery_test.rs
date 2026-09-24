@@ -201,7 +201,10 @@ fn selector_ignored_by_prefixes_requires_a_file_path() {
         "tests/slow/test_b.py::t",
         &["tests/slow".to_string()]
     ));
-    assert!(selector_ignored_by_prefixes("lib.rs::unit_ok", &["lib.rs".to_string()]));
+    assert!(selector_ignored_by_prefixes(
+        "lib.rs::unit_ok",
+        &["lib.rs".to_string()]
+    ));
 }
 
 #[test]

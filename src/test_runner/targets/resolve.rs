@@ -10,8 +10,8 @@ use kiss::code_roles::{
 use super::model::{SourceModel, load_source_model};
 use super::model_python::attach_python_nodeids;
 use super::parse::{ParsedTestTarget, parse_test_target};
-use crate::test_runner::workspace_selector_cache::load_cached_python_workspace_selectors;
 use super::resolve_hydrate::{hydrate_python_models, python_nodeids_for_model};
+use crate::test_runner::workspace_selector_cache::load_cached_python_workspace_selectors;
 #[derive(Clone, Debug, Default)]
 pub(crate) struct TargetSelectionQuery {
     pub direct_python: BTreeSet<String>,

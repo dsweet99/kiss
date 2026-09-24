@@ -245,9 +245,12 @@ pub(super) fn run_rust_selectors_for_module(
     }
 
     let force_rerun = ctx.options.force_rerun;
-    if let Some(summary) =
-        try_run_warm_or_forced_rust_selectors(selectors, ctx, force_rerun, &population_publication_selectors)?
-    {
+    if let Some(summary) = try_run_warm_or_forced_rust_selectors(
+        selectors,
+        ctx,
+        force_rerun,
+        &population_publication_selectors,
+    )? {
         return Ok(summary);
     }
     if let Some(population_selectors) = population_publication_selectors {
@@ -352,10 +355,8 @@ fn try_cached_check_aggregate_or_forced(
     else {
         return Ok(None);
     };
-    let forced = prior_force_selectors_in_planned(
-        selectors,
-        &ctx.planned.prior_failure_selectors.rust,
-    );
+    let forced =
+        prior_force_selectors_in_planned(selectors, &ctx.planned.prior_failure_selectors.rust);
     if forced.is_empty() {
         return Ok(Some(summary));
     }

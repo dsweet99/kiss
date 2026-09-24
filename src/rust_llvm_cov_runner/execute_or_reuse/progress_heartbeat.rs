@@ -146,14 +146,16 @@ impl ProgressWatchdog {
         note_progress();
         let stop = Arc::new(AtomicBool::new(false));
         let tick_stop = Arc::clone(&stop);
-        std::thread::spawn(move || loop {
-            std::thread::sleep(WATCHDOG_POLL);
-            if tick_stop.load(Ordering::Relaxed) {
-                break;
-            }
-            if silence_exceeds_heartbeat() {
-                let status = format_generic_status();
-                super::progress::emit_progress(&status);
+        std::thread::spawn(move || {
+            loop {
+                std::thread::sleep(WATCHDOG_POLL);
+                if tick_stop.load(Ordering::Relaxed) {
+                    break;
+                }
+                if silence_exceeds_heartbeat() {
+                    let status = format_generic_status();
+                    super::progress::emit_progress(&status);
+                }
             }
         });
         Self { stop }

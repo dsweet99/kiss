@@ -130,9 +130,7 @@ fn persistent_rust_sigint_repo() -> std::path::PathBuf {
         let usable = root.join("Cargo.toml").is_file()
             && kiss_target.is_dir()
             && stamp.is_file()
-            && std::fs::read_to_string(&stamp)
-                .ok()
-                .as_deref()
+            && std::fs::read_to_string(&stamp).ok().as_deref()
                 == Some(root.to_string_lossy().as_ref());
         if usable {
             let _ = std::fs::remove_file(root.join("BATCH_RUNNING"));

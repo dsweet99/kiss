@@ -75,12 +75,8 @@ fn rust_warm_misses_when_ordinary_source_bytes_change() {
     )
     .unwrap();
     let cache_root = crate::test_runner::rust_coverage_index::rust_coverage_cache_root(tmp.path());
-    kiss::rust_llvm_cov_runner::write_ordinary_source_snapshot(
-        &cache_root,
-        tmp.path(),
-        &before,
-    )
-    .unwrap();
+    kiss::rust_llvm_cov_runner::write_ordinary_source_snapshot(&cache_root, tmp.path(), &before)
+        .unwrap();
     publish_ab(tmp.path(), &before, true);
     std::fs::write(tmp.path().join("src").join("lib.rs"), "pub fn y() {}\n").unwrap();
     kiss::rust_llvm_cov_runner::refresh_identity_memo();

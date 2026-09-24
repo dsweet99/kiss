@@ -5,13 +5,13 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 use crate::support::git::{commit_all, init_git_repo};
-use crate::support::watch_proc::{
-    start_watch_logged, write_kissconfig_with_threshold, WatchProc,
-};
+use crate::support::watch_proc::{WatchProc, start_watch_logged, write_kissconfig_with_threshold};
 
 fn last_passed(text: &str) -> Option<usize> {
     text.lines().rev().find_map(|line| {
-        let rest = line.strip_prefix("✓ ").or_else(|| line.strip_prefix("✗ "))?;
+        let rest = line
+            .strip_prefix("✓ ")
+            .or_else(|| line.strip_prefix("✗ "))?;
         rest.split(" passed").next()?.trim().parse().ok()
     })
 }

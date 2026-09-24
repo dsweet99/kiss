@@ -115,10 +115,7 @@ pub enum Commands {
         base_branch: Option<String>,
         #[arg(long, help = "Show tests that would run without executing them")]
         dry_run: bool,
-        #[arg(
-            long,
-            help = "Rerun FAIL and TIMEOUT tests in the TARGET subset"
-        )]
+        #[arg(long, help = "Rerun FAIL and TIMEOUT tests in the TARGET subset")]
         retry_bad: bool,
         #[arg(long, help = "Print test-run metrics")]
         metrics: bool,

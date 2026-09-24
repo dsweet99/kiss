@@ -125,9 +125,6 @@ pub(crate) fn selector_evidence_from_outcome(
 }
 
 fn measured_duration(outcome: &RslipOutcome) -> Option<Duration> {
-    if outcome.duration.is_zero() && outcome.cache_status == CacheStatus::Hit {
-        return None;
-    }
     Some(outcome.duration)
 }
 

@@ -35,7 +35,7 @@ fn default_nudge_while_settling_runs_new_cycle() {
                 .recv_timeout(Duration::from_secs(5))
                 .unwrap()
                 .exit_code,
-            0
+            1
         );
     });
 

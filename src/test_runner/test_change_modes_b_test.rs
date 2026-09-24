@@ -204,18 +204,31 @@ fn assert_run_test_dry_run(mode: TestChangeMode, main: Option<&str>, base: Optio
         ..Default::default()
     };
     let code = with_cwd(tmp.path(), || {
+        let invocation = match mode {
+            TestChangeMode::Commit => crate::bin_cli::args::TestInvocation::Commit,
+            TestChangeMode::Base => crate::bin_cli::args::TestInvocation::Base,
+            TestChangeMode::Main => crate::bin_cli::args::TestInvocation::Main,
+        };
+        let request = crate::test_runner::target_request::request_from_focus(
+            crate::test_runner::target_request::focus_from_invocation(
+                &invocation,
+                main,
+                base,
+                None,
+            ),
+            Some(kiss::Language::Rust),
+            &[],
+        );
         run_test(RunTestCmdArgs {
-            invocation: match mode {
-                TestChangeMode::Commit => crate::bin_cli::args::TestInvocation::Commit,
-                TestChangeMode::Base => crate::bin_cli::args::TestInvocation::Base,
-                TestChangeMode::Main => crate::bin_cli::args::TestInvocation::Main,
-            },
+            invocation: crate::test_runner::target_request::to_compat_invocation(&request),
+            target_request: request,
             main_branch_cli: main,
             base_branch_cli: base,
             dry_run: true,
             force_rerun: false,
             force_bad: false,
             metrics: false,
+            coverage_all: false,
             jobs: 1,
             extra: &[],
             python_extra: &[],
@@ -280,12 +293,21 @@ fn row_k_run_test_base_without_other_refs_fails() {
     let code = with_cwd(tmp.path(), || {
         run_test(RunTestCmdArgs {
             invocation: crate::bin_cli::args::TestInvocation::Base,
+            target_request: crate::test_runner::target_request::request_from_invocation(
+                &crate::bin_cli::args::TestInvocation::Base,
+                None,
+                None,
+                None,
+                Some(kiss::Language::Rust),
+                &[],
+            ),
             main_branch_cli: None,
             base_branch_cli: None,
             dry_run: true,
             force_rerun: false,
             force_bad: false,
             metrics: false,
+            coverage_all: false,
             jobs: 1,
             extra: &[],
             python_extra: &[],

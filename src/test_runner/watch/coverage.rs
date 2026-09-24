@@ -32,9 +32,12 @@ impl WatchCoverageResult {
 }
 
 pub(crate) struct WatchCoverageParams<'a> {
+    #[allow(dead_code)]
     pub py_config: &'a kiss::Config,
+    #[allow(dead_code)]
     pub rs_config: &'a kiss::Config,
     pub coverage_all: bool,
+    #[allow(dead_code)]
     pub language_tables: kiss::LanguageTablesPresent,
 }
 

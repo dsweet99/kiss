@@ -121,7 +121,7 @@ fn count_test_statuses(records: &[(String, TestStatus, Duration)]) -> (usize, us
 
 fn print_cached_total(label: &str, count: usize) {
     if count > 0 {
-        crate::test_runner::emit_test_progress(&format!("{label} (cached): {count} selectors"));
+        crate::test_runner::emit_test_progress(&format!("{label} {count} selectors"));
     }
 }
 

@@ -37,11 +37,7 @@ fn hash_config_files(mut h: u64, repo_root: &Path, ignore: &[String]) -> io::Res
             h = fnv1a64(h, b"ignored");
             continue;
         }
-        if *name != ".kissconfig"
-            && gitignore
-                .matched(repo_root.join(name), false)
-                .is_ignore()
-        {
+        if *name != ".kissconfig" && gitignore.matched(repo_root.join(name), false).is_ignore() {
             h = fnv1a64(h, name.as_bytes());
             h = fnv1a64(h, b"gitignored");
             continue;

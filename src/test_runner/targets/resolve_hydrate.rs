@@ -61,7 +61,8 @@ pub(super) fn hydrate_python_models(
         return Ok(());
     }
     let started = std::time::Instant::now();
-    let nodeids = collect_python_nodeids_for_targets(repo_root, Some(misses.as_slice()), pytest_args)?;
+    let nodeids =
+        collect_python_nodeids_for_targets(repo_root, Some(misses.as_slice()), pytest_args)?;
     crate::test_runner::emit_stage_time("python_target_batch_collect", started.elapsed());
     let mut updates: Vec<(PathBuf, Vec<String>)> = Vec::new();
     for abs in &misses {

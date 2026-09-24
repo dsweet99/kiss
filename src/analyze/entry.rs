@@ -35,17 +35,16 @@ pub fn run_analyze(opts: &AnalyzeOptions<'_>) -> bool {
 pub fn run_analyze_with_result(opts: &AnalyzeOptions<'_>) -> AnalyzeResult {
     let t0 = std::time::Instant::now();
     let universe_root = Path::new(opts.universe);
-    let (py_files, rs_files) = if let Some(roots) =
-        crate::bin_cli::check_shards::gather_roots_from_env()
-    {
-        let root_strings: Vec<String> = roots
-            .iter()
-            .map(|p| p.to_string_lossy().into_owned())
-            .collect();
-        kiss::gather_files_by_lang(&root_strings, opts.lang_filter, opts.ignore_prefixes)
-    } else {
-        gather_files(universe_root, opts.lang_filter, opts.ignore_prefixes)
-    };
+    let (py_files, rs_files) =
+        if let Some(roots) = crate::bin_cli::check_shards::gather_roots_from_env() {
+            let root_strings: Vec<String> = roots
+                .iter()
+                .map(|p| p.to_string_lossy().into_owned())
+                .collect();
+            kiss::gather_files_by_lang(&root_strings, opts.lang_filter, opts.ignore_prefixes)
+        } else {
+            gather_files(universe_root, opts.lang_filter, opts.ignore_prefixes)
+        };
     if let Err(code) = crate::bin_cli::util::reject_unconfigured_languages(
         &py_files,
         &rs_files,

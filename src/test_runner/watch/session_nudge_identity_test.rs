@@ -1,23 +1,23 @@
-use super::{NudgeScript, commit_a_py, py_dry_args, timeout_steps};
+use super::{NudgeScript, commit_a_py, publish_pass_count, py_dry_args, timeout_steps};
 use crate::bin_cli::args::TestInvocation;
 use crate::test_runner::test_mode_fixtures::init_git;
 use crate::test_runner::watch::control::{NudgeRequest, NudgeRequestMsg};
 use crate::test_runner::{RunTestOnceOutcome, WatchCoverageResult, run_kiss_test_report_reuse};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{mpsc, Arc};
+use std::sync::{Arc, mpsc};
 use std::time::Duration;
 
 fn all_args() -> crate::test_runner::RunTestCmdArgs<'static> {
     let mut args = py_dry_args();
     args.dry_run = false;
-    args.invocation = TestInvocation::All;
-    args.lang_filter = None;
+    args.set_invocation(TestInvocation::All);
+    args.set_lang_filter(None);
     args
 }
 
 fn other_ignore_args() -> crate::test_runner::RunTestCmdArgs<'static> {
     let mut args = all_args();
-    args.ignore = Box::leak(vec!["other_prefix".into()].into_boxed_slice());
+    args.set_ignore(Box::leak(vec!["other_prefix".into()].into_boxed_slice()));
     args
 }
 
@@ -51,12 +51,18 @@ fn mismatched_ignore_does_not_replay_other_identity_recap() {
         Some(tmp.path()),
     );
     assert_eq!(persist_runs.load(Ordering::SeqCst), 1);
-    assert_eq!(first.exit_code, 0);
+    assert_eq!(first.exit_code, 1);
+    assert_eq!(
+        first.error.as_deref(),
+        Some("target membership is not proven complete")
+    );
+    publish_pass_count(tmp.path(), 5);
 
     let (tx, rx) = mpsc::channel::<NudgeRequest>();
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
     let watch_runs = Arc::new(AtomicUsize::new(0));
     let watch_runs_cycle = Arc::clone(&watch_runs);
+    let repo = tmp.path().to_path_buf();
     let sender = std::thread::spawn(move || {
         std::thread::sleep(Duration::from_millis(80));
         tx.send(NudgeRequest {
@@ -77,6 +83,7 @@ fn mismatched_ignore_does_not_replay_other_identity_recap() {
         Some(&rx),
         move |_| {
             watch_runs_cycle.fetch_add(1, Ordering::SeqCst);
+            publish_pass_count(&repo, 9);
             emit_counts(9)
         },
         |_| WatchCoverageResult::ok(0),
@@ -109,7 +116,12 @@ fn idle_after_ignore_override_keeps_session_identity_recap() {
         Some(tmp.path()),
     );
     assert_eq!(persist_runs.load(Ordering::SeqCst), 1);
-    assert_eq!(first.exit_code, 0);
+    assert_eq!(first.exit_code, 1);
+    assert_eq!(
+        first.error.as_deref(),
+        Some("target membership is not proven complete")
+    );
+    publish_pass_count(tmp.path(), 5);
 
     let (tx, rx) = mpsc::channel::<NudgeRequest>();
     let (reply_over_tx, reply_over_rx) = mpsc::sync_channel(1);
@@ -119,7 +131,10 @@ fn idle_after_ignore_override_keeps_session_identity_recap() {
         std::thread::sleep(Duration::from_millis(80));
         tx.send(NudgeRequest {
             msg: NudgeRequestMsg {
-                ignore: vec!["other_prefix".into()],
+                target_request: crate::test_runner::target_request::workspace_request(
+                    None,
+                    &["other_prefix".into()],
+                ),
                 ..Default::default()
             },
             reply: reply_over_tx,
@@ -152,12 +167,15 @@ fn idle_after_ignore_override_keeps_session_identity_recap() {
     );
     let (over, idle) = sender.join().unwrap();
     assert_eq!(code, 1);
-    assert_eq!(watch_runs.load(Ordering::SeqCst), 1);
-    let over_out = over.output.unwrap_or_default();
+    let over_out = over.output.as_deref().unwrap_or("");
     let idle_out = idle.output.unwrap_or_default();
+    assert_eq!(over.exit_code, 1);
     assert!(
-        over_out.contains("9 passed"),
-        "ignore-override cycle must run; out={over_out}"
+        over.error.as_deref().is_some_and(|err| {
+            err.contains("incomplete evidence") || err.contains("not proven complete")
+        }) || over_out.contains("9 passed")
+            || over_out.contains("report members="),
+        "ignore-override is a distinct identity and must not slice the session report; over={over:?}"
     );
     assert!(
         idle_out.contains("5 passed") && !idle_out.contains("9 passed"),

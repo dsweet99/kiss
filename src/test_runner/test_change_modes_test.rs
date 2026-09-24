@@ -2,10 +2,10 @@ use tempfile::TempDir;
 
 use crate::test_git::TestChangeMode;
 use crate::test_runner::test_mode_fixtures::{
-    PY_COVERING_SELECTOR, RS_COVERING_SELECTOR, edit_python_covered_source,
-    clone_row_b_committed_repo, clone_warm_committed_repo, edit_rust_covered_source,
+    PY_COVERING_SELECTOR, RS_COVERING_SELECTOR, clone_row_b_committed_repo,
+    clone_warm_committed_repo, edit_python_covered_source, edit_rust_covered_source,
     rewrite_python_population_after_edit, warm_committed_rust_demo, warm_python_covering_demo,
-    with_locked_warm_committed_repo, with_cwd,
+    with_cwd, with_locked_warm_committed_repo,
 };
 use crate::test_runner::{PlannedSelectors, SelectorRunOptions, plan_selectors, run_selectors};
 

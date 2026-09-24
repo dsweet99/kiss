@@ -14,12 +14,12 @@ use crate::bin_cli::cov_sibling_gates::{
 
 #[path = "cov_zero.rs"]
 mod cov_zero;
-use cov_zero::finish_zero_threshold_cov;
 use crate::bin_cli::util::{merge_check_ignore_prefixes, validate_paths};
 use crate::test_runner::check_line_coverage::{
     RequiredCoverageLanguages, repository_root_for_universe,
 };
 use crate::test_runner::unit_test_timing::RuntimeGateEval;
+use cov_zero::finish_zero_threshold_cov;
 use kiss::Language;
 use kiss::cli_output::print_no_files_message;
 use std::path::Path;
@@ -336,9 +336,7 @@ fn evaluate_gathered_cov(p: EvaluateGatheredCov<'_>) -> i32 {
         files: p.files,
         ignore: p.ignore,
     };
-    if let Some(code) =
-        try_evaluate_from_cache(&cache_key, &eval_ctx, &repo_root, required, &t0)
-    {
+    if let Some(code) = try_evaluate_from_cache(&cache_key, &eval_ctx, &repo_root, required, &t0) {
         return code;
     }
     let validated = match load_or_refresh_snapshot(

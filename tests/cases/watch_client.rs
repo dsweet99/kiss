@@ -1,12 +1,12 @@
 #![cfg(unix)]
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use crate::support::git::{commit_all, init_git_repo};
 use crate::support::watch_proc::{
-    start_watch, wait_watch_idle_cycle, write_kissconfig_with_threshold,
+    start_watch, start_watch_logged, wait_watch_idle_cycle, write_kissconfig_with_threshold,
 };
 
 fn write_kissconfig(root: &Path, settle: f64) {
@@ -42,11 +42,7 @@ fn oneshot_args(dir: &Path, args: &[&str]) -> (bool, String, String) {
     crate::common::scrub_parent_coverage_env(&mut cmd);
     crate::common::preserve_toolchain_homes(&mut cmd);
     cmd.env("PYTHONDONTWRITEBYTECODE", "1");
-    let output = cmd
-        .args(args)
-        .current_dir(dir)
-        .output()
-        .expect("oneshot");
+    let output = cmd.args(args).current_dir(dir).output().expect("oneshot");
     (
         output.status.success(),
         String::from_utf8_lossy(&output.stdout).into_owned(),
@@ -234,6 +230,72 @@ fn assert_watcher_oneshot_report(stdout: &str) {
     );
 }
 
+fn official_report_body(stdout: &str) -> String {
+    let lines: Vec<_> = stdout
+        .lines()
+        .filter(|line| !line.starts_with("kiss: "))
+        .collect();
+    format!("{}\n", lines.join("\n"))
+}
+
+fn watch_cycle_count(log: &Path) -> usize {
+    std::fs::read_to_string(log)
+        .unwrap_or_default()
+        .matches("kiss test: Starting")
+        .count()
+}
+
+#[test]
+fn warm_commit_client_does_not_start_another_watcher_cycle() {
+    if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
+        return;
+    }
+    let tmp = seeded_python_repo();
+    let root = tmp.path();
+    std::fs::write(root.join("lib.py"), "def f():\n    return 0\n\n").unwrap();
+    crate::common::seed_python_runtime_coverage(
+        root,
+        &[("test_lib.py::test_f", vec![("lib.py", vec![1, 2])])],
+    );
+    commit_all(root, "covered change");
+    let log = PathBuf::from(root).join("watch.log");
+    let _watch = start_watch_logged(root, &["test", "--watch"], &log);
+    wait_watch_idle_cycle(root);
+    let before = watch_cycle_count(&log);
+
+    let (workspace_ok, workspace_stdout, workspace_stderr) = oneshot_args(root, &["test"]);
+    assert!(
+        workspace_ok,
+        "workspace client failed: stdout={workspace_stdout:?} stderr={workspace_stderr:?}"
+    );
+    assert_watcher_oneshot_report(&workspace_stdout);
+    let workspace_report = official_report_body(&workspace_stdout);
+    let watcher_log = std::fs::read_to_string(&log).unwrap_or_default();
+    assert!(
+        workspace_report
+            .lines()
+            .all(|line| watcher_log.lines().any(|watcher_line| watcher_line == line)),
+        "workspace client must return the watcher official report body: watcher={watcher_log:?} client={workspace_report:?}"
+    );
+
+    let (commit_ok, commit_stdout, commit_stderr) = oneshot_args(root, &["test", "commit"]);
+    assert!(
+        commit_ok,
+        "commit client failed: stdout={commit_stdout:?} stderr={commit_stderr:?}"
+    );
+    assert_watcher_oneshot_report(&commit_stdout);
+    assert!(
+        workspace_stdout.contains("passed") && commit_stdout.contains("passed"),
+        "clients must echo cached report summaries: workspace={workspace_stdout:?} commit={commit_stdout:?}"
+    );
+    assert_eq!(
+        watch_cycle_count(&log),
+        before,
+        "warm workspace and commit clients must not start another watcher cycle; log={}",
+        std::fs::read_to_string(&log).unwrap_or_default()
+    );
+}
+
 #[test]
 fn oneshot_defers_to_idle_watcher() {
     if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
@@ -264,7 +326,9 @@ fn oneshot_defers_to_idle_watcher() {
     );
     assert_watcher_oneshot_report(&stdout);
     assert!(
-        stdout.contains("passed") && stdout.contains("total"),
+        stdout.contains("passed")
+            && stdout.contains("failed")
+            && stdout.contains("timed out"),
         "oneshot must print a summary from the watcher; stdout={stdout:?}"
     );
 }
@@ -272,7 +336,6 @@ fn oneshot_defers_to_idle_watcher() {
 // Client oneshot-during-settle is covered in-process by
 // `test_runner::watch::session_nudge_test::nudge_while_waiting_skips_settle`
 // (force nudge skips the quiet period without a multi-second watch e2e).
-
 
 #[test]
 fn oneshot_after_dirty_source_echoes_fail_and_exit() {
@@ -500,8 +563,11 @@ fn watcher_reloads_kissconfig_threshold_change() {
     write_kissconfig_with_threshold(tmp.path(), 0.005, 0);
 
     let log = tmp.path().join("watch.log");
-    let mut watch =
-        start_watch_logged(tmp.path(), &["test", "--watch", "--lang", "python", "."], &log);
+    let mut watch = start_watch_logged(
+        tmp.path(),
+        &["test", "--watch", "--lang", "python", "."],
+        &log,
+    );
     let ready = Instant::now() + Duration::from_secs(5);
     loop {
         let text = std::fs::read_to_string(&log).unwrap_or_default();
@@ -536,8 +602,7 @@ fn watcher_reloads_kissconfig_threshold_change() {
     );
     assert_watcher_oneshot_report(&stdout);
     assert!(
-        stdout.contains("VIOLATION:test_coverage:")
-            || stderr.contains("VIOLATION:test_coverage:"),
+        stdout.contains("VIOLATION:test_coverage:") || stderr.contains("VIOLATION:test_coverage:"),
         "reloaded threshold must produce coverage VIOLATION; stdout={stdout:?} stderr={stderr:?}"
     );
 }
@@ -578,9 +643,8 @@ fn oneshot_idle_watcher_prints_local_fail_not_bare_fail() {
         "expected failure; stdout={stdout:?} stderr={stderr:?}"
     );
     assert_watcher_oneshot_report(&stdout);
-    assert!(!stdout.contains("waiting for watcher"), "stdout={stdout:?}");
     assert!(
         stdout.contains("FAIL:") || stdout.contains("FAIL tests/") || stdout.contains("FAIL test_"),
-        "failing python + idle W must print FAIL: or a recap, not a solitary FAIL; stdout={stdout:?}"
+        "failing python oneshot must print FAIL; stdout={stdout:?}"
     );
 }

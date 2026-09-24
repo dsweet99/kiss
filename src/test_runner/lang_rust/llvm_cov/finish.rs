@@ -66,7 +66,7 @@ fn cached_summary_from_duration_pairs(
         if effective != kiss::rpytest_runner::TestStatus::Passed {
             return None;
         }
-        crate::test_runner::emit_test_progress(&format!("PASS (cached): {report}"));
+        crate::test_runner::emit_test_progress(&format!("PASS {report}"));
         summary.record(SelectorExecutionRecord {
             selector: report,
             status: kiss::rpytest_runner::TestStatus::Passed,
@@ -126,10 +126,9 @@ fn emit_bulk_cached_pass_summary(
         {
             continue;
         }
-        let Ok(report_id) = crate::test_runner::runners::require_kiss_test_report_id(
-            report_ids,
-            &outcome.selector,
-        ) else {
+        let Ok(report_id) =
+            crate::test_runner::runners::require_kiss_test_report_id(report_ids, &outcome.selector)
+        else {
             continue;
         };
         if kiss::rust_llvm_cov_runner::live_rust_was_printed(&report_id) {
@@ -146,9 +145,7 @@ fn emit_bulk_cached_pass_summary(
         }
     }
     if cached_pass > 0 {
-        crate::test_runner::emit_test_progress(&format!(
-            "PASS (cached): {cached_pass} selectors"
-        ));
+        crate::test_runner::emit_test_progress(&format!("PASS {cached_pass} selectors"));
     }
 }
 
@@ -233,13 +230,7 @@ pub(crate) fn finish_rust_coverage_batch_result(
         )?;
         let effective =
             effective_status_for_completed_outcome(outcome, &report_id, gate, emit_each);
-        record_completed_outcome(
-            &mut summary,
-            &mut statuses,
-            outcome,
-            report_id,
-            effective,
-        );
+        record_completed_outcome(&mut summary, &mut statuses, outcome, report_id, effective);
     }
     record_statuses(repo_root, kiss::Language::Rust, identity, &statuses)?;
     if let Some(err) = result.batch_error {

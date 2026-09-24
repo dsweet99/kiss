@@ -25,7 +25,7 @@ mod fresh;
 mod inventory;
 pub(crate) use fresh::begin_inventory_session;
 pub(crate) use inventory::{
-    rust_full_source_fingerprint, rust_selector_inputs_fingerprint_for_cache, should_skip_dir,
+    rust_full_source_fingerprint, rust_selector_inputs_fingerprint_for_cache,
     watch_support_gitignore, workspace_source_inventory_fingerprint_for_cache,
 };
 #[path = "workspace_selector_cache_lookup.rs"]
@@ -97,14 +97,6 @@ fn identity_cache_name(
     }
     let stem = name.strip_suffix(".json").unwrap_or(name);
     format!("{stem}.{h:016x}.json")
-}
-
-pub(crate) fn workspace_lang_file_fingerprints(
-    repo_root: &Path,
-    ignore: &[String],
-) -> io::Result<(String, String)> {
-    let fps = workspace_lang_fingerprints(repo_root, ignore)?;
-    Ok((fps.python, fps.rust))
 }
 
 pub(super) fn workspace_lang_fingerprints(

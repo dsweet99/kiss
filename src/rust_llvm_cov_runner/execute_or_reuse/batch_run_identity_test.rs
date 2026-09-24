@@ -466,7 +466,11 @@ fn instrumented_depot_likely_fresh_accepts_newer_dep_binaries() {
     let source_root = tmp.path().join("src_root");
     let build_target = tmp.path().join("target");
     fs::create_dir_all(source_root.join("src")).unwrap();
-    fs::write(source_root.join("Cargo.toml"), "[package]\nname='x'\nversion='0.1.0'\nedition='2021'\n").unwrap();
+    fs::write(
+        source_root.join("Cargo.toml"),
+        "[package]\nname='x'\nversion='0.1.0'\nedition='2021'\n",
+    )
+    .unwrap();
     fs::write(source_root.join("src").join("lib.rs"), "pub fn x() {}\n").unwrap();
     let deps = build_target.join("debug").join("deps");
     fs::create_dir_all(&deps).unwrap();
@@ -490,7 +494,10 @@ fn instrumented_depot_likely_fresh_accepts_newer_dep_binaries() {
         .unwrap()
         .set_modified(new);
     assert!(instrumented_depot_likely_fresh(&source_root, &build_target));
-    assert!(!instrumented_depot_likely_fresh(&source_root, &tmp.path().join("missing")));
+    assert!(!instrumented_depot_likely_fresh(
+        &source_root,
+        &tmp.path().join("missing")
+    ));
     assert_eq!(path_size_bytes(&tmp.path().join("no-such")).unwrap_or(0), 0);
 }
 
@@ -500,12 +507,19 @@ fn instrumented_depot_likely_fresh_rejects_object_files_and_stale_bins() {
     let source_root = tmp.path().join("src_root");
     let build_target = tmp.path().join("target");
     fs::create_dir_all(source_root.join("src")).unwrap();
-    fs::write(source_root.join("Cargo.toml"), "[package]\nname='y'\nversion='0.1.0'\nedition='2021'\n").unwrap();
+    fs::write(
+        source_root.join("Cargo.toml"),
+        "[package]\nname='y'\nversion='0.1.0'\nedition='2021'\n",
+    )
+    .unwrap();
     fs::write(source_root.join("src").join("lib.rs"), "pub fn y() {}\n").unwrap();
     let deps = build_target.join("debug").join("deps");
     fs::create_dir_all(&deps).unwrap();
     fs::write(deps.join("y-bbbb.rlib"), b"obj").unwrap();
-    assert!(!instrumented_depot_likely_fresh(&source_root, &build_target));
+    assert!(!instrumented_depot_likely_fresh(
+        &source_root,
+        &build_target
+    ));
     let bin = deps.join("y-bbbb");
     fs::write(&bin, b"bin").unwrap();
     let old = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(5);
@@ -520,5 +534,8 @@ fn instrumented_depot_likely_fresh_rejects_object_files_and_stale_bins() {
         .open(source_root.join("src").join("lib.rs"))
         .unwrap()
         .set_modified(new);
-    assert!(!instrumented_depot_likely_fresh(&source_root, &build_target));
+    assert!(!instrumented_depot_likely_fresh(
+        &source_root,
+        &build_target
+    ));
 }

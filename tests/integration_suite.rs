@@ -122,6 +122,8 @@ mod regression_stats_grouped_unit_test_runtime;
 mod regression_stats_summary_headers_and_coverage;
 #[path = "cases/regression_stats_summary_uses_cache.rs"]
 mod regression_stats_summary_uses_cache;
+#[path = "cases/regression_test_sigint_caching.rs"]
+mod regression_test_sigint_caching;
 #[path = "cases/rules_config_integration.rs"]
 mod rules_config_integration;
 #[path = "cases/rust_counts_violations.rs"]
@@ -140,8 +142,6 @@ mod watch_client;
 mod watch_client_violations;
 #[path = "cases/watch_paths.rs"]
 mod watch_paths;
-#[path = "cases/regression_test_sigint_caching.rs"]
-mod regression_test_sigint_caching;
 #[path = "cases/watch_sigint.rs"]
 mod watch_sigint;
 #[path = "cases/watch_startup_order.rs"]

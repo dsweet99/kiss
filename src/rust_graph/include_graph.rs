@@ -188,7 +188,9 @@ mod include_graph_tests {
     fn source_may_have_include_macro_accepts_include_bang() {
         assert!(source_may_have_include_macro("include!(\"child.rs\");"));
         assert!(source_may_have_include_macro("include ! (\"child.rs\");"));
-        assert!(source_may_have_include_macro("::core::include!(\"child.rs\");"));
+        assert!(source_may_have_include_macro(
+            "::core::include!(\"child.rs\");"
+        ));
     }
 
     #[test]

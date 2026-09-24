@@ -27,9 +27,7 @@ struct HostToolVersionsEntry {
 fn host_tool_versions_cache_path() -> Option<PathBuf> {
     let base = std::env::var_os("XDG_CACHE_HOME")
         .map(PathBuf::from)
-        .or_else(|| {
-            std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache"))
-        })?;
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))?;
     Some(base.join("kiss").join("rust_tool_versions.json"))
 }
 
@@ -97,11 +95,16 @@ pub(super) fn write_host_cached_rust_tool_identity(
         ".rust_tool_versions.{}.tmp",
         kiss::kiss_publication_barrier::unique_process_suffix()
     ));
-    kiss::kiss_publication_barrier::publish_atomically("host_rust_tool_versions", &path, &tmp, |file| {
-        serde_json::to_writer(&mut *file, &cached).map_err(std::io::Error::other)?;
-        file.write_all(b"\n")?;
-        Ok(())
-    })
+    kiss::kiss_publication_barrier::publish_atomically(
+        "host_rust_tool_versions",
+        &path,
+        &tmp,
+        |file| {
+            serde_json::to_writer(&mut *file, &cached).map_err(std::io::Error::other)?;
+            file.write_all(b"\n")?;
+            Ok(())
+        },
+    )
 }
 
 fn read_host_cache_file(path: &Path) -> Option<HostToolVersionsCache> {

@@ -7,8 +7,8 @@ use crate::test_runner::check_line_coverage::repository_root_for_universe;
 
 mod rust_durations;
 pub(crate) use rust_durations::clear_rust_duration_pairs_memo;
-pub(super) use rust_durations::load_rust_population_max_duration;
 use rust_durations::load_rust_duration_pairs;
+pub(super) use rust_durations::load_rust_population_max_duration;
 #[cfg(test)]
 pub(crate) use rust_durations::set_pairs_for_tests;
 
@@ -94,7 +94,10 @@ fn load_python_timings(repo_root: &Path, pytest_args: &[String]) -> Option<Vec<U
 }
 
 fn load_rust_timings(repo_root: &Path) -> Option<Vec<UnitTestTiming>> {
-    Some(map_rust_timing_pairs(repo_root, load_rust_duration_pairs(repo_root)?))
+    Some(map_rust_timing_pairs(
+        repo_root,
+        load_rust_duration_pairs(repo_root)?,
+    ))
 }
 
 fn map_rust_timing_pairs(
@@ -109,15 +112,11 @@ fn map_rust_timing_pairs(
         .into_iter()
         .map(|(selector, duration)| UnitTestTiming {
             language: Language::Rust,
-            selector: report_ids
-                .get(&selector)
-                .cloned()
-                .unwrap_or(selector),
+            selector: report_ids.get(&selector).cloned().unwrap_or(selector),
             duration,
         })
         .collect()
 }
-
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct RuntimeGateViolation {

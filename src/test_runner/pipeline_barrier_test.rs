@@ -13,12 +13,14 @@ static BARRIER_STDOUT: Mutex<()> = Mutex::new(());
 fn run_args(dry_run: bool, lang: Option<Language>) -> crate::test_runner::RunTestCmdArgs<'static> {
     crate::test_runner::RunTestCmdArgs {
         invocation: crate::bin_cli::args::TestInvocation::All,
+        target_request: crate::test_runner::target_request::workspace_request(lang, &[]),
         main_branch_cli: None,
         base_branch_cli: None,
         dry_run,
         force_rerun: false,
         force_bad: false,
         metrics: false,
+        coverage_all: false,
         jobs: 1,
         extra: &[],
         python_extra: &[],
@@ -60,8 +62,8 @@ fn status_printers_use_emit_test_progress() {
     assert!(!rslip.contains("writeln!(out,"));
     assert!(!rslip.contains("write_all(body"));
     let witness = include_str!("lang_iface/witness_summary.rs");
-    assert!(witness.contains("emit_test_progress(&format!(\"{label} (cached)"));
-    assert!(!witness.contains("println!(\"{label} (cached)"));
+    assert!(witness.contains("emit_test_progress(&format!(\"{label} {count} selectors"));
+    assert!(!witness.contains("println!(\"{label} {count} selectors"));
     let dry = include_str!("run_logic/language_executor.rs");
     assert!(dry.contains("emit_test_progress(&line)"));
 }
@@ -93,7 +95,10 @@ fn covering_rust_running_appears_before_blocked_planner_returns() {
     let done = Arc::clone(&finished);
     let out = crate::test_runner::capture_stdout::capture_stdout(|| {
         let job = std::thread::spawn(move || {
-            let _ = crate::test_runner::run_test(run_args(true, Some(Language::Rust)));
+            let _ = crate::test_runner::pipeline::run_overlapped_test(
+                &run_args(true, Some(Language::Rust)),
+                Instant::now(),
+            );
             done.store(true, Ordering::SeqCst);
         });
         wait_flag(&reached);
@@ -155,7 +160,10 @@ fn dry_run_omits_rust_selectors_until_python_covering_finishes() {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     with_stdout_file(&log, || {
         let job = std::thread::spawn(move || {
-            let _ = crate::test_runner::run_test(run_args(true, None));
+            let _ = crate::test_runner::pipeline::run_overlapped_test(
+                &run_args(true, None),
+                Instant::now(),
+            );
         });
         wait_flag(&rust_started);
         wait_log_contains(&log, "kiss test: Ran covering_rust");

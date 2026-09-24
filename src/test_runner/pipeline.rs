@@ -19,13 +19,14 @@ use super::planned_selectors::{
     PlannedSelectors, SelectorRunOptions, should_force_cold_initialization,
 };
 use super::run_logic::{finish_joined_run, merge_language_planned, print_joined_dry_run};
-use crate::bin_cli::args::TestInvocation;
-use crate::test_git::TestChangeMode;
+use crate::test_runner::target_request::{
+    TargetFocus, change_mode_from_focus, operand_raws, request_from_run_args,
+};
 
 enum SharedKind {
     Change(VcsWorkspace),
     All { cache: Option<AllWorkspaceCache> },
-    Targets,
+    Targets(Vec<String>),
 }
 
 pub(super) struct SharedPrefix {
@@ -88,7 +89,7 @@ fn merge_and_cache_planned(
         python,
         rust,
     );
-    if matches!(a.invocation, TestInvocation::All)
+    if crate::test_runner::target_request::is_workspace_run(a)
         && a.lang_filter.is_none()
         && planned.workspace_files_fingerprint.is_none()
         && (!planned.sel.python.is_empty() || !planned.sel.rust.is_empty())
@@ -128,8 +129,9 @@ fn plan_shared_prefix(
     a: &RunTestCmdArgs<'_>,
     repo_root: &std::path::Path,
 ) -> Result<SharedPrefix, String> {
-    match &a.invocation {
-        TestInvocation::Commit | TestInvocation::Base | TestInvocation::Main => {
+    let request = request_from_run_args(a);
+    match &request.focus {
+        TargetFocus::Git(_) => {
             let req = change_request(a);
             let ws = plan_vcs_workspace_at(&req, repo_root.to_path_buf())?;
             let cold_init = should_force_cold_initialization(a, &ws.repo_root);
@@ -146,8 +148,11 @@ fn plan_shared_prefix(
                 cold_init,
             })
         }
-        TestInvocation::All => plan_all_or_targets_prefix(a, repo_root, None),
-        TestInvocation::Targets(targets) => plan_all_or_targets_prefix(a, repo_root, Some(targets)),
+        TargetFocus::Workspace => plan_all_or_targets_prefix(a, repo_root, None),
+        TargetFocus::Operands(_) => {
+            let targets = operand_raws(&request.focus).unwrap_or_default();
+            plan_all_or_targets_prefix(a, repo_root, Some(&targets))
+        }
     }
 }
 
@@ -160,17 +165,16 @@ fn plan_all_or_targets_prefix(
     if matches!(a.lang_filter, Some(Language::Rust)) {
         super::rust_llvm_cov::validate_rust_extra_args(a.extra)?;
     }
-    let kind = if targets.is_none() {
-        SharedKind::All {
+    let kind = match targets {
+        None => SharedKind::All {
             cache: super::plan::load_all_workspace_cache(
                 repo_root,
                 &ignore,
                 a.python_extra,
                 a.lang_filter,
             ),
-        }
-    } else {
-        SharedKind::Targets
+        },
+        Some(targets) => SharedKind::Targets(targets.to_vec()),
     };
     let python_has_cached_work =
         !matches!(&kind, SharedKind::All { cache: Some(cache) } if cache.py.is_empty());
@@ -255,10 +259,7 @@ pub(super) fn cover_language(
             &a.gate_config,
             cache.as_ref(),
         ),
-        SharedKind::Targets => {
-            let TestInvocation::Targets(targets) = &a.invocation else {
-                return Err("error: kiss test: missing targets".to_string());
-            };
+        SharedKind::Targets(targets) => {
             let thread_targets = cover_thread_targets(targets, language, a.lang_filter)?;
             if thread_targets.is_empty() {
                 return Ok(super::empty_planned(
@@ -279,12 +280,7 @@ pub(super) fn cover_language(
 }
 
 fn change_request<'a>(a: &'a RunTestCmdArgs<'a>) -> PlanSelectorsRequest<'a> {
-    let mode = match a.invocation {
-        TestInvocation::Commit => TestChangeMode::Commit,
-        TestInvocation::Base => TestChangeMode::Base,
-        TestInvocation::Main => TestChangeMode::Main,
-        TestInvocation::All | TestInvocation::Targets(_) => TestChangeMode::Commit,
-    };
+    let mode = change_mode_from_focus(&request_from_run_args(a).focus);
     PlanSelectorsRequest {
         mode,
         main_branch_cli: a.main_branch_cli,

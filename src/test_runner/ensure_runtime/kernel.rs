@@ -280,12 +280,8 @@ fn run_misses_and_maybe_publish(
     witness: Option<crate::test_runner::lang_iface::ExecutionWitness>,
     misses: &[String],
 ) -> Result<LanguageEnsureResult, String> {
-    let cached_selectors = cached_selectors_for_run(
-        module.language(),
-        planned,
-        misses,
-        witness.as_ref(),
-    );
+    let cached_selectors =
+        cached_selectors_for_run(module.language(), planned, misses, witness.as_ref());
     if !cached_selectors.is_empty()
         && let Some(w) = witness.as_ref()
     {

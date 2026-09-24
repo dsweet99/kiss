@@ -1,5 +1,7 @@
 pub(super) fn nul_paths(out: &str) -> impl Iterator<Item = String> + '_ {
-    out.split('\0').filter(|s| !s.is_empty()).map(str::to_string)
+    out.split('\0')
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
 }
 
 pub(super) fn plus_line_path(rest: &str) -> Option<String> {
@@ -80,10 +82,7 @@ mod tests {
 
     #[test]
     fn plus_line_path_strips_tab_and_unquotes() {
-        assert_eq!(
-            plus_line_path("b/my file.py\t"),
-            Some("my file.py".into())
-        );
+        assert_eq!(plus_line_path("b/my file.py\t"), Some("my file.py".into()));
         assert_eq!(
             plus_line_path("\"b/tab\\tfile.py\""),
             Some("tab\tfile.py".into())

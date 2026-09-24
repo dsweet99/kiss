@@ -26,7 +26,19 @@ fn coverage_snapshot_path(cache_root: &Path) -> PathBuf {
     cache_root.join("coverage_snapshot.json")
 }
 
+pub(crate) fn python_coverage_snapshot_generation_id(repo_root: &Path) -> Option<String> {
+    let file = load_snapshot_file(repo_root)?;
+    Some(format!(
+        "{}:{}:{}",
+        file.schema_version, file.input_fingerprint, file.entries_fingerprint
+    ))
+}
+
 pub(crate) fn try_load_python_coverage_snapshot(repo_root: &Path) -> Option<CoveredLinesMap> {
+    Some(load_snapshot_file(repo_root)?.covered_lines)
+}
+
+fn load_snapshot_file(repo_root: &Path) -> Option<CoverageSnapshotFile> {
     let manifest = read_python_population_manifest(repo_root)?;
     if manifest.schema_version != POPULATION_SCHEMA_VERSION {
         return None;
@@ -42,7 +54,7 @@ pub(crate) fn try_load_python_coverage_snapshot(repo_root: &Path) -> Option<Cove
     {
         return None;
     }
-    Some(file.covered_lines)
+    Some(file)
 }
 
 pub(crate) fn write_python_coverage_snapshot(
@@ -117,6 +129,8 @@ mod tests {
         }
         write_python_coverage_snapshot(repo, &BTreeMap::new()).unwrap();
         assert!(try_load_python_coverage_snapshot(repo).is_some());
+        let id = python_coverage_snapshot_generation_id(repo).expect("snapshot id");
+        assert!(id.contains(COVERAGE_SNAPSHOT_SCHEMA), "{id}");
         std::fs::write(repo.join("test_app.py"), "def test_a(): pass  # changed\n").unwrap();
         assert!(try_load_python_coverage_snapshot(repo).is_none());
     }

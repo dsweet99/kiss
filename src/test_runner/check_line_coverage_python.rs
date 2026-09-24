@@ -242,12 +242,10 @@ mod tests {
             },
         });
         std::fs::write(&entry_path, serde_json::to_vec(&entry).unwrap()).unwrap();
-        let scanned = super::scanned_python_coverage_for_selectors(
-            repo,
-            &["app.py::test_x".into()],
-        )
-        .expect("scan")
-        .expect("found");
+        let scanned =
+            super::scanned_python_coverage_for_selectors(repo, &["app.py::test_x".into()])
+                .expect("scan")
+                .expect("found");
         assert_eq!(
             scanned.get("app.py").cloned().unwrap_or_default(),
             BTreeSet::from([1])

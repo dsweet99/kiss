@@ -311,9 +311,7 @@ fn rust_coverage_batch_dry_run_lines_render_one_nextest_batch() {
     let expected_build_jobs = kiss::rust_llvm_cov_runner::effective_coverage_build_jobs(8);
     assert_eq!(lines[0], "RUST BATCH selectors=2 jobs=8");
     assert!(lines[1].starts_with("cargo llvm-cov nextest"));
-    assert!(
-        lines[1].contains(&format!("'--build-jobs' {expected_build_jobs}"))
-    );
+    assert!(lines[1].contains(&format!("'--build-jobs' {expected_build_jobs}")));
     assert!(lines[1].contains("'--test-threads' 8"));
     assert!(lines[1].contains("'--message-format-version' 0.1"));
     assert!(!lines[1].contains("llvm-cov test"));

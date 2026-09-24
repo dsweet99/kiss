@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 
-use crate::bin_cli::args::TestInvocation;
+use crate::test_runner::target_request::TargetFocus;
 
 use super::filter::{config_rel_for_watch, path_should_enter_watch_queue};
 use super::roots::{WatchRegistration, WatchRootKind};
@@ -42,16 +42,16 @@ impl NativeWatchEventSource {
     pub(crate) fn register(
         registrations: &[WatchRegistration],
         repo_root: &Path,
-        invocation: &TestInvocation,
+        focus: &TargetFocus,
         config_path: &Path,
     ) -> Result<Self, String> {
         let (tx, rx) = mpsc::channel();
         let repo_root = repo_root.to_path_buf();
-        let invocation = invocation.clone();
+        let focus = focus.clone();
         let watched_config = config_rel_for_watch(&repo_root, config_path);
         let mut watcher = RecommendedWatcher::new(
             move |res| {
-                if event_should_enter_watch_queue(&res, &repo_root, &invocation, &watched_config) {
+                if event_should_enter_watch_queue(&res, &repo_root, &focus, &watched_config) {
                     let _ = tx.send(res);
                 }
             },
@@ -105,21 +105,19 @@ impl WatchEventSource for NativeWatchEventSource {
 pub(crate) fn event_should_enter_watch_queue(
     res: &Result<notify::Event, notify::Error>,
     repo_root: &Path,
-    invocation: &TestInvocation,
+    focus: &TargetFocus,
     watched_config: &Path,
 ) -> bool {
     match res {
         Err(_) => true,
-        Ok(event) => {
-            notify_event_should_enter_watch_queue(event, repo_root, invocation, watched_config)
-        }
+        Ok(event) => notify_event_should_enter_watch_queue(event, repo_root, focus, watched_config),
     }
 }
 
 fn notify_event_should_enter_watch_queue(
     event: &notify::Event,
     repo_root: &Path,
-    invocation: &TestInvocation,
+    focus: &TargetFocus,
     watched_config: &Path,
 ) -> bool {
     if event.need_rescan() {
@@ -134,17 +132,17 @@ fn notify_event_should_enter_watch_queue(
     event
         .paths
         .iter()
-        .any(|path| queueable_watch_path(path, repo_root, invocation, watched_config))
+        .any(|path| queueable_watch_path(path, repo_root, focus, watched_config))
 }
 
 fn queueable_watch_path(
     path: &Path,
     repo_root: &Path,
-    invocation: &TestInvocation,
+    focus: &TargetFocus,
     watched_config: &Path,
 ) -> bool {
     let rel = path.strip_prefix(repo_root).unwrap_or(path);
-    path_should_enter_watch_queue(rel, invocation, watched_config)
+    path_should_enter_watch_queue(rel, focus, watched_config)
 }
 
 pub(crate) fn normalize_notify_result(
@@ -210,7 +208,7 @@ impl WatchEventSource for FakeWatchEventSource {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bin_cli::args::TestInvocation;
+    use crate::test_runner::target_request::GitFocus;
     use notify::Event;
 
     #[test]
@@ -245,7 +243,7 @@ mod tests {
         assert!(!event_should_enter_watch_queue(
             &Ok(event),
             Path::new("/repo"),
-            &TestInvocation::All,
+            &TargetFocus::Workspace,
             Path::new(".kissconfig"),
         ));
     }
@@ -257,7 +255,7 @@ mod tests {
         assert!(!event_should_enter_watch_queue(
             &Ok(event),
             Path::new("/repo"),
-            &TestInvocation::All,
+            &TargetFocus::Workspace,
             Path::new(".kissconfig"),
         ));
     }
@@ -271,7 +269,7 @@ mod tests {
         assert!(event_should_enter_watch_queue(
             &Ok(event),
             Path::new("/repo"),
-            &TestInvocation::All,
+            &TargetFocus::Workspace,
             Path::new(".kissconfig"),
         ));
     }
@@ -285,7 +283,27 @@ mod tests {
         assert!(event_should_enter_watch_queue(
             &Ok(event),
             Path::new("/repo"),
-            &TestInvocation::All,
+            &TargetFocus::Workspace,
+            Path::new(".kissconfig"),
+        ));
+    }
+
+    #[test]
+    fn commit_focus_queues_git_head_workspace_does_not() {
+        let event = Event::new(notify::EventKind::Modify(notify::event::ModifyKind::Data(
+            notify::event::DataChange::Any,
+        )))
+        .add_path(PathBuf::from("/repo/.git/HEAD"));
+        assert!(!event_should_enter_watch_queue(
+            &Ok(event.clone()),
+            Path::new("/repo"),
+            &TargetFocus::Workspace,
+            Path::new(".kissconfig"),
+        ));
+        assert!(event_should_enter_watch_queue(
+            &Ok(event),
+            Path::new("/repo"),
+            &TargetFocus::Git(GitFocus::Commit),
             Path::new(".kissconfig"),
         ));
     }
@@ -297,7 +315,7 @@ mod tests {
         assert!(!event_should_enter_watch_queue(
             &Ok(event),
             Path::new("/repo"),
-            &TestInvocation::All,
+            &TargetFocus::Workspace,
             Path::new(".kissconfig"),
         ));
     }
@@ -311,7 +329,7 @@ mod tests {
         assert!(event_should_enter_watch_queue(
             &Ok(event),
             Path::new("/repo"),
-            &TestInvocation::All,
+            &TargetFocus::Workspace,
             Path::new("custom.toml"),
         ));
     }
@@ -331,7 +349,7 @@ mod tests {
         assert!(event_should_enter_watch_queue(
             &Ok(event),
             &repo,
-            &TestInvocation::All,
+            &TargetFocus::Workspace,
             &watched_config,
         ));
     }
@@ -347,7 +365,7 @@ mod tests {
         let mut src = NativeWatchEventSource::register(
             &regs,
             tmp.path(),
-            &TestInvocation::All,
+            &TargetFocus::Workspace,
             Path::new(".kissconfig"),
         )
         .unwrap();
@@ -370,7 +388,7 @@ mod tests {
         let mut src = NativeWatchEventSource::register(
             &regs,
             tmp.path(),
-            &TestInvocation::All,
+            &TargetFocus::Workspace,
             Path::new(".kissconfig"),
         )
         .unwrap();

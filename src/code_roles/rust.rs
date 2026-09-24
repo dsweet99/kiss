@@ -10,10 +10,10 @@ use super::cfg_pred::{AtomInterner, CfgPred};
 use super::error::RoleBuildError;
 use super::facts::{FileRoleFacts, RoleRange};
 use super::index::SourceRoleIndex;
-use super::rust_cargo::{cargo_roots_for_files, workspace_roots_at, CargoRoot};
-use super::rust_include_parse::{parse_include_source, IncludeAst, IncludeKind};
+use super::rust_cargo::{CargoRoot, cargo_roots_for_files, workspace_roots_at};
+use super::rust_include_parse::{IncludeAst, IncludeKind, parse_include_source};
 use super::rust_modules::resolve_external_mod;
-use super::rust_walk::{walk_file, WalkOutput};
+use super::rust_walk::{WalkOutput, walk_file};
 use super::span::SourceSpan;
 use super::sweep::normalize_ranges;
 use super::types::CodeContextSet;
@@ -66,13 +66,7 @@ pub fn classify_rust(
             continue;
         }
         process_work_item(
-            item,
-            &by_path,
-            &mut atoms,
-            &mut acc,
-            &mut base,
-            &mut queue,
-            walk_mode,
+            item, &by_path, &mut atoms, &mut acc, &mut base, &mut queue, walk_mode,
         )?;
     }
     Ok(finish_rust_index(&paths, acc, base))

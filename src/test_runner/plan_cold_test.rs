@@ -237,8 +237,7 @@ fn python_all_plan_keeps_provided_universe_and_requires_population_without_index
         "tests/test_a.py::test_a".into(),
         "tests/test_b.py::test_b".into(),
     ];
-    let (sel, required) =
-        super::plan_vcs::python_all_plan(tmp.path(), &[], provided.clone(), true);
+    let (sel, required) = super::plan_vcs::python_all_plan(tmp.path(), &[], provided.clone(), true);
     assert_eq!(sel, provided);
     assert!(required);
     let (skipped, skip_required) =
@@ -438,12 +437,9 @@ fn all_mode_ordinary_edit_keeps_universe_without_population() {
         !planned.population_required.rust,
         "ordinary lib.rs edit must not require a full Rust population"
     );
-    let misses = crate::test_runner::lang_rust::rust_source_delta_misses(
-        tmp.path(),
-        &planned.sel.rust,
-        &[],
-    )
-    .expect("source-delta misses");
+    let misses =
+        crate::test_runner::lang_rust::rust_source_delta_misses(tmp.path(), &planned.sel.rust, &[])
+            .expect("source-delta misses");
     assert!(
         misses.iter().any(|s| s.contains("a_ok")),
         "changed line must miss a_ok: {misses:?}"

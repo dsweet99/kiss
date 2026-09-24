@@ -10,6 +10,8 @@ use super::reload::{WatchLiveConfig, WatchReloadSeed};
 use super::session_cycle::{CycleOutcome, EXIT_INTERRUPTED, WatchCycleCtx, run_one_watch_cycle};
 #[cfg(not(unix))]
 use super::session_cycle::{NudgeReplyMsg, NudgeRequest};
+#[cfg(test)]
+pub(super) use super::session_idle::queued_target_request;
 use super::session_idle::{
     LastReplies, QueuedCycle, coalesce_nudges, force_ready_if_pending, reply_all_queued,
     try_reply_idle_nudge, wait_until_next_cycle,
@@ -110,18 +112,13 @@ where
 {
     #[cfg(test)]
     let _serial = watch_loop_serial();
-    let mut filter = WatchPathFilter::build_with_config(
-        repo_root,
-        &live.ignore,
-        live.lang_filter,
-        &live.invocation,
-        live.watched_config_path(),
-    );
+    let mut filter = live.path_filter(repo_root);
     let mut machine = SettleMachine::new(live.settle);
     let mut queued: Option<QueuedCycle> = None;
     let mut last_reply = LastReplies::for_session(repo_root, &live);
     let mut suite = kiss::rust_llvm_cov_runner::WatchSuiteReport::default();
     let mut initial = true;
+    let mut file_refresh = false;
     loop {
         if !initial {
             clear_python_collect_memo();
@@ -151,7 +148,7 @@ where
             suite: &mut suite,
             run_cycle: &mut run_cycle,
             run_cov: &mut run_cov,
-            reuse_suite,
+            reuse_suite: reuse_suite && !file_refresh,
         }) {
             CycleOutcome::Interrupted => {
                 coalesce_nudges(nudge_rx, &mut queued);
@@ -191,6 +188,7 @@ where
         ) {
             return code;
         }
+        file_refresh = queued.is_none();
     }
 }
 

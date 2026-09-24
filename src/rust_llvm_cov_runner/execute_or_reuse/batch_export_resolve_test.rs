@@ -292,7 +292,10 @@ fn resolve_objects_for_profdata_uses_profile_ids_when_seeds_do_not_overlap() {
         llvm_cov,
         llvm_readobj,
     };
-    let profdata = tmp.path().join("instances").join("test_show_config.profdata");
+    let profdata = tmp
+        .path()
+        .join("instances")
+        .join("test_show_config.profdata");
     std::fs::create_dir_all(profdata.parent().unwrap()).unwrap();
     std::fs::write(&profdata, b"profile").unwrap();
     let catalog = vec![catalog_bin.clone()];

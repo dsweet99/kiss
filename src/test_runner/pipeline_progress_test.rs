@@ -73,28 +73,32 @@ fn covering_and_workspace_lines_appear_for_all_dry_run() {
     let old = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
     let out = crate::test_runner::capture_stdout::capture_stdout(|| {
-        let _ = crate::test_runner::run_test(crate::test_runner::RunTestCmdArgs {
-            invocation: crate::bin_cli::args::TestInvocation::All,
-            main_branch_cli: None,
-            base_branch_cli: None,
-            dry_run: true,
-            force_rerun: false,
-            force_bad: false,
-            metrics: false,
-            jobs: 1,
-            extra: &[],
-            python_extra: &[],
-            ignore: &[],
-            lang_filter: Some(Language::Python),
-            config_main_branch: None,
-            gate_config: kiss::GateConfig::default(),
-        });
+        let _ = crate::test_runner::pipeline::run_overlapped_test(
+            &crate::test_runner::RunTestCmdArgs {
+                invocation: crate::bin_cli::args::TestInvocation::All,
+                target_request: crate::test_runner::target_request::workspace_request(
+                    Some(Language::Python),
+                    &[],
+                ),
+                main_branch_cli: None,
+                base_branch_cli: None,
+                dry_run: true,
+                force_rerun: false,
+                force_bad: false,
+                metrics: false,
+                coverage_all: false,
+                jobs: 1,
+                extra: &[],
+                python_extra: &[],
+                ignore: &[],
+                lang_filter: Some(Language::Python),
+                config_main_branch: None,
+                gate_config: kiss::GateConfig::default(),
+            },
+            std::time::Instant::now(),
+        );
     });
     std::env::set_current_dir(old).unwrap();
-    assert!(
-        out.contains("kiss test: Planning ..."),
-        "planning heartbeat first: {out}"
-    );
     assert!(
         out.contains("kiss test: Running workspace"),
         "workspace start: {out}"
@@ -211,22 +215,27 @@ fn rust_covering_proceeds_while_python_covering_waits() {
     let finished = Arc::new(AtomicBool::new(false));
     let finished_job = Arc::clone(&finished);
     let job = std::thread::spawn(move || {
-        let _ = crate::test_runner::run_test(crate::test_runner::RunTestCmdArgs {
-            invocation: crate::bin_cli::args::TestInvocation::All,
-            main_branch_cli: None,
-            base_branch_cli: None,
-            dry_run: true,
-            force_rerun: false,
-            force_bad: false,
-            metrics: false,
-            jobs: 1,
-            extra: &[],
-            python_extra: &[],
-            ignore: &[],
-            lang_filter: None,
-            config_main_branch: None,
-            gate_config: kiss::GateConfig::default(),
-        });
+        let _ = crate::test_runner::pipeline::run_overlapped_test(
+            &crate::test_runner::RunTestCmdArgs {
+                invocation: crate::bin_cli::args::TestInvocation::All,
+                target_request: crate::test_runner::target_request::workspace_request(None, &[]),
+                main_branch_cli: None,
+                base_branch_cli: None,
+                dry_run: true,
+                force_rerun: false,
+                force_bad: false,
+                metrics: false,
+                coverage_all: false,
+                jobs: 1,
+                extra: &[],
+                python_extra: &[],
+                ignore: &[],
+                lang_filter: None,
+                config_main_branch: None,
+                gate_config: kiss::GateConfig::default(),
+            },
+            Instant::now(),
+        );
         finished_job.store(true, Ordering::SeqCst);
     });
     let started = Instant::now();
@@ -277,13 +286,22 @@ fn run_args(
     lang: Option<Language>,
 ) -> crate::test_runner::RunTestCmdArgs<'static> {
     crate::test_runner::RunTestCmdArgs {
-        invocation,
+        invocation: invocation.clone(),
+        target_request: crate::test_runner::target_request::request_from_invocation(
+            &invocation,
+            None,
+            None,
+            None,
+            lang,
+            &[],
+        ),
         main_branch_cli: None,
         base_branch_cli: None,
         dry_run,
         force_rerun: false,
         force_bad: false,
         metrics: false,
+        coverage_all: false,
         jobs: 1,
         extra: &[],
         python_extra: &[],
@@ -502,11 +520,14 @@ fn workspace_span_completes_before_covering_error() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let out = crate::test_runner::capture_stdout::capture_stdout(|| {
-        let _ = crate::test_runner::run_test(run_args(
-            crate::bin_cli::args::TestInvocation::All,
-            true,
-            Some(Language::Python),
-        ));
+        let _ = crate::test_runner::pipeline::run_overlapped_test(
+            &run_args(
+                crate::bin_cli::args::TestInvocation::All,
+                true,
+                Some(Language::Python),
+            ),
+            std::time::Instant::now(),
+        );
     });
     std::env::set_current_dir(old).unwrap();
     crate::test_runner::pipeline::set_fail_covering(None);

@@ -88,8 +88,7 @@ fn emit_finalized_outcomes_maps_protocol_batch_missing_to_timeout() {
 #[cfg(unix)]
 #[test]
 fn emit_finalized_outcomes_reports_leftover_pipe_death_as_fail() {
-    let selector =
-        "tests/fast/networking/test_contract_cache_load_tester.py::test_enqueue_trial";
+    let selector = "tests/fast/networking/test_contract_cache_load_tester.py::test_enqueue_trial";
     let gate = kiss::GateConfig {
         max_unit_test_seconds: vec![("*".into(), 7.0)],
         ..kiss::GateConfig::default()
@@ -105,11 +104,7 @@ fn emit_finalized_outcomes_reports_leftover_pipe_death_as_fail() {
             ))
         };
         let (stdout, stderr) = capture_stdout_stderr(|| {
-            emit_finalized_outcomes(
-                vec![(0, Err(protocol()))],
-                &[selector.to_string()],
-                &gate,
-            );
+            emit_finalized_outcomes(vec![(0, Err(protocol()))], &[selector.to_string()], &gate);
         });
         let error_line = format_rslip_error(protocol());
         assert!(
@@ -585,11 +580,11 @@ def test_b():\n    assert True\n",
         );
     });
     assert!(
-        hit_out.contains("PASS (cached): test_sample.py::test_a")
-            && hit_out.contains("PASS (cached): test_sample.py::test_b"),
+        hit_out.contains("PASS test_sample.py::test_a")
+            && hit_out.contains("PASS test_sample.py::test_b"),
         "cache hits must print via prepare-time SelectorFinalized: {hit_out}"
     );
-    assert_eq!(hit_out.matches("PASS (cached):").count(), 2);
+    assert_eq!(hit_out.matches("PASS ").count(), 2);
 }
 
 #[test]
@@ -969,11 +964,11 @@ fn cached_hit_dump_prints_time_gate_timeout() {
         );
     });
     assert!(
-        out.contains("TIMEOUT (cached): t.py::cached_over"),
+        out.contains("TIMEOUT t.py::cached_over"),
         "cache-hit dump must print effective TIMEOUT, got:\n{out}"
     );
     assert!(
-        !out.contains("PASS (cached): t.py::cached_over"),
+        !out.contains("PASS t.py::cached_over"),
         "cache-hit dump must not print raw PASS when over time limit, got:\n{out}"
     );
 }

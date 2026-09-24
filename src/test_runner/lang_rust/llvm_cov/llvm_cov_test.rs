@@ -436,14 +436,9 @@ fn check_aggregate_population_can_return_cached_summary() {
     );
     std::fs::write(&binary_path, b"binary-b").unwrap();
     assert!(
-        cached_summary_from_check_aggregate_population(
-            tmp.path(),
-            &selectors,
-            &population,
-            &gate,
-        )
-        .unwrap()
-        .is_none()
+        cached_summary_from_check_aggregate_population(tmp.path(), &selectors, &population, &gate,)
+            .unwrap()
+            .is_none()
     );
     std::fs::write(&binary_path, b"binary-a").unwrap();
     let failed = kiss::rust_llvm_cov_runner::RustCovCacheEntry::from_outcome(
@@ -467,14 +462,9 @@ fn check_aggregate_population_can_return_cached_summary() {
     )
     .unwrap();
     assert!(
-        cached_summary_from_check_aggregate_population(
-            tmp.path(),
-            &selectors,
-            &population,
-            &gate,
-        )
-        .unwrap()
-        .is_none()
+        cached_summary_from_check_aggregate_population(tmp.path(), &selectors, &population, &gate,)
+            .unwrap()
+            .is_none()
     );
 
     let mut entry_backed = population;
@@ -567,14 +557,9 @@ fn check_aggregate_cached_summary_refuses_time_gate_violations() {
 
     let gate = kiss::GateConfig::default();
     assert!(
-        cached_summary_from_check_aggregate_population(
-            tmp.path(),
-            &selectors,
-            &population,
-            &gate,
-        )
-        .unwrap()
-        .is_none(),
+        cached_summary_from_check_aggregate_population(tmp.path(), &selectors, &population, &gate,)
+            .unwrap()
+            .is_none(),
         "over-limit check-aggregate durations must not warm-reuse as PASS"
     );
     let loose = kiss::GateConfig {

@@ -22,9 +22,10 @@ pub(in super::super) fn reconcile_inventory(
     let report_ids = if selectors.is_empty() {
         Default::default()
     } else {
-        match crate::test_runner::rust_report_id_cache::
-            rust_logical_to_kiss_test_ids_cached(&last.repo, args.ignore)
-        {
+        match crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
+            &last.repo,
+            args.ignore,
+        ) {
             Ok(ids) => ids,
             Err(err) => {
                 eprintln!("error: kiss test --watch: {err}");

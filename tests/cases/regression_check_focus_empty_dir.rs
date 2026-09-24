@@ -141,8 +141,10 @@ fn cli_check_requires_runtime_coverage_for_universe_languages_before_focus() {
          stdout:\n{stdout}\nstderr:\n{stderr}"
     );
     assert!(
-        stderr.contains("Rust runtime line coverage") && !stderr.contains("kiss test commit"),
-        "error should identify Rust runtime coverage without the old manual refresh instruction. \
+        (stdout.contains("VIOLATION:test_coverage")
+            || stderr.contains("Rust runtime line coverage"))
+            && !stderr.contains("kiss test commit"),
+        "error should identify missing coverage without the old manual refresh instruction. \
          stdout:\n{stdout}\nstderr:\n{stderr}"
     );
 }

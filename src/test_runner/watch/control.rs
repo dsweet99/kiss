@@ -16,7 +16,7 @@ use super::lock::{WatchLockGuard, watch_dir, watch_lock_path};
 pub(crate) const WATCH_SOCKET_TMP_DIR: &str = "/tmp/.kiss-watch";
 
 const SESSION_FILE_NAME: &str = "session.json";
-const MAX_FRAME_LEN: u32 = 256 * 1024;
+const MAX_FRAME_LEN: u32 = 16 * 1024 * 1024;
 pub(super) const CLIENT_SESSION_RETRY: Duration = Duration::from_millis(500);
 pub(super) const CLIENT_SESSION_SLEEP: Duration = Duration::from_millis(10);
 const REPLY_IMMEDIATE_WAIT: Duration = Duration::from_millis(250);
@@ -32,48 +32,73 @@ pub(crate) struct NudgeRequestMsg {
     #[serde(default)]
     pub metrics: bool,
     #[serde(default)]
-    pub invocation: NudgeInvocation,
-    #[serde(default)]
-    pub targets: Vec<String>,
-    #[serde(default)]
-    pub lang: Option<String>,
-    #[serde(default)]
-    pub ignore: Vec<String>,
-    #[serde(default)]
     pub extra: Vec<String>,
     #[serde(default)]
     pub python_extra: Vec<String>,
+    #[serde(default)]
+    pub target_request: crate::test_runner::target_request::TargetRequest,
+    #[serde(default)]
+    pub coverage_all: bool,
+    #[serde(default)]
+    pub runner: String,
+    #[serde(default)]
+    pub configuration: String,
 }
 
 impl NudgeRequestMsg {
     pub(crate) fn lang_filter(&self) -> Option<kiss::Language> {
-        match self.lang.as_deref() {
-            Some("python" | "py") => Some(kiss::Language::Python),
-            Some("rust" | "rs") => Some(kiss::Language::Rust),
+        self.target_request.language()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_lang_label(mut self, lang: &str) -> Self {
+        let language = match lang {
+            "python" | "py" => Some(kiss::Language::Python),
+            "rust" | "rs" => Some(kiss::Language::Rust),
             _ => None,
-        }
+        };
+        self.target_request = self.target_request.with_lang(language);
+        self
+    }
+
+    pub(crate) fn effective_scope(&self) -> (NudgeInvocation, Vec<String>) {
+        use crate::test_runner::target_request::operand_raws;
+        (
+            NudgeInvocation::from_focus(&self.target_request.focus),
+            operand_raws(&self.target_request.focus).unwrap_or_default(),
+        )
+    }
+
+    pub(crate) fn as_request(&self) -> crate::test_runner::target_request::TargetRequest {
+        self.target_request.clone()
+    }
+
+    pub(crate) fn is_workspace_focus(&self) -> bool {
+        crate::test_runner::target_request::is_workspace_focus(&self.as_request().focus)
     }
 
     pub(crate) fn progress_line(&self) -> String {
+        let (invocation, targets) = self.effective_scope();
         let mut line = format!(
             "kiss test: request force={} force_bad={} metrics={}",
             self.force, self.force_bad, self.metrics
         );
-        if !self.invocation.is_all() {
+        let workspace = self.is_workspace_focus();
+        if !workspace {
             line.push_str(" invocation=");
-            line.push_str(self.invocation.as_str());
+            line.push_str(invocation.as_str());
         }
-        if !self.targets.is_empty() {
+        if !targets.is_empty() {
             line.push_str(" targets=");
-            line.push_str(&self.targets.join(" "));
+            line.push_str(&targets.join(" "));
         }
-        if let Some(lang) = &self.lang {
+        if let Some(lang) = self.target_request.language() {
             line.push_str(" lang=");
-            line.push_str(lang);
+            line.push_str(lang.label());
         }
-        if !self.ignore.is_empty() {
+        if !self.target_request.ignore.is_empty() {
             line.push_str(" ignore=");
-            line.push_str(&self.ignore.join(","));
+            line.push_str(&self.target_request.ignore.join(","));
         }
         if !self.extra.is_empty() {
             line.push_str(" extra=");
@@ -188,7 +213,7 @@ impl WatchSessionOwner {
 
 fn acquire_exclusive_watch_lock(repo_root: &Path) -> Result<WatchLockGuard, String> {
     let lock_path = watch_lock_path(repo_root);
-    let deadline = Instant::now() + CLIENT_SESSION_RETRY;
+    let deadline = Instant::now() + Duration::from_secs(90);
     loop {
         match WatchLockGuard::try_lock(&lock_path) {
             Ok(Some(guard)) => return Ok(guard),

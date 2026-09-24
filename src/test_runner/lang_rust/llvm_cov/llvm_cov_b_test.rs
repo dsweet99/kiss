@@ -148,7 +148,8 @@ fn finish_rust_failure_recap_uses_path_symbol_report_id() {
         "streaming FAIL line must remain: {out}"
     );
     assert!(
-        out.lines().any(|line| line == "FAIL src/lib.rs::gets_value"),
+        out.lines()
+            .any(|line| line == "FAIL src/lib.rs::gets_value"),
         "recap must use kiss-test PATH::symbol id, out={out}"
     );
     assert!(

@@ -89,11 +89,7 @@ fn add_count(
     *slot_mut(capture, lang, outcome) += count;
 }
 
-fn dec_count(
-    capture: &mut WatchReportCapture,
-    lang: crate::Language,
-    outcome: WatchNamedOutcome,
-) {
+fn dec_count(capture: &mut WatchReportCapture, lang: crate::Language, outcome: WatchNamedOutcome) {
     let slot = slot_mut(capture, lang, outcome);
     *slot = slot.saturating_sub(1);
 }

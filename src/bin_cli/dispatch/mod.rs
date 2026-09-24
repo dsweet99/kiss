@@ -6,7 +6,7 @@ mod test_dispatch;
 #[cfg(test)]
 mod test_dispatch_b;
 
-use crate::bin_cli::args::{parse_test_invocation, validate_test_branch_options, Cli, Commands};
+use crate::bin_cli::args::{Cli, Commands, parse_test_invocation, validate_test_branch_options};
 
 use handlers::{
     dispatch_check, dispatch_dry, dispatch_rules, dispatch_stats, dispatch_test, dispatch_viz,

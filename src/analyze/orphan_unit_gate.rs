@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 
 use kiss::{
     OrphanCoverage, OrphanUnitInput, build_python_context_graph, build_rust_context_graph,
-    collect_orphan_entry_callables, collect_orphan_entry_paths, orphan_unit_violations,
+    collect_orphan_entry_callables, collect_orphan_entry_paths, orphan_unit_findings,
+    orphan_unit_violations,
 };
 
 use crate::analyze::line_coverage::{
@@ -47,10 +48,7 @@ pub(crate) fn evaluate_orphan_unit_gate(
     gate: &kiss::GateConfig,
     bypass: bool,
 ) -> bool {
-    evaluate_orphan_unit_gate_with_viols(
-        repo_root, py_files, rs_files, snapshot, gate, bypass,
-    )
-    .0
+    evaluate_orphan_unit_gate_with_viols(repo_root, py_files, rs_files, snapshot, gate, bypass).0
 }
 
 pub(crate) fn collect_orphan_unit_violations(
@@ -60,6 +58,41 @@ pub(crate) fn collect_orphan_unit_violations(
     snapshot: &RuntimeCoverageSnapshot,
     orphan_allowed: &[String],
 ) -> Result<Vec<kiss::Violation>, ()> {
+    with_orphan_input(
+        repo_root,
+        py_files,
+        rs_files,
+        snapshot,
+        orphan_allowed,
+        orphan_unit_violations,
+    )
+}
+
+pub(crate) fn collect_orphan_unit_findings(
+    repo_root: &Path,
+    py_files: &[PathBuf],
+    rs_files: &[PathBuf],
+    snapshot: &RuntimeCoverageSnapshot,
+    orphan_allowed: &[String],
+) -> Result<Vec<kiss::OrphanUnitFinding>, ()> {
+    with_orphan_input(
+        repo_root,
+        py_files,
+        rs_files,
+        snapshot,
+        orphan_allowed,
+        orphan_unit_findings,
+    )
+}
+
+fn with_orphan_input<T>(
+    repo_root: &Path,
+    py_files: &[PathBuf],
+    rs_files: &[PathBuf],
+    snapshot: &RuntimeCoverageSnapshot,
+    orphan_allowed: &[String],
+    finish: impl FnOnce(&OrphanUnitInput<'_>) -> T,
+) -> Result<T, ()> {
     let Ok((py_parsed, rs_parsed, roles)) = parse_classified(py_files, rs_files) else {
         return Err(());
     };
@@ -84,7 +117,7 @@ pub(crate) fn collect_orphan_unit_violations(
     let rs_graph = (!rs_parsed.is_empty()).then_some(&rs_prod);
     let entries = collect_orphan_entry_paths(&py_parsed, &rs_parsed, py_graph, rs_graph);
     let callables = collect_orphan_entry_callables(&py_parsed, &rs_parsed, py_graph, rs_graph);
-    let viols = orphan_unit_violations(&OrphanUnitInput {
+    Ok(finish(&OrphanUnitInput {
         py: &py_parsed,
         rs: &rs_parsed,
         py_ctx: &py_ctx,
@@ -95,8 +128,7 @@ pub(crate) fn collect_orphan_unit_violations(
         repo_root,
         roles: &roles,
         coverage: Some(&coverage),
-    });
-    Ok(viols)
+    }))
 }
 
 fn snapshot_to_orphan_coverage(

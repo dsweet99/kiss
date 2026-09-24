@@ -421,11 +421,11 @@ fn evaluate_cov_time_gate_disabled_without_limits() {
 #[test]
 fn evaluate_cov_time_gate_sole_star_from_python_generation() {
     use crate::test_runner::python_coverage_index::generation::{
-        population_plan_for_selectors, publish_python_population_generation, PopulationEvidence,
-        SelectorEvidence, TimingCacheDisposition,
+        PopulationEvidence, SelectorEvidence, TimingCacheDisposition,
+        population_plan_for_selectors, publish_python_population_generation,
     };
     use crate::test_runner::python_coverage_index::{
-        clear_python_generation_warm_memo, GenerationReason, PYTHON_SELECTOR_DISCOVERY_VERSION,
+        GenerationReason, PYTHON_SELECTOR_DISCOVERY_VERSION, clear_python_generation_warm_memo,
     };
     use crate::test_runner::runners::detect_rslip_versions;
     use kiss::rpytest_runner::TestStatus;
@@ -492,11 +492,11 @@ fn evaluate_cov_time_gate_sole_star_from_python_generation() {
 #[test]
 fn evaluate_cov_time_gate_multi_prefix_and_incomplete() {
     use crate::test_runner::python_coverage_index::generation::{
-        population_plan_for_selectors, publish_python_population_generation, PopulationEvidence,
-        SelectorEvidence, TimingCacheDisposition,
+        PopulationEvidence, SelectorEvidence, TimingCacheDisposition,
+        population_plan_for_selectors, publish_python_population_generation,
     };
     use crate::test_runner::python_coverage_index::{
-        clear_python_generation_warm_memo, GenerationReason, PYTHON_SELECTOR_DISCOVERY_VERSION,
+        GenerationReason, PYTHON_SELECTOR_DISCOVERY_VERSION, clear_python_generation_warm_memo,
     };
     use crate::test_runner::runners::detect_rslip_versions;
     use kiss::rpytest_runner::TestStatus;
@@ -567,11 +567,11 @@ fn evaluate_cov_time_gate_multi_prefix_and_incomplete() {
 #[test]
 fn python_timings_map_published_population_durations() {
     use crate::test_runner::python_coverage_index::generation::{
-        population_plan_for_selectors, publish_python_population_generation, PopulationEvidence,
-        SelectorEvidence, TimingCacheDisposition,
+        PopulationEvidence, SelectorEvidence, TimingCacheDisposition,
+        population_plan_for_selectors, publish_python_population_generation,
     };
     use crate::test_runner::python_coverage_index::{
-        clear_python_generation_warm_memo, GenerationReason, PYTHON_SELECTOR_DISCOVERY_VERSION,
+        GenerationReason, PYTHON_SELECTOR_DISCOVERY_VERSION, clear_python_generation_warm_memo,
     };
     use crate::test_runner::runners::detect_rslip_versions;
     use kiss::rpytest_runner::TestStatus;

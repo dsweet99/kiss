@@ -412,11 +412,7 @@ fn ignore_collection_paths_pass_tests_dir_not_each_file() {
     let tmp = TempDir::new().unwrap();
     let tests = tmp.path().join("tests");
     fs::create_dir_all(tests.join("nested")).unwrap();
-    fs::write(
-        tests.join("test_a.py"),
-        "def test_a():\n    assert True\n",
-    )
-    .unwrap();
+    fs::write(tests.join("test_a.py"), "def test_a():\n    assert True\n").unwrap();
     fs::write(
         tests.join("nested/test_b.py"),
         "def test_b():\n    assert True\n",

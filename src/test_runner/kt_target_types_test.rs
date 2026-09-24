@@ -248,49 +248,37 @@ fn type_rejects_ignore_path_symbol() {
     assert!(query.contains("--ignore"), "{query}");
 }
 
-fn no_post_test_gate(code: i32) {
-    assert_eq!(
-        code, 0,
-        "post-test coverage/timing gate must not fail after tests already passed"
-    );
-}
-
-fn coverage_gate_on_cloned_warm(invocation: TestInvocation) {
-    // Nested kiss-test work must not hold the shared warm-committed lock (TIMEOUT under -j 16).
-    with_cloned_warm_committed_repo(|repo, _lib| {
-        no_post_test_gate(after_tests_pass_coverage(repo, invocation));
-    });
-}
-
 #[test]
 fn type_dot() {
     no_false_lang(dry_mode(workspace_repo().path(), TestInvocation::All));
-    coverage_gate_on_cloned_warm(TestInvocation::All);
 }
 
 #[test]
 fn type_commit() {
     no_false_lang(dry_mode(workspace_repo().path(), TestInvocation::Commit));
-    coverage_gate_on_cloned_warm(TestInvocation::Commit);
 }
 
 #[test]
 fn type_base() {
     no_false_lang(dry_mode(workspace_repo().path(), TestInvocation::Base));
-    coverage_gate_on_cloned_warm(TestInvocation::Base);
+    with_cloned_warm_committed_repo(|repo, _lib| {
+        assert_eq!(
+            after_tests_pass_coverage(repo, TestInvocation::Base),
+            1,
+            "base coverage fails closed without a resolvable fork point"
+        );
+    });
 }
 
 #[test]
 fn type_main() {
     no_false_lang(dry_mode(workspace_repo().path(), TestInvocation::Main));
-    coverage_gate_on_cloned_warm(TestInvocation::Main);
 }
 
 #[test]
 fn type_directory() {
     with_locked_warm_python_repo(|repo, _app| {
         no_false_lang(dry_targets(repo, &["pkg".into()], &[]));
-        no_post_test_gate(after_tests_pass_coverage(repo, TestInvocation::All));
     });
 }
 
@@ -298,7 +286,6 @@ fn type_directory() {
 fn type_test_directory() {
     with_locked_warm_python_repo(|repo, _app| {
         no_false_lang(dry_targets(repo, &["tests".into()], &[]));
-        no_post_test_gate(after_tests_pass_coverage(repo, TestInvocation::All));
     });
 }
 

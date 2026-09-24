@@ -33,7 +33,9 @@ pub(crate) use graph_python::{
     is_dunder_import, is_importlib_import_module,
 };
 pub use orphan::{collect_orphan_entry_callables, collect_orphan_entry_paths, orphan_violations};
-pub use orphan_unit::{OrphanCoverage, OrphanUnitInput, orphan_unit_violations};
+pub use orphan_unit::{
+    OrphanCoverage, OrphanUnitFinding, OrphanUnitInput, orphan_unit_findings, orphan_unit_violations,
+};
 pub(crate) use unused::GraphIsolation;
 
 #[cfg(test)]

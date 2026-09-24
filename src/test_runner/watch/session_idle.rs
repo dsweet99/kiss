@@ -6,7 +6,6 @@ use std::time::{Duration, Instant};
 use super::control::{NudgeReplyMsg, NudgeRequest};
 use super::event_source::WatchEventSource;
 use super::filter::WatchPathFilter;
-use super::nudge_kind::NudgeInvocation;
 use super::reload::WatchLiveConfig;
 #[cfg(not(unix))]
 use super::session_cycle::NudgeReplyMsg;
@@ -15,10 +14,6 @@ use super::{apply_normalized_event, print_cycle_summary};
 
 pub(super) use super::session_replies::LastReplies;
 
-#[path = "session_idle_target.rs"]
-mod target;
-use target::slice_or_expand_recap;
-
 pub(super) const NUDGE_POLL_SLICE: Duration = Duration::from_millis(100);
 
 pub(super) struct QueuedCycle {
@@ -26,7 +21,6 @@ pub(super) struct QueuedCycle {
     pub force: bool,
     pub force_bad: bool,
     pub metrics: bool,
-    pub invocation: NudgeInvocation,
     pub targets: Vec<String>,
     pub unscoped_force: bool,
     pub lang_filter: Option<kiss::Language>,
@@ -34,33 +28,38 @@ pub(super) struct QueuedCycle {
     pub extra: Vec<String>,
     pub python_extra: Vec<String>,
     pub filter_override: bool,
+    pub coverage_all: bool,
+    pub target_request: crate::test_runner::target_request::TargetRequest,
+    pub runner: String,
+    pub configuration: String,
     pub next: Option<Box<QueuedCycle>>,
 }
 
 impl QueuedCycle {
     pub(super) fn stamp_filter_override(&mut self, live: &WatchLiveConfig) {
         self.filter_override = (!self.extra.is_empty() && self.extra != live.extra)
+            || (!self.python_extra.is_empty() && self.python_extra != live.python_extra)
             || (!self.ignore.is_empty() && self.ignore != live.ignore);
     }
 
     pub(super) fn wants_new_cycle(&self) -> bool {
-        self.force
-            || self.force_bad
-            || self.metrics
-            || !self.invocation.is_all()
-            || self.filter_override
+        self.force || self.force_bad || self.filter_override
     }
 
+    pub(super) fn is_workspace_focus(&self) -> bool {
+        crate::test_runner::target_request::is_workspace_focus(&self.target_request.focus)
+    }
+
+    #[cfg(test)]
     pub(super) fn is_target_scoped(&self) -> bool {
-        !self.unscoped_force
-            && (!self.targets.is_empty()
-                || !self.invocation.is_all()
-                || self.lang_filter.is_some())
+        !self.unscoped_force && (!self.is_workspace_focus() || self.lang_filter.is_some())
     }
 
     #[cfg(unix)]
     fn can_merge(&self, msg: &super::control::NudgeRequestMsg) -> bool {
-        let incoming_force = msg.force && msg.targets.is_empty() && msg.invocation.is_all();
+        let incoming = pin_from_nudge_msg(msg);
+        let in_targets = targets_from_pin(&incoming, msg);
+        let incoming_force = msg.force && in_targets.is_empty() && msg_is_workspace(msg);
         if incoming_force || self.unscoped_force {
             return true;
         }
@@ -68,52 +67,62 @@ impl QueuedCycle {
         if self.lang_filter != in_lang && (self.lang_filter.is_some() || in_lang.is_some()) {
             return false;
         }
-        let in_scoped = !msg.targets.is_empty() || !msg.invocation.is_all();
-        let self_scoped = !self.targets.is_empty()
-            || !self.invocation.is_all()
-            || self.lang_filter.is_some();
+        if self.target_request != incoming {
+            return false;
+        }
+        let in_scoped = !msg_is_workspace(msg) || in_lang.is_some();
+        let self_scoped = !self.is_workspace_focus() || self.lang_filter.is_some();
         self_scoped == in_scoped
     }
 
     #[cfg(unix)]
     fn from_req(req: NudgeRequest) -> Self {
-        let lang_filter = req.msg.lang_filter();
+        let target_request = pin_from_nudge_msg(&req.msg);
+        let lang_filter = target_request.language();
+        let targets = targets_from_pin(&target_request, &req.msg);
         Self {
             replies: vec![(lang_filter, req.reply)],
             force: req.msg.force,
             force_bad: req.msg.force_bad,
             metrics: req.msg.metrics,
-            invocation: req.msg.invocation,
-            unscoped_force: req.msg.force
-                && req.msg.targets.is_empty()
-                && req.msg.invocation.is_all(),
-            targets: req.msg.targets,
+            unscoped_force: req.msg.force && targets.is_empty() && msg_is_workspace(&req.msg),
+            targets,
             lang_filter,
-            ignore: req.msg.ignore,
+            ignore: target_request.ignore.clone(),
             extra: req.msg.extra,
             python_extra: req.msg.python_extra,
             filter_override: false,
+            coverage_all: req.msg.coverage_all,
+            target_request,
+            runner: req.msg.runner,
+            configuration: req.msg.configuration,
             next: None,
         }
     }
 
     #[cfg(unix)]
     fn merge_req(&mut self, req: NudgeRequest) {
+        let incoming = pin_from_nudge_msg(&req.msg);
+        let targets = targets_from_pin(&incoming, &req.msg);
         self.force |= req.msg.force;
         self.force_bad |= req.msg.force_bad;
         self.metrics |= req.msg.metrics;
-        if self.invocation.is_all() && req.msg.targets.is_empty() {
-            self.invocation = req.msg.invocation;
+        self.coverage_all |= req.msg.coverage_all;
+        if self.runner.is_empty() {
+            self.runner.clone_from(&req.msg.runner);
         }
-        merge_nudge_targets(self, req.msg.force, &req.msg.targets);
+        if self.configuration.is_empty() {
+            self.configuration.clone_from(&req.msg.configuration);
+        }
+        merge_nudge_targets(self, req.msg.force, &targets);
         merge_nudge_filters(
             self,
-            req.msg.lang_filter(),
-            &req.msg.ignore,
+            incoming.language(),
+            &incoming.ignore,
             &req.msg.extra,
             &req.msg.python_extra,
         );
-        self.replies.push((req.msg.lang_filter(), req.reply));
+        self.replies.push((incoming.language(), req.reply));
     }
 }
 
@@ -194,58 +203,159 @@ fn idle_head(
     if q.wants_new_cycle() || pending_files {
         return false;
     }
-    if q.replies.iter().any(|(lang, _)| last_reply.get(*lang).is_none()) {
-        return false;
+    if q.metrics {
+        return reply_metrics_target_report(queued, last_reply);
     }
-    if !q.targets.is_empty()
-        && !q.replies.iter().all(|(lang, _)| {
-            last_reply
-                .get(*lang)
-                .and_then(|msg| msg.output.as_deref())
-                .and_then(|out| slice_or_expand_recap(last_reply, out, &q.targets))
-                .is_some()
-        })
-    {
+    reply_ready_target_report(queued, last_reply)
+}
+
+fn reply_ready_target_report(queued: &mut Option<QueuedCycle>, last_reply: &LastReplies) -> bool {
+    let Some(q) = queued.as_ref() else {
         return false;
-    }
+    };
+    let Some(msg) = ready_target_report_reply(q, last_reply) else {
+        return false;
+    };
     let Some(mut q) = queued.take() else {
         return false;
     };
     *queued = q.next.take().map(|b| *b);
-    for (lang, reply) in q.replies {
-        let mut last = idle_cached_reply(last_reply.get(lang).cloned().unwrap_or_default());
-        if !q.targets.is_empty()
-            && let Some(sliced) = last
-                .output
-                .as_deref()
-                .and_then(|out| slice_or_expand_recap(last_reply, out, &q.targets))
-        {
-            last.output = Some(sliced);
-            last = idle_cached_reply(last);
-        }
-        last.idle_cache = Some(true);
-        let _ = reply.send(last);
+    for (_, reply) in q.replies {
+        let _ = reply.send(msg.clone());
     }
     true
 }
 
+fn ready_target_report_reply(q: &QueuedCycle, last_reply: &LastReplies) -> Option<NudgeReplyMsg> {
+    ensure_query_reply(q, last_reply, false)
+}
+
+fn reply_metrics_target_report(queued: &mut Option<QueuedCycle>, last_reply: &LastReplies) -> bool {
+    let Some(q) = queued.as_ref() else {
+        return false;
+    };
+    let msg = ensure_query_reply(q, last_reply, true).unwrap_or_else(|| NudgeReplyMsg {
+        exit_code: 1,
+        pid: last_reply.clone_any().map(|msg| msg.pid).unwrap_or(0),
+        error: Some("incomplete evidence".into()),
+        output: None,
+        idle_cache: Some(true),
+    });
+    let Some(mut q) = queued.take() else {
+        return false;
+    };
+    *queued = q.next.take().map(|b| *b);
+    for (_, reply) in q.replies {
+        let _ = reply.send(msg.clone());
+    }
+    true
+}
+
+fn ensure_query_reply(
+    q: &QueuedCycle,
+    last_reply: &LastReplies,
+    allow_error: bool,
+) -> Option<NudgeReplyMsg> {
+    if !protocol_identity_holds(q, &last_reply.repo) {
+        return None;
+    }
+    let request = queued_target_request(q);
+    let policy = crate::test_runner::target_request::EnsurePolicy {
+        dry_run: false,
+        require_complete: true,
+        inject_mismatch: false,
+        retry_bad: false,
+        coverage_all: q.coverage_all,
+        assemble_only: false,
+    };
+    let ensured = if matches!(
+        request.focus,
+        crate::test_runner::target_request::TargetFocus::Git(_)
+    ) {
+        crate::test_runner::target_request::assemble_target_report_query(
+            &last_reply.repo,
+            &request,
+            &policy,
+            &q.extra,
+        )
+    } else {
+        crate::test_runner::target_request::ensure_target_report_query(
+            &last_reply.repo,
+            &request,
+            &policy,
+            &q.extra,
+        )
+    };
+    match ensured {
+        Ok(crate::test_runner::target_request::Ensured::Report(report)) => {
+            Some(idle_cached_reply(NudgeReplyMsg {
+                exit_code: report.exit_code,
+                pid: last_reply.clone_any().map(|msg| msg.pid).unwrap_or(0),
+                error: None,
+                output: Some(crate::test_runner::target_request::official_report_text(
+                    &report,
+                )),
+                idle_cache: Some(true),
+            }))
+        }
+        Err(err) if allow_error => Some(NudgeReplyMsg {
+            exit_code: err.exit_code(),
+            pid: last_reply.clone_any().map(|msg| msg.pid).unwrap_or(0),
+            error: Some(err.to_string()),
+            output: None,
+            idle_cache: Some(true),
+        }),
+        Err(_) => None,
+    }
+}
+
+fn protocol_identity_holds(q: &QueuedCycle, repo: &std::path::Path) -> bool {
+    if !q.runner.is_empty() && q.runner != crate::test_runner::target_request::runner_identity(repo)
+    {
+        return false;
+    }
+    if !q.configuration.is_empty()
+        && q.configuration != crate::test_runner::target_request::configuration_generation(repo)
+    {
+        return false;
+    }
+    true
+}
+
+#[cfg(unix)]
+pub(super) fn msg_is_workspace(msg: &super::control::NudgeRequestMsg) -> bool {
+    msg.is_workspace_focus()
+}
+
+#[cfg(unix)]
+fn pin_from_nudge_msg(
+    msg: &super::control::NudgeRequestMsg,
+) -> crate::test_runner::target_request::TargetRequest {
+    msg.target_request.clone()
+}
+
+#[cfg(unix)]
+fn targets_from_pin(
+    pin: &crate::test_runner::target_request::TargetRequest,
+    _msg: &super::control::NudgeRequestMsg,
+) -> Vec<String> {
+    crate::test_runner::target_request::operand_raws(&pin.focus).unwrap_or_default()
+}
+
+pub(super) fn queued_target_request(
+    q: &QueuedCycle,
+) -> crate::test_runner::target_request::TargetRequest {
+    q.target_request.clone()
+}
+
 pub(crate) fn idle_cached_reply(mut last: NudgeReplyMsg) -> NudgeReplyMsg {
     let recap = last.output.as_deref().is_some_and(|s| !s.is_empty());
-    let keep_cov_gate = last.error.as_deref().is_some_and(|e| e.contains("coverage gate failed"));
+    let keep_cov_gate = last
+        .error
+        .as_deref()
+        .is_some_and(|e| e.contains("coverage gate failed"));
     if recap && !keep_cov_gate {
         last.error = None;
-    }
-    let output = last.output.as_deref().unwrap_or("");
-    if recap && recap_has_cached_status(output, "TIMEOUT") {
-        last.exit_code = 124;
-    } else if recap
-        && (keep_cov_gate
-            || recap_has_cached_status(output, "FAIL")
-            || recap_has_cached_status(output, "VIOLATION"))
-    {
-        last.exit_code = 1;
-    } else if recap {
-        last.exit_code = 0;
     }
     last
 }
@@ -257,10 +367,6 @@ pub(crate) fn oneshot_client_reply(reply: NudgeReplyMsg, waited: bool) -> NudgeR
         None if waited => reply,
         None => idle_cached_reply(reply),
     }
-}
-
-fn recap_has_cached_status(output: &str, label: &str) -> bool {
-    output.lines().any(|line| line.trim_start().starts_with(label))
 }
 
 fn merge_nudge_targets(q: &mut QueuedCycle, force: bool, targets: &[String]) {
@@ -326,11 +432,10 @@ pub(super) fn coalesce_nudges(
 }
 
 pub(super) fn force_ready_if_pending(
-    queued: &Option<QueuedCycle>, machine: &mut SettleMachine, repo_root: &Path,
+    _queued: &Option<QueuedCycle>,
+    machine: &mut SettleMachine,
+    repo_root: &Path,
 ) {
-    if queued.as_ref().is_some_and(QueuedCycle::is_target_scoped) {
-        return;
-    }
     let _ = machine.force_ready(Instant::now(), |path| {
         PathSignature::from_path(&repo_root.join(path))
     });

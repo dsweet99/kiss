@@ -161,4 +161,3 @@ mod tests {
         assert_eq!(index.schema_version, LINE_INDEX_SCHEMA_V2);
     }
 }
-

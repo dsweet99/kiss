@@ -22,9 +22,9 @@ mod miss_run;
 mod pycache;
 mod warm_hit_seal;
 use cached_status::emit_prepare_resolved_progress;
+pub use cached_status::format_cached_status_dump;
 use finalize::clone_rslip_error;
 use miss_run::run_rslip_misses;
-pub use cached_status::format_cached_status_dump;
 pub use warm_hit_seal::warm_hit_seal_exists;
 
 pub(crate) struct RslipCacheCandidate {

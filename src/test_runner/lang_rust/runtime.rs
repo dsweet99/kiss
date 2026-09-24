@@ -59,11 +59,12 @@ fn rust_summary_from_witness_statuses(
             false,
         );
     }
-    let report_ids = crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
-        &request.repo_root,
-        &[],
-    )
-    .unwrap_or_default();
+    let report_ids =
+        crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(
+            &request.repo_root,
+            &[],
+        )
+        .unwrap_or_default();
     crate::test_runner::lang_iface::summary_from_witness_statuses(
         planned,
         witness,

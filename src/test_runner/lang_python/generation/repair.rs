@@ -273,14 +273,14 @@ fn evidence_from_pinned(
 
 #[cfg(test)]
 mod refresh_tests {
+    use super::super::types::{
+        PythonExecutionIdentity, PythonPopulationPlan, TimingCacheDisposition,
+    };
     use super::{
         PinnedPythonGeneration, SelectorTimingRecord, restamp_complete_pinned_from_cache,
         restamp_is_safe, selectors_to_refresh,
     };
     use crate::test_runner::python_coverage_index::storage::python_selector_definition_digest;
-    use super::super::types::{
-        PythonExecutionIdentity, PythonPopulationPlan, TimingCacheDisposition,
-    };
 
     fn pin(
         complete: bool,

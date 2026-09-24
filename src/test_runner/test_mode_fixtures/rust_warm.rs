@@ -130,7 +130,11 @@ fn prebuild_cargo_tests(root: &Path, target_name: &str) {
         .env("CARGO_TARGET_DIR", &target_dir)
         .status()
         .expect("cargo prebuild");
-    assert!(status.success(), "cargo prebuild failed for {}", root.display());
+    assert!(
+        status.success(),
+        "cargo prebuild failed for {}",
+        root.display()
+    );
 }
 
 pub(crate) fn lib_source(value: u32) -> String {
@@ -167,10 +171,7 @@ pub(crate) fn republish_cloned_lib_population(root: &Path) {
     let cache_root = crate::test_runner::rust_coverage_index::rust_coverage_cache_root(root);
     let entries_dir = cache_root.join("entries");
     if entries_dir.is_dir() {
-        for entry in fs::read_dir(&entries_dir)
-            .expect("entries dir")
-            .flatten()
-        {
+        for entry in fs::read_dir(&entries_dir).expect("entries dir").flatten() {
             let path = entry.path();
             if path.extension().is_none_or(|ext| ext != "json") {
                 continue;
@@ -184,7 +185,8 @@ pub(crate) fn republish_cloned_lib_population(root: &Path) {
             if value.get("generation_fingerprint").is_some() {
                 value["generation_fingerprint"] =
                     serde_json::Value::String(identity.generation_fingerprint.clone());
-                fs::write(&path, serde_json::to_vec(&value).expect("entry json")).expect("write entry");
+                fs::write(&path, serde_json::to_vec(&value).expect("entry json"))
+                    .expect("write entry");
             }
         }
         kiss::rust_llvm_cov_runner::invalidate_entry_state(&cache_root);
@@ -274,9 +276,7 @@ impl Drop for RestoreLibSource {
 
 /// Use the persistent warm committed fixture in-process (no clone/republish).
 /// Holds the shared fixture lock for the entire callback — keep callbacks short.
-pub(crate) fn with_locked_warm_committed_repo<T>(
-    f: impl FnOnce(&Path, PathBuf) -> T,
-) -> T {
+pub(crate) fn with_locked_warm_committed_repo<T>(f: impl FnOnce(&Path, PathBuf) -> T) -> T {
     let _lock = lock_fixture(warm_committed_mutex(), "kiss-warm-committed-fixture.lock");
     let repo = ensure_warm_committed_repo();
     let lib = repo.join("src").join("lib.rs");
@@ -422,7 +422,11 @@ pub(crate) fn clone_row_b_committed_repo(dst: &Path) {
 fn copy_repo_tree(src: &Path, dst: &Path) {
     std::fs::create_dir_all(dst).expect("copy destination");
     let status = std::process::Command::new("cp")
-        .args(["-a", &format!("{}/.", src.display()), &format!("{}/", dst.display())])
+        .args([
+            "-a",
+            &format!("{}/.", src.display()),
+            &format!("{}/", dst.display()),
+        ])
         .status()
         .expect("cp");
     assert!(status.success(), "copy_repo_tree failed");
@@ -464,7 +468,8 @@ fn retarget_cloned_kiss_cache(src: &Path, dst: &Path) {
             if !text.contains(old.as_ref()) {
                 continue;
             }
-            std::fs::write(&path, text.replace(old.as_ref(), new.as_ref())).expect("retarget cache");
+            std::fs::write(&path, text.replace(old.as_ref(), new.as_ref()))
+                .expect("retarget cache");
         }
     }
 }

@@ -129,7 +129,11 @@ fn rust_plan_selectors_requires_population_when_manifest_selectors_differ() {
         &[],
     )
     .unwrap();
-    let plan = rust_plan_selectors(tmp.path(), vec!["a".into(), "b".into()], &GateConfig::default());
+    let plan = rust_plan_selectors(
+        tmp.path(),
+        vec!["a".into(), "b".into()],
+        &GateConfig::default(),
+    );
     assert!(plan.population_required);
 }
 

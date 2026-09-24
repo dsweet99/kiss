@@ -4,11 +4,11 @@ pub(crate) mod control;
 mod oneshot_lock;
 #[cfg(unix)]
 pub(crate) use oneshot_lock::{OneshotPeer, wait_oneshot_peer};
-mod nudge_kind;
 mod coverage;
 mod event_source;
 mod filter;
 mod lock;
+mod nudge_kind;
 mod reload;
 mod roots;
 mod session;
@@ -39,20 +39,26 @@ pub(crate) use settle::{PathSignature, SettleMachine, SettlePoll};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use crate::bin_cli::args::TestInvocation;
+use crate::test_runner::target_request::{GitFocus, TargetFocus};
 
 use event_source::NormalizedWatchEvent as Ev;
 use filter::WatchPathFilter as Filter;
 use settle::{PathSignature as Sig, SettleMachine as Machine};
 
 #[allow(dead_code)]
-pub(crate) fn invocation_label(invocation: &TestInvocation) -> String {
-    match invocation {
-        TestInvocation::Commit => "commit".into(),
-        TestInvocation::Base => "base".into(),
-        TestInvocation::Main => "main".into(),
-        TestInvocation::All => ".".into(),
-        TestInvocation::Targets(targets) => targets.join(" "),
+pub(crate) fn invocation_label(focus: &TargetFocus) -> String {
+    match focus {
+        TargetFocus::Workspace => ".".into(),
+        TargetFocus::Git(GitFocus::Commit) => "commit".into(),
+        TargetFocus::Git(GitFocus::AutomaticBase | GitFocus::ExplicitBase { .. }) => "base".into(),
+        TargetFocus::Git(
+            GitFocus::DefaultMain | GitFocus::ConfiguredMain { .. } | GitFocus::ExplicitMain { .. },
+        ) => "main".into(),
+        TargetFocus::Operands(operands) => operands
+            .iter()
+            .map(|operand| operand.raw.as_str())
+            .collect::<Vec<_>>()
+            .join(" "),
     }
 }
 

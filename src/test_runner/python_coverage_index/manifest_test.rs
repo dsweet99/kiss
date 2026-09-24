@@ -247,9 +247,7 @@ fn stored_python_universe_selectors_reads_current_manifest() {
         vec![selector.clone()],
         "coverage population remains the universe when only entries change"
     );
-    assert!(
-        stored_python_universe_population(tmp.path(), &[], PYTHON_COVERAGE_ENV_KEYS).is_none()
-    );
+    assert!(stored_python_universe_population(tmp.path(), &[], PYTHON_COVERAGE_ENV_KEYS).is_none());
 
     std::fs::write(tmp.path().join("new.py"), "x = 2\n").unwrap();
     assert_eq!(
@@ -257,9 +255,7 @@ fn stored_python_universe_selectors_reads_current_manifest() {
         vec![selector],
         "coverage population remains the universe when production inputs change"
     );
-    assert!(
-        stored_python_universe_population(tmp.path(), &[], PYTHON_COVERAGE_ENV_KEYS).is_none()
-    );
+    assert!(stored_python_universe_population(tmp.path(), &[], PYTHON_COVERAGE_ENV_KEYS).is_none());
 }
 
 #[test]

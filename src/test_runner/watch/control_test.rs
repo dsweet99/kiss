@@ -5,6 +5,54 @@ use std::time::{Duration, Instant};
 use super::*;
 use crate::test_runner::watch::lock::{WatchLockGuard, watch_lock_path};
 
+fn commit_request() -> crate::test_runner::target_request::TargetRequest {
+    use crate::test_runner::target_request::{GitFocus, TargetFocus, request_from_focus};
+    request_from_focus(TargetFocus::Git(GitFocus::Commit), None, &[])
+}
+
+#[test]
+fn nudge_msg_as_request_all_without_pin_is_workspace() {
+    use crate::test_runner::target_request::{TargetFocus, is_workspace_focus};
+    let all = NudgeRequestMsg::default();
+    assert!(matches!(all.as_request().focus, TargetFocus::Workspace));
+    assert!(is_workspace_focus(&all.as_request().focus));
+    let path = NudgeRequestMsg {
+        ..Default::default()
+    };
+    assert!(matches!(path.as_request().focus, TargetFocus::Workspace));
+    let commit = NudgeRequestMsg {
+        target_request: commit_request(),
+        ..Default::default()
+    };
+    assert!(matches!(
+        commit.as_request().focus,
+        crate::test_runner::target_request::TargetFocus::Git(
+            crate::test_runner::target_request::GitFocus::Commit
+        )
+    ));
+    assert!(!is_workspace_focus(&commit.as_request().focus));
+}
+
+#[test]
+fn progress_line_no_request_all_follows_workspace_request() {
+    use crate::test_runner::target_request::{is_workspace_focus, workspace_request};
+    let all = NudgeRequestMsg::default();
+    assert!(all.is_workspace_focus());
+    assert!(is_workspace_focus(&workspace_request(None, &[]).focus));
+    assert!(!all.progress_line().contains("invocation="));
+    let path = NudgeRequestMsg {
+        ..Default::default()
+    };
+    assert!(path.is_workspace_focus());
+    assert!(!path.progress_line().contains("invocation="));
+    let commit = NudgeRequestMsg {
+        target_request: commit_request(),
+        ..Default::default()
+    };
+    assert!(!commit.is_workspace_focus());
+    assert!(commit.progress_line().contains("invocation=commit"));
+}
+
 #[test]
 fn nudge_request_progress_line_includes_fields() {
     assert_eq!(
@@ -16,11 +64,120 @@ fn nudge_request_progress_line_includes_fields() {
             force: true,
             force_bad: true,
             metrics: true,
-            targets: vec!["a.rs".into(), "b.py".into()],
+            target_request: crate::test_runner::target_request::operands_request(
+                &["a.rs".into(), "b.py".into()],
+                None,
+                &[],
+            ),
             ..Default::default()
         }
         .progress_line(),
-        "kiss test: request force=true force_bad=true metrics=true targets=a.rs b.py"
+        "kiss test: request force=true force_bad=true metrics=true invocation=targets targets=a.rs b.py"
+    );
+}
+
+#[test]
+fn progress_line_prefers_target_request_over_stale_targets() {
+    use crate::test_runner::target_request::operands_request;
+    let request = operands_request(&["tests/a.py".into()], None, &[]);
+    let line = NudgeRequestMsg {
+        target_request: request,
+        ..Default::default()
+    }
+    .progress_line();
+    assert!(line.contains("invocation=targets"));
+    assert!(line.contains("targets=tests/a.py"));
+    assert!(!line.contains("stale.py"));
+}
+
+#[test]
+fn effective_scope_keeps_operand_request_as_targets() {
+    use crate::test_runner::target_request::operands_request;
+    let request = operands_request(&["tests/a.py".into()], None, &[]);
+    let msg = NudgeRequestMsg {
+        target_request: request,
+        ..Default::default()
+    };
+    let (invocation, targets) = msg.effective_scope();
+    assert_eq!(invocation, NudgeInvocation::Targets);
+    assert!(!invocation.is_all());
+    assert_eq!(targets, vec!["tests/a.py".to_string()]);
+}
+
+#[test]
+fn effective_scope_clones_operand_pin_sorted() {
+    use crate::test_runner::target_request::operands_request;
+    let request = operands_request(&["z.py".into(), "a.py".into()], None, &[]);
+    let msg = NudgeRequestMsg {
+        target_request: request,
+        ..Default::default()
+    };
+    let (invocation, targets) = msg.effective_scope();
+    assert_eq!(invocation, NudgeInvocation::Targets);
+    assert_eq!(targets, vec!["a.py".to_string(), "z.py".to_string()]);
+}
+
+#[test]
+fn as_request_clones_operand_pin_sorted() {
+    use crate::test_runner::target_request::{operand_raws, operands_request};
+    let request = operands_request(&["z.py".into(), "a.py".into()], None, &[]);
+    let msg = NudgeRequestMsg {
+        target_request: request,
+        ..Default::default()
+    };
+    assert_eq!(
+        operand_raws(&msg.as_request().focus),
+        Some(vec!["a.py".into(), "z.py".into()])
+    );
+}
+
+#[test]
+fn progress_line_prefers_git_request_over_stale_all() {
+    use crate::test_runner::target_request::{GitFocus, TargetFocus, request_from_focus};
+    let request = request_from_focus(TargetFocus::Git(GitFocus::Commit), None, &[]);
+    let line = NudgeRequestMsg {
+        target_request: request,
+        ..Default::default()
+    }
+    .progress_line();
+    assert!(line.contains("invocation=commit"));
+}
+
+#[test]
+fn progress_line_sorts_operand_request() {
+    use crate::test_runner::target_request::operands_request;
+    let request = operands_request(&["z.py".into(), "a.py".into()], None, &[]);
+    let line = NudgeRequestMsg {
+        target_request: request,
+        ..Default::default()
+    }
+    .progress_line();
+    assert!(line.contains("invocation=targets"));
+    assert!(line.contains("targets=a.py z.py"));
+    assert!(!line.contains("stale.py"));
+}
+
+#[test]
+fn from_focus_operands_is_targets() {
+    use crate::test_runner::target_request::operands_request;
+    let request = operands_request(&["z.py".into(), "a.py".into()], None, &[]);
+    assert_eq!(
+        NudgeInvocation::from_focus(&request.focus),
+        NudgeInvocation::Targets
+    );
+    assert!(!NudgeInvocation::from_focus(&request.focus).is_all());
+}
+
+#[test]
+fn from_test_maps_operand_invocation_to_targets() {
+    use crate::bin_cli::args::TestInvocation;
+    assert_eq!(
+        NudgeInvocation::from_test(&TestInvocation::Targets(vec!["tests/a.py".into()])),
+        NudgeInvocation::Targets
+    );
+    assert_eq!(
+        NudgeInvocation::from_test(&TestInvocation::All),
+        NudgeInvocation::All
     );
 }
 
@@ -52,7 +209,11 @@ fn handle_client_logs_received_request() {
                 force: false,
                 force_bad: true,
                 metrics: true,
-                targets: vec!["src/lib.rs".into()],
+                target_request: crate::test_runner::target_request::operands_request(
+                    &["src/lib.rs".into()],
+                    None,
+                    &[],
+                ),
                 ..Default::default()
             },
         )
@@ -63,7 +224,7 @@ fn handle_client_logs_received_request() {
     server.join().unwrap();
     assert!(
         out.contains(
-            "kiss test: request force=false force_bad=true metrics=true targets=src/lib.rs"
+            "kiss test: request force=false force_bad=true metrics=true invocation=targets targets=src/lib.rs"
         ),
         "watcher must log the received kiss test request; stdout={out:?}"
     );
@@ -305,6 +466,17 @@ fn start_publishes_session_well_before_client_retry() {
         max < CLIENT_SESSION_RETRY,
         "even the slowest start must beat the full client wait; max={max:?}"
     );
+}
+
+#[test]
+fn framed_json_accepts_full_workspace_report_size() {
+    let payload = "x".repeat(512 * 1024);
+    let expected_len = payload.len();
+    let (mut reader, mut writer) = UnixStream::pair().unwrap();
+    let send = thread::spawn(move || write_framed_json(&mut writer, &payload));
+    let received: String = read_framed_json(&mut reader).unwrap();
+    send.join().unwrap().unwrap();
+    assert_eq!(received.len(), expected_len);
 }
 
 #[test]

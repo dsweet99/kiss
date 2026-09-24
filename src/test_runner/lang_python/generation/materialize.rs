@@ -246,7 +246,9 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let selector = "tests/test_a.py::test_a";
         let mut summary = SelectorExecutionSummary::default();
-        summary.raw_statuses.insert(selector.into(), TestStatus::Failed);
+        summary
+            .raw_statuses
+            .insert(selector.into(), TestStatus::Failed);
         summary.failed_selectors.push(selector.into());
         summary.cache_unstored_selectors.push(selector.into());
         summary

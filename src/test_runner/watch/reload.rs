@@ -5,7 +5,6 @@ use kiss::{Config, ConfigLanguage, GateConfig, Language, TestSectionConfig};
 
 use super::filter::WatchPathFilter;
 use super::settle::{PathSignature, SettleMachine};
-use crate::bin_cli::args::TestInvocation;
 use crate::test_runner::RunTestCmdArgs;
 
 #[derive(Debug, Clone)]
@@ -19,7 +18,7 @@ pub(crate) struct WatchReloadSeed {
 }
 
 pub(crate) struct WatchLiveConfig {
-    pub invocation: TestInvocation,
+    pub target_request: crate::test_runner::target_request::TargetRequest,
     pub main_branch_cli: Option<String>,
     pub base_branch_cli: Option<String>,
     pub dry_run: bool,
@@ -33,6 +32,7 @@ pub(crate) struct WatchLiveConfig {
     pub py_config: Config,
     pub rs_config: Config,
     pub coverage_all: bool,
+    pub nudge_coverage_all: bool,
     pub settle: Duration,
     pub language_tables: kiss::LanguageTablesPresent,
     seed: WatchReloadSeed,
@@ -54,8 +54,7 @@ pub(crate) struct CycleForceFlags {
     pub force_rerun: bool,
     pub force_bad: bool,
     pub metrics: bool,
-    pub targets: Vec<String>,
-    pub invocation: super::nudge_kind::NudgeInvocation,
+    pub target_request: crate::test_runner::target_request::TargetRequest,
 }
 
 impl WatchLiveConfig {
@@ -67,8 +66,9 @@ impl WatchLiveConfig {
         rs_config: Config,
         config_path: &Path,
     ) -> Self {
+        let target_request = crate::test_runner::target_request::request_from_run_args(args);
         Self {
-            invocation: args.invocation.clone(),
+            target_request,
             main_branch_cli: args.main_branch_cli.map(str::to_owned),
             base_branch_cli: args.base_branch_cli.map(str::to_owned),
             dry_run: args.dry_run,
@@ -82,6 +82,7 @@ impl WatchLiveConfig {
             py_config,
             rs_config,
             coverage_all: seed.coverage_all,
+            nudge_coverage_all: false,
             settle,
             language_tables: kiss::LanguageTablesPresent::from_path_or_both(config_path),
             kissconfig_sig: PathSignature::from_path(config_path),
@@ -114,14 +115,16 @@ impl WatchLiveConfig {
         self.cycle_filters = None;
     }
 
+    fn cycle_request(
+        &self,
+        force: &CycleForceFlags,
+    ) -> crate::test_runner::target_request::TargetRequest {
+        force.target_request.clone()
+    }
+
     pub(crate) fn cycle_args(&self, force: CycleForceFlags) -> RunTestCmdArgs<'_> {
-        let invocation = if !force.targets.is_empty() {
-            TestInvocation::Targets(force.targets)
-        } else if let Some(invocation) = force.invocation.to_test() {
-            invocation
-        } else {
-            self.invocation.clone()
-        };
+        let request = self.cycle_request(&force);
+        let invocation = crate::test_runner::target_request::to_compat_invocation(&request);
         let (lang_filter, extra, python_extra, ignore) = match &self.cycle_filters {
             Some(over) => (
                 over.lang_filter.or(self.lang_filter),
@@ -150,12 +153,14 @@ impl WatchLiveConfig {
         };
         RunTestCmdArgs {
             invocation,
+            target_request: request,
             main_branch_cli: self.main_branch_cli.as_deref(),
             base_branch_cli: self.base_branch_cli.as_deref(),
             dry_run: self.dry_run,
             force_rerun: force.force_rerun,
             force_bad: force.force_bad,
             metrics: force.metrics,
+            coverage_all: self.coverage_all || self.nudge_coverage_all,
             jobs: self.jobs,
             extra,
             python_extra,
@@ -185,13 +190,7 @@ impl WatchLiveConfig {
         self.kissconfig_sig = sig;
         self.kissconfig_digest = digest;
         machine.set_settle(self.settle);
-        *filter = WatchPathFilter::build_with_config(
-            repo_root,
-            &self.ignore,
-            self.lang_filter,
-            &self.invocation,
-            &self.seed.config_path,
-        );
+        *filter = self.path_filter(repo_root);
         crate::test_runner::emit_test_progress("kiss test: Reloaded .kissconfig");
         Ok(true)
     }
@@ -226,6 +225,16 @@ impl WatchLiveConfig {
 
     pub(crate) fn watched_config_path(&self) -> &Path {
         &self.seed.config_path
+    }
+
+    pub(crate) fn path_filter(&self, repo_root: &Path) -> WatchPathFilter {
+        WatchPathFilter::build_with_config(
+            repo_root,
+            &self.ignore,
+            self.lang_filter,
+            &self.target_request,
+            self.watched_config_path(),
+        )
     }
 }
 

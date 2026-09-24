@@ -58,11 +58,7 @@ pub(super) fn detect_live_rust_coverage_tool_identity(
         });
         let llvm_v = scope.spawn(|| -> Result<String, String> {
             Ok(version_with_meta_tag(
-                command_stdout(
-                    &PathBuf::from("cargo"),
-                    &["llvm-cov", "--version"],
-                    &repo,
-                )?,
+                command_stdout(&PathBuf::from("cargo"), &["llvm-cov", "--version"], &repo)?,
                 Path::new("cargo-llvm-cov"),
             ))
         });
@@ -74,11 +70,7 @@ pub(super) fn detect_live_rust_coverage_tool_identity(
         });
         let nextest_v = scope.spawn(|| -> Result<String, String> {
             Ok(version_with_meta_tag(
-                command_stdout(
-                    &PathBuf::from("cargo"),
-                    &["nextest", "--version"],
-                    &repo,
-                )?,
+                command_stdout(&PathBuf::from("cargo"), &["nextest", "--version"], &repo)?,
                 Path::new("cargo-nextest"),
             ))
         });

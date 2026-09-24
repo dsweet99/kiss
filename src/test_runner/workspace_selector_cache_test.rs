@@ -351,10 +351,7 @@ fn load_cached_rust_workspace_selectors_keeps_logical_mod_tests() {
         root,
         &ignore,
         &[],
-        &[
-            "tests::unit_ok".into(),
-            "tests/foo.rs::integ".into(),
-        ],
+        &["tests::unit_ok".into(), "tests/foo.rs::integ".into()],
         &[],
     )
     .expect("store");
@@ -782,7 +779,11 @@ fn durable_plan_is_ignored_when_kiss_dir_is_absent() {
     let tmp = tempdir().unwrap();
     let root = tmp.path();
     fs::create_dir_all(root.join("tests")).unwrap();
-    fs::write(root.join("tests/test_a.py"), "def test_a():\n    assert True\n").unwrap();
+    fs::write(
+        root.join("tests/test_a.py"),
+        "def test_a():\n    assert True\n",
+    )
+    .unwrap();
     fs::write(root.join("lib.rs"), "#[test]\nfn t() {}\n").unwrap();
     store_workspace_selectors(
         root,

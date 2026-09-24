@@ -58,10 +58,7 @@ fn rust_witness_row_reportable(witness: &ExecutionWitness, i: usize) -> bool {
         && witness.durations_ns.get(i).copied().flatten().is_some()
 }
 
-pub(crate) fn rust_witness_overlap(
-    planned: &[String],
-    witness: &ExecutionWitness,
-) -> Vec<String> {
+pub(crate) fn rust_witness_overlap(planned: &[String], witness: &ExecutionWitness) -> Vec<String> {
     planned
         .iter()
         .filter(|selector| {

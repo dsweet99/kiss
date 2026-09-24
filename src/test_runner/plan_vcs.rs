@@ -140,10 +140,7 @@ pub(crate) fn python_all_plan(
         python_extra,
         crate::test_runner::python_coverage_index::PYTHON_COVERAGE_ENV_KEYS,
     );
-    crate::test_runner::emit_stage_time(
-        "python_source_fingerprint",
-        fingerprint_started.elapsed(),
-    );
+    crate::test_runner::emit_stage_time("python_source_fingerprint", fingerprint_started.elapsed());
     (py_sel, !current)
 }
 

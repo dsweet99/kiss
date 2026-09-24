@@ -5,6 +5,37 @@ use crate::test_git::TestChangeMode;
 use kiss::Language;
 
 #[test]
+fn plan_for_invocation_follows_target_focus() {
+    use crate::bin_cli::args::TestInvocation;
+    use crate::test_runner::test_mode_fixtures::{dry_run_cmd_args, init_git, with_cwd};
+    let _cwd = crate::cwd_test_lock::lock();
+    let tmp = tempfile::tempdir().unwrap();
+    init_git(&tmp);
+    std::fs::write(tmp.path().join("lib.rs"), "pub fn f() {}\n").unwrap();
+    crate::test_runner::test_mode_fixtures::git_in(tmp.path())
+        .args(["add", "."])
+        .status()
+        .unwrap();
+    crate::test_runner::test_mode_fixtures::git_in(tmp.path())
+        .args(["commit", "-m", "m"])
+        .status()
+        .unwrap();
+    with_cwd(tmp.path(), || {
+        let all = dry_run_cmd_args(TestInvocation::All, &[], 1, Some(Language::Rust));
+        assert!(super::plan_for_invocation(&all).is_ok());
+        let commit = dry_run_cmd_args(TestInvocation::Commit, &[], 1, Some(Language::Rust));
+        assert!(super::plan_for_invocation(&commit).is_ok());
+        let missing = dry_run_cmd_args(
+            TestInvocation::Targets(vec!["missing.py".into()]),
+            &[],
+            1,
+            Some(Language::Python),
+        );
+        assert!(super::plan_for_invocation(&missing).is_err());
+    });
+}
+
+#[test]
 fn run_test_returns_nonzero_when_planning_fails_outside_git_repo() {
     let _cwd = crate::cwd_test_lock::lock();
     let tmp = tempfile::tempdir().unwrap();
@@ -12,12 +43,20 @@ fn run_test_returns_nonzero_when_planning_fails_outside_git_repo() {
     std::env::set_current_dir(tmp.path()).unwrap();
     let code = crate::test_runner::run_test(crate::test_runner::RunTestCmdArgs {
         invocation: crate::bin_cli::args::TestInvocation::Commit,
+        target_request: crate::test_runner::target_request::request_from_focus(
+            crate::test_runner::target_request::TargetFocus::Git(
+                crate::test_runner::target_request::GitFocus::Commit,
+            ),
+            None,
+            &[],
+        ),
         main_branch_cli: None,
         base_branch_cli: None,
         dry_run: true,
         force_rerun: false,
         force_bad: false,
         metrics: false,
+        coverage_all: false,
         jobs: 1,
         extra: &[],
         python_extra: &[],
@@ -38,12 +77,20 @@ fn run_test_dry_run_commit_in_workspace_completes() {
     let code = crate::test_runner::test_mode_fixtures::with_cwd(tmp.path(), || {
         crate::test_runner::run_test(crate::test_runner::RunTestCmdArgs {
             invocation: crate::bin_cli::args::TestInvocation::Commit,
+            target_request: crate::test_runner::target_request::request_from_focus(
+                crate::test_runner::target_request::TargetFocus::Git(
+                    crate::test_runner::target_request::GitFocus::Commit,
+                ),
+                Some(Language::Rust),
+                &[],
+            ),
             main_branch_cli: None,
             base_branch_cli: None,
             dry_run: true,
             force_rerun: false,
             force_bad: false,
             metrics: false,
+            coverage_all: false,
             jobs: 1,
             extra: &[],
             python_extra: &[],
@@ -68,12 +115,17 @@ fn run_test_reports_run_selectors_error_for_unsupported_rust_extra() {
     let code = crate::test_runner::test_mode_fixtures::with_cwd(tmp.path(), || {
         crate::test_runner::run_test(crate::test_runner::RunTestCmdArgs {
             invocation: crate::bin_cli::args::TestInvocation::All,
+            target_request: crate::test_runner::target_request::workspace_request(
+                Some(Language::Rust),
+                &[],
+            ),
             main_branch_cli: None,
             base_branch_cli: None,
             dry_run: true,
             force_rerun: false,
             force_bad: false,
             metrics: false,
+            coverage_all: false,
             jobs: 1,
             extra: &extra,
             python_extra: &[],
@@ -96,18 +148,28 @@ fn cold_initialization_predicate_is_limited_to_unfiltered_base_or_main() {
         dry_run: bool,
         lang_filter: Option<Language>,
     ) -> crate::test_runner::RunTestCmdArgs<'static> {
+        let invocation = match mode {
+            TestChangeMode::Commit => crate::bin_cli::args::TestInvocation::Commit,
+            TestChangeMode::Base => crate::bin_cli::args::TestInvocation::Base,
+            TestChangeMode::Main => crate::bin_cli::args::TestInvocation::Main,
+        };
         crate::test_runner::RunTestCmdArgs {
-            invocation: match mode {
-                TestChangeMode::Commit => crate::bin_cli::args::TestInvocation::Commit,
-                TestChangeMode::Base => crate::bin_cli::args::TestInvocation::Base,
-                TestChangeMode::Main => crate::bin_cli::args::TestInvocation::Main,
-            },
+            invocation: invocation.clone(),
+            target_request: crate::test_runner::target_request::request_from_invocation(
+                &invocation,
+                None,
+                None,
+                None,
+                lang_filter,
+                &[],
+            ),
             main_branch_cli: None,
             base_branch_cli: None,
             dry_run,
             force_rerun: false,
             force_bad: false,
             metrics: false,
+            coverage_all: false,
             jobs: 16,
             extra: &[],
             python_extra: &[],
@@ -145,12 +207,21 @@ fn cold_initialization_population_marks_missing_state_for_both_languages() {
     let tmp = tempfile::tempdir().unwrap();
     let args = crate::test_runner::RunTestCmdArgs {
         invocation: crate::bin_cli::args::TestInvocation::Base,
+        target_request: crate::test_runner::target_request::request_from_invocation(
+            &crate::bin_cli::args::TestInvocation::Base,
+            None,
+            None,
+            None,
+            None,
+            &[],
+        ),
         main_branch_cli: None,
         base_branch_cli: None,
         dry_run: false,
         force_rerun: false,
         force_bad: false,
         metrics: false,
+        coverage_all: false,
         jobs: 16,
         extra: &[],
         python_extra: &[],

@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::bin_cli::args::TestInvocation;
+use crate::test_runner::target_request::{GitFocus, TargetFocus, TargetRequest};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum WatchRootKind {
@@ -16,28 +16,25 @@ pub(crate) struct WatchRegistration {
 
 pub(crate) fn resolve_watch_registrations(
     repo_root: &Path,
-    invocation: &TestInvocation,
+    request: &TargetRequest,
     _ignore: &[String],
     config_path: &Path,
 ) -> Result<Vec<WatchRegistration>, String> {
     let mut regs: Vec<WatchRegistration> = Vec::new();
-    match invocation {
-        TestInvocation::All
-        | TestInvocation::Commit
-        | TestInvocation::Base
-        | TestInvocation::Main => {
+    match &request.focus {
+        TargetFocus::Workspace | TargetFocus::Git(_) => {
             regs.push(WatchRegistration {
                 path: repo_root.to_path_buf(),
                 kind: WatchRootKind::Recursive,
             });
         }
-        TestInvocation::Targets(targets) => {
-            for raw in targets {
-                push_target_registration(repo_root, raw, &mut regs)?;
+        TargetFocus::Operands(operands) => {
+            for operand in operands {
+                push_target_registration(repo_root, &operand.raw, &mut regs)?;
             }
         }
     }
-    push_support_registrations(repo_root, invocation, &mut regs);
+    push_support_registrations(repo_root, &request.focus, &mut regs);
     push_config_registration(repo_root, config_path, &mut regs);
     Ok(dedup_registrations(regs))
 }
@@ -113,26 +110,23 @@ pub(super) fn is_source_file_operand(path_part: &Path, abs: &Path) -> bool {
 
 fn push_support_registrations(
     repo_root: &Path,
-    invocation: &TestInvocation,
+    focus: &TargetFocus,
     regs: &mut Vec<WatchRegistration>,
 ) {
     regs.push(WatchRegistration {
         path: repo_root.to_path_buf(),
         kind: WatchRootKind::NonRecursive,
     });
-    push_python_ancestor_support_roots(repo_root, invocation, regs);
-    if matches!(
-        invocation,
-        TestInvocation::Commit | TestInvocation::Base | TestInvocation::Main
-    ) {
-        let git = repo_root.join(".git");
+    push_python_ancestor_support_roots(repo_root, focus, regs);
+    if let TargetFocus::Git(git) = focus {
+        let git_dir = repo_root.join(".git");
         regs.push(WatchRegistration {
-            path: git.clone(),
+            path: git_dir.clone(),
             kind: WatchRootKind::NonRecursive,
         });
-        if matches!(invocation, TestInvocation::Base | TestInvocation::Main) {
+        if !matches!(git, GitFocus::Commit) {
             regs.push(WatchRegistration {
-                path: git.join("refs").join("heads"),
+                path: git_dir.join("refs").join("heads"),
                 kind: WatchRootKind::NonRecursive,
             });
         }
@@ -145,14 +139,14 @@ fn push_support_registrations(
 
 fn push_python_ancestor_support_roots(
     repo_root: &Path,
-    invocation: &TestInvocation,
+    focus: &TargetFocus,
     regs: &mut Vec<WatchRegistration>,
 ) {
-    let TestInvocation::Targets(targets) = invocation else {
+    let TargetFocus::Operands(operands) = focus else {
         return;
     };
-    for raw in targets {
-        let path_part = raw.split_once("::").map_or(raw.as_str(), |(path, _)| path);
+    for raw in operands.iter().map(|operand| operand.raw.as_str()) {
+        let path_part = raw.split_once("::").map_or(raw, |(path, _)| path);
         let abs = resolve_target_abs(repo_root, Path::new(path_part));
         if !is_python_collection_root(path_part, &abs) {
             continue;
@@ -234,13 +228,34 @@ fn dedup_registrations(regs: Vec<WatchRegistration>) -> Vec<WatchRegistration> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bin_cli::args::TestInvocation;
+    use crate::test_runner::target_request::{
+        focus_from_invocation, operands_request, request_from_focus, workspace_request,
+    };
+
+    fn request(invocation: TestInvocation) -> TargetRequest {
+        request_from_focus(
+            focus_from_invocation(&invocation, None, None, None),
+            None,
+            &[],
+        )
+    }
+
+    #[test]
+    fn roots_request_helper_uses_focus() {
+        assert_eq!(request(TestInvocation::All), workspace_request(None, &[]));
+        assert_eq!(
+            request(TestInvocation::Targets(vec!["z.py".into(), "a.py".into()])),
+            operands_request(&["z.py".into(), "a.py".into()], None, &[])
+        );
+    }
 
     #[test]
     fn all_registers_repo_root_recursive() {
         let tmp = tempfile::tempdir().unwrap();
         let regs = resolve_watch_registrations(
             tmp.path(),
-            &TestInvocation::All,
+            &request(TestInvocation::All),
             &[],
             Path::new(".kissconfig"),
         )
@@ -260,7 +275,7 @@ mod tests {
         std::fs::write(&py, "x=1\n").unwrap();
         let regs = resolve_watch_registrations(
             tmp.path(),
-            &TestInvocation::Targets(vec!["src/a.py".into()]),
+            &request(TestInvocation::Targets(vec!["src/a.py".into()])),
             &[],
             Path::new(".kissconfig"),
         )
@@ -278,7 +293,7 @@ mod tests {
         std::fs::write(pkg.join("a.py"), "x=1\n").unwrap();
         let regs = resolve_watch_registrations(
             tmp.path(),
-            &TestInvocation::Targets(vec!["src/pkg/a.py".into()]),
+            &request(TestInvocation::Targets(vec!["src/pkg/a.py".into()])),
             &[],
             Path::new(".kissconfig"),
         )
@@ -302,7 +317,7 @@ mod tests {
         std::fs::create_dir_all(&src).unwrap();
         let regs = resolve_watch_registrations(
             tmp.path(),
-            &TestInvocation::Targets(vec!["src".into()]),
+            &request(TestInvocation::Targets(vec!["src".into()])),
             &[],
             Path::new(".kissconfig"),
         )
@@ -319,7 +334,7 @@ mod tests {
         std::fs::create_dir(&suite).unwrap();
         let regs = resolve_watch_registrations(
             tmp.path(),
-            &TestInvocation::Targets(vec!["suite.py".into()]),
+            &request(TestInvocation::Targets(vec!["suite.py".into()])),
             &[],
             Path::new(".kissconfig"),
         )
@@ -336,7 +351,7 @@ mod tests {
         std::fs::create_dir_all(&config_dir).unwrap();
         let regs = resolve_watch_registrations(
             tmp.path(),
-            &TestInvocation::Targets(vec!["src/a.py".into()]),
+            &request(TestInvocation::Targets(vec!["src/a.py".into()])),
             &[],
             Path::new("config/watch.toml"),
         )
@@ -355,15 +370,40 @@ mod tests {
         std::fs::write(&config, "[test]\n").unwrap();
         let regs = resolve_watch_registrations(
             &repo,
-            &TestInvocation::Targets(vec!["src/a.py".into()]),
+            &request(TestInvocation::Targets(vec!["src/a.py".into()])),
             &[],
             Path::new("../watch.toml"),
         )
         .unwrap();
         assert!(regs.iter().any(|r| {
-            path_eq_canon(&r.path, tmp.path())
-                && matches!(r.kind, WatchRootKind::NonRecursive)
+            path_eq_canon(&r.path, tmp.path()) && matches!(r.kind, WatchRootKind::NonRecursive)
         }));
+    }
+
+    #[test]
+    fn commit_request_registers_git_dir_workspace_does_not() {
+        let tmp = tempfile::tempdir().unwrap();
+        let git = tmp.path().join(".git");
+        let workspace = resolve_watch_registrations(
+            tmp.path(),
+            &request(TestInvocation::All),
+            &[],
+            Path::new(".kissconfig"),
+        )
+        .unwrap();
+        let commit = resolve_watch_registrations(
+            tmp.path(),
+            &request(TestInvocation::Commit),
+            &[],
+            Path::new(".kissconfig"),
+        )
+        .unwrap();
+        assert!(!workspace.iter().any(|r| r.path == git));
+        assert!(
+            commit
+                .iter()
+                .any(|r| r.path == git && matches!(r.kind, WatchRootKind::NonRecursive))
+        );
     }
 
     fn path_eq_canon(left: &Path, right: &Path) -> bool {

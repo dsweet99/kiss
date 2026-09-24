@@ -239,6 +239,7 @@ fn timed_python_selectors(
             ids,
             python_extra,
         );
+        super::target_request::add_index();
     }
     (out, started.elapsed())
 }
@@ -256,6 +257,7 @@ fn timed_rust_selectors(
     let out = runners::enumerate_workspace_rust_selectors(repo_root, ignore);
     if let Ok(ids) = out.as_ref() {
         super::workspace_selector_cache::store_rust_workspace_selectors(repo_root, ignore, ids);
+        super::target_request::add_index();
     }
     (out, started.elapsed())
 }

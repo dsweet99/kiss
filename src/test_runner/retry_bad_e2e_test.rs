@@ -9,10 +9,10 @@ use tempfile::TempDir;
 
 use crate::bin_cli::args::TestInvocation;
 use crate::cwd_test_lock;
+use crate::test_runner::RunTestCmdArgs;
 use crate::test_runner::capture_stdout::capture_stdout;
 use crate::test_runner::run_test;
 use crate::test_runner::workspace_selector_cache::store_python_workspace_selectors;
-use crate::test_runner::RunTestCmdArgs;
 
 fn init_git(root: &Path) {
     assert!(
@@ -65,20 +65,21 @@ fn python_versions(root: &Path) -> (String, String) {
     )
 }
 
-fn seed_pass_cache(
+fn seed_cache(
     root: &Path,
     versions: &(String, String),
     selector: &str,
     coverage_file: &str,
     lines: &[u32],
+    status: &str,
+    exit_code: i32,
 ) {
     let root = root.canonicalize().unwrap();
     let (python_version, pytest_version) = versions;
     let env = kiss::python_coverage_env_map(&root);
-    let cache_root = crate::test_runner::python_coverage_index::storage::python_coverage_cache_root(
-        &root,
-    )
-    .unwrap();
+    let cache_root =
+        crate::test_runner::python_coverage_index::storage::python_coverage_cache_root(&root)
+            .unwrap();
     fs::create_dir_all(cache_root.join("entries")).unwrap();
     let req = kiss::rslip::RslipRequest {
         nodeid: selector.to_string(),
@@ -96,10 +97,7 @@ fn seed_pass_cache(
     };
     let fingerprint = kiss::rslip::cache_fingerprint_for_request(&req).unwrap();
     let abs = root.join(coverage_file).to_string_lossy().to_string();
-    let files = BTreeMap::from([(
-        abs.clone(),
-        lines.iter().copied().collect::<BTreeSet<_>>(),
-    )]);
+    let files = BTreeMap::from([(abs.clone(), lines.iter().copied().collect::<BTreeSet<_>>())]);
     let coverage = kiss::rslip::LineCoverage {
         files: files.clone(),
     };
@@ -112,8 +110,8 @@ fn seed_pass_cache(
     let payload = serde_json::json!({
         "schema_version": kiss::rslip::CACHE_SCHEMA_VERSION,
         "nodeid": selector,
-        "status": "Passed",
-        "exit_code": 0,
+        "status": status,
+        "exit_code": exit_code,
         "duration": { "secs": 0, "nanos": 1_000_000 },
         "coverage": { "files": files_json },
         "covered_digests": covered_digests,
@@ -127,19 +125,11 @@ fn seed_pass_cache(
     .unwrap();
 }
 
-fn seed_prior_fail(root: &Path, versions: &(String, String)) {
-    let (python, pytest) = versions;
-    let body = format!(
-        "{{\n  \"schema_version\": \"kiss-test-last-status-v1\",\n  \"records\": [\n    {{\n      \"language\": \"python\",\n      \"selector\": \"test_lib.py::test_flip\",\n      \"identity\": {{\n        \"schema_version\": \"kiss-test-last-status-v1\",\n        \"tool_versions\": {{\n          \"pytest\": \"{pytest}\",\n          \"python\": \"{python}\"\n        }},\n        \"test_args\": [],\n        \"env\": {{}}\n      }}\n    }}\n  ]\n}}\n"
-    );
-    fs::create_dir_all(root.join(".kiss")).unwrap();
-    fs::write(root.join(".kiss/test_last_status.json"), body).unwrap();
-}
-
 fn retry_bad_args() -> RunTestCmdArgs<'static> {
     let gate = kiss::GateConfig {
         test_coverage_threshold: 0,
         orphan_detection: false,
+        max_unit_test_seconds: Vec::new(),
         ..Default::default()
     };
     RunTestCmdArgs {
@@ -147,12 +137,21 @@ fn retry_bad_args() -> RunTestCmdArgs<'static> {
             "test_lib.py::test_ok".into(),
             "test_lib.py::test_flip".into(),
         ]),
+        target_request: crate::test_runner::target_request::operands_request(
+            &[
+                "test_lib.py::test_ok".into(),
+                "test_lib.py::test_flip".into(),
+            ],
+            Some(kiss::Language::Python),
+            &[],
+        ),
         main_branch_cli: None,
         base_branch_cli: None,
         dry_run: false,
         force_rerun: false,
         force_bad: true,
         metrics: false,
+        coverage_all: false,
         jobs: 1,
         extra: &[],
         python_extra: &[],
@@ -179,31 +178,37 @@ fn retry_bad_keeps_prior_pass_cached_and_reruns_fail() {
         &[],
     ));
     let versions = python_versions(tmp.path());
-    seed_pass_cache(
+    seed_cache(
         tmp.path(),
         &versions,
         "test_lib.py::test_ok",
         "test_lib.py",
         &[4, 5],
+        "Passed",
+        0,
     );
-    seed_pass_cache(
+    seed_cache(
         tmp.path(),
         &versions,
         "test_lib.py::test_flip",
         "lib.py",
         &[1],
+        "Failed",
+        1,
     );
-    seed_prior_fail(tmp.path(), &versions);
 
     let orig = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
+    let mut code = 1;
     let out = capture_stdout(|| {
-        assert_eq!(run_test(retry_bad_args()), 0, "retry-bad must exit 0");
+        code = run_test(retry_bad_args());
     });
     std::env::set_current_dir(orig).unwrap();
+    assert_eq!(code, 0, "retry-bad must exit 0; out={out}");
 
     assert!(
-        out.contains("PASS (cached)") && out.contains("test_ok"),
+        out.contains("kiss test: rslip prepared hits=1 misses=1")
+            && out.contains("PASS test_lib.py::test_ok"),
         "prior PASS must stay cached; out={out}"
     );
     assert!(

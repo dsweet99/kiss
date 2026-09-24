@@ -47,7 +47,11 @@ fn store_fixture_enum_cache(root: &std::path::Path, ignore: &[String], selectors
         "ignore": ignore,
         "selectors": selectors,
     });
-    fs::write(fixture_enum_cache_path(root), serde_json::to_vec(&payload).unwrap()).unwrap();
+    fs::write(
+        fixture_enum_cache_path(root),
+        serde_json::to_vec(&payload).unwrap(),
+    )
+    .unwrap();
 }
 
 fn load_fixture_enum_cache(root: &std::path::Path, ignore: &[String]) -> Option<Vec<String>> {
@@ -113,9 +117,7 @@ fn persistent_macro_generated_repo() -> std::path::PathBuf {
         let root = std::env::temp_dir().join("kiss-macro-generated-fixture");
         let stamp = root.join(".kiss").join("fixture_inplace_ok");
         if root.join("Cargo.toml").is_file()
-            && root
-                .join(".kiss/rust_llvm_cov_cache/build/target")
-                .is_dir()
+            && root.join(".kiss/rust_llvm_cov_cache/build/target").is_dir()
             && stamp.is_file()
             && fixture_enum_cache_path(&root).is_file()
             && fs::read_to_string(&stamp).ok().as_deref() == Some(root.to_string_lossy().as_ref())
@@ -252,9 +254,7 @@ fn persistent_ignored_static_listing_repo() -> std::path::PathBuf {
         let root = std::env::temp_dir().join("kiss-ignored-static-listing-fixture");
         let stamp = root.join(".kiss").join("fixture_inplace_ok");
         let usable = root.join("Cargo.toml").is_file()
-            && root
-                .join(".kiss/rust_llvm_cov_cache/build/target")
-                .is_dir()
+            && root.join(".kiss/rust_llvm_cov_cache/build/target").is_dir()
             && stamp.is_file()
             && fixture_enum_cache_path(&root).is_file()
             && fs::read_to_string(&stamp).ok().as_deref() == Some(root.to_string_lossy().as_ref());
@@ -280,8 +280,7 @@ mod tests {
         )
         .unwrap();
         let ignore = vec!["tests".to_string()];
-        let selectors =
-            enumerate_workspace_rust_selectors(&root, &ignore).unwrap_or_default();
+        let selectors = enumerate_workspace_rust_selectors(&root, &ignore).unwrap_or_default();
         store_fixture_enum_cache(&root, &ignore, &selectors);
         fs::create_dir_all(root.join(".kiss")).unwrap();
         fs::write(&stamp, root.to_string_lossy().as_bytes()).unwrap();
@@ -297,9 +296,7 @@ fn persistent_ignored_macro_listing_repo() -> std::path::PathBuf {
         let root = std::env::temp_dir().join("kiss-ignored-macro-listing-fixture");
         let stamp = root.join(".kiss").join("fixture_inplace_ok");
         let usable = root.join("Cargo.toml").is_file()
-            && root
-                .join(".kiss/rust_llvm_cov_cache/build/target")
-                .is_dir()
+            && root.join(".kiss/rust_llvm_cov_cache/build/target").is_dir()
             && stamp.is_file()
             && fixture_enum_cache_path(&root).is_file()
             && fs::read_to_string(&stamp).ok().as_deref() == Some(root.to_string_lossy().as_ref());
@@ -325,8 +322,7 @@ mod tests {
         )
         .unwrap();
         let ignore = vec!["tests".to_string()];
-        let selectors =
-            enumerate_workspace_rust_selectors(&root, &ignore).unwrap_or_default();
+        let selectors = enumerate_workspace_rust_selectors(&root, &ignore).unwrap_or_default();
         store_fixture_enum_cache(&root, &ignore, &selectors);
         fs::create_dir_all(root.join(".kiss")).unwrap();
         fs::write(&stamp, root.to_string_lossy().as_bytes()).unwrap();
@@ -342,9 +338,7 @@ fn persistent_report_id_submodule_repo() -> std::path::PathBuf {
         let root = std::env::temp_dir().join("kiss-report-id-submodule-fixture");
         let stamp = root.join(".kiss").join("fixture_inplace_ok");
         let usable = root.join("Cargo.toml").is_file()
-            && root
-                .join(".kiss/rust_llvm_cov_cache/build/target")
-                .is_dir()
+            && root.join(".kiss/rust_llvm_cov_cache/build/target").is_dir()
             && stamp.is_file()
             && root.join(".kiss").join("fixture_report_ids.json").is_file()
             && fs::read_to_string(&stamp).ok().as_deref() == Some(root.to_string_lossy().as_ref());

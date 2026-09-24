@@ -4,9 +4,9 @@ use std::time::{Duration, Instant};
 use kiss::Language;
 
 use super::{
+    RuntimeGateEval, RuntimeGateViolation, TimingCollectOpts, TimingLangInclude, TimingPopulation,
     collect_current_unit_test_timings, evaluate_runtime_gate, known_empty_unit_test_population,
-    load_rust_population_max_duration, selector_matches_ignore_prefix, RuntimeGateEval,
-    RuntimeGateViolation, TimingCollectOpts, TimingLangInclude, TimingPopulation,
+    load_rust_population_max_duration, selector_matches_ignore_prefix,
 };
 use crate::test_runner::check_line_coverage::repository_root_for_universe;
 

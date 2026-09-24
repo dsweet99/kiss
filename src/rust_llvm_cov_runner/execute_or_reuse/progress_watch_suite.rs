@@ -81,7 +81,9 @@ impl WatchSuiteReport {
 
     pub fn format(&self) -> String {
         let mut lines = status_lines(self);
-        if lines.is_empty() && self.violations.is_empty() && !self.gates_clean
+        if lines.is_empty()
+            && self.violations.is_empty()
+            && !self.gates_clean
             && !self.inventory_empty.iter().any(|empty| *empty)
         {
             return String::new();
@@ -100,8 +102,12 @@ impl WatchSuiteReport {
     }
 
     pub fn apply_totals(&mut self, totals: &WatchSuiteTotals) {
-        self.anonymous_passed = totals.passed.saturating_sub(self.named_count(SuiteOutcome::Pass));
-        self.anonymous_failed = totals.failed.saturating_sub(self.named_count(SuiteOutcome::Fail));
+        self.anonymous_passed = totals
+            .passed
+            .saturating_sub(self.named_count(SuiteOutcome::Pass));
+        self.anonymous_failed = totals
+            .failed
+            .saturating_sub(self.named_count(SuiteOutcome::Fail));
         self.anonymous_timed_out = totals
             .timed_out
             .saturating_sub(self.named_count(SuiteOutcome::Timeout));
@@ -115,7 +121,11 @@ fn language_slice(suite: &WatchSuiteReport, lang: crate::Language) -> Option<Wat
         crate::Language::Python => 0,
         crate::Language::Rust => 1,
     };
-    let (lp, lf, lt) = (suite.lang_passed[i], suite.lang_failed[i], suite.lang_timed_out[i]);
+    let (lp, lf, lt) = (
+        suite.lang_passed[i],
+        suite.lang_failed[i],
+        suite.lang_timed_out[i],
+    );
     let has_lang = lp + lf + lt > 0;
     let untagged = suite.anonymous_passed + suite.anonymous_failed + suite.anonymous_timed_out > 0;
     let known_empty = suite.inventory_empty[i];
@@ -134,7 +144,9 @@ fn language_slice(suite: &WatchSuiteReport, lang: crate::Language) -> Option<Wat
         ..WatchSuiteReport::default()
     };
     for (selector, outcome) in &suite.named {
-        let path_part = selector.split_once("::").map_or(selector.as_str(), |(p, _)| p);
+        let path_part = selector
+            .split_once("::")
+            .map_or(selector.as_str(), |(p, _)| p);
         if crate::Language::from_path(std::path::Path::new(path_part)) == Some(lang) {
             slice.named.insert(selector.clone(), *outcome);
         }
@@ -275,14 +287,21 @@ mod tests {
             "kiss test: lang_collapsed rust timeout 1".into(),
         ]);
         let mut current = WatchSuiteReport::default();
-        current.apply_language_totals(&previous, crate::Language::Python, &WatchSuiteTotals {
-            passed: 1,
-            failed: 0,
-            timed_out: 0,
-            total_label: "1s".into(),
-            max_pass_label: "1s".into(),
-        });
-        assert_eq!((current.passed(), current.failed(), current.timed_out()), (4, 2, 1));
+        current.apply_language_totals(
+            &previous,
+            crate::Language::Python,
+            &WatchSuiteTotals {
+                passed: 1,
+                failed: 0,
+                timed_out: 0,
+                total_label: "1s".into(),
+                max_pass_label: "1s".into(),
+            },
+        );
+        assert_eq!(
+            (current.passed(), current.failed(), current.timed_out()),
+            (4, 2, 1)
+        );
     }
 
     #[test]
@@ -290,13 +309,17 @@ mod tests {
         let mut suite = WatchSuiteReport::default();
         suite.merge_lines(&["PASS (cached): 5 selectors".into()]);
         let previous = suite.clone();
-        suite.apply_language_totals(&previous, crate::Language::Python, &WatchSuiteTotals {
-            passed: 1,
-            failed: 0,
-            timed_out: 0,
-            total_label: "1s".into(),
-            max_pass_label: "1s".into(),
-        });
+        suite.apply_language_totals(
+            &previous,
+            crate::Language::Python,
+            &WatchSuiteTotals {
+                passed: 1,
+                failed: 0,
+                timed_out: 0,
+                total_label: "1s".into(),
+                max_pass_label: "1s".into(),
+            },
+        );
         assert_eq!(suite, previous);
     }
 
@@ -633,8 +656,14 @@ mod tests {
             .expect("rust slice");
         assert_eq!(py_code, 0);
         assert_eq!(rs_code, 0);
-        assert!(py.contains("tests/a.py::test_a") && !py.contains("src/lib.rs::a_ok"), "{py}");
-        assert!(rs.contains("src/lib.rs::a_ok") && !rs.contains("tests/a.py::test_a"), "{rs}");
+        assert!(
+            py.contains("tests/a.py::test_a") && !py.contains("src/lib.rs::a_ok"),
+            "{py}"
+        );
+        assert!(
+            rs.contains("src/lib.rs::a_ok") && !rs.contains("tests/a.py::test_a"),
+            "{rs}"
+        );
         assert!(suite.try_format_language(crate::Language::Python).is_some());
         suite.anonymous_passed = 3;
         assert!(suite.try_format_language(crate::Language::Rust).is_none());
@@ -667,8 +696,7 @@ mod tests {
             "python slice must keep collapsed passes plus named problems; py={py}"
         );
         assert!(
-            py.contains("test_ops_eval_measurement_model")
-                && !py.contains("2633"),
+            py.contains("test_ops_eval_measurement_model") && !py.contains("2633"),
             "python slice={py}"
         );
         assert!(
