@@ -12,8 +12,8 @@ use super::facts::{FileRoleFacts, RoleRange};
 use super::index::SourceRoleIndex;
 use super::rust_cargo::{cargo_roots_for_files, workspace_roots_at, CargoRoot};
 use super::rust_include_parse::{parse_include_source, IncludeAst, IncludeKind};
-use super::rust_modules::resolve_external_mod;
-use super::rust_walk::{walk_file, WalkOutput};
+use super::rust_modules::{inline_mod_segment, resolve_external_mod};
+use super::rust_walk::{walk_file, walk_stmts_at_file, WalkOutput};
 use super::span::SourceSpan;
 use super::sweep::normalize_ranges;
 use super::types::CodeContextSet;
@@ -115,20 +115,28 @@ fn reachable_rust_sources_from(entry_paths: impl IntoIterator<Item = PathBuf>) -
 
 fn rust_child_source_paths(parent: &Path, items: &[syn::Item]) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    collect_child_source_paths(parent, items, &mut out);
+    collect_child_source_paths(parent, &[], items, &mut out);
     out
 }
 
-fn collect_child_source_paths(parent: &Path, items: &[syn::Item], out: &mut Vec<PathBuf>) {
+fn collect_child_source_paths(
+    parent: &Path,
+    inline_dirs: &[PathBuf],
+    items: &[syn::Item],
+    out: &mut Vec<PathBuf>,
+) {
     for item in items {
         match item {
             syn::Item::Mod(module) => {
                 if let Some((_, nested)) = &module.content {
-                    collect_child_source_paths(parent, nested, out);
+                    let mut inline_dirs = inline_dirs.to_vec();
+                    inline_dirs.push(inline_mod_segment(module));
+                    collect_child_source_paths(parent, &inline_dirs, nested, out);
                     continue;
                 }
                 let mut atoms = AtomInterner::new();
-                if let Ok(edges) = resolve_external_mod(parent, module, &CfgPred::True, &mut atoms)
+                if let Ok(edges) =
+                    resolve_external_mod(parent, inline_dirs, module, &CfgPred::True, &mut atoms)
                 {
                     out.extend(edges.into_iter().map(|edge| edge.target));
                 }
@@ -321,7 +329,7 @@ fn walk_stmt_list(
     atoms: &mut AtomInterner,
     out: &mut WalkOutput,
 ) -> Result<(), RoleBuildError> {
-    super::rust_walk::walk_stmts(path, stmts, pred, allow_production, atoms, out)
+    walk_stmts_at_file(path, stmts, pred, allow_production, atoms, out)
 }
 
 fn enqueue_edges(
@@ -538,5 +546,98 @@ mod rust_roles_test {
         assert!(reachable.contains(&canonical_path(&src.join("lib.rs"))));
         assert!(reachable.contains(&canonical_path(&src.join("kept.rs"))));
         assert!(!reachable.contains(&canonical_path(&src.join("orphan.rs"))));
+    }
+
+    #[test]
+    fn reachable_sources_follow_mods_declared_inside_inline_blocks() {
+        // `collect_child_source_paths` is a second, standalone walker (used
+        // by `reachable_workspace_rust_sources`) with the same inline-mod
+        // bug as the main `classify_rust` walker: it must also track
+        // enclosing inline `mod a { .. }` segments when resolving `mod x;`.
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(
+            tmp.path().join("Cargo.toml"),
+            "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
+        )
+        .unwrap();
+        std::fs::write(
+            src.join("lib.rs"),
+            "#[cfg(test)]\nmod tests {\n    mod helper;\n}\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(src.join("tests")).unwrap();
+        std::fs::write(src.join("tests").join("helper.rs"), "pub fn h() {}\n").unwrap();
+
+        let reachable = reachable_workspace_rust_sources(tmp.path()).unwrap();
+        assert!(reachable.contains(&canonical_path(&src.join("lib.rs"))));
+        assert!(reachable.contains(&canonical_path(&src.join("tests").join("helper.rs"))));
+    }
+
+    /// Regression for the EG train-3 layout: a `mod tests {}` inline block in
+    /// a `mod.rs` file declares two further `mod x;` children (mirroring
+    /// `src/server/mod.rs`'s `mod foreign_tenancy;`/`mod udf_tenancy;`), and a
+    /// sibling non-`mod.rs` file's own `mod tests {}` block declares a third
+    /// (mirroring `src/server/reasoning_projection.rs`'s `mod sweep_clock;`).
+    /// Before this fix `classify_rust` aborted the whole run with
+    /// `RoleBuildError::MissingModule` on layouts exactly like this one.
+    #[test]
+    fn classify_rust_resolves_mods_declared_inside_inline_test_blocks() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        let server = src.join("server");
+        std::fs::create_dir_all(server.join("tests")).unwrap();
+        std::fs::create_dir_all(server.join("reasoning_projection").join("tests")).unwrap();
+
+        let lib = src.join("lib.rs");
+        std::fs::write(&lib, "pub mod server;\n").unwrap();
+
+        let server_mod = server.join("mod.rs");
+        std::fs::write(
+            &server_mod,
+            "pub mod reasoning_projection;\n\n#[cfg(test)]\nmod tests {\n    mod foreign_tenancy;\n    mod udf_tenancy;\n}\n",
+        )
+        .unwrap();
+        let foreign_tenancy = server.join("tests").join("foreign_tenancy.rs");
+        std::fs::write(&foreign_tenancy, "pub fn f() {}\n").unwrap();
+        let udf_tenancy = server.join("tests").join("udf_tenancy.rs");
+        std::fs::write(&udf_tenancy, "pub fn u() {}\n").unwrap();
+
+        let reasoning_projection = server.join("reasoning_projection.rs");
+        std::fs::write(
+            &reasoning_projection,
+            "#[cfg(test)]\nmod tests {\n    mod sweep_clock;\n}\n",
+        )
+        .unwrap();
+        let sweep_clock = server
+            .join("reasoning_projection")
+            .join("tests")
+            .join("sweep_clock.rs");
+        std::fs::write(&sweep_clock, "pub fn s() {}\n").unwrap();
+
+        let files = [
+            lib.clone(),
+            server_mod.clone(),
+            foreign_tenancy.clone(),
+            udf_tenancy.clone(),
+            reasoning_projection.clone(),
+            sweep_clock.clone(),
+        ];
+        let parsed: Vec<_> = files
+            .iter()
+            .map(|f| parse_rust_file(f).unwrap())
+            .collect();
+        let refs: Vec<_> = parsed.iter().collect();
+        let index = classify_rust(&refs, &files).unwrap();
+
+        for file in [&foreign_tenancy, &udf_tenancy, &sweep_clock] {
+            assert_eq!(
+                index.file_composition(file),
+                super::super::types::FileComposition::TestOnly,
+                "{} reached only through an inline `mod tests {{ .. }}` block must be test-only",
+                file.display()
+            );
+        }
     }
 }
