@@ -147,7 +147,11 @@ fn conventional_target(
         return conventional_paths(parent_file, &child_module_dir(parent_file), name);
     }
     let dir = inline_stack_dir(parent_file, inline_dirs);
-    pick_mod_file(dir.join(format!("{name}.rs")), dir.join(name).join("mod.rs"), name)
+    pick_mod_file(
+        dir.join(format!("{name}.rs")),
+        dir.join(name).join("mod.rs"),
+        name,
+    )
 }
 
 fn conventional_paths(
@@ -300,7 +304,8 @@ mod modules_test {
         std::fs::write(&lib, "").unwrap();
         let mut atoms = AtomInterner::new();
         let missing: ItemMod = syn::parse_str("mod missing;").unwrap();
-        let err = resolve_external_mod(&lib, &[], &missing, &CfgPred::True, &mut atoms).unwrap_err();
+        let err =
+            resolve_external_mod(&lib, &[], &missing, &CfgPred::True, &mut atoms).unwrap_err();
         assert!(err.to_string().contains("missing module"));
 
         std::fs::write(src.join("present.rs"), "").unwrap();
@@ -313,7 +318,8 @@ mod modules_test {
         std::fs::create_dir_all(&nested).unwrap();
         std::fs::write(nested.join("mod.rs"), "").unwrap();
         let nested_mod: ItemMod = syn::parse_str("mod nested;").unwrap();
-        let edges = resolve_external_mod(&lib, &[], &nested_mod, &CfgPred::True, &mut atoms).unwrap();
+        let edges =
+            resolve_external_mod(&lib, &[], &nested_mod, &CfgPred::True, &mut atoms).unwrap();
         assert!(edges[0].target.ends_with("mod.rs"));
     }
 
@@ -339,13 +345,15 @@ mod modules_test {
         std::fs::write(&foo, "").unwrap();
         std::fs::write(src.join("foo").join("mod.rs"), "").unwrap();
         let nested_foo: ItemMod = syn::parse_str("mod foo;").unwrap();
-        let err = resolve_external_mod(&foo, &[], &nested_foo, &CfgPred::True, &mut atoms).unwrap_err();
+        let err =
+            resolve_external_mod(&foo, &[], &nested_foo, &CfgPred::True, &mut atoms).unwrap_err();
         assert!(
             err.to_string().contains("missing module"),
             "mod foo inside foo.rs looks for foo/foo.rs, not sibling foo.rs or foo/mod.rs"
         );
         let crate_root: ItemMod = syn::parse_str("mod foo;").unwrap();
-        let err = resolve_external_mod(&lib, &[], &crate_root, &CfgPred::True, &mut atoms).unwrap_err();
+        let err =
+            resolve_external_mod(&lib, &[], &crate_root, &CfgPred::True, &mut atoms).unwrap_err();
         assert!(err.to_string().contains("ambiguous module"));
 
         let bad: ItemMod = syn::parse_str("#[cfg_attr(unix, path)] mod z;").unwrap();
@@ -487,16 +495,28 @@ mod modules_test {
         let mut atoms = AtomInterner::new();
 
         let missing: ItemMod = syn::parse_str("mod missing;").unwrap();
-        let err = resolve_external_mod(&lib, &[PathBuf::from("inner")], &missing, &CfgPred::True, &mut atoms)
-            .unwrap_err();
+        let err = resolve_external_mod(
+            &lib,
+            &[PathBuf::from("inner")],
+            &missing,
+            &CfgPred::True,
+            &mut atoms,
+        )
+        .unwrap_err();
         assert!(err.to_string().contains("missing module"));
 
         std::fs::write(src.join("inner").join("dup.rs"), "").unwrap();
         std::fs::create_dir_all(src.join("inner").join("dup")).unwrap();
         std::fs::write(src.join("inner").join("dup").join("mod.rs"), "").unwrap();
         let dup: ItemMod = syn::parse_str("mod dup;").unwrap();
-        let err = resolve_external_mod(&lib, &[PathBuf::from("inner")], &dup, &CfgPred::True, &mut atoms)
-            .unwrap_err();
+        let err = resolve_external_mod(
+            &lib,
+            &[PathBuf::from("inner")],
+            &dup,
+            &CfgPred::True,
+            &mut atoms,
+        )
+        .unwrap_err();
         assert!(err.to_string().contains("ambiguous module"));
     }
 
@@ -516,15 +536,15 @@ mod modules_test {
         let tls = src.join("thread_files").join("tls.rs");
         std::fs::write(&tls, "").unwrap();
 
-        let thread: ItemMod = syn::parse_str("#[path = \"thread_files\"] mod thread { mod local_data; }")
-            .unwrap();
+        let thread: ItemMod =
+            syn::parse_str("#[path = \"thread_files\"] mod thread { mod local_data; }").unwrap();
         let segment = inline_mod_segment(&thread);
         assert_eq!(segment, PathBuf::from("thread_files"));
 
         let mut atoms = AtomInterner::new();
         let local_data: ItemMod = syn::parse_str("#[path = \"tls.rs\"] mod local_data;").unwrap();
-        let edges =
-            resolve_external_mod(&lib, &[segment], &local_data, &CfgPred::True, &mut atoms).unwrap();
+        let edges = resolve_external_mod(&lib, &[segment], &local_data, &CfgPred::True, &mut atoms)
+            .unwrap();
         assert_eq!(edges[0].target, tls);
     }
 
