@@ -229,6 +229,7 @@ fn reject_unresolved_targets(args: &TestCommandArgs<'_>) -> Result<(), i32> {
 }
 
 #[cfg(not(unix))]
+/// kiss-coverage-off
 fn wait_out_live_watcher(args: &TestCommandArgs<'_>) -> Option<i32> {
     #[cfg(unix)]
     let result = match try_wait_out_live_watcher(args) {
@@ -308,6 +309,11 @@ fn try_wait_out_live_watcher(args: &TestCommandArgs<'_>) -> Result<Option<i32>, 
         Err(err) => return Err(err),
     };
     let reply = crate::test_runner::oneshot_client_reply(reply, printed_waiting);
+    Ok(Some(emit_watcher_client_reply(&reply)))
+}
+
+#[cfg(unix)]
+fn emit_watcher_client_reply(reply: &crate::test_runner::NudgeReplyMsg) -> i32 {
     if let Some(output) = reply.output.as_deref()
         && !output.is_empty()
     {
@@ -319,7 +325,7 @@ fn try_wait_out_live_watcher(args: &TestCommandArgs<'_>) -> Result<Option<i32>, 
     if let Some(error) = reply.error.as_deref() {
         eprintln!("{}", format_watcher_client_error(error));
     }
-    Ok(Some(reply.exit_code))
+    reply.exit_code
 }
 
 fn format_watcher_client_error(error: &str) -> String {
@@ -760,7 +766,557 @@ mod tests {
             );
         }
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn take_oneshot_lock_honors_client_override_code() {
+        set_client_result_override_for_test(Some(Ok(Some(9))));
+        let test_cfg = TestSectionConfig::default();
+        let py = kiss::Config::python_defaults();
+        let rs = kiss::Config::rust_defaults();
+        let gate = kiss::GateConfig::default();
+        let args = TestCommandArgs {
+            invocation: TestInvocation::All,
+            main_branch: None,
+            base_branch: None,
+            dry_run: false,
+            retry_bad: false,
+            metrics: false,
+            coverage_all: false,
+            watch: false,
+            jobs: 1,
+            jobs_cli: Some(1),
+            ignore: &[],
+            cli_ignore: &[],
+            extra: &[],
+            lang_filter: None,
+            test_cfg: &test_cfg,
+            py_config: &py,
+            rs_config: &rs,
+            gate_config: &gate,
+            reload_kissconfig: false,
+            config_path: None,
+            language_tables: Default::default(),
+        };
+        let err = match test_cmd_lock::take_oneshot_lock(&args) {
+            Err(code) => code,
+            Ok(_) => panic!("override Some(9) must short-circuit the lock"),
+        };
+        assert_eq!(err, 9);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn take_oneshot_lock_honors_client_override_error() {
+        set_client_result_override_for_test(Some(Err("boom".into())));
+        let test_cfg = TestSectionConfig::default();
+        let py = kiss::Config::python_defaults();
+        let rs = kiss::Config::rust_defaults();
+        let gate = kiss::GateConfig::default();
+        let args = TestCommandArgs {
+            invocation: TestInvocation::All,
+            main_branch: None,
+            base_branch: None,
+            dry_run: false,
+            retry_bad: false,
+            metrics: false,
+            coverage_all: false,
+            watch: false,
+            jobs: 1,
+            jobs_cli: Some(1),
+            ignore: &[],
+            cli_ignore: &[],
+            extra: &[],
+            lang_filter: None,
+            test_cfg: &test_cfg,
+            py_config: &py,
+            rs_config: &rs,
+            gate_config: &gate,
+            reload_kissconfig: false,
+            config_path: None,
+            language_tables: Default::default(),
+        };
+        let err = match test_cmd_lock::take_oneshot_lock(&args) {
+            Err(code) => code,
+            Ok(_) => panic!("override Err must short-circuit the lock"),
+        };
+        assert_eq!(err, 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn take_oneshot_lock_acquires_when_override_none() {
+        set_client_result_override_for_test(Some(Ok(None)));
+        let test_cfg = TestSectionConfig::default();
+        let py = kiss::Config::python_defaults();
+        let rs = kiss::Config::rust_defaults();
+        let gate = kiss::GateConfig::default();
+        let args = TestCommandArgs {
+            invocation: TestInvocation::All,
+            main_branch: None,
+            base_branch: None,
+            dry_run: false,
+            retry_bad: false,
+            metrics: false,
+            coverage_all: false,
+            watch: false,
+            jobs: 1,
+            jobs_cli: Some(1),
+            ignore: &[],
+            cli_ignore: &[],
+            extra: &[],
+            lang_filter: None,
+            test_cfg: &test_cfg,
+            py_config: &py,
+            rs_config: &rs,
+            gate_config: &gate,
+            reload_kissconfig: false,
+            config_path: None,
+            language_tables: Default::default(),
+        };
+        let guard = match test_cmd_lock::take_oneshot_lock(&args) {
+            Ok(guard) => guard,
+            Err(code) => panic!("override None must acquire lock, got {code}"),
+        };
+        drop(guard);
+    }
+
+    #[test]
+    fn run_dry_tests_maps_interrupted_and_engine_error() {
+        let test_cfg = TestSectionConfig::default();
+        let py = kiss::Config::python_defaults();
+        let rs = kiss::Config::rust_defaults();
+        let gate = kiss::GateConfig::default();
+        let args = TestCommandArgs {
+            invocation: TestInvocation::All,
+            main_branch: None,
+            base_branch: None,
+            dry_run: true,
+            retry_bad: false,
+            metrics: false,
+            coverage_all: false,
+            watch: false,
+            jobs: 1,
+            jobs_cli: Some(1),
+            ignore: &[],
+            cli_ignore: &[],
+            extra: &[],
+            lang_filter: None,
+            test_cfg: &test_cfg,
+            py_config: &py,
+            rs_config: &rs,
+            gate_config: &gate,
+            reload_kissconfig: false,
+            config_path: None,
+            language_tables: kiss::LanguageTablesPresent {
+                python: true,
+                rust: true,
+            },
+        };
+        let mk_run_args = || RunTestCmdArgs {
+            invocation: TestInvocation::All,
+            target_request: crate::test_runner::target_request::workspace_request(None, &[]),
+            main_branch_cli: None,
+            base_branch_cli: None,
+            dry_run: true,
+            force_rerun: false,
+            force_bad: false,
+            metrics: false,
+            coverage_all: false,
+            jobs: 1,
+            extra: &[],
+            python_extra: &[],
+            ignore: &[],
+            lang_filter: None,
+            config_main_branch: None,
+            gate_config: gate.clone(),
+        };
+        assert_eq!(
+            run_dry_tests(&args, mk_run_args(), |_| RunTestOnceOutcome::Interrupted),
+            130
+        );
+        assert_eq!(
+            run_dry_tests(
+                &args,
+                mk_run_args(),
+                |_| RunTestOnceOutcome::EngineError("x".into())
+            ),
+            1
+        );
+    }
+
+    #[test]
+    fn reject_test_universe_languages_ok_when_both_configured() {
+        let test_cfg = TestSectionConfig::default();
+        let py = kiss::Config::python_defaults();
+        let rs = kiss::Config::rust_defaults();
+        let gate = kiss::GateConfig::default();
+        let args = TestCommandArgs {
+            invocation: TestInvocation::All,
+            main_branch: None,
+            base_branch: None,
+            dry_run: false,
+            retry_bad: false,
+            metrics: false,
+            coverage_all: false,
+            watch: false,
+            jobs: 1,
+            jobs_cli: Some(1),
+            ignore: &[],
+            cli_ignore: &[],
+            extra: &[],
+            lang_filter: None,
+            test_cfg: &test_cfg,
+            py_config: &py,
+            rs_config: &rs,
+            gate_config: &gate,
+            reload_kissconfig: false,
+            config_path: None,
+            language_tables: kiss::LanguageTablesPresent {
+                python: true,
+                rust: true,
+            },
+        };
+        assert!(reject_test_universe_languages(&args).is_ok());
+    }
+
+    #[test]
+    fn reject_test_universe_languages_scans_when_one_table_missing() {
+        let test_cfg = TestSectionConfig::default();
+        let py = kiss::Config::python_defaults();
+        let rs = kiss::Config::rust_defaults();
+        let gate = kiss::GateConfig::default();
+        let rust_only = TestCommandArgs {
+            invocation: TestInvocation::All,
+            main_branch: None,
+            base_branch: None,
+            dry_run: false,
+            retry_bad: false,
+            metrics: false,
+            coverage_all: false,
+            watch: false,
+            jobs: 1,
+            jobs_cli: Some(1),
+            ignore: &[],
+            cli_ignore: &[],
+            extra: &[],
+            lang_filter: Some(kiss::Language::Rust),
+            test_cfg: &test_cfg,
+            py_config: &py,
+            rs_config: &rs,
+            gate_config: &gate,
+            reload_kissconfig: false,
+            config_path: None,
+            language_tables: kiss::LanguageTablesPresent {
+                python: false,
+                rust: true,
+            },
+        };
+        // Workspace `.` has Rust sources; missing python table must still scan and accept.
+        assert!(reject_test_universe_languages(&rust_only).is_ok());
+        let py_only = TestCommandArgs {
+            lang_filter: Some(kiss::Language::Python),
+            language_tables: kiss::LanguageTablesPresent {
+                python: true,
+                rust: false,
+            },
+            ..rust_only
+        };
+        assert!(reject_test_universe_languages(&py_only).is_ok());
+    }
+
+    #[test]
+    fn run_dry_tests_maps_code_exit() {
+        let test_cfg = TestSectionConfig::default();
+        let py = kiss::Config::python_defaults();
+        let rs = kiss::Config::rust_defaults();
+        let gate = kiss::GateConfig::default();
+        let args = TestCommandArgs {
+            invocation: TestInvocation::All,
+            main_branch: None,
+            base_branch: None,
+            dry_run: true,
+            retry_bad: false,
+            metrics: false,
+            coverage_all: false,
+            watch: false,
+            jobs: 1,
+            jobs_cli: Some(1),
+            ignore: &[],
+            cli_ignore: &[],
+            extra: &[],
+            lang_filter: None,
+            test_cfg: &test_cfg,
+            py_config: &py,
+            rs_config: &rs,
+            gate_config: &gate,
+            reload_kissconfig: false,
+            config_path: None,
+            language_tables: kiss::LanguageTablesPresent {
+                python: true,
+                rust: true,
+            },
+        };
+        let run_args = RunTestCmdArgs {
+            invocation: TestInvocation::All,
+            target_request: crate::test_runner::target_request::workspace_request(None, &[]),
+            main_branch_cli: None,
+            base_branch_cli: None,
+            dry_run: true,
+            force_rerun: false,
+            force_bad: false,
+            metrics: false,
+            coverage_all: false,
+            jobs: 1,
+            extra: &[],
+            python_extra: &[],
+            ignore: &[],
+            lang_filter: None,
+            config_main_branch: None,
+            gate_config: gate.clone(),
+        };
+        assert_eq!(
+            run_dry_tests(&args, run_args, |_| RunTestOnceOutcome::Code(7)),
+            7
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn emit_watcher_client_reply_prints_output_and_errors() {
+        let code = emit_watcher_client_reply(&crate::test_runner::NudgeReplyMsg {
+            exit_code: 3,
+            output: Some("hello".into()),
+            error: Some("boom".into()),
+            ..Default::default()
+        });
+        assert_eq!(code, 3);
+        let code = emit_watcher_client_reply(&crate::test_runner::NudgeReplyMsg {
+            exit_code: 0,
+            output: Some("line\n".into()),
+            ..Default::default()
+        });
+        assert_eq!(code, 0);
+        let code = emit_watcher_client_reply(&crate::test_runner::NudgeReplyMsg {
+            exit_code: 1,
+            output: Some(String::new()),
+            ..Default::default()
+        });
+        assert_eq!(code, 1);
+    }
+
+    #[test]
+    fn reject_test_universe_languages_errors_when_tables_missing() {
+        let test_cfg = TestSectionConfig::default();
+        let py = kiss::Config::python_defaults();
+        let rs = kiss::Config::rust_defaults();
+        let gate = kiss::GateConfig::default();
+        let args = TestCommandArgs {
+            invocation: TestInvocation::All,
+            main_branch: None,
+            base_branch: None,
+            dry_run: false,
+            retry_bad: false,
+            metrics: false,
+            coverage_all: false,
+            watch: false,
+            jobs: 1,
+            jobs_cli: Some(1),
+            ignore: &[],
+            cli_ignore: &[],
+            extra: &[],
+            lang_filter: None,
+            test_cfg: &test_cfg,
+            py_config: &py,
+            rs_config: &rs,
+            gate_config: &gate,
+            reload_kissconfig: false,
+            config_path: None,
+            language_tables: kiss::LanguageTablesPresent {
+                python: false,
+                rust: false,
+            },
+        };
+        assert_eq!(reject_test_universe_languages(&args), Err(1));
+    }
+
+    #[test]
+    fn format_watcher_client_error_prefixes_bare_messages() {
+        assert_eq!(
+            format_watcher_client_error("error: already"),
+            "error: already"
+        );
+        assert_eq!(
+            format_watcher_client_error("nope"),
+            "error: kiss test: nope"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn try_wait_out_live_watcher_honors_override_paths() {
+        let test_cfg = TestSectionConfig::default();
+        let py = kiss::Config::python_defaults();
+        let rs = kiss::Config::rust_defaults();
+        let gate = kiss::GateConfig::default();
+        let args = TestCommandArgs {
+            invocation: TestInvocation::All,
+            main_branch: None,
+            base_branch: None,
+            dry_run: false,
+            retry_bad: false,
+            metrics: false,
+            coverage_all: false,
+            watch: false,
+            jobs: 1,
+            jobs_cli: Some(1),
+            ignore: &[],
+            cli_ignore: &[],
+            extra: &[],
+            lang_filter: None,
+            test_cfg: &test_cfg,
+            py_config: &py,
+            rs_config: &rs,
+            gate_config: &gate,
+            reload_kissconfig: false,
+            config_path: None,
+            language_tables: Default::default(),
+        };
+        set_client_result_override_for_test(Some(Ok(Some(5))));
+        assert_eq!(try_wait_out_live_watcher(&args).unwrap(), Some(5));
+        set_client_result_override_for_test(Some(Ok(None)));
+        assert_eq!(try_wait_out_live_watcher(&args).unwrap(), None);
+        set_client_result_override_for_test(Some(Err("x".into())));
+        assert!(try_wait_out_live_watcher(&args).is_err());
+        set_client_result_override_for_test(None);
+        let tmp = tempfile::tempdir().unwrap();
+        crate::test_runner::test_mode_fixtures::init_git(&tmp);
+        crate::test_runner::test_mode_fixtures::with_cwd(tmp.path(), || {
+            assert_eq!(
+                try_wait_out_live_watcher(&args).unwrap(),
+                None,
+                "isolated repo with no watcher session must return None"
+            );
+        });
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_local_tests_after_client_returns_oneshot_override_code() {
+        set_client_result_override_for_test(Some(Ok(Some(42))));
+        let test_cfg = TestSectionConfig::default();
+        let py = kiss::Config::python_defaults();
+        let rs = kiss::Config::rust_defaults();
+        let gate = kiss::GateConfig::default();
+        let args = TestCommandArgs {
+            invocation: TestInvocation::All,
+            main_branch: None,
+            base_branch: None,
+            dry_run: false,
+            retry_bad: false,
+            metrics: false,
+            coverage_all: false,
+            watch: false,
+            jobs: 1,
+            jobs_cli: Some(1),
+            ignore: &[],
+            cli_ignore: &[],
+            extra: &[],
+            lang_filter: None,
+            test_cfg: &test_cfg,
+            py_config: &py,
+            rs_config: &rs,
+            gate_config: &gate,
+            reload_kissconfig: false,
+            config_path: None,
+            language_tables: kiss::LanguageTablesPresent {
+                python: true,
+                rust: true,
+            },
+        };
+        let run_args = RunTestCmdArgs {
+            invocation: TestInvocation::All,
+            target_request: crate::test_runner::target_request::workspace_request(None, &[]),
+            main_branch_cli: None,
+            base_branch_cli: None,
+            dry_run: false,
+            force_rerun: false,
+            force_bad: false,
+            metrics: false,
+            coverage_all: false,
+            jobs: 1,
+            extra: &[],
+            python_extra: &[],
+            ignore: &[],
+            lang_filter: None,
+            config_main_branch: None,
+            gate_config: gate.clone(),
+        };
+        assert_eq!(
+            run_local_tests_after_client(&args, run_args, |_| RunTestOnceOutcome::Code(0)),
+            42
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_local_tests_after_client_returns_language_table_error() {
+        set_client_result_override_for_test(Some(Ok(None)));
+        let test_cfg = TestSectionConfig::default();
+        let py = kiss::Config::python_defaults();
+        let rs = kiss::Config::rust_defaults();
+        let gate = kiss::GateConfig::default();
+        let args = TestCommandArgs {
+            invocation: TestInvocation::All,
+            main_branch: None,
+            base_branch: None,
+            dry_run: false,
+            retry_bad: false,
+            metrics: false,
+            coverage_all: false,
+            watch: false,
+            jobs: 1,
+            jobs_cli: Some(1),
+            ignore: &[],
+            cli_ignore: &[],
+            extra: &[],
+            lang_filter: None,
+            test_cfg: &test_cfg,
+            py_config: &py,
+            rs_config: &rs,
+            gate_config: &gate,
+            reload_kissconfig: false,
+            config_path: None,
+            language_tables: kiss::LanguageTablesPresent {
+                python: false,
+                rust: false,
+            },
+        };
+        let run_args = RunTestCmdArgs {
+            invocation: TestInvocation::All,
+            target_request: crate::test_runner::target_request::workspace_request(None, &[]),
+            main_branch_cli: None,
+            base_branch_cli: None,
+            dry_run: false,
+            force_rerun: false,
+            force_bad: false,
+            metrics: false,
+            coverage_all: false,
+            jobs: 1,
+            extra: &[],
+            python_extra: &[],
+            ignore: &[],
+            lang_filter: None,
+            config_main_branch: None,
+            gate_config: gate.clone(),
+        };
+        assert_eq!(
+            run_local_tests_after_client(&args, run_args, |_| RunTestOnceOutcome::Code(0)),
+            1
+        );
+    }
 }
+
 
 #[cfg(test)]
 #[path = "test_cmd_client_test.rs"]

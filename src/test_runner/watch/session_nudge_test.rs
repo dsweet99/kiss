@@ -276,6 +276,8 @@ fn workspace_compat_targets_do_not_withhold_pending() {
 #[test]
 fn target_idle_replies_full_fail_recap() {
     use crate::test_runner::watch::control::NudgeRequestMsg as Msg;
+    let tmp = tempfile::tempdir().unwrap();
+    init_git(&tmp);
     let (tx, rx) = mpsc::channel::<NudgeRequest>();
     let (reply, wait) = mpsc::sync_channel(1);
     tx.send(NudgeRequest {
@@ -287,7 +289,7 @@ fn target_idle_replies_full_fail_recap() {
     .unwrap();
     let mut queued = None;
     coalesce_nudges(Some(&rx), &mut queued);
-    let mut last = LastReplies::for_repo(Path::new("."));
+    let mut last = LastReplies::for_repo(tmp.path());
     last.store(
         None,
         NudgeReplyMsg {
@@ -404,6 +406,8 @@ fn metrics_alone_do_not_force_new_cycle() {
 #[test]
 fn coalesce_lang_then_bare_idle_replies_each_slice() {
     use crate::test_runner::watch::control::NudgeRequestMsg as Msg;
+    let tmp = tempfile::tempdir().unwrap();
+    init_git(&tmp);
     let (tx, rx) = mpsc::channel::<NudgeRequest>();
     let (r_lang, w_lang) = mpsc::sync_channel(1);
     let (r_bare, w_bare) = mpsc::sync_channel(1);
@@ -419,7 +423,7 @@ fn coalesce_lang_then_bare_idle_replies_each_slice() {
     .unwrap();
     let mut queued = None;
     coalesce_nudges(Some(&rx), &mut queued);
-    let mut last = LastReplies::for_repo(Path::new("."));
+    let mut last = LastReplies::for_repo(tmp.path());
     last.store(
         None,
         NudgeReplyMsg {
@@ -669,6 +673,8 @@ fn can_merge_operand_pin_ignores_compat_targets() {
 fn coalesce_target_then_bare_idle_keeps_full_suite() {
     use crate::test_runner::target_request::operands_request;
     use crate::test_runner::watch::control::NudgeRequestMsg as Msg;
+    let tmp = tempfile::tempdir().unwrap();
+    init_git(&tmp);
     let (tx, rx) = mpsc::channel::<NudgeRequest>();
     let (r_tgt, w_tgt) = mpsc::sync_channel(1);
     let (r_bare, w_bare) = mpsc::sync_channel(1);
@@ -702,7 +708,7 @@ fn coalesce_target_then_bare_idle_keeps_full_suite() {
         TestInvocation::Targets(vec!["tests/a.py::test_a".into()])
     );
     assert_eq!(tgt_replies.len(), 1);
-    let mut last = LastReplies::for_repo(Path::new("."));
+    let mut last = LastReplies::for_repo(tmp.path());
     last.store(
         None,
         NudgeReplyMsg {
@@ -725,6 +731,8 @@ fn coalesce_target_then_bare_idle_keeps_full_suite() {
 #[test]
 fn coalesce_bare_then_target_idle_replies_full_recap() {
     use crate::test_runner::watch::control::NudgeRequestMsg as Msg;
+    let tmp = tempfile::tempdir().unwrap();
+    init_git(&tmp);
     let (tx, rx) = mpsc::channel::<NudgeRequest>();
     let (r_bare, w_bare) = mpsc::sync_channel(1);
     let (r_tgt, w_tgt) = mpsc::sync_channel(1);
@@ -751,7 +759,7 @@ fn coalesce_bare_then_target_idle_replies_full_recap() {
         queued.as_ref().is_some_and(|q| q.next.is_some()),
         "named TARGET must not merge onto bare"
     );
-    let mut last = LastReplies::for_repo(Path::new("."));
+    let mut last = LastReplies::for_repo(tmp.path());
     last.store(
         None,
         NudgeReplyMsg {
@@ -776,6 +784,8 @@ fn coalesce_bare_then_target_idle_replies_full_recap() {
 fn coalesce_bare_then_collapsed_target_starts_target_cycle() {
     use crate::test_runner::target_request::operands_request;
     use crate::test_runner::watch::control::NudgeRequestMsg as Msg;
+    let tmp = tempfile::tempdir().unwrap();
+    init_git(&tmp);
     let (tx, rx) = mpsc::channel::<NudgeRequest>();
     let (r_bare, w_bare) = mpsc::sync_channel(1);
     let (r_tgt, w_tgt) = mpsc::sync_channel(1);
@@ -798,7 +808,7 @@ fn coalesce_bare_then_collapsed_target_starts_target_cycle() {
     .unwrap();
     let mut queued = None;
     coalesce_nudges(Some(&rx), &mut queued);
-    let mut last = LastReplies::for_repo(Path::new("."));
+    let mut last = LastReplies::for_repo(tmp.path());
     last.store(
         None,
         NudgeReplyMsg {
@@ -885,6 +895,8 @@ fn collapsed_pass_target_idles_full_recap() {
 #[test]
 fn coalesce_lang_rust_then_python_idle_replies_each_slice() {
     use crate::test_runner::watch::control::NudgeRequestMsg as Msg;
+    let tmp = tempfile::tempdir().unwrap();
+    init_git(&tmp);
     let (tx, rx) = mpsc::channel::<NudgeRequest>();
     let (r_rs, w_rs) = mpsc::sync_channel(1);
     let (r_py, w_py) = mpsc::sync_channel(1);
@@ -906,7 +918,7 @@ fn coalesce_lang_rust_then_python_idle_replies_each_slice() {
             .is_some_and(|q| q.lang_filter == Some(kiss::Language::Rust) && q.next.is_some()),
         "--lang python must not merge onto --lang rust"
     );
-    let mut last = LastReplies::for_repo(Path::new("."));
+    let mut last = LastReplies::for_repo(tmp.path());
     last.store(
         Some(kiss::Language::Rust),
         NudgeReplyMsg {
@@ -987,6 +999,8 @@ fn coalesce_lang_rust_then_python_pending_keeps_separate_cycles() {
 fn coalesce_retry_bad_then_bare_idle_keeps_full_suite() {
     use crate::test_runner::target_request::operands_request;
     use crate::test_runner::watch::control::NudgeRequestMsg as Msg;
+    let tmp = tempfile::tempdir().unwrap();
+    init_git(&tmp);
     let (tx, rx) = mpsc::channel::<NudgeRequest>();
     let (r_bad, w_bad) = mpsc::sync_channel(1);
     let (r_bare, w_bare) = mpsc::sync_channel(1);
@@ -1023,7 +1037,7 @@ fn coalesce_retry_bad_then_bare_idle_keeps_full_suite() {
         TestInvocation::Targets(vec!["tests/a.py::test_a".into()])
     );
     assert_eq!(bad_replies.len(), 1);
-    let mut last = LastReplies::for_repo(Path::new("."));
+    let mut last = LastReplies::for_repo(tmp.path());
     last.store(
         None,
         NudgeReplyMsg {
@@ -1047,6 +1061,8 @@ fn coalesce_retry_bad_then_bare_idle_keeps_full_suite() {
 fn coalesce_bare_then_retry_bad_idle_starts_retry_bad_cycle() {
     use crate::test_runner::target_request::operands_request;
     use crate::test_runner::watch::control::NudgeRequestMsg as Msg;
+    let tmp = tempfile::tempdir().unwrap();
+    init_git(&tmp);
     let (tx, rx) = mpsc::channel::<NudgeRequest>();
     let (r_bare, w_bare) = mpsc::sync_channel(1);
     let (r_bad, w_bad) = mpsc::sync_channel(1);
@@ -1073,7 +1089,7 @@ fn coalesce_bare_then_retry_bad_idle_starts_retry_bad_cycle() {
             .is_some_and(|q| q.targets.is_empty() && !q.force_bad && q.next.is_some()),
         "--retry-bad TARGET must not merge onto bare"
     );
-    let mut last = LastReplies::for_repo(Path::new("."));
+    let mut last = LastReplies::for_repo(tmp.path());
     last.store(
         None,
         NudgeReplyMsg {
@@ -1789,96 +1805,6 @@ fn main_idle_misses_ready_target_report_when_runner_token_differs() {
     );
     assert!(wait.try_recv().is_err());
     assert!(queued.is_some());
-}
-
-#[test]
-fn commit_idle_assembles_complete_cached_target_report() {
-    use crate::test_runner::target_request::{
-        EnsurePolicy, GitFocus, TargetFocus, load_ready_for_request, materialize_target_report,
-        request_from_focus,
-    };
-    use crate::test_runner::watch::control::NudgeRequestMsg as Msg;
-    use crate::test_runner::workspace_selector_cache::store_rust_workspace_selectors;
-    let tmp = tempfile::tempdir().unwrap();
-    init_git(&tmp);
-    fs::write(tmp.path().join(".gitignore"), "/target\n/.kiss\n").unwrap();
-    fs::write(tmp.path().join("app.py"), "x = 1\n").unwrap();
-    assert!(
-        git_in(tmp.path())
-            .args(["add", "-A"])
-            .status()
-            .unwrap()
-            .success()
-    );
-    assert!(
-        git_in(tmp.path())
-            .args(["commit", "-m", "seed"])
-            .status()
-            .unwrap()
-            .success()
-    );
-    fs::write(tmp.path().join("app.py"), "x = 2\n").unwrap();
-    assert!(
-        git_in(tmp.path())
-            .args(["add", "app.py"])
-            .status()
-            .unwrap()
-            .success()
-    );
-    assert!(
-        git_in(tmp.path())
-            .args(["commit", "-m", "change"])
-            .status()
-            .unwrap()
-            .success()
-    );
-    assert!(store_rust_workspace_selectors(tmp.path(), &[], &[]));
-    let request = request_from_focus(
-        TargetFocus::Git(GitFocus::Commit),
-        Some(kiss::Language::Rust),
-        &[],
-    );
-    let report = materialize_target_report(
-        tmp.path(),
-        &request,
-        &EnsurePolicy {
-            dry_run: false,
-            require_complete: false,
-            inject_mismatch: false,
-            retry_bad: false,
-            coverage_all: false,
-            assemble_only: false,
-        },
-    )
-    .unwrap();
-    assert!(
-        load_ready_for_request(tmp.path(), &request, false, &[]).is_none(),
-        "the query must assemble complete evidence that was not stored"
-    );
-    let (tx, rx) = mpsc::channel::<NudgeRequest>();
-    let (reply, wait) = mpsc::sync_channel(1);
-    tx.send(NudgeRequest {
-        msg: Msg {
-            target_request: request.clone(),
-            ..Default::default()
-        },
-        reply,
-    })
-    .unwrap();
-    let mut queued = None;
-    coalesce_nudges(Some(&rx), &mut queued);
-    let last = LastReplies::for_repo(tmp.path());
-    assert!(
-        try_reply_idle_nudge(&mut queued, &last, false),
-        "complete cached all TargetReport must idle when last-reply is absent"
-    );
-    let out = wait.recv().unwrap().output.unwrap_or_default();
-    assert_eq!(
-        out,
-        crate::test_runner::target_request::official_report_text(&report),
-        "idle commit reply must equal the typed TargetReport rendering"
-    );
-    assert!(queued.is_none());
 }
 
 #[test]

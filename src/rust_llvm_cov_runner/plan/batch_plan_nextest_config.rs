@@ -33,17 +33,64 @@ pub(crate) fn test_args_request_nocapture(test_args: &[String]) -> bool {
 
 pub(crate) fn nextest_test_threads(req: &RustCoverageBatchRequest) -> String {
     if test_args_request_nocapture(&req.test_args) {
-        "1".to_string()
-    } else if std::env::var_os("KISS_COVERAGE_RUNTIME_REFRESH_ACTIVE").is_some() {
-        req.jobs.min(MAX_REFRESH_NEXTEST_THREADS).to_string()
-    } else {
-        let cfg = crate::test_section_config::TestSectionConfig::load();
-        if let Some(threads) = cfg.num_jobs_llvm_cov_explicit {
-            threads.to_string()
-        } else {
-            req.jobs.to_string()
+        return "1".to_string();
+    }
+    if std::env::var_os("KISS_COVERAGE_RUNTIME_REFRESH_ACTIVE").is_some() {
+        return req.jobs.min(MAX_REFRESH_NEXTEST_THREADS).to_string();
+    }
+    let cfg = crate::test_section_config::TestSectionConfig::load();
+    if let Some(threads) = cfg.num_jobs_llvm_cov_explicit {
+        return threads.to_string();
+    }
+    if let Some(threads) = repo_nextest_default_test_threads(&req.source_root) {
+        return threads.to_string();
+    }
+    req.jobs.to_string()
+}
+
+fn repo_nextest_default_test_threads(source_root: &Path) -> Option<usize> {
+    for rel in [".config/nextest.toml", "nextest.toml"] {
+        let path = source_root.join(rel);
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        if let Some(threads) = parse_nextest_default_test_threads(&text) {
+            return Some(threads);
         }
     }
+    None
+}
+
+fn parse_nextest_default_test_threads(text: &str) -> Option<usize> {
+    let mut in_default = false;
+    for raw in text.lines() {
+        let line = raw.split('#').next().unwrap_or("").trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix('[') {
+            let name = rest.trim_end_matches(']').trim();
+            in_default = name == "profile.default";
+            continue;
+        }
+        if !in_default {
+            continue;
+        }
+        let Some(value) = line
+            .strip_prefix("test-threads")
+            .map(str::trim)
+            .and_then(|rest| rest.strip_prefix('='))
+            .map(str::trim)
+        else {
+            continue;
+        };
+        if let Ok(threads) = value.parse::<usize>()
+            && threads > 0
+        {
+            return Some(threads);
+        }
+    }
+    None
 }
 
 pub(crate) fn target_runner_cargo_config_path(req: &RustCoverageBatchRequest) -> PathBuf {
@@ -195,7 +242,8 @@ fn target_runner_argv(req: &RustCoverageBatchRequest, runner_map_path: &Path) ->
 mod tests {
     use super::{
         MAX_REFRESH_NEXTEST_THREADS, build_target_runner_cargo_config_toml, escape_nextest_regex,
-        nextest_filter_string, nextest_test_threads, toml_basic_string,
+        nextest_filter_string, nextest_test_threads, parse_nextest_default_test_threads,
+        toml_basic_string,
     };
     use std::path::Path;
 
@@ -335,5 +383,32 @@ mod tests {
             crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
         req.jobs = 32;
         assert_eq!(nextest_test_threads(&req), "32");
+    }
+
+    #[test]
+    fn ordinary_nextest_threads_prefer_repo_nextest_toml() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config_dir = tmp.path().join(".config");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::write(
+            config_dir.join("nextest.toml"),
+            "[profile.default]\ntest-threads = 1\n",
+        )
+        .unwrap();
+        let kiss = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(kiss.path(), "[test]\nnum_jobs = 32\n").unwrap();
+        let _guard = crate::config::ConfigPathOverrideGuard::enter(Some(kiss.path()));
+        let mut req =
+            crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
+        req.source_root = tmp.path().to_path_buf();
+        req.jobs = 32;
+        assert_eq!(nextest_test_threads(&req), "1");
+    }
+
+    #[test]
+    fn parse_nextest_default_test_threads_reads_profile_default() {
+        let text = "# comment\n[profile.default]\n# note\ntest-threads = 1\n[profile.ci]\ntest-threads = 8\n";
+        assert_eq!(parse_nextest_default_test_threads(text), Some(1));
+        assert_eq!(parse_nextest_default_test_threads("[profile.ci]\ntest-threads = 8\n"), None);
     }
 }

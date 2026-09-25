@@ -193,11 +193,9 @@ pub(crate) fn run_live_overlapped_test(
     pipeline::run_overlapped_test(a, process_started)
 }
 
-#[cfg(all(unix, test))]
-pub(crate) use watch::control::NudgeReplyMsg;
 #[cfg(unix)]
 pub(crate) use watch::control::{
-    NudgeRequestMsg, nudge_watcher_with_retry_on_wait, probe_live_watcher,
+    NudgeReplyMsg, NudgeRequestMsg, nudge_watcher_with_retry_on_wait, probe_live_watcher,
     reclaim_stale_watch_session,
 };
 #[cfg(unix)]

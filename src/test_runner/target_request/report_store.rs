@@ -75,12 +75,6 @@ pub(crate) fn publish_report(
     Ok(())
 }
 
-#[allow(dead_code)]
-pub(crate) fn store_present(repo_root: &Path) -> bool {
-    let dir = store_dir(repo_root);
-    dir.join("pointer.json").is_file() || dir.join("pointers").is_dir()
-}
-
 pub(crate) fn load_current_report(repo_root: &Path) -> Option<TargetReport> {
     read_pointer(&store_dir(repo_root)).map(|stored| stored.report)
 }

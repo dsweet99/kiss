@@ -248,10 +248,12 @@ pub fn persistent_python_failure_repo() -> PathBuf {
     use std::sync::OnceLock;
     static REPO: OnceLock<PathBuf> = OnceLock::new();
     REPO.get_or_init(|| {
-        let root = std::env::temp_dir().join("kiss-python-failure-fixture");
-        if root.join("test_lib.py").is_file() {
-            return root;
-        }
+        // Unique per process so parallel nextest workers cannot share/mutate one fixture.
+        let root = std::env::temp_dir().join(format!(
+            "kiss-python-failure-fixture-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).unwrap();
         fs::write(
             root.join(".kissconfig"),

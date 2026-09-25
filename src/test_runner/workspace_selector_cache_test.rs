@@ -806,3 +806,33 @@ fn durable_plan_is_ignored_when_kiss_dir_is_absent() {
     assert!(load_cached_python_workspace_selectors(root, &[], &[]).is_none());
     assert!(load_cached_rust_workspace_selectors(root, &[]).is_none());
 }
+
+
+#[test]
+fn mix_collection_inventory_marks_ignored_and_absent_configs() {
+    let tmp = tempdir().unwrap();
+    let root = tmp.path();
+    fs::create_dir_all(root.join(".git")).unwrap();
+    fs::write(root.join(".gitignore"), "pytest.ini\n").unwrap();
+    fs::write(root.join("pytest.ini"), "[pytest]\n").unwrap();
+    let ignored = super::python_inventory::mix_collection_inventory(
+        root,
+        &["pyproject.toml".into()],
+        "py-fp",
+    )
+    .unwrap();
+    let again = super::python_inventory::mix_collection_inventory(
+        root,
+        &["pyproject.toml".into()],
+        "py-fp",
+    )
+    .unwrap();
+    assert_eq!(ignored, again);
+    let different = super::python_inventory::mix_collection_inventory(
+        root,
+        &[],
+        "py-fp",
+    )
+    .unwrap();
+    assert_ne!(ignored, different, "ignore prefixes must change the inventory mix");
+}

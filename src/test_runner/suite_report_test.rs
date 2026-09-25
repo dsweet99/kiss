@@ -888,3 +888,24 @@ fn unscoped_violations_persist_across_replay() {
         assert_eq!(second.exit_code, 1);
     });
 }
+
+
+#[test]
+fn replay_suite_report_skips_absent_and_empty_output() {
+    super::replay_suite_report(&KissTestReport {
+        output: None,
+        ..KissTestReport::default()
+    });
+    super::replay_suite_report(&KissTestReport {
+        output: Some(String::new()),
+        ..KissTestReport::default()
+    });
+}
+
+#[test]
+fn replay_suite_report_appends_newline_when_missing() {
+    super::replay_suite_report(&KissTestReport {
+        output: Some("cached-recap-without-newline".into()),
+        ..KissTestReport::default()
+    });
+}

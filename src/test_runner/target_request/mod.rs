@@ -58,11 +58,6 @@ pub(crate) use scope::ReportScope;
 pub(crate) use snapshot::EnsurePolicy;
 pub(crate) use types::{GitFocus, TargetFocus, TargetRequest};
 
-#[allow(dead_code)]
-pub(crate) fn remember_live_exit(args: &crate::test_runner::RunTestCmdArgs<'_>, exit_code: i32) {
-    remember_named(args, exit_code, None);
-}
-
 pub(crate) fn remember_named(
     args: &crate::test_runner::RunTestCmdArgs<'_>,
     exit_code: i32,

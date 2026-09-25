@@ -694,20 +694,32 @@ fn scenario_3_target_then_file_change_uses_new_cycle() {
     assert_scoped_then_file_change(targeted, after, later, cycles);
 }
 
+fn scenario_3_git_focus_then_file_change(focus: crate::test_runner::target_request::GitFocus) {
+    use crate::test_runner::target_request::{TargetFocus, request_from_focus};
+    let (targeted, after, later, cycles) = run_scoped_then_file_change(NudgeRequestMsg {
+        target_request: request_from_focus(TargetFocus::Git(focus), None, &[]),
+        ..Default::default()
+    });
+    assert_scoped_then_file_change(targeted, after, later, cycles);
+}
+
 #[test]
-fn scenario_3_commit_base_main_then_file_change_uses_new_cycle() {
-    use crate::test_runner::target_request::{GitFocus, TargetFocus, request_from_focus};
-    for focus in [
-        GitFocus::Commit,
-        GitFocus::AutomaticBase,
-        GitFocus::DefaultMain,
-    ] {
-        let (targeted, after, later, cycles) = run_scoped_then_file_change(NudgeRequestMsg {
-            target_request: request_from_focus(TargetFocus::Git(focus), None, &[]),
-            ..Default::default()
-        });
-        assert_scoped_then_file_change(targeted, after, later, cycles);
-    }
+fn scenario_3_commit_then_file_change_uses_new_cycle() {
+    scenario_3_git_focus_then_file_change(crate::test_runner::target_request::GitFocus::Commit);
+}
+
+#[test]
+fn scenario_3_base_then_file_change_uses_new_cycle() {
+    scenario_3_git_focus_then_file_change(
+        crate::test_runner::target_request::GitFocus::AutomaticBase,
+    );
+}
+
+#[test]
+fn scenario_3_main_then_file_change_uses_new_cycle() {
+    scenario_3_git_focus_then_file_change(
+        crate::test_runner::target_request::GitFocus::DefaultMain,
+    );
 }
 
 #[test]

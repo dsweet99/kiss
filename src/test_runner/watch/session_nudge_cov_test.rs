@@ -8,7 +8,6 @@ use super::{NudgeScript, commit_a_py, publish_pass_count, py_dry_args, timeout_s
 use crate::test_runner::RunTestOnceOutcome;
 use crate::test_runner::test_mode_fixtures::init_git;
 use crate::test_runner::watch::control::{NudgeReplyMsg, NudgeRequestMsg};
-use std::path::Path;
 use std::sync::{Arc, mpsc};
 use std::time::Duration;
 
@@ -350,7 +349,8 @@ fn idle_cached_reply_keeps_exit_when_recap_has_coverage_violation() {
 
 #[test]
 fn idle_nudge_omits_engine_error_when_recap_is_cached() {
-    let mut last = LastReplies::for_repo(Path::new("/tmp"));
+    let tmp = tempfile::tempdir().unwrap();
+    let mut last = LastReplies::for_repo(tmp.path());
     last.store(
         None,
         NudgeReplyMsg {

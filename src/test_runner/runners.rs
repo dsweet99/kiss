@@ -323,7 +323,7 @@ pub(crate) fn build_rust_coverage_batch_dry_run_lines(
         kiss::rust_llvm_cov_runner::placeholder_delegated_runner_fields();
     let req = RustCoverageBatchRequest {
         cwd: PathBuf::from("."),
-        source_root: PathBuf::from("."),
+        source_root: PathBuf::from("/kiss-dry-run-no-nextest-toml"),
         cargo: PathBuf::from("cargo"),
         cache_root: PathBuf::from("<cache>/rust_llvm_cov_cache"),
         logical_selectors: selectors.to_vec(),

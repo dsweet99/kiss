@@ -9,34 +9,6 @@ pub(crate) enum BindDecision {
     Interrupted,
 }
 
-#[allow(dead_code)]
-pub(crate) fn would_finish_target_report(args: &crate::test_runner::RunTestCmdArgs<'_>) -> bool {
-    load_ready_target_report(args, None).is_some()
-}
-
-pub(crate) fn load_ready_target_report(
-    args: &crate::test_runner::RunTestCmdArgs<'_>,
-    repo_root: Option<&std::path::Path>,
-) -> Option<TargetReport> {
-    if args.dry_run || must_execute(args) {
-        return None;
-    }
-    let owned;
-    let repo = if let Some(path) = repo_root {
-        path
-    } else {
-        let cwd = std::env::current_dir().ok()?;
-        owned = crate::test_git::git_repo_root(&cwd).ok()?;
-        &owned
-    };
-    load_ready_for_request(
-        repo,
-        &request_from_run_args(args),
-        args.coverage_all,
-        args.extra,
-    )
-}
-
 pub(crate) fn load_ready_for_request(
     repo: &std::path::Path,
     request: &super::types::TargetRequest,
@@ -166,10 +138,6 @@ fn complete_policy(retry_bad: bool, coverage_all: bool) -> EnsurePolicy {
         coverage_all,
         assemble_only: false,
     }
-}
-
-fn must_execute(args: &crate::test_runner::RunTestCmdArgs<'_>) -> bool {
-    args.force_rerun || args.force_bad
 }
 
 fn ready_report(report: &TargetReport) -> bool {

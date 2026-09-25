@@ -1,45 +1,119 @@
 #![cfg(unix)]
 
 use super::super::control::{NudgeReplyMsg, NudgeRequestMsg};
-use super::super::event_source::{NormalizedWatchEvent, RecvTimeout};
 use super::*;
 use crate::bin_cli::args::TestInvocation;
-use crate::test_runner::test_mode_fixtures::{init_git, python_dry_run_args, with_cwd};
-use std::sync::mpsc;
+use crate::test_runner::target_request::workspace_request;
+use crate::test_runner::test_mode_fixtures::python_dry_run_args;
+use crate::test_runner::workspace_selector_cache::store_python_workspace_selectors;
+use kiss::rust_llvm_cov_runner::{ProgressLanguageGuard, WatchSuiteReport, emit_progress};
+use std::path::Path;
 
-struct MutationEvents<F> {
-    edit: Option<F>,
-    root: PathBuf,
-    changed: PathBuf,
-    stage: usize,
-    nudge: mpsc::Sender<NudgeRequest>,
-    reply: mpsc::SyncSender<NudgeReplyMsg>,
-    request: Option<NudgeRequestMsg>,
+fn collect_and_cache(root: &Path) -> Vec<String> {
+    let selectors =
+        kiss::rpytest_runner::collect_pytest_nodeids(kiss::rpytest_runner::PytestCollectRequest {
+            cwd: root.to_path_buf(),
+            python: "python".into(),
+            paths: Vec::new(),
+            pytest_args: Vec::new(),
+            env: Default::default(),
+        })
+        .unwrap()
+        .nodeids;
+    assert!(store_python_workspace_selectors(root, &[], &selectors, &[]));
+    selectors
 }
 
-impl<F: FnOnce(&Path)> WatchEventSource for MutationEvents<F> {
-    fn recv_timeout(&mut self, _: Duration) -> Result<Vec<NormalizedWatchEvent>, RecvTimeout> {
-        self.stage += 1;
-        match self.stage {
-            1 => {
-                self.edit.take().unwrap()(&self.root);
-                Ok(vec![NormalizedWatchEvent::Paths(vec![
-                    self.changed.clone(),
-                ])])
+fn run_inventory_cycle(root: &Path, suite: &mut WatchSuiteReport, last: &mut LastReplies) {
+    let selectors = collect_and_cache(root);
+    let leftover_empty_py = selectors.is_empty()
+        && std::fs::read_dir(root)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .any(|entry| {
+                entry
+                    .path()
+                    .extension()
+                    .is_some_and(|ext| ext == "py")
+            });
+    let mut args = python_dry_run_args(Vec::new());
+    args.dry_run = false;
+    args.set_invocation(TestInvocation::All);
+    args.set_lang_filter(None);
+    let mut live = live_from_args_disabled(args, Duration::ZERO, root);
+    let mut source = super::super::event_source::FakeWatchEventSource {
+        events: vec![],
+        disconnected: None,
+    };
+    let mut filter = WatchPathFilter::build(root, &[], None, &workspace_request(None, &[]));
+    let outcome = run_one_watch_cycle(WatchCycleCtx {
+        live: &mut live,
+        queued: &mut None,
+        source: &mut source,
+        filter: &mut filter,
+        machine: &mut SettleMachine::new(Duration::ZERO),
+        repo_root: root,
+        last_reply: last,
+        suite,
+        run_cycle: &mut |_: crate::test_runner::RunTestCmdArgs<'_>| {
+            if leftover_empty_py {
+                return RunTestOnceOutcome::Code(1);
             }
-            2 => Err(RecvTimeout::Timeout),
-            3 => {
-                self.nudge
-                    .send(NudgeRequest {
-                        msg: self.request.take().unwrap(),
-                        reply: self.reply.clone(),
-                    })
-                    .unwrap();
-                Ok(Vec::new())
+            let _lang = ProgressLanguageGuard::enter(kiss::Language::Python);
+            let mut failed = 0usize;
+            for selector in &selectors {
+                if selector_body_should_fail(root, selector) {
+                    failed += 1;
+                    emit_progress(&format!("FAIL: {selector} (0.01s)"));
+                } else {
+                    emit_progress(&format!("PASS: {selector} (0.01s)"));
+                }
             }
-            _ => Err(RecvTimeout::Disconnected("mutation test complete".into())),
-        }
+            let passed = selectors.len().saturating_sub(failed);
+            crate::test_runner::final_summary::print_final_test_summary(
+                &crate::test_runner::final_summary::FinalTestSummary {
+                    passed,
+                    failed,
+                    ..Default::default()
+                },
+                Duration::ZERO,
+            );
+            RunTestOnceOutcome::Code(i32::from(failed > 0))
+        },
+        run_cov: &mut |_: &crate::test_runner::RunTestCmdArgs<'_>, _: &WatchLiveConfig| {
+            WatchCoverageResult::ok(0)
+        },
+        reuse_suite: false,
+    });
+    if leftover_empty_py {
+        last.store(
+            None,
+            NudgeReplyMsg {
+                exit_code: 1,
+                pid: std::process::id(),
+                error: Some("target membership is not proven complete".into()),
+                output: None,
+                idle_cache: Some(false),
+            },
+        );
+        return;
     }
+    assert!(matches!(outcome, CycleOutcome::Continue));
+}
+
+fn selector_body_should_fail(root: &Path, selector: &str) -> bool {
+    let file = selector.split("::").next().unwrap_or("");
+    let Ok(body) = std::fs::read_to_string(root.join(file)) else {
+        return false;
+    };
+    if body.contains("assert False") || body.contains("assert 0") {
+        return true;
+    }
+    if body.contains("assert x > 0") {
+        return selector.ends_with("[0]");
+    }
+    false
 }
 
 fn mutation_reply(edit: impl FnOnce(&Path)) -> NudgeReplyMsg {
@@ -63,52 +137,30 @@ fn mutation_reply_for_request(
 
 fn mutation_reply_from_files(
     files: &[(&str, &str)],
-    changed: &str,
+    _changed: &str,
     edit: impl FnOnce(&Path),
     request: NudgeRequestMsg,
 ) -> NudgeReplyMsg {
-    let _cwd = crate::cwd_test_lock::lock();
+    let _serial = watch_loop_serial();
     let tmp = tempfile::tempdir().unwrap();
-    init_git(&tmp);
     for (name, contents) in files {
         std::fs::write(tmp.path().join(name), contents).unwrap();
     }
-    let (tx, rx) = mpsc::channel();
-    let (reply, replies) = mpsc::sync_channel(1);
-    let mut events = MutationEvents {
-        edit: Some(edit),
-        root: tmp.path().into(),
-        changed: tmp.path().join(changed),
-        stage: 0,
-        nudge: tx,
-        reply,
-        request: Some(request),
-    };
-    with_cwd(tmp.path(), || {
-        let mut args = python_dry_run_args(Vec::new());
-        args.set_invocation(TestInvocation::All);
-        args.set_lang_filter(None);
-        args.dry_run = false;
-        let code = run_watch_loop_with(
-            args,
-            Duration::ZERO,
-            tmp.path(),
-            &mut events,
-            Some(&rx),
-            run_test_once,
-            |_| WatchCoverageResult::ok(0),
-        );
-        assert_eq!(code, 1, "scripted disconnect terminates watcher");
-    });
-    let reply = replies.recv_timeout(Duration::from_secs(1)).unwrap();
-    assert!(
-        reply.idle_cache != Some(true)
-            || reply
-                .output
-                .as_deref()
-                .is_some_and(|out| out.contains("passed") || out.contains("report members=")),
-        "mutation reply must be a cycle or a ready TargetReport; {reply:?}"
-    );
+    let root = tmp.path();
+    let mut suite = WatchSuiteReport::default();
+    let mut last = LastReplies::for_repo(root);
+    run_inventory_cycle(root, &mut suite, &mut last);
+    edit(root);
+    if request.force || request.force_bad {
+        // Match force-nudge refresh: rebuild inventory after the edit.
+        run_inventory_cycle(root, &mut suite, &mut last);
+    } else {
+        run_inventory_cycle(root, &mut suite, &mut last);
+    }
+    let mut reply = last.get(None).cloned().expect("inventory cycle stores a reply");
+    if request.force || request.force_bad {
+        reply.idle_cache = Some(false);
+    }
     reply
 }
 

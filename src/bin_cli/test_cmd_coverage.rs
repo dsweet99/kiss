@@ -22,14 +22,6 @@ pub(crate) fn evaluate_watch_coverage(
     ))
 }
 
-#[allow(dead_code)]
-pub(super) fn coverage_after_kiss_test(args: &TestCommandArgs<'_>) -> WatchCoverageResult {
-    coverage_result_from_exit(coverage_from_ready_request(
-        &request_from_test_args(args),
-        args.coverage_all,
-    ))
-}
-
 pub(crate) fn coverage_result_from_exit(cov_code: i32) -> WatchCoverageResult {
     if crate::test_runner::consume_rust_batch_interrupted() {
         return WatchCoverageResult::interrupted();

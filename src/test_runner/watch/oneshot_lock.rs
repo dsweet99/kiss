@@ -19,22 +19,38 @@ pub(crate) fn wait_oneshot_peer(
 ) -> Result<OneshotPeer, String> {
     let lock_path = watch_lock_path(repo_root);
     loop {
-        if watcher_session_is_live(repo_root)
-            && let Some(code) = try_watcher()?
+        if let Some(peer) =
+            oneshot_peer_step(repo_root, &lock_path, &mut try_watcher, &mut on_wait)?
         {
-            return Ok(OneshotPeer::WatcherExit(code));
-        }
-        match WatchLockGuard::try_lock(&lock_path) {
-            Ok(Some(guard)) => return Ok(OneshotPeer::Lock(guard)),
-            Ok(None) => {
-                on_wait();
-                thread::sleep(ONESHOT_LOCK_POLL);
-            }
-            Err(e) => {
-                return Err(format!("cannot lock {}: {e}", lock_path.display()));
-            }
+            return Ok(peer);
         }
     }
+}
+
+fn oneshot_peer_step(
+    repo_root: &Path,
+    lock_path: &Path,
+    try_watcher: &mut impl FnMut() -> Result<Option<i32>, String>,
+    on_wait: &mut impl FnMut(),
+) -> Result<Option<OneshotPeer>, String> {
+    if watcher_session_is_live(repo_root)
+        && let Some(code) = try_watcher()?
+    {
+        return Ok(Some(OneshotPeer::WatcherExit(code)));
+    }
+    match WatchLockGuard::try_lock(lock_path) {
+        Ok(Some(guard)) => Ok(Some(OneshotPeer::Lock(guard))),
+        Ok(None) => {
+            poll_oneshot_wait(on_wait);
+            Ok(None)
+        }
+        Err(e) => Err(format!("cannot lock {}: {e}", lock_path.display())),
+    }
+}
+
+fn poll_oneshot_wait(on_wait: &mut impl FnMut()) {
+    on_wait();
+    thread::sleep(ONESHOT_LOCK_POLL);
 }
 
 fn watcher_session_is_live(repo_root: &Path) -> bool {
@@ -50,6 +66,26 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::mpsc;
     use std::time::Instant;
+
+    #[test]
+    fn poll_oneshot_wait_invokes_callback() {
+        let mut hits = 0usize;
+        poll_oneshot_wait(&mut || hits += 1);
+        assert_eq!(hits, 1);
+    }
+
+    #[test]
+    fn oneshot_peer_step_wait_path_when_lock_held() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path();
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        let path = watch_lock_path(repo);
+        let _peer = WatchLockGuard::lock(&path).unwrap();
+        let mut waited = false;
+        let step = oneshot_peer_step(repo, &path, &mut || Ok(None), &mut || waited = true).unwrap();
+        assert!(step.is_none());
+        assert!(waited);
+    }
 
     #[test]
     fn wait_oneshot_peer_blocks_until_peer_releases_tmp_repo_lock() {
@@ -97,5 +133,77 @@ mod tests {
             rx.recv_timeout(Duration::from_secs(2)).unwrap(),
             "waiter must acquire the lock after the peer exits"
         );
+    }
+
+    #[test]
+    fn wait_oneshot_peer_returns_watcher_exit_when_session_live() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path();
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        let session = super::super::control::SessionFile {
+            pid: std::process::id(),
+            socket: repo.join("nudge.sock").display().to_string(),
+        };
+        super::super::control::write_session_file(
+            &super::super::control::session_file_path(repo),
+            &session,
+        )
+        .unwrap();
+        let outcome = wait_oneshot_peer(repo, || Ok(Some(7)), || {});
+        assert!(matches!(outcome, Ok(OneshotPeer::WatcherExit(7))));
+    }
+
+    #[test]
+    fn wait_oneshot_peer_surfaces_lock_errors() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("not-a-dir");
+        std::fs::write(&repo, "file").unwrap();
+        let outcome = wait_oneshot_peer(&repo, || Ok(None), || {});
+        assert!(outcome.is_err(), "lock under a file path must error");
+    }
+
+    #[test]
+    fn wait_oneshot_peer_continues_when_live_watcher_returns_none() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path();
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        let session = super::super::control::SessionFile {
+            pid: std::process::id(),
+            socket: repo.join("nudge.sock").display().to_string(),
+        };
+        super::super::control::write_session_file(
+            &super::super::control::session_file_path(repo),
+            &session,
+        )
+        .unwrap();
+        let calls = AtomicUsize::new(0);
+        let outcome = wait_oneshot_peer(
+            repo,
+            || {
+                calls.fetch_add(1, Ordering::SeqCst);
+                Ok(None)
+            },
+            || {},
+        );
+        assert!(matches!(outcome, Ok(OneshotPeer::Lock(_))));
+        assert!(calls.load(Ordering::SeqCst) >= 1);
+    }
+
+    #[test]
+    fn wait_oneshot_peer_propagates_watcher_probe_errors() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path();
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        let session = super::super::control::SessionFile {
+            pid: std::process::id(),
+            socket: repo.join("nudge.sock").display().to_string(),
+        };
+        super::super::control::write_session_file(
+            &super::super::control::session_file_path(repo),
+            &session,
+        )
+        .unwrap();
+        let outcome = wait_oneshot_peer(repo, || Err("probe failed".into()), || {});
+        assert!(outcome.is_err());
     }
 }

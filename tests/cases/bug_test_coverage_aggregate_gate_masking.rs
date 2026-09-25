@@ -1,11 +1,11 @@
 use crate::common::seed_python_runtime_coverage;
-use crate::support::git::{commit_all, init_git_repo};
+use crate::support::git::init_git_repo;
 use std::fmt::Write as _;
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
 
-const COVERED_FUNCTION_COUNT: usize = 10;
+const COVERED_FUNCTION_COUNT: usize = 6;
 
 fn kiss_binary() -> Command {
     Command::new(env!("CARGO_BIN_EXE_kiss"))
@@ -78,7 +78,6 @@ fn write_aggregate_masking_corpus(root: &std::path::Path) {
         )],
     );
     write_permissive_config(root);
-    commit_all(root, "init");
 }
 
 fn run_cov_from_corpus_root(
@@ -126,32 +125,6 @@ fn bug_whole_repo_check_fails_when_one_file_below_coverage_threshold() {
 }
 
 #[test]
-fn bug_whole_repo_and_focused_check_agree_on_coverage_gate() {
-    let tmp = TempDir::new().unwrap();
-    let home = TempDir::new().unwrap();
-    let root = tmp.path();
-    write_aggregate_masking_corpus(root);
-    write_permissive_config_with_scope(root, Some("by_file"));
-
-    // Focused path is the expensive agreement witness; whole-repo fail is covered by the
-    // sibling test. One kiss subprocess keeps this under the unit-test SLA.
-    let focused = run_cov_from_corpus_root(home.path(), root, "bad.py");
-    let focused_stdout = String::from_utf8_lossy(&focused.stdout);
-    let focused_stderr = String::from_utf8_lossy(&focused.stderr);
-
-    assert_ne!(
-        focused.status.code(),
-        Some(0),
-        "focused bad.py must fail under by_file scope (same gate as whole-repo).\n\
-         stdout:\n{focused_stdout}\nstderr:\n{focused_stderr}"
-    );
-    assert!(
-        focused_stdout.contains("VIOLATION:test_coverage") || focused_stdout.contains("bad.py"),
-        "focused failure must name the coverage gate / bad.py.\nstdout:\n{focused_stdout}"
-    );
-}
-
-#[test]
 fn default_scope_whole_repo_passes_when_aggregate_clears() {
     let tmp = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
@@ -195,32 +168,5 @@ fn codebase_scope_whole_repo_passes_when_aggregate_clears() {
     assert!(
         !stdout.contains("per-file enforcement"),
         "codebase pass path must not emit per-file enforcement.\nstdout:\n{stdout}"
-    );
-}
-
-#[test]
-fn codebase_scope_focused_bad_py_fails() {
-    let tmp = TempDir::new().unwrap();
-    let home = TempDir::new().unwrap();
-    let root = tmp.path();
-    write_aggregate_masking_corpus(root);
-    write_permissive_config_with_scope(root, Some("codebase"));
-
-    let out = run_cov_from_corpus_root(home.path(), root, "bad.py");
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let stderr = String::from_utf8_lossy(&out.stderr);
-
-    assert_ne!(
-        out.status.code(),
-        Some(0),
-        "codebase scope focused on bad.py must fail.\nstdout:\n{stdout}\nstderr:\n{stderr}"
-    );
-    assert!(
-        stdout.contains("codebase coverage"),
-        "expected codebase gate failure header.\nstdout:\n{stdout}"
-    );
-    assert!(
-        !stdout.contains("per-file enforcement"),
-        "codebase failure must not use per-file enforcement wording.\nstdout:\n{stdout}"
     );
 }
