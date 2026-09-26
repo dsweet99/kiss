@@ -11,6 +11,9 @@
   - If files have changed, the watcher should run the usual `kiss test` workflow -- i.e., run only tests that need to be run based on the cache --
     then return the results for `kiss test` to echo.
 - `kiss test --retry-bad TARGET` should rerun whichever tests in the TARGET subset are marked as FAIL or TIMEOUT.
+- 'kiss test' should be runnable multiple times in the same repo w/o corruption or problems. The processes should just
+lock each other out.
+- 'kiss test' should work sensibly and be unit tested with all of the various target types. We are sensitive to smooth interaction between the watcher and 'kiss test' client, maximal cache reuse, and speed.
 
 # ops/
 - ops/ holds all of the CLI Python scripts the developer might need to work in this repo.
