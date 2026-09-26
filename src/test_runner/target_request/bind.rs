@@ -42,8 +42,14 @@ fn load_identity_report(
         extras,
     )
     .filter(ready_report)
-    .filter(|report| report.snapshot.worktree == super::stamp::capture_worktree_token(repo))
+    .filter(|report| {
+        report.snapshot.worktree
+            == super::stamp::capture_worktree_token(repo, request.language())
+    })
     .filter(|report| report.snapshot.extras.as_slices() == extras)
+    .filter(|report| {
+        super::report::pinned_graph_generation_holds(repo, coverage_all, report)
+    })
 }
 
 pub(crate) fn bind_and_prepare(

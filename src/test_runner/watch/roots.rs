@@ -267,6 +267,73 @@ mod tests {
     }
 
     #[test]
+    fn operand_watch_roots_miss_worktree_feeding_sources() {
+        // kt_bug.md #16 lock: operand file TARGET registers parent NonRecursive +
+        // repo NonRecursive support only — nested out-of-operand Rust that still
+        // feeds rust_full / worktree is outside watch roots; filter target_scope
+        // denies too (dual wall).
+        use crate::test_runner::test_mode_fixtures::{git_in, init_git};
+        use crate::test_runner::watch::WatchPathFilter;
+        use crate::test_runner::workspace_selector_cache::rust_full_source_fingerprint;
+        use std::fs;
+        use std::path::Path;
+
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path();
+        init_git(&tmp);
+        fs::write(root.join(".gitignore"), "/target\n/.kiss\n").unwrap();
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::create_dir_all(root.join("other")).unwrap();
+        fs::write(root.join("src/lib.rs"), "pub fn a() {}\n").unwrap();
+        fs::write(root.join("other/x.rs"), "pub fn x() {}\n").unwrap();
+        assert!(git_in(root).args(["add", "-A"]).status().unwrap().success());
+        assert!(
+            git_in(root)
+                .args(["commit", "-m", "probe"])
+                .status()
+                .unwrap()
+                .success()
+        );
+
+        // rust_full_source_fingerprint(repo, &[]) is folded into capture_worktree_token
+        // for Rust / unfiltered requests (stamp.rs).
+        let before = rust_full_source_fingerprint(root, &[]).unwrap();
+        fs::write(root.join("other/x.rs"), "pub fn x() { /* edit */ }\n").unwrap();
+        let after = rust_full_source_fingerprint(root, &[]).unwrap();
+        assert_ne!(
+            before, after,
+            "workspace rust_full (worktree arm) must move on out-of-operand Rust edit"
+        );
+
+        let req = operands_request(&["src/lib.rs".into()], Some(kiss::Language::Rust), &[]);
+        let regs = resolve_watch_registrations(root, &req, &[], Path::new(".kissconfig")).unwrap();
+        let other = root.join("other");
+        let recursive_covers_other = regs.iter().any(|r| {
+            matches!(r.kind, WatchRootKind::Recursive)
+                && (other.starts_with(&r.path) || r.path == other)
+        });
+        assert!(
+            !recursive_covers_other,
+            "operand watch must not recursively cover other/; regs={regs:?}"
+        );
+        // Nested other/x.rs is not an immediate child of repo NonRecursive root.
+        let nonrec_exact_other = regs.iter().any(|r| {
+            matches!(r.kind, WatchRootKind::NonRecursive) && path_eq_canon(&r.path, &other)
+        });
+        assert!(
+            !nonrec_exact_other,
+            "operand watch must not register other/ as a root; regs={regs:?}"
+        );
+
+        let filter = WatchPathFilter::build(root, &[], Some(kiss::Language::Rust), &req);
+        assert!(
+            !filter.is_relevant(Path::new("other/x.rs")),
+            "target_scope must deny other/x.rs for operand src/lib.rs"
+        );
+        assert!(filter.is_relevant(Path::new("src/lib.rs")));
+    }
+
+    #[test]
     fn file_target_registers_parent_non_recursive() {
         let tmp = tempfile::tempdir().unwrap();
         let file = tmp.path().join("src");

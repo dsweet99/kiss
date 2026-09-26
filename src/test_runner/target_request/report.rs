@@ -38,6 +38,10 @@ pub(crate) struct ReportSnapshot {
     pub evidence: ReportEvidenceStamp,
     #[serde(default)]
     pub graph_generation: Option<String>,
+    /// Covered + orphan_allowed + config digest pinned with `graph_generation`.
+    /// Ready freshness after worktree match compares this instead of re-digesting sources.
+    #[serde(default)]
+    pub graph_mutable: Option<String>,
     #[serde(default)]
     pub worktree: String,
     #[serde(default)]
@@ -140,13 +144,22 @@ impl TargetReport {
                 &workspace_covered_from_stores(repo_root),
             ));
         }
+        let covered = workspace_covered_from_stores(repo_root);
         let graph_generation = graph_generation_id(
             repo_root,
             &scope,
             &cfg,
             coverage_all,
-            &workspace_covered_from_stores(repo_root),
+            &covered,
         );
+        let configuration = configuration_generation(repo_root);
+        let graph_mutable = graph_generation.as_ref().map(|_| {
+            super::graph_store::evidence_mutable_digest(
+                &cfg.orphan_allowed,
+                &covered,
+                &configuration,
+            )
+        });
         let population = population_inventory_id(repo_root, request);
         let mut built =
             Self::assembled_with(scope, rows, stamp, exit_code, coverage, gates, coverage_all);
@@ -169,6 +182,7 @@ impl TargetReport {
             &cfg,
             coverage_all,
         );
+        built.snapshot.graph_mutable = graph_mutable;
         built
     }
 
@@ -315,6 +329,10 @@ fn scope_has_orphan_candidates(repo_root: &Path, scope: &ReportScope) -> bool {
     !py.is_empty() || !rs.is_empty()
 }
 
+/// Workspace-wide sources intentionally feed the graph-evidence ITE key: orphan
+/// reachability is cross-file (`external_reference_clears_focused_orphan`). Narrowing
+/// to `production_files_for_scope` would leave focused reports stale after out-of-scope
+/// callers appear.
 fn graph_evidence_parts(
     repo_root: &Path,
     gate: &kiss::GateConfig,
@@ -848,9 +866,65 @@ pub(crate) fn graph_repair_needed(
         scope,
         &kiss::GateConfig::load_for_repo(repo_root),
         coverage_all,
-        &coverage_maps_from_stores(repo_root, scope).0,
+        &workspace_covered_from_stores(repo_root),
     )
     .is_some_and(|key| super::graph_store::load_items(repo_root, &key).is_none())
+}
+
+// True when the report's pinned graph-evidence generation still holds under the
+// current covered/config mutable digest (and the evidence blob is still present).
+// Ready-report identity does not hash covered lines; without this check, watch/oneshot
+// coverage churn serves stale orphan gates under an unchanged stamp/request.
+//
+// After `load_identity_report` already matched worktree (source fingerprints), this
+// path must not re-digest workspace sources — only covered/config (+ presence).
+pub(crate) fn pinned_graph_generation_holds(
+    repo_root: &Path,
+    coverage_all: bool,
+    report: &TargetReport,
+) -> bool {
+    let gate = kiss::GateConfig::load_for_repo(repo_root);
+    let covered = workspace_covered_from_stores(repo_root);
+    let active = graph_generation_active(repo_root, &report.scope, &gate, coverage_all);
+    match (&report.graph_generation, active) {
+        (None, false) => true,
+        (Some(pinned), true) => {
+            let configuration = configuration_generation(repo_root);
+            let current_mutable = super::graph_store::evidence_mutable_digest(
+                &gate.orphan_allowed,
+                &covered,
+                &configuration,
+            );
+            match report.snapshot.graph_mutable.as_deref() {
+                Some(pinned_mutable) if pinned_mutable == current_mutable => {
+                    super::graph_store::evidence_present(repo_root, pinned)
+                }
+                // Legacy reports without graph_mutable: fall back to full key recompute.
+                None => {
+                    let current =
+                        graph_generation_id(repo_root, &report.scope, &gate, coverage_all, &covered);
+                    matches!(current.as_deref(), Some(cur) if cur == pinned)
+                        && super::graph_store::evidence_present(repo_root, pinned)
+                }
+                Some(_) => false,
+            }
+        }
+        _ => false,
+    }
+}
+
+fn graph_generation_active(
+    repo_root: &Path,
+    scope: &ReportScope,
+    gate: &kiss::GateConfig,
+    coverage_all: bool,
+) -> bool {
+    if coverage_all || !gate.orphan_detection || !scope_has_orphan_candidates(repo_root, scope)
+    {
+        return false;
+    }
+    let (py, rs) = workspace_source_files(repo_root);
+    !py.is_empty() || !rs.is_empty()
 }
 
 fn snapshot_token(
@@ -868,7 +942,8 @@ fn snapshot_token(
         slice: stamp.clone(),
         evidence: evidence.clone(),
         graph_generation,
-        worktree: super::stamp::capture_worktree_token(repo_root),
+        graph_mutable: None,
+        worktree: super::stamp::capture_worktree_token(repo_root, request.language()),
         gate_policy: gate_policy_id(gate, coverage_all),
         runner: runner_identity(repo_root),
         python_witness,
@@ -981,14 +1056,10 @@ fn graph_generation_id(
     coverage_all: bool,
     covered: &BTreeMap<String, BTreeSet<u32>>,
 ) -> Option<String> {
-    if coverage_all || !gate.orphan_detection || !scope_has_orphan_candidates(repo_root, scope)
-    {
+    if !graph_generation_active(repo_root, scope, gate, coverage_all) {
         return None;
     }
-    let (key, py, rs) = graph_evidence_parts(repo_root, gate, covered);
-    if py.is_empty() && rs.is_empty() {
-        return None;
-    }
+    let (key, _, _) = graph_evidence_parts(repo_root, gate, covered);
     Some(key)
 }
 
@@ -1814,6 +1885,111 @@ mod exit_gate_tests {
         assert!(
             !gates.iter().any(|item| item.detail.contains("unused")),
             "{gates:?}"
+        );
+    }
+
+    /// Focused FileAll reports still key graph evidence on the full workspace source set:
+    /// an out-of-scope production edit must miss so reachability can be recomputed
+    /// (see `external_reference_clears_focused_orphan`). Closing kt_bug.md "scoped key" claim.
+    #[test]
+    fn focused_graph_evidence_misses_after_out_of_scope_source_edit() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("utils.py"), "def helper():\n    return 1\n").unwrap();
+        std::fs::write(tmp.path().join("other.py"), "def unused():\n    return 2\n").unwrap();
+        let scope = focused_utils_scope();
+        let gate = kiss::GateConfig {
+            orphan_detection: true,
+            ..Default::default()
+        };
+        seed_orphan_graph(tmp.path(), &scope, &gate, &BTreeMap::new());
+        let before = gates_from_orphan(tmp.path(), &gate, &scope, &BTreeMap::new());
+        assert!(
+            before
+                .iter()
+                .any(|item| item.kind == "orphan" && item.detail.starts_with("utils.py:")),
+            "{before:?}"
+        );
+        std::fs::write(
+            tmp.path().join("other.py"),
+            "def unused():\n    return 3\n",
+        )
+        .unwrap();
+        let after = gates_from_orphan(tmp.path(), &gate, &scope, &BTreeMap::new());
+        assert_eq!(
+            after[0].detail,
+            "graph evidence incomplete",
+            "out-of-scope production edit must invalidate focused graph evidence: {after:?}"
+        );
+    }
+
+    /// Documents that unequal covered maps change the graph-evidence ITE key
+    /// (the property behind the pre-fix scoped vs workspace need-check mismatch).
+    #[test]
+    fn graph_evidence_key_diverges_when_covered_includes_out_of_scope_file() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("utils.py"), "def helper():\n    return 1\n").unwrap();
+        std::fs::write(tmp.path().join("other.py"), "def unused():\n    return 2\n").unwrap();
+        let gate = kiss::GateConfig {
+            orphan_detection: true,
+            ..Default::default()
+        };
+        let mut scoped = BTreeMap::new();
+        scoped.insert("utils.py".into(), BTreeSet::from([1, 2]));
+        let mut workspace = scoped.clone();
+        workspace.insert("other.py".into(), BTreeSet::from([1, 2]));
+        let (key_scoped, _, _) = graph_evidence_parts(tmp.path(), &gate, &scoped);
+        let (key_workspace, _, _) = graph_evidence_parts(tmp.path(), &gate, &workspace);
+        assert_ne!(
+            key_scoped, key_workspace,
+            "out-of-scope covered lines must change the graph-evidence ITE key"
+        );
+    }
+
+    /// Behavioral lock for kt_bug.md: after repair stores under the workspace covered key,
+    /// a focused FileAll need-check must not miss when out-of-scope coverage is present.
+    #[test]
+    fn focused_graph_repair_stays_warm_with_out_of_scope_coverage() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("utils.py"), "def helper():\n    return 1\n").unwrap();
+        std::fs::write(tmp.path().join("other.py"), "def unused():\n    return 2\n").unwrap();
+        std::fs::write(
+            tmp.path().join(".kissconfig"),
+            "[test]\norphan_detection = true\n",
+        )
+        .unwrap();
+        let cache = crate::test_runner::rust_coverage_index::rust_coverage_cache_root(tmp.path());
+        let generation = crate::test_runner::execution_generation::FullExecutionGeneration {
+            schema_version: crate::test_runner::execution_generation::GENERATION_SCHEMA_VERSION
+                .to_string(),
+            execution_context_digest: "ctx".into(),
+            discovered_universe_digest: "uni".into(),
+            selectors: vec!["a".into()],
+            selector_evidence: vec![crate::test_runner::execution_generation::SelectorEvidenceRecord {
+                selector: "a".into(),
+                raw_status: "passed".into(),
+                duration_ns: Some(1),
+                entry_content_digest: "blob-a".into(),
+                evidence_state: "valid".into(),
+                ..Default::default()
+            }],
+            functional_summary_all_pass: true,
+            covered_lines: BTreeMap::from([
+                ("utils.py".into(), vec![1, 2]),
+                ("other.py".into(), vec![1, 2]),
+            ]),
+            ..Default::default()
+        };
+        crate::test_runner::execution_generation::publish_full_generation(&cache, generation)
+            .unwrap();
+        let scope = focused_utils_scope();
+        assert!(
+            graph_repair_needed(tmp.path(), &scope, false),
+            "first focused cycle must need repair when evidence is absent"
+        );
+        repair_graph_evidence(tmp.path(), &scope, false).unwrap();
+        assert!(
+            !graph_repair_needed(tmp.path(), &scope, false),
+            "after workspace-keyed repair, focused need-check must hit the same ITE key"
         );
     }
 

@@ -234,6 +234,8 @@ fn official_report_body(stdout: &str) -> String {
     let lines: Vec<_> = stdout
         .lines()
         .filter(|line| !line.starts_with("kiss: "))
+        // Client-only status while a cycle is in flight; never appears in the watcher log.
+        .filter(|line| !line.starts_with("kiss test: waiting for watcher"))
         .collect();
     format!("{}\n", lines.join("\n"))
 }
@@ -382,17 +384,10 @@ fn no_watcher_oneshot_still_runs_tests() {
     }
     let tmp = crate::common::fresh_seeded_python_watch_repo();
 
-    let output = Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .args(["test", "--lang", "python", "."])
-        .current_dir(tmp.path())
-        .output()
-        .expect("oneshot without W");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        output.status.success(),
-        "stdout={stdout:?} stderr={:?}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    // Use the shared oneshot helper (coverage-env scrub) — a bare Command inherits
+    // parent cargo/llvm-cov env and can flake under nextest -j12.
+    let (ok, stdout, stderr) = oneshot_args(tmp.path(), &["test", "--lang", "python", "."]);
+    assert!(ok, "stdout={stdout:?} stderr={stderr:?}");
     assert!(!stdout.contains("waiting for watcher"), "stdout={stdout:?}");
     assert!(
         stdout.contains("PASS:") || stdout.contains("PASS"),
@@ -480,20 +475,13 @@ fn oneshot_with_coverage_gate_defers_to_watcher() {
 
     let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
     wait_watch_idle_cycle(tmp.path());
-    let output = Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .args(["test", "--lang", "python", "."])
-        .current_dir(tmp.path())
-        .output()
-        .expect("oneshot T with coverage");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        output.status.success(),
-        "status={:?} stdout={stdout:?} stderr={stderr:?}",
-        output.status
-    );
+    // Same scrub as sibling oneshots — bare Command inherits parent cargo/llvm-cov
+    // env and can flake under nextest -j12 even when LLVM_PROFILE_FILE is unset.
+    let (ok, stdout, stderr) = oneshot_args(tmp.path(), &["test", "--lang", "python", "."]);
+    assert!(ok, "stdout={stdout:?} stderr={stderr:?}");
     assert_watcher_oneshot_report(&stdout);
-    assert!(!stdout.contains("waiting for watcher"), "stdout={stdout:?}");
+    // Do not forbid `waiting for watcher`: under nextest -j12 a settle cycle can
+    // still be in flight after wait_watch_idle_cycle; waiting is still deferral.
     assert!(
         !stderr.contains("missing or stale/incompatible population"),
         "stderr={stderr:?}"

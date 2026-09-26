@@ -486,6 +486,8 @@ fn wait_for_settled_batch(
         SettlePoll::Ready(paths) => {
             if paths.iter().any(|p| filter.is_ignore_file(p)) {
                 *filter = filter.rebuild();
+            } else {
+                filter.refresh_expand_extras();
             }
             WaitOutcome::Settled(paths)
         }

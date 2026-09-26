@@ -27,9 +27,14 @@ fn oneshot_surfaces_watcher_coverage_violations() {
     let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
     wait_watch_idle_cycle(tmp.path());
 
-    let output = Command::new(env!("CARGO_BIN_EXE_kiss"))
+    // Scrub parent cargo/llvm-cov env — same class as watch_client oneshots.
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
+    crate::common::scrub_parent_coverage_env(&mut cmd);
+    crate::common::preserve_toolchain_homes(&mut cmd);
+    let output = cmd
         .args(["test", "--lang", "python", "."])
         .current_dir(tmp.path())
+        .env("PYTHONDONTWRITEBYTECODE", "1")
         .output()
         .expect("oneshot T with violations");
     let stdout = String::from_utf8_lossy(&output.stdout);

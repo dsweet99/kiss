@@ -82,3 +82,62 @@ fn runner_identity_changes_plan_key() {
     assert_ne!(a, b);
     assert_eq!(a, plan_key_for_test(&req, &stamp, "runner-a"));
 }
+
+#[test]
+fn plan_entry_files_use_full_key_not_16_hex_prefix() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let published = publish(tmp.path(), &request("full-key"), &stamp("full-key")).unwrap();
+    let entries = tmp.path().join("target/kiss-plan/target-plans/entries");
+    let names: Vec<_> = std::fs::read_dir(&entries)
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    let full_name = format!("{:08}_{}.json", published.seq, published.key);
+    assert!(
+        names.iter().any(|n| n == &full_name),
+        "entry filename must be the full-key path; got {names:?}"
+    );
+    let prefix = &published.key[..16.min(published.key.len())];
+    let truncated = format!("{:08}_{}.json", published.seq, prefix);
+    assert!(
+        !names.iter().any(|n| n == &truncated),
+        "must not publish a truncated 16-hex-only entry name; got {names:?}"
+    );
+}
+
+#[test]
+fn plan_prune_removes_legacy_truncated_entry_path() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let first = publish(tmp.path(), &request("legacy-prune"), &stamp("legacy-prune")).unwrap();
+    let entries = tmp.path().join("target/kiss-plan/target-plans/entries");
+    let full_name = format!("{:08}_{}.json", first.seq, first.key);
+    let legacy_name = format!(
+        "{:08}_{}.json",
+        first.seq,
+        &first.key[..16.min(first.key.len())]
+    );
+    assert_ne!(full_name, legacy_name);
+    // Pre-fix truncated sibling left beside the full-key publish.
+    std::fs::copy(entries.join(&full_name), entries.join(&legacy_name)).unwrap();
+    assert!(entries.join(&legacy_name).is_file());
+
+    for i in 0..TARGET_PLAN_ENTRY_LIMIT {
+        publish(
+            tmp.path(),
+            &request(&format!("k{i}")),
+            &stamp(&format!("s{i}")),
+        )
+        .unwrap();
+    }
+
+    assert!(
+        !entries.join(&full_name).exists(),
+        "oldest full-key entry must be pruned"
+    );
+    assert!(
+        !entries.join(&legacy_name).exists(),
+        "prune must also remove the legacy truncated entry path \
+         (full-key-only unlink would leave it)"
+    );
+}

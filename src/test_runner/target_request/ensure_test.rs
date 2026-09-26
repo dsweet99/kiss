@@ -784,6 +784,562 @@ fn dry_run_preview_does_not_repair_graph() {
 }
 
 #[test]
+fn ready_load_misses_when_covered_map_churns_graph_generation() {
+    // kt_bug: ready-report identity ignores covered-map ITE key. Watch/oneshot can
+    // publish more coverage without changing stamp/request; load_ready must not
+    // serve a report whose pinned graph_generation is stale vs current covered.
+    let tmp = python_repo();
+    fs::write(tmp.path().join("utils.py"), "def helper():\n    return 1\n").unwrap();
+    fs::write(tmp.path().join("other.py"), "def unused():\n    return 2\n").unwrap();
+    fs::write(
+        tmp.path().join(".kissconfig"),
+        "[test]\norphan_detection = true\n",
+    )
+    .unwrap();
+    assert!(
+        git_in(tmp.path())
+            .args(["add", "-A"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        git_in(tmp.path())
+            .args(["commit", "-m", "sources"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    seed_population_cache(tmp.path());
+
+    let cache = crate::test_runner::rust_coverage_index::rust_coverage_cache_root(tmp.path());
+    let mut generation = crate::test_runner::execution_generation::FullExecutionGeneration {
+        schema_version: crate::test_runner::execution_generation::GENERATION_SCHEMA_VERSION
+            .to_string(),
+        execution_context_digest: "ctx".into(),
+        discovered_universe_digest: "uni".into(),
+        selectors: vec!["a".into()],
+        selector_evidence: vec![crate::test_runner::execution_generation::SelectorEvidenceRecord {
+            selector: "a".into(),
+            raw_status: "passed".into(),
+            duration_ns: Some(1),
+            entry_content_digest: "blob-a".into(),
+            evidence_state: "valid".into(),
+            ..Default::default()
+        }],
+        functional_summary_all_pass: true,
+        covered_lines: std::collections::BTreeMap::from([("utils.py".into(), vec![1, 2])]),
+        ..Default::default()
+    };
+    crate::test_runner::execution_generation::publish_full_generation(&cache, generation.clone())
+        .unwrap();
+
+    let req = workspace_req();
+    let built = materialize_target_report(tmp.path(), &req, &live_policy()).unwrap();
+    assert!(built.graph_generation.is_some(), "{built:?}");
+    crate::test_runner::target_request::publish_report(tmp.path(), &req, &built).unwrap();
+    assert!(
+        crate::test_runner::target_request::load_ready_for_request(
+            tmp.path(),
+            &req,
+            false,
+            crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
+        )
+        .is_some()
+    );
+    assert!(
+        !super::report::graph_repair_needed(tmp.path(), &built.scope, false),
+        "published report must leave graph evidence warm under covered map A"
+    );
+
+    generation
+        .covered_lines
+        .insert("other.py".into(), vec![1, 2]);
+    crate::test_runner::execution_generation::publish_full_generation(&cache, generation).unwrap();
+    assert!(
+        super::report::graph_repair_needed(tmp.path(), &built.scope, false),
+        "covered-map churn must miss the graph-evidence ITE key"
+    );
+    assert!(
+        crate::test_runner::target_request::load_ready_for_request(
+            tmp.path(),
+            &req,
+            false,
+            crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
+        )
+        .is_none(),
+        "ready-load must miss when pinned graph_generation is stale vs current covered map"
+    );
+}
+
+#[test]
+fn ready_load_misses_when_pinned_graph_evidence_blob_is_gone() {
+    // kt_bug: pinned_graph_generation_holds also requires the evidence blob to load.
+    let tmp = python_repo();
+    fs::write(
+        tmp.path().join(".kissconfig"),
+        "[test]\norphan_detection = true\n",
+    )
+    .unwrap();
+    assert!(
+        git_in(tmp.path())
+            .args(["add", "-A"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        git_in(tmp.path())
+            .args(["commit", "-m", "orphan-config"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    seed_population_cache(tmp.path());
+    let cache = crate::test_runner::rust_coverage_index::rust_coverage_cache_root(tmp.path());
+    let generation = crate::test_runner::execution_generation::FullExecutionGeneration {
+        schema_version: crate::test_runner::execution_generation::GENERATION_SCHEMA_VERSION
+            .to_string(),
+        execution_context_digest: "ctx".into(),
+        discovered_universe_digest: "uni".into(),
+        selectors: vec!["a".into()],
+        selector_evidence: vec![crate::test_runner::execution_generation::SelectorEvidenceRecord {
+            selector: "a".into(),
+            raw_status: "passed".into(),
+            duration_ns: Some(1),
+            entry_content_digest: "blob-a".into(),
+            evidence_state: "valid".into(),
+            ..Default::default()
+        }],
+        functional_summary_all_pass: true,
+        covered_lines: std::collections::BTreeMap::from([("app.py".into(), vec![1])]),
+        ..Default::default()
+    };
+    crate::test_runner::execution_generation::publish_full_generation(&cache, generation).unwrap();
+
+    let req = workspace_req();
+    let built = materialize_target_report(tmp.path(), &req, &live_policy()).unwrap();
+    let key = built
+        .graph_generation
+        .clone()
+        .expect("materialized report must pin a graph generation");
+    crate::test_runner::target_request::publish_report(tmp.path(), &req, &built).unwrap();
+    assert!(
+        crate::test_runner::target_request::load_ready_for_request(
+            tmp.path(),
+            &req,
+            false,
+            crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
+        )
+        .is_some()
+    );
+
+    let dir = tmp
+        .path()
+        .join("target")
+        .join("kiss-plan")
+        .join("graph-evidence");
+    let full = dir.join(format!("{key}.json"));
+    let legacy = dir.join(format!("{}.json", &key[..16.min(key.len())]));
+    let _ = fs::remove_file(&full);
+    let _ = fs::remove_file(&legacy);
+    assert!(
+        super::graph_store::load_items(tmp.path(), &key).is_none(),
+        "probe: graph evidence blob must be gone for {key}"
+    );
+    assert!(
+        super::report::graph_repair_needed(tmp.path(), &built.scope, false),
+        "missing evidence blob must make graph_repair_needed true under the same covered key"
+    );
+    assert!(
+        crate::test_runner::target_request::load_ready_for_request(
+            tmp.path(),
+            &req,
+            false,
+            crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
+        )
+        .is_none(),
+        "ready-load must miss when pinned graph_generation key matches but evidence blob is gone"
+    );
+}
+
+
+#[test]
+fn ready_freshness_after_worktree_skips_evidence_source_redigest() {
+    // kt_bug.md: after worktree match, pinned_graph_generation_holds must not
+    // re-digest workspace sources; covered/config (+ presence) are the remaining signals.
+    let tmp = python_repo();
+    fs::write(tmp.path().join("utils.py"), "def helper():\n    return 1\n").unwrap();
+    fs::write(tmp.path().join("other.py"), "def unused():\n    return 2\n").unwrap();
+    fs::write(
+        tmp.path().join(".kissconfig"),
+        "[test]\norphan_detection = true\n",
+    )
+    .unwrap();
+    assert!(
+        git_in(tmp.path())
+            .args(["add", "-A"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        git_in(tmp.path())
+            .args(["commit", "-m", "sources"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    seed_population_cache(tmp.path());
+
+    let cache = crate::test_runner::rust_coverage_index::rust_coverage_cache_root(tmp.path());
+    let mut generation = crate::test_runner::execution_generation::FullExecutionGeneration {
+        schema_version: crate::test_runner::execution_generation::GENERATION_SCHEMA_VERSION
+            .to_string(),
+        execution_context_digest: "ctx".into(),
+        discovered_universe_digest: "uni".into(),
+        selectors: vec!["a".into()],
+        selector_evidence: vec![crate::test_runner::execution_generation::SelectorEvidenceRecord {
+            selector: "a".into(),
+            raw_status: "passed".into(),
+            duration_ns: Some(1),
+            entry_content_digest: "blob-a".into(),
+            evidence_state: "valid".into(),
+            ..Default::default()
+        }],
+        functional_summary_all_pass: true,
+        covered_lines: std::collections::BTreeMap::from([("utils.py".into(), vec![1, 2])]),
+        ..Default::default()
+    };
+    crate::test_runner::execution_generation::publish_full_generation(&cache, generation.clone())
+        .unwrap();
+
+    let req = workspace_req();
+    let built = materialize_target_report(tmp.path(), &req, &live_policy()).unwrap();
+    assert!(built.graph_generation.is_some(), "{built:?}");
+    assert!(
+        built.snapshot.graph_mutable.is_some(),
+        "assembled reports must pin graph_mutable for cheap ready freshness: {built:?}"
+    );
+    crate::test_runner::target_request::publish_report(tmp.path(), &req, &built).unwrap();
+
+    super::graph_store::reset_evidence_source_reads();
+    assert!(
+        super::report::pinned_graph_generation_holds(tmp.path(), false, &built),
+        "warm pinned generation must hold under stable covered/config"
+    );
+    assert_eq!(
+        super::graph_store::evidence_source_reads(),
+        0,
+        "after worktree-validated sources, ready freshness must not re-digest evidence sources"
+    );
+    super::graph_store::reset_evidence_source_reads();
+    assert!(
+        crate::test_runner::target_request::load_ready_for_request(
+            tmp.path(),
+            &req,
+            false,
+            crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
+        )
+        .is_some()
+    );
+    assert_eq!(
+        super::graph_store::evidence_source_reads(),
+        0,
+        "full load_ready_for_request warm path must not re-digest evidence sources"
+    );
+
+    generation
+        .covered_lines
+        .insert("other.py".into(), vec![1, 2]);
+    crate::test_runner::execution_generation::publish_full_generation(&cache, generation).unwrap();
+    super::graph_store::reset_evidence_source_reads();
+    assert!(
+        !super::report::pinned_graph_generation_holds(tmp.path(), false, &built),
+        "covered-map churn must miss without relying on source re-digest"
+    );
+    assert_eq!(
+        super::graph_store::evidence_source_reads(),
+        0,
+        "covered-map miss path must also skip evidence source re-digest"
+    );
+}
+
+
+#[test]
+fn ready_misses_when_gitignored_rust_include_target_changes() {
+    // kt_bug.md: evidence_key expands include! targets (even gitignored); worktree must
+    // not warm-hold after those bytes change.
+    let tmp = python_repo();
+    fs::write(tmp.path().join(".gitignore"), "/target\n/.kiss\ngen.rs\n").unwrap();
+    fs::write(
+        tmp.path().join("lib.rs"),
+        "include!(\"gen.rs\");\npub fn prod() -> i32 { included() }\n",
+    )
+    .unwrap();
+    fs::write(tmp.path().join("gen.rs"), "fn included() -> i32 { 1 }\n").unwrap();
+    fs::write(
+        tmp.path().join(".kissconfig"),
+        "[test]\norphan_detection = true\n",
+    )
+    .unwrap();
+    assert!(
+        git_in(tmp.path())
+            .args(["add", "-A"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        git_in(tmp.path())
+            .args(["commit", "-m", "rs-include"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    seed_population_cache(tmp.path());
+
+    let cache = crate::test_runner::rust_coverage_index::rust_coverage_cache_root(tmp.path());
+    let generation = crate::test_runner::execution_generation::FullExecutionGeneration {
+        schema_version: crate::test_runner::execution_generation::GENERATION_SCHEMA_VERSION
+            .to_string(),
+        execution_context_digest: "ctx".into(),
+        discovered_universe_digest: "uni".into(),
+        selectors: vec!["a".into()],
+        selector_evidence: vec![crate::test_runner::execution_generation::SelectorEvidenceRecord {
+            selector: "a".into(),
+            raw_status: "passed".into(),
+            duration_ns: Some(1),
+            entry_content_digest: "blob-a".into(),
+            evidence_state: "valid".into(),
+            ..Default::default()
+        }],
+        functional_summary_all_pass: true,
+        covered_lines: std::collections::BTreeMap::from([("lib.rs".into(), vec![1, 2])]),
+        ..Default::default()
+    };
+    crate::test_runner::execution_generation::publish_full_generation(&cache, generation).unwrap();
+
+    let req = workspace_req();
+    let built = materialize_target_report(tmp.path(), &req, &live_policy()).unwrap();
+    assert!(
+        built.graph_generation.is_some(),
+        "orphan graph must be active for include lock: {built:?}"
+    );
+    crate::test_runner::target_request::publish_report(tmp.path(), &req, &built).unwrap();
+    assert!(
+        crate::test_runner::target_request::load_ready_for_request(
+            tmp.path(),
+            &req,
+            false,
+            crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
+        )
+        .is_some(),
+        "warm ready must hit before include-target edit"
+    );
+
+    let before_wt = super::stamp::capture_worktree_token(tmp.path(), None);
+    fs::write(tmp.path().join("gen.rs"), "fn included() -> i32 { 2 }\n").unwrap();
+    let after_wt = super::stamp::capture_worktree_token(tmp.path(), None);
+    assert_ne!(
+        before_wt, after_wt,
+        "worktree token must move when a gitignored include! target changes"
+    );
+    assert!(
+        crate::test_runner::target_request::load_ready_for_request(
+            tmp.path(),
+            &req,
+            false,
+            crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
+        )
+        .is_none(),
+        "gitignored include! target edit must miss ready"
+    );
+}
+
+#[test]
+fn ready_misses_when_gitignored_rust_path_attr_target_changes() {
+    // kt_bug.md class #8: evidence_key / worktree must follow #[path] targets
+    // (including gitignored), same premise as the include! lock above.
+    let tmp = python_repo();
+    fs::write(tmp.path().join(".gitignore"), "/target\n/.kiss\nalt.rs\n").unwrap();
+    fs::write(
+        tmp.path().join("lib.rs"),
+        "#[path = \"alt.rs\"]\nmod hidden;\npub fn prod() -> i32 { hidden::via_path() }\n",
+    )
+    .unwrap();
+    fs::write(tmp.path().join("alt.rs"), "pub fn via_path() -> i32 { 1 }\n").unwrap();
+    fs::write(
+        tmp.path().join(".kissconfig"),
+        "[test]\norphan_detection = true\n",
+    )
+    .unwrap();
+    assert!(
+        git_in(tmp.path())
+            .args(["add", "-A"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        git_in(tmp.path())
+            .args(["commit", "-m", "rs-path-attr"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    seed_population_cache(tmp.path());
+
+    let cache = crate::test_runner::rust_coverage_index::rust_coverage_cache_root(tmp.path());
+    let generation = crate::test_runner::execution_generation::FullExecutionGeneration {
+        schema_version: crate::test_runner::execution_generation::GENERATION_SCHEMA_VERSION
+            .to_string(),
+        execution_context_digest: "ctx".into(),
+        discovered_universe_digest: "uni".into(),
+        selectors: vec!["a".into()],
+        selector_evidence: vec![crate::test_runner::execution_generation::SelectorEvidenceRecord {
+            selector: "a".into(),
+            raw_status: "passed".into(),
+            duration_ns: Some(1),
+            entry_content_digest: "blob-a".into(),
+            evidence_state: "valid".into(),
+            ..Default::default()
+        }],
+        functional_summary_all_pass: true,
+        covered_lines: std::collections::BTreeMap::from([("lib.rs".into(), vec![1, 2, 3])]),
+        ..Default::default()
+    };
+    crate::test_runner::execution_generation::publish_full_generation(&cache, generation).unwrap();
+
+    let req = workspace_req();
+    let built = materialize_target_report(tmp.path(), &req, &live_policy()).unwrap();
+    assert!(
+        built.graph_generation.is_some(),
+        "orphan graph must be active for path-attr lock: {built:?}"
+    );
+    crate::test_runner::target_request::publish_report(tmp.path(), &req, &built).unwrap();
+    assert!(
+        crate::test_runner::target_request::load_ready_for_request(
+            tmp.path(),
+            &req,
+            false,
+            crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
+        )
+        .is_some(),
+        "warm ready must hit before path-attr target edit"
+    );
+
+    let before_wt = super::stamp::capture_worktree_token(tmp.path(), None);
+    fs::write(tmp.path().join("alt.rs"), "pub fn via_path() -> i32 { 2 }\n").unwrap();
+    let after_wt = super::stamp::capture_worktree_token(tmp.path(), None);
+    assert_ne!(
+        before_wt, after_wt,
+        "worktree token must move when a gitignored #[path] target changes"
+    );
+    assert!(
+        crate::test_runner::target_request::load_ready_for_request(
+            tmp.path(),
+            &req,
+            false,
+            crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
+        )
+        .is_none(),
+        "gitignored #[path] target edit must miss ready"
+    );
+}
+
+#[test]
+fn ready_misses_when_gitignored_rust_conventional_mod_target_changes() {
+    // kt_bug.md class #9: evidence_key / worktree must follow conventional
+    // `mod name;` targets (name.rs / name/mod.rs), including gitignored.
+    let tmp = python_repo();
+    fs::write(tmp.path().join(".gitignore"), "/target\n/.kiss\nhidden.rs\n").unwrap();
+    fs::write(
+        tmp.path().join("lib.rs"),
+        "mod hidden;\npub fn prod() -> i32 { hidden::via_conv() }\n",
+    )
+    .unwrap();
+    fs::write(tmp.path().join("hidden.rs"), "pub fn via_conv() -> i32 { 1 }\n").unwrap();
+    fs::write(
+        tmp.path().join(".kissconfig"),
+        "[test]\norphan_detection = true\n",
+    )
+    .unwrap();
+    assert!(
+        git_in(tmp.path())
+            .args(["add", "-A"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        git_in(tmp.path())
+            .args(["commit", "-m", "rs-conventional-mod"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    seed_population_cache(tmp.path());
+
+    let cache = crate::test_runner::rust_coverage_index::rust_coverage_cache_root(tmp.path());
+    let generation = crate::test_runner::execution_generation::FullExecutionGeneration {
+        schema_version: crate::test_runner::execution_generation::GENERATION_SCHEMA_VERSION
+            .to_string(),
+        execution_context_digest: "ctx".into(),
+        discovered_universe_digest: "uni".into(),
+        selectors: vec!["a".into()],
+        selector_evidence: vec![crate::test_runner::execution_generation::SelectorEvidenceRecord {
+            selector: "a".into(),
+            raw_status: "passed".into(),
+            duration_ns: Some(1),
+            entry_content_digest: "blob-a".into(),
+            evidence_state: "valid".into(),
+            ..Default::default()
+        }],
+        functional_summary_all_pass: true,
+        covered_lines: std::collections::BTreeMap::from([("lib.rs".into(), vec![1, 2])]),
+        ..Default::default()
+    };
+    crate::test_runner::execution_generation::publish_full_generation(&cache, generation).unwrap();
+
+    let req = workspace_req();
+    let built = materialize_target_report(tmp.path(), &req, &live_policy()).unwrap();
+    assert!(
+        built.graph_generation.is_some(),
+        "orphan graph must be active for conventional-mod lock: {built:?}"
+    );
+    crate::test_runner::target_request::publish_report(tmp.path(), &req, &built).unwrap();
+    assert!(
+        crate::test_runner::target_request::load_ready_for_request(
+            tmp.path(),
+            &req,
+            false,
+            crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
+        )
+        .is_some(),
+        "warm ready must hit before conventional-mod target edit"
+    );
+
+    let before_wt = super::stamp::capture_worktree_token(tmp.path(), None);
+    fs::write(tmp.path().join("hidden.rs"), "pub fn via_conv() -> i32 { 2 }\n").unwrap();
+    let after_wt = super::stamp::capture_worktree_token(tmp.path(), None);
+    assert_ne!(
+        before_wt, after_wt,
+        "worktree token must move when a gitignored conventional mod target changes"
+    );
+    assert!(
+        crate::test_runner::target_request::load_ready_for_request(
+            tmp.path(),
+            &req,
+            false,
+            crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
+        )
+        .is_none(),
+        "gitignored conventional mod target edit must miss ready"
+    );
+}
+
+#[test]
 fn lang_ready_load_does_not_slice_parent_workspace_report() {
     let tmp = python_repo();
     let parent = workspace_req();

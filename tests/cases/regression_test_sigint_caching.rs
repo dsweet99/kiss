@@ -85,19 +85,28 @@ fn kiss_test_sigint_caches_passed_tests_as_it_goes() {
     });
 
     let deadline = Instant::now() + Duration::from_secs(60);
+    let selector_cache = tmp.path().join("target/kiss-plan/python_test_selectors.json");
     loop {
         let snap = collected
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
-        if snap.contains("PASS: test_lib.py::test_fast") || snap.contains("PASS: test_fast") {
+        let saw_pass =
+            snap.contains("PASS: test_lib.py::test_fast") || snap.contains("PASS: test_fast");
+        // Wait for population selector publish too — SIGINT before that leaves the
+        // follow-up run without max_num_tests evidence under load.
+        if saw_pass && selector_cache.is_file() {
             break;
         }
         if Instant::now() >= deadline {
             let _ = child.kill();
             let _ = child.wait();
             let _ = reader.join();
-            panic!("timed out waiting for test_fast to pass; stdout={snap:?}");
+            panic!(
+                "timed out waiting for test_fast pass + selector cache; \
+                 cache_exists={} stdout={snap:?}",
+                selector_cache.is_file()
+            );
         }
         std::thread::sleep(Duration::from_millis(1));
     }
@@ -128,10 +137,17 @@ fn kiss_test_sigint_caches_passed_tests_as_it_goes() {
         second_out.status.success(),
         "restart must exit 0; stdout={stdout2} stderr={stderr2}"
     );
+    // Cache reuse may surface as rslip prepare hits, or as an ITE/official report
+    // assemble with no runner (`subprocess=0`) that still prints PASS <selector>
+    // without a live `PASS:` miss line. Both mean test_fast was not re-executed.
+    let rslip_hit = stdout2.contains("kiss test: rslip prepared hits=1 misses=0");
+    let report_reuse = stdout2.contains("PASS test_lib.py::test_fast")
+        && stdout2.contains("kiss test: report members=1")
+        && !stdout2.contains("PASS: test_lib.py::test_fast")
+        && !stdout2.contains("rslip prepared hits=0 misses=");
     assert!(
-        stdout2.contains("kiss test: rslip prepared hits=1 misses=0")
-            && stdout2.contains("PASS ")
-            && (stdout2.contains("test_fast") || stdout2.contains("test_lib.py")),
-        "expected test_fast to be cached on second run, stdout={stdout2}, stderr={stderr2}"
+        (rslip_hit || report_reuse) && stdout2.contains("PASS "),
+        "expected test_fast to be cached on second run (rslip hit or report reuse), \
+         stdout={stdout2}, stderr={stderr2}"
     );
 }

@@ -56,12 +56,20 @@ pub(crate) fn publish(
 
 pub(crate) fn load_current(repo_root: &Path) -> Option<TargetPlanEntry> {
     let dir = store_dir(repo_root);
+    if !dir.is_dir() {
+        return None;
+    }
+    let _lock = lock_store(&dir).ok()?;
     let bytes = fs::read(dir.join("pointer.json")).ok()?;
     serde_json::from_slice(&bytes).ok()
 }
 
 pub(crate) fn load_entry(repo_root: &Path, key: &str) -> Option<TargetPlanEntry> {
     let dir = store_dir(repo_root);
+    if !dir.is_dir() {
+        return None;
+    }
+    let _lock = lock_store(&dir).ok()?;
     let meta = read_meta(&dir);
     meta.entries.into_iter().find(|entry| entry.key == key)
 }
@@ -131,26 +139,30 @@ fn write_pointer(dir: &Path, entry: &TargetPlanEntry) -> Result<(), String> {
 }
 
 fn write_entry(dir: &Path, entry: &TargetPlanEntry) -> Result<(), String> {
-    let name = format!(
-        "entries/{:08}_{}.json",
-        entry.seq,
-        &entry.key[..16.min(entry.key.len())]
-    );
+    let name = entry_file_name(entry.seq, &entry.key);
     if let Some(parent) = dir.join(&name).parent() {
         fs::create_dir_all(parent).map_err(|err| format!("target plan entry: {err}"))?;
     }
     atomic_json(dir, &name, entry)
 }
 
+fn entry_file_name(seq: u64, key: &str) -> String {
+    format!("entries/{seq:08}_{key}.json")
+}
+
+fn legacy_entry_file_name(seq: u64, key: &str) -> String {
+    format!("entries/{:08}_{}.json", seq, &key[..16.min(key.len())])
+}
+
 fn prune_unlocked(dir: &Path, meta: &mut StoreMeta) {
     while meta.entries.len() > TARGET_PLAN_ENTRY_LIMIT {
         let oldest = meta.entries.remove(0);
-        let name = format!(
-            "entries/{:08}_{}.json",
-            oldest.seq,
-            &oldest.key[..16.min(oldest.key.len())]
-        );
-        let _ = fs::remove_file(dir.join(name));
+        let _ = fs::remove_file(dir.join(entry_file_name(oldest.seq, &oldest.key)));
+        // Pre-fix truncated filenames may linger after upgrade.
+        let legacy = legacy_entry_file_name(oldest.seq, &oldest.key);
+        if legacy != entry_file_name(oldest.seq, &oldest.key) {
+            let _ = fs::remove_file(dir.join(legacy));
+        }
     }
 }
 
@@ -167,4 +179,115 @@ fn atomic_json<T: Serialize>(dir: &Path, name: &str, value: &T) -> Result<(), St
             .map_err(|err| format!("target plan write: {err}"))?;
     }
     fs::rename(tmp, path).map_err(|err| format!("target plan publish: {err}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn load_current_waits_on_held_exclusive_lock() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let req = TargetRequest {
+            focus: super::super::types::TargetFocus::Workspace,
+            lang: None,
+            ignore: vec!["lock-load".into()],
+        };
+        let stamp = TargetSliceStamp {
+            digest: "d".repeat(64),
+            complete: true,
+            index_schema: super::super::slice::TARGET_SLICE_SCHEMA.to_string(),
+        };
+        let published = publish(tmp.path(), &req, &stamp).unwrap();
+        let dir = store_dir(tmp.path());
+        let held = lock_store(&dir).expect("hold exclusive lock");
+        let repo = tmp.path().to_path_buf();
+        let handle = std::thread::spawn(move || load_current(&repo));
+        let started = std::time::Instant::now();
+        while started.elapsed() < std::time::Duration::from_millis(200) {
+            if handle.is_finished() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(
+            !handle.is_finished(),
+            "load_current must block on an already-held exclusive store lock"
+        );
+        drop(held);
+        let loaded = handle.join().expect("load_current thread").expect("pointer");
+        assert_eq!(loaded, published);
+    }
+
+    #[test]
+    fn load_entry_waits_on_held_exclusive_lock() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let req = TargetRequest {
+            focus: super::super::types::TargetFocus::Workspace,
+            lang: None,
+            ignore: vec!["lock-entry".into()],
+        };
+        let stamp = TargetSliceStamp {
+            digest: "e".repeat(64),
+            complete: true,
+            index_schema: super::super::slice::TARGET_SLICE_SCHEMA.to_string(),
+        };
+        let published = publish(tmp.path(), &req, &stamp).unwrap();
+        let dir = store_dir(tmp.path());
+        let held = lock_store(&dir).expect("hold exclusive lock");
+        let repo = tmp.path().to_path_buf();
+        let key = published.key.clone();
+        let handle = std::thread::spawn(move || load_entry(&repo, &key));
+        let started = std::time::Instant::now();
+        while started.elapsed() < std::time::Duration::from_millis(200) {
+            if handle.is_finished() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(
+            !handle.is_finished(),
+            "load_entry (plan identity path) must block on an already-held exclusive store lock"
+        );
+        drop(held);
+        let loaded = handle.join().expect("load_entry thread").expect("entry");
+        assert_eq!(loaded, published);
+    }
+
+    #[test]
+    fn load_plan_for_identity_waits_on_held_exclusive_lock() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let req = TargetRequest {
+            focus: super::super::types::TargetFocus::Workspace,
+            lang: None,
+            ignore: vec!["lock-plan-id".into()],
+        };
+        let stamp = TargetSliceStamp {
+            digest: "f".repeat(64),
+            complete: true,
+            index_schema: super::super::slice::TARGET_SLICE_SCHEMA.to_string(),
+        };
+        let published = publish(tmp.path(), &req, &stamp).unwrap();
+        let dir = store_dir(tmp.path());
+        let held = lock_store(&dir).expect("hold exclusive lock");
+        let repo = tmp.path().to_path_buf();
+        let handle = std::thread::spawn(move || load_plan_for_identity(&repo, &req, &stamp));
+        let started = std::time::Instant::now();
+        while started.elapsed() < std::time::Duration::from_millis(200) {
+            if handle.is_finished() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(
+            !handle.is_finished(),
+            "load_plan_for_identity must block on an already-held exclusive store lock"
+        );
+        drop(held);
+        let loaded = handle
+            .join()
+            .expect("load_plan_for_identity thread")
+            .expect("entry");
+        assert_eq!(loaded, published);
+    }
 }

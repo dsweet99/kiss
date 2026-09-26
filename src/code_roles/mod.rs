@@ -32,7 +32,7 @@ pub use python::classify_python;
 pub use python_path::{is_default_pytest_collect_candidate, is_python_test_module_path};
 pub use rust::{classify_rust, reachable_workspace_rust_sources};
 pub(crate) use rust_cargo::cargo_entry_src_paths;
-pub(crate) use rust_modules::declared_mod_path;
+pub(crate) use rust_modules::{declared_mod_path, resolve_conventional_mod_file};
 pub use span::{SourcePosition, SourceSpan};
 pub use types::{CodeContextSet, CodeRole, FileComposition};
 

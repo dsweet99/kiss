@@ -256,6 +256,13 @@ fn try_snapshot(
             "target membership is not proven complete".into(),
         ));
     }
+    // No-repair assemble (e.g. post-SIGINT restart with rslip hits only) still needs
+    // workspace selector evidence for max_num_tests. assemble_after_repair refreshes;
+    // this path must too or gates_from_population fails closed as incomplete.
+    if let Some(args) = args {
+        refresh_python_witnesses(repo_root, &scope, args)
+            .map_err(EnsureError::IncompleteEvidence)?;
+    }
     assemble_report(
         repo_root,
         request,

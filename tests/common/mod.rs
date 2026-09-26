@@ -1,8 +1,9 @@
 #![allow(dead_code)]
 
+use fs2::FileExt;
 use kiss::parsing::{ParsedFile, create_parser, parse_file};
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
+use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -485,8 +486,37 @@ fn write_seeded_python_watch_sources(root: &Path) {
     .unwrap();
 }
 
-pub fn persistent_seeded_python_watch_repo() -> PathBuf {
+/// Cross-process lock for the shared seeded-python-watch fixture.
+/// nextest workers are separate OS processes; an in-process Mutex does not
+/// serialize rewrite of the persistent tree against concurrent `cp -a` clones.
+/// Uses an exclusive flock (same class as production kiss-plan stores / force-python
+/// fixture). A mkdir lock with timed steal can interrupt a live holder still
+/// cloning under nextest -j12 load.
+struct SeededPythonWatchFixtureLock {
+    _file: fs::File,
+}
+
+fn seeded_python_watch_fixture_lock() -> SeededPythonWatchFixtureLock {
     ensure_tmpfs();
+    let path = std::env::temp_dir().join("kiss-seeded-python-watch-fixture-v3.lock");
+    let file = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .truncate(false)
+        .open(&path)
+        .unwrap_or_else(|err| panic!("seeded python watch fixture lock {}: {err}", path.display()));
+    file.lock_exclusive().unwrap_or_else(|err| {
+        panic!(
+            "seeded python watch fixture lock_exclusive {}: {err}",
+            path.display()
+        )
+    });
+    SeededPythonWatchFixtureLock { _file: file }
+}
+
+/// Caller must hold `seeded_python_watch_fixture_lock`.
+fn persistent_seeded_python_watch_repo_unlocked() -> PathBuf {
     use std::sync::OnceLock;
     static REPO: OnceLock<PathBuf> = OnceLock::new();
     REPO.get_or_init(|| {
@@ -494,6 +524,8 @@ pub fn persistent_seeded_python_watch_repo() -> PathBuf {
         // fixtures committed those paths; watcher dirt then flapped commit stamps.
         let root = std::env::temp_dir().join("kiss-seeded-python-watch-fixture-v3");
         if root.join(".git").join("HEAD").is_file() {
+            // Reset sources under the flock so concurrent clones cannot tear a
+            // mid-write lib.py / test_lib.py pair.
             write_seeded_python_watch_sources(&root);
             return root;
         }
@@ -551,9 +583,19 @@ pub fn persistent_seeded_python_watch_repo() -> PathBuf {
     .clone()
 }
 
+pub fn persistent_seeded_python_watch_repo() -> PathBuf {
+    let _lock = seeded_python_watch_fixture_lock();
+    persistent_seeded_python_watch_repo_unlocked()
+}
+
 pub fn fresh_seeded_python_watch_repo() -> tempfile::TempDir {
+    // Hold the lock across clone so peers cannot rewrite sources mid-`cp -a`.
+    let _lock = seeded_python_watch_fixture_lock();
     let tmp = tempfile::TempDir::new().expect("seeded python watch tempdir");
-    copy_repo_tree(&persistent_seeded_python_watch_repo(), tmp.path());
+    copy_repo_tree(
+        &persistent_seeded_python_watch_repo_unlocked(),
+        tmp.path(),
+    );
     tmp
 }
 

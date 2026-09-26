@@ -50,7 +50,10 @@ fn assert_watch_interrupted_gone(mut watch: WatchProc, timeout: Duration) {
 
 #[allow(clippy::zombie_processes)]
 fn start_watch(args: &[&str], dir: &Path) -> WatchProc {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_kiss"))
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
+    crate::common::scrub_parent_coverage_env(&mut cmd);
+    crate::common::preserve_toolchain_homes(&mut cmd);
+    let mut child = cmd
         .args(args)
         .current_dir(dir)
         .stdout(Stdio::null())
@@ -148,11 +151,16 @@ fn persistent_rust_sigint_repo() -> std::path::PathBuf {
             .status()
             .expect("prime watch-sigint cargo test");
         assert!(status.success(), "prime watch-sigint cargo test failed");
-        let kiss_status = std::process::Command::new(env!("CARGO_BIN_EXE_kiss"))
-            .args(["test", "--lang", "rust", "--dry-run", "."])
-            .current_dir(&root)
-            .status()
-            .expect("prime watch-sigint kiss dry-run");
+        let kiss_status = {
+            let mut kiss_cmd = std::process::Command::new(env!("CARGO_BIN_EXE_kiss"));
+            crate::common::scrub_parent_coverage_env(&mut kiss_cmd);
+            crate::common::preserve_toolchain_homes(&mut kiss_cmd);
+            kiss_cmd
+                .args(["test", "--lang", "rust", "--dry-run", "."])
+                .current_dir(&root)
+                .status()
+                .expect("prime watch-sigint kiss dry-run")
+        };
         assert!(
             kiss_status.success(),
             "prime watch-sigint kiss dry-run failed"
@@ -216,8 +224,10 @@ fn watch_sigint_rust_batch_exits_130() {
 }
 
 fn spawn_foreground_watch(dir: &Path) -> Child {
-    Command::new(env!("CARGO_BIN_EXE_kiss"))
-        .args(["test", "--watch", "--lang", "python", "test_lib.py"])
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
+    crate::common::scrub_parent_coverage_env(&mut cmd);
+    crate::common::preserve_toolchain_homes(&mut cmd);
+    cmd.args(["test", "--watch", "--lang", "python", "test_lib.py"])
         .current_dir(dir)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -337,7 +347,10 @@ fn second_watch_fails_while_first_alive() {
         &["test", "--watch", "--lang", "python", "test_lib.py"],
         tmp.path(),
     );
-    let output = Command::new(env!("CARGO_BIN_EXE_kiss"))
+    let mut second = Command::new(env!("CARGO_BIN_EXE_kiss"));
+    crate::common::scrub_parent_coverage_env(&mut second);
+    crate::common::preserve_toolchain_homes(&mut second);
+    let output = second
         .args(["test", "--watch", "--lang", "python", "test_lib.py"])
         .current_dir(tmp.path())
         .output()
