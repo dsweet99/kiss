@@ -5,13 +5,13 @@ use super::control::NudgeReplyMsg;
 use super::reload::WatchLiveConfig;
 #[cfg(not(unix))]
 use super::session_cycle::NudgeReplyMsg;
+use crate::test_runner::language_keyed::LanguageKeyed;
 
 #[derive(Clone, Default)]
 pub(super) struct LastReplies {
     pub(super) repo: PathBuf,
     pub(super) ignore: Vec<String>,
-    pub(super) extra: Vec<String>,
-    pub(super) python_extra: Vec<String>,
+    pub(super) extras: LanguageKeyed<Vec<String>>,
     all: Option<NudgeReplyMsg>,
 }
 
@@ -25,30 +25,21 @@ impl LastReplies {
 
     pub(super) fn for_session(repo: &Path, live: &WatchLiveConfig) -> Self {
         let mut last = Self::for_repo(repo);
-        last.stamp_session(&live.ignore, &live.extra, &live.python_extra);
+        last.stamp_session(&live.target_request.ignore, &live.extras);
         last
     }
 
-    pub(super) fn stamp_session(
-        &mut self,
-        ignore: &[String],
-        extra: &[String],
-        python_extra: &[String],
-    ) {
-        let changed =
-            self.ignore != ignore || self.extra != extra || self.python_extra != python_extra;
+    pub(super) fn stamp_session(&mut self, ignore: &[String], extras: &LanguageKeyed<Vec<String>>) {
+        let changed = self.ignore != ignore || self.extras != *extras;
         self.ignore = ignore.to_vec();
-        self.extra = extra.to_vec();
-        self.python_extra = python_extra.to_vec();
+        self.extras = extras.clone();
         if changed {
             self.all = None;
         }
     }
 
     pub(super) fn matches_args(&self, args: &crate::test_runner::RunTestCmdArgs<'_>) -> bool {
-        self.ignore == args.ignore
-            && self.extra == args.extra
-            && self.python_extra == args.python_extra
+        self.ignore == args.ignore() && self.extras.as_slices() == args.extras
     }
 
     #[cfg(test)]

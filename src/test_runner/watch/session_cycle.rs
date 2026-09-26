@@ -102,13 +102,12 @@ mod inventory;
 pub(super) use inventory::reconcile_inventory;
 
 pub(crate) fn apply_queued_filters(live: &mut WatchLiveConfig, queued: &Option<QueuedCycle>) {
-    live.nudge_coverage_all = queued.as_ref().is_some_and(|q| q.coverage_all);
+    live.set_nudge_coverage_all(queued.as_ref().is_some_and(|q| q.coverage_all));
     match queued {
         Some(q) => live.apply_nudge_filters(
-            q.lang_filter,
-            q.ignore.clone(),
-            q.extra.clone(),
-            q.python_extra.clone(),
+            q.target_request.language(),
+            q.target_request.ignore.clone(),
+            q.extras.clone(),
         ),
         None => live.clear_nudge_filters(),
     }
@@ -237,12 +236,11 @@ mod nudge_stub {
         pub force: bool,
         pub force_bad: bool,
         pub metrics: bool,
-        pub extra: Vec<String>,
-        pub python_extra: Vec<String>,
+        pub extras: crate::test_runner::language_keyed::LanguageKeyed<Vec<String>>,
         pub target_request: crate::test_runner::target_request::TargetRequest,
         pub coverage_all: bool,
-        pub runner: String,
-        pub configuration: String,
+        pub runner: Option<String>,
+        pub configuration: Option<String>,
     }
 
     impl NudgeRequestMsg {

@@ -9,7 +9,7 @@ use super::digest::digest_bytes;
 use super::report::TargetReport;
 use super::types::TargetRequest;
 
-const SCHEMA: &str = "target-report-store-v2";
+const SCHEMA: &str = "target-report-store-v3";
 const ENTRY_LIMIT: usize = 64;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -85,10 +85,10 @@ pub(crate) fn load_report_for_identity(
     digest: &str,
     complete: bool,
     coverage_all: bool,
-    extra: &[String],
+    extras: crate::test_runner::language_keyed::LanguageKeyed<&[String]>,
 ) -> Option<TargetReport> {
     let (runner, gate_policy) = super::report::evaluation_key_tokens(repo_root, coverage_all);
-    let key = identity_key(request, digest, complete, &runner, &gate_policy, extra);
+    let key = identity_key(request, digest, complete, &runner, &gate_policy, extras);
     read_key_pointer(&store_dir(repo_root), &key).map(|stored| stored.report)
 }
 
@@ -99,7 +99,7 @@ fn report_key(request: &TargetRequest, report: &TargetReport) -> String {
         report.stamp.complete,
         &report.snapshot.runner,
         &report.snapshot.gate_policy,
-        &report.snapshot.extra,
+        report.snapshot.extras.as_slices(),
     )
 }
 
@@ -109,7 +109,7 @@ fn identity_key(
     complete: bool,
     runner: &str,
     gate_policy: &str,
-    extra: &[String],
+    extras: crate::test_runner::language_keyed::LanguageKeyed<&[String]>,
 ) -> String {
     let mut payload = serde_json::json!({
         "schema": SCHEMA,
@@ -119,8 +119,11 @@ fn identity_key(
         "runner": runner,
         "gate_policy": gate_policy,
     });
-    if !extra.is_empty() {
-        payload["extra"] = serde_json::json!(extra);
+    if !extras.python.is_empty() || !extras.rust.is_empty() {
+        payload["extras"] = serde_json::json!({
+            "python": extras.python,
+            "rust": extras.rust,
+        });
     }
     digest_bytes(&serde_json::to_vec(&payload).expect("report key"))
 }

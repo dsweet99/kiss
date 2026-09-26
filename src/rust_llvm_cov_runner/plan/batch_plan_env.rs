@@ -119,9 +119,7 @@ fn is_executable(meta: &fs::Metadata) -> bool {
 pub(crate) const COVERAGE_CODEGEN_UNITS_FLAG: &str = "-Ccodegen-units=16";
 
 pub fn effective_coverage_build_jobs(configured_jobs: usize) -> usize {
-    let configured = configured_jobs.max(1);
-    let host = crate::shared_helpers::host_cpu_count(configured);
-    configured.max(host)
+    crate::host_parallelism::coverage_build_jobs(configured_jobs)
 }
 
 pub(crate) fn ensure_coverage_link_build_id(env: &mut BTreeMap<String, String>) {

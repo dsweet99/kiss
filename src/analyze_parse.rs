@@ -146,10 +146,7 @@ pub(crate) fn parse_py_files(files: &[PathBuf]) -> Result<Vec<ParsedFile>, RoleB
 }
 
 pub(crate) fn parse_py_files_pooled(files: &[PathBuf]) -> Result<Vec<ParsedFile>, RoleBuildError> {
-    let n = std::thread::available_parallelism()
-        .map(|p| p.get())
-        .unwrap_or(8)
-        .max(1);
+    let n = kiss::shared_helpers::host_cpu_count(8);
     rayon::ThreadPoolBuilder::new()
         .num_threads(n)
         .build()

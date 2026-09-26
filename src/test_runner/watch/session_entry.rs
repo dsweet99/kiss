@@ -79,7 +79,7 @@ fn prepare_watch_session(
     let registrations = resolve_watch_registrations(
         &repo_root,
         &request,
-        args.ignore,
+        args.ignore(),
         config_path,
     )
         .map_err(|e| { eprintln!("error: kiss test --watch: {e}"); 1 })?;

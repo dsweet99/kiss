@@ -34,10 +34,7 @@ fn live_all_args() -> RunTestCmdArgs<'static> {
         metrics: false,
         coverage_all: false,
         jobs: 1,
-        extra: &[],
-        python_extra: &[],
-        ignore: &[],
-        lang_filter: None,
+        extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
         config_main_branch: None,
         gate_config: kiss::GateConfig::default(),
     }
@@ -116,19 +113,17 @@ fn publish_rust_ready(repo: &std::path::Path) {
     let built = materialize_target_report(
         repo,
         &request,
-        &EnsurePolicy {
-            dry_run: false,
-            require_complete: false,
-            inject_mismatch: false,
-            retry_bad: false,
-            coverage_all: false,
-            assemble_only: false,
-        },
+        &EnsurePolicy::soft(false, false),
     )
     .unwrap();
     crate::test_runner::target_request::publish_if_rows_hold(repo, &request, &built).unwrap();
     assert!(
-        crate::test_runner::target_request::load_ready_for_request(repo, &request, false, &[])
+        crate::test_runner::target_request::load_ready_for_request(
+            repo,
+            &request,
+            false,
+            crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
+        )
             .is_some(),
         "published rust-ready report must load"
     );
@@ -167,7 +162,7 @@ fn all_hit_replays_compact_recap_without_running() {
                         &[],
                     ),
                     false,
-                    &[],
+                    crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
                 )
                 .is_some()
         );

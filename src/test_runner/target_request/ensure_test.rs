@@ -9,6 +9,27 @@ use super::ensure::{
 use super::snapshot::{EnsureError, EnsurePolicy, MAX_SNAPSHOT_ATTEMPTS};
 use super::types::{OperandExpr, TargetFocus, TargetRequest};
 
+#[test]
+fn ensure_policy_named_modes_exclude_invalid_dry_run_require_complete() {
+    // PWS: free bool bags allowed dry_run∧require_complete; named modes must not.
+    let query = EnsurePolicy::query(false);
+    let preview = EnsurePolicy::preview(true, true);
+    let complete = EnsurePolicy::complete(true, false);
+    assert!(!query.dry_run() && query.require_complete());
+    assert!(!query.retry_bad() && !query.inject_mismatch() && !query.assemble_only());
+    assert!(preview.dry_run() && !preview.require_complete());
+    assert!(preview.retry_bad() && preview.coverage_all());
+    assert!(!complete.dry_run() && complete.require_complete() && complete.retry_bad());
+    for policy in [&query, &preview, &complete] {
+        assert!(
+            !(policy.dry_run() && policy.require_complete()),
+            "named modes must not encode dry_run with require_complete"
+        );
+    }
+    assert!(EnsurePolicy::query(true).coverage_all());
+    assert_eq!(EnsurePolicy::query(false), EnsurePolicy::complete(false, false));
+}
+
 fn workspace_req() -> TargetRequest {
     canonicalize_target_request(
         TargetRequest {
@@ -67,14 +88,7 @@ fn dry_run_preview_does_not_require_complete_membership() {
     let preview = preview_target_plan_with(
         tmp.path(),
         &workspace_req(),
-        &EnsurePolicy {
-            dry_run: true,
-            require_complete: false,
-            inject_mismatch: false,
-            retry_bad: false,
-            coverage_all: false,
-            assemble_only: false,
-        },
+        &EnsurePolicy::preview(false, false),
     )
     .unwrap();
     assert!(preview.deferred || preview.membership_complete);
@@ -92,15 +106,8 @@ fn incomplete_workspace_fails_closed_when_required() {
     let err = ensure_target_report_query(
         tmp.path(),
         &workspace_req(),
-        &EnsurePolicy {
-            dry_run: false,
-            require_complete: true,
-            inject_mismatch: false,
-            retry_bad: false,
-            coverage_all: false,
-            assemble_only: false,
-        },
-        &[],
+        &EnsurePolicy::query(false),
+        crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
     )
     .unwrap_err();
     assert!(matches!(err, EnsureError::IncompleteEvidence(_)));
@@ -110,15 +117,13 @@ fn incomplete_workspace_fails_closed_when_required() {
 #[test]
 fn query_assembles_a_complete_report_not_yet_in_the_store() {
     let tmp = python_repo();
-    let policy = EnsurePolicy {
-        dry_run: false,
-        require_complete: false,
-        inject_mismatch: false,
-        retry_bad: false,
-        coverage_all: false,
-        assemble_only: true,
-    };
-    let report = assemble_target_report_query(tmp.path(), &workspace_req(), &policy, &[])
+    let policy = EnsurePolicy::assemble(false);
+    let report = assemble_target_report_query(
+        tmp.path(),
+        &workspace_req(),
+        &policy,
+        crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
+    )
         .expect("complete cached evidence must assemble without a stored report");
     let super::ensure::Ensured::Report(report) = report;
     assert!(report.stamp.complete);
@@ -137,14 +142,7 @@ fn incomplete_membership_still_repairs_graph() {
     let err = match super::snapshot::run_snapshot_kernel(
         tmp.path(),
         &workspace_req(),
-        &EnsurePolicy {
-            dry_run: false,
-            require_complete: true,
-            inject_mismatch: false,
-            retry_bad: false,
-            coverage_all: false,
-            assemble_only: false,
-        },
+        &EnsurePolicy::query(false),
     ) {
         Err(err) => err,
         Ok(_) => panic!("expected incomplete membership"),
@@ -154,14 +152,7 @@ fn incomplete_membership_still_repairs_graph() {
     let preview = preview_target_plan_with(
         tmp.path(),
         &workspace_req(),
-        &EnsurePolicy {
-            dry_run: true,
-            require_complete: false,
-            inject_mismatch: false,
-            retry_bad: false,
-            coverage_all: false,
-            assemble_only: false,
-        },
+        &EnsurePolicy::preview(false, false),
     )
     .unwrap();
     assert!(!preview.plan.graph_repair);
@@ -173,14 +164,7 @@ fn snapshot_retries_then_returns_concurrent_mutation() {
     let err = materialize_target_report(
         tmp.path(),
         &workspace_req(),
-        &EnsurePolicy {
-            dry_run: false,
-            require_complete: false,
-            inject_mismatch: true,
-            retry_bad: false,
-            coverage_all: false,
-            assemble_only: false,
-        },
+        &EnsurePolicy::inject_mismatch_for_test(),
     )
     .unwrap_err();
     assert!(matches!(err, EnsureError::ConcurrentMutation));
@@ -208,15 +192,8 @@ fn operand_without_evidence_fails_closed() {
     let err = ensure_target_report_query(
         tmp.path(),
         &request,
-        &EnsurePolicy {
-            dry_run: false,
-            require_complete: false,
-            inject_mismatch: false,
-            retry_bad: false,
-            coverage_all: false,
-            assemble_only: false,
-        },
-        &[],
+        &EnsurePolicy::soft(false, false),
+        crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
     )
     .unwrap_err();
     assert!(matches!(err, EnsureError::IncompleteEvidence(_)));
@@ -275,14 +252,7 @@ fn workspace_scope_uses_projection_selectors() {
     let preview = preview_target_plan_with(
         tmp.path(),
         &workspace_req(),
-        &EnsurePolicy {
-            dry_run: true,
-            require_complete: false,
-            inject_mismatch: false,
-            retry_bad: false,
-            coverage_all: false,
-            assemble_only: false,
-        },
+        &EnsurePolicy::preview(false, false),
     )
     .unwrap();
     assert!(preview.scope.selectors.is_empty());
@@ -317,14 +287,7 @@ fn successful_report_exits_zero_without_timeouts() {
     let report = materialize_target_report(
         tmp.path(),
         &workspace_req(),
-        &EnsurePolicy {
-            dry_run: false,
-            require_complete: false,
-            inject_mismatch: false,
-            retry_bad: false,
-            coverage_all: false,
-            assemble_only: false,
-        },
+        &EnsurePolicy::soft(false, false),
     )
     .unwrap();
     assert_eq!(report.exit_code, 0);
@@ -376,14 +339,7 @@ fn publish_holds_when_recaptured_rows_match() {
     let report = materialize_target_report(
         tmp.path(),
         &workspace_req(),
-        &EnsurePolicy {
-            dry_run: false,
-            require_complete: false,
-            inject_mismatch: false,
-            retry_bad: false,
-            coverage_all: false,
-            assemble_only: false,
-        },
+        &EnsurePolicy::soft(false, false),
     )
     .unwrap();
     assert!(!report.evidence.digest.is_empty());
@@ -430,7 +386,7 @@ fn publish_holds_when_recaptured_rows_match() {
             &report.stamp.digest,
             report.stamp.complete,
             false,
-            &[],
+            crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
         )
         .is_some()
     );
@@ -441,7 +397,7 @@ fn publish_holds_when_recaptured_rows_match() {
             &report.stamp.digest,
             report.stamp.complete,
             true,
-            &[],
+            crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
         )
         .is_none(),
         "gate-policy flip must miss"
@@ -453,10 +409,11 @@ fn publish_holds_when_recaptured_rows_match() {
             "other-digest",
             report.stamp.complete,
             false,
-            &[],
+            crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
         )
         .is_none()
     );
+    let rust_extra = ["-k".to_string(), "does_not_match".to_string()];
     assert!(
         super::report_store::load_report_for_identity(
             tmp.path(),
@@ -464,7 +421,10 @@ fn publish_holds_when_recaptured_rows_match() {
             &report.stamp.digest,
             report.stamp.complete,
             false,
-            &["-k".into(), "does_not_match".into()],
+            crate::test_runner::language_keyed::LanguageKeyed {
+                python: &[],
+                rust: rust_extra.as_slice(),
+            },
         )
         .is_none(),
         "runner extra must miss the unfiltered report"
@@ -477,14 +437,7 @@ fn recapture_rejects_worktree_move() {
     let report = materialize_target_report(
         tmp.path(),
         &workspace_req(),
-        &EnsurePolicy {
-            dry_run: false,
-            require_complete: false,
-            inject_mismatch: false,
-            retry_bad: false,
-            coverage_all: false,
-            assemble_only: false,
-        },
+        &EnsurePolicy::soft(false, false),
     )
     .unwrap();
     super::recapture::recapture_report(tmp.path(), &workspace_req(), &report).unwrap();
@@ -500,14 +453,7 @@ fn recapture_rejects_generation_move() {
     let report = materialize_target_report(
         tmp.path(),
         &workspace_req(),
-        &EnsurePolicy {
-            dry_run: false,
-            require_complete: false,
-            inject_mismatch: false,
-            retry_bad: false,
-            coverage_all: false,
-            assemble_only: false,
-        },
+        &EnsurePolicy::soft(false, false),
     )
     .unwrap();
     super::recapture::recapture_report(tmp.path(), &workspace_req(), &report).unwrap();
@@ -547,14 +493,7 @@ fn recapture_rejects_population_inventory_move() {
     let report = materialize_target_report(
         tmp.path(),
         &workspace_req(),
-        &EnsurePolicy {
-            dry_run: false,
-            require_complete: false,
-            inject_mismatch: false,
-            retry_bad: false,
-            coverage_all: false,
-            assemble_only: false,
-        },
+        &EnsurePolicy::soft(false, false),
     )
     .unwrap();
     super::recapture::recapture_report(tmp.path(), &workspace_req(), &report).unwrap();
@@ -742,28 +681,14 @@ fn orphan_config_marks_graph_repair_on_preview() {
     let on = preview_target_plan_with(
         tmp.path(),
         &workspace_req(),
-        &EnsurePolicy {
-            dry_run: true,
-            require_complete: false,
-            inject_mismatch: false,
-            retry_bad: false,
-            coverage_all: false,
-            assemble_only: false,
-        },
+        &EnsurePolicy::preview(false, false),
     )
     .unwrap();
     assert!(on.plan.graph_repair);
     let bypass = preview_target_plan_with(
         tmp.path(),
         &workspace_req(),
-        &EnsurePolicy {
-            dry_run: true,
-            require_complete: false,
-            inject_mismatch: false,
-            retry_bad: false,
-            coverage_all: true,
-            assemble_only: false,
-        },
+        &EnsurePolicy::preview(false, true),
     )
     .unwrap();
     assert!(!bypass.plan.graph_repair);
@@ -780,14 +705,7 @@ fn warm_graph_cache_clears_preview_repair_and_pins_generation() {
     let cold = preview_target_plan_with(
         tmp.path(),
         &workspace_req(),
-        &EnsurePolicy {
-            dry_run: true,
-            require_complete: false,
-            inject_mismatch: false,
-            retry_bad: false,
-            coverage_all: false,
-            assemble_only: false,
-        },
+        &EnsurePolicy::preview(false, false),
     )
     .unwrap();
     assert!(cold.plan.graph_repair);
@@ -809,28 +727,14 @@ fn warm_graph_cache_clears_preview_repair_and_pins_generation() {
     let warm = preview_target_plan_with(
         tmp.path(),
         &workspace_req(),
-        &EnsurePolicy {
-            dry_run: true,
-            require_complete: false,
-            inject_mismatch: false,
-            retry_bad: false,
-            coverage_all: false,
-            assemble_only: false,
-        },
+        &EnsurePolicy::preview(false, false),
     )
     .unwrap();
     assert!(!warm.plan.graph_repair);
 }
 
 fn live_policy() -> EnsurePolicy {
-    EnsurePolicy {
-        dry_run: false,
-        require_complete: false,
-        inject_mismatch: false,
-        retry_bad: false,
-        coverage_all: false,
-        assemble_only: false,
-    }
+    EnsurePolicy::soft(false, false)
 }
 
 #[test]
@@ -886,14 +790,77 @@ fn lang_ready_load_does_not_slice_parent_workspace_report() {
     let built = materialize_target_report(tmp.path(), &parent, &live_policy()).unwrap();
     crate::test_runner::target_request::publish_if_rows_hold(tmp.path(), &parent, &built).unwrap();
     assert!(
-        crate::test_runner::target_request::load_ready_for_request(tmp.path(), &parent, false, &[])
-            .is_some()
+        crate::test_runner::target_request::load_ready_for_request(
+            tmp.path(),
+            &parent,
+            false,
+            crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
+        )
+        .is_some()
     );
     let mut rust = parent.clone();
     rust.lang = Some(super::types::LangFilter::Rust);
     assert!(
-        crate::test_runner::target_request::load_ready_for_request(tmp.path(), &rust, false, &[])
-            .is_none(),
+        crate::test_runner::target_request::load_ready_for_request(
+            tmp.path(),
+            &rust,
+            false,
+            crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
+        )
+        .is_none(),
         "language-filtered ready-load must not slice a parent workspace report"
+    );
+}
+
+#[test]
+fn ready_load_distinguishes_python_extras() {
+    let tmp = python_repo();
+    let parent = workspace_req();
+    let mut built = materialize_target_report(tmp.path(), &parent, &live_policy()).unwrap();
+    built.snapshot.extras = crate::test_runner::language_keyed::LanguageKeyed {
+        python: vec!["-k".into(), "foo".into()],
+        rust: Vec::new(),
+    };
+    crate::test_runner::target_request::publish_report(tmp.path(), &parent, &built).unwrap();
+
+    let py_foo = vec!["-k".to_string(), "foo".to_string()];
+    let py_bar = vec!["-k".to_string(), "bar".to_string()];
+    let match_extras = crate::test_runner::language_keyed::LanguageKeyed {
+        python: py_foo.as_slice(),
+        rust: &[][..],
+    };
+    let other_extras = crate::test_runner::language_keyed::LanguageKeyed {
+        python: py_bar.as_slice(),
+        rust: &[][..],
+    };
+    assert!(
+        crate::test_runner::target_request::load_ready_for_request(
+            tmp.path(),
+            &parent,
+            false,
+            match_extras,
+        )
+        .is_some(),
+        "same language-keyed extras must reuse the ready report"
+    );
+    assert!(
+        crate::test_runner::target_request::load_ready_for_request(
+            tmp.path(),
+            &parent,
+            false,
+            other_extras,
+        )
+        .is_none(),
+        "different python extras must not reuse a ready report"
+    );
+    assert!(
+        crate::test_runner::target_request::load_ready_for_request(
+            tmp.path(),
+            &parent,
+            false,
+            crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
+        )
+        .is_none(),
+        "empty extras must not reuse a report keyed with python extras"
     );
 }

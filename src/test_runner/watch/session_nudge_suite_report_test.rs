@@ -80,14 +80,7 @@ fn watch_to_waiting_then_oneshot_skips_rslip() {
     let built = crate::test_runner::target_request::materialize_target_report(
         tmp.path(),
         &request,
-        &crate::test_runner::target_request::EnsurePolicy {
-            dry_run: false,
-            require_complete: false,
-            inject_mismatch: false,
-            retry_bad: false,
-            coverage_all: false,
-            assemble_only: false,
-        },
+        &crate::test_runner::target_request::EnsurePolicy::soft(false, false),
     )
     .unwrap();
     crate::test_runner::target_request::publish_if_rows_hold(tmp.path(), &request, &built).unwrap();

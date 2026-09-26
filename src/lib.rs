@@ -28,6 +28,7 @@ pub mod defaults;
 pub mod gate_config;
 pub mod py_imports;
 pub mod py_metrics;
+pub mod host_parallelism;
 pub mod shared_helpers;
 pub mod violation;
 

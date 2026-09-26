@@ -58,10 +58,7 @@ fn source_may_contain_rust_test_attr(source: &str) -> bool {
 }
 
 fn rust_selector_parse_threads() -> usize {
-    let cpus = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(4)
-        .max(1);
+    let cpus = kiss::shared_helpers::host_cpu_count(4);
 
     match std::env::var("MALLOC_ARENA_MAX")
         .ok()

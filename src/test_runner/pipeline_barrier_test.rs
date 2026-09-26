@@ -22,10 +22,7 @@ fn run_args(dry_run: bool, lang: Option<Language>) -> crate::test_runner::RunTes
         metrics: false,
         coverage_all: false,
         jobs: 1,
-        extra: &[],
-        python_extra: &[],
-        ignore: &[],
-        lang_filter: lang,
+        extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
         config_main_branch: None,
         gate_config: kiss::GateConfig::default(),
     }

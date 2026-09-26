@@ -88,10 +88,7 @@ fn covering_and_workspace_lines_appear_for_all_dry_run() {
                 metrics: false,
                 coverage_all: false,
                 jobs: 1,
-                extra: &[],
-                python_extra: &[],
-                ignore: &[],
-                lang_filter: Some(Language::Python),
+                extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
                 config_main_branch: None,
                 gate_config: kiss::GateConfig::default(),
             },
@@ -128,7 +125,7 @@ fn lang_rust_omits_covering_python() {
     let jobs = include_str!("pipeline_jobs.rs");
     assert!(jobs.contains("covering_python"));
     assert!(jobs.contains("covering_rust"));
-    assert!(src.contains("lang_filter != Some(Language::Rust)"));
+    assert!(src.contains("lang_filter() != Some(Language::Rust)"));
 }
 
 #[test]
@@ -227,10 +224,7 @@ fn rust_covering_proceeds_while_python_covering_waits() {
                 metrics: false,
                 coverage_all: false,
                 jobs: 1,
-                extra: &[],
-                python_extra: &[],
-                ignore: &[],
-                lang_filter: None,
+                extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
                 config_main_branch: None,
                 gate_config: kiss::GateConfig::default(),
             },
@@ -303,10 +297,7 @@ fn run_args(
         metrics: false,
         coverage_all: false,
         jobs: 1,
-        extra: &[],
-        python_extra: &[],
-        ignore: &[],
-        lang_filter: lang,
+        extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
         config_main_branch: None,
         gate_config: kiss::GateConfig::default(),
     }

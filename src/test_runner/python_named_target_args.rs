@@ -15,10 +15,7 @@ pub(crate) fn python_named_target_args(target: &str, force_rerun: bool) -> RunTe
         metrics: false,
         coverage_all: false,
         jobs: 1,
-        extra: &[],
-        python_extra: &[],
-        ignore: &[],
-        lang_filter: Some(kiss::Language::Python),
+        extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
         config_main_branch: None,
         gate_config: kiss::GateConfig::default(),
     }

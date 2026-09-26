@@ -102,10 +102,10 @@ fn run_test_command_with_runner(
         metrics: args.metrics,
         coverage_all: args.coverage_all,
         jobs: args.jobs,
-        extra: args.extra,
-        python_extra: &python_extra_owned,
-        ignore: args.ignore,
-        lang_filter: args.lang_filter,
+        extras: crate::test_runner::language_keyed::LanguageKeyed {
+            rust: args.extra,
+            python: &python_extra_owned,
+        },
         config_main_branch: args.test_cfg.main_branch.as_deref(),
         gate_config: args.gate_config.clone(),
     };
@@ -146,7 +146,7 @@ fn run_watch_tests(args: &TestCommandArgs<'_>, run_args: RunTestCmdArgs<'_>) -> 
                 &WatchCoverageParams {
                     py_config: &live.py_config,
                     rs_config: &live.rs_config,
-                    coverage_all: live.coverage_all || live.nudge_coverage_all,
+                    coverage_all: live.effective_coverage_all(),
                     language_tables: live.language_tables,
                 },
             )
@@ -257,17 +257,22 @@ fn nudge_request_from_test_args(args: &TestCommandArgs<'_>) -> crate::test_runne
         .as_deref()
         .map(|root| {
             (
-                crate::test_runner::target_request::runner_identity(root),
-                crate::test_runner::target_request::configuration_generation(root),
+                Some(crate::test_runner::target_request::runner_identity(root)),
+                Some(crate::test_runner::target_request::configuration_generation(root)),
             )
         })
-        .unwrap_or_default();
+        .unwrap_or((None, None));
     crate::test_runner::NudgeRequestMsg {
         force: false,
         force_bad: args.retry_bad,
         metrics: args.metrics,
-        extra: args.extra.to_vec(),
-        python_extra: kiss::effective_python_pytest_args(&args.test_cfg.pytest_plugins, args.extra),
+        extras: crate::test_runner::language_keyed::LanguageKeyed {
+            rust: args.extra.to_vec(),
+            python: kiss::effective_python_pytest_args(
+                &args.test_cfg.pytest_plugins,
+                args.extra,
+            ),
+        },
         target_request: request_from_test_args(args),
         coverage_all: args.coverage_all,
         runner,
@@ -581,11 +586,11 @@ mod tests {
         let msg = nudge_request_from_test_args(&args);
         assert!(!msg.force);
         assert!(!msg.force_bad);
-        assert!(!msg.runner.is_empty());
-        assert!(!msg.configuration.is_empty());
+        assert!(msg.runner.as_ref().is_some_and(|s| !s.is_empty()));
+        assert!(msg.configuration.as_ref().is_some_and(|s| !s.is_empty()));
         assert!(msg.target_request.language().is_none());
         assert!(msg.target_request.ignore.is_empty());
-        assert!(msg.extra.is_empty());
+        assert!(msg.extras.both_empty());
         assert_eq!(msg.target_request, request_from_test_args(&args));
         assert_eq!(
             crate::test_runner::target_request::operand_raws(&msg.target_request.focus),
@@ -638,8 +643,8 @@ mod tests {
         assert_eq!(msg.lang_filter(), Some(kiss::Language::Rust));
         assert_eq!(msg.target_request.ignore, ignore);
         assert_eq!(msg.target_request, request_from_test_args(&args));
-        assert_eq!(msg.extra, extra);
-        assert_eq!(msg.python_extra, extra);
+        assert_eq!(msg.extras.rust, extra);
+        assert_eq!(msg.extras.python, extra);
     }
 
     #[cfg(unix)]
@@ -924,10 +929,7 @@ mod tests {
             metrics: false,
             coverage_all: false,
             jobs: 1,
-            extra: &[],
-            python_extra: &[],
-            ignore: &[],
-            lang_filter: None,
+            extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
             config_main_branch: None,
             gate_config: gate.clone(),
         };
@@ -1068,10 +1070,7 @@ mod tests {
             metrics: false,
             coverage_all: false,
             jobs: 1,
-            extra: &[],
-            python_extra: &[],
-            ignore: &[],
-            lang_filter: None,
+            extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
             config_main_branch: None,
             gate_config: gate.clone(),
         };
@@ -1245,10 +1244,7 @@ mod tests {
             metrics: false,
             coverage_all: false,
             jobs: 1,
-            extra: &[],
-            python_extra: &[],
-            ignore: &[],
-            lang_filter: None,
+            extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
             config_main_branch: None,
             gate_config: gate.clone(),
         };
@@ -1303,10 +1299,7 @@ mod tests {
             metrics: false,
             coverage_all: false,
             jobs: 1,
-            extra: &[],
-            python_extra: &[],
-            ignore: &[],
-            lang_filter: None,
+            extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
             config_main_branch: None,
             gate_config: gate.clone(),
         };

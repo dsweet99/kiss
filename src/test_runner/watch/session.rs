@@ -56,9 +56,9 @@ fn live_from_args_disabled(
     repo_root: &Path,
 ) -> WatchLiveConfig {
     let seed = WatchReloadSeed {
-        cli_ignore: args.ignore.to_vec(),
+        cli_ignore: args.ignore().to_vec(),
         jobs_cli: Some(args.jobs),
-        extra: args.extra.to_vec(),
+        extra: args.extras.rust.to_vec(),
         coverage_all: false,
         enabled: false,
         config_path: PathBuf::from(".kissconfig"),
@@ -201,7 +201,7 @@ fn reuse_after_reload(
 ) -> Result<bool, String> {
     let reloaded = live.maybe_reload(repo_root, machine, filter)?;
     if reloaded {
-        last_reply.stamp_session(&live.ignore, &live.extra, &live.python_extra);
+        last_reply.stamp_session(&live.target_request.ignore, &live.extras);
     }
     Ok(!reloaded)
 }

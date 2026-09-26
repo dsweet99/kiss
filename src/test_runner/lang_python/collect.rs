@@ -116,7 +116,9 @@ pub(crate) fn collect_python_nodeids(
     Ok(outcome.nodeids)
 }
 
-const COLLECT_SHARD_PATH_THRESHOLD: usize = 64;
+#[cfg(test)]
+const COLLECT_SHARD_PATH_THRESHOLD: usize =
+    kiss::host_parallelism::PYTHON_COLLECT_SHARD_PATH_THRESHOLD;
 
 fn collect_shard_count(path_count: usize) -> usize {
     collect_shard_count_for_cap(
@@ -126,12 +128,7 @@ fn collect_shard_count(path_count: usize) -> usize {
 }
 
 fn collect_shard_count_for_cap(path_count: usize, cap: usize) -> usize {
-    if path_count < COLLECT_SHARD_PATH_THRESHOLD {
-        return 1;
-    }
-    let cap = cap.max(1);
-    let cpus = kiss::shared_helpers::host_cpu_count(4).clamp(1, cap);
-    cpus.min(path_count / 16).max(1)
+    kiss::host_parallelism::python_collect_shard_count(path_count, cap)
 }
 
 fn shard_collect_paths(paths: &[PathBuf], shard_count: usize) -> Vec<Vec<PathBuf>> {

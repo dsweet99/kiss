@@ -490,7 +490,9 @@ pub fn persistent_seeded_python_watch_repo() -> PathBuf {
     use std::sync::OnceLock;
     static REPO: OnceLock<PathBuf> = OnceLock::new();
     REPO.get_or_init(|| {
-        let root = std::env::temp_dir().join("kiss-seeded-python-watch-fixture-v2");
+        // v3: ship a .gitignore so `.kiss/` / `target/` are never tracked. Older
+        // fixtures committed those paths; watcher dirt then flapped commit stamps.
+        let root = std::env::temp_dir().join("kiss-seeded-python-watch-fixture-v3");
         if root.join(".git").join("HEAD").is_file() {
             write_seeded_python_watch_sources(&root);
             return root;
@@ -507,6 +509,11 @@ pub fn persistent_seeded_python_watch_repo() -> PathBuf {
                 .status()
                 .expect("git config");
         }
+        fs::write(
+            root.join(".gitignore"),
+            "target/\n.kiss/\nwatch.log\n__pycache__/\n*.pyc\n",
+        )
+        .unwrap();
         write_seeded_python_watch_sources(&root);
         fs::write(
             root.join(".kissconfig"),

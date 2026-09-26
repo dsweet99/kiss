@@ -16,17 +16,6 @@ pub(crate) const EXIT_INTERRUPTED: i32 = 130;
 #[allow(dead_code)]
 pub(crate) const KISS_TEST_ALLOW_REFRESH: bool = false;
 
-fn query_ensure_policy(coverage_all: bool) -> crate::test_runner::target_request::EnsurePolicy {
-    crate::test_runner::target_request::EnsurePolicy {
-        dry_run: false,
-        require_complete: true,
-        inject_mismatch: false,
-        retry_bad: false,
-        coverage_all,
-        assemble_only: false,
-    }
-}
-
 pub(crate) fn kiss_report_from_ensure_query(
     args: &RunTestCmdArgs<'_>,
     repo_root: Option<&std::path::Path>,
@@ -38,8 +27,8 @@ pub(crate) fn kiss_report_from_ensure_query(
     match crate::test_runner::target_request::ensure_target_report_query(
         repo,
         &request_from_run_args(args),
-        &query_ensure_policy(args.coverage_all),
-        args.extra,
+        &crate::test_runner::target_request::EnsurePolicy::query(args.coverage_all),
+        args.extras,
     ) {
         Ok(crate::test_runner::target_request::Ensured::Report(report)) => {
             kiss_report_from_target(&report)
@@ -274,10 +263,7 @@ pub(crate) fn clone_run_args<'a>(args: &RunTestCmdArgs<'a>) -> RunTestCmdArgs<'a
         metrics: args.metrics,
         coverage_all: args.coverage_all,
         jobs: args.jobs,
-        extra: args.extra,
-        python_extra: args.python_extra,
-        ignore: args.ignore,
-        lang_filter: args.lang_filter,
+        extras: args.extras,
         config_main_branch: args.config_main_branch,
         gate_config: args.gate_config.clone(),
     }

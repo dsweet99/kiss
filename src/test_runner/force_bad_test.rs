@@ -41,10 +41,7 @@ fn apply_force_bad_noop_when_flag_off_and_merges_when_on() {
         metrics: false,
         coverage_all: false,
         jobs: 1,
-        extra: &[],
-        python_extra: &[],
-        ignore: &[],
-        lang_filter: None,
+        extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
         config_main_branch: None,
         gate_config: kiss::GateConfig::default(),
     };

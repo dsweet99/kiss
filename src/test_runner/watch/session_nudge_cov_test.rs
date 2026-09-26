@@ -220,17 +220,16 @@ fn idle_queue(reply: mpsc::SyncSender<NudgeReplyMsg>) -> Option<QueuedCycle> {
         force: false,
         force_bad: false,
         metrics: false,
-        targets: Vec::new(),
         unscoped_force: false,
-        lang_filter: None,
-        ignore: Vec::new(),
-        extra: Vec::new(),
-        python_extra: Vec::new(),
+        extras: crate::test_runner::language_keyed::LanguageKeyed {
+            rust: Vec::new(),
+            python: Vec::new(),
+        },
         filter_override: false,
         coverage_all: false,
         target_request: crate::test_runner::target_request::workspace_request(None, &[]),
-        runner: String::new(),
-        configuration: String::new(),
+        runner: None,
+        configuration: None,
         next: None,
     })
 }

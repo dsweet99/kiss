@@ -2,7 +2,7 @@ use std::path::Path;
 use std::thread;
 use std::time::Duration;
 
-use super::control::{read_session_file, session_pid_is_live};
+use super::control::{PeerPresence, classify_watcher_peer};
 use super::lock::{WatchLockGuard, watch_lock_path};
 
 const ONESHOT_LOCK_POLL: Duration = Duration::from_millis(10);
@@ -33,7 +33,8 @@ fn oneshot_peer_step(
     try_watcher: &mut impl FnMut() -> Result<Option<i32>, String>,
     on_wait: &mut impl FnMut(),
 ) -> Result<Option<OneshotPeer>, String> {
-    if watcher_session_is_live(repo_root)
+    // Shared-lock + session classification before exclusive oneshot try_lock.
+    if matches!(classify_watcher_peer(repo_root)?, PeerPresence::Live(_))
         && let Some(code) = try_watcher()?
     {
         return Ok(Some(OneshotPeer::WatcherExit(code)));
@@ -51,13 +52,6 @@ fn oneshot_peer_step(
 fn poll_oneshot_wait(on_wait: &mut impl FnMut()) {
     on_wait();
     thread::sleep(ONESHOT_LOCK_POLL);
-}
-
-fn watcher_session_is_live(repo_root: &Path) -> bool {
-    match read_session_file(repo_root) {
-        Ok(Some(session)) => session_pid_is_live(session.pid),
-        _ => false,
-    }
 }
 
 #[cfg(test)]
@@ -140,6 +134,8 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let repo = tmp.path();
         std::fs::create_dir_all(repo.join(".git")).unwrap();
+        let path = watch_lock_path(repo);
+        let _owner = WatchLockGuard::lock(&path).unwrap();
         let session = super::super::control::SessionFile {
             pid: std::process::id(),
             socket: repo.join("nudge.sock").display().to_string(),
@@ -167,6 +163,8 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let repo = tmp.path();
         std::fs::create_dir_all(repo.join(".git")).unwrap();
+        let path = watch_lock_path(repo);
+        let owner = WatchLockGuard::lock(&path).unwrap();
         let session = super::super::control::SessionFile {
             pid: std::process::id(),
             socket: repo.join("nudge.sock").display().to_string(),
@@ -176,17 +174,27 @@ mod tests {
             &session,
         )
         .unwrap();
-        let calls = AtomicUsize::new(0);
-        let outcome = wait_oneshot_peer(
-            repo,
-            || {
-                calls.fetch_add(1, Ordering::SeqCst);
-                Ok(None)
-            },
-            || {},
-        );
-        assert!(matches!(outcome, Ok(OneshotPeer::Lock(_))));
+        let calls = std::sync::Arc::new(AtomicUsize::new(0));
+        let (tx, rx) = mpsc::channel();
+        let repo_buf = repo.to_path_buf();
+        let calls_thread = std::sync::Arc::clone(&calls);
+        let handle = thread::spawn(move || {
+            let outcome = wait_oneshot_peer(
+                &repo_buf,
+                || {
+                    calls_thread.fetch_add(1, Ordering::SeqCst);
+                    Ok(None)
+                },
+                || {},
+            );
+            tx.send(matches!(outcome, Ok(OneshotPeer::Lock(_))))
+                .unwrap();
+        });
+        thread::sleep(Duration::from_millis(40));
+        drop(owner);
+        assert!(rx.recv_timeout(Duration::from_secs(2)).unwrap());
         assert!(calls.load(Ordering::SeqCst) >= 1);
+        handle.join().unwrap();
     }
 
     #[test]
@@ -194,6 +202,8 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let repo = tmp.path();
         std::fs::create_dir_all(repo.join(".git")).unwrap();
+        let path = watch_lock_path(repo);
+        let _owner = WatchLockGuard::lock(&path).unwrap();
         let session = super::super::control::SessionFile {
             pid: std::process::id(),
             socket: repo.join("nudge.sock").display().to_string(),

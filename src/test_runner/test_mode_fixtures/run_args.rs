@@ -36,10 +36,7 @@ pub(crate) fn dry_run_cmd_args<'a>(
         metrics: false,
         coverage_all: false,
         jobs,
-        extra: &[],
-        python_extra: &[],
-        ignore,
-        lang_filter,
+        extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
         config_main_branch: None,
         gate_config: kiss::GateConfig::default(),
     }

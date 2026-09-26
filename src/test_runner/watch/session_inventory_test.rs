@@ -175,12 +175,18 @@ fn stale_or_different_inventory_keeps_prior_results() {
     suite.merge_lines(&["FAIL: test_old.py::test_old".into()]);
     let mut last = LastReplies::for_repo(tmp.path());
     let args = python_dry_run_args(Vec::new());
-    last.stamp_session(&["other".into()], &[], &[]);
+    last.stamp_session(
+        &["other".into()],
+        &crate::test_runner::language_keyed::LanguageKeyed::default(),
+    );
     assert!(super::super::session_cycle::reconcile_inventory(
         &mut suite, &last, &args
     ));
     assert_eq!(suite.failed(), 1);
-    last.stamp_session(&[], &[], &[]);
+    last.stamp_session(
+        &[],
+        &crate::test_runner::language_keyed::LanguageKeyed::default(),
+    );
     std::fs::write(&path, "def test_changed():\n    pass\n").unwrap();
     assert!(super::super::session_cycle::reconcile_inventory(
         &mut suite, &last, &args

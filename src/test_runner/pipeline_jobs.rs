@@ -103,8 +103,8 @@ pub(super) fn spawn_language_jobs(
     slots: &LanguageSlots,
 ) -> Result<(), String> {
     let spawn = LanguageSpawn {
-        python: prefix.python_may_work && a.lang_filter != Some(Language::Rust),
-        rust: prefix.rust_may_work && a.lang_filter != Some(Language::Python),
+        python: prefix.python_may_work && a.lang_filter() != Some(Language::Rust),
+        rust: prefix.rust_may_work && a.lang_filter() != Some(Language::Python),
     };
     let share = JobShare::new(a.jobs, spawn.python && spawn.rust);
     if spawn.python {
@@ -329,7 +329,7 @@ fn run_covering(
     let _list_build = (language == Language::Rust).then(|| {
         crate::test_runner::rust_list_build::install_job(
             prefix.repo_root.clone(),
-            a.extra.to_vec(),
+            a.extras.rust.to_vec(),
             jobs,
             a.dry_run,
         )
@@ -362,10 +362,7 @@ fn execute_planned(
         force_rerun: a.force_rerun,
         metrics: a.metrics,
         jobs,
-        extras: crate::test_runner::language_keyed::LanguageKeyed {
-            python: a.python_extra,
-            rust: a.extra,
-        },
+        extras: a.extras,
         plan_duration: std::time::Duration::ZERO,
         gate: a.gate_config.clone(),
     };

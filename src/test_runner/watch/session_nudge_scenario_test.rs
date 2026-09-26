@@ -163,7 +163,7 @@ fn assert_lang_then_bare(lang: &str, lang_has: &[&str], lang_lacks: &[&str]) {
             tests_run.fetch_add(1, Ordering::SeqCst);
             emit_full_suite();
             publish_full_suite(&repo);
-            let rows: &[(&str, &str, EffectiveStatus)] = match cycle_args.lang_filter {
+            let rows: &[(&str, &str, EffectiveStatus)] = match cycle_args.lang_filter() {
                 Some(kiss::Language::Rust) => {
                     &[("rust", "src/lib.rs::t_slow", EffectiveStatus::Timeout)]
                 }
@@ -511,7 +511,7 @@ fn scenario_3_lang_target_keeps_python_idle_slice() {
 #[test]
 fn scenario_3_watch_lang_inherits_onto_target_without_clobbering_slice() {
     let mut watch = watch_args();
-    watch.lang_filter = Some(kiss::Language::Python);
+    watch.target_request.set_language(Some(kiss::Language::Python));
     let (replies, cycles) = run_full_then_target_then_idle(
         watch,
         vec![

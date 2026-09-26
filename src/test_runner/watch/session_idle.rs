@@ -11,6 +11,7 @@ use super::reload::WatchLiveConfig;
 use super::session_cycle::NudgeReplyMsg;
 use super::settle::{PathSignature, SettleMachine, SettlePoll};
 use super::{apply_normalized_event, print_cycle_summary};
+use crate::test_runner::language_keyed::LanguageKeyed;
 
 pub(super) use super::session_replies::LastReplies;
 
@@ -21,25 +22,36 @@ pub(super) struct QueuedCycle {
     pub force: bool,
     pub force_bad: bool,
     pub metrics: bool,
-    pub targets: Vec<String>,
     pub unscoped_force: bool,
-    pub lang_filter: Option<kiss::Language>,
-    pub ignore: Vec<String>,
-    pub extra: Vec<String>,
-    pub python_extra: Vec<String>,
+    pub extras: LanguageKeyed<Vec<String>>,
     pub filter_override: bool,
     pub coverage_all: bool,
     pub target_request: crate::test_runner::target_request::TargetRequest,
-    pub runner: String,
-    pub configuration: String,
+    pub runner: Option<String>,
+    pub configuration: Option<String>,
     pub next: Option<Box<QueuedCycle>>,
 }
 
 impl QueuedCycle {
+    pub(super) fn lang_filter(&self) -> Option<kiss::Language> {
+        self.target_request.language()
+    }
+
+    pub(super) fn ignore(&self) -> &[String] {
+        &self.target_request.ignore
+    }
+
+    pub(super) fn targets(&self) -> Vec<String> {
+        if self.unscoped_force {
+            return Vec::new();
+        }
+        crate::test_runner::target_request::operand_raws(&self.target_request.focus)
+            .unwrap_or_default()
+    }
+
     pub(super) fn stamp_filter_override(&mut self, live: &WatchLiveConfig) {
-        self.filter_override = (!self.extra.is_empty() && self.extra != live.extra)
-            || (!self.python_extra.is_empty() && self.python_extra != live.python_extra)
-            || (!self.ignore.is_empty() && self.ignore != live.ignore);
+        self.filter_override = (!self.extras.both_empty() && self.extras != live.extras)
+            || (!self.ignore().is_empty() && self.ignore() != live.target_request.ignore.as_slice());
     }
 
     pub(super) fn wants_new_cycle(&self) -> bool {
@@ -52,7 +64,7 @@ impl QueuedCycle {
 
     #[cfg(test)]
     pub(super) fn is_target_scoped(&self) -> bool {
-        !self.unscoped_force && (!self.is_workspace_focus() || self.lang_filter.is_some())
+        !self.unscoped_force && (!self.is_workspace_focus() || self.lang_filter().is_some())
     }
 
     #[cfg(unix)]
@@ -64,14 +76,15 @@ impl QueuedCycle {
             return true;
         }
         let in_lang = msg.lang_filter();
-        if self.lang_filter != in_lang && (self.lang_filter.is_some() || in_lang.is_some()) {
+        let self_lang = self.lang_filter();
+        if self_lang != in_lang && (self_lang.is_some() || in_lang.is_some()) {
             return false;
         }
         if self.target_request != incoming {
             return false;
         }
         let in_scoped = !msg_is_workspace(msg) || in_lang.is_some();
-        let self_scoped = !self.is_workspace_focus() || self.lang_filter.is_some();
+        let self_scoped = !self.is_workspace_focus() || self_lang.is_some();
         self_scoped == in_scoped
     }
 
@@ -86,16 +99,12 @@ impl QueuedCycle {
             force_bad: req.msg.force_bad,
             metrics: req.msg.metrics,
             unscoped_force: req.msg.force && targets.is_empty() && msg_is_workspace(&req.msg),
-            targets,
-            lang_filter,
-            ignore: target_request.ignore.clone(),
-            extra: req.msg.extra,
-            python_extra: req.msg.python_extra,
+            extras: req.msg.extras,
             filter_override: false,
             coverage_all: req.msg.coverage_all,
             target_request,
-            runner: req.msg.runner,
-            configuration: req.msg.configuration,
+            runner: req.msg.runner.filter(|s| !s.is_empty()),
+            configuration: req.msg.configuration.filter(|s| !s.is_empty()),
             next: None,
         }
     }
@@ -108,19 +117,18 @@ impl QueuedCycle {
         self.force_bad |= req.msg.force_bad;
         self.metrics |= req.msg.metrics;
         self.coverage_all |= req.msg.coverage_all;
-        if self.runner.is_empty() {
-            self.runner.clone_from(&req.msg.runner);
+        if self.runner.is_none() {
+            self.runner = req.msg.runner.filter(|s| !s.is_empty());
         }
-        if self.configuration.is_empty() {
-            self.configuration.clone_from(&req.msg.configuration);
+        if self.configuration.is_none() {
+            self.configuration = req.msg.configuration.filter(|s| !s.is_empty());
         }
         merge_nudge_targets(self, req.msg.force, &targets);
         merge_nudge_filters(
             self,
             incoming.language(),
             &incoming.ignore,
-            &req.msg.extra,
-            &req.msg.python_extra,
+            &req.msg.extras,
         );
         self.replies.push((incoming.language(), req.reply));
     }
@@ -260,14 +268,7 @@ fn ensure_query_reply(
         return None;
     }
     let request = queued_target_request(q);
-    let policy = crate::test_runner::target_request::EnsurePolicy {
-        dry_run: false,
-        require_complete: true,
-        inject_mismatch: false,
-        retry_bad: false,
-        coverage_all: q.coverage_all,
-        assemble_only: false,
-    };
+    let policy = crate::test_runner::target_request::EnsurePolicy::query(q.coverage_all);
     let ensured = if matches!(
         request.focus,
         crate::test_runner::target_request::TargetFocus::Git(_)
@@ -276,14 +277,14 @@ fn ensure_query_reply(
             &last_reply.repo,
             &request,
             &policy,
-            &q.extra,
+            q.extras.as_slices(),
         )
     } else {
         crate::test_runner::target_request::ensure_target_report_query(
             &last_reply.repo,
             &request,
             &policy,
-            &q.extra,
+            q.extras.as_slices(),
         )
     };
     match ensured {
@@ -310,12 +311,13 @@ fn ensure_query_reply(
 }
 
 fn protocol_identity_holds(q: &QueuedCycle, repo: &std::path::Path) -> bool {
-    if !q.runner.is_empty() && q.runner != crate::test_runner::target_request::runner_identity(repo)
+    if let Some(runner) = q.runner.as_deref()
+        && runner != crate::test_runner::target_request::runner_identity(repo)
     {
         return false;
     }
-    if !q.configuration.is_empty()
-        && q.configuration != crate::test_runner::target_request::configuration_generation(repo)
+    if let Some(configuration) = q.configuration.as_deref()
+        && configuration != crate::test_runner::target_request::configuration_generation(repo)
     {
         return false;
     }
@@ -372,33 +374,39 @@ pub(crate) fn oneshot_client_reply(reply: NudgeReplyMsg, waited: bool) -> NudgeR
 fn merge_nudge_targets(q: &mut QueuedCycle, force: bool, targets: &[String]) {
     if force && targets.is_empty() {
         q.unscoped_force = true;
-        q.targets.clear();
         return;
     }
     if q.unscoped_force || targets.is_empty() {
         return;
     }
-    q.targets.extend(targets.iter().cloned());
-    q.targets.sort();
-    q.targets.dedup();
+    // Same TargetRequest is required to merge; operand lists then match already.
+    // Union into focus so targets() stays a pure projection of target_request.
+    use crate::test_runner::target_request::{OperandExpr, TargetFocus};
+    let mut raws = q.targets();
+    raws.extend(targets.iter().cloned());
+    raws.sort();
+    raws.dedup();
+    q.target_request.focus = TargetFocus::Operands(
+        raws.into_iter()
+            .map(|raw| OperandExpr { raw })
+            .collect(),
+    );
 }
 
 fn merge_nudge_filters(
     q: &mut QueuedCycle,
     lang_filter: Option<kiss::Language>,
     ignore: &[String],
-    extra: &[String],
-    python_extra: &[String],
+    extras: &LanguageKeyed<Vec<String>>,
 ) {
-    if lang_filter.is_some() {
-        q.lang_filter = lang_filter;
+    if let Some(lang) = lang_filter {
+        q.target_request.set_language(Some(lang));
     }
     if !ignore.is_empty() {
-        q.ignore = ignore.to_vec();
+        q.target_request.ignore = ignore.to_vec();
     }
-    if !extra.is_empty() {
-        q.extra = extra.to_vec();
-        q.python_extra = python_extra.to_vec();
+    if !extras.both_empty() {
+        q.extras = extras.clone();
     }
 }
 

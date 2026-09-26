@@ -76,6 +76,26 @@ fn untracked_is_commit_miss_and_base_main_hit() {
 }
 
 #[test]
+fn kiss_cache_untracked_is_commit_hit() {
+    let tmp = seed_repo();
+    let root = tmp.path();
+    let before = stamp(root, &GitFocus::Commit);
+    fs::create_dir_all(root.join(".kiss").join("watch")).unwrap();
+    fs::write(root.join(".kiss").join("watch").join("session.json"), "{}\n").unwrap();
+    fs::create_dir_all(root.join("target").join("kiss-plan")).unwrap();
+    fs::write(
+        root.join("target").join("kiss-plan").join("pointer.json"),
+        "{}\n",
+    )
+    .unwrap();
+    assert_eq!(
+        before,
+        stamp(root, &GitFocus::Commit),
+        "runtime cache under .kiss/ and target/ must not flap the commit stamp"
+    );
+}
+
+#[test]
 fn preferred_main_fallback_creation_is_a_miss() {
     let tmp = seed_repo();
     let root = tmp.path();

@@ -94,9 +94,9 @@ pub(crate) fn should_force_cold_initialization(
     ) && !a.dry_run
         && !a.force_rerun
         && !a.metrics
-        && a.extra.is_empty()
-        && a.ignore.is_empty()
-        && a.lang_filter.is_none()
+        && a.extras.rust.is_empty()
+        && a.ignore().is_empty()
+        && a.lang_filter().is_none()
         && !repo_root.join(".kiss").exists()
 }
 
@@ -121,7 +121,7 @@ pub(crate) fn apply_force_all_population(a: &RunTestCmdArgs<'_>, planned: &mut P
     ) {
         return;
     }
-    match a.lang_filter {
+    match a.lang_filter() {
         Some(Language::Python) => {
             if !planned.sel.python.is_empty() {
                 planned.population_required.python = true;
@@ -172,10 +172,7 @@ mod tests {
             metrics: false,
             coverage_all: false,
             jobs: 1,
-            extra: &[],
-            python_extra: &[],
-            ignore: &[],
-            lang_filter: lang,
+            extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
             config_main_branch: None,
             gate_config: kiss::GateConfig::default(),
         }

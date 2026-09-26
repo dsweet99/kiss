@@ -37,14 +37,111 @@ impl std::fmt::Display for EnsureError {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+/// Snapshot / ensure behavior as named modes — not a free bool bag.
+/// Invalid combinations such as `dry_run` with `require_complete` are not constructible
+/// through the production constructors.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct EnsurePolicy {
-    pub dry_run: bool,
-    pub require_complete: bool,
-    pub inject_mismatch: bool,
-    pub retry_bad: bool,
-    pub coverage_all: bool,
-    pub assemble_only: bool,
+    dry_run: bool,
+    require_complete: bool,
+    inject_mismatch: bool,
+    retry_bad: bool,
+    coverage_all: bool,
+    assemble_only: bool,
+}
+
+impl EnsurePolicy {
+    /// Dry-run plan preview (`bind` / `preview_target_plan_with`).
+    pub(crate) fn preview(retry_bad: bool, coverage_all: bool) -> Self {
+        Self {
+            dry_run: true,
+            require_complete: false,
+            inject_mismatch: false,
+            retry_bad,
+            coverage_all,
+            assemble_only: false,
+        }
+    }
+
+    /// Full ensure that requires complete membership evidence.
+    pub(crate) fn complete(retry_bad: bool, coverage_all: bool) -> Self {
+        Self {
+            dry_run: false,
+            require_complete: true,
+            inject_mismatch: false,
+            retry_bad,
+            coverage_all,
+            assemble_only: false,
+        }
+    }
+
+    /// Idle / report query: complete membership, no retry-bad, no assembly repair.
+    pub(crate) fn query(coverage_all: bool) -> Self {
+        Self::complete(false, coverage_all)
+    }
+
+    /// Assemble a report from witnesses without running repair subprocesses.
+    #[cfg(test)]
+    pub(crate) fn assemble(coverage_all: bool) -> Self {
+        Self {
+            dry_run: false,
+            require_complete: false,
+            inject_mismatch: false,
+            retry_bad: false,
+            coverage_all,
+            assemble_only: true,
+        }
+    }
+
+    /// Soft materialize: may omit complete-membership errors (tests / tolerant paths).
+    #[cfg(test)]
+    pub(crate) fn soft(retry_bad: bool, coverage_all: bool) -> Self {
+        Self {
+            dry_run: false,
+            require_complete: false,
+            inject_mismatch: false,
+            retry_bad,
+            coverage_all,
+            assemble_only: false,
+        }
+    }
+
+    /// Test-only fault injection for concurrent-mutation retry paths.
+    #[cfg(test)]
+    pub(crate) fn inject_mismatch_for_test() -> Self {
+        Self {
+            dry_run: false,
+            require_complete: false,
+            inject_mismatch: true,
+            retry_bad: false,
+            coverage_all: false,
+            assemble_only: false,
+        }
+    }
+
+    pub(crate) fn dry_run(&self) -> bool {
+        self.dry_run
+    }
+
+    pub(crate) fn require_complete(&self) -> bool {
+        self.require_complete
+    }
+
+    pub(crate) fn inject_mismatch(&self) -> bool {
+        self.inject_mismatch
+    }
+
+    pub(crate) fn retry_bad(&self) -> bool {
+        self.retry_bad
+    }
+
+    pub(crate) fn coverage_all(&self) -> bool {
+        self.coverage_all
+    }
+
+    pub(crate) fn assemble_only(&self) -> bool {
+        self.assemble_only
+    }
 }
 
 pub(crate) fn run_snapshot_kernel(
@@ -89,7 +186,7 @@ fn try_snapshot(
     let resolved = resolve_only(repo_root, request).map_err(EnsureError::Planning)?;
     let (projection, complete) = build_slice_projection(repo_root, request, &resolved);
     let stamp = stamp_from_projection(&projection, complete);
-    if policy.inject_mismatch {
+    if policy.inject_mismatch() {
         return Err(EnsureError::ConcurrentMutation);
     }
     let resolved_again = resolve_only(repo_root, request).map_err(EnsureError::Planning)?;
@@ -104,20 +201,20 @@ fn try_snapshot(
         ReportScope::from_membership(projection.coverage_regions(), selectors, stamp.complete);
     apply_runner_extra(repo_root, &mut scope, args)?;
     let available = super::rows::available_rows(repo_root, &scope);
-    let graph_repair = super::report::graph_repair_needed(repo_root, &scope, policy.coverage_all);
+    let graph_repair = super::report::graph_repair_needed(repo_root, &scope, policy.coverage_all());
     let force = args.is_some_and(|item| item.force_rerun);
     let time_gate_active = time_gate_active(repo_root, args);
     let plan = super::rows::plan_from_available_rows_with(
         &scope,
         &available,
-        policy.retry_bad,
+        policy.retry_bad(),
         graph_repair,
         force,
         time_gate_active,
     );
-    if policy.dry_run {
+    if policy.dry_run() {
         let _ = plan.known_execution_union();
-        let deferred = !scope.complete || (policy.retry_bad && !plan.repair_selectors.is_empty());
+        let deferred = !scope.complete || (policy.retry_bad() && !plan.repair_selectors.is_empty());
         return Ok(SnapshotOutcome::Preview(TargetPlanPreview {
             deferred,
             membership_complete: scope.complete,
@@ -125,34 +222,36 @@ fn try_snapshot(
             plan,
         }));
     }
-    if !policy.retry_bad && !force {
-        let extra = args.map(|item| item.extra).unwrap_or(&[]);
+    if !policy.retry_bad() && !force {
+        let extras = args
+            .map(|item| item.extras)
+            .unwrap_or(crate::test_runner::language_keyed::LanguageKeyed::EMPTY);
         if let Some(ready) =
-            super::bind::load_ready_for_request(repo_root, request, policy.coverage_all, extra)
+            super::bind::load_ready_for_request(repo_root, request, policy.coverage_all(), extras)
         {
             return Ok(SnapshotOutcome::Report(Box::new(ready)));
         }
     }
     if graph_repair {
-        super::report::repair_graph_evidence(repo_root, &scope, policy.coverage_all)
+        super::report::repair_graph_evidence(repo_root, &scope, policy.coverage_all())
             .map_err(EnsureError::IncompleteEvidence)?;
     }
-    if !policy.assemble_only
+    if !policy.assemble_only()
         && let Some(args) = args
         && (!plan.known_execution_union().is_empty() || plan.population_repair)
     {
         execute_repair(args)?;
         return assemble_after_repair(repo_root, request, policy, time_gate_active, args);
     }
-    if args.is_some_and(|item| !item.extra.is_empty())
+    if args.is_some_and(|item| !item.extras.rust.is_empty())
         && scope.selectors.is_empty()
-        && policy.require_complete
+        && policy.require_complete()
     {
         return Err(EnsureError::IncompleteEvidence(
             crate::test_runner::runners::NO_COVERING_TESTS_MSG.into(),
         ));
     }
-    if policy.require_complete && !stamp.complete {
+    if policy.require_complete() && !stamp.complete {
         return Err(EnsureError::IncompleteEvidence(
             "target membership is not proven complete".into(),
         ));
@@ -213,7 +312,7 @@ fn assemble_after_repair(
     let mut scope =
         ReportScope::from_membership(projection.coverage_regions(), selectors, stamp.complete);
     apply_runner_extra(repo_root, &mut scope, Some(args))?;
-    if !args.extra.is_empty() && scope.selectors.is_empty() && policy.require_complete {
+    if !args.extras.rust.is_empty() && scope.selectors.is_empty() && policy.require_complete() {
         return Err(EnsureError::IncompleteEvidence(
             crate::test_runner::runners::NO_COVERING_TESTS_MSG.into(),
         ));
@@ -246,23 +345,23 @@ fn refresh_python_witnesses(
         && crate::test_runner::lang_python::generation::identity_matches_current(
             repo_root,
             &pinned.plan.base_identity,
-            args.python_extra,
+            args.extras.python,
         )
     {
-        store_live_python_selectors(repo_root, args.ignore, &pinned.plan.selectors);
+        store_live_python_selectors(repo_root, args.ignore(), &pinned.plan.selectors);
         return Ok(());
     }
     let discovered = crate::test_runner::lang_python::collect::collect_python_nodeids(
         repo_root,
         None,
-        args.python_extra,
+        args.extras.python,
     )
     .unwrap_or_else(|_| python.clone());
     if !discovered.is_empty() {
         crate::test_runner::python_coverage_index::publish_python_generation_from_cached_selectors(
             repo_root,
             &discovered,
-            args.python_extra,
+            args.extras.python,
             &args.gate_config,
         )?;
     }
@@ -271,7 +370,7 @@ fn refresh_python_witnesses(
     } else {
         live_python_selectors(repo_root, &discovered)
     };
-    store_live_python_selectors(repo_root, args.ignore, &stored);
+    store_live_python_selectors(repo_root, args.ignore(), &stored);
     Ok(())
 }
 
@@ -327,13 +426,13 @@ fn apply_runner_extra(
     let Some(args) = args else {
         return Ok(());
     };
-    if args.extra.is_empty() {
+    if args.extras.rust.is_empty() {
         return Ok(());
     }
     let discovered = crate::test_runner::lang_python::collect::collect_python_nodeids(
         repo_root,
         None,
-        args.python_extra,
+        args.extras.python,
     )
     .unwrap_or_default();
     scope.selectors.retain(|selector| {
@@ -363,10 +462,10 @@ fn assemble_report(
         rows,
         stamp,
         exit_code,
-        policy.coverage_all,
+        policy.coverage_all(),
     );
     if let Some(args) = args {
-        report.snapshot.extra = args.extra.to_vec();
+        report.snapshot.extras = args.extras.owned_vecs();
     }
     Ok(SnapshotOutcome::Report(Box::new(report)))
 }

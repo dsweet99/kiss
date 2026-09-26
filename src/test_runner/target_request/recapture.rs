@@ -29,7 +29,7 @@ pub(crate) fn recapture_report(
         report.exit_code,
         report.coverage_all,
     );
-    recaptured.snapshot.extra.clone_from(&report.snapshot.extra);
+    recaptured.snapshot.extras.clone_from(&report.snapshot.extras);
     if recaptured.evidence != report.evidence
         || recaptured.snapshot.worktree != report.snapshot.worktree
         || recaptured.snapshot.gate_policy != report.snapshot.gate_policy

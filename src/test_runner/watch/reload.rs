@@ -6,11 +6,13 @@ use kiss::{Config, ConfigLanguage, GateConfig, Language, TestSectionConfig};
 use super::filter::WatchPathFilter;
 use super::settle::{PathSignature, SettleMachine};
 use crate::test_runner::RunTestCmdArgs;
+use crate::test_runner::language_keyed::LanguageKeyed;
 
 #[derive(Debug, Clone)]
 pub(crate) struct WatchReloadSeed {
     pub cli_ignore: Vec<String>,
     pub jobs_cli: Option<usize>,
+    /// Raw CLI `--extra` seed (not language-keyed); live config holds `LanguageKeyed` extras.
     pub extra: Vec<String>,
     pub coverage_all: bool,
     pub enabled: bool,
@@ -22,17 +24,16 @@ pub(crate) struct WatchLiveConfig {
     pub main_branch_cli: Option<String>,
     pub base_branch_cli: Option<String>,
     pub dry_run: bool,
-    pub lang_filter: Option<Language>,
-    pub extra: Vec<String>,
-    pub python_extra: Vec<String>,
-    pub ignore: Vec<String>,
+    pub extras: LanguageKeyed<Vec<String>>,
     pub jobs: usize,
     pub config_main_branch: Option<String>,
     pub gate_config: GateConfig,
     pub py_config: Config,
     pub rs_config: Config,
-    pub coverage_all: bool,
-    pub nudge_coverage_all: bool,
+    /// Session seed from CLI / reload; consumers must use [`Self::effective_coverage_all`].
+    coverage_all: bool,
+    /// Per-cycle nudge overlay; consumers must use [`Self::effective_coverage_all`].
+    nudge_coverage_all: bool,
     pub settle: Duration,
     pub language_tables: kiss::LanguageTablesPresent,
     seed: WatchReloadSeed,
@@ -45,8 +46,7 @@ pub(crate) struct WatchLiveConfig {
 struct CycleFilterOverride {
     lang_filter: Option<Language>,
     ignore: Vec<String>,
-    extra: Vec<String>,
-    python_extra: Vec<String>,
+    extras: LanguageKeyed<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -72,10 +72,10 @@ impl WatchLiveConfig {
             main_branch_cli: args.main_branch_cli.map(str::to_owned),
             base_branch_cli: args.base_branch_cli.map(str::to_owned),
             dry_run: args.dry_run,
-            lang_filter: args.lang_filter,
-            extra: seed.extra.clone(),
-            python_extra: args.python_extra.to_vec(),
-            ignore: args.ignore.to_vec(),
+            extras: LanguageKeyed {
+                rust: seed.extra.clone(),
+                python: args.extras.python.to_vec(),
+            },
             jobs: args.jobs,
             config_main_branch: args.config_main_branch.map(str::to_owned),
             gate_config: args.gate_config.clone(),
@@ -96,23 +96,30 @@ impl WatchLiveConfig {
         &mut self,
         lang_filter: Option<Language>,
         ignore: Vec<String>,
-        extra: Vec<String>,
-        python_extra: Vec<String>,
+        extras: LanguageKeyed<Vec<String>>,
     ) {
-        if lang_filter.is_none() && ignore.is_empty() && extra.is_empty() {
+        if lang_filter.is_none() && ignore.is_empty() && extras.both_empty() {
             self.cycle_filters = None;
             return;
         }
         self.cycle_filters = Some(CycleFilterOverride {
             lang_filter,
             ignore,
-            extra,
-            python_extra,
+            extras,
         });
     }
 
     pub(crate) fn clear_nudge_filters(&mut self) {
         self.cycle_filters = None;
+    }
+
+    /// Effective “coverage-all for this cycle?” — OR of session seed and nudge overlay.
+    pub(crate) fn effective_coverage_all(&self) -> bool {
+        self.coverage_all || self.nudge_coverage_all
+    }
+
+    pub(crate) fn set_nudge_coverage_all(&mut self, value: bool) {
+        self.nudge_coverage_all = value;
     }
 
     fn cycle_request(
@@ -123,34 +130,39 @@ impl WatchLiveConfig {
     }
 
     pub(crate) fn cycle_args(&self, force: CycleForceFlags) -> RunTestCmdArgs<'_> {
-        let request = self.cycle_request(&force);
-        let invocation = crate::test_runner::target_request::to_compat_invocation(&request);
-        let (lang_filter, extra, python_extra, ignore) = match &self.cycle_filters {
+        let (lang_filter, extras, ignore) = match &self.cycle_filters {
             Some(over) => (
-                over.lang_filter.or(self.lang_filter),
-                if over.extra.is_empty() {
-                    self.extra.as_slice()
-                } else {
-                    over.extra.as_slice()
-                },
-                if over.python_extra.is_empty() {
-                    self.python_extra.as_slice()
-                } else {
-                    over.python_extra.as_slice()
+                over.lang_filter.or(self.target_request.language()),
+                LanguageKeyed {
+                    rust: if over.extras.rust.is_empty() {
+                        self.extras.rust.as_slice()
+                    } else {
+                        over.extras.rust.as_slice()
+                    },
+                    python: if over.extras.python.is_empty() {
+                        self.extras.python.as_slice()
+                    } else {
+                        over.extras.python.as_slice()
+                    },
                 },
                 if over.ignore.is_empty() {
-                    self.ignore.as_slice()
+                    self.target_request.ignore.as_slice()
                 } else {
                     over.ignore.as_slice()
                 },
             ),
             None => (
-                self.lang_filter,
-                self.extra.as_slice(),
-                self.python_extra.as_slice(),
-                self.ignore.as_slice(),
+                self.target_request.language(),
+                self.extras.as_slices(),
+                self.target_request.ignore.as_slice(),
             ),
         };
+        let mut request = self.cycle_request(&force);
+        request.set_language(lang_filter);
+        if !ignore.is_empty() {
+            request.ignore = ignore.to_vec();
+        }
+        let invocation = crate::test_runner::target_request::to_compat_invocation(&request);
         RunTestCmdArgs {
             invocation,
             target_request: request,
@@ -160,12 +172,9 @@ impl WatchLiveConfig {
             force_rerun: force.force_rerun,
             force_bad: force.force_bad,
             metrics: force.metrics,
-            coverage_all: self.coverage_all || self.nudge_coverage_all,
+            coverage_all: self.effective_coverage_all(),
             jobs: self.jobs,
-            extra,
-            python_extra,
-            ignore,
-            lang_filter,
+            extras,
             config_main_branch: self.config_main_branch.as_deref(),
             gate_config: self.gate_config.clone(),
         }
@@ -213,9 +222,9 @@ impl WatchLiveConfig {
         self.gate_config = gate_config;
         self.py_config = py_config;
         self.rs_config = rs_config;
-        self.ignore = test_cfg.merged_ignore(&self.seed.cli_ignore);
+        self.target_request.ignore = test_cfg.merged_ignore(&self.seed.cli_ignore);
         self.jobs = self.seed.jobs_cli.unwrap_or(test_cfg.num_jobs);
-        self.python_extra =
+        self.extras.python =
             kiss::effective_python_pytest_args(&test_cfg.pytest_plugins, &self.seed.extra);
         self.config_main_branch = test_cfg.main_branch.clone();
         self.settle = Duration::from_secs_f64(test_cfg.watch_settle_seconds);
@@ -230,8 +239,8 @@ impl WatchLiveConfig {
     pub(crate) fn path_filter(&self, repo_root: &Path) -> WatchPathFilter {
         WatchPathFilter::build_with_config(
             repo_root,
-            &self.ignore,
-            self.lang_filter,
+            &self.target_request.ignore,
+            self.target_request.language(),
             &self.target_request,
             self.watched_config_path(),
         )

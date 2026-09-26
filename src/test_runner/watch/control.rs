@@ -32,17 +32,17 @@ pub(crate) struct NudgeRequestMsg {
     #[serde(default)]
     pub metrics: bool,
     #[serde(default)]
-    pub extra: Vec<String>,
-    #[serde(default)]
-    pub python_extra: Vec<String>,
+    pub extras: crate::test_runner::language_keyed::LanguageKeyed<Vec<String>>,
     #[serde(default)]
     pub target_request: crate::test_runner::target_request::TargetRequest,
     #[serde(default)]
     pub coverage_all: bool,
+    /// None means "do not check runner identity".
     #[serde(default)]
-    pub runner: String,
+    pub runner: Option<String>,
+    /// None means "do not check configuration generation".
     #[serde(default)]
-    pub configuration: String,
+    pub configuration: Option<String>,
 }
 
 impl NudgeRequestMsg {
@@ -100,9 +100,9 @@ impl NudgeRequestMsg {
             line.push_str(" ignore=");
             line.push_str(&self.target_request.ignore.join(","));
         }
-        if !self.extra.is_empty() {
+        if !self.extras.rust.is_empty() {
             line.push_str(" extra=");
-            line.push_str(&self.extra.join(" "));
+            line.push_str(&self.extras.rust.join(" "));
         }
         line
     }
@@ -218,16 +218,17 @@ fn acquire_exclusive_watch_lock(repo_root: &Path) -> Result<WatchLockGuard, Stri
         match WatchLockGuard::try_lock(&lock_path) {
             Ok(Some(guard)) => return Ok(guard),
             Ok(None) => {
-                if let Ok(Some(session)) = read_session_file(repo_root) {
-                    if session_pid_is_live(session.pid) {
+                match classify_watcher_peer(repo_root)? {
+                    PeerPresence::Live(session) => {
                         return Err(format!("watcher already running (pid {})", session.pid));
                     }
-                    reclaim_stale_watch_session(repo_root);
+                    PeerPresence::Absent | PeerPresence::SessionPending => {
+                        if Instant::now() >= deadline {
+                            return Err("watcher already running".into());
+                        }
+                        thread::sleep(CLIENT_SESSION_SLEEP);
+                    }
                 }
-                if Instant::now() >= deadline {
-                    return Err("watcher already running".into());
-                }
-                thread::sleep(CLIENT_SESSION_SLEEP);
             }
             Err(e) => return Err(format!("cannot lock {}: {e}", lock_path.display())),
         }
@@ -365,8 +366,8 @@ pub(crate) fn watch_socket_path(repo_root: &Path) -> Result<PathBuf, String> {
 #[path = "control_reclaim.rs"]
 mod control_reclaim;
 pub(crate) use control_reclaim::{
-    probe_live_watcher, reclaim_stale_watch_session, reclaim_stale_watch_sockets,
-    session_pid_is_live,
+    PeerPresence, classify_watcher_peer, probe_live_watcher, reclaim_stale_watch_session,
+    reclaim_stale_watch_sockets,
 };
 
 fn accept_loop(listener: UnixListener, nudge_tx: Sender<NudgeRequest>, shutdown: Arc<AtomicBool>) {

@@ -34,19 +34,35 @@ pub(crate) enum SessionLook {
     Missing,
 }
 
-pub(crate) fn probe_live_watcher(repo_root: &Path) -> Result<Option<SessionFile>, String> {
+// Named watcher↔client peer outcomes (lock mode + session + reclaim).
+#[derive(Debug)]
+pub(crate) enum PeerPresence {
+    Absent,
+    Live(SessionFile),
+    SessionPending,
+}
+
+pub(crate) fn classify_watcher_peer(repo_root: &Path) -> Result<PeerPresence, String> {
     let lock_path = watch_lock_path(repo_root);
     match WatchLockGuard::try_lock_shared(&lock_path) {
         Ok(Some(_guard)) => {
             reclaim_stale_watch_session(repo_root);
-            Ok(None)
+            Ok(PeerPresence::Absent)
         }
         Ok(None) => match take_live_session(repo_root)? {
-            SessionLook::Live(session) => Ok(Some(session)),
-            SessionLook::Reclaimed => Ok(None),
-            SessionLook::Missing => Ok(Some(wait_for_session(repo_root)?)),
+            SessionLook::Live(session) => Ok(PeerPresence::Live(session)),
+            SessionLook::Reclaimed => Ok(PeerPresence::Absent),
+            SessionLook::Missing => Ok(PeerPresence::SessionPending),
         },
         Err(e) => Err(format!("cannot probe watch lock: {e}")),
+    }
+}
+
+pub(crate) fn probe_live_watcher(repo_root: &Path) -> Result<Option<SessionFile>, String> {
+    match classify_watcher_peer(repo_root)? {
+        PeerPresence::Absent => Ok(None),
+        PeerPresence::Live(session) => Ok(Some(session)),
+        PeerPresence::SessionPending => Ok(Some(wait_for_session(repo_root)?)),
     }
 }
 

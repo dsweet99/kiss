@@ -63,10 +63,10 @@ pub(crate) fn ensure_target_report_query(
     repo_root: &Path,
     request: &TargetRequest,
     policy: &EnsurePolicy,
-    extra: &[String],
+    extras: crate::test_runner::language_keyed::LanguageKeyed<&[String]>,
 ) -> Result<Ensured, EnsureError> {
     if let Some(ready) =
-        super::bind::load_ready_for_request(repo_root, request, policy.coverage_all, extra)
+        super::bind::load_ready_for_request(repo_root, request, policy.coverage_all(), extras)
     {
         return Ok(Ensured::Report(Box::new(ready)));
     }
@@ -79,9 +79,9 @@ pub(crate) fn assemble_target_report_query(
     repo_root: &Path,
     request: &TargetRequest,
     policy: &EnsurePolicy,
-    extra: &[String],
+    extras: crate::test_runner::language_keyed::LanguageKeyed<&[String]>,
 ) -> Result<Ensured, EnsureError> {
-    if let Ok(ready) = ensure_target_report_query(repo_root, request, policy, extra) {
+    if let Ok(ready) = ensure_target_report_query(repo_root, request, policy, extras) {
         return Ok(ready);
     }
     match run_snapshot_kernel(repo_root, request, policy)? {
@@ -98,12 +98,14 @@ pub(crate) fn ensure_target_report_with(
     policy: &EnsurePolicy,
     args: Option<&crate::test_runner::RunTestCmdArgs<'_>>,
 ) -> Result<Ensured, EnsureError> {
-    if !policy.dry_run && !policy.retry_bad && !args.is_some_and(|item| item.force_rerun) {
-        let extra = args.map(|item| item.extra).unwrap_or(&[]);
-        if let Ok(ensured) = ensure_target_report_query(repo_root, request, policy, extra) {
+    if !policy.dry_run() && !policy.retry_bad() && !args.is_some_and(|item| item.force_rerun) {
+        let extras = args
+            .map(|item| item.extras)
+            .unwrap_or(crate::test_runner::language_keyed::LanguageKeyed::EMPTY);
+        if let Ok(ensured) = ensure_target_report_query(repo_root, request, policy, extras) {
             return Ok(ensured);
         }
-        if args.is_none() && policy.require_complete {
+        if args.is_none() && policy.require_complete() {
             return Err(EnsureError::IncompleteEvidence(
                 "incomplete evidence".into(),
             ));
@@ -122,30 +124,12 @@ pub(crate) fn preview_target_plan_with(
     request: &TargetRequest,
     policy: &EnsurePolicy,
 ) -> Result<TargetPlanPreview, EnsureError> {
-    let policy = EnsurePolicy {
-        dry_run: true,
-        require_complete: false,
-        inject_mismatch: false,
-        retry_bad: policy.retry_bad,
-        coverage_all: policy.coverage_all,
-        assemble_only: false,
-    };
+    let policy = EnsurePolicy::preview(policy.retry_bad(), policy.coverage_all());
     match run_snapshot_kernel(repo_root, request, &policy)? {
         SnapshotOutcome::Preview(preview) => Ok(preview),
         SnapshotOutcome::Report(_) => {
             Err(EnsureError::Planning("expected a dry-run preview".into()))
         }
-    }
-}
-
-fn query_policy(coverage_all: bool) -> EnsurePolicy {
-    EnsurePolicy {
-        dry_run: false,
-        require_complete: true,
-        inject_mismatch: false,
-        retry_bad: false,
-        coverage_all,
-        assemble_only: false,
     }
 }
 
@@ -161,8 +145,8 @@ fn ready_report(
     match ensure_target_report_query(
         repo,
         &super::request_from_run_args(args),
-        &query_policy(args.coverage_all),
-        args.extra,
+        &EnsurePolicy::query(args.coverage_all),
+        args.extras,
     ) {
         Ok(Ensured::Report(report)) => Some(*report),
         Err(_) => None,

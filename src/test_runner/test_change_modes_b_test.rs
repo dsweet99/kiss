@@ -230,10 +230,7 @@ fn assert_run_test_dry_run(mode: TestChangeMode, main: Option<&str>, base: Optio
             metrics: false,
             coverage_all: false,
             jobs: 1,
-            extra: &[],
-            python_extra: &[],
-            ignore: &[],
-            lang_filter: Some(kiss::Language::Rust),
+            extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
             config_main_branch: None,
             gate_config: gate,
         })
@@ -309,10 +306,7 @@ fn row_k_run_test_base_without_other_refs_fails() {
             metrics: false,
             coverage_all: false,
             jobs: 1,
-            extra: &[],
-            python_extra: &[],
-            ignore: &[],
-            lang_filter: Some(kiss::Language::Rust),
+            extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
             config_main_branch: None,
             gate_config: kiss::GateConfig::default(),
         })

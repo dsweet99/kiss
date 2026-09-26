@@ -152,8 +152,10 @@ fn forwarded_extra_overrides_watcher_and_starts_new_cycle() {
     let (reply_tx, _reply_rx) = mpsc::sync_channel(1);
     tx.send(NudgeRequest {
         msg: Msg {
-            extra: vec!["-k".into(), "does_not_match".into()],
-            python_extra: vec!["-k".into(), "does_not_match".into()],
+            extras: crate::test_runner::language_keyed::LanguageKeyed {
+                rust: vec!["-k".into(), "does_not_match".into()],
+                python: vec!["-k".into(), "does_not_match".into()],
+            },
             ..Default::default()
         },
         reply: reply_tx,
@@ -171,11 +173,11 @@ fn forwarded_extra_overrides_watcher_and_starts_new_cycle() {
     apply_queued_filters(&mut live, &queued);
     let (cycle, _) = take_queued_cycle_args(&live, &mut queued);
     assert_eq!(
-        cycle.extra,
+        cycle.extras.rust,
         &["-k".to_string(), "does_not_match".to_string()]
     );
     assert_eq!(
-        cycle.python_extra,
+        cycle.extras.python,
         &["-k".to_string(), "does_not_match".to_string()]
     );
 }
@@ -187,7 +189,10 @@ fn python_extra_alone_starts_a_new_cycle() {
     let (reply_tx, _reply_rx) = mpsc::sync_channel(1);
     tx.send(NudgeRequest {
         msg: Msg {
-            python_extra: vec!["-k".into(), "does_not_match".into()],
+            extras: crate::test_runner::language_keyed::LanguageKeyed {
+                rust: Vec::new(),
+                python: vec!["-k".into(), "does_not_match".into()],
+            },
             ..Default::default()
         },
         reply: reply_tx,
@@ -468,7 +473,7 @@ fn coalesce_lang_then_bare_pending_keeps_separate_cycles() {
     coalesce_nudges(Some(&rx), &mut queued);
     let q = queued.as_ref().expect("queued");
     assert!(
-        q.lang_filter == Some(kiss::Language::Rust) && q.next.is_some(),
+        q.lang_filter() == Some(kiss::Language::Rust) && q.next.is_some(),
         "bare must not merge onto --lang"
     );
     assert!(q.is_target_scoped());
@@ -493,9 +498,9 @@ fn coalesce_lang_then_bare_pending_keeps_separate_cycles() {
     let mut live = live_from_args_disabled(args, Duration::from_secs(1), Path::new("."));
     apply_queued_filters(&mut live, &queued);
     let (cycle, _) = take_queued_cycle_args(&live, &mut queued);
-    assert_eq!(cycle.lang_filter, Some(kiss::Language::Rust));
+    assert_eq!(cycle.lang_filter(), Some(kiss::Language::Rust));
     let rest = queued.as_ref().expect("bare remains");
-    assert!(rest.lang_filter.is_none() && !rest.is_target_scoped());
+    assert!(rest.lang_filter().is_none() && !rest.is_target_scoped());
 }
 
 #[test]
@@ -534,9 +539,9 @@ fn coalesce_force_request_does_not_union_other_path() {
     );
     assert!(q.unscoped_force);
     assert!(
-        q.targets.is_empty(),
+        q.targets().is_empty(),
         "unscoped force must not copy protocol targets: {:?}",
-        q.targets
+        q.targets()
     );
 }
 
@@ -565,9 +570,9 @@ fn coalesce_different_path_targets_without_request_union() {
     let q = queued.as_ref().expect("queued");
     assert!(q.next.is_none(), "same Workspace pin must merge");
     assert!(
-        q.targets.is_empty(),
+        q.targets().is_empty(),
         "Workspace pin must not copy protocol targets: {:?}",
-        q.targets
+        q.targets()
     );
 }
 
@@ -603,9 +608,9 @@ fn coalesce_different_operand_requests_stay_separate() {
         q.next.is_some(),
         "different operand TargetRequests must not merge"
     );
-    assert_eq!(q.targets, vec!["tests/a.py".to_string()]);
+    assert_eq!(q.targets(), vec!["tests/a.py".to_string()]);
     assert_eq!(
-        q.next.as_ref().map(|n| n.targets.clone()),
+        q.next.as_ref().map(|n| n.targets()),
         Some(vec!["tests/b.py".to_string()])
     );
 }
@@ -632,10 +637,10 @@ fn coalesce_unsorted_operands_request_sorts_targets() {
     coalesce_nudges(Some(&rx), &mut queued);
     let q = queued.as_ref().expect("queued");
     assert_eq!(
-        q.targets,
+        q.targets(),
         vec!["tests/a.py".to_string(), "tests/z.py".to_string()]
     );
-    assert!(!q.targets.iter().any(|t| t == "stale.py"));
+    assert!(!q.targets().iter().any(|t| t == "stale.py"));
 }
 
 #[test]
@@ -665,8 +670,8 @@ fn can_merge_operand_pin_ignores_compat_targets() {
     coalesce_nudges(Some(&rx), &mut queued);
     let q = queued.as_ref().expect("queued");
     assert!(q.next.is_none(), "same operand pin must merge");
-    assert_eq!(q.targets, vec!["tests/a.py".to_string()]);
-    assert!(!q.targets.iter().any(|t| t == "stale.py" || t == "other.py"));
+    assert_eq!(q.targets(), vec!["tests/a.py".to_string()]);
+    assert!(!q.targets().iter().any(|t| t == "stale.py" || t == "other.py"));
 }
 
 #[test]
@@ -696,7 +701,7 @@ fn coalesce_target_then_bare_idle_keeps_full_suite() {
     assert!(
         queued
             .as_ref()
-            .is_some_and(|q| !q.targets.is_empty() && q.next.is_some()),
+            .is_some_and(|q| !q.targets().is_empty() && q.next.is_some()),
         "bare must not merge onto TARGET"
     );
     let mut args = py_dry_args();
@@ -915,7 +920,7 @@ fn coalesce_lang_rust_then_python_idle_replies_each_slice() {
     assert!(
         queued
             .as_ref()
-            .is_some_and(|q| q.lang_filter == Some(kiss::Language::Rust) && q.next.is_some()),
+            .is_some_and(|q| q.lang_filter() == Some(kiss::Language::Rust) && q.next.is_some()),
         "--lang python must not merge onto --lang rust"
     );
     let mut last = LastReplies::for_repo(tmp.path());
@@ -960,7 +965,7 @@ fn coalesce_lang_rust_then_python_pending_keeps_separate_cycles() {
     coalesce_nudges(Some(&rx), &mut queued);
     let q = queued.as_ref().expect("queued");
     assert!(
-        q.lang_filter == Some(kiss::Language::Rust) && q.next.is_some(),
+        q.lang_filter() == Some(kiss::Language::Rust) && q.next.is_some(),
         "--lang python must not merge onto --lang rust"
     );
     assert!(q.is_target_scoped());
@@ -985,9 +990,9 @@ fn coalesce_lang_rust_then_python_pending_keeps_separate_cycles() {
     let mut live = live_from_args_disabled(args, Duration::from_secs(1), Path::new("."));
     apply_queued_filters(&mut live, &queued);
     let (cycle, _) = take_queued_cycle_args(&live, &mut queued);
-    assert_eq!(cycle.lang_filter, Some(kiss::Language::Rust));
+    assert_eq!(cycle.lang_filter(), Some(kiss::Language::Rust));
     let rest = queued.as_ref().expect("python remains");
-    assert!(rest.lang_filter == Some(kiss::Language::Python) && rest.is_target_scoped());
+    assert!(rest.lang_filter() == Some(kiss::Language::Python) && rest.is_target_scoped());
     force_ready_if_pending(&queued, &mut machine, Path::new("."));
     assert!(
         !machine.has_pending_work(),
@@ -1024,7 +1029,7 @@ fn coalesce_retry_bad_then_bare_idle_keeps_full_suite() {
     assert!(
         queued
             .as_ref()
-            .is_some_and(|q| q.force_bad && !q.targets.is_empty() && q.next.is_some()),
+            .is_some_and(|q| q.force_bad && !q.targets().is_empty() && q.next.is_some()),
         "bare must not merge onto --retry-bad TARGET"
     );
     let mut args = py_dry_args();
@@ -1086,7 +1091,7 @@ fn coalesce_bare_then_retry_bad_idle_starts_retry_bad_cycle() {
     assert!(
         queued
             .as_ref()
-            .is_some_and(|q| q.targets.is_empty() && !q.force_bad && q.next.is_some()),
+            .is_some_and(|q| q.targets().is_empty() && !q.force_bad && q.next.is_some()),
         "--retry-bad TARGET must not merge onto bare"
     );
     let mut last = LastReplies::for_repo(tmp.path());
@@ -1331,12 +1336,11 @@ fn queued_target_request_commit_is_git_commit() {
         force: false,
         force_bad: false,
         metrics: false,
-        targets: Vec::new(),
         unscoped_force: false,
-        lang_filter: None,
-        ignore: Vec::new(),
-        extra: Vec::new(),
-        python_extra: Vec::new(),
+        extras: crate::test_runner::language_keyed::LanguageKeyed {
+            rust: Vec::new(),
+            python: Vec::new(),
+        },
         filter_override: false,
         coverage_all: false,
         target_request: crate::test_runner::target_request::request_from_focus(
@@ -1344,8 +1348,8 @@ fn queued_target_request_commit_is_git_commit() {
             None,
             &[],
         ),
-        runner: String::new(),
-        configuration: String::new(),
+        runner: None,
+        configuration: None,
         next: None,
     };
     assert!(matches!(
@@ -1363,17 +1367,16 @@ fn queued_all_without_request_builds_workspace_request() {
         force: false,
         force_bad: false,
         metrics: false,
-        targets: Vec::new(),
         unscoped_force: false,
-        lang_filter: None,
-        ignore: Vec::new(),
-        extra: Vec::new(),
-        python_extra: Vec::new(),
+        extras: crate::test_runner::language_keyed::LanguageKeyed {
+            rust: Vec::new(),
+            python: Vec::new(),
+        },
         filter_override: false,
         coverage_all: false,
         target_request: crate::test_runner::target_request::workspace_request(None, &[]),
-        runner: String::new(),
-        configuration: String::new(),
+        runner: None,
+        configuration: None,
         next: None,
     };
     let request = super::super::queued_target_request(&q);
@@ -1390,17 +1393,16 @@ fn queued_target_request_clones_operand_pin_sorted() {
         force: false,
         force_bad: false,
         metrics: false,
-        targets: Vec::new(),
         unscoped_force: false,
-        lang_filter: None,
-        ignore: Vec::new(),
-        extra: Vec::new(),
-        python_extra: Vec::new(),
+        extras: crate::test_runner::language_keyed::LanguageKeyed {
+            rust: Vec::new(),
+            python: Vec::new(),
+        },
         filter_override: false,
         coverage_all: false,
         target_request: operands_request(&["z.py".into(), "a.py".into()], None, &[]),
-        runner: String::new(),
-        configuration: String::new(),
+        runner: None,
+        configuration: None,
         next: None,
     };
     assert_eq!(
@@ -1429,7 +1431,7 @@ fn from_req_clones_operand_pin_sorted() {
         q.target_request.focus,
         crate::test_runner::target_request::TargetFocus::Operands(_)
     ));
-    assert_eq!(q.targets, vec!["a.py".to_string(), "z.py".to_string()]);
+    assert_eq!(q.targets(), vec!["a.py".to_string(), "z.py".to_string()]);
 }
 
 #[test]
@@ -1471,7 +1473,43 @@ fn pin_from_nudge_msg_clones_workspace_pin_ignores_compat_lang() {
     coalesce_nudges(Some(&rx), &mut queued);
     let q = queued.expect("workspace pin should queue");
     assert_eq!(q.target_request, workspace_request(None, &[]));
-    assert_eq!(q.lang_filter, None);
+    assert_eq!(q.lang_filter(), None);
+}
+
+/// PWS2: QueuedCycle scope is only `target_request` (no lang/ignore/targets mirrors).
+#[test]
+fn apply_queued_filters_uses_target_request_language() {
+    use crate::test_runner::target_request::workspace_request;
+    let (reply, _wait) = mpsc::sync_channel(1);
+    let mut queued = Some(QueuedCycle {
+        replies: vec![(Some(kiss::Language::Rust), reply)],
+        force: false,
+        force_bad: false,
+        metrics: false,
+        unscoped_force: false,
+        extras: crate::test_runner::language_keyed::LanguageKeyed {
+            rust: Vec::new(),
+            python: Vec::new(),
+        },
+        filter_override: false,
+        coverage_all: false,
+        target_request: workspace_request(Some(kiss::Language::Rust), &[]),
+        runner: None,
+        configuration: None,
+        next: None,
+    });
+    assert_eq!(queued.as_ref().unwrap().lang_filter(), Some(kiss::Language::Rust));
+    let mut args = py_dry_args();
+    args.set_lang_filter(None);
+    args.set_invocation(TestInvocation::All);
+    let mut live = live_from_args_disabled(args, Duration::from_secs(1), Path::new("."));
+    apply_queued_filters(&mut live, &queued);
+    let (cycle, _) = take_queued_cycle_args(&live, &mut queued);
+    assert_eq!(
+        cycle.lang_filter(),
+        Some(kiss::Language::Rust),
+        "cycle lang must come from target_request.language()"
+    );
 }
 
 #[test]
@@ -1483,17 +1521,16 @@ fn queued_workspace_focus_prefers_target_request() {
         force: false,
         force_bad: false,
         metrics: false,
-        targets: Vec::new(),
         unscoped_force: false,
-        lang_filter: None,
-        ignore: Vec::new(),
-        extra: Vec::new(),
-        python_extra: Vec::new(),
+        extras: crate::test_runner::language_keyed::LanguageKeyed {
+            rust: Vec::new(),
+            python: Vec::new(),
+        },
         filter_override: false,
         coverage_all: false,
         target_request: request_from_focus(TargetFocus::Git(GitFocus::Commit), None, &[]),
-        runner: String::new(),
-        configuration: String::new(),
+        runner: None,
+        configuration: None,
         next: None,
     };
     assert!(!q.is_workspace_focus());
@@ -1501,11 +1538,9 @@ fn queued_workspace_focus_prefers_target_request() {
     q.target_request = crate::test_runner::target_request::workspace_request(None, &[]);
     assert!(q.is_workspace_focus());
     assert!(!q.is_target_scoped());
-    q.targets.push("tests/a.py".into());
-    assert!(q.is_workspace_focus());
     assert!(
-        !q.is_target_scoped(),
-        "Workspace compat targets must not withhold pending files"
+        q.targets().is_empty(),
+        "workspace focus has no operand targets()"
     );
 }
 
@@ -1517,17 +1552,16 @@ fn queued_all_without_request_is_workspace_focus() {
         force: false,
         force_bad: false,
         metrics: false,
-        targets: Vec::new(),
         unscoped_force: false,
-        lang_filter: None,
-        ignore: Vec::new(),
-        extra: Vec::new(),
-        python_extra: Vec::new(),
+        extras: crate::test_runner::language_keyed::LanguageKeyed {
+            rust: Vec::new(),
+            python: Vec::new(),
+        },
         filter_override: false,
         coverage_all: false,
         target_request: crate::test_runner::target_request::workspace_request(None, &[]),
-        runner: String::new(),
-        configuration: String::new(),
+        runner: None,
+        configuration: None,
         next: None,
     };
     assert!(q.is_workspace_focus());
@@ -1690,20 +1724,19 @@ fn main_idle_recaps_ready_target_report() {
     let report = materialize_target_report(
         tmp.path(),
         &request,
-        &EnsurePolicy {
-            dry_run: false,
-            require_complete: false,
-            inject_mismatch: false,
-            retry_bad: false,
-            coverage_all: false,
-            assemble_only: false,
-        },
+        &EnsurePolicy::soft(false, false),
     )
     .unwrap();
     crate::test_runner::target_request::publish_if_rows_hold(tmp.path(), &request, &report)
         .unwrap();
     assert!(
-        load_ready_for_request(tmp.path(), &request, false, &[]).is_some(),
+        load_ready_for_request(
+            tmp.path(),
+            &request,
+            false,
+            crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
+        )
+        .is_some(),
         "seeded main report must load as ready"
     );
     let (tx, rx) = mpsc::channel::<NudgeRequest>();
@@ -1763,27 +1796,26 @@ fn main_idle_misses_ready_target_report_when_runner_token_differs() {
     let report = materialize_target_report(
         tmp.path(),
         &request,
-        &EnsurePolicy {
-            dry_run: false,
-            require_complete: false,
-            inject_mismatch: false,
-            retry_bad: false,
-            coverage_all: false,
-            assemble_only: false,
-        },
+        &EnsurePolicy::soft(false, false),
     )
     .unwrap();
     crate::test_runner::target_request::publish_if_rows_hold(tmp.path(), &request, &report)
         .unwrap();
     assert!(
-        load_ready_for_request(tmp.path(), &request, false, &[]).is_some(),
+        load_ready_for_request(
+            tmp.path(),
+            &request,
+            false,
+            crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
+        )
+        .is_some(),
         "seeded main report must load as ready"
     );
     let (tx, rx) = mpsc::channel::<NudgeRequest>();
     let (reply, wait) = mpsc::sync_channel(1);
     tx.send(NudgeRequest {
         msg: Msg {
-            runner: "other-runner".into(),
+            runner: Some("other-runner".into()),
             target_request: crate::test_runner::target_request::request_from_focus(
                 crate::test_runner::target_request::TargetFocus::Git(
                     crate::test_runner::target_request::GitFocus::DefaultMain,
@@ -1862,9 +1894,9 @@ fn coalesce_unions_force_targets_until_unscoped_force() {
     let live = live_from_args_disabled(base, Duration::from_secs(1), Path::new("."));
     let q = queued.as_ref().expect("coalesced");
     assert!(
-        q.targets.is_empty(),
+        q.targets().is_empty(),
         "Workspace force pins must not union protocol targets: {:?}",
-        q.targets
+        q.targets()
     );
     assert!(q.unscoped_force);
     tx.send(NudgeRequest {
@@ -2981,6 +3013,16 @@ fn bare_idle_after_forced_lang_rust_fail_recaps_failure() {
             kiss::rust_llvm_cov_runner::emit_progress(
                 "✗ 0 passed · 1 failed · 0 timed out · 0.01s total · 0s max pass",
             );
+            publish_rows_for_request(
+                &repo,
+                &crate::test_runner::target_request::workspace_request(
+                    Some(kiss::Language::Rust),
+                    &[],
+                ),
+                &[("rust", "src/lib.rs::a_ok", EffectiveStatus::Fail)],
+                1,
+            );
+            // Bare idle clients load the unscoped workspace report.
             publish_workspace_rows(
                 &repo,
                 &[("rust", "src/lib.rs::a_ok", EffectiveStatus::Fail)],

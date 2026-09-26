@@ -78,6 +78,10 @@ impl TargetRequest {
         self
     }
 
+    pub(crate) fn set_language(&mut self, lang: Option<kiss::Language>) {
+        self.lang = lang.map(LangFilter::from_language);
+    }
+
     pub(crate) fn language(&self) -> Option<kiss::Language> {
         self.lang.map(LangFilter::to_language)
     }

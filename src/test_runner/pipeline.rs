@@ -90,7 +90,7 @@ fn merge_and_cache_planned(
         rust,
     );
     if crate::test_runner::target_request::is_workspace_run(a)
-        && a.lang_filter.is_none()
+        && a.lang_filter().is_none()
         && planned.workspace_files_fingerprint.is_none()
         && (!planned.sel.python.is_empty() || !planned.sel.rust.is_empty())
     {
@@ -100,7 +100,7 @@ fn merge_and_cache_planned(
                 &prefix.ignore,
                 &planned.sel.python,
                 &planned.sel.rust,
-                a.python_extra,
+                a.extras.python,
             );
     }
     Ok(planned)
@@ -116,10 +116,7 @@ fn run_options<'a>(
         force_rerun: a.force_rerun,
         metrics: a.metrics,
         jobs,
-        extras: crate::test_runner::language_keyed::LanguageKeyed {
-            python: a.python_extra,
-            rust: a.extra,
-        },
+        extras: a.extras,
         plan_duration: process_started.elapsed(),
         gate: a.gate_config.clone(),
     }
@@ -135,9 +132,9 @@ fn plan_shared_prefix(
             let req = change_request(a);
             let ws = plan_vcs_workspace_at(&req, repo_root.to_path_buf())?;
             let cold_init = should_force_cold_initialization(a, &ws.repo_root);
-            let python_may_work = a.lang_filter != Some(Language::Rust)
+            let python_may_work = a.lang_filter() != Some(Language::Rust)
                 && language_thread_may_work(&ws, Language::Python, cold_init)?;
-            let rust_may_work = a.lang_filter != Some(Language::Python)
+            let rust_may_work = a.lang_filter() != Some(Language::Python)
                 && language_thread_may_work(&ws, Language::Rust, cold_init)?;
             Ok(SharedPrefix {
                 repo_root: ws.repo_root.clone(),
@@ -161,17 +158,17 @@ fn plan_all_or_targets_prefix(
     repo_root: &std::path::Path,
     targets: Option<&[String]>,
 ) -> Result<SharedPrefix, String> {
-    let ignore = kiss::normalize_ignore_prefixes(a.ignore);
-    if matches!(a.lang_filter, Some(Language::Rust)) {
-        super::rust_llvm_cov::validate_rust_extra_args(a.extra)?;
+    let ignore = kiss::normalize_ignore_prefixes(a.ignore());
+    if matches!(a.lang_filter(), Some(Language::Rust)) {
+        super::rust_llvm_cov::validate_rust_extra_args(a.extras.rust)?;
     }
     let kind = match targets {
         None => SharedKind::All {
             cache: super::plan::load_all_workspace_cache(
                 repo_root,
                 &ignore,
-                a.python_extra,
-                a.lang_filter,
+                a.extras.python,
+                a.lang_filter(),
             ),
         },
         Some(targets) => SharedKind::Targets(targets.to_vec()),
@@ -182,8 +179,8 @@ fn plan_all_or_targets_prefix(
         !matches!(&kind, SharedKind::All { cache: Some(cache) } if cache.rs.is_empty());
     let cold_init = should_force_cold_initialization(a, repo_root);
     Ok(SharedPrefix {
-        python_may_work: a.lang_filter != Some(Language::Rust) && python_has_cached_work,
-        rust_may_work: a.lang_filter != Some(Language::Python) && rust_has_cached_work,
+        python_may_work: a.lang_filter() != Some(Language::Rust) && python_has_cached_work,
+        rust_may_work: a.lang_filter() != Some(Language::Python) && rust_has_cached_work,
         repo_root: repo_root.to_path_buf(),
         ignore,
         kind,
@@ -245,22 +242,19 @@ pub(super) fn cover_language(
     if pipeline_jobs::covering_should_fail(language) {
         return Err("error: kiss test: covering failed".to_string());
     }
-    let extras = crate::test_runner::language_keyed::LanguageKeyed {
-        python: a.python_extra,
-        rust: a.extra,
-    };
+    let extras = a.extras;
     match &prefix.kind {
         SharedKind::Change(ws) => plan_selectors_from_workspace(ws, extras, Some(language)),
         SharedKind::All { cache } => cover_all_language(
             &prefix.repo_root,
             &prefix.ignore,
-            a.python_extra,
+            a.extras.python,
             language,
             &a.gate_config,
             cache.as_ref(),
         ),
         SharedKind::Targets(targets) => {
-            let thread_targets = cover_thread_targets(targets, language, a.lang_filter)?;
+            let thread_targets = cover_thread_targets(targets, language, a.lang_filter())?;
             if thread_targets.is_empty() {
                 return Ok(super::empty_planned(
                     prefix.repo_root.clone(),
@@ -285,12 +279,9 @@ fn change_request<'a>(a: &'a RunTestCmdArgs<'a>) -> PlanSelectorsRequest<'a> {
         mode,
         main_branch_cli: a.main_branch_cli,
         base_branch_cli: a.base_branch_cli,
-        ignore: a.ignore,
-        extras: crate::test_runner::language_keyed::LanguageKeyed {
-            python: a.python_extra,
-            rust: a.extra,
-        },
-        lang_filter: a.lang_filter,
+        ignore: a.ignore(),
+        extras: a.extras,
+        lang_filter: a.lang_filter(),
         config_main_branch: a.config_main_branch,
     }
 }

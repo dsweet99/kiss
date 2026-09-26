@@ -184,8 +184,9 @@ fn capture_tracked(repo: &Path) -> Result<TrackedTreeStamp, String> {
 }
 
 fn untracked_digest(repo: &Path) -> Result<String, String> {
-    let listed = git_stdout_raw(repo, &["ls-files", "-z", "--others", "--exclude-standard"])?;
-    Ok(digest_bytes(&[&listed]))
+    // Same cache-path filter as worktree_untracked_digest: kiss runtime files under
+    // `.kiss/` / `target/` must not flap the commit stamp while a run is in flight.
+    worktree_untracked_digest(repo)
 }
 
 fn ref_inventory(repo: &Path, names: &[String]) -> Vec<RefPresence> {

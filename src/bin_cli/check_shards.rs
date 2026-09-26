@@ -60,8 +60,7 @@ pub(crate) fn run_split_check_sharded(exe: &Path, args: &CheckCommandArgs<'_>) -
 }
 
 fn rust_shard_count(file_count: usize) -> usize {
-    let cpus = kiss::shared_helpers::host_cpu_count(4);
-    cpus.min(file_count.max(1)).max(1)
+    kiss::host_parallelism::check_rust_shard_count(file_count)
 }
 
 fn partition_paths(mut paths: Vec<PathBuf>, shards: usize) -> Vec<Vec<PathBuf>> {

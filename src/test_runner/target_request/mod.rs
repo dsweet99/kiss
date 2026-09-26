@@ -56,7 +56,7 @@ pub(crate) use resolve::resolve_only;
 pub(crate) use rows::{available_rows, plan_from_available_rows};
 pub(crate) use scope::ReportScope;
 pub(crate) use snapshot::EnsurePolicy;
-pub(crate) use types::{GitFocus, TargetFocus, TargetRequest};
+pub(crate) use types::{GitFocus, OperandExpr, TargetFocus, TargetRequest};
 
 pub(crate) fn remember_named(
     args: &crate::test_runner::RunTestCmdArgs<'_>,
@@ -93,7 +93,7 @@ pub(crate) fn remember_named(
     if rows.is_empty() || !stamp.complete {
         return;
     }
-    let built = report::TargetReport::assembled_in(
+    let mut built = report::TargetReport::assembled_in(
         repo,
         &request,
         scope,
@@ -102,6 +102,7 @@ pub(crate) fn remember_named(
         report::TargetReport::combine_exit(report::TargetReport::exit_from_rows(&rows), exit_code),
         args.coverage_all,
     );
+    built.snapshot.extras = args.extras.owned_vecs();
     let _ = report_store::publish_if_rows_hold(repo, &request, &built);
     let _ = report_store::load_current_report(repo);
 }

@@ -59,7 +59,7 @@ pub(crate) struct ReportSnapshot {
     #[serde(default)]
     pub configuration: String,
     #[serde(default)]
-    pub extra: Vec<String>,
+    pub extras: crate::test_runner::language_keyed::LanguageKeyed<Vec<String>>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -878,7 +878,7 @@ fn snapshot_token(
         resolved: resolved_dependency_digest(repo_root, request),
         population: population_inventory_id(repo_root, request),
         configuration: configuration_generation(repo_root),
-        extra: Vec::new(),
+        extras: crate::test_runner::language_keyed::LanguageKeyed::default(),
     }
 }
 

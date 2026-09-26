@@ -7,10 +7,12 @@ use super::types::{TargetFocus, TargetRequest};
 pub(crate) fn coverage_exit_from_ready_request(
     request: &TargetRequest,
     coverage_all: bool,
+    extras: crate::test_runner::language_keyed::LanguageKeyed<&[String]>,
 ) -> Option<i32> {
     let cwd = std::env::current_dir().ok()?;
     let repo = crate::test_git::git_repo_root(&cwd).ok()?;
-    let report = super::bind::load_ready_for_request(&repo, request, coverage_all, &[])?;
+    let report =
+        super::bind::load_ready_for_request(&repo, request, coverage_all, extras)?;
     for line in super::render::official_coverage_text(&report).lines() {
         crate::test_runner::emit_test_progress(line);
     }
@@ -132,9 +134,61 @@ mod coverage_path_tests {
         init_git(&tmp);
         let restore = std::env::current_dir().unwrap();
         std::env::set_current_dir(tmp.path()).unwrap();
-        let exit = coverage_exit_from_ready_request(&workspace_req(), false);
+        let exit = coverage_exit_from_ready_request(
+            &workspace_req(),
+            false,
+            crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
+        );
         std::env::set_current_dir(restore).unwrap();
         assert_eq!(exit, None);
+    }
+
+    #[test]
+    fn coverage_exit_rejects_empty_extras_report_when_query_has_python_extras() {
+        use crate::test_runner::target_request::{
+            EnsurePolicy, materialize_target_report, publish_report,
+        };
+
+        let _cwd = crate::cwd_test_lock::lock();
+        let tmp = tempfile::TempDir::new().unwrap();
+        init_git(&tmp);
+        fs::write(tmp.path().join(".gitignore"), "/target\n/.kiss\n").unwrap();
+        fs::write(tmp.path().join("app.py"), "x = 1\n").unwrap();
+        assert!(
+            git_in(tmp.path())
+                .args(["add", "-A"])
+                .status()
+                .unwrap()
+                .success()
+        );
+        assert!(
+            git_in(tmp.path())
+                .args(["commit", "-m", "seed"])
+                .status()
+                .unwrap()
+                .success()
+        );
+
+        let parent = workspace_req();
+        let built =
+            materialize_target_report(tmp.path(), &parent, &EnsurePolicy::soft(false, false))
+                .unwrap();
+        assert!(built.snapshot.extras.both_empty());
+        publish_report(tmp.path(), &parent, &built).unwrap();
+
+        let py = vec!["-k".to_string(), "foo".to_string()];
+        let query_extras = crate::test_runner::language_keyed::LanguageKeyed {
+            python: py.as_slice(),
+            rust: &[][..],
+        };
+        let restore = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+        let exit = coverage_exit_from_ready_request(&parent, false, query_extras);
+        std::env::set_current_dir(restore).unwrap();
+        assert_eq!(
+            exit, None,
+            "coverage-exit must not reuse an empty-extras ready report when the query carries python extras"
+        );
     }
 
     #[test]

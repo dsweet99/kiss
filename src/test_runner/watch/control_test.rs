@@ -520,3 +520,40 @@ fn reclaim_stale_watch_sockets_removes_dead_socks_keeps_live() {
     drop(live_listener);
     let _ = std::fs::remove_file(&live);
 }
+
+#[test]
+fn classify_watcher_peer_absent_without_owner() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    std::fs::create_dir_all(repo.join(".kiss").join("watch")).unwrap();
+    match classify_watcher_peer(repo).unwrap() {
+        PeerPresence::Absent => {}
+        other => panic!("expected Absent, got {other:?}"),
+    }
+}
+
+#[test]
+fn classify_watcher_peer_live_with_owner_and_session() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    let watch = repo.join(".kiss").join("watch");
+    std::fs::create_dir_all(&watch).unwrap();
+    let lock_path = watch_lock_path(repo);
+    let _owner = WatchLockGuard::try_lock(&lock_path)
+        .unwrap()
+        .expect("exclusive owner");
+    let socket = watch.join("sock");
+    let _ = std::fs::File::create(&socket);
+    let session = SessionFile {
+        pid: std::process::id(),
+        socket: socket.display().to_string(),
+    };
+    write_session_file(&session_file_path(repo), &session).unwrap();
+    match classify_watcher_peer(repo).unwrap() {
+        PeerPresence::Live(got) => {
+            assert_eq!(got.pid, session.pid);
+            assert_eq!(got.socket, session.socket);
+        }
+        other => panic!("expected Live, got {other:?}"),
+    }
+}

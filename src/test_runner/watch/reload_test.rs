@@ -308,6 +308,89 @@ fn cycle_args_prefers_target_request_over_stale_targets() {
     );
 }
 
+/// PWS: reload must write ignore into `target_request` (sole authority), not only
+/// a sibling mirror field that hot paths can disagree with.
+#[test]
+fn reload_writes_ignore_into_target_request() {
+    let tmp = tempfile::tempdir().unwrap();
+    let cfg_path = tmp.path().join(".kissconfig");
+    std::fs::write(
+        &cfg_path,
+        "[test]\nignore = [\"vendor/\"]\nwatch_settle_seconds = 1.0\nnum_jobs = 2\n",
+    )
+    .unwrap();
+    let args = base_args();
+    let mut live = WatchLiveConfig::from_args(
+        &args,
+        Duration::from_secs(1),
+        seed(true),
+        Config::python_defaults(),
+        Config::rust_defaults(),
+        &cfg_path,
+    );
+    assert!(
+        live.target_request.ignore.is_empty(),
+        "precondition: start with empty request ignore"
+    );
+    live.apply_reload_from_path(&cfg_path).unwrap();
+    assert!(
+        live.target_request
+            .ignore
+            .iter()
+            .any(|p| p.contains("vendor")),
+        "reload must update target_request.ignore; got {:?}",
+        live.target_request.ignore
+    );
+    let cycle = live.cycle_args(CycleForceFlags {
+        target_request: live.target_request.clone(),
+        ..CycleForceFlags::default()
+    });
+    assert!(
+        cycle
+            .target_request
+            .ignore
+            .iter()
+            .any(|p| p.contains("vendor")),
+        "cycle_args must carry reloaded ignore via target_request"
+    );
+}
+
+/// PWS2 residual: filter overlay must land on `target_request`, not only on
+/// the `lang_filter` / `ignore` mirror fields.
+#[test]
+fn cycle_args_writes_filter_overlay_into_target_request() {
+    let args = base_args();
+    let mut live = WatchLiveConfig::from_args(
+        &args,
+        Duration::from_secs(1),
+        seed(false),
+        Config::python_defaults(),
+        Config::rust_defaults(),
+        PathBuf::from(".kissconfig").as_path(),
+    );
+    live.apply_nudge_filters(
+        Some(Language::Rust),
+        vec!["vendor/".into()],
+        crate::test_runner::language_keyed::LanguageKeyed::default(),
+    );
+    let cycle = live.cycle_args(CycleForceFlags {
+        target_request: workspace_request(None, &[]),
+        ..CycleForceFlags::default()
+    });
+    assert_eq!(cycle.lang_filter(), Some(Language::Rust));
+    assert_eq!(
+        cycle.target_request.language(),
+        Some(Language::Rust),
+        "lang overlay must update target_request, not only the lang_filter field"
+    );
+    assert_eq!(cycle.ignore(), &["vendor/".to_string()]);
+    assert_eq!(
+        cycle.target_request.ignore,
+        vec!["vendor/".to_string()],
+        "ignore overlay must update target_request"
+    );
+}
+
 #[test]
 fn cycle_args_sorts_operands_request_pin() {
     let args = base_args();
@@ -445,4 +528,45 @@ fn path_filter_uses_live_target_request() {
     let filter = live.path_filter(tmp.path());
     assert!(filter.is_relevant(Path::new("tests/a.py")));
     assert!(!filter.is_relevant(Path::new("tests/b.py")));
+}
+
+#[test]
+fn effective_coverage_all_ors_seed_and_nudge_into_cycle_args() {
+    let args = base_args();
+    let mut live = WatchLiveConfig::from_args(
+        &args,
+        Duration::from_secs(1),
+        seed(false),
+        Config::python_defaults(),
+        Config::rust_defaults(),
+        PathBuf::from(".kissconfig").as_path(),
+    );
+    assert!(!live.effective_coverage_all());
+    live.set_nudge_coverage_all(true);
+    assert!(live.effective_coverage_all());
+    let cycle = live.cycle_args(CycleForceFlags {
+        target_request: live.target_request.clone(),
+        ..CycleForceFlags::default()
+    });
+    assert!(cycle.coverage_all);
+
+    let mut seed_on = seed(false);
+    seed_on.coverage_all = true;
+    let live_seed = WatchLiveConfig::from_args(
+        &args,
+        Duration::from_secs(1),
+        seed_on,
+        Config::python_defaults(),
+        Config::rust_defaults(),
+        PathBuf::from(".kissconfig").as_path(),
+    );
+    assert!(live_seed.effective_coverage_all());
+    assert!(
+        live_seed
+            .cycle_args(CycleForceFlags {
+                target_request: live_seed.target_request.clone(),
+                ..CycleForceFlags::default()
+            })
+            .coverage_all
+    );
 }

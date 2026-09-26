@@ -16,7 +16,7 @@ pub(crate) mod final_summary;
 pub(crate) mod lang_iface;
 pub(crate) mod lang_python;
 pub(crate) mod lang_rust;
-mod language_keyed;
+pub(crate) mod language_keyed;
 pub(crate) mod last_status;
 mod line_selection;
 mod planned_selectors;
@@ -98,29 +98,35 @@ pub struct RunTestCmdArgs<'a> {
     pub metrics: bool,
     pub coverage_all: bool,
     pub jobs: usize,
-    pub extra: &'a [String],
-    pub python_extra: &'a [String],
-    pub ignore: &'a [String],
-    pub lang_filter: Option<Language>,
+    pub extras: language_keyed::LanguageKeyed<&'a [String]>,
     pub config_main_branch: Option<&'a str>,
     pub gate_config: kiss::GateConfig,
 }
 
+impl RunTestCmdArgs<'_> {
+    pub(crate) fn lang_filter(&self) -> Option<Language> {
+        self.target_request.language()
+    }
+
+    pub(crate) fn ignore(&self) -> &[String] {
+        &self.target_request.ignore
+    }
+}
+
 #[cfg(test)]
-impl<'a> RunTestCmdArgs<'a> {
+impl RunTestCmdArgs<'_> {
     pub(crate) fn set_invocation(&mut self, invocation: TestInvocation) {
         self.invocation = invocation;
         self.refresh_target_request();
     }
 
     pub(crate) fn set_lang_filter(&mut self, lang_filter: Option<Language>) {
-        self.lang_filter = lang_filter;
-        self.refresh_target_request();
+        self.target_request.set_language(lang_filter);
+        self.invocation = target_request::to_compat_invocation(&self.target_request);
     }
 
-    pub(crate) fn set_ignore(&mut self, ignore: &'a [String]) {
-        self.ignore = ignore;
-        self.refresh_target_request();
+    pub(crate) fn set_ignore(&mut self, ignore: &[String]) {
+        self.target_request.ignore = ignore.to_vec();
     }
 
     fn refresh_target_request(&mut self) {
@@ -129,8 +135,8 @@ impl<'a> RunTestCmdArgs<'a> {
             self.main_branch_cli,
             self.base_branch_cli,
             self.config_main_branch,
-            self.lang_filter,
-            self.ignore,
+            self.target_request.language(),
+            &self.target_request.ignore,
         );
         self.invocation = target_request::to_compat_invocation(&request);
         self.target_request = request;
@@ -210,34 +216,31 @@ fn plan_for_invocation(a: &RunTestCmdArgs<'_>) -> Result<PlannedSelectors, Strin
         TargetFocus, change_mode_from_focus, operand_raws, request_from_run_args,
     };
     let request = request_from_run_args(a);
-    let extras = crate::test_runner::language_keyed::LanguageKeyed {
-        python: a.python_extra,
-        rust: a.extra,
-    };
+    let extras = a.extras;
     match &request.focus {
         TargetFocus::Git(_) => plan_selectors(PlanSelectorsRequest {
             mode: change_mode_from_focus(&request.focus),
             main_branch_cli: a.main_branch_cli,
             base_branch_cli: a.base_branch_cli,
-            ignore: a.ignore,
+            ignore: a.ignore(),
             extras,
-            lang_filter: a.lang_filter,
+            lang_filter: a.lang_filter(),
             config_main_branch: a.config_main_branch,
         }),
         TargetFocus::Workspace => plan_target_selectors(
             TargetPlanKind::All,
-            a.ignore,
+            a.ignore(),
             extras,
-            a.lang_filter,
+            a.lang_filter(),
             &a.gate_config,
         ),
         TargetFocus::Operands(_) => {
             let targets = operand_raws(&request.focus).unwrap_or_default();
             plan_target_selectors(
                 TargetPlanKind::Targets(targets.as_slice()),
-                a.ignore,
+                a.ignore(),
                 extras,
-                a.lang_filter,
+                a.lang_filter(),
                 &a.gate_config,
             )
         }

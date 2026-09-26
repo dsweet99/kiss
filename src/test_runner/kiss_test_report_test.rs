@@ -175,14 +175,7 @@ fn ready_target_report_after_tests_skips_run_cov() {
             let built = materialize_target_report(
                 tmp.path(),
                 &request,
-                &EnsurePolicy {
-                    dry_run: false,
-                    require_complete: false,
-                    inject_mismatch: false,
-                    retry_bad: false,
-                    coverage_all: false,
-                    assemble_only: false,
-                },
+                &EnsurePolicy::soft(false, false),
             )
             .unwrap();
             crate::test_runner::target_request::publish_if_rows_hold(tmp.path(), &request, &built)
@@ -192,7 +185,7 @@ fn ready_target_report_after_tests_skips_run_cov() {
                     tmp.path(),
                     &request,
                     false,
-                    &[],
+                    crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
                 )
                 .is_some(),
                 "published report must load as ready"
@@ -261,14 +254,7 @@ fn ready_target_report_with_coverage_gates_skips_run_cov() {
             let built = materialize_target_report(
                 tmp.path(),
                 &request,
-                &EnsurePolicy {
-                    dry_run: false,
-                    require_complete: false,
-                    inject_mismatch: false,
-                    retry_bad: false,
-                    coverage_all: false,
-                    assemble_only: false,
-                },
+                &EnsurePolicy::soft(false, false),
             )
             .unwrap();
             assert!(

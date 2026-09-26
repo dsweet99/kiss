@@ -13,8 +13,6 @@ use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export_resolve::{
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export_tools::ExportTools;
 use crate::rust_llvm_cov_runner::{RustLineCoverage, RustLlvmCovError};
 
-const ESTIMATED_CPUS_PER_LLVM_EXPORT: usize = 2;
-
 pub(crate) use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export_merge::{
     export_instance_coverage, merge_profiles,
 };
@@ -258,8 +256,7 @@ pub(crate) fn export_instances_bounded_with(
 }
 
 fn max_export_workers_for_host() -> usize {
-    let available = crate::shared_helpers::host_cpu_count(1);
-    available.div_ceil(ESTIMATED_CPUS_PER_LLVM_EXPORT).max(1)
+    crate::host_parallelism::llvm_export_worker_cap()
 }
 
 fn export_worker_count(jobs: usize) -> usize {
