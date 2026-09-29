@@ -52,6 +52,62 @@ fn load_identity_report(
     })
 }
 
+/// Idle/query path for `kiss test --lang`: answer from a ready unscoped workspace
+/// report by projecting that language's rows, without starting a new test cycle.
+///
+/// `load_ready_for_request` stays identity-strict (no parent slice on load alone).
+pub(crate) fn project_language_ready_from_parent_workspace(
+    repo: &std::path::Path,
+    request: &super::types::TargetRequest,
+    coverage_all: bool,
+    extras: crate::test_runner::language_keyed::LanguageKeyed<&[String]>,
+) -> Option<TargetReport> {
+    let lang = request.language()?;
+    if !super::is_workspace_focus(&request.focus) {
+        return None;
+    }
+    let mut parent_req = request.clone();
+    parent_req.set_language(None);
+    let parent = load_ready_for_request(repo, &parent_req, coverage_all, extras)?;
+    let label = match lang {
+        kiss::Language::Python => "python",
+        kiss::Language::Rust => "rust",
+    };
+    let rows: Vec<_> = parent
+        .rows
+        .iter()
+        .filter(|row| row.language == label)
+        .cloned()
+        .collect();
+    let resolved = super::resolve::resolve_only(repo, request).ok()?;
+    let (projection, _) = super::projection::build_slice_projection(repo, request, &resolved);
+    let mut stamp = super::slice::stamp_from_projection(&projection, parent.stamp.complete);
+    stamp.complete = parent.stamp.complete;
+    if !stamp.complete {
+        return None;
+    }
+    let selectors: Vec<String> = rows.iter().map(|row| row.selector.clone()).collect();
+    let scope = super::scope::ReportScope::from_membership(
+        projection.coverage_regions(),
+        selectors,
+        stamp.complete,
+    );
+    let exit_code = TargetReport::exit_from_rows(&rows);
+    let mut built = TargetReport::assembled_in(
+        repo,
+        request,
+        scope,
+        rows,
+        stamp,
+        exit_code,
+        coverage_all,
+    );
+    built.snapshot.extras = parent.snapshot.extras.clone();
+    built.snapshot.worktree = super::stamp::capture_worktree_token(repo, Some(lang));
+    let _ = report_store::publish_report(repo, request, &built);
+    Some(built)
+}
+
 pub(crate) fn bind_and_prepare(
     args: &crate::test_runner::RunTestCmdArgs<'_>,
 ) -> Result<BindDecision, String> {

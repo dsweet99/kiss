@@ -70,6 +70,14 @@ pub(crate) fn ensure_target_report_query(
     {
         return Ok(Ensured::Report(Box::new(ready)));
     }
+    if let Some(projected) = super::bind::project_language_ready_from_parent_workspace(
+        repo_root,
+        request,
+        policy.coverage_all(),
+        extras,
+    ) {
+        return Ok(Ensured::Report(Box::new(projected)));
+    }
     Err(EnsureError::IncompleteEvidence(
         "incomplete evidence".into(),
     ))

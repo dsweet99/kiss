@@ -159,25 +159,10 @@ fn assert_lang_then_bare(lang: &str, lang_has: &[&str], lang_lacks: &[&str]) {
         tmp.path(),
         &mut src,
         Some(&rx),
-        move |cycle_args| {
+        move |_cycle_args| {
             tests_run.fetch_add(1, Ordering::SeqCst);
             emit_full_suite();
             publish_full_suite(&repo);
-            let rows: &[(&str, &str, EffectiveStatus)] = match cycle_args.lang_filter() {
-                Some(kiss::Language::Rust) => {
-                    &[("rust", "src/lib.rs::t_slow", EffectiveStatus::Timeout)]
-                }
-                Some(kiss::Language::Python) => &[
-                    ("python", "tests/a.py::test_a", EffectiveStatus::Pass),
-                    ("python", "tests/b.py::test_b", EffectiveStatus::Fail),
-                ],
-                None => &[
-                    ("python", "tests/a.py::test_a", EffectiveStatus::Pass),
-                    ("python", "tests/b.py::test_b", EffectiveStatus::Fail),
-                    ("rust", "src/lib.rs::t_slow", EffectiveStatus::Timeout),
-                ],
-            };
-            super::publish_rows_for_request(&repo, &cycle_args.target_request, rows, 124);
             RunTestOnceOutcome::Code(1)
         },
         |_args| WatchCoverageResult::ok(0),
@@ -186,16 +171,16 @@ fn assert_lang_then_bare(lang: &str, lang_has: &[&str], lang_lacks: &[&str]) {
     assert_eq!(code, 1);
     let lang_out = replies[0].output.clone().unwrap_or_default();
     let idle_out = replies[1].output.clone().unwrap_or_default();
-    let _ = (lang_has, lang_lacks);
-    let lang_needles: &[&str] = if lang == "rust" {
-        &["src/lib.rs::t_slow"]
-    } else {
-        &["tests/a.py::test_a", "tests/b.py::test_b"]
-    };
     assert!(
-        recap_has_all(&lang_out, lang_needles),
+        recap_has_all(&lang_out, lang_has),
         "--lang {lang} recaps that language; out={lang_out:?}"
     );
+    for needle in lang_lacks {
+        assert!(
+            !lang_out.contains(needle),
+            "--lang {lang} must omit other-language selector {needle}; out={lang_out:?}"
+        );
+    }
     assert!(
         recap_has_all(
             &idle_out,
@@ -209,8 +194,8 @@ fn assert_lang_then_bare(lang: &str, lang_has: &[&str], lang_lacks: &[&str]) {
     );
     assert_eq!(
         tests.load(Ordering::SeqCst),
-        2,
-        "language-filtered and workspace requests are distinct identities"
+        1,
+        "--lang and bare must idle from the full-suite cache without a new cycle"
     );
     assert_ne!(
         replies[0].exit_code, 0,
@@ -387,29 +372,96 @@ fn scenario_2_lang_then_bare_after_file_change() {
 
 #[test]
 fn scenario_3_target_while_watcher_on_full_suite() {
-    let (replies, cycles) = run_full_then_target_then_idle(
-        watch_args(),
+    let tmp = tempfile::tempdir().unwrap();
+    init_git(&tmp);
+    commit_a_py(&tmp);
+    let tests_dir = tmp.path().join("tests");
+    std::fs::create_dir_all(&tests_dir).unwrap();
+    std::fs::write(
+        tests_dir.join("a.py"),
+        "def test_a():\n    assert True\n",
+    )
+    .unwrap();
+    assert!(
+        crate::test_runner::test_mode_fixtures::git_in(tmp.path())
+            .args(["add", "tests/a.py"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        crate::test_runner::test_mode_fixtures::git_in(tmp.path())
+            .args(["commit", "-m", "target-fixture"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    let target = "tests/a.py::test_a";
+    let tests = Arc::new(AtomicUsize::new(0));
+    let (rx, sender) = nudge_after_cycles(
+        Arc::clone(&tests),
+        1,
         vec![
             NudgeRequestMsg {
+                target_request: crate::test_runner::target_request::operands_request(
+                    &[target.into()],
+                    None,
+                    &[],
+                ),
                 ..Default::default()
             },
             NudgeRequestMsg::default(),
         ],
-        "tests/a.py::test_a",
     );
+    let tests_run = Arc::clone(&tests);
+    let repo = tmp.path().to_path_buf();
+    let mut src = NudgeScript {
+        steps: timeout_steps(16),
+    };
+    let code = run_watch_loop_with(
+        watch_args(),
+        Duration::from_secs(3600),
+        tmp.path(),
+        &mut src,
+        Some(&rx),
+        move |cycle_args| {
+            let n = tests_run.fetch_add(1, Ordering::SeqCst);
+            if n == 0 {
+                emit_bilingual_full();
+                publish_bilingual_full(&repo);
+                return RunTestOnceOutcome::Code(1);
+            }
+            emit_one_pass(target);
+            super::publish_rows_for_request(
+                &repo,
+                &cycle_args.target_request,
+                &[("python", target, EffectiveStatus::Pass)],
+                0,
+            );
+            RunTestOnceOutcome::Code(0)
+        },
+        |_args| WatchCoverageResult::ok(0),
+    );
+    let replies = sender.join().unwrap();
+    assert_eq!(code, 1);
     let targeted = replies[0].output.clone().unwrap_or_default();
     let idle = replies[1].output.clone().unwrap_or_default();
     assert!(
-        targeted.contains("tests/b.py::test_b") && targeted.contains("src/lib.rs::t_slow"),
-        "TARGET recap must idle the full last-reply; targeted={targeted:?}"
+        targeted.contains("tests/a.py::test_a") && targeted.contains("1 passed"),
+        "TARGET recap must list the TARGET result; targeted={targeted:?}"
+    );
+    assert!(
+        !targeted.contains("tests/b.py::test_b") && !targeted.contains("src/lib.rs::t_slow"),
+        "TARGET recap must omit siblings; targeted={targeted:?}"
     );
     assert!(
         idle.contains("tests/b.py::test_b") && idle.contains("src/lib.rs::t_slow"),
         "later bare kiss test must keep the full-suite recap; idle={idle:?}"
     );
     assert_eq!(
-        cycles, 1,
-        "named TARGET must idle; bare kiss test must not start another cycle"
+        tests.load(Ordering::SeqCst),
+        2,
+        "named TARGET must start a scoped cycle; bare kiss test must not start another"
     );
 }
 
