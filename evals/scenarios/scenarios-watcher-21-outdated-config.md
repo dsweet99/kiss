@@ -1,6 +1,6 @@
 # Mixing `kiss test-watch` with `kiss test`
 
-One `kiss test-watch` process stays up in a repository. It takes no options and no TARGET. A later `kiss test` contacts it, echoes the reply, and exits. The watcher does not exit when that later command finishes.
+One `kiss test-watch` process stays up in a worktree. It takes no options and no TARGET. A later `kiss test` contacts it, echoes the reply, and exits. The watcher does not exit when that later command finishes.
 
 "Return" means the watcher replies. It does not mean the watch process exits.
 
@@ -17,14 +17,16 @@ Test lines are the same whether or not a watcher is running. They list every FAI
 
 A command that is waiting in order to proceed repeats its waiting message every 3 seconds. While `kiss test-watch` is idle and waiting for a connection, it does not repeat a waiting message.
 
-The watcher finishes the request it is serving before it starts the next one. A client that arrives during a cycle does not receive that cycle's results. Its own request is handled afterward.
+The watcher runs tests on its own cycles: a startup cycle, a cycle after edits settle, and a cycle once it has noticed that a config file changed. A plain client does not start a cycle and does not make the watcher run tests. The watcher answers a client only while it is waiting, from the cache, for that client's scope. It finishes the cycle it is running before it answers a waiting client. A client that arrives during a cycle waits until the watcher is waiting. The in-flight cycle is not filtered or narrowed for that client, and the answer does not include a cycle that has not started. `kiss test --retry-bad` is the exception: when that client is answered, the watcher runs the FAIL and TIMEOUT tests compatible with the client's TARGET. A client interrupted while it is only waiting is dropped. The watcher does not start a cycle for it.
 
 ## 21. Config files change while the watcher is running
 
-User actions: Start `kiss test-watch` and wait until it is idle. Change `.kissconfig`, then `pyproject.toml`, then `Cargo.toml`, one at a time. After each change, run `kiss test` with no source edits. Separately, start a cycle and, while that cycle is still running, change one of those three files. Let that cycle finish, then run `kiss test` again with no source edits. Restart is not part of this scenario.
+User actions: Start `kiss test-watch` and wait until it is idle. Change `.kissconfig`, then `pyproject.toml`, then `Cargo.toml`. With no source edits, run `kiss test` once before the watcher has warned, and once after it has warned and is waiting again. Restart is not part of this scenario.
 
-Correct behavior: The watcher keeps the configs it had when it started. It does not reload them. On every transition into running, and on every transition into waiting, it warns that it is running with outdated configs. The warning is tied to the transition. It is not repeated every 3 seconds while the watcher sits idle waiting for a connection. The watcher includes that warning in the reply. The client prints the warning on its own stderr, along with the usual reply on stdout. The watch process keeps running until it is stopped.
+Correct behavior: The watcher keeps the configs it had when it started. It does not reload them. It notices a config change on its own schedule. Before it has noticed, `kiss test` is answered from the cache it already had, and the reply has no outdated-config warning.
 
-Each of those config changes invalidates the cache. A `kiss test` started after the watcher is idle does not reuse PASS, FAIL, or TIMEOUT results cached before that change. It runs the tests in its scope again, still under the configs the watcher started with. Ignore prefixes from the `.kissconfig` the watcher started with still exclude paths. A later edit to those prefixes does not change the list the watcher is using. There is no `--ignore` option.
+Noticing does not leave a client on that pre-change cache. The watcher runs the tests again itself, under the configs it started with, and it does that before it answers a client who arrives after notice. If it is waiting when it notices, that rerun is the next cycle. If a cycle is already running when it notices, that cycle finishes, and the rerun is the cycle after it. The watcher does not answer in the gap between those two cycles. A client who is already waiting stays waiting until the watcher is waiting after the rerun. The reply is the rerun's cache: that finished cycle, not a cycle that has not started, and not the pre-change cache. The watcher does not reuse PASS, FAIL, or TIMEOUT results cached from before the change. The client does not cause the rerun.
 
-A cycle that is already running when the file changes finishes, reports, and records results as usual. The next request treats the cache as invalid, including those just-recorded results. It runs the tests in its scope again, still under the configs the watcher started with.
+Once it has noticed, every transition into running and every transition into waiting warns that it is running with outdated configs. The warning is tied to the transition. It is not repeated every 3 seconds while the watcher sits idle waiting for a connection. The reply after the rerun includes that warning. The client prints it on stderr, along with the usual reply on stdout. When the watcher is waiting after the rerun, `kiss test` is answered from the cache that rerun recorded.
+
+Ignore prefixes from the `.kissconfig` the watcher started with still exclude paths. A later edit to those prefixes does not change the list the watcher is using. There is no `--ignore` option. The watch process keeps running until it is stopped.

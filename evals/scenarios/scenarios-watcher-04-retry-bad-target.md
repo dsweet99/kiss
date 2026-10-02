@@ -1,6 +1,6 @@
 # Mixing `kiss test-watch` with `kiss test`
 
-One `kiss test-watch` process stays up in a repository. It takes no options and no TARGET. A later `kiss test` contacts it, echoes the reply, and exits. The watcher does not exit when that later command finishes.
+One `kiss test-watch` process stays up in a worktree. It takes no options and no TARGET. A later `kiss test` contacts it, echoes the reply, and exits. The watcher does not exit when that later command finishes.
 
 "Return" means the watcher replies. It does not mean the watch process exits.
 
@@ -17,18 +17,18 @@ Test lines are the same whether or not a watcher is running. They list every FAI
 
 A command that is waiting in order to proceed repeats its waiting message every 3 seconds. While `kiss test-watch` is idle and waiting for a connection, it does not repeat a waiting message.
 
-The watcher finishes the request it is serving before it starts the next one. A client that arrives during a cycle does not receive that cycle's results. Its own request is handled afterward.
+The watcher runs tests on its own cycles: a startup cycle, a cycle after edits settle, and a cycle once it has noticed that a config file changed. A plain client does not start a cycle and does not make the watcher run tests. The watcher answers a client only while it is waiting, from the cache, for that client's scope. It finishes the cycle it is running before it answers a waiting client. A client that arrives during a cycle waits until the watcher is waiting. The in-flight cycle is not filtered or narrowed for that client, and the answer does not include a cycle that has not started. `kiss test --retry-bad` is the exception: when that client is answered, the watcher runs the FAIL and TIMEOUT tests compatible with the client's TARGET. A client interrupted while it is only waiting is dropped. The watcher does not start a cycle for it.
 
-## 4. `--retry-bad` enlarges the set of tests to run
+## 4. `--retry-bad` runs FAIL and TIMEOUT tests in TARGET
 
 User actions: Leave `kiss test-watch` idle. Then:
 
 1. Run `kiss test --retry-bad TARGET`, where TARGET contains at least one FAIL or TIMEOUT test and at least one PASS test, and no file has changed.
 2. Run `kiss test --retry-bad TARGET` where every cached test in TARGET is PASS, and no file has changed.
-3. Edit a source file so that a PASS test in TARGET needs to run, while a FAIL test in TARGET would not be selected by that edit alone. Run `kiss test --retry-bad TARGET`.
+3. Edit a source file so that a PASS test in TARGET needs to run, while a FAIL test in TARGET would not be selected by that edit alone. That FAIL test still fails when it is run. Run `kiss test --retry-bad TARGET` while the watcher is waiting, once before the edit's cycle starts and once after that cycle has finished.
 
-Correct behavior: `--retry-bad` adds the FAIL and TIMEOUT tests in TARGET to the set that would run for that TARGET anyway. It does not drop tests the edits require. The reply's scope is TARGET, so the summary counts passing tests in TARGET that did not run.
+Correct behavior: `--retry-bad` is the client request that makes the watcher run tests. It runs the FAIL and TIMEOUT tests compatible with TARGET. It does not run PASS tests. The reply's scope is TARGET, so the summary counts passing tests in TARGET that did not run. Edits are a separate cycle: after they settle, the watcher runs the tests those edits require, and that cycle does not rerun a FAIL or TIMEOUT merely because it failed.
 
 1. The watcher runs the FAIL and TIMEOUT tests in TARGET. It does not run the passing tests.
-2. TARGET contributes no FAIL or TIMEOUT tests, and nothing else needs to run. The watcher starts no cycle and replies from the cache.
-3. The watcher runs both the PASS test required by the edit and the FAIL test added by `--retry-bad`. The watch process keeps running.
+2. TARGET contributes no FAIL or TIMEOUT tests. The watcher starts no cycle and replies from the cache.
+3. Both `--retry-bad` commands find the FAIL test still failing. Each runs that FAIL test and does not run the PASS test. The edit's cycle runs the PASS test and does not run the FAIL test. The watch process keeps running.

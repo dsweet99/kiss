@@ -1,6 +1,6 @@
 # Mixing `kiss test-watch` with `kiss test`
 
-One `kiss test-watch` process stays up in a repository. It takes no options and no TARGET. A later `kiss test` contacts it, echoes the reply, and exits. The watcher does not exit when that later command finishes.
+One `kiss test-watch` process stays up in a worktree. It takes no options and no TARGET. A later `kiss test` contacts it, echoes the reply, and exits. The watcher does not exit when that later command finishes.
 
 "Return" means the watcher replies. It does not mean the watch process exits.
 
@@ -17,12 +17,12 @@ Test lines are the same whether or not a watcher is running. They list every FAI
 
 A command that is waiting in order to proceed repeats its waiting message every 3 seconds. While `kiss test-watch` is idle and waiting for a connection, it does not repeat a waiting message.
 
-The watcher finishes the request it is serving before it starts the next one. A client that arrives during a cycle does not receive that cycle's results. Its own request is handled afterward.
+The watcher runs tests on its own cycles: a startup cycle, a cycle after edits settle, and a cycle once it has noticed that a config file changed. A plain client does not start a cycle and does not make the watcher run tests. The watcher answers a client only while it is waiting, from the cache, for that client's scope. It finishes the cycle it is running before it answers a waiting client. A client that arrives during a cycle waits until the watcher is waiting. The in-flight cycle is not filtered or narrowed for that client, and the answer does not include a cycle that has not started. `kiss test --retry-bad` is the exception: when that client is answered, the watcher runs the FAIL and TIMEOUT tests compatible with the client's TARGET. A client interrupted while it is only waiting is dropped. The watcher does not start a cycle for it.
 
 ## 9. `kiss test` while the watcher is still starting
 
 User actions: Start `kiss test-watch` in a repository where its first cycle will take a while (a cold cache, or edited sources). Before that first cycle finishes, run `kiss test` in another terminal. Also try a narrower command, such as `kiss test PATH` or `kiss test --lang rust`, during that same window.
 
-Correct behavior: The client does not start its own test run beside the watcher. It waits, as if queued, and prints `kiss test: waiting for watcher (pid …)`, repeating that line every 3 seconds. The watcher does not start a second, overlapping cycle. The in-flight cycle is not filtered or narrowed to answer the client. There is no dependence between that cycle and the waiting request.
+Correct behavior: The client does not start its own test run beside the watcher. It waits, and prints `kiss test: waiting for watcher (pid …)`, repeating that line every 3 seconds. The watcher does not start a second, overlapping cycle. The in-flight cycle is not filtered or narrowed to answer the client.
 
-When the watcher finishes the work already under way, it handles the client's request as a normal next request. A bare `kiss test` is then answered by the rules in scenario 1 or scenario 2, whichever matches the tree. A PATH or `--lang` request is answered by the rules in scenario 3 or scenario 5, not by slicing the cycle that just finished. The client prints that reply and exits. The watch process keeps running.
+When the watcher is waiting, it answers the client from the cache. The startup cycle has already recorded its results there. A bare `kiss test` is the full suite. A PATH or `--lang` request is that scope only. Neither request makes the watcher run tests. The client prints that reply and exits. The watch process keeps running.

@@ -1,6 +1,6 @@
 # Mixing `kiss test-watch` with `kiss test`
 
-One `kiss test-watch` process stays up in a repository. It takes no options and no TARGET. A later `kiss test` contacts it, echoes the reply, and exits. The watcher does not exit when that later command finishes.
+One `kiss test-watch` process stays up in a worktree. It takes no options and no TARGET. A later `kiss test` contacts it, echoes the reply, and exits. The watcher does not exit when that later command finishes.
 
 "Return" means the watcher replies. It does not mean the watch process exits.
 
@@ -17,7 +17,7 @@ Test lines are the same whether or not a watcher is running. They list every FAI
 
 A command that is waiting in order to proceed repeats its waiting message every 3 seconds. While `kiss test-watch` is idle and waiting for a connection, it does not repeat a waiting message.
 
-The watcher finishes the request it is serving before it starts the next one. A client that arrives during a cycle does not receive that cycle's results. Its own request is handled afterward.
+The watcher runs tests on its own cycles: a startup cycle, a cycle after edits settle, and a cycle once it has noticed that a config file changed. A plain client does not start a cycle and does not make the watcher run tests. The watcher answers a client only while it is waiting, from the cache, for that client's scope. It finishes the cycle it is running before it answers a waiting client. A client that arrives during a cycle waits until the watcher is waiting. The in-flight cycle is not filtered or narrowed for that client, and the answer does not include a cycle that has not started. `kiss test --retry-bad` is the exception: when that client is answered, the watcher runs the FAIL and TIMEOUT tests compatible with the client's TARGET. A client interrupted while it is only waiting is dropped. The watcher does not start a cycle for it.
 
 ## 22. `--retry-bad` with no watcher, and during watcher startup
 
@@ -29,6 +29,6 @@ User actions:
 
 Correct behavior:
 
-1. The `--retry-bad` command takes the normal lock. It prints `kiss test: waiting for kiss test` every 3 seconds while the first command holds the lock. It does not run tests at the same time as the first command. When it gets the lock, it uses the same set rule as scenario 4: `--retry-bad` adds FAIL and TIMEOUT tests in TARGET to whatever the cache already needs. The cache is not corrupted.
+1. The `--retry-bad` command takes the normal lock. It prints `kiss test: waiting for kiss test` every 3 seconds while the first command holds the lock. It does not run tests at the same time as the first command. When it gets the lock, there is no watcher to answer it, so this command itself runs the tests. `--retry-bad` adds FAIL and TIMEOUT tests in TARGET to whatever the cache already needs. The cache is not corrupted.
 2. Nothing needs to run. The command starts no test run and answers from the cache for TARGET. That plain run uses the same test lines as a reply from the watcher.
-3. The client waits, with no overlapping cycle, as in scenario 9. When the watcher is free, it handles `--retry-bad TARGET` as its own request under the scenario 4 rule. It does not answer by filtering the startup cycle. The watch process keeps running.
+3. The client waits, with no overlapping cycle, as in scenario 9. When the watcher is waiting, it runs the FAIL and TIMEOUT tests compatible with TARGET, as in scenario 4. It does not run PASS tests for that client, and it does not answer by filtering the startup cycle. The watch process keeps running.

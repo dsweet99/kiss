@@ -1,6 +1,6 @@
 # Mixing `kiss test-watch` with `kiss test`
 
-One `kiss test-watch` process stays up in a repository. It takes no options and no TARGET. A later `kiss test` contacts it, echoes the reply, and exits. The watcher does not exit when that later command finishes.
+One `kiss test-watch` process stays up in a worktree. It takes no options and no TARGET. A later `kiss test` contacts it, echoes the reply, and exits. The watcher does not exit when that later command finishes.
 
 "Return" means the watcher replies. It does not mean the watch process exits.
 
@@ -17,13 +17,13 @@ Test lines are the same whether or not a watcher is running. They list every FAI
 
 A command that is waiting in order to proceed repeats its waiting message every 3 seconds. While `kiss test-watch` is idle and waiting for a connection, it does not repeat a waiting message.
 
-The watcher finishes the request it is serving before it starts the next one. A client that arrives during a cycle does not receive that cycle's results. Its own request is handled afterward.
+The watcher runs tests on its own cycles: a startup cycle, a cycle after edits settle, and a cycle once it has noticed that a config file changed. A plain client does not start a cycle and does not make the watcher run tests. The watcher answers a client only while it is waiting, from the cache, for that client's scope. It finishes the cycle it is running before it answers a waiting client. A client that arrives during a cycle waits until the watcher is waiting. The in-flight cycle is not filtered or narrowed for that client, and the answer does not include a cycle that has not started. `kiss test --retry-bad` is the exception: when that client is answered, the watcher runs the FAIL and TIMEOUT tests compatible with the client's TARGET. A client interrupted while it is only waiting is dropped. The watcher does not start a cycle for it.
 
 ## 14. Several TARGETs, arguments after `--`, and a missing path
 
-User actions: Leave `kiss test-watch` idle. Run `kiss test tests/unit src/pkg/mod.py`. Then run `kiss test tests/unit src/pkg/mod.py -- -k parse`. Then run `kiss test tests/does_not_exist.py`.
+User actions: Leave `kiss test-watch` idle. Run `kiss test tests/unit src/pkg/mod.py`. Then run `kiss test tests/unit src/pkg/mod.py -- -k parse`. Then run `kiss test tests/does_not_exist.py`. Separately, edit source so that some needed tests lie in the union of `tests/unit` and `src/pkg/mod.py` and some lie outside it. Wait until the watcher has finished the cycle for that edit. Run `kiss test tests/unit src/pkg/mod.py` again.
 
-Correct behavior: The first command contacts the watcher. Its scope is the union of the tests under `tests/unit` and the tests that cover `src/pkg/mod.py`. With no edits that require tests in that union, the watcher answers from the cache and starts no cycle. If some needed tests lie in the union and some lie outside it, the watcher runs only those inside the union and leaves the rest for a later request. The reply's scope is that union. The watcher's full-suite results are kept for a later bare `kiss test`.
+Correct behavior: The first command contacts the watcher. Its scope is the union of the tests under `tests/unit` and the tests that cover `src/pkg/mod.py`. With no edits, the watcher answers from the cache and the client starts no cycle. The edit's cycle runs the needed tests inside the union and the needed tests outside it. The later command starts no cycle. Its reply's scope is that union, so the outside tests are absent from its lines and summary. They remain in the cache for a later bare `kiss test`.
 
 The command with `-- -k parse` is rejected before contacting the watcher. Arguments after `--` are not accepted. It prints a usage error and exits with code 2. The watcher sees no request from it.
 

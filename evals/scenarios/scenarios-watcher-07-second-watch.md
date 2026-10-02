@@ -1,6 +1,6 @@
 # Mixing `kiss test-watch` with `kiss test`
 
-One `kiss test-watch` process stays up in a repository. It takes no options and no TARGET. A later `kiss test` contacts it, echoes the reply, and exits. The watcher does not exit when that later command finishes.
+One `kiss test-watch` process stays up in a worktree. It takes no options and no TARGET. A later `kiss test` contacts it, echoes the reply, and exits. The watcher does not exit when that later command finishes.
 
 "Return" means the watcher replies. It does not mean the watch process exits.
 
@@ -17,12 +17,14 @@ Test lines are the same whether or not a watcher is running. They list every FAI
 
 A command that is waiting in order to proceed repeats its waiting message every 3 seconds. While `kiss test-watch` is idle and waiting for a connection, it does not repeat a waiting message.
 
-The watcher finishes the request it is serving before it starts the next one. A client that arrives during a cycle does not receive that cycle's results. Its own request is handled afterward.
+The watcher runs tests on its own cycles: a startup cycle, a cycle after edits settle, and a cycle once it has noticed that a config file changed. A plain client does not start a cycle and does not make the watcher run tests. The watcher answers a client only while it is waiting, from the cache, for that client's scope. It finishes the cycle it is running before it answers a waiting client. A client that arrives during a cycle waits until the watcher is waiting. The in-flight cycle is not filtered or narrowed for that client, and the answer does not include a cycle that has not started. `kiss test --retry-bad` is the exception: when that client is answered, the watcher runs the FAIL and TIMEOUT tests compatible with the client's TARGET. A client interrupted while it is only waiting is dropped. The watcher does not start a cycle for it.
 
 ## 7. A second `kiss test-watch` while one is already running
 
-User actions: Start `kiss test-watch` and wait until it is idle. In another terminal in the same worktree, run `kiss test-watch` again. Also run `kiss test-watch tests/unit`, `kiss test-watch --config ci.kissconfig`, `kiss test-watch -j 4`, `kiss test-watch --lang rust`, and `kiss test-watch --retry-bad tests/unit` while that first watcher is still running. Then run a plain `kiss test`.
+User actions: Start `kiss test-watch` and wait until it is idle. In another terminal in the same worktree, run `kiss test-watch` again. Also run `kiss test-watch tests/unit`, `kiss test-watch --config ci.kissconfig`, `kiss test-watch -j 4`, `kiss test-watch --lang rust`, `kiss test-watch --retry-bad tests/unit`, `kiss test-watch --dry-run`, and `kiss test-watch --gobledygook` while that first watcher is still running. Then run a plain `kiss test`.
 
-Correct behavior: Each of those second commands does not start a session and does not run any tests. It prints an error that a watcher is already running, for example `error: kiss test-watch: watcher already running (pid …)`, and exits with code 2. A TARGET or an option on that second command does not change the message. It does not report "cannot take a TARGET" instead. The first watcher's session, socket, cache, and last results are unchanged. The later plain `kiss test` is answered by the first watcher as in scenario 1. The first watch process keeps running.
+Correct behavior: The second bare `kiss test-watch` does not start a session and does not run any tests. It prints `error: kiss test-watch: watcher already running (pid …)` and exits with code 2.
 
-When no watcher is running, a TARGET or an option on `kiss test-watch` is the usage error in scenario 15. `kiss test-watch` accepts no options.
+Each of the other commands carries a TARGET or an option. `kiss test-watch` accepts no options and no TARGET, so each one is the usage error in scenario 15. A watcher that is already running does not change that error. The command prints that the option is not accepted, or that the TARGET is not accepted, and exits with code 2. It does not print that a watcher is already running. It does not start a session and does not run any tests.
+
+The first watcher's session, socket, cache, and last results are unchanged. The later plain `kiss test` is answered by the first watcher as in scenario 1. The first watch process keeps running.

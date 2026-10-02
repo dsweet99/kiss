@@ -9,7 +9,7 @@ import ops.adversarial as ops_adversarial
 import ops.coverage_maps as ops_coverage_maps
 import ops.coverage_metrics as ops_coverage_metrics
 
-_ROOT = Path(__file__).resolve().parents[1]
+_ROOT = Path(__file__).resolve().parents[2]
 _OPS = _ROOT / "ops"
 
 

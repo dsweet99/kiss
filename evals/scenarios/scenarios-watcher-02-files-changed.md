@@ -1,6 +1,6 @@
 # Mixing `kiss test-watch` with `kiss test`
 
-One `kiss test-watch` process stays up in a repository. It takes no options and no TARGET. A later `kiss test` contacts it, echoes the reply, and exits. The watcher does not exit when that later command finishes.
+One `kiss test-watch` process stays up in a worktree. It takes no options and no TARGET. A later `kiss test` contacts it, echoes the reply, and exits. The watcher does not exit when that later command finishes.
 
 "Return" means the watcher replies. It does not mean the watch process exits.
 
@@ -17,12 +17,12 @@ Test lines are the same whether or not a watcher is running. They list every FAI
 
 A command that is waiting in order to proceed repeats its waiting message every 3 seconds. While `kiss test-watch` is idle and waiting for a connection, it does not repeat a waiting message.
 
-The watcher finishes the request it is serving before it starts the next one. A client that arrives during a cycle does not receive that cycle's results. Its own request is handled afterward.
+The watcher runs tests on its own cycles: a startup cycle, a cycle after edits settle, and a cycle once it has noticed that a config file changed. A plain client does not start a cycle and does not make the watcher run tests. The watcher answers a client only while it is waiting, from the cache, for that client's scope. It finishes the cycle it is running before it answers a waiting client. A client that arrives during a cycle waits until the watcher is waiting. The in-flight cycle is not filtered or narrowed for that client, and the answer does not include a cycle that has not started. `kiss test --retry-bad` is the exception: when that client is answered, the watcher runs the FAIL and TIMEOUT tests compatible with the client's TARGET. A client interrupted while it is only waiting is dropped. The watcher does not start a cycle for it.
 
-## 2. Files changed, and a client that arrives during an earlier cycle
+## 2. File edits start the cycle; a plain client does not
 
-User actions: Leave `kiss test-watch` running. Edit, add, or delete source that the suite covers. Run `kiss test` in another terminal. Also start `kiss test` while the watcher is already serving an earlier request. The new command may arrive while the watcher is still waiting for edits to settle, or after they have settled.
+User actions: Leave `kiss test-watch` running. Edit, add, or delete source that the suite covers. After that cycle finishes, run `kiss test`. Also start `kiss test` while that cycle is still running.
 
-Correct behavior: On the new command's own turn, the watcher runs only the tests the cache says are needed for the tree as it is on that turn. A cached FAIL or TIMEOUT is not run again merely because it failed. The client prints the reply for the full suite and exits.
+Correct behavior: The edit cycle belongs to the watcher. After the edits settle, the watcher itself runs the tests the cache says are needed. A cached FAIL or TIMEOUT is not run again merely because it failed. A plain `kiss test` does not start that cycle and does not make the watcher run more tests.
 
-If a cycle is already in progress, the new `kiss test` prints `kiss test: waiting for watcher (pid …)` and repeats that line every 3 seconds. It waits until the watcher has finished the earlier request. It does not print that earlier reply. Edits made during the earlier cycle are visible to this later request. The watch process keeps running.
+When the watcher is already waiting, the client is answered from the cache for the full suite and exits. When a cycle is already in progress, the client prints `kiss test: waiting for watcher (pid …)` and repeats that line every 3 seconds. It waits until the watcher is waiting. It does not print the in-flight cycle's reply as its own. That client is then answered from the cache of the cycle that just finished, for the full suite. An edit that lands during a cycle is scenario 19. The watch process keeps running.

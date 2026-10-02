@@ -1,6 +1,6 @@
 # Mixing `kiss test-watch` with `kiss test`
 
-One `kiss test-watch` process stays up in a repository. It takes no options and no TARGET. A later `kiss test` contacts it, echoes the reply, and exits. The watcher does not exit when that later command finishes.
+One `kiss test-watch` process stays up in a worktree. It takes no options and no TARGET. A later `kiss test` contacts it, echoes the reply, and exits. The watcher does not exit when that later command finishes.
 
 "Return" means the watcher replies. It does not mean the watch process exits.
 
@@ -17,10 +17,10 @@ Test lines are the same whether or not a watcher is running. They list every FAI
 
 A command that is waiting in order to proceed repeats its waiting message every 3 seconds. While `kiss test-watch` is idle and waiting for a connection, it does not repeat a waiting message.
 
-The watcher finishes the request it is serving before it starts the next one. A client that arrives during a cycle does not receive that cycle's results. Its own request is handled afterward.
+The watcher runs tests on its own cycles: a startup cycle, a cycle after edits settle, and a cycle once it has noticed that a config file changed. A plain client does not start a cycle and does not make the watcher run tests. The watcher answers a client only while it is waiting, from the cache, for that client's scope. It finishes the cycle it is running before it answers a waiting client. A client that arrives during a cycle waits until the watcher is waiting. The in-flight cycle is not filtered or narrowed for that client, and the answer does not include a cycle that has not started. `kiss test --retry-bad` is the exception: when that client is answered, the watcher runs the FAIL and TIMEOUT tests compatible with the client's TARGET. A client interrupted while it is only waiting is dropped. The watcher does not start a cycle for it.
 
 ## 10. The watcher was interrupted with CTRL-C or killed
 
 User actions: Start `kiss test-watch`. Edit source so a cycle begins, and while tests are running, stop the watcher with CTRL-C (or `kill -9` its pid). The session file and socket may be left behind. Then run `kiss test`. After that, start `kiss test-watch` again.
 
-Correct behavior: The watcher exits quickly on CTRL-C and does no cleanup. The later `kiss test` notices that the recorded watcher is no longer alive, clears the stale session, and runs the usual workflow itself under the normal lock. It does not hang, and it does not treat the dead watcher as a connection failure, so this recovery is not exit 255. It reuses results that were recorded before the interruption and runs only what is still needed. A Rust batch that was in progress and had not been recorded may be run again. Recorded FAIL and TIMEOUT tests are not run again merely because they failed. It prints its results and exits with 0 or 1. That plain run uses the same test lines as a reply from the watcher. The new `kiss test-watch` starts normally: it replaces the stale socket and session, runs a first cycle that reuses the cache the same way, and then serves later `kiss test` commands as in scenario 1.
+Correct behavior: The watcher exits quickly on CTRL-C and does no cleanup. The later `kiss test` notices that the recorded watcher is no longer alive, clears the stale session, and runs the usual workflow itself under the normal lock. It does not hang, and it does not treat the dead watcher as a connection failure, so this recovery is not exit 255. It reuses results that were recorded before the interruption and runs only what is still needed. A Rust batch that was in progress and had not been recorded is still needed, so that batch is run again. Recorded FAIL and TIMEOUT tests are not run again merely because they failed. It prints its results and exits with 0 or 1. That plain run uses the same test lines as a reply from the watcher. The new `kiss test-watch` starts normally: it replaces the stale socket and session, runs a first cycle that reuses the cache the same way, and then serves later `kiss test` commands as in scenario 1.
