@@ -82,9 +82,12 @@ fn prepare_watch_session(
         args.ignore(),
         config_path,
     )
-        .map_err(|e| { eprintln!("error: kiss test --watch: {e}"); 1 })?;
+        .map_err(|e| { eprintln!("error: kiss test-watch: {e}"); 1 })?;
     #[cfg(unix)] let owner = WatchSessionOwner::acquire(&repo_root)
-        .map_err(|e| { eprintln!("error: kiss test --watch: {e}"); 1 })?;
+        .map_err(|e| {
+            eprintln!("error: kiss test-watch: {e}");
+            if e.contains("already running") { 2 } else { 1 }
+        })?;
     #[cfg(not(unix))] let owner = ();
     let source = NativeWatchEventSource::register(
         &registrations,
@@ -92,7 +95,7 @@ fn prepare_watch_session(
         &request.focus,
         config_path,
     )
-    .map_err(|e| { eprintln!("error: kiss test --watch: {e}"); 1 })?;
+    .map_err(|e| { eprintln!("error: kiss test-watch: {e}"); 1 })?;
     Ok(PreparedWatch { repo_root, source, owner })
 }
 

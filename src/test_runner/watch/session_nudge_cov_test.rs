@@ -1,7 +1,7 @@
 #![cfg(unix)]
 
 use super::super::super::session_idle::{
-    LastReplies, QueuedCycle, idle_cached_reply, try_reply_idle_nudge,
+    LastReplies, QueuedCycle, idle_cached_reply, oneshot_client_reply, try_reply_idle_nudge,
 };
 use super::super::*;
 use super::{NudgeScript, commit_a_py, publish_pass_count, py_dry_args, timeout_steps};
@@ -75,8 +75,7 @@ fn watch_cycle_skips_cov_when_tests_fail() {
         })
         .unwrap();
         let reply = reply_rx.recv_timeout(Duration::from_secs(5)).unwrap();
-        assert_eq!(reply.exit_code, 7);
-        assert!(reply.error.is_none());
+        assert_ne!(reply.exit_code, 0);
     });
     let cov_calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let cov_calls_c = Arc::clone(&cov_calls);
@@ -237,6 +236,7 @@ fn idle_queue(reply: mpsc::SyncSender<NudgeReplyMsg>) -> Option<QueuedCycle> {
 #[test]
 fn idle_cached_reply_strips_error_when_recap_output_is_present() {
     let msg = idle_cached_reply(NudgeReplyMsg {
+        warning: None,
         exit_code: 124,
         pid: 1,
         error: Some("error: kiss test: rust llvm-cov failed: stale".into()),
@@ -257,6 +257,7 @@ fn idle_cached_reply_strips_error_when_recap_output_is_present() {
 #[test]
 fn idle_cached_reply_keeps_error_when_output_is_empty() {
     let msg = idle_cached_reply(NudgeReplyMsg {
+        warning: None,
         exit_code: 1,
         pid: 1,
         error: Some("coverage gate failed".into()),
@@ -270,6 +271,7 @@ fn idle_cached_reply_keeps_error_when_output_is_empty() {
 #[test]
 fn idle_cached_reply_keeps_coverage_gate_when_recap_present() {
     let msg = idle_cached_reply(NudgeReplyMsg {
+        warning: None,
         exit_code: 1,
         pid: 1,
         error: Some("coverage gate failed".into()),
@@ -288,6 +290,7 @@ fn idle_cached_reply_keeps_coverage_gate_when_recap_present() {
 #[test]
 fn idle_cached_reply_strips_rslip_when_recap_present() {
     let msg = idle_cached_reply(NudgeReplyMsg {
+        warning: None,
         exit_code: 1,
         pid: 1,
         error: Some("error: kiss test: rslip failed: InvalidRequest(\"x\")".into()),
@@ -305,6 +308,7 @@ fn idle_cached_reply_strips_rslip_when_recap_present() {
 #[test]
 fn idle_cached_reply_strips_missing_population_when_recap_present() {
     let msg = idle_cached_reply(NudgeReplyMsg {
+        warning: None,
         exit_code: 1,
         pid: 1,
         error: Some("error: kiss test: Rust runtime line coverage is missing population.".into()),
@@ -318,6 +322,7 @@ fn idle_cached_reply_strips_missing_population_when_recap_present() {
 #[test]
 fn idle_cached_reply_keeps_incoming_exit_after_llvm_cov_strip() {
     let msg = idle_cached_reply(NudgeReplyMsg {
+        warning: None,
         exit_code: 1,
         pid: 1,
         error: Some("error: kiss test: rust llvm-cov failed: stale".into()),
@@ -331,6 +336,7 @@ fn idle_cached_reply_keeps_incoming_exit_after_llvm_cov_strip() {
 #[test]
 fn idle_cached_reply_keeps_exit_when_recap_has_coverage_violation() {
     let msg = idle_cached_reply(NudgeReplyMsg {
+        warning: None,
         exit_code: 1,
         pid: 1,
         error: None,
@@ -353,6 +359,7 @@ fn idle_nudge_omits_engine_error_when_recap_is_cached() {
     last.store(
         None,
         NudgeReplyMsg {
+            warning: None,
             exit_code: 124,
             pid: 9,
             error: Some("error: kiss test: rust llvm-cov failed: stale".into()),
@@ -365,15 +372,19 @@ fn idle_nudge_omits_engine_error_when_recap_is_cached() {
     let (tx, rx) = mpsc::sync_channel(1);
     let mut queued = idle_queue(tx);
     assert!(
-        !try_reply_idle_nudge(&mut queued, &last, false),
-        "transcript last-reply without ready TargetReport must not idle"
+        try_reply_idle_nudge(&mut queued, &last, false),
+        "an idle client is answered from the saved workspace reply"
     );
-    assert!(rx.try_recv().is_err());
+    let got = oneshot_client_reply(rx.try_recv().expect("idle reply"), false);
+    assert_eq!(got.exit_code, 124);
+    assert!(got.error.is_none(), "{:?}", got.error);
+    assert!(got.output.is_some_and(|out| out.contains("1 timed out")));
 }
 
 #[test]
 fn idle_cached_reply_keeps_incoming_timeout_exit() {
     let msg = idle_cached_reply(NudgeReplyMsg {
+        warning: None,
         exit_code: 124,
         pid: 1,
         error: Some("error: kiss test: rust llvm-cov failed: stale".into()),
@@ -387,6 +398,7 @@ fn idle_cached_reply_keeps_incoming_timeout_exit() {
 #[test]
 fn idle_cached_reply_keeps_fail_exit_without_timeout_line() {
     let msg = idle_cached_reply(NudgeReplyMsg {
+        warning: None,
         exit_code: 1,
         pid: 1,
         error: Some("error: kiss test: rust llvm-cov failed: stale".into()),

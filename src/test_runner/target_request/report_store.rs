@@ -65,7 +65,13 @@ pub(crate) fn publish_report(
     prune_unlocked(&dir, &mut meta);
     write_meta(&dir, &meta)?;
     write_key_pointer(&dir, &entry)?;
-    write_pointer(&dir, &entry)?;
+    // A language or operand projection must not become the workspace cache.
+    // Later clients read that cache to answer a different scope.
+    let full_workspace = matches!(request.focus, super::types::TargetFocus::Workspace)
+        && request.language().is_none();
+    if full_workspace {
+        write_pointer(&dir, &entry)?;
+    }
     Ok(())
 }
 

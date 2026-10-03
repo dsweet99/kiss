@@ -31,12 +31,7 @@ fn run_inventory_cycle(root: &Path, suite: &mut WatchSuiteReport, last: &mut Las
             .into_iter()
             .flatten()
             .flatten()
-            .any(|entry| {
-                entry
-                    .path()
-                    .extension()
-                    .is_some_and(|ext| ext == "py")
-            });
+            .any(|entry| entry.path().extension().is_some_and(|ext| ext == "py"));
     let mut args = python_dry_run_args(Vec::new());
     args.dry_run = false;
     args.set_invocation(TestInvocation::All);
@@ -90,6 +85,7 @@ fn run_inventory_cycle(root: &Path, suite: &mut WatchSuiteReport, last: &mut Las
         last.store(
             None,
             NudgeReplyMsg {
+                warning: None,
                 exit_code: 1,
                 pid: std::process::id(),
                 error: Some("target membership is not proven complete".into()),
@@ -157,7 +153,10 @@ fn mutation_reply_from_files(
     } else {
         run_inventory_cycle(root, &mut suite, &mut last);
     }
-    let mut reply = last.get(None).cloned().expect("inventory cycle stores a reply");
+    let mut reply = last
+        .get(None)
+        .cloned()
+        .expect("inventory cycle stores a reply");
     if request.force || request.force_bad {
         reply.idle_cache = Some(false);
     }

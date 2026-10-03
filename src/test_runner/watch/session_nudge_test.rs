@@ -312,11 +312,18 @@ fn target_idle_replies_full_fail_recap() {
         },
     );
     assert!(
-        !try_reply_idle_nudge(&mut queued, &last, false),
-        "PATH must not idle by slicing last-reply"
+        try_reply_idle_nudge(&mut queued, &last, false),
+        "an idle bare client is answered from the saved workspace reply"
     );
-    assert!(wait.try_recv().is_err());
-    assert!(queued.is_some());
+    let got = wait.try_recv().expect("bare reply");
+    assert_ne!(got.exit_code, 0);
+    let out = got.output.unwrap_or_default();
+    assert!(
+        out.contains("FAIL tests/slow/ops/test_ops.py::test_ops_eval_measurement_model")
+            && out.contains("TIMEOUT tests/slow/ops/test_observability.py::test_observability"),
+        "{out}"
+    );
+    assert!(queued.is_none());
 }
 
 #[test]
@@ -446,11 +453,17 @@ fn coalesce_lang_then_bare_idle_replies_each_slice() {
         },
     );
     assert!(
-        !try_reply_idle_nudge(&mut queued, &last, false),
-        "idle --lang and bare without ready TargetReport must start a cycle"
+        try_reply_idle_nudge(&mut queued, &last, false),
+        "idle clients are answered without starting a cycle"
     );
-    assert!(w_lang.try_recv().is_err());
-    assert!(w_bare.try_recv().is_err());
+    assert!(w_lang.try_recv().is_ok(), "--lang is answered, not left waiting");
+    let bare = w_bare.try_recv().expect("bare reply");
+    assert_eq!(bare.exit_code, 255);
+    assert!(
+        bare.output.is_none(),
+        "the latest saved reply is Rust-only, so it must not answer a full-suite client"
+    );
+    assert!(queued.is_none());
 }
 
 #[test]
@@ -722,15 +735,17 @@ fn coalesce_target_then_bare_idle_keeps_full_suite() {
             ..Default::default()
         },
     );
-    assert!(!try_reply_idle_nudge(&mut queued, &last, false));
+    assert!(try_reply_idle_nudge(&mut queued, &last, false));
     assert!(
         w_tgt.try_recv().is_err(),
         "TARGET waiter stays on the cycle"
     );
-    assert!(
-        w_bare.try_recv().is_err(),
-        "bare must not idle from last-reply transcript"
-    );
+    let bare = w_bare
+        .try_recv()
+        .expect("idle bare is answered from the saved workspace reply");
+    assert_eq!(bare.exit_code, 1);
+    assert_eq!(bare.idle_cache, Some(true));
+    assert!(queued.is_none(), "an idle client does not start a cycle");
 }
 
 #[test]
@@ -773,20 +788,23 @@ fn coalesce_bare_then_target_idle_replies_full_recap() {
             ..Default::default()
         },
     );
-    assert!(!try_reply_idle_nudge(&mut queued, &last, false));
-    assert!(
-        w_bare.try_recv().is_err(),
-        "bare must not idle from last-reply transcript"
+    assert!(try_reply_idle_nudge(&mut queued, &last, false));
+    let bare = w_bare
+        .try_recv()
+        .expect("idle bare is answered from the saved workspace reply");
+    assert_eq!(bare.exit_code, 1);
+    let tgt = w_tgt
+        .try_recv()
+        .expect("idle TARGET is answered, never left waiting");
+    assert_eq!(
+        tgt.exit_code, 255,
+        "TARGET must not idle by slicing last-reply; with no cache it is an operational failure"
     );
-    assert!(
-        w_tgt.try_recv().is_err(),
-        "TARGET must not idle by slicing last-reply"
-    );
-    assert!(queued.is_some(), "named TARGET must start a cycle");
+    assert!(queued.is_none(), "an idle client does not start a cycle");
 }
 
 #[test]
-fn coalesce_bare_then_collapsed_target_starts_target_cycle() {
+fn coalesce_bare_then_collapsed_target_replies_without_cycle() {
     use crate::test_runner::target_request::operands_request;
     use crate::test_runner::watch::control::NudgeRequestMsg as Msg;
     let tmp = tempfile::tempdir().unwrap();
@@ -823,24 +841,16 @@ fn coalesce_bare_then_collapsed_target_starts_target_cycle() {
         },
     );
     assert!(
-        !try_reply_idle_nudge(&mut queued, &last, false),
-        "workspace head without a ready TargetReport must start a cycle"
+        try_reply_idle_nudge(&mut queued, &last, false),
+        "an idle client is answered without starting a cycle"
     );
-    assert!(w_bare.try_recv().is_err());
-    assert!(
-        w_tgt.try_recv().is_err(),
-        "collapsed PASS TARGET must start a cycle"
+    assert_eq!(w_bare.try_recv().expect("bare reply").exit_code, 1);
+    assert_eq!(
+        w_tgt.try_recv().expect("TARGET reply").exit_code,
+        255,
+        "collapsed PASS TARGET without cached evidence is an operational failure"
     );
-    let mut args = py_dry_args();
-    args.set_invocation(TestInvocation::All);
-    let live = live_from_args_disabled(args, Duration::from_secs(1), Path::new("."));
-    let (cycle, head_replies) = take_queued_cycle_args(&live, &mut queued);
-    assert_eq!(cycle.invocation, TestInvocation::All);
-    assert_eq!(head_replies.len(), 1);
-    assert!(
-        queued.is_some(),
-        "TARGET stays queued behind the workspace head"
-    );
+    assert!(queued.is_none());
 }
 
 #[test]
@@ -890,11 +900,12 @@ fn collapsed_pass_target_idles_full_recap() {
         },
     );
     assert!(
-        !try_reply_idle_nudge(&mut queued, &last, false),
-        "PATH must not idle by expanding last-reply"
+        try_reply_idle_nudge(&mut queued, &last, false),
+        "an idle bare client is answered without starting a cycle"
     );
-    assert!(wait.try_recv().is_err());
-    assert!(queued.is_some());
+    let got = wait.try_recv().expect("bare reply");
+    assert_eq!(got.exit_code, 1);
+    assert!(queued.is_none());
 }
 
 #[test]
@@ -940,9 +951,13 @@ fn coalesce_lang_rust_then_python_idle_replies_each_slice() {
             ..Default::default()
         },
     );
-    assert!(!try_reply_idle_nudge(&mut queued, &last, false));
-    assert!(w_rs.try_recv().is_err());
-    assert!(w_py.try_recv().is_err());
+    assert!(
+        try_reply_idle_nudge(&mut queued, &last, false),
+        "idle --lang clients are answered without starting a cycle"
+    );
+    assert!(w_rs.try_recv().is_ok());
+    assert!(w_py.try_recv().is_ok());
+    assert!(queued.is_none());
 }
 
 #[test]
@@ -1051,19 +1066,23 @@ fn coalesce_retry_bad_then_bare_idle_keeps_full_suite() {
             ..Default::default()
         },
     );
-    assert!(!try_reply_idle_nudge(&mut queued, &last, false));
+    assert!(try_reply_idle_nudge(&mut queued, &last, false));
     assert!(
         w_bad.try_recv().is_err(),
         "retry-bad waiter stays on the cycle"
     );
-    assert!(
-        w_bare.try_recv().is_err(),
-        "bare must not idle from last-reply transcript"
+    assert_eq!(
+        w_bare
+            .try_recv()
+            .expect("idle bare is answered from the saved workspace reply")
+            .exit_code,
+        1
     );
+    assert!(queued.is_none());
 }
 
 #[test]
-fn coalesce_bare_then_retry_bad_idle_starts_retry_bad_cycle() {
+fn coalesce_bare_then_retry_bad_without_known_bad_replies_idle() {
     use crate::test_runner::target_request::operands_request;
     use crate::test_runner::watch::control::NudgeRequestMsg as Msg;
     let tmp = tempfile::tempdir().unwrap();
@@ -1103,20 +1122,13 @@ fn coalesce_bare_then_retry_bad_idle_starts_retry_bad_cycle() {
             ..Default::default()
         },
     );
-    assert!(!try_reply_idle_nudge(&mut queued, &last, false));
-    assert!(w_bare.try_recv().is_err());
-    assert!(w_bad.try_recv().is_err(), "retry-bad waiter must not idle");
-    let mut args = py_dry_args();
-    args.set_invocation(TestInvocation::All);
-    let live = live_from_args_disabled(args, Duration::from_secs(1), Path::new("."));
-    let (cycle, head_replies) = take_queued_cycle_args(&live, &mut queued);
-    assert!(!cycle.force_bad);
-    assert_eq!(cycle.invocation, TestInvocation::All);
-    assert_eq!(head_replies.len(), 1);
+    assert!(try_reply_idle_nudge(&mut queued, &last, false));
+    assert_eq!(w_bare.try_recv().expect("bare reply").exit_code, 1);
     assert!(
-        queued.as_ref().is_some_and(|q| q.force_bad),
-        "retry-bad stays queued behind the workspace head"
+        w_bad.try_recv().is_ok(),
+        "retry-bad with no recorded FAIL or TIMEOUT in TARGET has nothing to run and is answered"
     );
+    assert!(queued.is_none());
 }
 
 fn watcher_running_invocations() -> Vec<TestInvocation> {
@@ -1681,12 +1693,14 @@ fn commit_without_target_report_does_not_idle_on_workspace_last_reply() {
             ..Default::default()
         },
     );
+    assert!(try_reply_idle_nudge(&mut queued, &last, false));
+    let got = wait.try_recv().expect("idle client is answered");
+    assert_eq!(got.exit_code, 255);
     assert!(
-        !try_reply_idle_nudge(&mut queued, &last, false),
-        "commit must not replay the workspace last-reply"
+        got.output.is_none(),
+        "a full-suite client must not get a --lang rust transcript"
     );
-    assert!(wait.try_recv().is_err());
-    assert!(queued.is_some());
+    assert!(queued.is_none());
 }
 
 #[test]
@@ -1831,12 +1845,18 @@ fn main_idle_misses_ready_target_report_when_runner_token_differs() {
     let mut queued = None;
     coalesce_nudges(Some(&rx), &mut queued);
     let last = LastReplies::for_repo(tmp.path());
+    assert!(try_reply_idle_nudge(&mut queued, &last, false));
+    let got = wait.try_recv().expect("idle client is answered");
+    assert_eq!(got.exit_code, 255, "runner-token mismatch must not replay the report");
+    assert!(got.output.is_none());
     assert!(
-        !try_reply_idle_nudge(&mut queued, &last, false),
-        "runner-token mismatch must not idle"
+        got.error
+            .as_deref()
+            .is_some_and(|err| err.contains("identity does not match")),
+        "{:?}",
+        got.error
     );
-    assert!(wait.try_recv().is_err());
-    assert!(queued.is_some());
+    assert!(queued.is_none());
 }
 
 #[test]
@@ -2002,6 +2022,7 @@ fn retry_bad_nudge_reruns_only_selected_fake_python_test_on_tmp_repo() {
     let cycles_run = Arc::clone(&cycles);
     let seen_run = Arc::clone(&seen);
     let out_run = Arc::clone(&forced_out);
+    let repo_run = tmp.path().to_path_buf();
     let mut src = NudgeScript {
         steps: timeout_steps(12),
     };
@@ -2018,7 +2039,15 @@ fn retry_bad_nudge_reruns_only_selected_fake_python_test_on_tmp_repo() {
             let n = cycles_run.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
             seen_run.lock().unwrap().push(cycle_args.invocation.clone());
             if n == 1 {
-                return RunTestOnceOutcome::Code(0);
+                publish_workspace_rows(
+                    &repo_run,
+                    &[
+                        ("python", selected, EffectiveStatus::Fail),
+                        ("python", "tests/test_pair.py::test_second", EffectiveStatus::Pass),
+                    ],
+                    1,
+                );
+                return RunTestOnceOutcome::Code(1);
             }
             let mut code = 1;
             let stdout = capture_stdout(|| {
@@ -2418,6 +2447,9 @@ fn idle_target_nudge_replies_full_recap_without_new_cycle() {
     let tmp = tempfile::tempdir().unwrap();
     init_git(&tmp);
     commit_a_py(&tmp);
+    fs::create_dir_all(tmp.path().join("tests")).unwrap();
+    fs::write(tmp.path().join("tests/a.py"), "def test_a():\n    assert True\n").unwrap();
+    fs::write(tmp.path().join("tests/b.py"), "def test_b():\n    assert True\n").unwrap();
 
     let (tx, rx) = mpsc::channel::<NudgeRequest>();
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
@@ -2491,16 +2523,14 @@ fn idle_target_nudge_replies_full_recap_without_new_cycle() {
     let seen = seen.lock().unwrap().clone();
     assert_eq!(
         seen,
-        vec![
-            TestInvocation::All,
-            TestInvocation::Targets(vec!["tests/a.py::test_a".into()]),
-        ],
-        "named TARGET without TargetReport must start a cycle"
+        vec![TestInvocation::All],
+        "an idle named TARGET is answered from the cache without a new cycle"
     );
+    assert_eq!(reply.exit_code, 0);
     let out = reply.output.clone().unwrap_or_default();
     assert!(
-        out.contains("passed") || out.contains("report members=") || out.is_empty(),
-        "targeted official body is TargetReport or typed miss; out={out:?}"
+        out.contains("1 passed") && out.contains("report members=1"),
+        "TARGET reply is scoped to TARGET; out={out:?}"
     );
 }
 
@@ -2585,11 +2615,11 @@ fn unscoped_idle_nudge_after_target_still_recaps_full_suite() {
     let targeted_out = targeted.output.clone().unwrap_or_default();
     let idle_out = idle.output.clone().unwrap_or_default();
     assert!(
-        targeted_out.contains("2 passed") && targeted_out.contains("tests/b.py::test_b"),
-        "TARGET waiter={targeted_out:?}"
+        targeted_out.contains("2 passed") && !targeted_out.contains("tests/b.py::test_b"),
+        "a cached PASS has no line; TARGET waiter={targeted_out:?}"
     );
     assert!(
-        idle_out.contains("2 passed") && idle_out.contains("tests/b.py::test_b"),
+        idle_out.contains("2 passed") && !idle_out.contains("tests/b.py::test_b"),
         "unscoped idle recap must keep the last full cycle; idle={idle_out:?}"
     );
     assert_eq!(
@@ -2679,14 +2709,14 @@ fn unscoped_idle_nudge_after_lang_rust_recaps_full_suite() {
     let rust_out = rust.output.clone().unwrap_or_default();
     let idle_out = idle.output.clone().unwrap_or_default();
     assert!(
-        rust_out.contains("src/lib.rs::a_ok") && rust_out.contains("tests/a.py::test_a"),
+        rust_out.contains("2 passed") && !rust_out.contains("src/lib.rs::a_ok"),
         "--lang rust without a rust TargetRequest idles the ready workspace report; rust={rust_out:?}"
     );
     assert!(
         idle_out.contains("2 passed")
-            && idle_out.contains("tests/a.py::test_a")
-            && idle_out.contains("src/lib.rs::a_ok"),
-        "bare kiss test after --lang rust must recap both languages; idle={idle_out:?}"
+            && !idle_out.contains("tests/a.py::test_a")
+            && !idle_out.contains("src/lib.rs::a_ok"),
+        "bare kiss test after --lang rust must count both languages; idle={idle_out:?}"
     );
     assert_eq!(
         tests.load(std::sync::atomic::Ordering::SeqCst),
@@ -2771,7 +2801,7 @@ fn lang_rust_nudge_reuses_cached_rust_recap() {
     let first_out = first.output.clone().unwrap_or_default();
     let second_out = second.output.clone().unwrap_or_default();
     assert!(
-        first_out.contains("src/lib.rs::a_ok") && first_out.contains("tests/a.py::test_a"),
+        first_out.contains("2 passed") && !first_out.contains("src/lib.rs::a_ok"),
         "first --lang rust idles the ready workspace report; first={first_out:?}"
     );
     assert_eq!(
@@ -3256,8 +3286,8 @@ fn idle_nudge_recaps_all_known_pass_fail_timeouts() {
     let out = reply.output.clone().unwrap_or_default();
     assert!(
         out.contains("1 passed")
-            && out.contains("tests/slow/test_ops_hogneato_sim_tuner_smoke_rust.py::test_ops_hogneato_sim_tuner_smoke_rust"),
-        "idle oneshot recaps the last ready TargetReport; out={out:?}"
+            && !out.contains("tests/slow/test_ops_hogneato_sim_tuner_smoke_rust.py::test_ops_hogneato_sim_tuner_smoke_rust"),
+        "idle oneshot recaps the last ready TargetReport without a cached PASS line; out={out:?}"
     );
     assert_eq!(
         reply.exit_code, 0,

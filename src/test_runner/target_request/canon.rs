@@ -12,7 +12,18 @@ pub(crate) fn canonicalize_target_request(
     if let TargetFocus::Operands(operands) = &mut request.focus {
         *operands = canonicalize_operands(operands, repo_root);
     }
+    if repo_root.is_some()
+        && let TargetFocus::Operands(operands) = &request.focus
+        && operands.len() == 1
+        && operand_is_repo_root(&operands[0].raw)
+    {
+        request.focus = TargetFocus::Workspace;
+    }
     request
+}
+
+fn operand_is_repo_root(raw: &str) -> bool {
+    raw.is_empty() || raw == "."
 }
 
 fn canonicalize_operands(operands: &[OperandExpr], repo_root: Option<&Path>) -> Vec<OperandExpr> {
@@ -67,12 +78,37 @@ fn colon_to_nodeid(raw: &str) -> String {
 
 fn normalize_path_spelling(path_part: &str, repo_root: Option<&Path>) -> String {
     let unified = path_part.replace('\\', "/");
-    let trimmed = unified.trim_start_matches("./");
+    let trimmed = if unified == "." || unified == "./" {
+        ".".to_string()
+    } else {
+        clean_dot_components(unified.trim_start_matches("./"))
+    };
     let stripped = match repo_root {
-        Some(root) => strip_repo_prefix(trimmed, root),
-        None => trimmed.to_string(),
+        Some(root) => strip_repo_prefix(&trimmed, root),
+        None => trimmed,
     };
     strip_dir_slash(&stripped)
+}
+
+fn clean_dot_components(path: &str) -> String {
+    let absolute = path.starts_with('/');
+    let mut parts = Vec::new();
+    for part in path.split('/') {
+        if part.is_empty() || part == "." {
+            continue;
+        }
+        if part == ".." {
+            parts.pop();
+            continue;
+        }
+        parts.push(part);
+    }
+    let joined = parts.join("/");
+    if absolute {
+        format!("/{joined}")
+    } else {
+        joined
+    }
 }
 
 fn strip_repo_prefix(path_part: &str, repo_root: &Path) -> String {

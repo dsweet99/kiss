@@ -127,7 +127,7 @@ fn cli_check_requires_runtime_coverage_for_universe_languages_before_focus() {
 
     let focused = kiss_binary()
         .current_dir(root)
-        .args(["test", "--coverage-all", "--jobs", "1", "."])
+        .args(["test", "--jobs", "1", "."])
         .env("PYTHONDONTWRITEBYTECODE", "1")
         .output()
         .unwrap();

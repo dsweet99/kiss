@@ -142,7 +142,12 @@ fn finalize_cacheable_miss_outcome(
     outcome: RslipOutcome,
     memo: &mut DigestMemo,
 ) -> Result<RslipOutcome, RslipError> {
-    if outcome.status != TestStatus::Passed || outcome.coverage.files.is_empty() {
+    let store_failure = matches!(
+        outcome.status,
+        TestStatus::Failed | TestStatus::TimedOut
+    );
+    let store_pass = outcome.status == TestStatus::Passed && !outcome.coverage.files.is_empty();
+    if !store_failure && !store_pass {
         return Ok(outcome);
     }
     let _guard = crate::rslip::lock_rslip_cache_entry(&miss.req.cache_root, &miss.fingerprint)?;

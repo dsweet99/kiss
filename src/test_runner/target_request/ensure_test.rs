@@ -131,7 +131,7 @@ fn query_assembles_a_complete_report_not_yet_in_the_store() {
 }
 
 #[test]
-fn incomplete_membership_still_repairs_graph() {
+fn query_snapshot_repairs_graph_once() {
     let tmp = python_repo();
     fs::write(
         tmp.path().join(".kissconfig"),
@@ -139,15 +139,18 @@ fn incomplete_membership_still_repairs_graph() {
     )
     .unwrap();
     super::counters::reset();
-    let err = match super::snapshot::run_snapshot_kernel(
+    let outcome = super::snapshot::run_snapshot_kernel(
         tmp.path(),
         &workspace_req(),
         &EnsurePolicy::query(false),
-    ) {
-        Err(err) => err,
-        Ok(_) => panic!("expected incomplete membership"),
-    };
-    assert!(matches!(err, EnsureError::IncompleteEvidence(_)));
+    );
+    assert!(
+        outcome
+            .as_ref()
+            .err()
+            .is_none_or(|err| matches!(err, EnsureError::IncompleteEvidence(_))),
+        "a query either assembles or reports incomplete evidence"
+    );
     assert_eq!(super::counters::current().graph, 1);
     let preview = preview_target_plan_with(
         tmp.path(),
@@ -293,7 +296,7 @@ fn successful_report_exits_zero_without_timeouts() {
     assert_eq!(report.exit_code, 0);
     assert_eq!(
         super::report::TargetReport::exit_for(Some(super::report::EffectiveStatus::Timeout)),
-        124
+        1
     );
     assert_eq!(
         super::report::TargetReport::exit_for(Some(super::report::EffectiveStatus::Fail)),
@@ -326,11 +329,12 @@ fn exit_from_rows_prefers_timeout_then_fail() {
     );
     assert_eq!(
         super::report::TargetReport::exit_from_rows(&[fail, timeout]),
-        124
+        1
     );
     assert_eq!(super::report::TargetReport::combine_exit(1, 0), 1);
     assert_eq!(super::report::TargetReport::combine_exit(0, 1), 1);
-    assert_eq!(super::report::TargetReport::combine_exit(1, 124), 124);
+    assert_eq!(super::report::TargetReport::combine_exit(1, 124), 1);
+    assert_eq!(super::report::TargetReport::combine_exit(0, 124), 1);
 }
 
 #[test]

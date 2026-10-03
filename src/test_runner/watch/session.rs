@@ -158,6 +158,7 @@ where
                     error: None,
                     output: None,
                     idle_cache: Some(false),
+                    warning: None,
                 });
                 reply_all_queued(&mut queued, &msg);
                 return EXIT_INTERRUPTED;
@@ -169,6 +170,10 @@ where
         coalesce_nudges(nudge_rx, &mut queued);
         if let Some(q) = queued.as_mut() {
             q.stamp_filter_override(&live);
+        }
+        // A noticed config change starts the rerun before any client is answered.
+        if live.poll_config_drift(repo_root) {
+            continue;
         }
         if !try_reply_idle_nudge(&mut queued, &last_reply, machine.has_pending_work())
             && queued.is_some()
@@ -184,7 +189,7 @@ where
             nudge_rx,
             &mut queued,
             &last_reply,
-            &live,
+            &mut live,
         ) {
             return code;
         }

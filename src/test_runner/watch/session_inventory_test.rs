@@ -436,7 +436,8 @@ fn check_deletion_report_transition(collapsed_after: bool) {
             Duration::ZERO,
         );
     });
-    assert!(suite.passed() >= 3, "{}", suite.format());
+    assert!(suite.passed() >= 1, "{}", suite.format());
+    assert!(!suite.format().contains("test_old"), "{}", suite.format());
     let output = last.get(None).unwrap().output.as_ref().unwrap();
     assert!(
         output.contains("passed") && !output.contains("test_old"),
@@ -445,12 +446,12 @@ fn check_deletion_report_transition(collapsed_after: bool) {
 }
 
 #[test]
-fn deletion_with_collapsed_report_preserves_foreign_counts() {
+fn deletion_with_collapsed_report_drops_deleted_test() {
     check_deletion_report_transition(true);
 }
 
 #[test]
-fn deletion_with_named_report_preserves_foreign_counts() {
+fn deletion_with_named_report_drops_deleted_test() {
     check_deletion_report_transition(false);
 }
 

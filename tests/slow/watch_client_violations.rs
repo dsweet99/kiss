@@ -24,7 +24,7 @@ fn oneshot_surfaces_watcher_coverage_violations() {
         &[("test_lib.py::test_f", vec![("lib.py", vec![1, 2])])],
     );
 
-    let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
+    let _watch = start_watch(tmp.path(), &["test-watch"]);
     wait_watch_idle_cycle(tmp.path());
 
     // Scrub parent cargo/llvm-cov env — same class as watch_client oneshots.

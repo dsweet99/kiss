@@ -83,7 +83,7 @@ fn watch_and_oneshot_report_24_then_11_and_13() {
     commit_all(tmp.path(), "init");
 
     let log = tmp.path().join("watch.log");
-    let mut watch = start_watch_logged(tmp.path(), &["test", "--watch"], &log);
+    let mut watch = start_watch_logged(tmp.path(), &["test-watch"], &log);
     wait_log(&log, &mut watch, |t| t.contains("kiss test: Waiting"), 90);
     write_kissconfig_with_threshold(tmp.path(), 0.02, 0);
     wait_log(

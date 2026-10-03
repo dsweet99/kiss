@@ -13,6 +13,7 @@ pub(super) struct LastReplies {
     pub(super) ignore: Vec<String>,
     pub(super) extras: LanguageKeyed<Vec<String>>,
     all: Option<NudgeReplyMsg>,
+    all_is_workspace: bool,
 }
 
 impl LastReplies {
@@ -47,11 +48,21 @@ impl LastReplies {
         self.all.as_ref()
     }
 
-    pub(super) fn store(&mut self, _lang: Option<kiss::Language>, msg: NudgeReplyMsg) {
+    #[cfg(test)]
+    pub(super) fn store(&mut self, lang: Option<kiss::Language>, msg: NudgeReplyMsg) {
+        self.store_scoped(lang.is_none(), msg);
+    }
+
+    pub(super) fn store_scoped(&mut self, workspace: bool, msg: NudgeReplyMsg) {
         self.all = Some(msg);
+        self.all_is_workspace = workspace;
     }
 
     pub(super) fn clone_any(&self) -> Option<NudgeReplyMsg> {
         self.all.clone()
+    }
+
+    pub(super) fn clone_workspace(&self) -> Option<NudgeReplyMsg> {
+        self.all.clone().filter(|_| self.all_is_workspace)
     }
 }

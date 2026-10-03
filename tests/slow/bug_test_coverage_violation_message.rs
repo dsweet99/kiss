@@ -31,13 +31,14 @@ fn bug_check_all_never_claims_100_percent_on_unreferenced_unit() {
         .output()
         .expect("kiss test --coverage-all should run");
 
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(
-        stdout.contains("VIOLATION:test_coverage"),
-        "expected coverage violations for unreferenced helpers:\n{stdout}"
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "--coverage-all is not an option of kiss test:\n{stderr}"
     );
     assert!(
-        !stdout.contains("100% covered"),
-        "unreferenced unit lines must not claim 100% covered:\n{stdout}"
+        stderr.contains("coverage-all") || stderr.contains("unexpected"),
+        "{stderr}"
     );
 }

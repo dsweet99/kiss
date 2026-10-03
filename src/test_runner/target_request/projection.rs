@@ -67,16 +67,13 @@ fn workspace_projection(repo_root: &Path, request: &TargetRequest) -> SliceProje
     let lang = request.lang.map(|filter| filter.to_language());
     let ignore = request.ignore.as_slice();
     let mut selectors = Vec::new();
-    if let Some((python, rust, _)) =
-        crate::test_runner::workspace_selector_cache::load_cached_workspace_selectors_for_lang(
-            repo_root,
-            ignore,
-            &[],
-            lang,
-        )
-    {
-        selectors.extend(python);
-        selectors.extend(rust);
+    let want_python = !matches!(lang, Some(Language::Rust));
+    let want_rust = !matches!(lang, Some(Language::Python));
+    if want_python {
+        selectors.extend(python_workspace_selectors(repo_root, ignore));
+    }
+    if want_rust {
+        selectors.extend(rust_workspace_selectors(repo_root, ignore));
     }
     selectors.sort();
     selectors.dedup();
@@ -84,6 +81,49 @@ fn workspace_projection(repo_root: &Path, request: &TargetRequest) -> SliceProje
         selectors,
         sources: current_sources(repo_root, ignore, lang),
     }
+}
+
+fn python_workspace_selectors(repo_root: &Path, ignore: &[String]) -> Vec<String> {
+    if let Some(cached) =
+        crate::test_runner::workspace_selector_cache::load_cached_python_workspace_selectors(
+            repo_root,
+            ignore,
+            &[],
+        )
+    {
+        return cached;
+    }
+    let Ok(found) = crate::test_runner::runners::enumerate_workspace_python_selectors(
+        repo_root, ignore, &[],
+    ) else {
+        return Vec::new();
+    };
+    let _ = crate::test_runner::workspace_selector_cache::store_python_workspace_selectors(
+        repo_root,
+        ignore,
+        &found,
+        &[],
+    );
+    found
+}
+
+fn rust_workspace_selectors(repo_root: &Path, ignore: &[String]) -> Vec<String> {
+    if let Some(cached) =
+        crate::test_runner::workspace_selector_cache::load_cached_rust_workspace_selectors(
+            repo_root, ignore,
+        )
+    {
+        return cached;
+    }
+    let Ok(found) =
+        crate::test_runner::runners::enumerate_workspace_rust_selectors(repo_root, ignore)
+    else {
+        return Vec::new();
+    };
+    let _ = crate::test_runner::workspace_selector_cache::store_rust_workspace_selectors(
+        repo_root, ignore, &found,
+    );
+    found
 }
 
 fn vcs_projection(repo_root: &Path, resolved: &ResolvedTarget) -> SliceProjection {

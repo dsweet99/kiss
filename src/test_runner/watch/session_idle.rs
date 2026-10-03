@@ -51,7 +51,8 @@ impl QueuedCycle {
 
     pub(super) fn stamp_filter_override(&mut self, live: &WatchLiveConfig) {
         self.filter_override = (!self.extras.both_empty() && self.extras != live.extras)
-            || (!self.ignore().is_empty() && self.ignore() != live.target_request.ignore.as_slice());
+            || (!self.ignore().is_empty()
+                && self.ignore() != live.target_request.ignore.as_slice());
     }
 
     pub(super) fn wants_new_cycle(&self) -> bool {
@@ -124,12 +125,7 @@ impl QueuedCycle {
             self.configuration = req.msg.configuration.filter(|s| !s.is_empty());
         }
         merge_nudge_targets(self, req.msg.force, &targets);
-        merge_nudge_filters(
-            self,
-            incoming.language(),
-            &incoming.ignore,
-            &req.msg.extras,
-        );
+        merge_nudge_filters(self, incoming.language(), &incoming.ignore, &req.msg.extras);
         self.replies.push((incoming.language(), req.reply));
     }
 }
@@ -149,19 +145,28 @@ pub(super) fn wait_until_next_cycle(
     nudge_rx: Option<&std::sync::mpsc::Receiver<NudgeRequest>>,
     queued: &mut Option<QueuedCycle>,
     last_reply: &LastReplies,
-    live: &WatchLiveConfig,
+    live: &mut WatchLiveConfig,
 ) -> Option<i32> {
     crate::test_runner::emit_test_progress("kiss test: Waiting");
+    if live.config_outdated() && !live.config_rerun_pending() {
+        eprintln!("kiss test-watch: running with outdated configs");
+    }
     loop {
+        if live.poll_config_drift(repo_root) {
+            return None;
+        }
         kiss::rust_llvm_cov_runner::reap_orphaned_zombies();
         coalesce_nudges(nudge_rx, queued);
         if let Some(q) = queued.as_mut() {
             q.stamp_filter_override(live);
         }
+        if live.config_rerun_pending() {
+            return None;
+        }
         if try_reply_idle_nudge(queued, last_reply, machine.has_pending_work()) {
             continue;
         }
-        if queued.is_some() {
+        if queued.as_ref().is_some_and(|q| q.wants_new_cycle()) {
             force_ready_if_pending(queued, machine, repo_root);
             return None;
         }
@@ -171,7 +176,7 @@ pub(super) fn wait_until_next_cycle(
                 return None;
             }
             WaitOutcome::Terminal(msg) => {
-                eprintln!("error: kiss test --watch: {msg}");
+                eprintln!("error: kiss test-watch: {msg}");
                 return Some(1);
             }
             WaitOutcome::Continue => {}
@@ -205,16 +210,107 @@ fn idle_head(
     last_reply: &LastReplies,
     pending_files: bool,
 ) -> bool {
+    let retry_without_bad = {
+        let Some(q) = queued.as_ref() else {
+            return false;
+        };
+        q.force_bad
+            && !q.force
+            && !q.filter_override
+            && !crate::test_runner::force_bad::target_has_retry_bad(
+                &last_reply.repo,
+                &q.target_request,
+            )
+    };
+    if retry_without_bad && let Some(q) = queued.as_mut() {
+        q.force_bad = false;
+    }
     let Some(q) = queued.as_ref() else {
         return false;
     };
-    if q.wants_new_cycle() || pending_files {
+    if q.wants_new_cycle() {
         return false;
     }
     if q.metrics {
         return reply_metrics_target_report(queued, last_reply);
     }
-    reply_ready_target_report(queued, last_reply)
+    if reply_ready_target_report(queued, last_reply) {
+        return true;
+    }
+    // A file change still belongs to the watcher's own cycle. The client waits.
+    if pending_files {
+        return false;
+    }
+    if reply_saved_workspace_report(queued, last_reply) {
+        return true;
+    }
+    // The watcher is idle and the cache cannot answer. Leaving the client
+    // blocked would wait forever. That is an operational failure.
+    reply_idle_operational_failure(queued, last_reply)
+}
+
+fn reply_saved_workspace_report(
+    queued: &mut Option<QueuedCycle>,
+    last_reply: &LastReplies,
+) -> bool {
+    let Some(q) = queued.as_ref() else {
+        return false;
+    };
+    if !q.is_workspace_focus() || q.lang_filter().is_some() {
+        return false;
+    }
+    if q.ignore() != last_reply.ignore.as_slice() || q.extras != last_reply.extras {
+        return false;
+    }
+    let Some(saved) = last_reply.clone_workspace() else {
+        return false;
+    };
+    if saved.output.as_deref().is_none_or(str::is_empty) {
+        return false;
+    }
+    let Some(mut q) = queued.take() else {
+        return false;
+    };
+    *queued = q.next.take().map(|b| *b);
+    let mut msg = saved;
+    msg.idle_cache = Some(true);
+    msg.pid = last_reply
+        .clone_any()
+        .map(|saved| saved.pid)
+        .unwrap_or(msg.pid);
+    for (_, reply) in q.replies {
+        let _ = reply.send(msg.clone());
+    }
+    true
+}
+
+fn reply_idle_operational_failure(
+    queued: &mut Option<QueuedCycle>,
+    last_reply: &LastReplies,
+) -> bool {
+    let Some(mut q) = queued.take() else {
+        return false;
+    };
+    *queued = q.next.take().map(|b| *b);
+    let msg = NudgeReplyMsg {
+        exit_code: 255,
+        pid: last_reply.clone_any().map(|msg| msg.pid).unwrap_or(0),
+        error: Some(idle_cache_miss_reason(&q, last_reply)),
+        output: None,
+        idle_cache: Some(true),
+        warning: last_reply.clone_any().and_then(|msg| msg.warning),
+    };
+    for (_, reply) in q.replies {
+        let _ = reply.send(msg.clone());
+    }
+    true
+}
+
+fn idle_cache_miss_reason(q: &QueuedCycle, last_reply: &LastReplies) -> String {
+    if !protocol_identity_holds(q, &last_reply.repo) {
+        return "watcher cache identity does not match this kiss test".to_string();
+    }
+    "watcher has no cached result for this request".to_string()
 }
 
 fn reply_ready_target_report(queued: &mut Option<QueuedCycle>, last_reply: &LastReplies) -> bool {
@@ -248,6 +344,7 @@ fn reply_metrics_target_report(queued: &mut Option<QueuedCycle>, last_reply: &La
         error: Some("incomplete evidence".into()),
         output: None,
         idle_cache: Some(true),
+        warning: last_reply.clone_any().and_then(|msg| msg.warning),
     });
     let Some(mut q) = queued.take() else {
         return false;
@@ -267,7 +364,27 @@ fn ensure_query_reply(
     if !protocol_identity_holds(q, &last_reply.repo) {
         return None;
     }
-    let request = queued_target_request(q);
+    let request = crate::test_runner::target_request::canonicalize_target_request(
+        queued_target_request(q),
+        Some(&last_reply.repo),
+    );
+    if let Some(report) = crate::test_runner::target_request::project_operand_ready_from_parent_workspace(
+        &last_reply.repo,
+        &request,
+        q.coverage_all,
+        q.extras.as_slices(),
+    ) {
+        return Some(idle_cached_reply(NudgeReplyMsg {
+            exit_code: report.exit_code,
+            pid: last_reply.clone_any().map(|msg| msg.pid).unwrap_or(0),
+            error: None,
+            output: Some(crate::test_runner::target_request::official_report_text(
+                &report,
+            )),
+            idle_cache: Some(true),
+            warning: last_reply.clone_any().and_then(|msg| msg.warning),
+        }));
+    }
     let policy = crate::test_runner::target_request::EnsurePolicy::query(q.coverage_all);
     let ensured = if matches!(
         request.focus,
@@ -297,6 +414,7 @@ fn ensure_query_reply(
                     &report,
                 )),
                 idle_cache: Some(true),
+                warning: last_reply.clone_any().and_then(|msg| msg.warning),
             }))
         }
         Err(err) if allow_error => Some(NudgeReplyMsg {
@@ -305,6 +423,7 @@ fn ensure_query_reply(
             error: Some(err.to_string()),
             output: None,
             idle_cache: Some(true),
+            warning: last_reply.clone_any().and_then(|msg| msg.warning),
         }),
         Err(_) => None,
     }
@@ -386,11 +505,8 @@ fn merge_nudge_targets(q: &mut QueuedCycle, force: bool, targets: &[String]) {
     raws.extend(targets.iter().cloned());
     raws.sort();
     raws.dedup();
-    q.target_request.focus = TargetFocus::Operands(
-        raws.into_iter()
-            .map(|raw| OperandExpr { raw })
-            .collect(),
-    );
+    q.target_request.focus =
+        TargetFocus::Operands(raws.into_iter().map(|raw| OperandExpr { raw }).collect());
 }
 
 fn merge_nudge_filters(

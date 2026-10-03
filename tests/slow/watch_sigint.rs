@@ -156,7 +156,7 @@ fn persistent_rust_sigint_repo() -> std::path::PathBuf {
             crate::common::scrub_parent_coverage_env(&mut kiss_cmd);
             crate::common::preserve_toolchain_homes(&mut kiss_cmd);
             kiss_cmd
-                .args(["test", "--lang", "rust", "--dry-run", "."])
+                .args(["test", "--lang", "rust", "."])
                 .current_dir(&root)
                 .status()
                 .expect("prime watch-sigint kiss dry-run")
@@ -196,10 +196,7 @@ fn watch_sigint_python_exits_130() {
     init_git_repo(tmp.path());
     write_python_repo(tmp.path());
     commit_all(tmp.path(), "init");
-    let watch = start_watch(
-        &["test", "--watch", "--lang", "python", "test_lib.py"],
-        tmp.path(),
-    );
+    let watch = start_watch(&["test-watch"], tmp.path());
     std::thread::sleep(Duration::from_millis(100));
     unsafe {
         assert_eq!(libc::kill(watch.pid(), libc::SIGINT), 0);
@@ -215,7 +212,7 @@ fn watch_sigint_rust_batch_exits_130() {
     let repo = persistent_rust_sigint_repo();
     let _ = std::fs::remove_file(repo.join("BATCH_RUNNING"));
     let _ = std::fs::remove_dir_all(repo.join(".kiss").join("watch"));
-    let watch = start_watch(&["test", "--watch", "--lang", "rust", "."], &repo);
+    let watch = start_watch(&["test-watch"], &repo);
     wait_for_path(&repo.join("BATCH_RUNNING"), Duration::from_secs(90));
     unsafe {
         assert_eq!(libc::kill(watch.pid(), libc::SIGINT), 0);
@@ -227,7 +224,7 @@ fn spawn_foreground_watch(dir: &Path) -> Child {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
     crate::common::scrub_parent_coverage_env(&mut cmd);
     crate::common::preserve_toolchain_homes(&mut cmd);
-    cmd.args(["test", "--watch", "--lang", "python", "test_lib.py"])
+    cmd.args(["test-watch"])
         .current_dir(dir)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -291,10 +288,7 @@ fn watch_foreground_writes_session_json() {
     init_git_repo(tmp.path());
     write_python_repo(tmp.path());
     commit_all(tmp.path(), "init");
-    let watch = start_watch(
-        &["test", "--watch", "--lang", "python", "test_lib.py"],
-        tmp.path(),
-    );
+    let watch = start_watch(&["test-watch"], tmp.path());
     let pid = read_session_pid(tmp.path()).expect("session pid");
     assert_eq!(pid, watch.pid() as u32);
     unsafe {
@@ -343,15 +337,12 @@ fn second_watch_fails_while_first_alive() {
     init_git_repo(tmp.path());
     write_python_repo(tmp.path());
     commit_all(tmp.path(), "init");
-    let watch = start_watch(
-        &["test", "--watch", "--lang", "python", "test_lib.py"],
-        tmp.path(),
-    );
+    let watch = start_watch(&["test-watch"], tmp.path());
     let mut second = Command::new(env!("CARGO_BIN_EXE_kiss"));
     crate::common::scrub_parent_coverage_env(&mut second);
     crate::common::preserve_toolchain_homes(&mut second);
     let output = second
-        .args(["test", "--watch", "--lang", "python", "test_lib.py"])
+        .args(["test-watch"])
         .current_dir(tmp.path())
         .output()
         .expect("second watch");

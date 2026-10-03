@@ -218,7 +218,7 @@ fn subset_mode_rejects_missing_or_failed() {
 }
 
 #[test]
-fn time_limit_reclassify_forces_miss_on_affected_selector() {
+fn time_limit_reclassify_marks_timeout_without_repair_rerun() {
     let gate = GateConfig {
         max_unit_test_seconds: vec![("*".into(), 0.0)],
         ..GateConfig::default()
@@ -248,7 +248,7 @@ fn time_limit_reclassify_forces_miss_on_affected_selector() {
             Some(&w),
             false
         ),
-        vec!["a".to_string(), "b".to_string()]
+        Vec::<String>::new()
     );
 }
 
@@ -344,7 +344,7 @@ fn incomplete_full_miss_repairs_non_passed_not_scope() {
             Some(&w),
             false,
         ),
-        vec!["b".to_string()]
+        Vec::<String>::new()
     );
 }
 
@@ -450,7 +450,7 @@ fn gate_derived_timeout_from_raw_pass_is_not_warm_skippable() {
 }
 
 #[test]
-fn gate_derived_timeout_is_repair_miss_like_raw_timeout() {
+fn gate_derived_timeout_is_not_a_repair_miss() {
     let mut w = witness(
         WitnessScope::Full,
         "id",
@@ -467,7 +467,7 @@ fn gate_derived_timeout_is_repair_miss_like_raw_timeout() {
             Some(&w),
             false
         ),
-        vec!["a".to_string()]
+        Vec::<String>::new()
     );
 }
 

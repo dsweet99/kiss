@@ -95,7 +95,7 @@ fn from_outcome_with_memo_matches_from_outcome_digests() {
 }
 
 #[test]
-fn failed_status_is_never_reusable_even_with_coverage() {
+fn failed_status_is_reusable_until_a_covered_file_changes() {
     let tmp = tempfile::tempdir().unwrap();
     let app = tmp.path().join("app.py");
     fs::write(&app, "x = 1\n").unwrap();
@@ -116,6 +116,8 @@ fn failed_status_is_never_reusable_even_with_coverage() {
         tmp.path(),
     );
     assert!(!entry.coverage.files.is_empty());
+    assert!(entry_is_reusable(&entry, tmp.path()));
+    fs::write(&app, "x = 2\n").unwrap();
     assert!(!entry_is_reusable(&entry, tmp.path()));
 }
 

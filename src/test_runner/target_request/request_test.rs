@@ -101,6 +101,34 @@ fn operand_spelling_and_order_normalize_when_semantics_match() {
 }
 
 #[test]
+fn repo_root_dot_is_workspace_when_root_is_known() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    let abs_dot = root.join(".");
+    let collapsed = canon(
+        operands(&[abs_dot.to_str().unwrap()]),
+        Some(&root),
+    );
+    assert!(is_workspace_focus(&collapsed.focus));
+    let sub = canon(operands(&["src"]), Some(&root));
+    assert!(!is_workspace_focus(&sub.focus));
+}
+
+#[test]
+fn subdir_dot_is_that_directory_not_the_workspace() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    let sub = root.join("pkg");
+    std::fs::create_dir(&sub).unwrap();
+    let collapsed = canon(operands(&[sub.join(".").to_str().unwrap()]), Some(&root));
+    assert!(!is_workspace_focus(&collapsed.focus));
+    assert_eq!(
+        operand_raws(&collapsed.focus).unwrap(),
+        vec!["pkg".to_string()]
+    );
+}
+
+#[test]
 fn directory_is_not_an_explicit_file_union() {
     let dir = canon(operands(&["src"]), None);
     let files = canon(operands(&["src/a.py", "src/b.py"]), None);

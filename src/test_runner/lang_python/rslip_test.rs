@@ -477,9 +477,11 @@ fn print_rslip_outcome_accepts_all_status_cache_shapes() {
                 &kiss::GateConfig::default(),
             );
         });
-        assert!(
+        let cached_pass = status == TestStatus::Passed && cache_status == PyCacheStatus::Hit;
+        assert_eq!(
             out.contains("tests/test_app.py::test_ok"),
-            "status line must go through emit_test_progress: {out}"
+            !cached_pass,
+            "a cached PASS has no line; other status lines go through emit_test_progress: {out}"
         );
     }
 }
@@ -580,11 +582,14 @@ def test_b():\n    assert True\n",
         );
     });
     assert!(
-        hit_out.contains("PASS test_sample.py::test_a")
-            && hit_out.contains("PASS test_sample.py::test_b"),
-        "cache hits must print via prepare-time SelectorFinalized: {hit_out}"
+        hit_out.contains("kiss test: rslip prepared hits=2 misses=0"),
+        "{hit_out}"
     );
-    assert_eq!(hit_out.matches("PASS ").count(), 2);
+    assert_eq!(
+        hit_out.matches("PASS").count(),
+        0,
+        "a cached PASS has no line: {hit_out}"
+    );
 }
 
 #[test]

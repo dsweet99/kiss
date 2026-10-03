@@ -148,7 +148,24 @@ fn repair_planned(planned: &[String], witness: &ExecutionWitness) -> Vec<String>
     planned
         .iter()
         .filter(|sel| match index.get(sel.as_str()) {
-            Some(&i) => !reusable_without_rerun(witness, i) || witness.durations_ns[i].is_none(),
+            Some(&i) => {
+                let raw = witness
+                    .raw_statuses
+                    .get(i)
+                    .copied()
+                    .unwrap_or(witness.statuses[i]);
+                // A recorded FAIL or TIMEOUT stays cached. An edit does not rerun it.
+                if matches!(
+                    raw,
+                    WitnessStatus::Failed | WitnessStatus::TimedOut
+                ) || matches!(
+                    witness.statuses[i],
+                    WitnessStatus::Failed | WitnessStatus::TimedOut
+                ) {
+                    return false;
+                }
+                !reusable_without_rerun(witness, i) || witness.durations_ns[i].is_none()
+            }
             None => true,
         })
         .cloned()

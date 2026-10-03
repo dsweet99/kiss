@@ -60,11 +60,10 @@ fn planned_witness_records(
         if require_all_passed && !gate_violation_from_raw_pass(witness, i) {
             assert_eq!(status, TestStatus::Passed);
         }
-        records.push((
-            report_id(selector),
-            status,
-            Duration::from_nanos(witness.durations_ns[i]?),
-        ));
+        let Some(ns) = witness.durations_ns.get(i).copied().flatten() else {
+            continue;
+        };
+        records.push((report_id(selector), status, Duration::from_nanos(ns)));
     }
     Some(records)
 }
@@ -75,6 +74,9 @@ fn emit_cached_witness_lines(records: &[(String, TestStatus, Duration)]) {
     }
     if records.len() <= 64 {
         for (report, status, duration) in records {
+            if *status == TestStatus::Passed {
+                continue;
+            }
             crate::test_runner::status_labels::print_classified_status_line(
                 *status,
                 report,

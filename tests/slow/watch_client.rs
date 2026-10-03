@@ -54,10 +54,6 @@ fn assert_reports_lang_mismatch(ok: bool, stdout: &str, stderr: &str, target: &s
     assert_reports_missing_target(ok, stdout, stderr, target, "--lang selects only rust");
 }
 
-fn assert_reports_ignore(ok: bool, stdout: &str, stderr: &str, target: &str) {
-    assert_reports_missing_target(ok, stdout, stderr, target, "--ignore prefix");
-}
-
 #[test]
 fn oneshot_reports_missing_rustc_path_without_watcher() {
     if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
@@ -75,7 +71,7 @@ fn oneshot_reports_missing_rustc_path_with_watcher() {
         return;
     }
     let tmp = seeded_python_repo();
-    let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
+    let _watch = start_watch(tmp.path(), &["test-watch"]);
 
     let target = "python_nested_observed.rs:51:python_nested_observed";
     let (ok, stdout, stderr) = oneshot_target(tmp.path(), target);
@@ -99,7 +95,7 @@ fn oneshot_reports_missing_rs_file_with_watcher() {
         return;
     }
     let tmp = seeded_python_repo();
-    let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
+    let _watch = start_watch(tmp.path(), &["test-watch"]);
     let target = "bad_path.rs";
     let (ok, stdout, stderr) = oneshot_target(tmp.path(), target);
     assert_reports_missing_target(ok, &stdout, &stderr, target, "file not found");
@@ -122,7 +118,7 @@ fn oneshot_reports_lang_mismatch_with_watcher() {
         return;
     }
     let tmp = seeded_python_repo();
-    let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
+    let _watch = start_watch(tmp.path(), &["test-watch"]);
     let target = "test_lib.py";
     let (ok, stdout, stderr) = oneshot_args(tmp.path(), &["test", "--lang", "rust", target]);
     assert_reports_lang_mismatch(ok, &stdout, &stderr, target);
@@ -139,7 +135,11 @@ fn oneshot_reports_ignore_without_watcher() {
         tmp.path(),
         &["test", "--lang", "python", "--ignore", "test_", target],
     );
-    assert_reports_ignore(ok, &stdout, &stderr, target);
+    assert!(!ok, "kiss test --ignore is not an option; stdout={stdout} stderr={stderr}");
+    assert!(
+        stderr.contains("unexpected") || stderr.contains("--ignore"),
+        "stderr={stderr}"
+    );
 }
 
 #[test]
@@ -148,13 +148,17 @@ fn oneshot_reports_ignore_with_watcher() {
         return;
     }
     let tmp = seeded_python_repo();
-    let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
+    let _watch = start_watch(tmp.path(), &["test-watch"]);
     let target = "test_lib.py";
     let (ok, stdout, stderr) = oneshot_args(
         tmp.path(),
         &["test", "--lang", "python", "--ignore", "test_", target],
     );
-    assert_reports_ignore(ok, &stdout, &stderr, target);
+    assert!(!ok, "kiss test --ignore is not an option; stdout={stdout} stderr={stderr}");
+    assert!(
+        stderr.contains("unexpected") || stderr.contains("--ignore"),
+        "stderr={stderr}"
+    );
 }
 
 #[test]
@@ -177,12 +181,12 @@ fn oneshot_extra_k_filter_without_watcher() {
     );
     assert!(
         !ok,
-        "empty -k selection must fail; stdout={stdout:?} stderr={stderr:?}"
+        "arguments after -- must fail; stdout={stdout:?} stderr={stderr:?}"
     );
     let combined = format!("{stdout}{stderr}");
     assert!(
-        combined.contains("NO COVERING TESTS") || combined.contains("incomplete"),
-        "must not recap a passing suite; stdout={stdout:?} stderr={stderr:?}"
+        combined.contains("arguments after --") || combined.contains("not accepted"),
+        "must reject runner args; stdout={stdout:?} stderr={stderr:?}"
     );
 }
 
@@ -192,10 +196,7 @@ fn oneshot_extra_k_filter_with_watcher() {
         return;
     }
     let tmp = crate::common::locked_seeded_python_watch_repo();
-    let _watch = start_watch(
-        tmp.path(),
-        &["test", "--watch", "--lang", "python", "test_lib.py"],
-    );
+    let _watch = start_watch(tmp.path(), &["test-watch"]);
     let (ok, stdout, stderr) = oneshot_args(
         tmp.path(),
         &[
@@ -261,7 +262,7 @@ fn warm_commit_client_does_not_start_another_watcher_cycle() {
     );
     commit_all(root, "covered change");
     let log = PathBuf::from(root).join("watch.log");
-    let _watch = start_watch_logged(root, &["test", "--watch"], &log);
+    let _watch = start_watch_logged(root, &["test-watch"], &log);
     wait_watch_idle_cycle(root);
     let before = watch_cycle_count(&log);
 
@@ -305,10 +306,7 @@ fn oneshot_defers_to_idle_watcher() {
     }
     let tmp = crate::common::locked_seeded_python_watch_repo();
 
-    let _watch = start_watch(
-        tmp.path(),
-        &["test", "--watch", "--lang", "python", "test_lib.py"],
-    );
+    let _watch = start_watch(tmp.path(), &["test-watch"]);
     // First oneshot primes (and defers to) the watcher; avoid a separate idle nudge cycle.
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
     crate::common::scrub_parent_coverage_env(&mut cmd);
@@ -328,9 +326,7 @@ fn oneshot_defers_to_idle_watcher() {
     );
     assert_watcher_oneshot_report(&stdout);
     assert!(
-        stdout.contains("passed")
-            && stdout.contains("failed")
-            && stdout.contains("timed out"),
+        stdout.contains("passed") && stdout.contains("failed") && stdout.contains("timed out"),
         "oneshot must print a summary from the watcher; stdout={stdout:?}"
     );
 }
@@ -352,10 +348,7 @@ fn oneshot_after_dirty_source_echoes_fail_and_exit() {
     let lib = root.join("lib.py");
     let _restore = Restore(&lib, std::fs::read_to_string(&lib).unwrap());
     std::fs::write(&lib, "def f():\n    return 1\n").unwrap();
-    let _watch = start_watch(
-        root,
-        &["test", "--watch", "--lang", "python", "test_lib.py"],
-    );
+    let _watch = start_watch(root, &["test-watch"]);
     let mut oneshot = Command::new(env!("CARGO_BIN_EXE_kiss"));
     crate::common::scrub_parent_coverage_env(&mut oneshot);
     crate::common::preserve_toolchain_homes(&mut oneshot);
@@ -442,10 +435,7 @@ fn oneshot_waits_out_long_inflight_cycle() {
     )
     .unwrap();
 
-    let _watch = start_watch(
-        tmp.path(),
-        &["test", "--watch", "--lang", "python", "test_lib.py"],
-    );
+    let _watch = start_watch(tmp.path(), &["test-watch"]);
     std::thread::sleep(Duration::from_millis(15));
     let mut output_cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
     crate::common::scrub_parent_coverage_env(&mut output_cmd);
@@ -473,7 +463,7 @@ fn oneshot_with_coverage_gate_defers_to_watcher() {
     let tmp = crate::common::fresh_seeded_python_watch_repo();
     write_kissconfig_with_threshold(tmp.path(), 0.02, 1);
 
-    let _watch = start_watch(tmp.path(), &["test", "--watch", "--lang", "python", "."]);
+    let _watch = start_watch(tmp.path(), &["test-watch"]);
     wait_watch_idle_cycle(tmp.path());
     // Same scrub as sibling oneshots — bare Command inherits parent cargo/llvm-cov
     // env and can flake under nextest -j12 even when LLVM_PROFILE_FILE is unset.
@@ -486,7 +476,7 @@ fn oneshot_with_coverage_gate_defers_to_watcher() {
         !stderr.contains("missing or stale/incompatible population"),
         "stderr={stderr:?}"
     );
-    assert!(stdout.contains("PASS"), "stdout={stdout:?}");
+    assert!(stdout.contains("1 passed"), "stdout={stdout:?}");
 }
 
 #[test]
@@ -497,10 +487,7 @@ fn stale_generation_repaired_on_watcher_not_client() {
     // Persistent seeded fixture (threshold 0) — avoid cold git/seed/python version probes.
     let tmp = crate::common::fresh_seeded_python_watch_repo();
 
-    let _watch = start_watch(
-        tmp.path(),
-        &["test", "--watch", "--lang", "python", "test_lib.py"],
-    );
+    let _watch = start_watch(tmp.path(), &["test-watch"]);
 
     std::fs::write(
         tmp.path().join("lib.py"),
@@ -551,11 +538,7 @@ fn watcher_reloads_kissconfig_threshold_change() {
     write_kissconfig_with_threshold(tmp.path(), 0.005, 0);
 
     let log = tmp.path().join("watch.log");
-    let mut watch = start_watch_logged(
-        tmp.path(),
-        &["test", "--watch", "--lang", "python", "."],
-        &log,
-    );
+    let mut watch = start_watch_logged(tmp.path(), &["test-watch"], &log);
     let ready = Instant::now() + Duration::from_secs(5);
     loop {
         let text = std::fs::read_to_string(&log).unwrap_or_default();
@@ -610,10 +593,7 @@ fn oneshot_idle_watcher_prints_local_fail_not_bare_fail() {
     write_kissconfig(tmp.path(), 0.01);
     commit_all(tmp.path(), "init");
 
-    let _watch = start_watch(
-        tmp.path(),
-        &["test", "--watch", "--lang", "python", "test_lib.py"],
-    );
+    let _watch = start_watch(tmp.path(), &["test-watch"]);
     wait_watch_idle_cycle(tmp.path());
 
     let mut fail_cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));

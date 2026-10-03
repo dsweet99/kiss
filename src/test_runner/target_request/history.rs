@@ -16,8 +16,10 @@ pub(crate) fn historical_covering_selectors(
         crate::test_runner::python_coverage_index::load_current_python_coverage_index(repo_root)
     {
         for path in historical_paths {
-            if let Some(found) = index.get(path) {
-                selectors.extend(found.iter().cloned());
+            for key in index_lookup_keys(repo_root, path) {
+                if let Some(found) = index.get(&key) {
+                    selectors.extend(found.iter().cloned());
+                }
             }
         }
     }
@@ -34,8 +36,10 @@ pub(crate) fn historical_covering_selectors(
         &[],
     ) {
         for path in historical_paths {
-            if let Some(found) = pop.line_index.get(path) {
-                selectors.extend(found.iter().cloned());
+            for key in index_lookup_keys(repo_root, path) {
+                if let Some(found) = pop.line_index.get(&key) {
+                    selectors.extend(found.iter().cloned());
+                }
             }
         }
         if let Some(rust) = crate::test_runner::rust_coverage_index::selectors_for_source_paths(
@@ -62,6 +66,19 @@ pub(crate) fn reverse_records(repo_root: &Path, paths: &[String]) -> Vec<Reverse
     records
 }
 
+fn index_lookup_keys(repo_root: &Path, path: &str) -> Vec<String> {
+    let mut keys = Vec::new();
+    let candidate = Path::new(path);
+    if let Ok(rel) = candidate.strip_prefix(repo_root) {
+        keys.push(rel.to_string_lossy().replace('\\', "/"));
+    }
+    let spelled = path.trim_start_matches("./");
+    if !keys.iter().any(|key| key == spelled) {
+        keys.push(spelled.to_string());
+    }
+    keys
+}
+
 fn index_has_path(repo_root: &Path, path: &str) -> bool {
     let python =
         crate::test_runner::python_coverage_index::load_current_python_coverage_index(repo_root);
@@ -70,10 +87,11 @@ fn index_has_path(repo_root: &Path, path: &str) -> bool {
         None,
         &[],
     );
-    python
-        .as_ref()
-        .is_some_and(|index| index.contains_key(path))
-        || rust
-            .as_ref()
-            .is_some_and(|pop| pop.line_index.contains_key(path))
+    let keys = index_lookup_keys(repo_root, path);
+    keys.iter().any(|key| {
+        python.as_ref().is_some_and(|index| index.contains_key(key))
+            || rust
+                .as_ref()
+                .is_some_and(|pop| pop.line_index.contains_key(key))
+    })
 }

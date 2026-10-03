@@ -125,6 +125,13 @@ fn timed_compute_misses(
     witness: &Option<crate::test_runner::lang_iface::ExecutionWitness>,
 ) -> Result<Vec<String>, String> {
     let started = std::time::Instant::now();
+    // The cycle after `--retry-bad` runs the PASS tests that request deferred.
+    if request.force_selectors.is_empty()
+        && let Some(deferred) = take_deferred_selectors_for(planned)
+    {
+        emit_rust_stage(module.language(), "rust_miss_select", started);
+        return Ok(deferred);
+    }
     let mut misses = rust_or_default_misses(module, request, planned, identity, witness.as_ref());
     crate::test_runner::lang_iface::union_force_selectors_into_misses(
         planned,
@@ -133,8 +140,67 @@ fn timed_compute_misses(
     );
     union_source_delta_misses(request, module, planned, &mut misses)?;
     union_incomparable_timing_misses(request, module, planned, witness, &mut misses);
+    // `--retry-bad` runs FAIL and TIMEOUT tests. A pending edit's PASS tests
+    // stay for the edit's own cycle.
+    if !request.force_selectors.is_empty() {
+        let dropped: Vec<String> = misses
+            .iter()
+            .filter(|sel| !request.force_selectors.iter().any(|forced| forced == *sel))
+            .cloned()
+            .collect();
+        misses.retain(|sel| request.force_selectors.iter().any(|forced| forced == sel));
+        if !dropped.is_empty() {
+            remember_deferred_selectors(dropped);
+        }
+    }
     emit_rust_stage(module.language(), "rust_miss_select", started);
     Ok(misses)
+}
+
+static DEFERRED_EDIT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static DEFERRED_SELECTORS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+fn remember_deferred_selectors(selectors: Vec<String>) {
+    let mut held = DEFERRED_SELECTORS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    for selector in selectors {
+        if !held.iter().any(|item| item == &selector) {
+            held.push(selector);
+        }
+    }
+    DEFERRED_EDIT.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
+fn take_deferred_selectors_for(planned: &[String]) -> Option<Vec<String>> {
+    let mut held = DEFERRED_SELECTORS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if held.is_empty() {
+        return None;
+    }
+    let ready: Vec<String> = held
+        .iter()
+        .filter(|sel| planned.iter().any(|item| item == *sel))
+        .cloned()
+        .collect();
+    if ready.is_empty() {
+        return None;
+    }
+    held.retain(|sel| !ready.iter().any(|item| item == sel));
+    Some(ready)
+}
+
+pub(crate) fn deferred_edit_pending() -> bool {
+    DEFERRED_EDIT.load(std::sync::atomic::Ordering::SeqCst)
+        || !DEFERRED_SELECTORS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .is_empty()
+}
+
+pub(crate) fn take_deferred_edit() -> bool {
+    DEFERRED_EDIT.swap(false, std::sync::atomic::Ordering::SeqCst)
 }
 
 fn timed_accept_or_run(

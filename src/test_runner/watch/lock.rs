@@ -61,6 +61,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn two_worktrees_do_not_share_a_watch_lock() {
+        let a = tempfile::tempdir().unwrap();
+        let b = tempfile::tempdir().unwrap();
+        assert_ne!(watch_lock_path(a.path()), watch_lock_path(b.path()));
+        assert_ne!(watch_dir(a.path()), watch_dir(b.path()));
+    }
+
+    #[test]
     fn try_lock_success_vs_would_block() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("watch.lock");

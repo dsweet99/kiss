@@ -18,6 +18,12 @@ pub(crate) fn render_preview_members(preview: &TargetPlanPreview) {
 pub(crate) fn official_report_text(report: &TargetReport) -> String {
     let mut out = String::new();
     for row in &report.rows {
+        // A cached PASS that did not run has no line. FAIL and TIMEOUT stay,
+        // including when they were read from the cache. Tests that ran print
+        // their own lines before this report.
+        if row.effective == EffectiveStatus::Pass {
+            continue;
+        }
         out.push_str(official_label(row.effective));
         out.push(' ');
         out.push_str(&row.selector);
@@ -185,6 +191,37 @@ mod official_text_tests {
         let text = official_report_text(&report(Vec::new()));
         assert!(text.contains("NO VIOLATIONS"), "{text}");
         assert!(!text.contains("VIOLATION:"), "{text}");
+        assert!(
+            !text.lines().any(|line| line.starts_with("PASS ")),
+            "cached PASS has no line: {text}"
+        );
+        assert!(text.contains("1 passed"), "{text}");
+    }
+
+    #[test]
+    fn official_text_lists_cached_fail_and_timeout_only() {
+        let mut cached = report(Vec::new());
+        cached.rows.push(SelectorRow {
+            language: "python".into(),
+            selector: "tests/a.py::test_bad".into(),
+            raw: "failed".into(),
+            effective: EffectiveStatus::Fail,
+            duration_ns: None,
+            provenance: "witness".into(),
+        });
+        cached.rows.push(SelectorRow {
+            language: "rust".into(),
+            selector: "src/lib.rs::test_slow".into(),
+            raw: "timeout".into(),
+            effective: EffectiveStatus::Timeout,
+            duration_ns: None,
+            provenance: "witness".into(),
+        });
+        let text = official_report_text(&cached);
+        assert!(!text.lines().any(|line| line.starts_with("PASS ")), "{text}");
+        assert!(text.contains("FAIL tests/a.py::test_bad"), "{text}");
+        assert!(text.contains("TIMEOUT src/lib.rs::test_slow"), "{text}");
+        assert!(text.contains("1 passed · 1 failed · 1 timed out"), "{text}");
     }
 
     #[test]

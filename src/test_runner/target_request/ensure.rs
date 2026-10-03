@@ -78,6 +78,14 @@ pub(crate) fn ensure_target_report_query(
     ) {
         return Ok(Ensured::Report(Box::new(projected)));
     }
+    if let Some(projected) = super::bind::project_git_ready_from_parent_workspace(
+        repo_root,
+        request,
+        policy.coverage_all(),
+        extras,
+    ) {
+        return Ok(Ensured::Report(Box::new(projected)));
+    }
     Err(EnsureError::IncompleteEvidence(
         "incomplete evidence".into(),
     ))
@@ -106,7 +114,12 @@ pub(crate) fn ensure_target_report_with(
     policy: &EnsurePolicy,
     args: Option<&crate::test_runner::RunTestCmdArgs<'_>>,
 ) -> Result<Ensured, EnsureError> {
-    if !policy.dry_run() && !policy.retry_bad() && !args.is_some_and(|item| item.force_rerun) {
+    let pending = crate::test_runner::ensure_runtime::deferred_edit_pending();
+    if !policy.dry_run()
+        && !policy.retry_bad()
+        && !args.is_some_and(|item| item.force_rerun)
+        && !pending
+    {
         let extras = args
             .map(|item| item.extras)
             .unwrap_or(crate::test_runner::language_keyed::LanguageKeyed::EMPTY);

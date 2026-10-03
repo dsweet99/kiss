@@ -11,6 +11,9 @@ pub fn format_cached_status_dump(outcomes: &[RslipOutcome]) -> String {
 fn format_cached_status_each(outcomes: &[RslipOutcome]) -> String {
     let mut body = String::with_capacity(outcomes.len().saturating_mul(48));
     for outcome in outcomes {
+        if outcome.status == crate::rpytest_runner::TestStatus::Passed {
+            continue;
+        }
         body.push_str(cached_status_label(outcome.status));
         body.push_str(&outcome.nodeid);
         body.push('\n');
@@ -84,7 +87,7 @@ mod tests {
             outcome("b::t", TestStatus::Failed),
             outcome("c::t", TestStatus::TimedOut),
         ]);
-        assert!(body.contains("PASS a::t"));
+        assert!(!body.contains("PASS a::t"));
         assert!(body.contains("FAIL b::t"));
         assert!(body.contains("TIMEOUT c::t"));
     }
@@ -104,10 +107,8 @@ mod tests {
         assert!(outcomes.len() > 32);
         let body = format_cached_status_dump(&outcomes);
         assert!(
-            body.starts_with(
-                "PASS p::0\nPASS p::1\nPASS p::2\n"
-            ),
-            "totals must lead; body={body}"
+            !body.contains("PASS p::0"),
+            "cached PASS has no line; body={body}"
         );
         for i in 0..10 {
             assert!(
@@ -122,8 +123,8 @@ mod tests {
             );
         }
         assert!(
-            body.contains("PASS p::19"),
-            "must list every cached selector; body={body}"
+            !body.contains("PASS p::19"),
+            "cached PASS has no line; body={body}"
         );
     }
 

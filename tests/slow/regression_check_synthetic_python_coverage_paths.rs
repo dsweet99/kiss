@@ -136,8 +136,9 @@ fn cold_python_check_refreshes_runtime_coverage_and_warm_check_reuses_cache() {
         "warm cov should pass from coverage caches. stdout:\n{warm_stdout}\nstderr:\n{warm_stderr}"
     );
     assert!(
-        warm_stdout.contains("PASS (cached): test_lib.py::test_value")
-            || warm_stdout.contains("PASS test_lib.py::test_value"),
+        warm_stdout.contains("1 passed")
+            && !warm_stdout.contains("PASS: test_lib.py::test_value")
+            && !warm_stdout.contains("PASS test_lib.py::test_value"),
         "warm kiss test should reuse the cached Python result. stdout:\n{warm_stdout}"
     );
 }

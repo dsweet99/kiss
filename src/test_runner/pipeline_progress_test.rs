@@ -357,11 +357,10 @@ fn rust_execute_proceeds_while_python_covering_waits() {
     let finished = Arc::new(AtomicBool::new(false));
     let finished_job = Arc::clone(&finished);
     let job = std::thread::spawn(move || {
-        let _ = crate::test_runner::run_test(run_args(
-            crate::bin_cli::args::TestInvocation::All,
-            false,
-            None,
-        ));
+        let _ = crate::test_runner::pipeline::run_overlapped_test(
+            &run_args(crate::bin_cli::args::TestInvocation::All, false, None),
+            Instant::now(),
+        );
         finished_job.store(true, Ordering::SeqCst);
     });
     let started = Instant::now();

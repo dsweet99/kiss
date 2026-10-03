@@ -222,7 +222,8 @@ fn try_snapshot(
             plan,
         }));
     }
-    if !policy.retry_bad() && !force {
+    let deferred_edit = crate::test_runner::ensure_runtime::deferred_edit_pending();
+    if !policy.retry_bad() && !force && !deferred_edit {
         let extras = args
             .map(|item| item.extras)
             .unwrap_or(crate::test_runner::language_keyed::LanguageKeyed::EMPTY);
@@ -238,7 +239,9 @@ fn try_snapshot(
     }
     if !policy.assemble_only()
         && let Some(args) = args
-        && (!plan.known_execution_union().is_empty() || plan.population_repair)
+        && (!plan.known_execution_union().is_empty()
+            || plan.population_repair
+            || deferred_edit)
     {
         execute_repair(args)?;
         return assemble_after_repair(repo_root, request, policy, time_gate_active, args);

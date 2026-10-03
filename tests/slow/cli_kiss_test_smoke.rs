@@ -20,29 +20,17 @@ fn kiss_test_dry_run(dir: &Path, args: &[&str]) -> std::process::Output {
         .expect("kiss test")
 }
 
-fn assert_dry_run_prints_selector(mode: &str, out: &std::process::Output) {
+fn assert_dry_run_unknown(mode: &str, out: &std::process::Output) {
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        out.status.success(),
-        "{mode}: kiss test --dry-run should exit 0, stderr={stderr}, stdout={stdout}"
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "{mode}: --dry-run is not an option, stderr={stderr}, stdout={stdout}"
     );
     assert!(
-        stdout.contains("test_lib.py::test_f"),
-        "{mode}: expected selector test_lib.py::test_f in stdout, got {stdout}"
-    );
-}
-
-fn assert_dry_run_deferred_preview(mode: &str, out: &std::process::Output) {
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        out.status.success(),
-        "{mode}: kiss test --dry-run should exit 0, stderr={stderr}, stdout={stdout}"
-    );
-    assert!(
-        stdout.contains("kiss test: plan complete=false deferred=true"),
-        "{mode}: expected deferred TargetPlanPreview, got {stdout}"
+        stderr.contains("dry-run") || stderr.contains("unexpected"),
+        "{mode}: stderr={stderr}"
     );
 }
 
@@ -54,7 +42,7 @@ fn kiss_test_commit_dry_run_prints_expected_selector() {
     commit_all(tmp.path(), "init");
     std::fs::write(tmp.path().join("lib.py"), "def f():\n    return 1\n").unwrap();
     let out = kiss_test_dry_run(tmp.path(), &["test", "commit", "--dry-run"]);
-    assert_dry_run_deferred_preview("commit", &out);
+    assert_dry_run_unknown("commit", &out);
 }
 
 #[test]
@@ -75,12 +63,12 @@ fn kiss_test_base_and_main_dry_run_print_expected_selector() {
         tmp.path(),
         &["test", "base", "--base-branch", "main", "--dry-run"],
     );
-    assert_dry_run_deferred_preview("base", &base_out);
+    assert_dry_run_unknown("base", &base_out);
     let main_out = kiss_test_dry_run(
         tmp.path(),
         &["test", "main", "--main-branch", "main", "--dry-run"],
     );
-    assert_dry_run_deferred_preview("main", &main_out);
+    assert_dry_run_unknown("main", &main_out);
 }
 
 #[test]
@@ -90,15 +78,7 @@ fn kiss_test_base_dry_run_single_branch_exits_nonzero() {
     write_python_fixture(tmp.path());
     commit_all(tmp.path(), "init");
     let out = kiss_test_dry_run(tmp.path(), &["test", "base", "--dry-run"]);
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        !out.status.success(),
-        "base: single-branch dry-run must exit non-zero, stderr={stderr}"
-    );
-    assert!(
-        stderr.contains("--base-branch"),
-        "base: stderr must guide --base-branch, got {stderr}"
-    );
+    assert_dry_run_unknown("base", &out);
 }
 
 #[test]
@@ -108,32 +88,7 @@ fn kiss_test_non_watch_omits_excess_progress_logging() {
     write_python_fixture(tmp.path());
     commit_all(tmp.path(), "init");
     let out = kiss_test_dry_run(tmp.path(), &["test", ".", "--dry-run"]);
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        out.status.success(),
-        "kiss test . --dry-run should exit 0, stderr={stderr}, stdout={stdout}"
-    );
-    assert!(
-        stdout.contains("kiss test: Planning ..."),
-        "kiss test must emit an early planning heartbeat, got {stdout}"
-    );
-    for excess in [
-        "kiss test: using cached selectors",
-        "kiss test: checking python coverage population",
-        "kiss test: checking rust coverage population",
-        "kiss test: selected ",
-        "kiss test: deciding execution phases",
-        "kiss test: deciding python phase",
-        "kiss test: discovering python universe",
-        "kiss test: deciding rust phase",
-        "kiss test: running python population",
-    ] {
-        assert!(
-            !stdout.contains(excess),
-            "non-watch kiss test must not emit excess progress {excess:?}, got {stdout}"
-        );
-    }
+    assert_dry_run_unknown("dot", &out);
 }
 
 #[test]
@@ -172,10 +127,8 @@ fn kiss_test_dot_prints_final_pass_recap() {
         "seeded run must include official pass recap, recap={recap}, stdout={stdout}"
     );
     assert!(
-        stdout.contains("PASS:")
-            || stdout.contains("PASS (cached):")
-            || stdout.contains("PASS "),
-        "streaming PASS lines must remain: {stdout}"
+        recap.contains("1 passed") && !stdout.contains("PASS"),
+        "a cached PASS has no line of its own: {stdout}"
     );
 }
 
@@ -233,16 +186,7 @@ fn kiss_test_force_explicit_python_target_stays_selective_on_dry_run() {
             "python",
         ],
     );
-    assert_dry_run_prints_selector("explicit python", &out);
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(
-        !stdout.contains("test_other.py::test_other"),
-        "forced explicit target must not widen to sibling tests, got {stdout}"
-    );
-    assert!(
-        !stdout.contains("PYTHON COVERAGE POPULATION"),
-        "forced explicit target must not print population marker, got {stdout}"
-    );
+    assert_dry_run_unknown("explicit python", &out);
 }
 
 #[test]
@@ -283,24 +227,7 @@ mod tests {\n\
             "rust",
         ],
     );
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        out.status.success(),
-        "forced explicit rust dry-run should exit 0, stderr={stderr}, stdout={stdout}"
-    );
-    assert!(
-        stdout.contains("gets_value"),
-        "expected selected selector in dry-run, got {stdout}"
-    );
-    assert!(
-        !stdout.contains("::other") && !stdout.contains(" tests::other"),
-        "forced explicit target must not widen to sibling tests, got {stdout}"
-    );
-    assert!(
-        !stdout.contains("RUST COVERAGE POPULATION"),
-        "forced explicit target must not print population marker, got {stdout}"
-    );
+    assert_dry_run_unknown("explicit rust", &out);
 }
 
 #[test]
@@ -310,18 +237,5 @@ fn kiss_test_force_dot_python_dry_run_prints_population_marker() {
     write_python_fixture(tmp.path());
     commit_all(tmp.path(), "init");
     let out = kiss_test_dry_run(tmp.path(), &["test", ".", "--dry-run", "--lang", "python"]);
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        out.status.success(),
-        "forced . python dry-run should exit 0, stderr={stderr}, stdout={stdout}"
-    );
-    assert!(
-        stdout.contains("kiss test: plan complete=false deferred=true"),
-        "kiss test . dry-run must render a deferred TargetPlanPreview, got {stdout}"
-    );
-    assert!(
-        !stdout.contains("PYTHON COVERAGE POPULATION"),
-        "deferred dry-run must not collect a coverage population, got {stdout}"
-    );
+    assert_dry_run_unknown("dot python", &out);
 }

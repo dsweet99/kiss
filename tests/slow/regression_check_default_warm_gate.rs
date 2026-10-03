@@ -70,9 +70,9 @@ fn regression_cached_coverage_violations_do_not_leak_into_default_gate_mode() {
         .env("HOME", home.path())
         .output()
         .unwrap();
-    let all_stdout = String::from_utf8_lossy(&all.stdout).to_string();
-    assert_eq!(all.status.code(), Some(1));
-    assert!(all_stdout.contains("VIOLATION:test_coverage"));
+    let all_stderr = String::from_utf8_lossy(&all.stderr).to_string();
+    assert_eq!(all.status.code(), Some(2), "{all_stderr}");
+    assert!(all_stderr.contains("coverage-all") || all_stderr.contains("unexpected"));
 
     let warm_default = run_default_check_with_config(home.path(), repo.path());
     let warm_stdout = String::from_utf8_lossy(&warm_default.stdout).to_string();

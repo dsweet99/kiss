@@ -53,15 +53,31 @@ where
     C: FnMut(&RunTestCmdArgs<'_>, &WatchLiveConfig) -> WatchCoverageResult,
 {
     crate::test_runner::emit_test_progress("kiss test: Starting");
-    apply_queued_filters(ctx.live, ctx.queued);
-    let live = &*ctx.live;
-    let (cycle_args, replies) = take_queued_cycle_args(live, ctx.queued);
+    if ctx.live.config_outdated() {
+        eprintln!("kiss test-watch: running with outdated configs");
+    }
+    let config_force = ctx.live.config_rerun_pending();
+    // The config rerun belongs to the watcher. A waiting client does not narrow it.
+    if !config_force {
+        apply_queued_filters(ctx.live, ctx.queued);
+    }
+    let (mut cycle_args, replies) = if config_force {
+        let mut hold_clients = None;
+        take_queued_cycle_args(ctx.live, &mut hold_clients)
+    } else {
+        take_queued_cycle_args(ctx.live, ctx.queued)
+    };
+    if config_force {
+        cycle_args.force_rerun = true;
+    }
     let _ = ctx.run_cov;
+    let reuse_suite =
+        ctx.reuse_suite && !crate::test_runner::ensure_runtime::deferred_edit_pending();
     let report = crate::test_runner::kiss_report_from_ensure_outcome(
         crate::test_runner::target_request::ensure_target_report(
             Some(ctx.repo_root),
             &cycle_args,
-            ctx.reuse_suite,
+            reuse_suite,
             true,
             |args| (*ctx.run_cycle)(args),
         ),
@@ -77,13 +93,25 @@ where
     if !reconcile_inventory(ctx.suite, ctx.last_reply, &cycle_args) {
         return CycleOutcome::Error;
     }
+    let warning = ctx
+        .live
+        .config_outdated()
+        .then(|| "kiss test-watch: running with outdated configs".to_string());
     let waiter = reply_all(
         &replies,
         report.exit_code,
         report.error.clone(),
         report.output,
+        warning,
     );
     store_cycle_replies(ctx.last_reply, &cycle_args, waiter);
+    if crate::test_runner::ensure_runtime::take_deferred_edit() {
+        ctx.machine
+            .mark_scope_dirty(std::time::Instant::now());
+    }
+    if config_force {
+        ctx.live.finish_config_rerun();
+    }
     if let Some(msg) = drain_into_machine(
         ctx.source,
         ctx.filter,
@@ -150,8 +178,8 @@ fn store_interrupted_reply(
     cycle_args: &RunTestCmdArgs<'_>,
 ) {
     let output = cycle_ensure_hit(repo, cycle_args).and_then(|report| report.output);
-    let msg = reply_all(replies, EXIT_INTERRUPTED, None, output);
-    last.store(None, msg);
+    let msg = reply_all(replies, EXIT_INTERRUPTED, None, output, None);
+    last.store_scoped(cycle_is_workspace(cycle_args), msg);
 }
 
 fn store_cycle_replies(
@@ -162,7 +190,12 @@ fn store_cycle_replies(
     if !last.matches_args(cycle_args) {
         return;
     }
-    last.store(None, waiter);
+    last.store_scoped(cycle_is_workspace(cycle_args), waiter);
+}
+
+fn cycle_is_workspace(cycle_args: &RunTestCmdArgs<'_>) -> bool {
+    cycle_args.lang_filter().is_none()
+        && crate::test_runner::target_request::is_workspace_focus(&cycle_args.target_request.focus)
 }
 
 fn reply_all(
@@ -170,6 +203,7 @@ fn reply_all(
     exit_code: i32,
     error: Option<String>,
     output: Option<String>,
+    warning: Option<String>,
 ) -> NudgeReplyMsg {
     let output = output.filter(|s| !s.is_empty());
     let msg = NudgeReplyMsg {
@@ -178,6 +212,7 @@ fn reply_all(
         error,
         output,
         idle_cache: Some(false),
+        warning,
     };
     for reply in replies {
         let _ = reply.send(msg.clone());
@@ -225,6 +260,7 @@ mod nudge_stub {
 
     #[derive(Clone)]
     pub(crate) struct NudgeReplyMsg {
+        pub warning: Option<String>,
         pub exit_code: i32,
         pub pid: u32,
         pub error: Option<String>,
@@ -233,6 +269,7 @@ mod nudge_stub {
     }
 
     pub(crate) struct NudgeRequestMsg {
+        pub reject: Option<String>,
         pub force: bool,
         pub force_bad: bool,
         pub metrics: bool,

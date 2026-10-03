@@ -5,7 +5,7 @@ mod planning;
 
 pub(crate) use factory::ensure_languages_runtime;
 pub(crate) use from_planned::EnsureFromPlanned;
-pub(crate) use kernel::ensure_runtime_cache;
+pub(crate) use kernel::{deferred_edit_pending, ensure_runtime_cache, take_deferred_edit};
 pub(crate) use planning::{
     EnsureSelectorsArgs, ensure_request_for_all, ensure_request_for_selectors,
     ensure_request_from_planned,

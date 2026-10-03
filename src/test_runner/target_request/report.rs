@@ -213,7 +213,7 @@ impl TargetReport {
 
     pub(crate) fn exit_for(worst: Option<EffectiveStatus>) -> i32 {
         match worst {
-            Some(EffectiveStatus::Timeout) => 124,
+            Some(EffectiveStatus::Timeout) => 1,
             Some(EffectiveStatus::Fail) => 1,
             Some(EffectiveStatus::Pass) | None => 0,
         }
@@ -237,9 +237,11 @@ impl TargetReport {
     }
 
     pub(crate) fn combine_exit(row_exit: i32, caller_exit: i32) -> i32 {
-        if row_exit == 124 || caller_exit == 124 {
-            124
-        } else if row_exit != 0 {
+        // A timed-out test is a failed result for the process. Runners still
+        // report 124 internally; the scenario exit for FAIL or TIMEOUT is 1.
+        let row_exit = if row_exit == 124 { 1 } else { row_exit };
+        let caller_exit = if caller_exit == 124 { 1 } else { caller_exit };
+        if row_exit != 0 {
             row_exit
         } else {
             caller_exit
@@ -665,6 +667,55 @@ fn gates_from_coverage(coverage: &ReportCoverage, gate: &kiss::GateConfig) -> Ve
     }
 }
 
+fn population_selectors_for_count(
+    repo_root: &Path,
+    request: &super::types::TargetRequest,
+    need: crate::test_runner::workspace_selector_cache::SelectorCountNeed,
+) -> Option<(Vec<String>, Vec<String>)> {
+    if let Some(cached) =
+        crate::test_runner::workspace_selector_cache::load_workspace_selectors_for_count(
+            repo_root,
+            &request.ignore,
+            &[],
+            need,
+        )
+    {
+        return Some(cached);
+    }
+    let python = if need.python {
+        crate::test_runner::runners::enumerate_workspace_python_selectors(
+            repo_root,
+            &request.ignore,
+            &[],
+        )
+        .ok()?
+    } else {
+        Vec::new()
+    };
+    let rust = if need.rust {
+        crate::test_runner::runners::enumerate_workspace_rust_selectors(repo_root, &request.ignore)
+            .ok()?
+    } else {
+        Vec::new()
+    };
+    if need.python {
+        crate::test_runner::workspace_selector_cache::store_python_workspace_selectors(
+            repo_root,
+            &request.ignore,
+            &python,
+            &[],
+        );
+    }
+    if need.rust {
+        crate::test_runner::workspace_selector_cache::store_rust_workspace_selectors(
+            repo_root,
+            &request.ignore,
+            &rust,
+        );
+    }
+    Some((python, rust))
+}
+
 fn gates_from_population(
     repo_root: &Path,
     gate: &kiss::GateConfig,
@@ -675,14 +726,7 @@ fn gates_from_population(
         python: need_python && super::manifest::has_python_test_files(repo_root, request),
         rust: need_rust,
     };
-    let Some((py, rs)) =
-        crate::test_runner::workspace_selector_cache::load_workspace_selectors_for_count(
-            repo_root,
-            &request.ignore,
-            &[],
-            need,
-        )
-    else {
+    let Some((py, rs)) = population_selectors_for_count(repo_root, request, need) else {
         return vec![ReportGate {
             kind: "max_num_tests".into(),
             detail: "population evidence incomplete".into(),
@@ -1448,7 +1492,7 @@ mod exit_gate_tests {
             vec![coverage_gate()],
             false,
         );
-        assert_eq!(report.exit_code, 124);
+        assert_eq!(report.exit_code, 1);
     }
 
     fn timed_row(selector: &str, duration_ns: u64) -> SelectorRow {
@@ -1533,7 +1577,7 @@ mod exit_gate_tests {
     }
 
     #[test]
-    fn missing_population_cache_fails_closed() {
+    fn missing_population_cache_is_filled_by_enumeration() {
         let tmp = tempfile::TempDir::new().unwrap();
         seed_count_repo(&tmp);
         let gates = gates_from_population(
@@ -1541,9 +1585,21 @@ mod exit_gate_tests {
             &kiss::GateConfig::default(),
             &workspace_request(),
         );
-        assert_eq!(gates.len(), 1);
-        assert_eq!(gates[0].kind, "max_num_tests");
-        assert_eq!(gates[0].detail, "population evidence incomplete");
+        assert!(
+            gates
+                .iter()
+                .all(|gate| gate.detail != "population evidence incomplete"),
+            "{gates:?}"
+        );
+        assert!(
+            crate::test_runner::workspace_selector_cache::load_cached_python_workspace_selectors(
+                tmp.path(),
+                &[],
+                &[],
+            )
+            .is_some(),
+            "enumeration stores the population for the next count"
+        );
     }
 
     #[test]

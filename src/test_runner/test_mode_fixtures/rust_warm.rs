@@ -173,6 +173,10 @@ pub(crate) fn republish_cloned_lib_population(root: &Path) {
     if entries_dir.is_dir() {
         for entry in fs::read_dir(&entries_dir).expect("entries dir").flatten() {
             let path = entry.path();
+            if path.file_name().is_some_and(|name| name != "abc.json") {
+                let _ = fs::remove_file(&path);
+                continue;
+            }
             if path.extension().is_none_or(|ext| ext != "json") {
                 continue;
             }
@@ -454,6 +458,15 @@ fn retarget_cloned_kiss_cache(src: &Path, dst: &Path) {
             let path = entry.path();
             if path.is_dir() {
                 stack.push(path);
+                continue;
+            }
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if (name.starts_with("cargo_roots_") && name.ends_with(".bin"))
+                || name == "rust_test_selectors.json"
+                || (name.starts_with("rust_test_selectors.") && name.ends_with(".json"))
+            {
+                let _ = std::fs::remove_file(&path);
                 continue;
             }
             let is_text = path

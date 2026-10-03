@@ -59,7 +59,7 @@ fn run_planning_oneshot(dir: &Path) -> (bool, String, String) {
     crate::common::scrub_parent_coverage_env(&mut cmd);
     crate::common::preserve_toolchain_homes(&mut cmd);
     let output = cmd
-        .args(["test", "--dry-run", "--lang", "python", "test_lib.py"])
+        .args(["test", "--lang", "python", "test_lib.py"])
         .env("PYTHONDONTWRITEBYTECODE", "1")
         .current_dir(dir)
         .output()
@@ -148,10 +148,7 @@ fn oneshot_then_watch_sequential() {
     let (ok, stdout, stderr) = run_planning_oneshot(tmp.path());
     assert_local_oneshot_ok(&stdout, &stderr, ok);
 
-    let mut watch = start_watch(
-        tmp.path(),
-        &["test", "--watch", "--lang", "python", "test_lib.py"],
-    );
+    let mut watch = start_watch(tmp.path(), &["test-watch"]);
     assert!(watch.still_running(), "watcher must stay up after oneshot");
     assert_json_under_kiss_parses(tmp.path());
 }
@@ -162,10 +159,7 @@ fn watch_then_oneshot_sequential() {
         return;
     }
     let tmp = crate::common::locked_seeded_python_watch_repo();
-    let mut watch = start_watch(
-        tmp.path(),
-        &["test", "--watch", "--lang", "python", "test_lib.py"],
-    );
+    let mut watch = start_watch(tmp.path(), &["test-watch"]);
     wait_watch_idle_cycle(tmp.path());
     let (ok, stdout, stderr) = run_oneshot(tmp.path());
     assert_watcher_oneshot_ok(&stdout, &stderr, ok);
@@ -177,7 +171,7 @@ fn spawn_planning_oneshot(dir: &Path) -> std::process::Child {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
     crate::common::scrub_parent_coverage_env(&mut cmd);
     crate::common::preserve_toolchain_homes(&mut cmd);
-    cmd.args(["test", "--dry-run", "--lang", "python", "test_lib.py"])
+    cmd.args(["test", "--lang", "python", "test_lib.py"])
         .env("PYTHONDONTWRITEBYTECODE", "1")
         .current_dir(dir)
         .stdout(Stdio::piped())
@@ -193,10 +187,7 @@ fn oneshot_and_watch_start_together_oneshot_first() {
     }
     let tmp = crate::common::locked_seeded_python_watch_repo();
     let oneshot = spawn_planning_oneshot(tmp.path());
-    let mut watch = spawn_watch(
-        tmp.path(),
-        &["test", "--watch", "--lang", "python", "test_lib.py"],
-    );
+    let mut watch = spawn_watch(tmp.path(), &["test-watch"]);
     let (ok, stdout, stderr) = finish_oneshot(oneshot);
     wait_watch_session(tmp.path(), &mut watch);
     assert_oneshot_local_or_watcher(&stdout, &stderr, ok);
@@ -213,10 +204,7 @@ fn oneshot_and_watch_start_together_watch_first() {
         return;
     }
     let tmp = crate::common::locked_seeded_python_watch_repo();
-    let mut watch = spawn_watch(
-        tmp.path(),
-        &["test", "--watch", "--lang", "python", "test_lib.py"],
-    );
+    let mut watch = spawn_watch(tmp.path(), &["test-watch"]);
     let oneshot = spawn_planning_oneshot(tmp.path());
     let (ok, stdout, stderr) = finish_oneshot(oneshot);
     wait_watch_session(tmp.path(), &mut watch);
@@ -253,10 +241,7 @@ fn overlapping_oneshot_and_watch_leave_usable_cache() {
         &["test", "--lang", "python", "test_lib.py::test_f"],
     );
     std::thread::sleep(Duration::from_millis(15));
-    let mut watch = spawn_watch(
-        tmp.path(),
-        &["test", "--watch", "--lang", "python", "test_lib.py"],
-    );
+    let mut watch = spawn_watch(tmp.path(), &["test-watch"]);
     let (ok, stdout, stderr) = finish_oneshot(oneshot);
     wait_watch_session(tmp.path(), &mut watch);
     assert_oneshot_local_or_watcher(&stdout, &stderr, ok);

@@ -41,20 +41,32 @@ fn resolve_git(
     let (mode, main_cfg, main_cli, base_cli) = git_resolve_args(focus);
     let diff_target =
         crate::test_git::resolve_diff_target(repo_root, mode, main_cfg, main_cli, base_cli)?;
-    let rel_changed = match mode {
+    let mut rel_changed = match mode {
         TestChangeMode::Commit => crate::test_git::changed_paths_commit(repo_root)?,
         TestChangeMode::Base | TestChangeMode::Main => crate::test_git::changed_paths_since(
             repo_root,
             diff_target.as_ref().ok_or("missing git diff target")?,
         )?,
     };
-    let rel_lines = match mode {
+    let mut rel_lines = match mode {
         TestChangeMode::Commit => crate::test_git::changed_lines_commit(repo_root)?,
         TestChangeMode::Base | TestChangeMode::Main => crate::test_git::changed_lines_since(
             repo_root,
             diff_target.as_ref().ok_or("missing git diff target")?,
         )?,
     };
+    // `base` and `main` include the committed range and the uncommitted work,
+    // including a new untracked test file.
+    if matches!(mode, TestChangeMode::Base | TestChangeMode::Main) {
+        for path in crate::test_git::changed_paths_commit(repo_root)? {
+            if !rel_changed.iter().any(|item| item == &path) {
+                rel_changed.push(path);
+            }
+        }
+        for (path, lines) in crate::test_git::changed_lines_commit(repo_root)? {
+            rel_lines.entry(path).or_default().extend(lines);
+        }
+    }
     let lang = request.lang.map(super::types::LangFilter::to_language);
     Ok(git_resolved(
         repo_root,

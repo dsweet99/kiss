@@ -33,10 +33,12 @@ pub(crate) use adapt::{
 };
 #[cfg(test)]
 pub(crate) use bind::load_ready_for_request;
-pub(crate) use bind::{BindDecision, bind_and_prepare};
+pub(crate) use bind::{BindDecision, bind_and_prepare, project_operand_ready_from_parent_workspace};
+pub(crate) use canon::canonicalize_target_request;
 pub(crate) use counters::add_index;
 pub(crate) use coverage::{coverage_exit_from_ready_request, coverage_paths_for_request};
 pub(crate) use projection::build_slice_projection;
+pub(crate) use report_store::load_current_report;
 #[cfg(test)]
 pub(crate) use projection::slice_for;
 pub(crate) use render::official_report_text;

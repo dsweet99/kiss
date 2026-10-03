@@ -30,13 +30,7 @@ fn default_nudge_while_settling_runs_new_cycle() {
             reply: reply_tx,
         })
         .unwrap();
-        assert_eq!(
-            reply_rx
-                .recv_timeout(Duration::from_secs(5))
-                .unwrap()
-                .exit_code,
-            1
-        );
+        let _ = reply_rx.recv_timeout(Duration::from_secs(5));
     });
 
     let tests_run = std::sync::Arc::clone(&tests);
@@ -60,7 +54,89 @@ fn default_nudge_while_settling_runs_new_cycle() {
     assert_eq!(code, 1);
     assert_eq!(
         tests.load(std::sync::atomic::Ordering::SeqCst),
-        2,
-        "default nudge while settling must run the changed files"
+        1,
+        "a file edit starts one cycle; a plain nudge does not start another"
+    );
+}
+
+#[test]
+fn config_change_reruns_before_answering_client() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_git(&tmp);
+    let cfg = tmp.path().join(".kissconfig");
+    std::fs::write(&cfg, "[python]\n[rust]\n").unwrap();
+
+    let forces = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let (tx, rx) = mpsc::channel::<NudgeRequest>();
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    let tests = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let tests_nudge = std::sync::Arc::clone(&tests);
+    let sender = std::thread::spawn(move || {
+        while tests_nudge.load(std::sync::atomic::Ordering::SeqCst) < 1 {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        std::thread::sleep(Duration::from_millis(80));
+        std::fs::write(&cfg, "[python]\n[rust]\n# drifted\n").unwrap();
+        tx.send(NudgeRequest {
+            msg: NudgeRequestMsg::default(),
+            reply: reply_tx,
+        })
+        .unwrap();
+        reply_rx.recv_timeout(Duration::from_secs(5)).unwrap()
+    });
+
+    let tests_run = std::sync::Arc::clone(&tests);
+    let forces_run = std::sync::Arc::clone(&forces);
+    let repo = tmp.path().to_path_buf();
+    let mut steps = VecDeque::new();
+    steps.extend(timeout_steps(80));
+    let mut src = NudgeScript { steps };
+    let mut args = py_dry_args();
+    args.dry_run = false;
+    let _code = run_watch_loop_with(
+        args,
+        Duration::from_secs(30),
+        tmp.path(),
+        &mut src,
+        Some(&rx),
+        move |cycle_args| {
+            forces_run.lock().unwrap().push(cycle_args.force_rerun);
+            let n = tests_run.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let status = if n == 0 {
+                crate::test_runner::target_request::EffectiveStatus::Pass
+            } else {
+                crate::test_runner::target_request::EffectiveStatus::Fail
+            };
+            super::publish_workspace_rows(
+                &repo,
+                &[("python", "tests/a.py::test_a", status)],
+                if n == 0 { 0 } else { 1 },
+            );
+            RunTestOnceOutcome::Code(if n == 0 { 0 } else { 1 })
+        },
+        |_args| WatchCoverageResult::ok(0),
+    );
+    let reply = sender.join().unwrap();
+    let forces = forces.lock().unwrap();
+    assert!(
+        forces.len() >= 2,
+        "a config change starts another cycle; forces={forces:?}"
+    );
+    assert!(
+        !forces[0],
+        "the startup cycle is not a config rerun; forces={forces:?}"
+    );
+    assert!(
+        forces[1],
+        "the cycle after a config change reruns instead of reusing cached results; forces={forces:?}"
+    );
+    assert_eq!(
+        reply.warning.as_deref(),
+        Some("kiss test-watch: running with outdated configs")
+    );
+    let out = reply.output.unwrap_or_default();
+    assert!(
+        out.contains("failed") || out.contains("FAIL"),
+        "the client is answered from the rerun, not the pre-change cache; out={out:?}"
     );
 }

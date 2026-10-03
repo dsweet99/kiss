@@ -65,6 +65,7 @@ fn watcher_client_error_does_not_double_prefix() {
 #[test]
 fn oneshot_client_reply_strips_only_when_not_waited() {
     let src = crate::test_runner::NudgeReplyMsg {
+        warning: None,
         exit_code: 1,
         pid: 1,
         error: Some("error: kiss test: rust llvm-cov failed: stale".into()),
@@ -83,6 +84,7 @@ fn oneshot_client_reply_strips_only_when_not_waited() {
 #[test]
 fn oneshot_client_reply_keeps_fresh_cycle_without_wait() {
     let src = crate::test_runner::NudgeReplyMsg {
+        warning: None,
         exit_code: 1,
         pid: 1,
         error: Some("error: kiss test: rust llvm-cov failed: stale".into()),
@@ -273,7 +275,7 @@ fn rustc_style_missing_path_is_rejected_even_if_watcher_says_ok() {
         });
         set_client_result_override_for_test(None);
         assert_eq!(
-            code, 1,
+            code, 2,
             "{raw}: missing path must fail even when a watcher recap is success"
         );
         assert_eq!(calls.load(Ordering::SeqCst), 0, "{raw}");
@@ -300,7 +302,7 @@ fn lang_mismatch_is_rejected_even_if_watcher_says_ok() {
     });
     set_client_result_override_for_test(None);
     assert_eq!(
-        code, 1,
+        code, 2,
         "lang mismatch must fail even when a watcher recap is success"
     );
     assert_eq!(calls.load(Ordering::SeqCst), 0);
@@ -327,7 +329,7 @@ fn ignore_prefix_is_rejected_even_if_watcher_says_ok() {
     });
     set_client_result_override_for_test(None);
     assert_eq!(
-        code, 1,
+        code, 2,
         "ignore prefix must fail even when a watcher recap is success"
     );
     assert_eq!(calls.load(Ordering::SeqCst), 0);

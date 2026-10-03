@@ -10,30 +10,14 @@ use crate::test_runner::watch::filter::WatchPathFilter;
 use crate::test_runner::watch::settle::{PathSignature, SettleMachine, SettlePoll};
 
 #[test]
-fn watch_flag_parses_and_rejects_dry_run() {
+fn watch_command_parses_and_old_flags_do_not() {
     use crate::bin_cli::args::{Cli, Commands};
     use clap::Parser;
-    let cli = Cli::try_parse_from(["kiss", "test", "--watch", "."]).unwrap();
-    match cli.command {
-        Commands::Test {
-            watch: true,
-            dry_run: false,
-            operands,
-            ..
-        } => assert_eq!(operands, vec![".".to_string()]),
-        _ => panic!("expected watch"),
-    }
-    let err = Cli::try_parse_from(["kiss", "test", "--watch-bg", "."]).unwrap_err();
-    assert!(err.to_string().contains("--watch-bg") || err.to_string().contains("unexpected"));
-    let cli = Cli::try_parse_from(["kiss", "test", "--watch", "--dry-run", "."]).unwrap();
-    match cli.command {
-        Commands::Test {
-            watch: true,
-            dry_run: true,
-            ..
-        } => {}
-        _ => panic!("expected both flags parse; dispatch rejects combo"),
-    }
+    let cli = Cli::try_parse_from(["kiss", "test-watch"]).unwrap();
+    assert!(matches!(cli.command, Commands::TestWatch));
+    let err = Cli::try_parse_from(["kiss", "test", "--watch", "."]).unwrap_err();
+    assert!(err.to_string().contains("--watch") || err.to_string().contains("unexpected"));
+    assert!(Cli::try_parse_from(["kiss", "test", "--dry-run", "."]).is_err());
 }
 
 #[test]

@@ -138,15 +138,15 @@ fn kiss_test_sigint_caches_passed_tests_as_it_goes() {
         "restart must exit 0; stdout={stdout2} stderr={stderr2}"
     );
     // Cache reuse may surface as rslip prepare hits, or as an ITE/official report
-    // assemble with no runner (`subprocess=0`) that still prints PASS <selector>
-    // without a live `PASS:` miss line. Both mean test_fast was not re-executed.
+    // assemble with no runner. A cached PASS has no line of its own.
     let rslip_hit = stdout2.contains("kiss test: rslip prepared hits=1 misses=0");
-    let report_reuse = stdout2.contains("PASS test_lib.py::test_fast")
-        && stdout2.contains("kiss test: report members=1")
-        && !stdout2.contains("PASS: test_lib.py::test_fast")
+    let report_reuse = stdout2.contains("kiss test: report members=1")
         && !stdout2.contains("rslip prepared hits=0 misses=");
     assert!(
-        (rslip_hit || report_reuse) && stdout2.contains("PASS "),
+        (rslip_hit || report_reuse)
+            && stdout2.contains("1 passed")
+            && !stdout2.contains("PASS: test_lib.py::test_fast")
+            && !stdout2.contains("PASS test_lib.py::test_fast"),
         "expected test_fast to be cached on second run (rslip hit or report reuse), \
          stdout={stdout2}, stderr={stderr2}"
     );

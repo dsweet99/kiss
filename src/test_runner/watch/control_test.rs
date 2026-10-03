@@ -11,6 +11,15 @@ fn commit_request() -> crate::test_runner::target_request::TargetRequest {
 }
 
 #[test]
+fn two_worktrees_get_different_watch_sockets() {
+    let a = tempfile::tempdir().unwrap();
+    let b = tempfile::tempdir().unwrap();
+    let sock_a = watch_socket_path(a.path()).unwrap();
+    let sock_b = watch_socket_path(b.path()).unwrap();
+    assert_ne!(sock_a, sock_b);
+}
+
+#[test]
 fn nudge_msg_as_request_all_without_pin_is_workspace() {
     use crate::test_runner::target_request::{TargetFocus, is_workspace_focus};
     let all = NudgeRequestMsg::default();
@@ -194,6 +203,7 @@ fn handle_client_logs_received_request() {
             .recv_timeout(Duration::from_secs(2))
             .unwrap();
         let _ = req.reply.send(NudgeReplyMsg {
+            warning: None,
             exit_code: 0,
             pid: std::process::id(),
             error: None,
@@ -242,6 +252,7 @@ fn protocol_round_trip_on_socket() {
         write_framed_json(
             &mut stream,
             &NudgeReplyMsg {
+                warning: None,
                 exit_code: 7,
                 pid: 42,
                 error: None,
@@ -266,6 +277,7 @@ fn protocol_round_trip_on_socket() {
     assert_eq!(
         reply,
         NudgeReplyMsg {
+            warning: None,
             exit_code: 7,
             pid: 42,
             error: None,
@@ -349,6 +361,7 @@ fn lock_held_missing_session_retries_then_ok() {
             .recv_timeout(Duration::from_secs(2))
             .unwrap();
         let _ = req.reply.send(NudgeReplyMsg {
+            warning: None,
             exit_code: 0,
             pid: std::process::id(),
             error: None,

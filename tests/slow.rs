@@ -88,6 +88,8 @@ mod watch_bilingual_counts;
 mod watch_client;
 #[path = "slow/watch_client_violations.rs"]
 mod watch_client_violations;
+#[path = "slow/watch_dry_run_rejected.rs"]
+mod watch_dry_run_rejected;
 #[path = "slow/watch_paths.rs"]
 mod watch_paths;
 #[path = "slow/watch_sigint.rs"]

@@ -6,10 +6,10 @@ use kiss::rpytest_runner::TestStatus;
 
 use crate::test_runner::lang_iface::{
     EnsureRequest, ExecutionWitness, LanguageRuntime, OutcomeBatch, PublishBatch,
-    SourceDeltaMisses, WitnessStatus, summary_from_accepted_witness,
+    SourceDeltaMisses, WitnessStatus, summary_from_witness_statuses,
 };
 use crate::test_runner::python_coverage_index::generation::{
-    SelectorEvidence, current_python_execution_identity, identity_matches_current,
+    SelectorEvidence, current_python_execution_identity, execution_context_matches_current,
 };
 use crate::test_runner::python_coverage_index::{
     GenerationReason, publish_python_derived_state_with_filter, repo_relative_coverage_file,
@@ -47,8 +47,61 @@ impl SourceDeltaMisses for PythonRuntime {
                 crate::test_runner::python_coverage_index::storage::
                     python_selector_definition_digest(&request.repo_root, file)
             });
-            if stored.get(selector.as_str()).copied().unwrap_or("") != current.as_str() {
-                misses.push(selector.clone());
+            let stored_digest = stored.get(selector.as_str()).copied().unwrap_or("");
+            if stored_digest == current.as_str() {
+                continue;
+            }
+            let recorded_problem = pinned.timings.iter().any(|row| {
+                row.selector == *selector
+                    && matches!(row.raw_status.as_str(), "failed" | "timed_out")
+            });
+            // A missing digest is not evidence the test file changed. A recorded
+            // FAIL or TIMEOUT is not rerun unless its stored definition digest differs.
+            if recorded_problem && stored_digest.is_empty() {
+                continue;
+            }
+            misses.push(selector.clone());
+        }
+        // A covered source file can change while the test file stays the same.
+        // A PASS whose rslip entry no longer matches those files has to run.
+        let passed: Vec<&String> = planned
+            .iter()
+            .filter(|selector| !misses.iter().any(|item| item == *selector))
+            .filter(|selector| {
+                pinned
+                    .timings
+                    .iter()
+                    .any(|row| row.selector == **selector && row.raw_status == "passed")
+            })
+            .collect();
+        if !passed.is_empty()
+            && let Ok((python_version, pytest_version)) =
+                super::rslip_request::detect_rslip_versions(&request.repo_root)
+        {
+            let reqs: Vec<_> = passed
+                .iter()
+                .filter_map(|selector| {
+                    super::rslip_request::rslip_request_from_parts(
+                        &request.repo_root,
+                        selector,
+                        &request.extras.python,
+                        &python_version,
+                        &pytest_version,
+                        false,
+                        &request.gate,
+                    )
+                    .ok()
+                })
+                .collect();
+            if reqs.len() == passed.len() {
+                for (selector, outcome) in passed
+                    .iter()
+                    .zip(kiss::rslip::load_cached_outcomes_many(&reqs))
+                {
+                    if matches!(outcome, Ok(None)) {
+                        misses.push((*selector).clone());
+                    }
+                }
             }
         }
         Ok(misses)
@@ -62,7 +115,7 @@ impl LanguageRuntime for PythonRuntime {
 
     fn current_identity(&self, request: &EnsureRequest) -> Result<String, String> {
         if let Ok(pinned) = try_load_pinned_python_generation_warm(&request.repo_root)
-            && identity_matches_current(
+            && execution_context_matches_current(
                 &request.repo_root,
                 &pinned.plan.base_identity,
                 &request.extras.python,
@@ -212,10 +265,11 @@ impl LanguageRuntime for PythonRuntime {
         planned: &[String],
         witness: &ExecutionWitness,
     ) -> Result<SelectorExecutionSummary, String> {
-        Ok(summary_from_accepted_witness(
+        Ok(summary_from_witness_statuses(
             planned,
             witness,
             |selector| selector.to_string(),
+            false,
         ))
     }
 }

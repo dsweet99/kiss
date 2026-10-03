@@ -223,13 +223,13 @@ fn reject_unresolved_targets(args: &TestCommandArgs<'_>) -> Result<(), i32> {
     crate::test_runner::expand_target_operands(&repo_root, &targets, args.ignore, args.lang_filter)
         .map_err(|e| {
             eprintln!("error: kiss test: {e}");
-            1
+            2
         })?;
     Ok(())
 }
 
 #[cfg(not(unix))]
-/// kiss-coverage-off
+#[coverage(off)]
 fn wait_out_live_watcher(args: &TestCommandArgs<'_>) -> Option<i32> {
     #[cfg(unix)]
     let result = match try_wait_out_live_watcher(args) {
@@ -268,15 +268,13 @@ fn nudge_request_from_test_args(args: &TestCommandArgs<'_>) -> crate::test_runne
         metrics: args.metrics,
         extras: crate::test_runner::language_keyed::LanguageKeyed {
             rust: args.extra.to_vec(),
-            python: kiss::effective_python_pytest_args(
-                &args.test_cfg.pytest_plugins,
-                args.extra,
-            ),
+            python: kiss::effective_python_pytest_args(&args.test_cfg.pytest_plugins, args.extra),
         },
         target_request: request_from_test_args(args),
         coverage_all: args.coverage_all,
         runner,
         configuration,
+        reject: None,
     }
 }
 
@@ -295,17 +293,17 @@ fn try_wait_out_live_watcher(args: &TestCommandArgs<'_>) -> Result<Option<i32>, 
     };
     let pid = session.pid;
     let mut printed_waiting = false;
-    let reply = match nudge_watcher_with_retry_on_wait(
-        &repo_root,
-        &session,
-        &nudge_request_from_test_args(args),
-        &mut || {
-            if !printed_waiting {
-                printed_waiting = true;
-                println!("kiss test: waiting for watcher (pid {pid})");
-            }
-        },
-    ) {
+    let mut request = nudge_request_from_test_args(args);
+    if args.jobs_cli.is_some() {
+        request.reject = Some("-j is not accepted while kiss test-watch is running".to_string());
+    } else if args.config_path.is_some() {
+        request.reject =
+            Some("--config is not accepted while kiss test-watch is running".to_string());
+    }
+    let reply = match nudge_watcher_with_retry_on_wait(&repo_root, &session, &request, &mut || {
+        printed_waiting = true;
+        println!("kiss test: waiting for watcher (pid {pid})");
+    }) {
         Ok(reply) => reply,
         Err(err) if err.contains("cannot connect") || err.contains("Broken pipe") => {
             crate::test_runner::reclaim_stale_watch_session(&repo_root);
@@ -329,6 +327,9 @@ fn emit_watcher_client_reply(reply: &crate::test_runner::NudgeReplyMsg) -> i32 {
     }
     if let Some(error) = reply.error.as_deref() {
         eprintln!("{}", format_watcher_client_error(error));
+    }
+    if let Some(warning) = reply.warning.as_deref() {
+        eprintln!("{warning}");
     }
     reply.exit_code
 }
@@ -938,11 +939,9 @@ mod tests {
             130
         );
         assert_eq!(
-            run_dry_tests(
-                &args,
-                mk_run_args(),
-                |_| RunTestOnceOutcome::EngineError("x".into())
-            ),
+            run_dry_tests(&args, mk_run_args(), |_| RunTestOnceOutcome::EngineError(
+                "x".into()
+            )),
             1
         );
     }
@@ -1309,7 +1308,6 @@ mod tests {
         );
     }
 }
-
 
 #[cfg(test)]
 #[path = "test_cmd_client_test.rs"]

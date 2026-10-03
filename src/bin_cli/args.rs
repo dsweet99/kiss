@@ -111,12 +111,25 @@ fn reject_legacy_all_operand(operands: &[String]) -> Result<(), String> {
     }
 }
 
+fn dot_operand_is_repo_root() -> bool {
+    let Ok(cwd) = std::env::current_dir() else {
+        return true;
+    };
+    match crate::test_git::git_repo_root(&cwd) {
+        Ok(root) => cwd.canonicalize().ok().as_deref() == Some(root.as_path()),
+        Err(_) => true,
+    }
+}
+
 fn try_parse_dot_all(operands: &[String], first: &str) -> Result<Option<TestInvocation>, String> {
     if is_dot_all_operand(first) {
         if operands.len() > 1 {
             return Err("`.` cannot be mixed with additional targets".to_string());
         }
-        return Ok(Some(TestInvocation::All));
+        if dot_operand_is_repo_root() {
+            return Ok(Some(TestInvocation::All));
+        }
+        return Ok(Some(TestInvocation::Targets(vec![first.to_string()])));
     }
     if operands.iter().any(|operand| is_dot_all_operand(operand)) {
         return Err("`.` cannot be mixed with additional targets".to_string());

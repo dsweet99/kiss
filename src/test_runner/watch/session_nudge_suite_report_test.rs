@@ -160,7 +160,7 @@ fn publish_timeout_ready(repo: &std::path::Path) {
             ("rust", "src/lib.rs::t_a", EffectiveStatus::Pass),
             ("rust", "src/lib.rs::t_b", EffectiveStatus::Pass),
         ],
-        124,
+        1,
     );
 }
 
@@ -358,7 +358,7 @@ fn python_only_oneshot_leaves_unscoped_watch_to_run() {
 }
 
 #[test]
-fn oneshot_then_watch_retry_bad_runs_engine() {
+fn oneshot_then_watch_retry_bad_all_pass_skips_engine() {
     let _cwd = crate::cwd_test_lock::lock();
     let tmp = seed_repo();
     persist_with(tmp.path(), watch_args());
@@ -385,7 +385,11 @@ fn oneshot_then_watch_retry_bad_runs_engine() {
     );
     let _ = sender.join().unwrap();
     assert_eq!(code, 1);
-    assert_eq!(watch_runs.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        watch_runs.load(Ordering::SeqCst),
+        0,
+        "retry-bad with only PASS tests must not run the engine"
+    );
 }
 
 #[test]
@@ -434,7 +438,7 @@ fn oneshot_then_watch_python_twice_skips_engine() {
 }
 
 #[test]
-fn oneshot_timeout_then_watch_bare_keeps_exit_124() {
+fn oneshot_timeout_then_watch_bare_exits_1() {
     let _cwd = crate::cwd_test_lock::lock();
     let tmp = seed_repo();
     let runs = AtomicUsize::new(0);
@@ -468,11 +472,11 @@ fn oneshot_timeout_then_watch_bare_keeps_exit_124() {
         Some(tmp.path()),
     );
     assert_eq!(runs.load(Ordering::SeqCst), 1);
-    assert_eq!(first.exit_code, 124);
+    assert_eq!(first.exit_code, 1);
     publish_timeout_ready(tmp.path());
     let (rx, sender) = send_nudge(lang_msg(None));
     assert_eq!(idle_watch(tmp.path(), watch_args(), &rx), 0);
-    assert_eq!(sender.join().unwrap().exit_code, 124);
+    assert_eq!(sender.join().unwrap().exit_code, 1);
 }
 
 #[test]

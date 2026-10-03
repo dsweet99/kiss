@@ -101,15 +101,8 @@ fn help_subcommand_is_removed() {
 }
 
 #[test]
-fn test_accepts_coverage_all_flag() {
-    let cli = Cli::parse_from(["kiss", "test", ".", "--coverage-all"]);
-    assert!(matches!(
-        cli.command,
-        Commands::Test {
-            coverage_all: true,
-            ..
-        }
-    ));
+fn test_rejects_coverage_all_flag() {
+    assert!(Cli::try_parse_from(["kiss", "test", ".", "--coverage-all"]).is_err());
 }
 
 #[test]
@@ -243,8 +236,10 @@ fn test_command_help_is_language_neutral_for_shared_options() {
     assert!(!help.contains("validate-selection"));
     assert!(!help.contains("Force Python tests"));
     assert!(!help.contains("Maximum number of Python test jobs"));
-    assert!(help.contains("Show tests that would run without executing them"));
-    assert!(help.contains("Rerun tests when sources change"));
+    assert!(!help.contains("Show tests that would run without executing them"));
+    assert!(!help.contains("Rerun tests when sources change"));
+    assert!(!help.contains("--dry-run"));
+    assert!(!help.contains("--watch"));
 }
 
 #[test]
@@ -320,17 +315,19 @@ fn check_and_cov_help_describe_options() {
 
 #[test]
 fn test_cli_parses_targets_and_rejects_removed_modes() {
-    let cli = Cli::parse_from([
-        "kiss",
-        "test",
-        "src/lib.rs",
-        "tests/test_x.py::test_y",
-        "--dry-run",
-    ]);
+    assert!(
+        Cli::try_parse_from([
+            "kiss",
+            "test",
+            "src/lib.rs",
+            "tests/test_x.py::test_y",
+            "--dry-run",
+        ])
+        .is_err()
+    );
+    let cli = Cli::parse_from(["kiss", "test", "src/lib.rs", "tests/test_x.py::test_y"]);
     match cli.command {
-        Commands::Test {
-            operands, dry_run, ..
-        } => {
+        Commands::Test { operands, .. } => {
             assert_eq!(
                 operands,
                 vec![
@@ -338,14 +335,13 @@ fn test_cli_parses_targets_and_rejects_removed_modes() {
                     "tests/test_x.py::test_y".to_string()
                 ]
             );
-            assert!(dry_run);
         }
         _ => panic!("expected Test"),
     }
     let bare = Cli::try_parse_from(["kiss", "test"]).unwrap();
     match bare.command {
         Commands::Test { operands, .. } => {
-            assert_eq!(operands, vec![".".to_string()]);
+            assert!(operands.is_empty());
             assert_eq!(
                 parse_test_invocation(&operands).unwrap(),
                 TestInvocation::All
@@ -363,16 +359,10 @@ fn test_cli_parses_targets_and_rejects_removed_modes() {
 }
 
 #[test]
-fn test_watch_flag_parses() {
-    let cli = Cli::try_parse_from(["kiss", "test", "--watch", "commit"]).unwrap();
-    match cli.command {
-        Commands::Test {
-            watch: true,
-            operands,
-            ..
-        } => assert_eq!(operands, vec!["commit".to_string()]),
-        _ => panic!("expected watch"),
-    }
+fn test_watch_command_parses_without_options() {
+    let cli = Cli::try_parse_from(["kiss", "test-watch"]).unwrap();
+    assert!(matches!(cli.command, Commands::TestWatch));
+    assert!(Cli::try_parse_from(["kiss", "test", "--watch", "commit"]).is_err());
 }
 
 #[test]

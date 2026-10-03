@@ -43,6 +43,9 @@ pub(crate) struct NudgeRequestMsg {
     /// None means "do not check configuration generation".
     #[serde(default)]
     pub configuration: Option<String>,
+    /// When set, the watcher rejects the request without running tests.
+    #[serde(default)]
+    pub reject: Option<String>,
 }
 
 impl NudgeRequestMsg {
@@ -118,6 +121,8 @@ pub(crate) struct NudgeReplyMsg {
     pub output: Option<String>,
     #[serde(default)]
     pub idle_cache: Option<bool>,
+    #[serde(default)]
+    pub warning: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -213,23 +218,23 @@ impl WatchSessionOwner {
 
 fn acquire_exclusive_watch_lock(repo_root: &Path) -> Result<WatchLockGuard, String> {
     let lock_path = watch_lock_path(repo_root);
-    let deadline = Instant::now() + Duration::from_secs(90);
+    let mut next_wait: Option<Instant> = None;
     loop {
         match WatchLockGuard::try_lock(&lock_path) {
             Ok(Some(guard)) => return Ok(guard),
-            Ok(None) => {
-                match classify_watcher_peer(repo_root)? {
-                    PeerPresence::Live(session) => {
-                        return Err(format!("watcher already running (pid {})", session.pid));
-                    }
-                    PeerPresence::Absent | PeerPresence::SessionPending => {
-                        if Instant::now() >= deadline {
-                            return Err("watcher already running".into());
-                        }
-                        thread::sleep(CLIENT_SESSION_SLEEP);
-                    }
+            Ok(None) => match classify_watcher_peer(repo_root)? {
+                PeerPresence::Live(session) => {
+                    return Err(format!("watcher already running (pid {})", session.pid));
                 }
-            }
+                PeerPresence::Absent | PeerPresence::SessionPending => {
+                    let now = Instant::now();
+                    if next_wait.is_none_or(|at| now >= at) {
+                        println!("kiss test-watch: waiting for kiss test");
+                        next_wait = Some(now + Duration::from_secs(3));
+                    }
+                    thread::sleep(CLIENT_SESSION_SLEEP);
+                }
+            },
             Err(e) => return Err(format!("cannot lock {}: {e}", lock_path.display())),
         }
     }
@@ -294,8 +299,18 @@ fn nudge_watcher_on_wait(
     let mut stream = UnixStream::connect(&session.socket)
         .map_err(|e| format!("cannot connect to watcher socket: {e}"))?;
     write_framed_json(&mut stream, msg).map_err(|e| format!("nudge write failed: {e}"))?;
-    if !socket_readable_within(&stream, REPLY_IMMEDIATE_WAIT) {
-        on_slow();
+    let mut next_wait = Instant::now();
+    let mut announced = false;
+    loop {
+        if socket_readable_within(&stream, REPLY_IMMEDIATE_WAIT) {
+            break;
+        }
+        let now = Instant::now();
+        if !announced || now >= next_wait {
+            on_slow();
+            announced = true;
+            next_wait = now + Duration::from_secs(3);
+        }
     }
     let reply: NudgeReplyMsg =
         read_framed_json(&mut stream).map_err(|e| format!("nudge read failed: {e}"))?;
@@ -399,6 +414,18 @@ fn handle_client(mut stream: UnixStream, nudge_tx: Sender<NudgeRequest>) -> Resu
         Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(()),
         Err(e) => return Err(e.to_string()),
     };
+    if let Some(reason) = msg.reject.clone() {
+        let reply = NudgeReplyMsg {
+            exit_code: 2,
+            pid: std::process::id(),
+            error: Some(reason),
+            output: None,
+            idle_cache: Some(true),
+            warning: None,
+        };
+        write_framed_json(&mut stream, &reply).map_err(|e| e.to_string())?;
+        return Ok(());
+    }
     crate::test_runner::emit_test_progress(&msg.progress_line());
     let (reply_tx, reply_rx) = mpsc::sync_channel::<NudgeReplyMsg>(1);
     nudge_tx

@@ -248,7 +248,7 @@ fn accept_skips_run() {
 }
 
 #[test]
-fn second_ensure_after_partial_failure_runs_only_problem_selectors() {
+fn second_ensure_after_partial_failure_keeps_cached_fail() {
     let state = Rc::new(RefCell::new(FakeState {
         witness: Some(ExecutionWitness {
             language: "python".into(),
@@ -271,7 +271,7 @@ fn second_ensure_after_partial_failure_runs_only_problem_selectors() {
     };
     let _ =
         ensure_runtime_cache(&request(vec!["a".into(), "b".into()]), &[&runtime]).expect("ensure");
-    assert_eq!(state.borrow().run_calls, vec![vec!["b".to_string()]]);
+    assert!(state.borrow().run_calls.is_empty());
 }
 
 #[test]
@@ -354,10 +354,11 @@ fn rust_accept_under_fake_runs_zero_exports_and_delta_publish() {
     state.borrow_mut().witness.as_mut().unwrap().statuses[1] = WitnessStatus::Failed;
     state.borrow_mut().witness.as_mut().unwrap().complete = false;
     state.borrow_mut().run_exit_code = 0;
-    let result = ensure_runtime_cache(&req, &[&runtime]).expect("repair");
-    assert_eq!(result.exit_code, 0);
-    assert_eq!(state.borrow().run_calls, vec![vec!["b".to_string()]]);
-    assert_eq!(state.borrow().publish_calls, 1);
+    let _ = ensure_runtime_cache(&req, &[&runtime]).expect("repair");
+    assert!(
+        state.borrow().run_calls.is_empty(),
+        "a cached FAIL with unchanged identity must not rerun"
+    );
     let observed = kiss::rust_llvm_cov_runner::subprocess_observer_snapshot();
     assert_eq!(observed.llvm_export_invocations, 0);
     assert_eq!(observed.cargo_invocations, 0);
@@ -398,8 +399,8 @@ fn rust_covering_miss_recaps_witness_complement(mode: AcceptMode) {
     });
     assert_eq!(state.borrow().run_calls, vec![vec!["a".to_string()]]);
     assert!(
-        out.contains("PASS b"),
-        "unaffected rust witness hits must emit their canonical status:\n{out}"
+        !out.contains("PASS b"),
+        "a cached rust PASS that did not run has no line of its own:\n{out}"
     );
 }
 

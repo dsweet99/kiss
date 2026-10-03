@@ -40,6 +40,13 @@ pub(crate) struct WatchLiveConfig {
     kissconfig_sig: PathSignature,
     kissconfig_digest: u64,
     cycle_filters: Option<CycleFilterOverride>,
+    drift: ConfigDrift,
+}
+
+struct ConfigDrift {
+    files: Vec<(PathBuf, u64)>,
+    outdated: bool,
+    rerun_done: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -89,6 +96,43 @@ impl WatchLiveConfig {
             kissconfig_digest: file_digest(config_path),
             seed,
             cycle_filters: None,
+            drift: ConfigDrift::empty(),
+        }
+    }
+
+    pub(super) fn poll_config_drift(&mut self, repo_root: &Path) -> bool {
+        if self.seed.enabled || self.drift.rerun_done {
+            return false;
+        }
+        if self.drift.files.is_empty() {
+            self.drift.files = ConfigDrift::paths(repo_root, &self.seed.config_path);
+            return false;
+        }
+        if self.drift.outdated {
+            return true;
+        }
+        let changed = self
+            .drift
+            .files
+            .iter()
+            .any(|(path, digest)| file_digest(path) != *digest);
+        if changed {
+            self.drift.outdated = true;
+        }
+        changed
+    }
+
+    pub(super) fn config_outdated(&self) -> bool {
+        self.drift.outdated
+    }
+
+    pub(super) fn config_rerun_pending(&self) -> bool {
+        self.drift.outdated && !self.drift.rerun_done && !self.seed.enabled
+    }
+
+    pub(super) fn finish_config_rerun(&mut self) {
+        if self.drift.outdated {
+            self.drift.rerun_done = true;
         }
     }
 
@@ -252,6 +296,35 @@ pub(crate) fn resolve_config_path(repo_root: &Path, config_path: &Path) -> PathB
         config_path.to_path_buf()
     } else {
         repo_root.join(config_path)
+    }
+}
+
+impl ConfigDrift {
+    fn empty() -> Self {
+        Self {
+            files: Vec::new(),
+            outdated: false,
+            rerun_done: false,
+        }
+    }
+
+    fn paths(repo_root: &Path, config_path: &Path) -> Vec<(PathBuf, u64)> {
+        let config = if config_path.is_absolute() {
+            config_path.to_path_buf()
+        } else {
+            repo_root.join(config_path)
+        };
+        [
+            config,
+            repo_root.join("pyproject.toml"),
+            repo_root.join("Cargo.toml"),
+        ]
+        .into_iter()
+        .map(|path| {
+            let digest = file_digest(&path);
+            (path, digest)
+        })
+        .collect()
     }
 }
 

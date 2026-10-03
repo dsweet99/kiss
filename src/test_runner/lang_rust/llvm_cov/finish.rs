@@ -66,7 +66,6 @@ fn cached_summary_from_duration_pairs(
         if effective != kiss::rpytest_runner::TestStatus::Passed {
             return None;
         }
-        crate::test_runner::emit_test_progress(&format!("PASS {report}"));
         summary.record(SelectorExecutionRecord {
             selector: report,
             status: kiss::rpytest_runner::TestStatus::Passed,
@@ -95,6 +94,9 @@ fn print_rust_llvm_cov_outcome(
         RustCovCacheStatus::MissStored => (None, true),
         RustCovCacheStatus::FreshUnstored => (Some("not cached"), true),
     };
+    if cache_tag == Some("cached") && status == kiss::rpytest_runner::TestStatus::Passed {
+        return status;
+    }
     crate::test_runner::status_labels::print_classified_status_line(
         status,
         report_id,

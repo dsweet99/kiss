@@ -131,10 +131,13 @@ fn push_support_registrations(
             });
         }
     }
-    regs.push(WatchRegistration {
-        path: repo_root.join(".git").join("info"),
-        kind: WatchRootKind::NonRecursive,
-    });
+    let git_info = repo_root.join(".git").join("info");
+    if git_info.is_dir() {
+        regs.push(WatchRegistration {
+            path: git_info,
+            kind: WatchRootKind::NonRecursive,
+        });
+    }
 }
 
 fn push_python_ancestor_support_roots(

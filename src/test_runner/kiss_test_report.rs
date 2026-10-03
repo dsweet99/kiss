@@ -208,13 +208,57 @@ fn typed_without_transcript(
     error: Option<String>,
     engine_aborted: bool,
 ) -> KissTestReport {
-    let _ = kiss::rust_llvm_cov_runner::take_watch_report_taken();
-    KissTestReport {
-        exit_code,
-        error,
-        engine_aborted,
-        ..KissTestReport::default()
+    let taken = kiss::rust_llvm_cov_runner::take_watch_report_taken().unwrap_or_default();
+    let mut report = report_from_taken(exit_code, error, false, taken);
+    report.engine_aborted = engine_aborted;
+    if let Some(output) = cached_result_text(&report.lines) {
+        report.output = Some(output);
+        if report.exit_code == 124 {
+            report.exit_code = 1;
+        }
+        report.error = None;
+    } else {
+        report.output = None;
     }
+    report
+}
+
+/// Only a transcript with a FAIL or TIMEOUT replaces the miss error. A PASS the
+/// client did not run has no line.
+fn cached_result_text(lines: &[String]) -> Option<String> {
+    let mut out = String::new();
+    let mut seen = std::collections::BTreeSet::new();
+    let mut has_bad = false;
+    for line in lines {
+        let trimmed = line.trim();
+        if let Some(row) =
+            status_row(trimmed, "FAIL").or_else(|| status_row(trimmed, "TIMEOUT"))
+        {
+            has_bad = true;
+            if seen.insert(row.clone()) {
+                out.push_str(&row);
+                out.push('\n');
+            }
+        } else if trimmed.starts_with('✓') || trimmed.starts_with('✗') {
+            let summary = trimmed.split(" · ").take(3).collect::<Vec<_>>().join(" · ");
+            if seen.insert(summary.clone()) {
+                out.push_str(&summary);
+                out.push('\n');
+            }
+        }
+    }
+    has_bad.then_some(out)
+}
+
+fn status_row(line: &str, label: &str) -> Option<String> {
+    let rest = line
+        .strip_prefix(&format!("{label}:"))
+        .or_else(|| line.strip_prefix(&format!("{label} ")))?;
+    let selector = rest.trim().split(" (").next().unwrap_or("").trim();
+    if selector.is_empty() {
+        return None;
+    }
+    Some(format!("{label} {selector}"))
 }
 
 fn finish_report(exit_code: i32, error: Option<String>, engine_aborted: bool) -> KissTestReport {

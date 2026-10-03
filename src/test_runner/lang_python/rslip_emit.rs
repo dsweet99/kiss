@@ -98,6 +98,9 @@ pub(super) fn print_rslip_outcome(outcome: &RslipOutcome, gate: &kiss::GateConfi
         PyCacheStatus::Hit => Some("cached"),
         PyCacheStatus::MissStored => None,
     };
+    if cache_tag == Some("cached") && status == kiss::rpytest_runner::TestStatus::Passed {
+        return;
+    }
     crate::test_runner::status_labels::print_classified_status_line(
         status,
         &outcome.nodeid,

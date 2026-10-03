@@ -76,16 +76,16 @@ pub(crate) fn load_reusable_rslip_cache_entry(
 }
 
 pub(crate) fn entry_is_reusable(entry: &RslipCacheEntry, source_root: &Path) -> bool {
-    if entry.status != crate::rpytest_runner::TestStatus::Passed {
-        return false;
+    status_allows_reuse(entry)
+        && covered_file_digests(source_root, &entry.nodeid, &entry.coverage)
+            .is_some_and(|expected| expected == entry.covered_digests)
+}
+
+fn status_allows_reuse(entry: &RslipCacheEntry) -> bool {
+    match entry.status {
+        TestStatus::Passed => !entry.coverage.files.is_empty(),
+        TestStatus::Failed | TestStatus::TimedOut => !entry.covered_digests.is_empty(),
     }
-    if entry.coverage.files.is_empty() {
-        return false;
-    }
-    let Some(expected) = covered_file_digests(source_root, &entry.nodeid, &entry.coverage) else {
-        return false;
-    };
-    expected == entry.covered_digests
 }
 
 pub(crate) fn store_rslip_cache_entry(
@@ -171,7 +171,7 @@ pub(crate) fn covered_file_digests(
     coverage: &LineCoverage,
 ) -> Option<BTreeMap<String, String>> {
     if coverage.files.is_empty() {
-        return None;
+        return module_digest_only(source_root, nodeid);
     }
     let mut digests = BTreeMap::new();
     for recorded in coverage.files.keys() {
@@ -191,6 +191,17 @@ pub(crate) fn covered_file_digests(
     if digests.is_empty() {
         return Some(digests);
     }
+    Some(digests)
+}
+
+fn module_digest_only(source_root: &Path, nodeid: &str) -> Option<BTreeMap<String, String>> {
+    let module = test_module_path_from_nodeid(nodeid);
+    if module.is_empty() || is_non_digestable_coverage_path(module) {
+        return None;
+    }
+    let digest = digest_recorded_path(source_root, module)?;
+    let mut digests = BTreeMap::new();
+    digests.insert(module.to_string(), digest);
     Some(digests)
 }
 

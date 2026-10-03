@@ -27,18 +27,9 @@ pub(crate) fn entry_is_reusable_with_memo(
     source_root: &Path,
     memo: &mut DigestMemo,
 ) -> bool {
-    if entry.status != crate::rpytest_runner::TestStatus::Passed {
-        return false;
-    }
-    if entry.coverage.files.is_empty() {
-        return false;
-    }
-    let Some(expected) =
-        covered_file_digests_with_memo(source_root, &entry.nodeid, &entry.coverage, memo)
-    else {
-        return false;
-    };
-    expected == entry.covered_digests
+    super::status_allows_reuse(entry)
+        && covered_file_digests_with_memo(source_root, &entry.nodeid, &entry.coverage, memo)
+            .is_some_and(|expected| expected == entry.covered_digests)
 }
 
 pub(crate) fn covered_file_digests_with_memo(
@@ -48,7 +39,7 @@ pub(crate) fn covered_file_digests_with_memo(
     memo: &mut DigestMemo,
 ) -> Option<BTreeMap<String, String>> {
     if coverage.files.is_empty() {
-        return None;
+        return super::module_digest_only(source_root, nodeid);
     }
     let mut digests = BTreeMap::new();
     for recorded in coverage.files.keys() {

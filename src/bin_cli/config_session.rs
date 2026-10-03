@@ -12,18 +12,18 @@ pub fn ensure_default_config_exists() {
 }
 
 pub fn ensure_default_config_from(paths: &[String], ignore: &[String]) {
-    let local_config = Path::new(".kissconfig");
+    let local_config = kiss::kissconfig_path_from_cwd();
     let roots = config_roots(paths);
     if !local_config.exists() {
-        write_gate_stub(local_config, ignore);
-    } else if !is_kiss_gate_config(local_config) {
+        write_gate_stub(&local_config, ignore);
+    } else if !is_kiss_gate_config(&local_config) {
         return;
     }
-    let collect_ignore = ignore_for_collect(local_config, ignore);
-    if !needs_language_tables(local_config, &roots, &collect_ignore) {
+    let collect_ignore = ignore_for_collect(&local_config, ignore);
+    if !needs_language_tables(&local_config, &roots, &collect_ignore) {
         return;
     }
-    let code = run_mimic(&roots, Some(local_config), None, &collect_ignore);
+    let code = run_mimic(&roots, Some(&local_config), None, &collect_ignore);
     if code != 0 {
         std::process::exit(code);
     }
@@ -354,5 +354,26 @@ ignore = [\"vendor\"]
             missing_text.contains("absent.toml") && missing_text.contains("not found"),
             "{missing_text}"
         );
+    }
+
+    #[test]
+    fn ensure_default_config_from_subdir_keeps_repo_root_config() {
+        let _cwd_guard = crate::cwd_test_lock::lock();
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(tmp.path().join(".git")).unwrap();
+        let root_config = "[test]\ntest_coverage_threshold = 3\n[python]\n[rust]\n";
+        std::fs::write(tmp.path().join(".kissconfig"), root_config).unwrap();
+        let nested = tmp.path().join("pkg");
+        std::fs::create_dir_all(&nested).unwrap();
+        let orig_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&nested).unwrap();
+        ensure_default_config_exists();
+        std::env::set_current_dir(orig_dir).unwrap();
+        assert!(
+            !nested.join(".kissconfig").exists(),
+            "a subdirectory kiss command must not create its own .kissconfig"
+        );
+        let kept = std::fs::read_to_string(tmp.path().join(".kissconfig")).unwrap();
+        assert_eq!(kept, root_config);
     }
 }

@@ -105,24 +105,15 @@ pub enum Commands {
         #[arg(
             num_args = 0..,
             value_name = "TARGET",
-            default_value = ".",
-            help = "commit, base, main, ., or PATH / PATH::symbol / directory"
+            help = "commit, base, main, ., or PATH / PATH::symbol / directory. Bare kiss test is the whole repository."
         )]
         operands: Vec<String>,
         #[arg(long, value_name = "BRANCH", help = "Branch name for kiss test main")]
         main_branch: Option<String>,
         #[arg(long, value_name = "BRANCH", help = "Branch name for kiss test base")]
         base_branch: Option<String>,
-        #[arg(long, help = "Show tests that would run without executing them")]
-        dry_run: bool,
         #[arg(long, help = "Rerun FAIL and TIMEOUT tests in the TARGET subset")]
         retry_bad: bool,
-        #[arg(long, help = "Print test-run metrics")]
-        metrics: bool,
-        #[arg(long, help = "Include files that currently pass the coverage gate")]
-        coverage_all: bool,
-        #[arg(long, help = "Rerun tests when sources change")]
-        watch: bool,
         #[arg(
             short = 'j',
             long,
@@ -131,15 +122,12 @@ pub enum Commands {
             help = "Maximum number of test jobs to run concurrently"
         )]
         jobs: Option<usize>,
-        #[arg(long, value_name = "PREFIX", help = "Path prefix to exclude")]
-        ignore: Vec<String>,
-        #[arg(
-            last = true,
-            value_name = "ARG",
-            help = "Arguments passed through to the test runner"
-        )]
-        extra: Vec<String>,
     },
+    #[command(
+        name = "test-watch",
+        about = "Run covering tests when sources change and answer later kiss test commands"
+    )]
+    TestWatch,
     #[command(name = "__rust-llvm-cov-target-runner", hide = true)]
     RustLlvmCovTargetRunner {
         #[arg(long, value_name = "DIR")]

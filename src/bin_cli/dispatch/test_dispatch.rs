@@ -159,14 +159,8 @@ fn dispatch_test_command_rejects_invalid_modes_before_running_tests() {
                 operands: vec!["all".to_string()],
                 main_branch: None,
                 base_branch: None,
-                dry_run: true,
                 retry_bad: false,
-                metrics: false,
-                coverage_all: false,
-                watch: false,
                 jobs: None,
-                ignore: vec![],
-                extra: vec![],
             },
             &cfg,
             &test,
@@ -175,6 +169,22 @@ fn dispatch_test_command_rejects_invalid_modes_before_running_tests() {
     );
     assert_eq!(
         super::dispatch_test_command(None, None, Commands::Rules, &cfg, &test),
+        2
+    );
+    assert_eq!(
+        super::dispatch_test_command(
+            None,
+            None,
+            Commands::Test {
+                operands: vec![".".to_string(), "-q".to_string()],
+                main_branch: None,
+                base_branch: None,
+                retry_bad: false,
+                jobs: None,
+            },
+            &cfg,
+            &test,
+        ),
         2
     );
 }
@@ -262,37 +272,12 @@ fn dispatch_private_routers_cover_additional_command_variants() {
 }
 
 #[test]
-fn dispatch_test_rejects_watch_with_dry_run() {
-    let test = TestSectionConfig::default();
-    let py = kiss::Config::python_defaults();
-    let rs = kiss::Config::rust_defaults();
-    let gate = kiss::GateConfig::default();
-    let cfg = super::TriConfig {
-        py: &py,
-        rs: &rs,
-        gate: &gate,
-        language_tables: kiss::LanguageTablesPresent::both(),
-    };
-    assert_eq!(
-        super::dispatch_test_command(
-            None,
-            None,
-            Commands::Test {
-                operands: vec![".".to_string()],
-                main_branch: None,
-                base_branch: None,
-                dry_run: true,
-                retry_bad: false,
-                metrics: false,
-                coverage_all: false,
-                watch: true,
-                jobs: None,
-                ignore: vec![],
-                extra: vec![],
-            },
-            &cfg,
-            &test,
-        ),
-        2
+fn dispatch_test_watch_flag_is_not_a_test_option() {
+    use clap::Parser;
+    let err = crate::bin_cli::args::Cli::try_parse_from(["kiss", "test", "--watch"]).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("unexpected") || msg.contains("--watch"),
+        "{msg}"
     );
 }

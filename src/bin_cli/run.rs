@@ -7,7 +7,33 @@ use crate::bin_cli::dispatch::dispatch;
 use clap::Parser;
 
 pub fn run_cli_entrypoint() -> i32 {
+    #[cfg(not(test))]
+    {
+        let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
+        if let Some(code) = reject_test_watch_argv(&args) {
+            return code;
+        }
+    }
     run_with_cli(parse_cli())
+}
+
+pub(crate) fn reject_test_watch_argv(args: &[std::ffi::OsString]) -> Option<i32> {
+    let index = args.iter().position(|arg| arg == "test-watch")?;
+    if let Some(arg) = args.iter().take(index).nth(1) {
+        let text = arg.to_string_lossy();
+        eprintln!("error: kiss test-watch: option is not accepted: {text}");
+        return Some(2);
+    }
+    if let Some(arg) = args.get(index + 1) {
+        let text = arg.to_string_lossy();
+        if text.starts_with('-') {
+            eprintln!("error: kiss test-watch: option is not accepted: {text}");
+        } else {
+            eprintln!("error: kiss test-watch: TARGET is not accepted: {text}");
+        }
+        return Some(2);
+    }
+    None
 }
 
 pub(crate) fn run_with_cli(cli: Cli) -> i32 {
@@ -22,9 +48,6 @@ pub(crate) fn run_with_cli(cli: Cli) -> i32 {
         return kiss::rust_llvm_cov_runner::run_target_runner_shim(
             output_dir, runner_map, platform, command,
         );
-    }
-    if let Some(code) = prepare_watch_flags(&cli) {
-        return code;
     }
     prepare_default_config(&cli);
     let (py_config, rs_config) = load_configs(cli.config.as_ref());
@@ -49,17 +72,6 @@ fn prepare_default_config(cli: &Cli) {
         }
         _ => ensure_default_config_exists(),
     }
-}
-
-fn prepare_watch_flags(cli: &Cli) -> Option<i32> {
-    let Commands::Test { watch, dry_run, .. } = &cli.command else {
-        return None;
-    };
-    if *watch && *dry_run {
-        eprintln!("error: kiss test: --watch cannot be combined with --dry-run");
-        return Some(2);
-    }
-    None
 }
 
 pub(crate) fn parse_cli() -> Cli {
@@ -88,9 +100,31 @@ mod run_coverage {
     use std::fs;
 
     #[test]
+    fn test_watch_argv_rejects_options_and_targets() {
+        let opt = std::ffi::OsString::from("--config");
+        let args = [
+            std::ffi::OsString::from("kiss"),
+            std::ffi::OsString::from("test-watch"),
+            opt,
+        ];
+        assert_eq!(super::reject_test_watch_argv(&args), Some(2));
+        let target = [
+            std::ffi::OsString::from("kiss"),
+            std::ffi::OsString::from("test-watch"),
+            std::ffi::OsString::from("tests/unit"),
+        ];
+        assert_eq!(super::reject_test_watch_argv(&target), Some(2));
+        let bare = [
+            std::ffi::OsString::from("kiss"),
+            std::ffi::OsString::from("test-watch"),
+        ];
+        assert_eq!(super::reject_test_watch_argv(&bare), None);
+    }
+
+    #[test]
     fn run_with_cli_rejects_watch_combined_with_dry_run() {
-        let cli = parse_cli_from(["kiss", "test", "--watch", "--dry-run"]);
-        assert_eq!(run_with_cli(cli), 2);
+        use clap::Parser;
+        assert!(Cli::try_parse_from(["kiss", "test", "--watch", "--dry-run"]).is_err());
     }
 
     #[test]
