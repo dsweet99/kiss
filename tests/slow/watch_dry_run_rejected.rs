@@ -55,16 +55,26 @@ fn request_lines(log: &Path) -> usize {
     read_log(log).matches("kiss test: request ").count()
 }
 
-fn wait_for_log(log: &Path, needle: &str) {
+fn wait_log_until(log: &Path, what: &str, done: impl Fn(&str) -> bool) {
     let deadline = Instant::now() + Duration::from_secs(90);
-    while !read_log(log).contains(needle) {
+    while !done(&read_log(log)) {
         assert!(
             Instant::now() < deadline,
-            "watcher log never showed {needle:?}; log={:?}",
+            "watcher log never showed {what}; log={:?}",
             read_log(log)
         );
         std::thread::sleep(Duration::from_millis(10));
     }
+}
+
+fn wait_for_log(log: &Path, needle: &str) {
+    wait_log_until(log, needle, |text| text.contains(needle));
+}
+
+fn wait_until_idle(log: &Path) {
+    wait_log_until(log, "an idle watcher", |text| {
+        text.trim_end().ends_with("kiss test: Waiting")
+    });
 }
 
 fn snapshot_kiss_dir(root: &Path) -> KissSnapshot {
@@ -93,13 +103,18 @@ fn snapshot_kiss_dir(root: &Path) -> KissSnapshot {
 
 fn assert_idle_dry_run_leaves_cache(root: &Path, log: &Path) {
     for _ in 0..10 {
-        wait_for_log(log, "kiss test: Waiting");
+        wait_until_idle(log);
         let log_before = read_log(log);
         let before = snapshot_kiss_dir(root);
         assert_dry_run_rejected(root, "idle watcher");
         let after = snapshot_kiss_dir(root);
         if read_log(log) == log_before {
-            assert!(before == after, "rejected --dry-run changed .kiss/");
+            let changed: Vec<_> = before
+                .keys()
+                .chain(after.keys())
+                .filter(|path| before.get(*path) != after.get(*path))
+                .collect();
+            assert!(changed.is_empty(), "rejected --dry-run changed .kiss/: {changed:?}");
             return;
         }
         std::thread::sleep(Duration::from_millis(500));

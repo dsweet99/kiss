@@ -92,6 +92,8 @@ mod watch_client_violations;
 mod watch_dry_run_rejected;
 #[path = "slow/watch_paths.rs"]
 mod watch_paths;
+#[path = "slow/watch_retry_bad.rs"]
+mod watch_retry_bad;
 #[path = "slow/watch_sigint.rs"]
 mod watch_sigint;
 #[path = "slow/watch_startup_order.rs"]
