@@ -259,6 +259,13 @@ fn json_shape_error(line_no: usize, err: serde_json::Error) -> RustLlvmCovError 
 }
 
 pub fn selector_matches_test(full_name: &str, selector: &str, exact: bool) -> bool {
+    if let Some((binary_id, test_path)) = selector.split_once('$') {
+        return full_name
+            .rsplit_once('$')
+            .is_some_and(|(full_binary, full_test)| {
+                full_test == test_path && (binary_id.is_empty() || full_binary == binary_id)
+            });
+    }
     if exact {
         full_name == selector
             || full_name
@@ -321,7 +328,9 @@ fn indexed_name_tokens(full_name: &str) -> impl Iterator<Item = &str> {
         .rsplit_once('$')
         .map(|(_, test)| test)
         .unwrap_or(full_name);
+    let any_binary = full_name.rfind('$').map(|index| &full_name[index..]);
     std::iter::once(full_name)
+        .chain(any_binary)
         .chain(std::iter::once(suffix))
         .chain(suffix_after_each_colon_colon(suffix))
 }

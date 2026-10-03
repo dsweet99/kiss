@@ -26,7 +26,7 @@ pub(crate) fn official_report_text(report: &TargetReport) -> String {
         }
         out.push_str(official_label(row.effective));
         out.push(' ');
-        out.push_str(&row.selector);
+        out.push_str(report.labels.get(&row.selector).unwrap_or(&row.selector));
         out.push('\n');
     }
     out.push_str(&official_summary_text(report));
@@ -183,6 +183,7 @@ mod official_text_tests {
             coverage_all: false,
             graph_generation: None,
             snapshot: ReportSnapshot::default(),
+            labels: Default::default(),
         }
     }
 

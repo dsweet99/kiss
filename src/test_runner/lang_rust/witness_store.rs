@@ -259,10 +259,12 @@ pub(crate) fn try_warm_rust_cached_summary(
                 status_by_selector.get(selector.as_str()) == Some(&WitnessStatus::Passed)
             }))
     {
+        let report_ids =
+            crate::test_runner::selector_ids::qualified_rust_report_ids(repo_root, &planned);
         return Some(summary_from_accepted_witness(
             &planned,
             &witness,
-            str::to_string,
+            |selector| report_string_for_logical_string(&report_ids, selector),
         ));
     }
     let report_ids = rust_logical_to_kiss_test_ids_cached(repo_root, &[]).ok()?;

@@ -20,7 +20,17 @@ pub(crate) use decision::{CombinedSelectorInput, SelectorPlan, combined_selector
 #[path = "runners/rust_enumerate.rs"]
 mod rust_enumerate;
 pub use rust_enumerate::enumerate_workspace_rust_selectors;
-pub(crate) use rust_enumerate::rust_logical_to_kiss_test_ids;
+pub(crate) use rust_enumerate::{rust_logical_to_kiss_test_ids, universe_rust_selectors_for_file};
+
+pub(crate) fn current_rust_selector_universe(repo_root: &Path) -> BTreeSet<String> {
+    crate::test_runner::workspace_selector_cache::cached_rust_selectors_if_rust_fingerprint_current(
+        repo_root,
+    )
+    .or_else(|| enumerate_workspace_rust_selectors(repo_root, &[]).ok())
+    .unwrap_or_default()
+    .into_iter()
+    .collect()
+}
 
 pub(crate) use crate::test_runner::lang_python::backer as python_backer;
 pub(crate) use crate::test_runner::lang_python::collect;
@@ -167,12 +177,13 @@ pub fn enumerate_tests_in_changed_files(
         }
     }
     if !rs.is_empty() {
+        let universe = current_rust_selector_universe(repo_root);
         for path in rs {
             let ids =
                 crate::test_runner::targets::rust_direct_test_selectors(&path).map_err(|e| {
                     format!("error: kiss test: failed to parse {}: {e}", path.display())
                 })?;
-            for id in ids {
+            for id in universe_rust_selectors_for_file(repo_root, &path, ids, &universe) {
                 out.rust_tests.insert((path.clone(), id));
             }
         }

@@ -355,6 +355,14 @@ fn emit_one_live_status(
 }
 
 fn kiss_id_for_libtest(report_ids: &BTreeMap<String, String>, name: &str) -> Option<String> {
+    if let Some(id) = report_ids.get(name) {
+        return Some(id.clone());
+    }
+    if let Some(index) = name.rfind('$')
+        && let Some(id) = report_ids.get(&name[index..])
+    {
+        return Some(id.clone());
+    }
     let logical = name.rsplit_once('$').map_or(name, |(_, test)| test);
     if let Some(id) = report_ids.get(logical) {
         return Some(id.clone());

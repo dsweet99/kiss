@@ -14,6 +14,7 @@ pub struct CargoRoot {
     pub allow_production: bool,
     pub workspace: PathBuf,
     pub package: String,
+    pub name: String,
     pub kinds: Vec<String>,
     pub manifest_path: PathBuf,
 }
@@ -33,6 +34,7 @@ struct MetaPackage {
 
 #[derive(Deserialize)]
 struct MetaTarget {
+    name: String,
     kind: Vec<String>,
     src_path: PathBuf,
 }
@@ -177,7 +179,7 @@ fn load_workspace_roots(workspace_manifest: &Path) -> Result<Vec<CargoRoot>, Rol
     let disk_cache_path = manifest_cache_key(workspace_manifest).map(|hash| {
         let kiss_dir = parent.join(".kiss");
         let _ = std::fs::create_dir_all(&kiss_dir);
-        kiss_dir.join(format!("cargo_roots_{hash:016x}.bin"))
+        kiss_dir.join(format!("cargo_roots_v2_{hash:016x}.bin"))
     });
     if let Some(ref path) = disk_cache_path
         && let Ok(bytes) = std::fs::read(path)
@@ -249,6 +251,7 @@ fn target_root(
         allow_production,
         workspace: workspace.to_path_buf(),
         package: package.to_string(),
+        name: target.name,
         kinds,
         manifest_path: manifest_path.to_path_buf(),
     }

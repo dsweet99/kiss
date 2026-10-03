@@ -80,6 +80,8 @@ mod regression_test_sigint_caching;
 mod rpytest_runner_behavior;
 #[path = "slow/rules_config_integration.rs"]
 mod rules_config_integration;
+#[path = "slow/rust_duplicate_test_names.rs"]
+mod rust_duplicate_test_names;
 #[path = "slow/sync_stats_check.rs"]
 mod sync_stats_check;
 #[path = "slow/watch_bilingual_counts.rs"]

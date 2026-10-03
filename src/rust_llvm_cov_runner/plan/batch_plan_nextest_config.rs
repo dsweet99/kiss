@@ -165,7 +165,7 @@ fn build_nextest_default_filter(req: &RustCoverageBatchRequest) -> String {
             .logical_selectors
             .iter()
             .filter(|selector| req.selector_timeout_millis.get(*selector) == Some(&0))
-            .map(|selector| format!("not test({})", nextest_filter_string(selector, true)))
+            .map(|selector| format!("not {}", nextest_selector_filter(selector, true)))
             .collect::<Vec<_>>()
             .join(" & ");
         return format!("all() & {excludes}");
@@ -176,9 +176,24 @@ fn build_nextest_default_filter(req: &RustCoverageBatchRequest) -> String {
     let exact = rust_test_args_request_exact_match(&req.test_args);
     runnable
         .into_iter()
-        .map(|selector| format!("test({})", nextest_filter_string(selector, exact)))
+        .map(|selector| nextest_selector_filter(selector, exact))
         .collect::<Vec<_>>()
         .join(" | ")
+}
+
+fn nextest_selector_filter(selector: &str, exact: bool) -> String {
+    let Some((binary_prefix, test_path)) = selector.split_once('$') else {
+        return format!("test({})", nextest_filter_string(selector, exact));
+    };
+    let test = format!("test(/^{}$/)", escape_nextest_regex(test_path));
+    match binary_prefix.split_once("::") {
+        Some((package, binary)) => format!(
+            "(package(/^{}$/) & binary(/^{}$/) & {test})",
+            escape_nextest_regex(package),
+            escape_nextest_regex(binary)
+        ),
+        None => test,
+    }
 }
 
 fn rust_test_args_request_exact_match(test_args: &[String]) -> bool {

@@ -13,7 +13,7 @@ use super::workspace_selector_cache::{
     rust_selector_inputs_fingerprint_for_cache,
 };
 
-const SCHEMA_VERSION: &str = "rust-test-report-ids-v2";
+const SCHEMA_VERSION: &str = "rust-test-report-ids-v3";
 const CACHE_FILE_NAME: &str = "rust_test_report_ids.json";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

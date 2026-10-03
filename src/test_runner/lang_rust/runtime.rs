@@ -11,7 +11,9 @@ use crate::test_runner::runners::SelectorExecutionSummary;
 use crate::test_runner::rust_coverage_index::{
     current_rust_coverage_batch_identity, repo_relative_coverage_file,
 };
-use crate::test_runner::selector_ids::report_string_for_logical_string;
+use crate::test_runner::selector_ids::{
+    qualified_rust_report_ids, report_string_for_logical_string,
+};
 
 use super::witness_identity::{rust_source_identity_covers, rust_witness_overlap};
 use super::witness_store::{
@@ -63,10 +65,11 @@ fn rust_summary_from_witness_statuses(
     witness: &ExecutionWitness,
 ) -> SelectorExecutionSummary {
     if !kiss::time_gate_uses_path_prefixes(&request.gate.max_unit_test_seconds) {
+        let report_ids = qualified_rust_report_ids(&request.repo_root, planned);
         return crate::test_runner::lang_iface::summary_from_witness_statuses(
             planned,
             witness,
-            str::to_string,
+            |selector| report_string_for_logical_string(&report_ids, selector),
             false,
         );
     }

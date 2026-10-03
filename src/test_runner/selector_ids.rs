@@ -118,6 +118,22 @@ pub(crate) fn report_string_for_logical_string(
     report_id_for_logical(map, &LogicalSelectorId::new(logical)).into_string()
 }
 
+/// Report ids for the qualified Rust selectors (`<binary>$<test path>`) among `planned`;
+/// other selectors have no entry and keep their logical form.
+pub(crate) fn qualified_rust_report_ids(
+    repo_root: &std::path::Path,
+    planned: &[String],
+) -> BTreeMap<String, String> {
+    if !planned.iter().any(|selector| selector.contains('$')) {
+        return BTreeMap::new();
+    }
+    crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(repo_root, &[])
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|(logical, _)| logical.contains('$'))
+        .collect()
+}
+
 pub(crate) fn report_ids_for_logicals(
     map: &BTreeMap<String, String>,
     logicals: &[LogicalSelectorId],

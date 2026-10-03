@@ -13,6 +13,7 @@ mod rust;
 mod rust_cargo;
 mod rust_include_parse;
 mod rust_modules;
+mod rust_test_binaries;
 mod rust_walk;
 mod rust_walk_attrs;
 mod span;
@@ -33,6 +34,7 @@ pub use python_path::{is_default_pytest_collect_candidate, is_python_test_module
 pub use rust::{classify_rust, reachable_workspace_rust_sources};
 pub(crate) use rust_cargo::cargo_entry_src_paths;
 pub(crate) use rust_modules::{declared_mod_path, resolve_conventional_mod_file};
+pub use rust_test_binaries::{RustTestBinaryModule, workspace_rust_test_modules};
 pub use span::{SourcePosition, SourceSpan};
 pub use types::{CodeContextSet, CodeRole, FileComposition};
 

@@ -106,6 +106,8 @@ pub(crate) struct TargetReport {
     pub graph_generation: Option<String>,
     #[serde(default)]
     pub snapshot: ReportSnapshot,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub labels: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -177,6 +179,8 @@ impl TargetReport {
             coverage_all,
         );
         built.snapshot.graph_mutable = graph_mutable;
+        let selectors: Vec<String> = built.rows.iter().map(|row| row.selector.clone()).collect();
+        built.labels = crate::test_runner::selector_ids::qualified_rust_report_ids(repo_root, &selectors);
         built
     }
 
@@ -202,6 +206,7 @@ impl TargetReport {
             coverage_all,
             graph_generation: None,
             snapshot: ReportSnapshot::default(),
+            labels: BTreeMap::new(),
         }
     }
 

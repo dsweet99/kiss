@@ -41,6 +41,7 @@ pub(crate) fn resolve_target_operands(
     let mut python_selector_cache =
         load_python_target_cache(repo_root, ignore, pytest_args, lang_filter);
     let mut pending: Vec<(ParsedTestTarget, PathBuf)> = Vec::new();
+    let mut rust_universe = None;
     for raw in operands {
         if !seen_raw.insert(raw.clone()) {
             continue;
@@ -55,7 +56,8 @@ pub(crate) fn resolve_target_operands(
             continue;
         }
         if !models.contains_key(&abs) {
-            let model = load_source_model(&abs, parsed.language)?;
+            let mut model = load_source_model(&abs, parsed.language)?;
+            qualify_rust_model(repo_root, &mut model, &mut rust_universe);
             models.insert(abs.clone(), model);
         }
         pending.push((parsed, abs));
@@ -84,6 +86,49 @@ pub(crate) fn resolve_target_operands(
     }
     flush_unresolved_universes(&mut query, repo_root, ignore, pytest_args)?;
     Ok(query)
+}
+
+fn qualify_rust_model(
+    repo_root: &Path,
+    model: &mut SourceModel,
+    universe: &mut Option<BTreeSet<String>>,
+) {
+    if model.language != Language::Rust || model.direct_tests.is_empty() {
+        return;
+    }
+    let universe = universe
+        .get_or_insert_with(|| crate::test_runner::runners::current_rust_selector_universe(repo_root));
+    let parsed: Vec<String> = model
+        .direct_tests
+        .iter()
+        .map(|test| test.selector.clone())
+        .collect();
+    let mapped = crate::test_runner::runners::universe_rust_selectors_for_file(
+        repo_root,
+        &model.path,
+        parsed.clone(),
+        universe,
+    );
+    let renames: BTreeMap<String, String> = parsed
+        .into_iter()
+        .zip(mapped)
+        .filter(|(from, to)| from != to)
+        .collect();
+    if renames.is_empty() {
+        return;
+    }
+    for test in &mut model.direct_tests {
+        if let Some(to) = renames.get(&test.selector) {
+            test.selector = to.clone();
+        }
+    }
+    for def in &mut model.definitions {
+        if let Some(selector) = def.test_selector.as_mut()
+            && let Some(to) = renames.get(selector)
+        {
+            *selector = to.clone();
+        }
+    }
 }
 
 fn explicit_python_test_selector(

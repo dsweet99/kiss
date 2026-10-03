@@ -13,6 +13,11 @@ use crate::test_runner::targets::rust_direct_test_selectors;
 mod rust_enumerate_dynamic;
 use rust_enumerate_dynamic::rust_file_needs_dynamic_listing;
 
+#[path = "rust_selector_qualify.rs"]
+mod rust_selector_qualify;
+pub(crate) use rust_selector_qualify::{rust_selector_test_path, universe_rust_selectors_for_file};
+use rust_selector_qualify::qualify_colliding_entries;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ParseErrorPolicy {
     Fail,
@@ -44,9 +49,10 @@ pub(crate) fn rust_logical_to_kiss_test_ids(
         let Some(rel) = repo_relative_path(repo_root, &path) else {
             continue;
         };
-        let bare = logical
+        let test_path = rust_selector_test_path(&logical);
+        let bare = test_path
             .rsplit_once("::")
-            .map_or(logical.as_str(), |(_, name)| name)
+            .map_or(test_path, |(_, name)| name)
             .to_string();
         map.insert(logical, format!("{rel}::{bare}"));
     }
@@ -340,20 +346,20 @@ fn enumerate_workspace_rust_test_entries(
         });
     let t_parse = t_parse_started.elapsed();
     let entries = flatten_parsed_entries(parsed, parse_errors)?;
+    let known: BTreeSet<_> = entries
+        .iter()
+        .map(|(_, selector)| selector.clone())
+        .collect();
+    let mut entries = qualify_colliding_entries(repo_root, entries);
     let needs_dynamic_listing = rs_files
         .iter()
         .any(|path| rust_file_needs_dynamic_listing(path));
-    let mut entries = entries;
     if needs_dynamic_listing {
         #[cfg(test)]
         let testing_current_crate = repo_root == Path::new(env!("CARGO_MANIFEST_DIR"));
         #[cfg(not(test))]
         let testing_current_crate = false;
         if !testing_current_crate {
-            let known: BTreeSet<_> = entries
-                .iter()
-                .map(|(_, selector)| selector.clone())
-                .collect();
             entries.extend(
                 dynamic_rust_selectors(repo_root, ignore, &rs_files)?
                     .into_iter()

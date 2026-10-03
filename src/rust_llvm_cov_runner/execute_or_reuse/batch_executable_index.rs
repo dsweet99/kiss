@@ -204,10 +204,16 @@ fn resolve_listed_executable(
     }
     let mut selector_hits = Vec::new();
     for selector in &req.logical_selectors {
-        if test_names
-            .iter()
-            .any(|test_name| selector_matches_test(test_name, selector, exact))
-        {
+        let hit = match selector.split_once('$') {
+            Some((binary_prefix, test_path)) => {
+                libtest_prefix_matches_nextest_id(binary_prefix, &item.binary_id)
+                    && listed_tests.iter().any(|(_, logical)| logical == test_path)
+            }
+            None => test_names
+                .iter()
+                .any(|test_name| selector_matches_test(test_name, selector, exact)),
+        };
+        if hit {
             selector_hits.push((selector.clone(), id.clone()));
         }
     }
@@ -220,6 +226,20 @@ fn resolve_listed_executable(
         listed_tests,
         selector_hits,
     })
+}
+
+fn libtest_prefix_matches_nextest_id(binary_prefix: &str, nextest_id: &str) -> bool {
+    let Some((package, target)) = binary_prefix.split_once("::") else {
+        return true;
+    };
+    nextest_id == package
+        || nextest_id
+            .strip_prefix(package)
+            .and_then(|rest| rest.strip_prefix("::"))
+            .is_some_and(|rest| {
+                let name = rest.split_once('/').map_or(rest, |(_, name)| name);
+                name == target
+            })
 }
 
 fn resolve_listed_test_names(

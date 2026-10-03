@@ -330,6 +330,7 @@ mod tests {
             coverage_all: false,
             graph_generation: None,
             snapshot: Default::default(),
+            labels: Default::default(),
         }
     }
 
