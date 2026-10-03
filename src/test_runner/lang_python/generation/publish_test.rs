@@ -109,6 +109,7 @@ fn stored_universe_keeps_pinned_selectors_when_input_fingerprint_drifts() {
         "def test_extra():\n    assert True\n",
     )
     .unwrap();
+    super::clear_python_execution_identity_memo();
     let stored = crate::test_runner::python_coverage_index::stored_python_universe_selectors(
         repo,
         &[],

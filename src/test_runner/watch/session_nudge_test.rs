@@ -146,7 +146,7 @@ fn forwarded_force_applies_to_queued_cycle_then_clears() {
 }
 
 #[test]
-fn forwarded_extra_overrides_watcher_and_starts_new_cycle() {
+fn client_extras_yield_to_watcher_and_start_no_cycle() {
     use crate::test_runner::watch::control::NudgeRequestMsg as Msg;
     let (tx, rx) = mpsc::channel::<NudgeRequest>();
     let (reply_tx, _reply_rx) = mpsc::sync_channel(1);
@@ -165,25 +165,53 @@ fn forwarded_extra_overrides_watcher_and_starts_new_cycle() {
     coalesce_nudges(Some(&rx), &mut queued);
     let base = py_dry_args();
     let mut live = live_from_args_disabled(base, Duration::from_secs(1), Path::new("."));
+    let watcher_extras = live.extras.clone();
     queued
         .as_mut()
         .expect("queued")
-        .stamp_filter_override(&live);
-    assert!(queued.as_ref().expect("queued").wants_new_cycle());
+        .adopt_watcher_filters(&live);
+    assert!(!queued.as_ref().expect("queued").wants_new_cycle());
     apply_queued_filters(&mut live, &queued);
     let (cycle, _) = take_queued_cycle_args(&live, &mut queued);
-    assert_eq!(
-        cycle.extras.rust,
-        &["-k".to_string(), "does_not_match".to_string()]
-    );
-    assert_eq!(
-        cycle.extras.python,
-        &["-k".to_string(), "does_not_match".to_string()]
-    );
+    assert_eq!(cycle.extras.rust, watcher_extras.rust.as_slice());
+    assert_eq!(cycle.extras.python, watcher_extras.python.as_slice());
 }
 
 #[test]
-fn python_extra_alone_starts_a_new_cycle() {
+fn client_ignore_yields_to_watcher_across_the_queue() {
+    use crate::test_runner::watch::control::NudgeRequestMsg as Msg;
+    let (tx, rx) = mpsc::channel::<NudgeRequest>();
+    for lang in [None, Some(kiss::Language::Rust)] {
+        let (reply_tx, _reply_rx) = mpsc::sync_channel(1);
+        tx.send(NudgeRequest {
+            msg: Msg {
+                target_request: crate::test_runner::target_request::request_from_focus(
+                    crate::test_runner::target_request::TargetFocus::Git(
+                        crate::test_runner::target_request::GitFocus::Commit,
+                    ),
+                    lang,
+                    &["client_only".to_string()],
+                ),
+                ..Default::default()
+            },
+            reply: reply_tx,
+        })
+        .unwrap();
+    }
+    let mut queued = None;
+    coalesce_nudges(Some(&rx), &mut queued);
+    let live = live_from_args_disabled(py_dry_args(), Duration::from_secs(1), Path::new("."));
+    let q = queued.as_mut().expect("queued");
+    q.adopt_watcher_filters(&live);
+    assert!(!q.wants_new_cycle());
+    let next = q.next.as_deref().expect("second request queued separately");
+    for ignore in [q.ignore(), next.ignore()] {
+        assert_eq!(ignore, live.target_request.ignore.as_slice());
+    }
+}
+
+#[test]
+fn python_extra_alone_starts_no_cycle() {
     use crate::test_runner::watch::control::NudgeRequestMsg as Msg;
     let (tx, rx) = mpsc::channel::<NudgeRequest>();
     let (reply_tx, _reply_rx) = mpsc::sync_channel(1);
@@ -204,8 +232,8 @@ fn python_extra_alone_starts_a_new_cycle() {
     queued
         .as_mut()
         .expect("queued")
-        .stamp_filter_override(&live);
-    assert!(queued.as_ref().expect("queued").wants_new_cycle());
+        .adopt_watcher_filters(&live);
+    assert!(!queued.as_ref().expect("queued").wants_new_cycle());
 }
 
 #[test]
@@ -231,7 +259,7 @@ fn targets_alone_do_not_force_new_cycle() {
     queued
         .as_mut()
         .expect("queued")
-        .stamp_filter_override(&live);
+        .adopt_watcher_filters(&live);
     assert!(
         !queued.as_ref().expect("queued").wants_new_cycle(),
         "PATH must look up a cached recap when files have not changed"
@@ -312,7 +340,7 @@ fn target_idle_replies_full_fail_recap() {
         },
     );
     assert!(
-        try_reply_idle_nudge(&mut queued, &last, false),
+        try_reply_idle_nudge(&mut queued, &last),
         "an idle bare client is answered from the saved workspace reply"
     );
     let got = wait.try_recv().expect("bare reply");
@@ -354,7 +382,7 @@ fn lang_filter_alone_does_not_force_new_cycle() {
     queued
         .as_mut()
         .expect("queued")
-        .stamp_filter_override(&live);
+        .adopt_watcher_filters(&live);
     assert!(
         !queued.as_ref().expect("queued").wants_new_cycle(),
         "--lang must look up a cached recap when files have not changed"
@@ -404,7 +432,7 @@ fn metrics_alone_do_not_force_new_cycle() {
     queued
         .as_mut()
         .expect("queued")
-        .stamp_filter_override(&live);
+        .adopt_watcher_filters(&live);
     assert!(
         !queued.as_ref().expect("queued").wants_new_cycle(),
         "metrics-only must look up a cached recap when files have not changed"
@@ -453,10 +481,13 @@ fn coalesce_lang_then_bare_idle_replies_each_slice() {
         },
     );
     assert!(
-        try_reply_idle_nudge(&mut queued, &last, false),
+        try_reply_idle_nudge(&mut queued, &last),
         "idle clients are answered without starting a cycle"
     );
-    assert!(w_lang.try_recv().is_ok(), "--lang is answered, not left waiting");
+    assert!(
+        w_lang.try_recv().is_ok(),
+        "--lang is answered, not left waiting"
+    );
     let bare = w_bare.try_recv().expect("bare reply");
     assert_eq!(bare.exit_code, 255);
     assert!(
@@ -684,7 +715,11 @@ fn can_merge_operand_pin_ignores_compat_targets() {
     let q = queued.as_ref().expect("queued");
     assert!(q.next.is_none(), "same operand pin must merge");
     assert_eq!(q.targets(), vec!["tests/a.py".to_string()]);
-    assert!(!q.targets().iter().any(|t| t == "stale.py" || t == "other.py"));
+    assert!(
+        !q.targets()
+            .iter()
+            .any(|t| t == "stale.py" || t == "other.py")
+    );
 }
 
 #[test]
@@ -735,7 +770,7 @@ fn coalesce_target_then_bare_idle_keeps_full_suite() {
             ..Default::default()
         },
     );
-    assert!(try_reply_idle_nudge(&mut queued, &last, false));
+    assert!(try_reply_idle_nudge(&mut queued, &last));
     assert!(
         w_tgt.try_recv().is_err(),
         "TARGET waiter stays on the cycle"
@@ -788,7 +823,7 @@ fn coalesce_bare_then_target_idle_replies_full_recap() {
             ..Default::default()
         },
     );
-    assert!(try_reply_idle_nudge(&mut queued, &last, false));
+    assert!(try_reply_idle_nudge(&mut queued, &last));
     let bare = w_bare
         .try_recv()
         .expect("idle bare is answered from the saved workspace reply");
@@ -841,7 +876,7 @@ fn coalesce_bare_then_collapsed_target_replies_without_cycle() {
         },
     );
     assert!(
-        try_reply_idle_nudge(&mut queued, &last, false),
+        try_reply_idle_nudge(&mut queued, &last),
         "an idle client is answered without starting a cycle"
     );
     assert_eq!(w_bare.try_recv().expect("bare reply").exit_code, 1);
@@ -900,7 +935,7 @@ fn collapsed_pass_target_idles_full_recap() {
         },
     );
     assert!(
-        try_reply_idle_nudge(&mut queued, &last, false),
+        try_reply_idle_nudge(&mut queued, &last),
         "an idle bare client is answered without starting a cycle"
     );
     let got = wait.try_recv().expect("bare reply");
@@ -952,7 +987,7 @@ fn coalesce_lang_rust_then_python_idle_replies_each_slice() {
         },
     );
     assert!(
-        try_reply_idle_nudge(&mut queued, &last, false),
+        try_reply_idle_nudge(&mut queued, &last),
         "idle --lang clients are answered without starting a cycle"
     );
     assert!(w_rs.try_recv().is_ok());
@@ -1066,7 +1101,7 @@ fn coalesce_retry_bad_then_bare_idle_keeps_full_suite() {
             ..Default::default()
         },
     );
-    assert!(try_reply_idle_nudge(&mut queued, &last, false));
+    assert!(try_reply_idle_nudge(&mut queued, &last));
     assert!(
         w_bad.try_recv().is_err(),
         "retry-bad waiter stays on the cycle"
@@ -1122,7 +1157,7 @@ fn coalesce_bare_then_retry_bad_without_known_bad_replies_idle() {
             ..Default::default()
         },
     );
-    assert!(try_reply_idle_nudge(&mut queued, &last, false));
+    assert!(try_reply_idle_nudge(&mut queued, &last));
     assert_eq!(w_bare.try_recv().expect("bare reply").exit_code, 1);
     assert!(
         w_bad.try_recv().is_ok(),
@@ -1353,7 +1388,6 @@ fn queued_target_request_commit_is_git_commit() {
             rust: Vec::new(),
             python: Vec::new(),
         },
-        filter_override: false,
         coverage_all: false,
         target_request: crate::test_runner::target_request::request_from_focus(
             TargetFocus::Git(GitFocus::Commit),
@@ -1384,7 +1418,6 @@ fn queued_all_without_request_builds_workspace_request() {
             rust: Vec::new(),
             python: Vec::new(),
         },
-        filter_override: false,
         coverage_all: false,
         target_request: crate::test_runner::target_request::workspace_request(None, &[]),
         runner: None,
@@ -1410,7 +1443,6 @@ fn queued_target_request_clones_operand_pin_sorted() {
             rust: Vec::new(),
             python: Vec::new(),
         },
-        filter_override: false,
         coverage_all: false,
         target_request: operands_request(&["z.py".into(), "a.py".into()], None, &[]),
         runner: None,
@@ -1503,14 +1535,16 @@ fn apply_queued_filters_uses_target_request_language() {
             rust: Vec::new(),
             python: Vec::new(),
         },
-        filter_override: false,
         coverage_all: false,
         target_request: workspace_request(Some(kiss::Language::Rust), &[]),
         runner: None,
         configuration: None,
         next: None,
     });
-    assert_eq!(queued.as_ref().unwrap().lang_filter(), Some(kiss::Language::Rust));
+    assert_eq!(
+        queued.as_ref().unwrap().lang_filter(),
+        Some(kiss::Language::Rust)
+    );
     let mut args = py_dry_args();
     args.set_lang_filter(None);
     args.set_invocation(TestInvocation::All);
@@ -1538,7 +1572,6 @@ fn queued_workspace_focus_prefers_target_request() {
             rust: Vec::new(),
             python: Vec::new(),
         },
-        filter_override: false,
         coverage_all: false,
         target_request: request_from_focus(TargetFocus::Git(GitFocus::Commit), None, &[]),
         runner: None,
@@ -1569,7 +1602,6 @@ fn queued_all_without_request_is_workspace_focus() {
             rust: Vec::new(),
             python: Vec::new(),
         },
-        filter_override: false,
         coverage_all: false,
         target_request: crate::test_runner::target_request::workspace_request(None, &[]),
         runner: None,
@@ -1693,7 +1725,7 @@ fn commit_without_target_report_does_not_idle_on_workspace_last_reply() {
             ..Default::default()
         },
     );
-    assert!(try_reply_idle_nudge(&mut queued, &last, false));
+    assert!(try_reply_idle_nudge(&mut queued, &last));
     let got = wait.try_recv().expect("idle client is answered");
     assert_eq!(got.exit_code, 255);
     assert!(
@@ -1735,12 +1767,8 @@ fn main_idle_recaps_ready_target_report() {
         Some(kiss::Language::Rust),
         &[],
     );
-    let report = materialize_target_report(
-        tmp.path(),
-        &request,
-        &EnsurePolicy::soft(false, false),
-    )
-    .unwrap();
+    let report =
+        materialize_target_report(tmp.path(), &request, &EnsurePolicy::soft(false, false)).unwrap();
     crate::test_runner::target_request::publish_if_rows_hold(tmp.path(), &request, &report)
         .unwrap();
     assert!(
@@ -1767,7 +1795,7 @@ fn main_idle_recaps_ready_target_report() {
     coalesce_nudges(Some(&rx), &mut queued);
     let last = LastReplies::for_repo(tmp.path());
     assert!(
-        try_reply_idle_nudge(&mut queued, &last, false),
+        try_reply_idle_nudge(&mut queued, &last),
         "ready main TargetReport must idle"
     );
     let out = wait.recv().unwrap().output.unwrap_or_default();
@@ -1807,12 +1835,8 @@ fn main_idle_misses_ready_target_report_when_runner_token_differs() {
         Some(kiss::Language::Rust),
         &[],
     );
-    let report = materialize_target_report(
-        tmp.path(),
-        &request,
-        &EnsurePolicy::soft(false, false),
-    )
-    .unwrap();
+    let report =
+        materialize_target_report(tmp.path(), &request, &EnsurePolicy::soft(false, false)).unwrap();
     crate::test_runner::target_request::publish_if_rows_hold(tmp.path(), &request, &report)
         .unwrap();
     assert!(
@@ -1845,9 +1869,12 @@ fn main_idle_misses_ready_target_report_when_runner_token_differs() {
     let mut queued = None;
     coalesce_nudges(Some(&rx), &mut queued);
     let last = LastReplies::for_repo(tmp.path());
-    assert!(try_reply_idle_nudge(&mut queued, &last, false));
+    assert!(try_reply_idle_nudge(&mut queued, &last));
     let got = wait.try_recv().expect("idle client is answered");
-    assert_eq!(got.exit_code, 255, "runner-token mismatch must not replay the report");
+    assert_eq!(
+        got.exit_code, 255,
+        "runner-token mismatch must not replay the report"
+    );
     assert!(got.output.is_none());
     assert!(
         got.error
@@ -2043,7 +2070,11 @@ fn retry_bad_nudge_reruns_only_selected_fake_python_test_on_tmp_repo() {
                     &repo_run,
                     &[
                         ("python", selected, EffectiveStatus::Fail),
-                        ("python", "tests/test_pair.py::test_second", EffectiveStatus::Pass),
+                        (
+                            "python",
+                            "tests/test_pair.py::test_second",
+                            EffectiveStatus::Pass,
+                        ),
                     ],
                     1,
                 );
@@ -2448,8 +2479,16 @@ fn idle_target_nudge_replies_full_recap_without_new_cycle() {
     init_git(&tmp);
     commit_a_py(&tmp);
     fs::create_dir_all(tmp.path().join("tests")).unwrap();
-    fs::write(tmp.path().join("tests/a.py"), "def test_a():\n    assert True\n").unwrap();
-    fs::write(tmp.path().join("tests/b.py"), "def test_b():\n    assert True\n").unwrap();
+    fs::write(
+        tmp.path().join("tests/a.py"),
+        "def test_a():\n    assert True\n",
+    )
+    .unwrap();
+    fs::write(
+        tmp.path().join("tests/b.py"),
+        "def test_b():\n    assert True\n",
+    )
+    .unwrap();
 
     let (tx, rx) = mpsc::channel::<NudgeRequest>();
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);

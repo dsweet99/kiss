@@ -59,7 +59,7 @@ pub(crate) fn build_generation_index(
         let Some((selector, status, coverage)) = load_index_entry(&path, generation) else {
             continue;
         };
-        if status != TestStatus::Passed || coverage.files.is_empty() {
+        if status == TestStatus::TimedOut || coverage.files.is_empty() {
             continue;
         }
         for file in coverage.files.keys() {

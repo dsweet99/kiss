@@ -97,7 +97,7 @@ fn collect_raw_coverage_by_file(
         if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
             continue;
         }
-        let Some(parsed) = load_passed_generation_entry(&path, generation) else {
+        let Some(parsed) = load_covered_generation_entry(&path, generation) else {
             continue;
         };
         selector_set.insert(parsed.selector.clone());
@@ -106,12 +106,12 @@ fn collect_raw_coverage_by_file(
     Ok((raw, selector_set))
 }
 
-fn load_passed_generation_entry(path: &Path, generation: &str) -> Option<RustCovCacheEntry> {
+fn load_covered_generation_entry(path: &Path, generation: &str) -> Option<RustCovCacheEntry> {
     let bytes = fs::read(path).ok()?;
     let parsed: RustCovCacheEntry = serde_json::from_slice(&bytes).ok()?;
     (parsed.schema_version == CACHE_SCHEMA_VERSION
         && parsed.generation_fingerprint == generation
-        && parsed.status == TestStatus::Passed
+        && parsed.status != TestStatus::TimedOut
         && !parsed.coverage.files.is_empty())
     .then_some(parsed)
 }

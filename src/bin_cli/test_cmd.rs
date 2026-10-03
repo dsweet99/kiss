@@ -257,7 +257,7 @@ fn nudge_request_from_test_args(args: &TestCommandArgs<'_>) -> crate::test_runne
         .as_deref()
         .map(|root| {
             (
-                Some(crate::test_runner::target_request::runner_identity(root)),
+                crate::test_runner::target_request::known_runner_identity(root),
                 Some(crate::test_runner::target_request::configuration_generation(root)),
             )
         })
@@ -275,6 +275,7 @@ fn nudge_request_from_test_args(args: &TestCommandArgs<'_>) -> crate::test_runne
         runner,
         configuration,
         reject: None,
+        ..Default::default()
     }
 }
 
@@ -587,7 +588,11 @@ mod tests {
         let msg = nudge_request_from_test_args(&args);
         assert!(!msg.force);
         assert!(!msg.force_bad);
-        assert!(msg.runner.as_ref().is_some_and(|s| !s.is_empty()));
+        let root = crate::test_git::git_repo_root(&std::env::current_dir().unwrap()).unwrap();
+        assert_eq!(
+            msg.runner,
+            crate::test_runner::target_request::known_runner_identity(&root)
+        );
         assert!(msg.configuration.as_ref().is_some_and(|s| !s.is_empty()));
         assert!(msg.target_request.language().is_none());
         assert!(msg.target_request.ignore.is_empty());

@@ -84,6 +84,13 @@ fn runner_identity_changes_plan_key() {
 }
 
 #[test]
+fn cold_cache_has_no_known_runner_identity() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    assert_eq!(super::known_runner_identity(tmp.path()), None);
+    assert!(!super::runner_identity(tmp.path()).is_empty());
+}
+
+#[test]
 fn plan_entry_files_use_full_key_not_16_hex_prefix() {
     let tmp = tempfile::TempDir::new().unwrap();
     let published = publish(tmp.path(), &request("full-key"), &stamp("full-key")).unwrap();

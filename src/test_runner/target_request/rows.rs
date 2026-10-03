@@ -140,8 +140,17 @@ fn python_witness(repo_root: &Path) -> Option<ExecutionWitness> {
     ))
 }
 
+/// A Rust row stands only while no source edit since its run could change it.
 fn rust_witness(repo_root: &Path) -> Option<ExecutionWitness> {
-    crate::test_runner::lang_rust::try_load_rust_execution_witness(repo_root).ok()
+    let mut witness = crate::test_runner::lang_rust::try_load_rust_execution_witness(repo_root).ok()?;
+    let stale =
+        crate::test_runner::lang_rust::rust_source_delta_misses(repo_root, &witness.selectors, &[])
+            .unwrap_or_else(|_| witness.selectors.clone());    for (selector, raw) in witness.selectors.iter().zip(witness.raw_statuses.iter_mut()) {
+        if stale.contains(selector) {
+            *raw = WitnessStatus::Unresolved;
+        }
+    }
+    Some(witness)
 }
 
 fn extend_witness(out: &mut BTreeMap<String, SelectorRow>, witness: Option<ExecutionWitness>) {

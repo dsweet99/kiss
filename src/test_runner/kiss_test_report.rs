@@ -155,6 +155,13 @@ pub(crate) fn kiss_report_from_ensure_outcome(
                 finish_report(exit_code, error, engine_aborted)
             }
         }
+        crate::test_runner::target_request::EnsureOutcome::Moved { exit_code } => {
+            let taken = kiss::rust_llvm_cov_runner::take_watch_report_taken().unwrap_or_default();
+            let mut report = report_from_taken(exit_code, None, false, taken);
+            let (text, _) = result_text(&report.lines);
+            report.output = (!text.is_empty()).then_some(text);
+            report
+        }
     }
 }
 
@@ -226,14 +233,18 @@ fn typed_without_transcript(
 /// Only a transcript with a FAIL or TIMEOUT replaces the miss error. A PASS the
 /// client did not run has no line.
 fn cached_result_text(lines: &[String]) -> Option<String> {
+    let (out, has_bad) = result_text(lines);
+    has_bad.then_some(out)
+}
+
+/// FAIL and TIMEOUT rows plus the summary; PASS rows are left out.
+fn result_text(lines: &[String]) -> (String, bool) {
     let mut out = String::new();
     let mut seen = std::collections::BTreeSet::new();
     let mut has_bad = false;
     for line in lines {
         let trimmed = line.trim();
-        if let Some(row) =
-            status_row(trimmed, "FAIL").or_else(|| status_row(trimmed, "TIMEOUT"))
-        {
+        if let Some(row) = status_row(trimmed, "FAIL").or_else(|| status_row(trimmed, "TIMEOUT")) {
             has_bad = true;
             if seen.insert(row.clone()) {
                 out.push_str(&row);
@@ -247,7 +258,7 @@ fn cached_result_text(lines: &[String]) -> Option<String> {
             }
         }
     }
-    has_bad.then_some(out)
+    (out, has_bad)
 }
 
 fn status_row(line: &str, label: &str) -> Option<String> {

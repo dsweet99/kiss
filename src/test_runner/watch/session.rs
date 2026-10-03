@@ -169,15 +169,13 @@ where
         kiss::rust_llvm_cov_runner::reap_orphaned_zombies();
         coalesce_nudges(nudge_rx, &mut queued);
         if let Some(q) = queued.as_mut() {
-            q.stamp_filter_override(&live);
+            q.adopt_watcher_filters(&live);
         }
         // A noticed config change starts the rerun before any client is answered.
         if live.poll_config_drift(repo_root) {
             continue;
         }
-        if !try_reply_idle_nudge(&mut queued, &last_reply, machine.has_pending_work())
-            && queued.is_some()
-        {
+        if !try_reply_idle_nudge(&mut queued, &last_reply) && queued.is_some() {
             force_ready_if_pending(&queued, &mut machine, repo_root);
             continue;
         }

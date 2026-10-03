@@ -191,7 +191,7 @@ fn subprocess_exporter_wrapper_propagates_pre_export_failures() {
 }
 
 #[test]
-fn subprocess_exporter_wrapper_handles_failed_test_without_export_jobs() {
+fn subprocess_exporter_wrapper_keeps_failed_test_when_its_export_fails() {
     let repo = batch_executor_fixture_repo();
     let mut req = batch_executor_request(repo.path());
     req.logical_selectors = vec!["alpha".to_string()];
@@ -232,8 +232,10 @@ fn subprocess_exporter_wrapper_handles_failed_test_without_export_jobs() {
         execute_fresh_batch_with_exporter(&req, &tools, &identity, &plan, &runner, Some(exporter))
             .unwrap();
 
-    assert_eq!(result.counters.export_jobs, 0);
+    assert!(result.batch_error.is_none(), "{:?}", result.batch_error);
+    assert_eq!(result.counters.export_jobs, 1);
     assert_eq!(result.completed[0].status, TestStatus::Failed);
+    assert!(result.completed[0].coverage.files.is_empty());
 }
 
 #[test]

@@ -33,6 +33,7 @@ pub struct InstanceExportRequest {
     pub instance_id: String,
     pub profile_path: PathBuf,
     pub objects: Vec<PathBuf>,
+    pub best_effort: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -333,8 +334,17 @@ fn drain_export_results(drain: &mut ExportDrainState<'_>) -> Result<(), RustLlvm
         match drain.rx.recv_timeout(Duration::from_millis(25)) {
             Ok((index, outcome)) => {
                 *drain.running -= 1;
-                let (id, coverage) = outcome?;
-                drain.results[index] = (id, coverage);
+                let request = &drain.requests[index];
+                drain.results[index] = match outcome {
+                    Ok(pair) => pair,
+                    Err(_) if request.best_effort => (
+                        request.instance_id.clone(),
+                        RustLineCoverage {
+                            files: BTreeMap::new(),
+                        },
+                    ),
+                    Err(err) => return Err(err),
+                };
                 if *drain.next_index < drain.requests.len() {
                     spawn_export_job(
                         *drain.next_index,

@@ -24,7 +24,6 @@ pub(super) struct QueuedCycle {
     pub metrics: bool,
     pub unscoped_force: bool,
     pub extras: LanguageKeyed<Vec<String>>,
-    pub filter_override: bool,
     pub coverage_all: bool,
     pub target_request: crate::test_runner::target_request::TargetRequest,
     pub runner: Option<String>,
@@ -49,14 +48,21 @@ impl QueuedCycle {
             .unwrap_or_default()
     }
 
-    pub(super) fn stamp_filter_override(&mut self, live: &WatchLiveConfig) {
-        self.filter_override = (!self.extras.both_empty() && self.extras != live.extras)
-            || (!self.ignore().is_empty()
-                && self.ignore() != live.target_request.ignore.as_slice());
+    /// A client's ignore list and extras come only from its own config files.
+    /// The watcher keeps the configs it started with, so its own values win.
+    pub(super) fn adopt_watcher_filters(&mut self, live: &WatchLiveConfig) {
+        let mut cursor = Some(self);
+        while let Some(q) = cursor {
+            q.target_request
+                .ignore
+                .clone_from(&live.target_request.ignore);
+            q.extras = live.extras.clone();
+            cursor = q.next.as_deref_mut();
+        }
     }
 
     pub(super) fn wants_new_cycle(&self) -> bool {
-        self.force || self.force_bad || self.filter_override
+        self.force || self.force_bad
     }
 
     pub(super) fn is_workspace_focus(&self) -> bool {
@@ -101,7 +107,6 @@ impl QueuedCycle {
             metrics: req.msg.metrics,
             unscoped_force: req.msg.force && targets.is_empty() && msg_is_workspace(&req.msg),
             extras: req.msg.extras,
-            filter_override: false,
             coverage_all: req.msg.coverage_all,
             target_request,
             runner: req.msg.runner.filter(|s| !s.is_empty()),
@@ -158,12 +163,12 @@ pub(super) fn wait_until_next_cycle(
         kiss::rust_llvm_cov_runner::reap_orphaned_zombies();
         coalesce_nudges(nudge_rx, queued);
         if let Some(q) = queued.as_mut() {
-            q.stamp_filter_override(live);
+            q.adopt_watcher_filters(live);
         }
         if live.config_rerun_pending() {
             return None;
         }
-        if try_reply_idle_nudge(queued, last_reply, machine.has_pending_work()) {
+        if try_reply_idle_nudge(queued, last_reply) {
             continue;
         }
         if queued.as_ref().is_some_and(|q| q.wants_new_cycle()) {
@@ -196,27 +201,21 @@ pub(super) fn reply_all_queued(queued: &mut Option<QueuedCycle>, msg: &NudgeRepl
 pub(super) fn try_reply_idle_nudge(
     queued: &mut Option<QueuedCycle>,
     last_reply: &LastReplies,
-    pending_files: bool,
 ) -> bool {
     let mut replied = false;
-    while idle_head(queued, last_reply, pending_files) {
+    while idle_head(queued, last_reply) {
         replied = true;
     }
     replied
 }
 
-fn idle_head(
-    queued: &mut Option<QueuedCycle>,
-    last_reply: &LastReplies,
-    pending_files: bool,
-) -> bool {
+fn idle_head(queued: &mut Option<QueuedCycle>, last_reply: &LastReplies) -> bool {
     let retry_without_bad = {
         let Some(q) = queued.as_ref() else {
             return false;
         };
         q.force_bad
             && !q.force
-            && !q.filter_override
             && !crate::test_runner::force_bad::target_has_retry_bad(
                 &last_reply.repo,
                 &q.target_request,
@@ -236,10 +235,6 @@ fn idle_head(
     }
     if reply_ready_target_report(queued, last_reply) {
         return true;
-    }
-    // A file change still belongs to the watcher's own cycle. The client waits.
-    if pending_files {
-        return false;
     }
     if reply_saved_workspace_report(queued, last_reply) {
         return true;
@@ -368,12 +363,14 @@ fn ensure_query_reply(
         queued_target_request(q),
         Some(&last_reply.repo),
     );
-    if let Some(report) = crate::test_runner::target_request::project_operand_ready_from_parent_workspace(
-        &last_reply.repo,
-        &request,
-        q.coverage_all,
-        q.extras.as_slices(),
-    ) {
+    if let Some(report) =
+        crate::test_runner::target_request::project_operand_ready_from_parent_workspace(
+            &last_reply.repo,
+            &request,
+            q.coverage_all,
+            q.extras.as_slices(),
+        )
+    {
         return Some(idle_cached_reply(NudgeReplyMsg {
             exit_code: report.exit_code,
             pid: last_reply.clone_any().map(|msg| msg.pid).unwrap_or(0),
@@ -528,6 +525,9 @@ fn merge_nudge_filters(
 
 #[cfg(unix)]
 fn enqueue_nudge(queued: &mut Option<QueuedCycle>, req: NudgeRequest) {
+    if req.msg.client.departed() {
+        return;
+    }
     let Some(head) = queued.as_mut() else {
         *queued = Some(QueuedCycle::from_req(req));
         return;

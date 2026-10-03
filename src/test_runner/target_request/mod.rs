@@ -33,16 +33,20 @@ pub(crate) use adapt::{
 };
 #[cfg(test)]
 pub(crate) use bind::load_ready_for_request;
-pub(crate) use bind::{BindDecision, bind_and_prepare, project_operand_ready_from_parent_workspace};
+pub(crate) use bind::{
+    BindDecision, bind_and_prepare, project_operand_ready_from_parent_workspace,
+};
 pub(crate) use canon::canonicalize_target_request;
 pub(crate) use counters::add_index;
 pub(crate) use coverage::{coverage_exit_from_ready_request, coverage_paths_for_request};
 pub(crate) use projection::build_slice_projection;
-pub(crate) use report_store::load_current_report;
 #[cfg(test)]
 pub(crate) use projection::slice_for;
 pub(crate) use render::official_report_text;
-pub(crate) use report::{EffectiveStatus, TargetReport, configuration_generation, runner_identity};
+pub(crate) use report::{
+    EffectiveStatus, TargetReport, configuration_generation, known_runner_identity, runner_identity,
+};
+pub(crate) use report_store::load_current_report;
 
 #[cfg(test)]
 pub(crate) use ensure::materialize_target_report;
@@ -112,6 +116,10 @@ pub(crate) fn remember_named(
 #[cfg(test)]
 #[path = "request_test.rs"]
 mod request_test;
+
+#[cfg(test)]
+#[path = "bind_test.rs"]
+mod bind_test;
 
 #[cfg(test)]
 #[path = "stamp_test.rs"]

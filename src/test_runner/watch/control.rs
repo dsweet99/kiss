@@ -20,6 +20,7 @@ const MAX_FRAME_LEN: u32 = 16 * 1024 * 1024;
 pub(super) const CLIENT_SESSION_RETRY: Duration = Duration::from_millis(500);
 pub(super) const CLIENT_SESSION_SLEEP: Duration = Duration::from_millis(10);
 const REPLY_IMMEDIATE_WAIT: Duration = Duration::from_millis(250);
+const CLIENT_PRESENCE_POLL: Duration = Duration::from_millis(100);
 
 pub(crate) use super::nudge_kind::NudgeInvocation;
 
@@ -46,6 +47,8 @@ pub(crate) struct NudgeRequestMsg {
     /// When set, the watcher rejects the request without running tests.
     #[serde(default)]
     pub reject: Option<String>,
+    #[serde(skip)]
+    pub client: ClientPresence,
 }
 
 impl NudgeRequestMsg {
@@ -378,6 +381,11 @@ pub(crate) fn watch_socket_path(repo_root: &Path) -> Result<PathBuf, String> {
     )))
 }
 
+#[path = "control_presence.rs"]
+mod control_presence;
+pub(crate) use control_presence::ClientPresence;
+use control_presence::{client_left, peer_hung_up};
+
 #[path = "control_reclaim.rs"]
 mod control_reclaim;
 pub(crate) use control_reclaim::{
@@ -392,7 +400,7 @@ fn accept_loop(listener: UnixListener, nudge_tx: Sender<NudgeRequest>, shutdown:
                 let tx = nudge_tx.clone();
                 thread::spawn(move || {
                     if let Err(e) = handle_client(stream, tx) {
-                        eprintln!("kiss test --watch: control client error: {e}");
+                        eprintln!("kiss test-watch: control client error: {e}");
                     }
                 });
             }
@@ -401,7 +409,7 @@ fn accept_loop(listener: UnixListener, nudge_tx: Sender<NudgeRequest>, shutdown:
             }
             Err(_) if shutdown.load(Ordering::SeqCst) => break,
             Err(e) => {
-                eprintln!("kiss test --watch: accept error: {e}");
+                eprintln!("kiss test-watch: accept error: {e}");
                 thread::sleep(Duration::from_millis(50));
             }
         }
@@ -409,7 +417,7 @@ fn accept_loop(listener: UnixListener, nudge_tx: Sender<NudgeRequest>, shutdown:
 }
 
 fn handle_client(mut stream: UnixStream, nudge_tx: Sender<NudgeRequest>) -> Result<(), String> {
-    let msg: NudgeRequestMsg = match read_framed_json(&mut stream) {
+    let mut msg: NudgeRequestMsg = match read_framed_json(&mut stream) {
         Ok(msg) => msg,
         Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(()),
         Err(e) => return Err(e.to_string()),
@@ -427,6 +435,8 @@ fn handle_client(mut stream: UnixStream, nudge_tx: Sender<NudgeRequest>) -> Resu
         return Ok(());
     }
     crate::test_runner::emit_test_progress(&msg.progress_line());
+    let (presence, gone) = ClientPresence::watched();
+    msg.client = presence;
     let (reply_tx, reply_rx) = mpsc::sync_channel::<NudgeReplyMsg>(1);
     nudge_tx
         .send(NudgeRequest {
@@ -434,11 +444,24 @@ fn handle_client(mut stream: UnixStream, nudge_tx: Sender<NudgeRequest>) -> Resu
             reply: reply_tx,
         })
         .map_err(|_| "watcher nudge channel closed".to_string())?;
-    let reply = reply_rx
-        .recv()
-        .map_err(|_| "watcher closed before reply".to_string())?;
-    write_framed_json(&mut stream, &reply).map_err(|e| e.to_string())?;
-    Ok(())
+    let reply = loop {
+        match reply_rx.recv_timeout(CLIENT_PRESENCE_POLL) {
+            Ok(reply) => break reply,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                if peer_hung_up(&stream) {
+                    gone.store(true, Ordering::SeqCst);
+                    return Ok(());
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return Err("watcher closed before reply".to_string());
+            }
+        }
+    };
+    match write_framed_json(&mut stream, &reply) {
+        Err(e) if !client_left(&e) => Err(e.to_string()),
+        _ => Ok(()),
+    }
 }
 
 pub(crate) fn write_framed_json<T: Serialize>(

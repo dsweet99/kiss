@@ -25,7 +25,8 @@ pub(super) fn publish_rust_witness_after_batch(
             repo_root,
             &batch_req.test_args,
         )?;
-    let existing_full = load_matching_full_witness(repo_root, &batch_identity);
+    let existing_full = load_matching_full_witness(repo_root, &batch_identity)
+        .or_else(|| load_prior_full_witness(repo_root));
     let by_logical = merged_statuses(repo_root, batch_req, summary, existing_full.as_ref())?;
     let Some(selectors) = full_publication_selectors(
         batch_req,
@@ -76,6 +77,14 @@ pub(super) fn load_matching_full_witness(
     (witness.scope == WitnessScope::Full
         && witness.identity_digest == rust_identity_digest_from_batch(batch_identity))
     .then_some(witness)
+}
+
+/// Rows of tests a run did not select stay as the run's selection left them,
+/// even when the sources changed since they were recorded.
+pub(super) fn load_prior_full_witness(repo_root: &Path) -> Option<ExecutionWitness> {
+    try_load_rust_execution_witness(repo_root)
+        .ok()
+        .filter(|witness| witness.scope == WitnessScope::Full)
 }
 
 pub(super) fn full_publication_selectors(

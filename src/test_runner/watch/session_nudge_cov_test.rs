@@ -224,7 +224,6 @@ fn idle_queue(reply: mpsc::SyncSender<NudgeReplyMsg>) -> Option<QueuedCycle> {
             rust: Vec::new(),
             python: Vec::new(),
         },
-        filter_override: false,
         coverage_all: false,
         target_request: crate::test_runner::target_request::workspace_request(None, &[]),
         runner: None,
@@ -372,7 +371,7 @@ fn idle_nudge_omits_engine_error_when_recap_is_cached() {
     let (tx, rx) = mpsc::sync_channel(1);
     let mut queued = idle_queue(tx);
     assert!(
-        try_reply_idle_nudge(&mut queued, &last, false),
+        try_reply_idle_nudge(&mut queued, &last),
         "an idle client is answered from the saved workspace reply"
     );
     let got = oneshot_client_reply(rx.try_recv().expect("idle reply"), false);

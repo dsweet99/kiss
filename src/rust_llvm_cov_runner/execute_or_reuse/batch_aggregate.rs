@@ -162,9 +162,7 @@ fn aggregate_one_selector(selector: &str, matched: &[&InstanceResult]) -> RustLl
             status: TestStatus::Failed,
             exit_code: Some(1),
             duration,
-            coverage: RustLineCoverage {
-                files: BTreeMap::new(),
-            },
+            coverage: union_coverage(&ordered),
             test_binary_ids: test_binary_ids(&ordered),
             cache_status: RustCovCacheStatus::MissStored,
             stdout: concat_parts(stdout_parts),
@@ -262,12 +260,15 @@ mod tests {
     }
 
     #[test]
-    fn failed_instance_makes_selector_failed_with_empty_coverage() {
+    fn failed_instance_makes_selector_failed_keeping_reached_coverage() {
         let instances = vec![instance("pkg::bin$alpha", false, 1)];
         let (outcomes, _) = aggregate_logical_selectors(&["alpha".to_string()], false, &instances);
         assert_eq!(outcomes[0].status, TestStatus::Failed);
         assert_eq!(outcomes[0].exit_code, Some(1));
-        assert!(outcomes[0].coverage.files.is_empty());
+        assert_eq!(
+            outcomes[0].coverage.files["src/lib.rs"],
+            BTreeSet::from([1])
+        );
     }
 
     #[test]

@@ -26,6 +26,11 @@ pub(crate) enum EnsureOutcome {
         engine_aborted: bool,
         typed: bool,
     },
+    /// The worktree changed while the tests ran, so the cache cannot prove a
+    /// report for it. The run's own result stands; the edit gets its own run.
+    Moved {
+        exit_code: i32,
+    },
 }
 
 pub(crate) fn ensure_target_report<F>(
@@ -185,6 +190,7 @@ where
 {
     kiss::rust_llvm_cov_runner::begin_watch_report_capture();
     let defer = crate::test_runner::final_summary::RecapDeferGuard::enter();
+    let worktree_before = worktree_token(repo_root, args);
     let ran = match execute(crate::test_runner::clone_run_args(args)) {
         crate::test_runner::RunTestOnceOutcome::Interrupted => Executed::Interrupted,
         crate::test_runner::RunTestOnceOutcome::EngineError(msg) => Executed::Engine(msg),
@@ -196,10 +202,25 @@ where
         }
     };
     let published = ready_report(repo_root, args, false);
+    crate::test_runner::lang_python::generation::clear_python_execution_identity_memo();
     if published.is_some() {
         defer.discard();
+    } else if let Executed::Code(code) = &ran
+        && worktree_token(repo_root, args) != worktree_before
+    {
+        return EnsureOutcome::Moved { exit_code: *code };
     }
     finish_executed(repo_root, args, close_zero, ran, published)
+}
+
+fn worktree_token(
+    repo_root: Option<&Path>,
+    args: &crate::test_runner::RunTestCmdArgs<'_>,
+) -> Option<String> {
+    if args.dry_run {
+        return None;
+    }
+    repo_root.map(|repo| super::stamp::capture_worktree_token(repo, args.lang_filter()))
 }
 
 enum Executed {

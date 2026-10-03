@@ -94,6 +94,52 @@ mod watch_dry_run_rejected;
 mod watch_paths;
 #[path = "slow/watch_retry_bad.rs"]
 mod watch_retry_bad;
+#[path = "slow/watch_s01_no_edits.rs"]
+mod watch_s01_no_edits;
+#[path = "slow/watch_s02_edit_cycle.rs"]
+mod watch_s02_edit_cycle;
+#[path = "slow/watch_s02_python_fail_fix.rs"]
+mod watch_s02_python_fail_fix;
+#[path = "slow/watch_s02_rust_library_edit.rs"]
+mod watch_s02_rust_library_edit;
+#[path = "slow/watch_s03_target_scope.rs"]
+mod watch_s03_target_scope;
+#[path = "slow/watch_s05_s06_lang.rs"]
+mod watch_s05_s06_lang;
+#[path = "slow/watch_s07_second_watch.rs"]
+mod watch_s07_second_watch;
+#[path = "slow/watch_s08_two_oneshots.rs"]
+mod watch_s08_two_oneshots;
+#[path = "slow/watch_s09_client_during_startup.rs"]
+mod watch_s09_client_during_startup;
+#[path = "slow/watch_s10_stale_watcher.rs"]
+mod watch_s10_stale_watcher;
+#[path = "slow/watch_s11_watch_during_oneshot.rs"]
+mod watch_s11_watch_during_oneshot;
+#[path = "slow/watch_s13_git_targets.rs"]
+mod watch_s13_git_targets;
+#[path = "slow/watch_s14_multi_targets.rs"]
+mod watch_s14_multi_targets;
+#[path = "slow/watch_s15_watch_takes_no_options.rs"]
+mod watch_s15_watch_takes_no_options;
+#[path = "slow/watch_s16_doctests.rs"]
+mod watch_s16_doctests;
+#[path = "slow/watch_s17_ctrl_c_plain_run.rs"]
+mod watch_s17_ctrl_c_plain_run;
+#[path = "slow/watch_s18_ctrl_c_client.rs"]
+mod watch_s18_ctrl_c_client;
+#[path = "slow/watch_s19_edits_during_cycle.rs"]
+mod watch_s19_edits_during_cycle;
+#[path = "slow/watch_s20_subdir.rs"]
+mod watch_s20_subdir;
+#[path = "slow/watch_s21_outdated_config.rs"]
+mod watch_s21_outdated_config;
+#[path = "slow/watch_s22_retry_bad_no_watcher.rs"]
+mod watch_s22_retry_bad_no_watcher;
+#[path = "slow/watch_s23_kissconfig_ignore.rs"]
+mod watch_s23_kissconfig_ignore;
+#[path = "slow/watch_s24_second_worktree.rs"]
+mod watch_s24_second_worktree;
 #[path = "slow/watch_sigint.rs"]
 mod watch_sigint;
 #[path = "slow/watch_startup_order.rs"]

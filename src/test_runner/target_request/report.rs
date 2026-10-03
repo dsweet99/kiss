@@ -145,13 +145,7 @@ impl TargetReport {
             ));
         }
         let covered = workspace_covered_from_stores(repo_root);
-        let graph_generation = graph_generation_id(
-            repo_root,
-            &scope,
-            &cfg,
-            coverage_all,
-            &covered,
-        );
+        let graph_generation = graph_generation_id(repo_root, &scope, &cfg, coverage_all, &covered);
         let configuration = configuration_generation(repo_root);
         let graph_mutable = graph_generation.as_ref().map(|_| {
             super::graph_store::evidence_mutable_digest(
@@ -241,11 +235,7 @@ impl TargetReport {
         // report 124 internally; the scenario exit for FAIL or TIMEOUT is 1.
         let row_exit = if row_exit == 124 { 1 } else { row_exit };
         let caller_exit = if caller_exit == 124 { 1 } else { caller_exit };
-        if row_exit != 0 {
-            row_exit
-        } else {
-            caller_exit
-        }
+        if row_exit != 0 { row_exit } else { caller_exit }
     }
 }
 
@@ -872,14 +862,9 @@ fn write_graph_items(
         identity: "target-report".into(),
         covered_lines: covered.clone(),
     };
-    let findings = crate::analyze::collect_orphan_unit_findings(
-        repo_root,
-        py,
-        rs,
-        &snapshot,
-        orphan_allowed,
-    )
-    .map_err(|_| "graph evidence incomplete".to_string())?;
+    let findings =
+        crate::analyze::collect_orphan_unit_findings(repo_root, py, rs, &snapshot, orphan_allowed)
+            .map_err(|_| "graph evidence incomplete".to_string())?;
     let items: Vec<super::graph_store::GraphOrphanItem> = findings
         .into_iter()
         .map(|item| {
@@ -945,8 +930,13 @@ pub(crate) fn pinned_graph_generation_holds(
                 }
                 // Legacy reports without graph_mutable: fall back to full key recompute.
                 None => {
-                    let current =
-                        graph_generation_id(repo_root, &report.scope, &gate, coverage_all, &covered);
+                    let current = graph_generation_id(
+                        repo_root,
+                        &report.scope,
+                        &gate,
+                        coverage_all,
+                        &covered,
+                    );
                     matches!(current.as_deref(), Some(cur) if cur == pinned)
                         && super::graph_store::evidence_present(repo_root, pinned)
                 }
@@ -963,8 +953,7 @@ fn graph_generation_active(
     gate: &kiss::GateConfig,
     coverage_all: bool,
 ) -> bool {
-    if coverage_all || !gate.orphan_detection || !scope_has_orphan_candidates(repo_root, scope)
-    {
+    if coverage_all || !gate.orphan_detection || !scope_has_orphan_candidates(repo_root, scope) {
         return false;
     }
     let (py, rs) = workspace_source_files(repo_root);
@@ -1016,6 +1005,22 @@ fn resolved_dependency_digest(repo_root: &Path, request: &super::types::TargetRe
 }
 
 pub(crate) fn runner_identity(repo_root: &Path) -> String {
+    digest_bytes(&serde_json::to_vec(&runner_identity_parts(repo_root)).expect("runner identity"))
+}
+
+/// `None` while the cache records no runner yet, so a client that starts during
+/// a cold startup cycle does not carry a stale identity.
+pub(crate) fn known_runner_identity(repo_root: &Path) -> Option<String> {
+    let parts = runner_identity_parts(repo_root);
+    if parts.is_empty() {
+        return None;
+    }
+    Some(digest_bytes(
+        &serde_json::to_vec(&parts).expect("runner identity"),
+    ))
+}
+
+fn runner_identity_parts(repo_root: &Path) -> Vec<serde_json::Value> {
     let mut parts = Vec::new();
     if let Ok(pinned) =
         crate::test_runner::python_coverage_index::try_load_pinned_python_generation_warm(repo_root)
@@ -1036,7 +1041,7 @@ pub(crate) fn runner_identity(repo_root: &Path) -> String {
             "identity_digest": witness.identity_digest,
         }));
     }
-    digest_bytes(&serde_json::to_vec(&parts).expect("runner identity"))
+    parts
 }
 
 fn language_generation_ids(
@@ -1965,15 +1970,10 @@ mod exit_gate_tests {
                 .any(|item| item.kind == "orphan" && item.detail.starts_with("utils.py:")),
             "{before:?}"
         );
-        std::fs::write(
-            tmp.path().join("other.py"),
-            "def unused():\n    return 3\n",
-        )
-        .unwrap();
+        std::fs::write(tmp.path().join("other.py"), "def unused():\n    return 3\n").unwrap();
         let after = gates_from_orphan(tmp.path(), &gate, &scope, &BTreeMap::new());
         assert_eq!(
-            after[0].detail,
-            "graph evidence incomplete",
+            after[0].detail, "graph evidence incomplete",
             "out-of-scope production edit must invalidate focused graph evidence: {after:?}"
         );
     }
@@ -2020,14 +2020,16 @@ mod exit_gate_tests {
             execution_context_digest: "ctx".into(),
             discovered_universe_digest: "uni".into(),
             selectors: vec!["a".into()],
-            selector_evidence: vec![crate::test_runner::execution_generation::SelectorEvidenceRecord {
-                selector: "a".into(),
-                raw_status: "passed".into(),
-                duration_ns: Some(1),
-                entry_content_digest: "blob-a".into(),
-                evidence_state: "valid".into(),
-                ..Default::default()
-            }],
+            selector_evidence: vec![
+                crate::test_runner::execution_generation::SelectorEvidenceRecord {
+                    selector: "a".into(),
+                    raw_status: "passed".into(),
+                    duration_ns: Some(1),
+                    entry_content_digest: "blob-a".into(),
+                    evidence_state: "valid".into(),
+                    ..Default::default()
+                },
+            ],
             functional_summary_all_pass: true,
             covered_lines: BTreeMap::from([
                 ("utils.py".into(), vec![1, 2]),

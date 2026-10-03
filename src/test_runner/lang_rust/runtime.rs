@@ -5,7 +5,7 @@ use kiss::Language;
 
 use crate::test_runner::lang_iface::{
     AcceptMode, EnsureRequest, ExecutionWitness, LanguageRuntime, OutcomeBatch, PublishBatch,
-    SourceDeltaMisses, WitnessScope,
+    SourceDeltaMisses, WitnessScope, WitnessStatus,
 };
 use crate::test_runner::runners::SelectorExecutionSummary;
 use crate::test_runner::rust_coverage_index::{
@@ -23,6 +23,17 @@ use super::witness_store::{
 mod population_repair;
 
 pub(crate) struct RustRuntime;
+
+/// Check-aggregate coverage pools every test's profile, so after a FAIL or
+/// TIMEOUT only per-test coverage lets later edits leave that test alone.
+fn prior_run_had_problems(repo_root: &Path) -> bool {
+    try_load_rust_execution_witness(repo_root).is_ok_and(|witness| {
+        witness
+            .raw_statuses
+            .iter()
+            .any(|status| matches!(status, WitnessStatus::Failed | WitnessStatus::TimedOut))
+    })
+}
 
 fn rust_population_publication_selectors(
     mode: AcceptMode,
@@ -120,7 +131,7 @@ impl LanguageRuntime for RustRuntime {
         let publication_universe =
             rust_publication_universe(request.mode, &request.planned.rust, miss_set);
         let summary = match request.mode {
-            AcceptMode::All => {
+            AcceptMode::All if !prior_run_had_problems(&request.repo_root) => {
 
                 crate::test_runner::rust_llvm_cov::run_rust_llvm_cov_check_aggregate_selectors_with_gate(
                     &request.repo_root,
@@ -136,7 +147,7 @@ impl LanguageRuntime for RustRuntime {
                     &request.gate,
                 )?
             }
-            AcceptMode::Subset => {
+            AcceptMode::All | AcceptMode::Subset => {
 
                 crate::test_runner::runners::run_rust_llvm_cov_selectors(
                     &request.repo_root,

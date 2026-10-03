@@ -43,6 +43,18 @@ impl WatchProc {
     pub fn still_running(&mut self) -> bool {
         matches!(self.child.try_wait(), Ok(None))
     }
+
+    pub fn signal_and_wait(&mut self, signal: i32, timeout: Duration) -> bool {
+        let _ = unsafe { libc::kill(self.child.id() as i32, signal) };
+        let deadline = Instant::now() + timeout;
+        while Instant::now() < deadline {
+            if !self.still_running() {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        false
+    }
 }
 
 #[allow(clippy::zombie_processes)]
@@ -74,6 +86,13 @@ pub fn start_watch(dir: &Path, args: &[&str]) -> WatchProc {
 
 #[allow(clippy::zombie_processes)]
 pub fn start_watch_logged(dir: &Path, args: &[&str], log_path: &Path) -> WatchProc {
+    let mut watch = spawn_watch_logged(dir, args, log_path);
+    wait_watch_session(dir, &mut watch);
+    watch
+}
+
+#[allow(clippy::zombie_processes)]
+pub fn spawn_watch_logged(dir: &Path, args: &[&str], log_path: &Path) -> WatchProc {
     let stdout = std::fs::File::create(log_path).expect("create watcher test log");
     let stderr = stdout.try_clone().expect("clone watcher test log");
     let child = kiss_cmd()
@@ -83,9 +102,7 @@ pub fn start_watch_logged(dir: &Path, args: &[&str], log_path: &Path) -> WatchPr
         .stderr(Stdio::from(stderr))
         .spawn()
         .expect("spawn logged watch");
-    let mut watch = WatchProc { child };
-    wait_watch_session(dir, &mut watch);
-    watch
+    WatchProc { child }
 }
 
 pub fn wait_watch_session(dir: &Path, watch: &mut WatchProc) {

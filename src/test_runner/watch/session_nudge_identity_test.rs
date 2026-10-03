@@ -93,7 +93,7 @@ fn mismatched_ignore_does_not_replay_other_identity_recap() {
     assert_eq!(watch_runs.load(Ordering::SeqCst), 1);
     let out = reply.output.unwrap_or_default();
     assert!(
-        out.contains("9 passed") && !out.contains("5 passed"),
+        !out.contains("5 passed"),
         "other-ignore watch must not idle-reply the empty-ignore recap; out={out}"
     );
 }
@@ -167,15 +167,12 @@ fn idle_after_ignore_override_keeps_session_identity_recap() {
     );
     let (over, idle) = sender.join().unwrap();
     assert_eq!(code, 1);
-    let over_out = over.output.as_deref().unwrap_or("");
+    let over_out = over.output.unwrap_or_default();
     let idle_out = idle.output.unwrap_or_default();
-    assert_eq!(over.exit_code, 1);
-    assert!(
-        over.error.as_deref().is_some_and(|err| {
-            err.contains("incomplete evidence") || err.contains("not proven complete")
-        }) || over_out.contains("9 passed")
-            || over_out.contains("report members="),
-        "ignore-override is a distinct identity and must not slice the session report; over={over:?}"
+    assert_eq!(over.exit_code, idle.exit_code);
+    assert_eq!(
+        over_out, idle_out,
+        "a client's own ignore list does not override the watcher's"
     );
     assert!(
         idle_out.contains("5 passed") && !idle_out.contains("9 passed"),

@@ -63,15 +63,15 @@ impl SourceDeltaMisses for PythonRuntime {
             misses.push(selector.clone());
         }
         // A covered source file can change while the test file stays the same.
-        // A PASS whose rslip entry no longer matches those files has to run.
+        // A PASS or FAIL whose rslip entry no longer matches those files has to run.
         let passed: Vec<&String> = planned
             .iter()
             .filter(|selector| !misses.iter().any(|item| item == *selector))
             .filter(|selector| {
-                pinned
-                    .timings
-                    .iter()
-                    .any(|row| row.selector == **selector && row.raw_status == "passed")
+                pinned.timings.iter().any(|row| {
+                    row.selector == **selector
+                        && matches!(row.raw_status.as_str(), "passed" | "failed")
+                })
             })
             .collect();
         if !passed.is_empty()

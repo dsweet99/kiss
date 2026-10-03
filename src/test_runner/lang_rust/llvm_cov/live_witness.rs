@@ -46,6 +46,8 @@ impl LiveWitnessCache {
                 universe.push(sel.clone());
             }
         }
+        let carried = carried_prior_rows(repo_root, fallback_selectors);
+        universe.extend(carried.keys().cloned());
         universe.sort();
         universe.dedup();
 
@@ -68,6 +70,13 @@ impl LiveWitnessCache {
             }
             for (path, lines) in &existing.covered_lines {
                 covered_lines.insert(path.clone(), lines.iter().copied().collect());
+            }
+        } else {
+            for (i, sel) in universe.iter().enumerate() {
+                if let Some(&(status, duration)) = carried.get(sel) {
+                    statuses[i] = status;
+                    durations_ns[i] = duration;
+                }
             }
         }
 
@@ -150,6 +159,28 @@ impl LiveWitnessCache {
         self.dirty_events = 0;
         self.last_persist = Instant::now();
     }
+}
+
+/// Prior rows for tests outside this batch, limited to tests that still exist.
+fn carried_prior_rows(
+    repo_root: &Path,
+    batch: &[String],
+) -> BTreeMap<String, (WitnessStatus, Option<u64>)> {
+    let Some(prior) = super::witness::load_prior_full_witness(repo_root) else {
+        return BTreeMap::new();
+    };
+    let Ok(current) =
+        crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(repo_root, &[])
+    else {
+        return BTreeMap::new();
+    };
+    prior
+        .selectors
+        .iter()
+        .zip(prior.statuses.iter().zip(prior.durations_ns.iter()))
+        .filter(|(sel, _)| !batch.contains(sel) && current.contains_key(*sel))
+        .map(|(sel, (status, duration))| (sel.clone(), (*status, *duration)))
+        .collect()
 }
 
 pub(super) fn record_live_rust_pass(logical: &str, report: &str, duration: Duration) {

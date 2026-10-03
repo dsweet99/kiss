@@ -85,20 +85,26 @@ pub(crate) fn build_instance_export_requests(
         .map(|item| (item.full_name.clone(), item))
         .collect();
     let mut requests = Vec::new();
-    for instance in instances.iter().filter(|instance| instance.passed) {
+    for instance in instances
+        .iter()
+        .filter(|instance| exports_coverage(instance, shim_metadata))
+    {
+        let best_effort = !instance.passed;
         let shim = resolve_shim_metadata(&metadata_by_id, shim_metadata, &instance.full_name)?;
-        let executable = shim
-            .argv
-            .first()
-            .map(std::path::PathBuf::from)
-            .ok_or_else(|| {
-                RustLlvmCovError::InvalidRequest(format!(
-                    "missing test binary argv for export instance `{}`",
-                    instance.full_name
-                ))
-            })?;
+        let Some(executable) = shim.argv.first().map(std::path::PathBuf::from) else {
+            if best_effort {
+                continue;
+            }
+            return Err(RustLlvmCovError::InvalidRequest(format!(
+                "missing test binary argv for export instance `{}`",
+                instance.full_name
+            )));
+        };
         let objects = object_paths_for_executable(artifacts, &executable);
         if objects.is_empty() {
+            if best_effort {
+                continue;
+            }
             return Err(RustLlvmCovError::InvalidRequest(format!(
                 "no instrumented objects found for export instance `{}` executable {}",
                 instance.full_name,
@@ -109,9 +115,16 @@ pub(crate) fn build_instance_export_requests(
             instance_id: instance.full_name.clone(),
             profile_path: instance_profile_path(shim_metadata, &instance.full_name),
             objects,
+            best_effort,
         });
     }
     Ok(requests)
+}
+
+fn exports_coverage(instance: &InstanceResult, shim_metadata: &[BatchShimMetadata]) -> bool {
+    instance.passed
+        || (!instance.timed_out
+            && instance_profile_path(shim_metadata, &instance.full_name).is_file())
 }
 
 #[allow(clippy::too_many_arguments)]

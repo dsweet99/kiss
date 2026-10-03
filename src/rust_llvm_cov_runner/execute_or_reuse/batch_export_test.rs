@@ -155,6 +155,7 @@ fn bounded_export_pool_never_exceeds_jobs() {
     write_fake_profile(&profile, b"profile").unwrap();
     let requests = (0..6)
         .map(|index| InstanceExportRequest {
+            best_effort: false,
             instance_id: format!("inst-{index}"),
             profile_path: profile.clone(),
             objects: vec![PathBuf::from("/tmp/a.o")],
@@ -184,6 +185,7 @@ fn bounded_export_pool_never_exceeds_jobs() {
 
     let requests = (0..6)
         .map(|index| InstanceExportRequest {
+            best_effort: false,
             instance_id: format!("cap-{index}"),
             profile_path: profile.clone(),
             objects: vec![PathBuf::from("/tmp/a.o")],
@@ -216,6 +218,7 @@ fn bounded_export_preserves_request_order_and_propagates_worker_errors() {
     let requests = ["slow", "fast"]
         .into_iter()
         .map(|id| InstanceExportRequest {
+            best_effort: false,
             instance_id: id.to_string(),
             profile_path: profile.clone(),
             objects: vec![PathBuf::from("/tmp/a.o")],
@@ -245,6 +248,7 @@ fn bounded_export_preserves_request_order_and_propagates_worker_errors() {
         tmp.path(),
         &[PathBuf::from("/tmp/a.o")],
         vec![InstanceExportRequest {
+            best_effort: false,
             instance_id: "bad".to_string(),
             profile_path: profile,
             objects: vec![PathBuf::from("/tmp/a.o")],

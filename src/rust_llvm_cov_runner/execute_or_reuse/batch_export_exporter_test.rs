@@ -15,6 +15,7 @@ fn subprocess_exporter_returns_empty_coverage_without_objects() {
     };
     let exporter = SubprocessInstanceExporter::new(tools, None);
     let request = InstanceExportRequest {
+        best_effort: false,
         instance_id: "inst".to_string(),
         profile_path: PathBuf::from("/tmp/inst.profraw"),
         objects: Vec::new(),
@@ -37,6 +38,7 @@ fn subprocess_exporter_reports_profdata_merge_failure() {
     };
     let exporter = SubprocessInstanceExporter::new(tools, None);
     let request = InstanceExportRequest {
+        best_effort: false,
         instance_id: "inst".to_string(),
         profile_path: profile,
         objects: vec![PathBuf::from("/tmp/a.o")],
@@ -63,6 +65,7 @@ fn subprocess_exporter_reports_missing_binary_id_map_after_merge() {
     };
     let exporter = SubprocessInstanceExporter::new(tools, None);
     let request = InstanceExportRequest {
+        best_effort: false,
         instance_id: "inst".to_string(),
         profile_path: profile,
         objects: vec![object.clone()],
@@ -176,6 +179,7 @@ fn with_binary_id_map_stores_map_for_later_exports() {
     let map = BinaryIdObjectMap::default();
     let exporter = SubprocessInstanceExporter::with_binary_id_map(tools, None, map);
     let request = InstanceExportRequest {
+        best_effort: false,
         instance_id: "inst".to_string(),
         profile_path: PathBuf::from("/tmp/missing.profraw"),
         objects: Vec::new(),

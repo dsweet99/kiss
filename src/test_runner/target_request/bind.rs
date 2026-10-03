@@ -43,8 +43,7 @@ fn load_identity_report(
     )
     .filter(ready_report)
     .filter(|report| {
-        report.snapshot.worktree
-            == super::stamp::capture_worktree_token(repo, request.language())
+        report.snapshot.worktree == super::stamp::capture_worktree_token(repo, request.language())
     })
     .filter(|report| report.snapshot.extras.as_slices() == extras)
     .filter(|report| super::report::pinned_graph_generation_holds(repo, coverage_all, report))
@@ -91,15 +90,8 @@ pub(crate) fn project_language_ready_from_parent_workspace(
         stamp.complete,
     );
     let exit_code = TargetReport::exit_from_rows(&rows);
-    let mut built = TargetReport::assembled_in(
-        repo,
-        request,
-        scope,
-        rows,
-        stamp,
-        exit_code,
-        coverage_all,
-    );
+    let mut built =
+        TargetReport::assembled_in(repo, request, scope, rows, stamp, exit_code, coverage_all);
     built.snapshot.extras = parent.snapshot.extras.clone();
     built.snapshot.worktree = super::stamp::capture_worktree_token(repo, Some(lang));
     let _ = report_store::publish_report(repo, request, &built);
@@ -148,18 +140,10 @@ pub(crate) fn project_operand_ready_from_parent_workspace(
         stamp.complete,
     );
     let exit_code = TargetReport::exit_from_rows(&rows);
-    let mut built = TargetReport::assembled_in(
-        repo,
-        request,
-        scope,
-        rows,
-        stamp,
-        exit_code,
-        coverage_all,
-    );
+    let mut built =
+        TargetReport::assembled_in(repo, request, scope, rows, stamp, exit_code, coverage_all);
     built.snapshot.extras = parent.snapshot.extras.clone();
-    built.snapshot.worktree =
-        super::stamp::capture_worktree_token(repo, request.language());
+    built.snapshot.worktree = super::stamp::capture_worktree_token(repo, request.language());
     let _ = report_store::publish_report(repo, request, &built);
     Some(built)
 }
@@ -188,22 +172,26 @@ fn operand_expected_selectors(
     expected
 }
 
-fn selector_in_operand_scope(
+pub(super) fn selector_in_operand_scope(
     selector: &str,
     expected: &[String],
     operands: &[super::types::OperandExpr],
 ) -> bool {
-    let by_expected = expected.iter().any(|item| {
-        selector == item || selector.starts_with(&format!("{item}::"))
-    });
+    let by_expected = expected
+        .iter()
+        .any(|item| selector == item || selector.starts_with(&format!("{item}::")));
     if by_expected {
         return true;
     }
     operands.iter().any(|operand| {
-        let path = operand.raw.split_once("::").map_or(operand.raw.as_str(), |(path, _)| path);
-        selector == operand.raw
-            || selector.starts_with(&format!("{}::", operand.raw))
-            || (!path.is_empty() && (selector == path || selector.starts_with(&format!("{path}::")) || selector.starts_with(&format!("{path}/"))))
+        let raw = operand.raw.as_str();
+        if selector == raw
+            || selector.starts_with(&format!("{raw}::"))
+            || selector.starts_with(&format!("{raw}["))
+        {
+            return true;
+        }
+        !raw.contains("::") && !raw.is_empty() && selector.starts_with(&format!("{raw}/"))
     })
 }
 
@@ -229,21 +217,11 @@ pub(crate) fn project_git_ready_from_parent_workspace(
     let (projection, _) = super::projection::build_slice_projection(repo, request, &resolved);
     let mut stamp = super::slice::stamp_from_projection(&projection, true);
     stamp.complete = true;
-    let scope = super::scope::ReportScope::from_membership(
-        projection.coverage_regions(),
-        selectors,
-        true,
-    );
+    let scope =
+        super::scope::ReportScope::from_membership(projection.coverage_regions(), selectors, true);
     let exit_code = TargetReport::exit_from_rows(&rows);
-    let mut built = TargetReport::assembled_in(
-        repo,
-        request,
-        scope,
-        rows,
-        stamp,
-        exit_code,
-        coverage_all,
-    );
+    let mut built =
+        TargetReport::assembled_in(repo, request, scope, rows, stamp, exit_code, coverage_all);
     built.snapshot.extras = parent.snapshot.extras.clone();
     built.snapshot.worktree = super::stamp::capture_worktree_token(repo, request.language());
     let _ = report_store::publish_report(repo, request, &built);
@@ -282,7 +260,9 @@ fn git_answer_selectors(
     let outcomes = python_cached_outcomes(repo, &universe);
     let mut selected = Vec::new();
     for selector in universe {
-        let file = selector.split_once("::").map_or(selector.as_str(), |(file, _)| file);
+        let file = selector
+            .split_once("::")
+            .map_or(selector.as_str(), |(file, _)| file);
         if deleted.contains(file) || path_ignored(&gitignore, file, &request.ignore) {
             continue;
         }
@@ -306,7 +286,9 @@ fn git_answer_selectors(
     selected
 }
 
-fn git_changed_existing(resolved: &super::resolved::ResolvedTarget) -> std::collections::BTreeSet<String> {
+fn git_changed_existing(
+    resolved: &super::resolved::ResolvedTarget,
+) -> std::collections::BTreeSet<String> {
     resolved
         .regions
         .iter()
@@ -319,10 +301,7 @@ fn git_changed_existing(resolved: &super::resolved::ResolvedTarget) -> std::coll
 }
 
 fn path_ignored(gitignore: &ignore::gitignore::Gitignore, rel: &str, prefixes: &[String]) -> bool {
-    gitignore
-        .matched(rel, false)
-        .is_ignore()
-        || kiss::path_ignored_by_prefixes(rel, prefixes)
+    gitignore.matched(rel, false).is_ignore() || kiss::path_ignored_by_prefixes(rel, prefixes)
 }
 
 fn python_cached_outcomes(
@@ -335,7 +314,10 @@ fn python_cached_outcomes(
         return std::collections::BTreeMap::new();
     };
     let gate = kiss::GateConfig::load_for_repo(repo);
-    let python: Vec<&String> = selectors.iter().filter(|selector| selector.contains(".py")).collect();
+    let python: Vec<&String> = selectors
+        .iter()
+        .filter(|selector| selector.contains(".py"))
+        .collect();
     let reqs: Vec<_> = python
         .iter()
         .filter_map(|selector| {
@@ -366,9 +348,11 @@ fn outcome_covers(
     outcome: &kiss::rslip::RslipOutcome,
     changed: &std::collections::BTreeSet<String>,
 ) -> bool {
-    outcome.coverage.files.keys().any(|recorded| {
-        recorded_rel(repo, recorded).is_some_and(|rel| changed.contains(&rel))
-    })
+    outcome
+        .coverage
+        .files
+        .keys()
+        .any(|recorded| recorded_rel(repo, recorded).is_some_and(|rel| changed.contains(&rel)))
 }
 
 fn recorded_rel(repo: &std::path::Path, recorded: &str) -> Option<String> {
@@ -400,7 +384,9 @@ fn git_rows_for_selectors(
             let effective = match outcome.status {
                 kiss::rpytest_runner::TestStatus::Passed => super::report::EffectiveStatus::Pass,
                 kiss::rpytest_runner::TestStatus::Failed => super::report::EffectiveStatus::Fail,
-                kiss::rpytest_runner::TestStatus::TimedOut => super::report::EffectiveStatus::Timeout,
+                kiss::rpytest_runner::TestStatus::TimedOut => {
+                    super::report::EffectiveStatus::Timeout
+                }
             };
             let language = if selector.contains(".py") {
                 "python"

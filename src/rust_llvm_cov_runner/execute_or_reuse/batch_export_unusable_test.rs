@@ -44,6 +44,7 @@ fn export_instance_returns_empty_coverage_for_unusable_profraw() {
     };
     let exporter = SubprocessInstanceExporter::new(tools, None);
     let request = InstanceExportRequest {
+        best_effort: false,
         instance_id: "inst".to_string(),
         profile_path: profile,
         objects: vec![PathBuf::from("/tmp/a.o")],
@@ -83,6 +84,7 @@ fn export_instance_returns_empty_coverage_when_profile_binary_id_missing_from_ca
         .with_catalog_map(&catalog, 1)
         .expect("catalog map");
     let request = InstanceExportRequest {
+        best_effort: false,
         instance_id: "remote_run::localhost_conda_env_lock$test_show_config".to_string(),
         profile_path: profile,
         objects: catalog.clone(),
@@ -144,11 +146,13 @@ fn export_instances_bounded_keeps_sibling_when_one_profile_id_is_stale() {
         &catalog,
         vec![
             InstanceExportRequest {
+                best_effort: false,
                 instance_id: "stale".to_string(),
                 profile_path: stale_raw,
                 objects: catalog.clone(),
             },
             InstanceExportRequest {
+                best_effort: false,
                 instance_id: "good".to_string(),
                 profile_path: good_raw,
                 objects: catalog.clone(),
@@ -170,6 +174,7 @@ fn export_instance_returns_empty_coverage_when_profraw_missing() {
     };
     let exporter = SubprocessInstanceExporter::new(tools, None);
     let request = InstanceExportRequest {
+        best_effort: false,
         instance_id: "inst".to_string(),
         profile_path: PathBuf::from("/tmp/definitely-missing-kiss-profraw.profraw"),
         objects: vec![PathBuf::from("/tmp/a.o")],
