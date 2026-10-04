@@ -80,21 +80,13 @@ fn commit_generation_under_lock(
     let generation_id = generation_id_for_payload(&generation)?;
     generation.generation_id = generation_id.clone();
     generation.content_digest = manifest_digest(&generation)?;
-    let _pending = super::pin::acquire_pending_pin(cache_root, &generation_id)?;
-    let staged = create_staging_dir(cache_root)?;
-    let mut bytes = serde_json::to_vec(&generation)
-        .map_err(|err| format!("error: kiss: serialize generation: {err}"))?;
-    bytes.push(b'\n');
-    write_create_new_bytes(&staged.join("generation.json"), &bytes)?;
-    write_evidence_blobs(&staged, &generation)?;
-    sync_dir(&staged)?;
     let final_dir = generation_dir(cache_root, &generation_id);
-    if final_dir.exists() {
-        let _ = fs::remove_dir_all(&staged);
-    } else {
-        fs::rename(&staged, &final_dir)
-            .map_err(|err| format!("error: kiss: rename generation staging: {err}"))?;
-        sync_dir(&generations_dir(cache_root))?;
+    if parent_id == generation_id && final_dir.exists() {
+        return Ok(generation_id);
+    }
+    let _pending = super::pin::acquire_pending_pin(cache_root, &generation_id)?;
+    if !final_dir.exists() {
+        stage_generation(cache_root, &generation, &final_dir)?;
     }
     let pointer = CurrentGenerationPointer {
         schema_version: super::pointer::POINTER_SCHEMA_VERSION.to_string(),
@@ -109,6 +101,27 @@ fn commit_generation_under_lock(
     };
     write_pointer_cas(cache_root, &pointer, expected)?;
     Ok(generation_id)
+}
+
+fn stage_generation(
+    cache_root: &Path,
+    generation: &FullExecutionGeneration,
+    final_dir: &Path,
+) -> Result<(), String> {
+    let staged = create_staging_dir(cache_root)?;
+    let mut bytes = serde_json::to_vec(generation)
+        .map_err(|err| format!("error: kiss: serialize generation: {err}"))?;
+    bytes.push(b'\n');
+    write_create_new_bytes(&staged.join("generation.json"), &bytes)?;
+    write_evidence_blobs(&staged, generation)?;
+    sync_dir(&staged)?;
+    if final_dir.exists() {
+        let _ = fs::remove_dir_all(&staged);
+        return Ok(());
+    }
+    fs::rename(&staged, final_dir)
+        .map_err(|err| format!("error: kiss: rename generation staging: {err}"))?;
+    sync_dir(&generations_dir(cache_root))
 }
 
 fn write_evidence_blobs(dir: &Path, generation: &FullExecutionGeneration) -> Result<(), String> {

@@ -1,20 +1,23 @@
-.PHONY: all clean test lint install
+.DEFAULT_GOAL := all
 
+.PHONY: all install test lint clean
+
+# Job count and memory limits come from .cargo/config.toml: admin/rustc_memlock.sh
+# shared-locks every rustc up to build.jobs.
+# release-local is the release profile plus incremental compilation (Cargo.toml).
 all:
-	cargo build --release
+	cargo build --profile release-local
 
-# Prefer tmpfs for TempDir publish fsync (ext4 /tmp fsync dominates per-test SLA).
+install:
+	cargo install --path . --force --locked --config 'build.rustflags=[]'
+
 test:
-	pytest tests && TMPDIR=/dev/shm cargo nextest run
+	pytest tests && cargo nextest run
 
 lint:
 	$(HOME)/kiss-tmp check
 	ruff check .
 	cargo clippy --all-targets --all-features -- -D warnings -W clippy::cargo
 
-install:
-	cargo install --path . --force
-
 clean:
 	cargo clean
-

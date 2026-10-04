@@ -34,7 +34,6 @@ fn publish_generated_config_file(path: &std::path::Path, contents: &[u8]) -> io:
         .create_new(true)
         .open(&tmp_path)?;
     file.write_all(contents)?;
-    file.sync_all()?;
     drop(file);
     fs::rename(tmp_path, path)
 }

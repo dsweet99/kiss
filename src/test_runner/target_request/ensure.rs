@@ -191,17 +191,23 @@ where
     kiss::rust_llvm_cov_runner::begin_watch_report_capture();
     let defer = crate::test_runner::final_summary::RecapDeferGuard::enter();
     let worktree_before = worktree_token(repo_root, args);
+    let mut published = None;
     let ran = match execute(crate::test_runner::clone_run_args(args)) {
         crate::test_runner::RunTestOnceOutcome::Interrupted => Executed::Interrupted,
         crate::test_runner::RunTestOnceOutcome::EngineError(msg) => Executed::Engine(msg),
         crate::test_runner::RunTestOnceOutcome::Code(code) => {
             if !args.dry_run {
-                super::remember_named(args, code, repo_root);
+                published = ready_report(repo_root, args, false).filter(|report| {
+                    TargetReport::combine_exit(report.exit_code, code) == report.exit_code
+                });
+                if published.is_none() {
+                    super::remember_named(args, code, repo_root);
+                }
             }
             Executed::Code(code)
         }
     };
-    let published = ready_report(repo_root, args, false);
+    let published = published.or_else(|| ready_report(repo_root, args, false));
     crate::test_runner::lang_python::generation::clear_python_execution_identity_memo();
     if published.is_some() {
         defer.discard();

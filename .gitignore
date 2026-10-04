@@ -8,7 +8,8 @@ results/
 src/analyze/.kissconfig
 .kpop/
 .cursor/
-.config/
+.config/*
+!.config/nextest.toml
 AGENTS.md
 .malvin
 .vscode

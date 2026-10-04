@@ -1,14 +1,15 @@
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use kiss::kiss_publication_barrier::unique_process_suffix;
-
-use super::paths::write_create_new_bytes;
 
 pub(crate) struct PinGuard {
     path: PathBuf,
 }
 
+// Pins only need to be visible to concurrent GC on this host; a pin left by a crash is
+// stale anyway, so the write is not fsynced.
 fn write_pin(cache_root: &Path, kind: &str, generation_id: &str) -> Result<PinGuard, String> {
     let dir = cache_root.join(kind);
     fs::create_dir_all(&dir).map_err(|err| format!("error: kiss: create {kind} dir: {err}"))?;
@@ -17,8 +18,13 @@ fn write_pin(cache_root: &Path, kind: &str, generation_id: &str) -> Result<PinGu
         std::process::id(),
         unique_process_suffix()
     ));
-    let body = format!("{generation_id}\n");
-    write_create_new_bytes(&path, body.as_bytes())?;
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .map_err(|err| format!("error: kiss: create_new {}: {err}", path.display()))?;
+    file.write_all(format!("{generation_id}\n").as_bytes())
+        .map_err(|err| format!("error: kiss: write {}: {err}", path.display()))?;
     Ok(PinGuard { path })
 }
 

@@ -1,6 +1,7 @@
 use crate::config::ConfigError;
 use crate::test_cache_policy::TestCachePolicy;
 use std::path::Path;
+use std::sync::Mutex;
 
 #[derive(Debug, Clone)]
 pub struct TestSectionConfig {
@@ -127,7 +128,7 @@ impl TestSectionConfig {
     }
 
     fn merge_from_toml(&mut self, toml_str: &str, repo_root: Option<&Path>) {
-        let Ok(value) = toml_str.parse::<toml::Table>() else {
+        let Some(value) = parse_table_memoized(toml_str) else {
             return;
         };
         let Some(t) = value.get("test").and_then(|v| v.as_table()) else {
@@ -151,6 +152,21 @@ impl TestSectionConfig {
         };
         crate::test_toml::merge_test_table_strict(t, None, Some(self), repo_root)
     }
+}
+
+fn parse_table_memoized(toml_str: &str) -> Option<toml::Table> {
+    static LAST: Mutex<Option<(String, toml::Table)>> = Mutex::new(None);
+    if let Ok(last) = LAST.lock()
+        && let Some((text, table)) = last.as_ref()
+        && text == toml_str
+    {
+        return Some(table.clone());
+    }
+    let table = toml_str.parse::<toml::Table>().ok()?;
+    if let Ok(mut last) = LAST.lock() {
+        *last = Some((toml_str.to_string(), table.clone()));
+    }
+    Some(table)
 }
 
 #[cfg(test)]

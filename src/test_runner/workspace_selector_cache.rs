@@ -168,6 +168,11 @@ fn read_cache_at(path: &Path) -> Option<LanguageSelectorCache> {
 }
 
 fn write_cache_at(path: &Path, cache: &LanguageSelectorCache) -> io::Result<()> {
+    let mut body = serde_json::to_vec(cache).map_err(io::Error::other)?;
+    body.push(b'\n');
+    if fs::read(path).is_ok_and(|existing| existing == body) {
+        return Ok(());
+    }
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -178,10 +183,10 @@ fn write_cache_at(path: &Path, cache: &LanguageSelectorCache) -> io::Result<()> 
             .map(|d| d.as_nanos())
             .unwrap_or(0)
     ));
+    // No fsync: readers treat an unparsable file as a cache miss, so a write lost to a
+    // crash only costs a recollection.
     let mut file = File::create(&tmp)?;
-    serde_json::to_writer(&mut file, cache).map_err(io::Error::other)?;
-    file.write_all(b"\n")?;
-    file.sync_all()?;
+    file.write_all(&body)?;
     drop(file);
     fs::rename(tmp, path)?;
     Ok(())
