@@ -1,7 +1,4 @@
-use crate::common::{
-    generate_lockfile, list_full_check_cache_files, seed_python_runtime_coverage,
-    seed_rust_runtime_coverage,
-};
+use crate::common::{generate_lockfile, list_full_check_cache_files, seed_python_runtime_coverage};
 use crate::support::git::{commit_all, init_git_repo};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -305,20 +302,6 @@ fn write_rust_inline_external_crate(repo: &Path) {
         "#[test]\nfn external_ok() {\n    assert_eq!(role_cache_rs::value(), 1);\n}\n",
     )
     .unwrap();
-    // Lockfile not required for seeded kiss check / coverage identity.
-    seed_rust_runtime_coverage(
-        repo,
-        &[
-            (
-                "tests::inline_ok",
-                vec![("src/lib.rs", (1_u32..=9).collect())],
-            ),
-            (
-                "external::external_ok",
-                vec![("src/lib.rs", (1_u32..=9).collect())],
-            ),
-        ],
-    );
     commit_all(repo, "init");
 }
 
@@ -405,6 +388,5 @@ fn rust_only_cached_coverage_matches_uncached() {
     let repo = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     write_rust_inline_external_crate(repo.path());
-    // Seeded runtime coverage + kiss check (not cold --coverage-all llvm-cov).
     assert_coverage_identity(home.path(), repo.path(), &["check", "--lang", "rust"]);
 }

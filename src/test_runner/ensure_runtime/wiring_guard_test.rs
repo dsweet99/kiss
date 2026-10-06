@@ -16,28 +16,21 @@ fn language_modules_route_python_and_rust_through_ensure() {
 }
 
 #[test]
-fn rust_all_mode_records_per_test_coverage_and_forwards_force_selectors() {
+fn rust_runs_go_through_nextest_and_forward_force_selectors() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("src/test_runner/lang_rust/runtime.rs");
     let src = std::fs::read_to_string(&path).expect("read rust runtime");
     assert!(
-        src.contains("run_rust_llvm_cov_selectors_streaming(")
-            && src.contains("CoverageOutputMode::SelectorEntries"),
-        "population runs must export per-test coverage"
+        src.contains("run_nextest_selectors("),
+        "Rust selectors must run through cargo nextest"
     );
+    let kernel = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("src/test_runner/ensure_runtime/kernel.rs"),
+    )
+    .expect("read kernel");
     assert!(
-        !src.contains("run_rust_llvm_cov_check_aggregate_selectors"),
-        "pooled check-aggregate coverage leaves the first edit after a cold run unable to select"
-    );
-    assert!(
-        src.contains("&request.force_selectors"),
-        "All mode must forward force_selectors for --retry-bad"
-    );
-    let cov = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("src/test_runner/lang_rust/llvm_cov/mod.rs");
-    let cov_src = std::fs::read_to_string(&cov).expect("read llvm_cov mod");
-    assert!(
-        !cov_src.contains("force_rerun_selectors: &[],"),
-        "check-aggregate publication helper must not hardcode empty force_rerun_selectors"
+        kernel.contains("&request.force_selectors"),
+        "the kernel must run force_selectors for --retry-bad"
     );
 }

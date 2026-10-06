@@ -116,28 +116,3 @@ fn covering_select_python_only_repeat_does_not_grow_rss() {
         "python-only covering_select RSS grew {grew} kB over 2 repeats (start {start} kB)"
     );
 }
-
-#[test]
-fn load_population_repeat_does_not_grow_rss() {
-    let tmp = TempDir::new().expect("population rss mini repo");
-    let root = tmp.path();
-    let _lib = clone_warm_committed_repo(root);
-    let _ = crate::test_runner::rust_coverage_index::load_current_rust_population_state(
-        root,
-        None,
-        &[],
-    );
-    let start = vmrss_kb();
-    for _ in 0..2 {
-        let _ = crate::test_runner::rust_coverage_index::load_current_rust_population_state(
-            root,
-            None,
-            &[],
-        );
-    }
-    let grew = vmrss_kb().saturating_sub(start);
-    assert!(
-        grew < 8192,
-        "load_current_population RSS grew {grew} kB over 2 repeats (start {start} kB)"
-    );
-}

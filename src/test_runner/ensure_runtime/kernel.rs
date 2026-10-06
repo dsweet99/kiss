@@ -11,7 +11,7 @@ pub(crate) fn ensure_runtime_cache(
     request: &EnsureRequest,
     modules: &[&dyn LanguageRuntime],
 ) -> Result<EnsureRuntimeResult, String> {
-    kiss::rust_llvm_cov_runner::reset_subprocess_observer();
+    kiss::subprocess_observer::reset_subprocess_observer();
     let mut result = EnsureRuntimeResult::default();
     let gate = &request.gate;
     for module in modules {

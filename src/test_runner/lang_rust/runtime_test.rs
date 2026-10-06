@@ -49,7 +49,6 @@ fn accepted_summary_emits_cached_passes() {
         KernelRules::accepted_summary(&RustKernelRules, &req, &["a".into()], &witness).unwrap();
     assert_eq!(summary.total, 1);
     assert_eq!(summary.cache_hits, 1);
-    assert!(!summary.rust_derived_repair);
     let _ = rt.list(&req);
 }
 
@@ -122,17 +121,8 @@ fn demo_crate() -> tempfile::TempDir {
         "#[cfg(test)]\nmod tests {\n    #[test]\n    fn case() {}\n}\n",
     )
     .unwrap();
-    // Cargo writes Cargo.lock on first use, and the lockfile is part of the record identity.
-    crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(tmp.path(), &[])
-        .unwrap();
+    super::nextest::generate_lockfile(tmp.path());
     tmp
-}
-
-fn current_record_identity(root: &std::path::Path) -> String {
-    let (req, tools) =
-        crate::test_runner::rust_coverage_index::resolved_rust_batch_request_parts(root, &[])
-            .unwrap();
-    kiss::rust_llvm_cov_runner::rust_record_identity(&req, &tools).unwrap()
 }
 
 fn store_rust_record(
@@ -160,9 +150,13 @@ fn store_rust_record(
 fn records_witness_drops_removed_tests_and_other_identities() {
     use kiss::rpytest_runner::TestStatus;
     let tmp = demo_crate();
-    let identity = current_record_identity(tmp.path());
-    store_rust_record(tmp.path(), "tests::case", &identity, TestStatus::Passed);
-    store_rust_record(tmp.path(), "tests::gone", &identity, TestStatus::Passed);
+    super::nextest::store_records(
+        tmp.path(),
+        &[
+            ("tests::case", TestStatus::Passed),
+            ("tests::gone", TestStatus::Passed),
+        ],
+    );
     store_rust_record(
         tmp.path(),
         "tests::older",
@@ -273,9 +267,10 @@ fn time_gate_report_ids(ignore: &[String]) -> Result<Vec<String>, String> {
 fn live_misses_are_the_tests_whose_records_do_not_hold() {
     use kiss::rpytest_runner::TestStatus;
     let tmp = demo_crate();
-    let identity = current_record_identity(tmp.path());
-    store_rust_record(tmp.path(), "pass", &identity, TestStatus::Passed);
-    store_rust_record(tmp.path(), "fail", &identity, TestStatus::Failed);
+    super::nextest::store_records(
+        tmp.path(),
+        &[("pass", TestStatus::Passed), ("fail", TestStatus::Failed)],
+    );
     let mut req = EnsureRequest {
         repo_root: tmp.path().to_path_buf(),
         mode: AcceptMode::All,
@@ -321,39 +316,29 @@ fn live_misses_are_the_tests_whose_records_do_not_hold() {
 }
 
 #[test]
-fn stored_coverage_keeps_only_coverable_lines_of_holding_records() {
-    let tmp = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+fn records_with_stale_inputs_do_not_hold() {
+    use kiss::rpytest_runner::TestStatus;
+    let tmp = demo_crate();
+    super::nextest::store_records(tmp.path(), &[("tests::case", TestStatus::Passed)]);
     std::fs::write(
         tmp.path().join("src/lib.rs"),
-        "pub fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn t() {\n        assert_eq!(super::add(1, 1), 2);\n    }\n}\n",
+        "#[cfg(test)]\nmod tests {\n    #[test]\n    fn case() { assert!(true); }\n}\n",
     )
     .unwrap();
-    let identity = kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity {
-        input_digest: "i".into(),
-        generation_fingerprint: "g".into(),
-        selection_context_fingerprint: "s".into(),
-        ordinary_source_digests: Default::default(),
-    };
-    let covered = BTreeMap::from([(
-        "src/lib.rs".to_string(),
-        std::collections::BTreeSet::from([1u32, 2, 3, 8, 9, 10]),
-    )]);
-    super::test_records::seed_rust_witness(super::test_records::SeedRustWitness {
-        repo_root: tmp.path(),
-        identity: &identity,
-        selectors: &["tests::t".to_string()],
-        statuses: &[WitnessStatus::Passed],
-        durations_ns: &[Some(1)],
-        covered_lines: &covered,
-        complete: true,
-    })
-    .unwrap();
-    let stored = RustKernelRules.stored_coverage(tmp.path());
-    let lines = stored.covered.get("src/lib.rs").expect("lib.rs covered");
-    assert!(lines.contains(&2), "production line must count: {lines:?}");
+    let witness = super::try_load_rust_execution_witness(tmp.path());
     assert!(
-        !lines.iter().any(|line| *line >= 6),
-        "test-module lines must not count: {lines:?}"
+        witness.is_err() || witness.unwrap().selectors.is_empty(),
+        "an edited Rust source must invalidate every Rust record"
+    );
+}
+
+#[test]
+fn stored_coverage_is_empty_for_rust() {
+    let tmp = demo_crate();
+    assert!(
+        RustKernelRules
+            .stored_coverage(tmp.path())
+            .covered
+            .is_empty()
     );
 }

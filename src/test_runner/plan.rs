@@ -263,8 +263,6 @@ fn planned_current(
         population_required,
         source_paths: LanguageKeyed::default(),
         vcs_source_paths: LanguageKeyed::default(),
-        snapshot_delta_modified: LanguageKeyed::default(),
-        snapshot_delta_structural: LanguageKeyed::default(),
         prior_failure_selectors: LanguageKeyed::default(),
         coverage_decision_engine_used: false,
         selection_basis: LanguageKeyed::from_fn(|_| {
@@ -289,8 +287,6 @@ pub(super) fn planned_from_selector_plan(
         population_required: selector_plan.population_required,
         source_paths: selector_plan.source_paths,
         vcs_source_paths: selector_plan.vcs_source_paths,
-        snapshot_delta_modified: selector_plan.snapshot_delta_modified,
-        snapshot_delta_structural: selector_plan.snapshot_delta_structural,
         prior_failure_selectors: selector_plan.prior_failure_selectors,
         coverage_decision_engine_used: selector_plan.coverage_decision_engine_used,
         selection_basis: selector_plan.selection_basis,

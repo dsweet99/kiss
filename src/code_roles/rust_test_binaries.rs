@@ -17,9 +17,32 @@ pub struct RustTestBinaryModule {
 pub fn workspace_rust_test_modules(
     repo_root: &Path,
 ) -> Result<HashMap<PathBuf, Vec<RustTestBinaryModule>>, RoleBuildError> {
-    let mut out: HashMap<PathBuf, Vec<RustTestBinaryModule>> = HashMap::new();
+    modules_by_file(repo_root, |root| {
+        let binary_prefix = libtest_binary_prefix(root)?;
+        Some(move |module_path| RustTestBinaryModule {
+            binary_prefix: binary_prefix.clone(),
+            module_path,
+        })
+    })
+}
+
+pub fn workspace_nextest_file_modules(
+    repo_root: &Path,
+) -> Result<HashMap<PathBuf, Vec<(String, String)>>, RoleBuildError> {
+    modules_by_file(repo_root, |root| {
+        libtest_binary_prefix(root)?;
+        let binary_id = nextest_binary_id(root);
+        Some(move |module_path| (binary_id.clone(), module_path))
+    })
+}
+
+fn modules_by_file<T: Ord, F: Fn(String) -> T>(
+    repo_root: &Path,
+    module_of: impl Fn(&CargoRoot) -> Option<F>,
+) -> Result<HashMap<PathBuf, Vec<T>>, RoleBuildError> {
+    let mut out: HashMap<PathBuf, Vec<T>> = HashMap::new();
     for root in workspace_roots_at(repo_root)? {
-        let Some(binary_prefix) = libtest_binary_prefix(&root) else {
+        let Some(make) = module_of(&root) else {
             continue;
         };
         let mut modules = Vec::new();
@@ -31,10 +54,7 @@ pub fn workspace_rust_test_modules(
         );
         for (file, module_path) in modules {
             let entry = out.entry(file).or_default();
-            let module = RustTestBinaryModule {
-                binary_prefix: binary_prefix.clone(),
-                module_path,
-            };
+            let module = make(module_path);
             if !entry.contains(&module) {
                 entry.push(module);
             }
@@ -44,6 +64,53 @@ pub fn workspace_rust_test_modules(
         modules.sort();
     }
     Ok(out)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NextestBinary {
+    pub selector_prefix: String,
+    pub binary_id: String,
+    pub src_path: PathBuf,
+}
+
+pub fn workspace_nextest_binaries(repo_root: &Path) -> Result<Vec<NextestBinary>, RoleBuildError> {
+    Ok(workspace_roots_at(repo_root)?
+        .iter()
+        .filter_map(|root| {
+            Some(NextestBinary {
+                selector_prefix: libtest_binary_prefix(root)?,
+                binary_id: nextest_binary_id(root),
+                src_path: root.src_path.clone(),
+            })
+        })
+        .collect())
+}
+
+pub fn workspace_nextest_binary_ids(
+    repo_root: &Path,
+) -> Result<HashMap<String, Vec<String>>, RoleBuildError> {
+    let mut ids: HashMap<String, Vec<String>> = HashMap::new();
+    for binary in workspace_nextest_binaries(repo_root)? {
+        let found = ids.entry(binary.selector_prefix).or_default();
+        if !found.contains(&binary.binary_id) {
+            found.push(binary.binary_id);
+            found.sort();
+        }
+    }
+    Ok(ids)
+}
+
+fn nextest_binary_id(root: &CargoRoot) -> String {
+    let kind_prefix = ["bin", "example", "bench"]
+        .into_iter()
+        .find(|kind| root.kinds.iter().any(|k| k == kind));
+    match kind_prefix {
+        Some(kind) => format!("{}::{kind}/{}", root.package, root.name),
+        None if root.kinds.iter().any(|k| k == "test") => {
+            format!("{}::{}", root.package, root.name)
+        }
+        None => root.package.clone(),
+    }
 }
 
 fn libtest_binary_prefix(root: &CargoRoot) -> Option<String> {
@@ -147,5 +214,24 @@ mod rust_test_binaries_test {
             ]
         );
         assert_eq!(get("tests/it.rs"), [module("demo-pkg::it", "")]);
+
+        let files = super::workspace_nextest_file_modules(root).unwrap();
+        let in_binaries = |rel: &str| {
+            files
+                .get(&canonical_path(&root.join(rel)))
+                .cloned()
+                .unwrap_or_default()
+        };
+        let pair = |id: &str, module: &str| (id.to_string(), module.to_string());
+        assert_eq!(
+            in_binaries("src/a.rs"),
+            [pair("demo-pkg", "a"), pair("demo-pkg::bin/demo-pkg", "a")]
+        );
+        assert_eq!(in_binaries("tests/it.rs"), [pair("demo-pkg::it", "")]);
+
+        let ids = super::workspace_nextest_binary_ids(root).unwrap();
+        assert_eq!(ids["demo-pkg::demo_pkg"], ["demo-pkg"]);
+        assert_eq!(ids["demo-pkg::demo-pkg"], ["demo-pkg::bin/demo-pkg"]);
+        assert_eq!(ids["demo-pkg::it"], ["demo-pkg::it"]);
     }
 }

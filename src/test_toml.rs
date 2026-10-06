@@ -8,8 +8,8 @@ const TEST_SECTION_KEYS: &[&str] = &[
     "main_branch",
     "num_jobs",
     "num_jobs_pytest",
+    "num_jobs_nextest",
     "num_jobs_llvm_cov",
-    // Accepted and ignored so existing `.kissconfig` files that set them still load.
     "watch_settle_seconds",
     "test_coverage_threshold",
     "test_coverage_scope",
@@ -147,10 +147,10 @@ fn apply_strict_runtime(
         config.num_jobs_pytest = val;
         config.num_jobs_pytest_explicit = Some(val);
     }
-    if let Some(v) = table.get("num_jobs_llvm_cov") {
-        let val = parse_positive_usize(v, "num_jobs_llvm_cov")?;
-        config.num_jobs_llvm_cov = val;
-        config.num_jobs_llvm_cov_explicit = Some(val);
+    if let Some(key) = nextest_jobs_key(table) {
+        let val = parse_positive_usize(&table[key], key)?;
+        config.num_jobs_nextest = val;
+        config.num_jobs_nextest_explicit = Some(val);
     }
     if let Some(v) = table.get("pytest_plugins") {
         config.pytest_plugins = parse_string_list_key(v, "pytest_plugins", "plugin names")?;
@@ -162,6 +162,12 @@ fn apply_strict_runtime(
         config.cache_policy = crate::test_cache_policy::TestCachePolicy::parse_table(v, repo_root)?;
     }
     Ok(())
+}
+
+fn nextest_jobs_key(table: &toml::Table) -> Option<&'static str> {
+    ["num_jobs_nextest", "num_jobs_llvm_cov"]
+        .into_iter()
+        .find(|key| table.contains_key(*key))
 }
 
 fn parse_positive_usize(value: &toml::Value, key: &str) -> Result<usize, ConfigError> {
@@ -203,12 +209,14 @@ fn apply_lenient_runtime(
     }
     apply_lenient_positive_usize(table, "num_jobs", &mut config.num_jobs);
     apply_lenient_positive_usize(table, "num_jobs_pytest", &mut config.num_jobs_pytest);
-    apply_lenient_positive_usize(table, "num_jobs_llvm_cov", &mut config.num_jobs_llvm_cov);
+    if let Some(key) = nextest_jobs_key(table) {
+        apply_lenient_positive_usize(table, key, &mut config.num_jobs_nextest);
+    }
     if table.contains_key("num_jobs_pytest") {
         config.num_jobs_pytest_explicit = Some(config.num_jobs_pytest);
     }
-    if table.contains_key("num_jobs_llvm_cov") {
-        config.num_jobs_llvm_cov_explicit = Some(config.num_jobs_llvm_cov);
+    if nextest_jobs_key(table).is_some() {
+        config.num_jobs_nextest_explicit = Some(config.num_jobs_nextest);
     }
     apply_lenient_string_list(table, "pytest_plugins", "plugin names", |v| {
         config.pytest_plugins = v;
@@ -242,6 +250,7 @@ mod tests {
         assert!(TEST_SECTION_KEYS.contains(&"orphan_detection"));
         assert!(TEST_SECTION_KEYS.contains(&"num_jobs"));
         assert!(TEST_SECTION_KEYS.contains(&"num_jobs_pytest"));
+        assert!(TEST_SECTION_KEYS.contains(&"num_jobs_nextest"));
         assert!(TEST_SECTION_KEYS.contains(&"num_jobs_llvm_cov"));
         assert!(TEST_SECTION_KEYS.contains(&"max_unit_test_seconds"));
         assert!(TEST_SECTION_KEYS.contains(&"cache"));

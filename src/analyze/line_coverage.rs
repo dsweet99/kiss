@@ -19,6 +19,7 @@ pub(crate) struct CoverageSourceFacts {
 }
 
 impl CoverageSourceFacts {
+    #[cfg(test)]
     pub(crate) fn from_files(
         py_files: &[PathBuf],
         rs_files: &[PathBuf],

@@ -196,7 +196,7 @@ pub(crate) trait KernelRules: Sync {
 
     fn bind_subprocess_observer(&self, request: &EnsureRequest) {
         let _ = request;
-        kiss::rust_llvm_cov_runner::reset_subprocess_observer();
+        kiss::subprocess_observer::reset_subprocess_observer();
     }
 }
 

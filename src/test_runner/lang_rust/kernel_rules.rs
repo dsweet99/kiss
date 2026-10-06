@@ -8,11 +8,12 @@ impl KernelRules for RustKernelRules {
         "rust_identity"
     }
 
+    /// Rust tests run without coverage, so no Rust lines are ever recorded as covered.
     fn stored_coverage(
         &self,
-        repo_root: &std::path::Path,
+        _repo_root: &std::path::Path,
     ) -> crate::test_runner::lang_iface::StoredCoverage {
-        super::stored::stored_coverage(repo_root)
+        crate::test_runner::lang_iface::StoredCoverage::default()
     }
 
     fn runner_identity_part(&self, repo_root: &std::path::Path) -> Option<serde_json::Value> {
@@ -36,15 +37,15 @@ impl KernelRules for RustKernelRules {
 
     fn historical_covering_selectors(
         &self,
-        repo_root: &std::path::Path,
-        keys: &[String],
-        abs: &[std::path::PathBuf],
+        _repo_root: &std::path::Path,
+        _keys: &[String],
+        _abs: &[std::path::PathBuf],
     ) -> std::collections::BTreeSet<String> {
-        super::stored::historical_covering_selectors(repo_root, keys, abs)
+        std::collections::BTreeSet::new()
     }
 
-    fn indexes_path(&self, repo_root: &std::path::Path, keys: &[String]) -> bool {
-        super::stored::indexes_path(repo_root, keys)
+    fn indexes_path(&self, _repo_root: &std::path::Path, _keys: &[String]) -> bool {
+        false
     }
 
     fn report_labels(
@@ -81,13 +82,9 @@ impl KernelRules for RustKernelRules {
         repo_root: &std::path::Path,
         _extras: &[String],
         selectors: Vec<String>,
-        gate: &kiss::GateConfig,
+        _gate: &kiss::GateConfig,
     ) -> crate::test_runner::lang_iface::AllModePlan {
-        let plan = super::all_mode_plan::rust_plan_selectors(repo_root, selectors, gate);
-        crate::test_runner::lang_iface::AllModePlan {
-            planned: plan.planned,
-            population_required: plan.population_required,
-        }
+        super::all_mode_plan::rust_all_mode_plan(repo_root, selectors)
     }
 
     fn validate_explicit_targets(
@@ -129,23 +126,11 @@ impl KernelRules for RustKernelRules {
     }
 
     fn cancel_active_work(&self) {
-        kiss::rust_llvm_cov_runner::cancel_active_batch_scope();
-    }
-
-    fn begin_covering(
-        &self,
-        repo_root: &std::path::Path,
-        extras: &[String],
-        jobs: usize,
-        dry_run: bool,
-    ) -> Option<Box<dyn std::any::Any>> {
-        let _ = (repo_root, extras, jobs, dry_run);
-        kiss::rust_llvm_cov_runner::begin_identity_memo();
-        None
+        super::nextest::cancel_active_run();
     }
 
     fn validate_extra_args(&self, extras: &[String]) -> Result<(), String> {
-        crate::test_runner::rust_llvm_cov::validate_rust_extra_args(extras)
+        super::nextest::validate_rust_extra_args(extras)
     }
 
     fn cached_witness_summary(
@@ -156,15 +141,6 @@ impl KernelRules for RustKernelRules {
     ) -> SelectorExecutionSummary {
         let planned = super::witness_identity::rust_witness_overlap(planned, witness);
         super::runtime::rust_summary_from_witness_statuses(request, &planned, witness)
-    }
-
-    fn accepted_summary(
-        &self,
-        request: &EnsureRequest,
-        planned: &[String],
-        witness: &ExecutionWitness,
-    ) -> Result<SelectorExecutionSummary, String> {
-        super::runtime::rust_accepted_summary(request, planned, witness)
     }
 
     fn selectors_for_time_gate(

@@ -1,17 +1,13 @@
 use std::collections::BTreeMap;
 
 use kiss::rpytest_runner::TestStatus;
-use kiss::rust_llvm_cov_runner::RustLineCoverage;
 
 use crate::test_runner::coverage_decision::{
     CoverageFreshness, LanguagePlanner, PopulationPlan, SelectionDecision, TestSelector,
 };
 use crate::test_runner::python_coverage_index::write_python_population_manifest_for_args;
 use crate::test_runner::runners::python_backer;
-use crate::test_runner::runners::rust_backer::RustModule;
-use crate::test_runner::rust_coverage_index::{
-    write_rust_population_manifest_for_args, write_test_entry,
-};
+use crate::test_runner::runners::rust_backer::{RustBackerInput, RustModule};
 
 struct PlannerParityCase {
     fresh_selective: PlannerPolicyState,
@@ -29,20 +25,8 @@ struct PlannerPolicyState {
 fn planner_parity_cases(
     repo_root: &std::path::Path,
     app: &std::path::Path,
-    lib: &std::path::Path,
-    universe: &[TestSelector; 2],
+    universe: &[TestSelector; 1],
 ) -> Vec<PlannerParityCase> {
-    write_test_entry(
-        repo_root,
-        "value",
-        &universe[1].id,
-        TestStatus::Passed,
-        RustLineCoverage {
-            files: BTreeMap::new(),
-        },
-    );
-    // Empty coverage: publish population directly (rebuild would omit the selector).
-    write_rust_population_manifest_for_args(repo_root, &[universe[1].id.clone()], &[]).unwrap();
     crate::test_runner::python_coverage_index::storage::write_python_record_fixture(
         repo_root,
         &universe[0].id,
@@ -53,36 +37,20 @@ fn planner_parity_cases(
     );
     write_python_population_manifest_for_args(repo_root, &[universe[0].id.clone()], &[]).unwrap();
 
-    vec![
-        PlannerParityCase {
-            fresh_selective: python_policy_state(repo_root, &[], &universe[0]),
-            stale_population: python_policy_state_with_args(
-                repo_root,
-                std::slice::from_ref(&app.to_path_buf()),
-                &["--stale".to_string()],
-                &universe[0],
-            ),
-            uncovered_fresh: python_policy_state(
-                repo_root,
-                std::slice::from_ref(&app.to_path_buf()),
-                &universe[0],
-            ),
-        },
-        PlannerParityCase {
-            fresh_selective: rust_policy_state(repo_root, &[], &universe[1]),
-            stale_population: rust_policy_state_with_args(
-                repo_root,
-                std::slice::from_ref(&lib.to_path_buf()),
-                &["--stale".to_string()],
-                &universe[1],
-            ),
-            uncovered_fresh: rust_policy_state(
-                repo_root,
-                std::slice::from_ref(&lib.to_path_buf()),
-                &universe[1],
-            ),
-        },
-    ]
+    vec![PlannerParityCase {
+        fresh_selective: python_policy_state(repo_root, &[], &universe[0]),
+        stale_population: python_policy_state_with_args(
+            repo_root,
+            std::slice::from_ref(&app.to_path_buf()),
+            &["--stale".to_string()],
+            &universe[0],
+        ),
+        uncovered_fresh: python_policy_state(
+            repo_root,
+            std::slice::from_ref(&app.to_path_buf()),
+            &universe[0],
+        ),
+    }]
 }
 
 fn python_policy_state(
@@ -125,24 +93,13 @@ fn rust_policy_state(
     source_paths: &[std::path::PathBuf],
     selector: &TestSelector,
 ) -> PlannerPolicyState {
-    rust_policy_state_with_args(repo_root, source_paths, &[], selector)
-}
-
-fn rust_policy_state_with_args(
-    repo_root: &std::path::Path,
-    source_paths: &[std::path::PathBuf],
-    test_args: &[String],
-    selector: &TestSelector,
-) -> PlannerPolicyState {
-    let module = RustModule::new(
+    let module = RustModule::new(RustBackerInput {
         repo_root,
-        source_paths,
-        &BTreeMap::new(),
-        test_args,
-        &[],
-        &[],
-        &[],
-    );
+        rust_source_paths: source_paths,
+        ignore: &[],
+        changed_tests: &[],
+        prior_failures: &[],
+    });
     let universe = vec![selector.clone()];
     PlannerPolicyState {
         selector: selector.clone(),
@@ -156,25 +113,13 @@ fn rust_policy_state_with_args(
 fn concrete_language_planners_keep_policy_parity() {
     let tmp = tempfile::TempDir::new().unwrap();
     let app = tmp.path().join("app.py");
-    let lib = tmp.path().join("src").join("lib.rs");
-    std::fs::create_dir_all(lib.parent().unwrap()).unwrap();
     std::fs::write(&app, "VALUE = 1\n").unwrap();
-    std::fs::write(
-        &lib,
-        "pub fn value() -> i32 { 1 }\n#[cfg(test)]\nmod tests { #[test] fn test_value() { assert_eq!(super::value(), 1); } }\n",
-    )
-    .unwrap();
-    // Prime host/tool caches once (no Cargo.toml: metadata is skipped, not spawned).
-    let _ = crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(
-        tmp.path(),
-        &[],
-    );
-    let universe = [
-        TestSelector::new(kiss::Language::Python, "tests/test_app.py::test_value"),
-        TestSelector::new(kiss::Language::Rust, "tests::test_value"),
-    ];
+    let universe = [TestSelector::new(
+        kiss::Language::Python,
+        "tests/test_app.py::test_value",
+    )];
 
-    for case in planner_parity_cases(tmp.path(), &app, &lib, &universe) {
+    for case in planner_parity_cases(tmp.path(), &app, &universe) {
         assert_eq!(case.fresh_selective.freshness, CoverageFreshness::Fresh);
         assert!(case.fresh_selective.selection.complete);
         assert!(case.fresh_selective.selection.selectors.is_empty());
@@ -187,4 +132,21 @@ fn concrete_language_planners_keep_policy_parity() {
         assert!(case.uncovered_fresh.selection.complete);
         assert!(case.uncovered_fresh.selection.selectors.is_empty());
     }
+}
+
+#[test]
+fn rust_planner_reruns_every_test_once_any_rust_source_changes() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let lib = tmp.path().join("src").join("lib.rs");
+    let selector = TestSelector::new(kiss::Language::Rust, "tests::test_value");
+
+    let unchanged = rust_policy_state(tmp.path(), &[], &selector);
+    assert_eq!(unchanged.freshness, CoverageFreshness::Fresh);
+    assert!(unchanged.selection.complete);
+    assert!(unchanged.selection.selectors.is_empty());
+
+    let changed = rust_policy_state(tmp.path(), std::slice::from_ref(&lib), &selector);
+    assert_eq!(changed.freshness, CoverageFreshness::Stale);
+    assert_eq!(changed.population.selectors, vec![selector]);
+    assert!(changed.selection.selectors.is_empty());
 }

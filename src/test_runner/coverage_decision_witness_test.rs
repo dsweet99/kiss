@@ -132,7 +132,7 @@ fn witness_changed_diff_and_freshness_are_exhaustive() {
         ));
     }
     assert_eq!(SelectionBasis::default(), SelectionBasis::Current);
-    assert_ne!(SelectionBasis::ReusablePrior, SelectionBasis::Population);
+    assert_ne!(SelectionBasis::Current, SelectionBasis::Population);
 }
 
 #[test]

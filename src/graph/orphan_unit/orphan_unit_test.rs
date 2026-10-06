@@ -463,6 +463,33 @@ fn rust_trait_impl_method_is_not_candidate() {
 }
 
 #[test]
+fn rust_trait_impl_method_roots_its_callees() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+    write(
+        &src.join("lib.rs"),
+        "pub struct Helper;\nimpl Default for Helper { fn default() -> Self { called(); Helper } }\nfn called() { let _x = 1; }\nfn unused() { let _x = 2; }\n",
+    );
+    let lib = src.join("lib.rs");
+    let names = rust_names(
+        std::slice::from_ref(&lib),
+        OrphanCoverage {
+            coverable: BTreeMap::from([(lib.clone(), BTreeSet::from([3, 4]))]),
+            hit: BTreeMap::from([(lib.clone(), BTreeSet::new())]),
+        },
+        tmp.path(),
+    );
+    assert!(
+        !names.iter().any(|n| n == "called"),
+        "callee of a trait impl method must not be orphan: {names:?}"
+    );
+    assert!(
+        names.iter().any(|n| n == "unused"),
+        "unused rust fn must be orphan: {names:?}"
+    );
+}
+
+#[test]
 fn rust_enum_variant_path_witnesses_type() {
     let tmp = tempfile::TempDir::new().unwrap();
     let src = tmp.path().join("src");
@@ -628,4 +655,58 @@ fn unused_lib_rs_module_can_be_orphan() {
         !names.is_empty(),
         "unreached cargo lib units must be reportable: {names:?}"
     );
+}
+
+
+fn rust_names_without_coverage(files: &[PathBuf], root: &Path) -> Vec<String> {
+    let coverage = OrphanCoverage {
+        coverable: BTreeMap::new(),
+        hit: BTreeMap::new(),
+    };
+    rust_names(files, coverage, root)
+}
+
+#[test]
+fn rust_reexported_fn_reaches_its_module() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+    write(&src.join("main.rs"), "mod m;\nmod idle;\nfn main() {\n    m::helper(1);\n}\n");
+    write(
+        &src.join("m/mod.rs"),
+        "mod planning;\npub(crate) use planning::helper;\n",
+    );
+    write(
+        &src.join("m/planning.rs"),
+        "pub(crate) fn helper(x: u8) -> u8 {\n    x + 1\n}\n",
+    );
+    write(&src.join("idle.rs"), "fn unused() {\n    let _x = 1;\n}\n");
+    let files = vec![
+        src.join("main.rs"),
+        src.join("m/mod.rs"),
+        src.join("m/planning.rs"),
+        src.join("idle.rs"),
+    ];
+    let names = rust_names_without_coverage(&files, tmp.path());
+    assert_eq!(names, ["idle.rs"]);
+}
+
+#[test]
+fn rust_mod_rs_module_is_reached_by_its_directory_name() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let src = tmp.path().join("src");
+    write(&src.join("main.rs"), "mod fc;\nmod idle;\nfn main() {\n    let _ = fc::S;\n}\n");
+    write(
+        &src.join("fc/mod.rs"),
+        "mod part;\npub static S: &str = part::A;\n",
+    );
+    write(&src.join("fc/part.rs"), "pub(crate) const A: &str = \"a\";\n");
+    write(&src.join("idle.rs"), "pub(crate) const B: &str = \"b\";\n");
+    let files = vec![
+        src.join("main.rs"),
+        src.join("fc/mod.rs"),
+        src.join("fc/part.rs"),
+        src.join("idle.rs"),
+    ];
+    let names = rust_names_without_coverage(&files, tmp.path());
+    assert_eq!(names, ["idle.rs"]);
 }

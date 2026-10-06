@@ -40,8 +40,6 @@ pub(crate) struct PlannerBackerInput<'a> {
     pub(crate) ignore: &'a [String],
     pub(crate) changed_tests: &'a [crate::test_runner::coverage_decision::TestSelector],
     pub(crate) prior_failures: &'a [crate::test_runner::coverage_decision::TestSelector],
-    pub(crate) rust_resolved:
-        Option<crate::test_runner::rust_coverage_index::ResolvedRustPopulation>,
 }
 
 pub(crate) fn planner_backer(
@@ -58,16 +56,13 @@ pub(crate) fn planner_backer(
             input.changed_tests,
             input.prior_failures,
         ),
-        Language::Rust => crate::test_runner::lang_rust::backer::rust_llvm_cov_backer(
+        Language::Rust => crate::test_runner::lang_rust::backer::rust_backer(
             crate::test_runner::lang_rust::backer::RustBackerInput {
                 repo_root: input.repo_root,
                 rust_source_paths: input.source_paths,
-                rust_changed_lines: input.changed_lines,
-                rust_test_args: input.test_args,
                 ignore: input.ignore,
                 changed_tests: input.changed_tests,
                 prior_failures: input.prior_failures,
-                resolved: input.rust_resolved,
             },
         ),
     }

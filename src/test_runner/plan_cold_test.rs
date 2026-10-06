@@ -287,7 +287,7 @@ fn dirty_all_keeps_both_rust_tests_after_one_file_change() {
 }
 
 #[test]
-fn all_mode_ordinary_edit_keeps_universe_without_population() {
+fn all_mode_rust_edit_keeps_universe_and_reruns_every_test() {
     let _cwd = crate::cwd_test_lock::lock();
     let tmp = TempDir::new().unwrap();
     crate::test_runner::test_mode_fixtures::init_git(&tmp);
@@ -310,108 +310,22 @@ fn all_mode_ordinary_edit_keeps_universe_without_population() {
     let mut lib = fs::read_to_string(tmp.path().join("src/lib.rs")).unwrap();
     lib.push_str("#[cfg(test)]\nmod extra_test;\n");
     fs::write(tmp.path().join("src/lib.rs"), lib).unwrap();
-    crate::test_runner::rust_coverage_index::write_test_entry(
+    let selectors = ["only_extra", "tests::a_ok", "tests::b_ok"];
+    crate::test_runner::lang_rust::nextest::generate_lockfile(tmp.path());
+    crate::test_runner::lang_rust::nextest::store_records(
         tmp.path(),
-        "a_ok",
-        "tests::a_ok",
-        kiss::rpytest_runner::TestStatus::Passed,
-        kiss::rust_llvm_cov_runner::RustLineCoverage {
-            files: std::collections::BTreeMap::from([(
-                "src/lib.rs".to_string(),
-                std::collections::BTreeSet::from([1]),
-            )]),
-        },
+        &selectors.map(|s| (s, kiss::rpytest_runner::TestStatus::Passed)),
     );
-    crate::test_runner::rust_coverage_index::write_test_entry(
-        tmp.path(),
-        "b_ok",
-        "tests::b_ok",
-        kiss::rpytest_runner::TestStatus::Passed,
-        kiss::rust_llvm_cov_runner::RustLineCoverage {
-            files: std::collections::BTreeMap::from([(
-                "src/lib.rs".to_string(),
-                std::collections::BTreeSet::from([2]),
-            )]),
-        },
+    let selector_list: Vec<String> = selectors.iter().map(|s| s.to_string()).collect();
+    let witness = crate::test_runner::lang_rust::try_load_rust_execution_witness(tmp.path()).ok();
+    assert!(
+        crate::test_runner::lang_rust::records_witness::record_misses(
+            &selector_list,
+            witness.as_ref()
+        )
+        .is_empty(),
+        "fresh records must hold before the edit"
     );
-    crate::test_runner::rust_coverage_index::write_test_entry(
-        tmp.path(),
-        "only_extra",
-        "only_extra",
-        kiss::rpytest_runner::TestStatus::Passed,
-        kiss::rust_llvm_cov_runner::RustLineCoverage {
-            files: std::collections::BTreeMap::from([(
-                "src/extra_test.rs".to_string(),
-                std::collections::BTreeSet::from([2]),
-            )]),
-        },
-    );
-    crate::test_runner::rust_coverage_index::rebuild_rust_coverage_index(tmp.path()).unwrap();
-    let executable = tmp.path().join("test-bin");
-    std::fs::write(&executable, b"binary").unwrap();
-    let binary_digest = b"binary"
-        .iter()
-        .fold(0xcbf2_9ce4_8422_2325u64, |hash, byte| {
-            (hash ^ u64::from(*byte)).wrapping_mul(0x100_0000_01b3)
-        });
-    let selectors = vec![
-        "only_extra".to_string(),
-        "tests::a_ok".to_string(),
-        "tests::b_ok".to_string(),
-    ];
-    let (mut req, tools) =
-        crate::test_runner::rust_coverage_index::resolved_rust_batch_request_parts(tmp.path(), &[])
-            .unwrap();
-    req.logical_selectors = selectors.clone();
-    req.population_publication_selectors = Some(selectors.clone());
-    let identity = kiss::rust_llvm_cov_runner::batch_identity(&req, &tools).unwrap();
-    kiss::rust_llvm_cov_runner::publish_derived_state_with_binaries(
-        &req,
-        &tools,
-        &identity,
-        &selectors,
-        &[kiss::rust_llvm_cov_runner::RustTestBinaryIdentity {
-            id: "test-bin".into(),
-            executable: executable.to_string_lossy().to_string(),
-            digest: format!("{binary_digest:016x}"),
-        }],
-        true,
-    )
-    .unwrap();
-    kiss::rust_llvm_cov_runner::write_ordinary_source_snapshot(
-        &req.cache_root,
-        tmp.path(),
-        &identity,
-    )
-    .unwrap();
-    let root = tmp.path().canonicalize().unwrap();
-    let outcomes: Vec<_> = [
-        ("tests::a_ok", "src/lib.rs", 1),
-        ("tests::b_ok", "src/lib.rs", 2),
-        ("only_extra", "src/extra_test.rs", 2),
-    ]
-    .into_iter()
-    .map(
-        |(selector, file, line)| kiss::rust_llvm_cov_runner::RustLlvmCovOutcome {
-            selector: selector.to_string(),
-            status: kiss::rpytest_runner::TestStatus::Passed,
-            exit_code: Some(0),
-            duration: std::time::Duration::from_millis(1),
-            coverage: kiss::rust_llvm_cov_runner::RustLineCoverage {
-                files: std::collections::BTreeMap::from([(
-                    root.join(file).to_string_lossy().into_owned(),
-                    std::collections::BTreeSet::from([line]),
-                )]),
-            },
-            test_binary_ids: vec!["test-bin".into()],
-            cache_status: kiss::rust_llvm_cov_runner::RustCovCacheStatus::MissStored,
-            stdout: None,
-            stderr: None,
-        },
-    )
-    .collect();
-    kiss::rust_llvm_cov_runner::record_completed_outcomes(&req, &tools, &identity, &outcomes)
-        .unwrap();
     assert!(
         crate::test_runner::test_mode_fixtures::git_in(tmp.path())
             .args(["add", "."])
@@ -459,12 +373,9 @@ fn all_mode_ordinary_edit_keeps_universe_without_population() {
         &planned.sel.rust,
         witness.as_ref(),
     );
-    assert!(
-        misses.iter().any(|s| s.contains("a_ok")),
-        "changed line must miss a_ok: {misses:?}"
-    );
-    assert!(
-        !misses.iter().any(|s| s == "only_extra"),
-        "uncorrelated test must stay cached: {misses:?}"
+    assert_eq!(
+        misses.len(),
+        planned.sel.rust.len(),
+        "a Rust source edit must rerun every Rust test: {misses:?}"
     );
 }

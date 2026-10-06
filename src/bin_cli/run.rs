@@ -12,17 +12,6 @@ pub fn run_cli_entrypoint() -> i32 {
 
 pub(crate) fn run_with_cli(cli: Cli) -> i32 {
     let _config_override = kiss::ConfigPathOverrideGuard::enter(cli.config.as_deref());
-    if let Commands::RustLlvmCovTargetRunner {
-        output_dir,
-        runner_map,
-        platform,
-        command,
-    } = &cli.command
-    {
-        return kiss::rust_llvm_cov_runner::run_target_runner_shim(
-            output_dir, runner_map, platform, command,
-        );
-    }
     prepare_default_config(&cli);
     let (py_config, rs_config) = load_configs(cli.config.as_ref());
     let gate_config = load_gate_config(cli.config.as_ref());
@@ -129,38 +118,6 @@ mod run_coverage {
             "check should write .kissconfig when it is missing"
         );
         std::env::set_current_dir(&orig_dir).unwrap();
-    }
-
-    #[test]
-    fn hidden_rust_llvm_cov_target_runner_dispatches_before_config_loading() {
-        let tmp = tempfile::tempdir().unwrap();
-        let script = tmp.path().join("shim-child.sh");
-        fs::write(&script, "#!/bin/sh\nexit 6\n").unwrap();
-        make_executable(&script);
-        let output_dir = tmp.path().join("instances");
-
-        let runner_map = tmp.path().join("runner-map.json");
-        fs::write(&runner_map, b"{}").unwrap();
-        let code = run_with_cli(Cli {
-            config: None,
-            lang: None,
-            command: Commands::RustLlvmCovTargetRunner {
-                output_dir: output_dir.clone(),
-                runner_map,
-                platform: "x86_64-unknown-linux-gnu".to_string(),
-                command: vec![script.into_os_string()],
-            },
-        });
-
-        assert_eq!(code, 6);
-        assert!(fs::read_dir(output_dir).unwrap().any(|entry| {
-            entry
-                .unwrap()
-                .path()
-                .extension()
-                .and_then(|ext| ext.to_str())
-                == Some("json")
-        }));
     }
 
     #[test]
@@ -287,16 +244,4 @@ mod run_coverage {
             "--config should not write .kissconfig"
         );
     }
-
-    #[cfg(unix)]
-    fn make_executable(path: &std::path::Path) {
-        use std::os::unix::fs::PermissionsExt;
-
-        let mut permissions = fs::metadata(path).unwrap().permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(path, permissions).unwrap();
-    }
-
-    #[cfg(not(unix))]
-    fn make_executable(_path: &std::path::Path) {}
 }

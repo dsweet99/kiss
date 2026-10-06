@@ -274,8 +274,27 @@ fn lang_ok(path: &Path, lang_filter: Option<TestLangFilter>) -> bool {
     }
 }
 
-fn is_rust_planning_path(path: &Path) -> bool {
-    kiss::Language::is_rust_path(path) || kiss::rust_llvm_cov_runner::is_rust_cov_cache_input(path)
+/// Whether a change to `path` can change how Rust tests build or run: Rust sources and
+/// `include!`d `.inc` files, manifests, lockfiles, cargo config, and toolchain files.
+pub(crate) fn is_rust_planning_path(path: &Path) -> bool {
+    if kiss::Language::is_rust_path(path)
+        || path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("inc"))
+    {
+        return true;
+    }
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
+    let in_cargo_dir = path
+        .parent()
+        .and_then(|parent| parent.file_name())
+        .is_some_and(|dir| dir == ".cargo");
+    matches!(name, "Cargo.toml" | "Cargo.lock" | "config.toml")
+        || (in_cargo_dir && name == "config")
+        || name.starts_with("rust-toolchain")
 }
 
 pub fn resolve_changed_source_paths(

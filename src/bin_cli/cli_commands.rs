@@ -1,5 +1,4 @@
 use clap::Subcommand;
-use std::ffi::OsString;
 use std::path::PathBuf;
 
 use super::parse_positive_usize;
@@ -122,16 +121,5 @@ pub enum Commands {
             help = "Maximum number of test jobs to run concurrently"
         )]
         jobs: Option<usize>,
-    },
-    #[command(name = "__rust-llvm-cov-target-runner", hide = true)]
-    RustLlvmCovTargetRunner {
-        #[arg(long, value_name = "DIR")]
-        output_dir: PathBuf,
-        #[arg(long, value_name = "PATH")]
-        runner_map: PathBuf,
-        #[arg(long, value_name = "TRIPLE")]
-        platform: String,
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        command: Vec<OsString>,
     },
 }

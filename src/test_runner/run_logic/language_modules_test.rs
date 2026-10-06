@@ -3,7 +3,6 @@ use crate::test_runner::PlannedSelectors;
 use crate::test_runner::coverage_decision::LanguagePlanner;
 use crate::test_runner::runners::SelectorExecutionSummary;
 use std::path::PathBuf;
-use std::time::Duration;
 
 fn planned() -> PlannedSelectors {
     let mut planned =
@@ -191,7 +190,7 @@ fn dry_run_lines_report_population_and_selector_commands() {
         4,
     )
     .unwrap();
-    assert_eq!(rust_lines[0], "RUST COVERAGE POPULATION");
+    assert_eq!(rust_lines[0], "RUST POPULATION");
     assert!(
         rust_lines
             .iter()
@@ -257,116 +256,5 @@ fn language_executor_non_empty_runs_validate_jobs_before_spawning() {
             )
         }))
         .is_err()
-    );
-}
-
-#[test]
-fn rust_population_phase_uses_selector_entries_not_check_aggregate() {
-    use crate::test_runner::rust_llvm_cov::RustCoverageToolVersions;
-    use kiss::rust_llvm_cov_runner::{
-        CoverageOutputMode, RustCovCacheStatus, RustCoverageBatchCounters, RustCoverageBatchResult,
-        RustLineCoverage, RustLlvmCovOutcome,
-    };
-    use std::cell::Cell;
-    use std::collections::BTreeMap;
-    use std::rc::Rc;
-
-    fn passed_outcome(selector: String) -> RustLlvmCovOutcome {
-        RustLlvmCovOutcome {
-            selector,
-            status: kiss::rpytest_runner::TestStatus::Passed,
-            exit_code: Some(0),
-            duration: Duration::from_millis(1),
-            coverage: RustLineCoverage {
-                files: BTreeMap::new(),
-            },
-            test_binary_ids: vec!["test-bin".to_string()],
-            cache_status: RustCovCacheStatus::MissStored,
-            stdout: None,
-            stderr: None,
-        }
-    }
-
-    let tmp = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
-    std::fs::write(
-        tmp.path().join("Cargo.toml"),
-        "[package]\nname='demo'\nversion='0.1.0'\nedition='2021'\n",
-    )
-    .unwrap();
-    std::fs::write(
-        tmp.path().join("src").join("lib.rs"),
-        "#[cfg(test)]\nmod tests {\n    #[test]\n    fn alpha() {}\n}\n",
-    )
-    .unwrap();
-    let selectors = vec!["tests::alpha".to_string()];
-    let expected_selectors = selectors.clone();
-    let mut planned = planned();
-    planned.repo_root = tmp.path().to_path_buf();
-    planned.ignore = Vec::new();
-    let mut options = super::dry_run_selector_options();
-    options.extras.rust = &[];
-    options.force_rerun = false;
-    options.jobs = 1;
-    options.dry_run = false;
-    let ctx = crate::test_runner::coverage_decision::RunContext {
-        planned: &planned,
-        options: &options,
-    };
-
-    let saw_selector_entries = Rc::new(Cell::new(false));
-    let saw_selector_entries_for_closure = Rc::clone(&saw_selector_entries);
-    let summary = run_rust_population_selectors_with_batch_deps(
-        &selectors,
-        &ctx,
-        selectors.clone(),
-        |_repo_root| {
-            Ok(RustCoverageToolVersions {
-                cargo: "cargo 1.88.0".to_string(),
-                llvm_cov: "cargo-llvm-cov 0.6.0".to_string(),
-                rustc: "rustc 1.88.0".to_string(),
-                cargo_nextest: "cargo-nextest 0.9.0".to_string(),
-            })
-        },
-        move |batch_req, _versions| {
-            assert_eq!(
-                batch_req.population_publication_selectors,
-                Some(expected_selectors.clone())
-            );
-            assert!(matches!(
-                batch_req.coverage_output_mode,
-                CoverageOutputMode::SelectorEntries
-            ));
-            saw_selector_entries_for_closure.set(true);
-            Ok(RustCoverageBatchResult {
-                completed: batch_req
-                    .logical_selectors
-                    .iter()
-                    .cloned()
-                    .map(passed_outcome)
-                    .collect(),
-                batch_error: None,
-                counters: RustCoverageBatchCounters::default(),
-                test_binaries: Vec::new(),
-            })
-        },
-    )
-    .unwrap();
-
-    assert!(saw_selector_entries.get());
-    assert_eq!(summary.total, selectors.len());
-}
-
-#[test]
-fn aggregate_selection_scope_is_conservative_not_per_test() {
-    let summary = crate::test_runner::runners::SelectorExecutionSummary {
-        rust_batch_cache_hits: 42,
-        rust_entry_generation_count: 0,
-        ..Default::default()
-    };
-    assert_eq!(summary.rust_batch_cache_hits, 42);
-    assert_eq!(
-        summary.rust_entry_generation_count, 0,
-        "aggregate-only cache must not claim per-test attribution"
     );
 }

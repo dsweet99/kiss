@@ -75,8 +75,8 @@ pub fn generate_config_toml_by_language(p: &GenerateConfigParams<'_>) -> String 
     );
     let _ = writeln!(
         out,
-        "num_jobs_llvm_cov = {}",
-        crate::defaults::gate::NUM_JOBS_LLVM_COV
+        "num_jobs_nextest = {}",
+        crate::defaults::gate::NUM_JOBS_NEXTEST
     );
     let _ = writeln!(out, "pytest_plugins = []");
     write_toml_string_list(&mut out, "ignore", p.ignore);

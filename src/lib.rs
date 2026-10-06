@@ -19,7 +19,8 @@ static prefer_tmpfs_tmpdir_init: extern "C" fn() = {
 pub mod kiss_publication_barrier;
 pub mod rpytest_runner;
 pub mod rslip;
-pub mod rust_llvm_cov_runner;
+pub mod subprocess_observer;
+pub mod test_progress;
 
 pub mod cli_output;
 pub mod config;

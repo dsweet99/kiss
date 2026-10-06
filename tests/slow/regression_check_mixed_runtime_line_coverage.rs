@@ -1,6 +1,5 @@
 use crate::common::{
     preserve_toolchain_homes, scrub_parent_coverage_env, seed_python_runtime_coverage,
-    seed_rust_runtime_coverage,
 };
 use crate::support::git::{commit_all, init_git_repo};
 use std::fs;
@@ -19,16 +18,8 @@ fn mixed_python_and_rust_runtime_line_coverage_can_pass_together() {
         repo.path(),
         &[("test_app.py::test_py_value", vec![("app.py", vec![1, 2])])],
     );
-    seed_rust_runtime_coverage(
-        repo.path(),
-        &[(
-            "tests::test_rust_value",
-            vec![("src/lib.rs", (1_u32..=13).collect())],
-        )],
-    );
 
-    // Coverage gate only: seeded runtimes must satisfy mixed-language threshold without
-    // cold llvm-cov / pytest (kiss test --coverage-all) which is multi-second even warm.
+    // Rust tests record no line coverage, so only the Python runtime is seeded.
     let out = run_kiss_check(&home, &repo);
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);

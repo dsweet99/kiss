@@ -1,17 +1,17 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::path::Path;
 
 use crate::test_runner::lang_iface::{ExecutionWitness, WitnessStatus};
-use crate::test_runner::rust_coverage_index::{
-    current_rust_coverage_batch_identity, resolved_rust_batch_request_parts,
-};
-
-pub(crate) use super::witness_identity::rust_identity_digest_from_batch;
 
 const NO_RECORDS: &str = "error: kiss: no rust test records";
 
-/// The Rust witness: the test records made under the current toolchain identity whose
-/// dependency digests still match the sources, limited to tests that still exist.
+/// The witness identity for Rust records stored under `record_identity`.
+pub(crate) fn rust_witness_identity(record_identity: &str) -> String {
+    format!("rs:{record_identity}")
+}
+
+/// The Rust witness: the test records made under the current identity whose
+/// dependencies still match, limited to tests that still exist.
 pub(crate) fn try_load_rust_execution_witness(
     repo_root: &Path,
 ) -> Result<ExecutionWitness, String> {
@@ -22,11 +22,8 @@ pub(crate) fn try_load_rust_execution_witness(
     if !kiss::test_records::records_dir(repo_root, "rust").is_dir() {
         return Err(NO_RECORDS.into());
     }
-    let (req, tools) = resolved_rust_batch_request_parts(repo_root, &[])?;
-    let identity = kiss::rust_llvm_cov_runner::rust_record_identity(&req, &tools)
-        .map_err(|err| format!("error: kiss: rust record identity: {err}"))?;
-    let batch = current_rust_coverage_batch_identity(repo_root, &[])?;
-    let mut records = kiss::rust_llvm_cov_runner::rust_records_holding(repo_root, &identity);
+    let gate = kiss::GateConfig::load_for_repo(repo_root);
+    let (identity, mut records) = super::nextest::holding_records(repo_root, &[], &gate)?;
     if let Some(known) = known_selectors(repo_root) {
         records.retain(|record| known.contains(&record.test_id));
     }
@@ -40,7 +37,7 @@ pub(crate) fn try_load_rust_execution_witness(
         .collect();
     Ok(ExecutionWitness {
         language: "rust".into(),
-        identity_digest: rust_identity_digest_from_batch(&batch),
+        identity_digest: rust_witness_identity(&identity),
         generation_id: records_digest(&identity, &records),
         selectors: records
             .iter()
@@ -50,38 +47,13 @@ pub(crate) fn try_load_rust_execution_witness(
             .iter()
             .map(|record| u64::try_from(record.duration.as_nanos()).ok())
             .collect(),
-        covered_lines: repo_relative_covered_lines(repo_root, &records),
+        covered_lines: Default::default(),
         complete: statuses
             .iter()
             .all(|status| *status == WitnessStatus::Passed),
         raw_statuses: statuses.clone(),
         statuses,
     })
-}
-
-fn repo_relative_covered_lines(
-    repo_root: &Path,
-    records: &[kiss::test_records::TestRecord],
-) -> BTreeMap<String, Vec<u32>> {
-    let root = repo_root
-        .canonicalize()
-        .unwrap_or_else(|_| repo_root.to_path_buf());
-    let mut covered: BTreeMap<String, BTreeSet<u32>> = BTreeMap::new();
-    for record in records {
-        for (file, lines) in &record.covered {
-            let Ok(rel) = Path::new(file).strip_prefix(&root) else {
-                continue;
-            };
-            covered
-                .entry(rel.to_string_lossy().replace('\\', "/"))
-                .or_default()
-                .extend(lines.iter().copied());
-        }
-    }
-    covered
-        .into_iter()
-        .map(|(file, lines)| (file, lines.into_iter().collect()))
-        .collect()
 }
 
 pub(super) fn known_selectors(repo_root: &Path) -> Option<BTreeSet<String>> {
@@ -107,7 +79,6 @@ fn records_digest(identity: &str, records: &[kiss::test_records::TestRecord]) ->
     )
 }
 
-/// The `planned` tests whose records do not hold for a run with test arguments `test_args`.
 /// The planned tests with no holding record, given the witness built from those records.
 pub(crate) fn record_misses(planned: &[String], witness: Option<&ExecutionWitness>) -> Vec<String> {
     let held: BTreeSet<&str> = witness

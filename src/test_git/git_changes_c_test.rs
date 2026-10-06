@@ -204,3 +204,24 @@ fn changed_lines_commit_survives_mnemonic_prefix() {
         "commit: diff.mnemonicPrefix must not drop line maps, got {lines:?}"
     );
 }
+
+#[test]
+fn rust_planning_paths_cover_sources_and_cargo_inputs() {
+    use std::path::Path;
+    for path in [
+        "src/lib.rs",
+        "src/table.inc",
+        "Cargo.toml",
+        "crates/a/Cargo.toml",
+        "Cargo.lock",
+        ".cargo/config.toml",
+        ".cargo/config",
+        "rust-toolchain.toml",
+        "rust-toolchain",
+    ] {
+        assert!(is_rust_planning_path(Path::new(path)), "{path}");
+    }
+    for path in ["src/app.py", "README.md", "config", "tests/data.json"] {
+        assert!(!is_rust_planning_path(Path::new(path)), "{path}");
+    }
+}

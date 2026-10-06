@@ -1,15 +1,4 @@
-use kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity;
-
 use crate::test_runner::lang_iface::ExecutionWitness;
-
-pub(crate) fn rust_identity_digest_from_batch(identity: &RustCoverageBatchIdentity) -> String {
-    format!(
-        "rs:{}:{}:{}",
-        identity.input_digest,
-        identity.generation_fingerprint,
-        identity.selection_context_fingerprint
-    )
-}
 
 fn rust_witness_row_reportable(witness: &ExecutionWitness, i: usize) -> bool {
     witness
@@ -43,7 +32,7 @@ mod tests {
         use crate::test_runner::lang_iface::WitnessStatus;
         let witness = ExecutionWitness {
             language: "rust".into(),
-            identity_digest: "rs:input:old-gen:old-sel".into(),
+            identity_digest: "rs:identity".into(),
             selectors: vec!["pass".into(), "fail".into(), "unresolved".into()],
             statuses: vec![
                 WitnessStatus::Passed,

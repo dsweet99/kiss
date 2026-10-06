@@ -1,7 +1,9 @@
+const TIMING_CONTEXT_SCHEMA_VERSION: &str = "kiss-timing-context-v1";
+
 pub(crate) fn session_timing_context_digest(_jobs: usize) -> String {
     format!(
         "{}:{}:{}",
-        kiss::rust_llvm_cov_runner::TIMING_CONTEXT_SCHEMA_VERSION,
+        TIMING_CONTEXT_SCHEMA_VERSION,
         std::env::consts::OS,
         std::env::consts::ARCH,
     )

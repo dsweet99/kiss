@@ -24,11 +24,11 @@ cargo install kiss-ai
 
 `kiss check`, `kiss stats`, and `kiss viz` need only the installed binary. `kiss test` also needs the language toolchains for the repos you run it on:
 
-- **Rust tests:** [`cargo-llvm-cov`](https://crates.io/crates/cargo-llvm-cov) and [`cargo-nextest`](https://crates.io/crates/cargo-nextest) on `PATH` (kiss drives `cargo llvm-cov nextest`).
+- **Rust tests:** [`cargo-nextest`](https://crates.io/crates/cargo-nextest) on `PATH` (kiss drives `cargo nextest run`).
 - **Python tests:** a `python` interpreter with [`pytest`](https://pypi.org/project/pytest/) importable.
 
 ```bash
-cargo install cargo-llvm-cov cargo-nextest
+cargo install cargo-nextest
 # Python: pip install pytest   # or your environment's equivalent
 ```
 

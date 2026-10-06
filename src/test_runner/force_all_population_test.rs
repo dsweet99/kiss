@@ -131,14 +131,6 @@ fn apply_force_all_population_only_for_all_invocation() {
                 python: 0,
                 rust: 0,
             },
-            snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
-                python: 0,
-                rust: 0,
-            },
-            snapshot_delta_structural: crate::test_runner::language_keyed::LanguageKeyed {
-                python: false,
-                rust: false,
-            },
             prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
                 python: Vec::new(),
                 rust: Vec::new(),

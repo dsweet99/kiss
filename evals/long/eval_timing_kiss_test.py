@@ -36,11 +36,7 @@ def _ruff_kiss_cmd(*args: str) -> list[str]:
 
 
 def _clear_runtime_test_cache(repo: Path) -> None:
-    """Clear Python/runtime caches only.
-
-    Do not delete rust_llvm_cov_cache: rebuilding it on ruff takes many minutes
-    and violates the eval time budget.
-    """
+    """Clear Python/runtime caches only; Rust records stay so ruff's Rust tests stay cached."""
     kiss_dir = repo / ".kiss"
     shutil.rmtree(kiss_dir / "test" / "rslip_cache", ignore_errors=True)
     (kiss_dir / "test" / "cov_records_cache.json").unlink(missing_ok=True)
@@ -80,7 +76,7 @@ def _seed_python_selector_cache(repo: Path, env: dict[str, str]) -> None:
 def timing_kiss_test() -> None:
     """Cold then warm `kiss test --lang python` on ruff within the eval budget.
 
-    Full Rust llvm-cov on ruff exceeds 60s when caches are cold, so this eval
+    A full cold Rust run on ruff exceeds 60s, so this eval
     times the Python path against the large ruff tree (workspace planning +
     Python selectors) without forcing a multi-minute Rust rebuild.
 

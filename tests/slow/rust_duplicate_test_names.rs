@@ -1,6 +1,6 @@
 #![cfg(unix)]
 
-use crate::support::scenario::{Reply, Scenario, kiss, skip_under_coverage};
+use crate::support::scenario::{Reply, Scenario, kiss, skip_under_kiss_test};
 
 fn assert_summary(reply: &Reply, code: i32, summary: &str, phase: &str) {
     assert_eq!(reply.code, Some(code), "{phase}: {reply:?}");
@@ -51,7 +51,7 @@ fn integration_file(s: &Scenario, file: &str, same_body: &str, ok_name: &str) ->
 
 #[test]
 fn same_named_integration_tests_in_two_files_are_two_tests() {
-    if skip_under_coverage() {
+    if skip_under_kiss_test() {
         return;
     }
     let s = Scenario::new();
@@ -159,7 +159,7 @@ fn assert_two_unit_tests(s: &Scenario, runs: &[&str]) {
 
 #[test]
 fn same_named_unit_tests_in_two_modules_are_two_tests() {
-    if skip_under_coverage() {
+    if skip_under_kiss_test() {
         return;
     }
     let s = Scenario::new();
@@ -170,7 +170,7 @@ fn same_named_unit_tests_in_two_modules_are_two_tests() {
 
 #[test]
 fn same_named_unit_tests_in_modules_shared_by_lib_and_bin_are_two_tests() {
-    if skip_under_coverage() {
+    if skip_under_kiss_test() {
         return;
     }
     let s = Scenario::new();

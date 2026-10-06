@@ -1,12 +1,4 @@
-use super::{rust_dynamic_listing_jobs, rust_file_needs_dynamic_listing};
-
-#[test]
-fn dynamic_rust_listing_uses_repository_num_jobs() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    std::fs::write(tmp.path().join(".kissconfig"), "[test]\nnum_jobs = 7\n").expect("config");
-
-    assert_eq!(rust_dynamic_listing_jobs(tmp.path()).expect("jobs"), 7);
-}
+use super::rust_file_needs_dynamic_listing;
 
 #[test]
 fn tokio_test_does_not_need_dynamic_listing() {
@@ -57,21 +49,6 @@ fn local_macro_rules_generating_tests_needs_dynamic_listing() {
 }
 
 #[test]
-fn source_for_listed_test_prefers_non_lib_matching_target() {
-    use std::collections::HashMap;
-    use std::path::PathBuf;
-
-    let lib = PathBuf::from("/repo/src/lib.rs");
-    let other = PathBuf::from("/repo/src/foo.rs");
-    let exe = PathBuf::from("/repo/target/debug/deps/demo-abc123");
-    let mut index = HashMap::new();
-    index.insert("demo".to_string(), vec![lib.clone(), other.clone()]);
-    let got =
-        super::source_for_listed_test(&exe, "foo::bar", &[lib.clone(), other.clone()], &index);
-    assert_eq!(got, other);
-}
-
-#[test]
 fn defining_source_for_selector_maps_module_file() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let src = tmp.path().join("src");
@@ -86,21 +63,6 @@ fn defining_source_for_selector_maps_module_file() {
         &[lib.clone(), module.clone()],
     );
     assert_eq!(got, module);
-}
-
-#[test]
-fn target_source_index_groups_by_name() {
-    use std::path::PathBuf;
-
-    let a = PathBuf::from("/a.rs");
-    let b = PathBuf::from("/b.rs");
-    let index = super::target_source_index(&[
-        ("demo".into(), a.clone()),
-        ("demo".into(), b.clone()),
-        ("other".into(), a.clone()),
-    ]);
-    assert_eq!(index.get("demo").map(|v| v.len()), Some(2));
-    assert_eq!(index.get("other").map(|v| v.len()), Some(1));
 }
 
 #[test]

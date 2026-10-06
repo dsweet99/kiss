@@ -13,8 +13,6 @@ mod language_executor;
 mod language_modules;
 #[path = "run_logic/metrics.rs"]
 mod metrics;
-#[path = "run_logic/metrics_rust.rs"]
-mod metrics_rust;
 pub(crate) use language_executor::LanguagePhaseOutcome;
 use language_executor::{
     ExecutionPhase, execute_language_phase, execution_phase, population_selector_count,
@@ -232,8 +230,6 @@ fn take_language_plan(to: &mut PlannedSelectors, from: &mut PlannedSelectors, l:
         population_required,
         source_paths,
         vcs_source_paths,
-        snapshot_delta_modified,
-        snapshot_delta_structural,
         prior_failure_selectors,
         selection_basis,
         skip_index_rebuild_after_selective

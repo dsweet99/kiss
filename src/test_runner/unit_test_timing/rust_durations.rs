@@ -2,9 +2,7 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use crate::test_runner::rust_coverage_index::{
-    resolved_rust_batch_request_parts, rust_coverage_cache_root,
-};
+use crate::test_runner::lang_iface::ExecutionWitness;
 
 type DurationPair = (String, Duration);
 type DurationPairsMemo = Option<(PathBuf, Vec<DurationPair>)>;
@@ -23,78 +21,24 @@ pub(super) fn load_rust_duration_pairs(repo_root: &Path) -> Option<Vec<DurationP
     }) {
         return Some(cached);
     }
-    let pairs = load_rust_duration_pairs_uncached(repo_root)?;
+    let witness =
+        crate::test_runner::execution_witness::try_load_rust_execution_witness(repo_root).ok()?;
+    let pairs = duration_pairs(&witness)?;
     RUST_DURATION_PAIRS_MEMO.with(|memo| {
         *memo.borrow_mut() = Some((repo_key, pairs.clone()));
     });
     Some(pairs)
 }
 
-fn load_rust_duration_pairs_uncached(repo_root: &Path) -> Option<Vec<DurationPair>> {
-    let cache_root = rust_coverage_cache_root(repo_root);
-    if let Some(pairs) =
-        kiss::rust_llvm_cov_runner::try_load_sealed_population_durations(&cache_root, repo_root)
-        && !pairs.is_empty()
-    {
-        return Some(pairs);
-    }
-    if let Some(sealed) =
-        kiss::rust_llvm_cov_runner::try_source_matched_seal_identity(&cache_root, repo_root)
-        && kiss::rust_llvm_cov_runner::current_population_manifest_matches_identity(
-            &cache_root,
-            &sealed,
-        )
-        .unwrap_or(false)
-    {
-        if let Some(pairs) = load_rust_duration_pairs_from_witness(repo_root, &sealed) {
-            return Some(pairs);
-        }
-        if let Some(pairs) =
-            load_rust_duration_pairs_via_batch(repo_root, &cache_root, Some(sealed))
-        {
-            return Some(pairs);
-        }
-    }
-    load_rust_duration_pairs_via_batch(repo_root, &cache_root, None)
-}
-
-fn load_rust_duration_pairs_via_batch(
-    repo_root: &Path,
-    cache_root: &Path,
-    sealed: Option<kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity>,
-) -> Option<Vec<DurationPair>> {
-    let (req, tools) = resolved_rust_batch_request_parts(repo_root, &[]).ok()?;
-    let identity = match sealed {
-        Some(sealed) => sealed,
-        None => kiss::rust_llvm_cov_runner::batch_identity(&req, &tools).ok()?,
-    };
-    if let Some(pairs) = load_rust_duration_pairs_from_witness(repo_root, &identity) {
-        return Some(pairs);
-    }
-    kiss::rust_llvm_cov_runner::load_current_population_durations(
-        cache_root, repo_root, &identity, &req, &tools, None,
-    )
-    .filter(|pairs| !pairs.is_empty())
-}
-
-fn load_rust_duration_pairs_from_witness(
-    repo_root: &Path,
-    identity: &kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity,
-) -> Option<Vec<DurationPair>> {
-    use crate::test_runner::execution_witness::{
-        rust_identity_digest_from_batch, try_load_rust_execution_witness,
-    };
-    use crate::test_runner::lang_iface::identity_covers;
-    let witness = try_load_rust_execution_witness(repo_root).ok()?;
-    if !identity_covers(
-        &witness.identity_digest,
-        &rust_identity_digest_from_batch(identity),
-    ) {
-        return None;
-    }
+/// The recorded duration of every test, when every holding record passed.
+fn duration_pairs(witness: &ExecutionWitness) -> Option<Vec<DurationPair>> {
     if !witness.complete
         || witness.selectors.is_empty()
         || witness.durations_ns.len() != witness.selectors.len()
+        || witness
+            .statuses
+            .iter()
+            .any(|status| *status != crate::test_runner::lang_iface::WitnessStatus::Passed)
     {
         return None;
     }
@@ -109,52 +53,39 @@ fn load_rust_duration_pairs_from_witness(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_runner::execution_witness::WitnessStatus;
 
     #[test]
-    fn load_rust_duration_pairs_from_witness_absent_returns_none() {
+    fn absent_records_give_no_durations() {
         let tmp = tempfile::tempdir().unwrap();
-        let identity = kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity {
-            input_digest: "digest".to_string(),
-            generation_fingerprint: "fingerprint".to_string(),
-            selection_context_fingerprint: "sel".to_string(),
-            ordinary_source_digests: std::collections::BTreeMap::new(),
-        };
-        assert!(load_rust_duration_pairs_from_witness(tmp.path(), &identity).is_none());
+        assert!(load_rust_duration_pairs(tmp.path()).is_none());
     }
 
     #[test]
-    fn load_rust_duration_pairs_from_witness_present_returns_pairs() {
-        use crate::test_runner::execution_witness::WitnessStatus;
-
+    fn passing_records_give_their_durations() {
         let tmp = tempfile::tempdir().unwrap();
-        let identity = kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity {
-            input_digest: "digest".to_string(),
-            generation_fingerprint: "fingerprint".to_string(),
-            selection_context_fingerprint: "sel".to_string(),
-            ordinary_source_digests: std::collections::BTreeMap::new(),
-        };
+        crate::test_runner::lang_rust::test_records::store(
+            tmp.path(),
+            &[("tests/a.rs::test_1".to_string(), WitnessStatus::Passed)],
+        );
+        let pairs = load_rust_duration_pairs(tmp.path()).unwrap();
+        assert_eq!(
+            pairs,
+            [("tests/a.rs::test_1".to_string(), Duration::from_nanos(1))]
+        );
+    }
 
-        let selectors = vec!["tests/a.rs::test_1".to_string()];
-        let statuses = vec![WitnessStatus::Passed];
-        let durations_ns = vec![Some(2_000_000_000)];
-        let covered_lines = std::collections::BTreeMap::new();
-
-        crate::test_runner::lang_rust::test_records::seed_rust_witness(
-            crate::test_runner::lang_rust::test_records::SeedRustWitness {
-                repo_root: tmp.path(),
-                identity: &identity,
-                selectors: &selectors,
-                statuses: &statuses,
-                durations_ns: &durations_ns,
-                covered_lines: &covered_lines,
-                complete: true,
-            },
-        )
-        .unwrap();
-
-        let pairs = load_rust_duration_pairs_from_witness(tmp.path(), &identity).unwrap();
-        assert_eq!(pairs.len(), 1);
-        assert_eq!(pairs[0].0, "tests/a.rs::test_1");
-        assert_eq!(pairs[0].1, Duration::from_secs(2));
+    #[test]
+    fn a_failing_record_withholds_durations() {
+        let tmp = tempfile::tempdir().unwrap();
+        crate::test_runner::lang_rust::test_records::store(
+            tmp.path(),
+            &[
+                ("a".to_string(), WitnessStatus::Passed),
+                ("b".to_string(), WitnessStatus::Failed),
+            ],
+        );
+        let witness = crate::test_runner::lang_rust::test_records::load(tmp.path()).unwrap();
+        assert!(duration_pairs(&witness).is_none());
     }
 }

@@ -448,9 +448,7 @@ fn emit_covering_abort() -> RunTestOnceOutcome {
         },
         std::time::Duration::from_millis(10),
     );
-    RunTestOnceOutcome::EngineError(
-        "error: kiss test: rust llvm-cov failed: InvalidRequest(\"95 cargo-llvm-cov processes live (cap 84); aborting instrumented nextest\")".into(),
-    )
+    RunTestOnceOutcome::EngineError("error: kiss test: cargo nextest exited with code 101".into())
 }
 
 #[test]

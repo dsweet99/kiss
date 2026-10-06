@@ -3,7 +3,6 @@
 pub(crate) mod capture_stdout;
 
 mod coverage_decision;
-pub(crate) mod coverage_index;
 pub(crate) mod duration;
 pub(crate) mod ensure_runtime;
 pub(crate) mod execution_witness;
@@ -21,7 +20,6 @@ pub(crate) mod python_coverage_index;
 mod run_logic;
 mod runners;
 mod rust_batch_interrupt;
-mod rust_coverage_index;
 mod rust_report_id_cache;
 mod selector_ids;
 mod status_labels;
@@ -39,7 +37,6 @@ pub(crate) use kiss_test_report::{
 };
 #[cfg(test)]
 pub(crate) use kiss_test_report::{run_kiss_test_report, run_kiss_test_report_reuse};
-pub(crate) use lang_rust::llvm_cov as rust_llvm_cov;
 #[cfg(test)]
 pub(crate) use planned_selectors::should_force_cold_initialization;
 pub(crate) use planned_selectors::{PlannedSelectors, SelectorRunOptions, empty_planned};
@@ -164,7 +161,7 @@ pub(crate) fn emit_test_progress(message: &str) {
 }
 
 pub(crate) fn emit_test_status(message: &str) {
-    kiss::rust_llvm_cov_runner::emit_progress(message);
+    kiss::test_progress::emit_progress(message);
 }
 
 pub(crate) fn emit_stage_time(stage: &str, duration: std::time::Duration) {
@@ -191,7 +188,7 @@ pub(crate) fn run_live_overlapped_test(
 ) -> Result<i32, String> {
     crate::test_runner::runners::clear_python_collect_memo();
     crate::test_runner::tests_remaining::reset_tests_remaining();
-    let _progress_watchdog = kiss::rust_llvm_cov_runner::ProgressWatchdog::start();
+    let _progress_watchdog = kiss::test_progress::ProgressWatchdog::start();
     emit_test_progress("kiss test: Planning ...");
     pipeline::run_overlapped_test(a, process_started)
 }
@@ -306,15 +303,6 @@ mod mod_run_api_test;
 mod python_coverage_index_witness_test;
 
 #[cfg(test)]
-#[path = "runners_reusable_prior_cli_acceptance_test.rs"]
-mod runners_reusable_prior_cli_acceptance_test;
-#[cfg(test)]
-#[path = "runners_reusable_prior_compile_time_test.rs"]
-mod runners_reusable_prior_compile_time_test;
-#[cfg(test)]
-#[path = "runners_reusable_prior_test.rs"]
-mod runners_reusable_prior_test;
-#[cfg(test)]
 #[path = "runners_test.rs"]
 mod runners_test;
 
@@ -325,14 +313,6 @@ mod runners_workspace_test;
 #[cfg(test)]
 #[path = "runners_request_test.rs"]
 mod runners_request_test;
-
-#[cfg(test)]
-#[path = "rust_batch_witness_test.rs"]
-mod rust_batch_witness_test;
-
-#[cfg(test)]
-#[path = "rust_batch_witness_derived_test.rs"]
-mod rust_batch_witness_derived_test;
 
 #[cfg(test)]
 #[path = "test_cli_acceptance_test.rs"]

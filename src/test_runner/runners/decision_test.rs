@@ -1,11 +1,6 @@
 use super::*;
-use crate::test_runner::coverage_decision::{LanguagePlanner, SelectionDecision};
-use crate::test_runner::rust_coverage_index::rebuild_rust_coverage_index;
 use kiss::rpytest_runner::TestStatus;
-use kiss::rslip::LineCoverage;
 
-#[path = "decision_line_coverage_test.rs"]
-mod line_coverage_tests;
 #[path = "decision_policy_test.rs"]
 mod policy_tests;
 
@@ -18,8 +13,6 @@ fn selector_plan_default_has_no_work_or_engine_claim() {
     assert!(!plan.population_required.python);
     assert!(!plan.population_required.rust);
     assert!(plan.source_paths.rust.is_empty());
-    assert!(plan.changed_lines.python.is_empty());
-    assert!(plan.changed_lines.rust.is_empty());
     assert!(plan.prior_failure_selectors.python.is_empty());
     assert!(plan.prior_failure_selectors.rust.is_empty());
     assert!(!plan.coverage_decision_engine_used);
@@ -269,13 +262,11 @@ fn EngineBackers_empty_when_no_language_has_work() {
     let tmp = tempfile::TempDir::new().unwrap();
     let changed_tests = ChangedTestSelectors::default();
     let python_changed_lines = BTreeMap::new();
-    let rust_changed_lines = BTreeMap::new();
     let input = EngineBackerInputs {
         repo_root: tmp.path(),
         py_source_paths: &[],
         python_changed_lines: &python_changed_lines,
         rust_source_paths: &[],
-        rust_changed_lines: &rust_changed_lines,
         test_args: crate::test_runner::language_keyed::LanguageKeyed {
             python: &[],
             rust: &[],
@@ -283,7 +274,6 @@ fn EngineBackers_empty_when_no_language_has_work() {
         lang_filter: None,
         ignore: &[],
         changed_tests: &changed_tests,
-        rust_resolved: None,
         include_prior_failures: true,
     };
 
@@ -302,13 +292,11 @@ fn engine_backers_expose_manifest_env_policy() {
     std::fs::write(&lib, "pub fn value() -> i32 { 1 }\n").unwrap();
     let changed_tests = ChangedTestSelectors::default();
     let python_changed_lines = BTreeMap::new();
-    let rust_changed_lines = BTreeMap::new();
     let input = EngineBackerInputs {
         repo_root: tmp.path(),
         py_source_paths: std::slice::from_ref(&app),
         python_changed_lines: &python_changed_lines,
         rust_source_paths: std::slice::from_ref(&lib),
-        rust_changed_lines: &rust_changed_lines,
         test_args: crate::test_runner::language_keyed::LanguageKeyed {
             python: &[],
             rust: &[],
@@ -316,7 +304,6 @@ fn engine_backers_expose_manifest_env_policy() {
         lang_filter: None,
         ignore: &[],
         changed_tests: &changed_tests,
-        rust_resolved: None,
         include_prior_failures: true,
     };
 

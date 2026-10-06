@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
-use kiss::rust_llvm_cov_runner::repo_relative_path;
 use rayon::prelude::*;
 
 use crate::test_runner::lang_rust::workspace::{
@@ -46,7 +45,9 @@ pub(crate) fn rust_logical_to_kiss_test_ids(
     for (path, logical) in
         enumerate_workspace_rust_test_entries(repo_root, ignore, ParseErrorPolicy::Skip)?
     {
-        let Some(rel) = repo_relative_path(repo_root, &path) else {
+        let Some(rel) =
+            crate::test_runner::python_coverage_index::repo_relative_path(repo_root, &path)
+        else {
             continue;
         };
         let test_path = rust_selector_test_path(&logical);
@@ -143,124 +144,34 @@ fn selectors_in_rust_file(path: &Path) -> Result<(PathBuf, Vec<String>), String>
     Ok((path.to_path_buf(), selectors))
 }
 
+/// Tests that macros generate, found by listing the built test binaries; each is
+/// attributed to the source file of its Cargo target, or for a crate root to the
+/// module file whose path prefixes the test.
 fn dynamic_rust_selectors(
     repo_root: &Path,
     ignore: &[String],
     candidate_sources: &[PathBuf],
 ) -> Result<Vec<(PathBuf, String)>, String> {
-    let (mut request, tools) =
-        crate::test_runner::rust_coverage_index::resolved_rust_batch_request_parts(repo_root, &[])?;
-    request.jobs = rust_dynamic_listing_jobs(repo_root)?;
-    let target_sources = kiss::rust_llvm_cov_runner::workspace_test_target_sources(
-        &request.cwd,
-        &request.cargo,
-        &request.cargo_args,
-    )
-    .map_err(|err| {
-        format!("error: kiss test: failed to resolve generated Rust test targets: {err:?}")
-    })?;
-    request.population_publication_selectors = Some(Vec::new());
-    let identity = kiss::rust_llvm_cov_runner::batch_identity(&request, &tools)
-        .map_err(|err| format!("error: kiss test: failed to list generated Rust tests: {err}"))?;
-    let plan = kiss::rust_llvm_cov_runner::build_rust_coverage_batch_plan(&request)
-        .map_err(|err| format!("error: kiss test: failed to list generated Rust tests: {err}"))?;
-    let (_, listed_tests) =
-        kiss::rust_llvm_cov_runner::build_rust_test_executable_index_with_tests(
-            &request, &tools, &identity, &plan,
-        )
-        .map_err(|err| format!("error: kiss test: failed to list generated Rust tests: {err:?}"))?;
-    let target_index = target_source_index(&target_sources);
-    let mapped: Vec<(PathBuf, String)> = listed_tests
-        .into_par_iter()
-        .filter_map(|listed| {
-            let source = source_for_listed_test(
-                Path::new(&listed.executable),
-                &listed.logical_name,
-                candidate_sources,
-                &target_index,
-            );
-            let rel = source
-                .strip_prefix(repo_root)
-                .map(|path| path.to_string_lossy().replace('\\', "/"))
-                .unwrap_or_default();
-            if kiss::path_ignored_by_prefixes(&rel, ignore) {
-                None
-            } else {
-                Some((source, listed.logical_name))
-            }
-        })
+    let sources: HashMap<String, PathBuf> = kiss::code_roles::workspace_nextest_binaries(repo_root)
+        .map_err(|err| format!("error: kiss test: failed to read Cargo targets: {err}"))?
+        .into_iter()
+        .map(|binary| (binary.binary_id, binary.src_path))
         .collect();
     let mut selectors = BTreeSet::new();
-    selectors.extend(mapped);
+    for listed in super::nextest::list_tests(repo_root)? {
+        let Some(target_source) = sources.get(&listed.binary_id) else {
+            continue;
+        };
+        let source = defining_source_for_selector(target_source, &listed.name, candidate_sources);
+        let rel = source
+            .strip_prefix(repo_root)
+            .map(|path| path.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_default();
+        if !kiss::path_ignored_by_prefixes(&rel, ignore) {
+            selectors.insert((source, listed.name));
+        }
+    }
     Ok(selectors.into_iter().collect())
-}
-
-fn target_source_index(target_sources: &[(String, PathBuf)]) -> HashMap<String, Vec<PathBuf>> {
-    let mut index = HashMap::<String, Vec<PathBuf>>::new();
-    for (name, source) in target_sources {
-        index.entry(name.clone()).or_default().push(source.clone());
-    }
-    index
-}
-
-fn rust_dynamic_listing_jobs(repo_root: &Path) -> Result<usize, String> {
-    kiss::TestSectionConfig::try_load_path_only(&kiss::kissconfig_path_for_repo(repo_root))
-        .map(|config| config.num_jobs)
-        .map_err(|err| format!("error: kiss test: failed to load test configuration: {err}"))
-}
-
-fn source_for_listed_test(
-    executable: &Path,
-    selector: &str,
-    candidate_sources: &[PathBuf],
-    target_index: &HashMap<String, Vec<PathBuf>>,
-) -> PathBuf {
-    let executable_stem = executable
-        .file_stem()
-        .and_then(|value| value.to_str())
-        .unwrap_or_default()
-        .rsplit_once('-')
-        .map_or_else(
-            || {
-                executable
-                    .file_stem()
-                    .and_then(|value| value.to_str())
-                    .unwrap_or_default()
-            },
-            |(stem, _)| stem,
-        );
-    let matching_targets = target_index
-        .get(executable_stem)
-        .map(|sources| sources.as_slice())
-        .unwrap_or(&[]);
-    if let Some(source) = matching_targets.iter().find(|source| {
-        !matches!(
-            source.file_name().and_then(|value| value.to_str()),
-            Some("lib.rs" | "main.rs")
-        )
-    }) {
-        return source.clone();
-    }
-    matching_targets
-        .iter()
-        .chain(candidate_sources.iter().filter(|source| {
-            source
-                .file_name()
-                .and_then(|value| value.to_str())
-                .is_some_and(|name| matches!(name, "lib.rs" | "main.rs"))
-        }))
-        .map(|root| defining_source_for_selector(root, selector, candidate_sources))
-        .max_by_key(|source| {
-            (
-                !matches!(
-                    source.file_name().and_then(|value| value.to_str()),
-                    Some("lib.rs" | "main.rs")
-                ),
-                source.components().count(),
-            )
-        })
-        .or_else(|| candidate_sources.first().cloned())
-        .unwrap_or_default()
 }
 
 fn defining_source_for_selector(

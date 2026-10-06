@@ -1,6 +1,6 @@
 #![cfg(unix)]
 
-use crate::support::scenario::{Reply, Scenario, kiss, skip_under_coverage};
+use crate::support::scenario::{Reply, Scenario, kiss, skip_under_kiss_test};
 
 fn assert_excluded(reply: &Reply, phase: &str) {
     assert_eq!(reply.code, Some(1), "{phase}: {reply:?}");
@@ -17,7 +17,7 @@ fn assert_excluded(reply: &Reply, phase: &str) {
 
 #[test]
 fn kissconfig_ignore_prefix_excludes_tests() {
-    if skip_under_coverage() {
+    if skip_under_kiss_test() {
         return;
     }
     let s = Scenario::new();

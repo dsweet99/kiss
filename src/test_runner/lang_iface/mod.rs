@@ -16,8 +16,8 @@ pub(crate) use stored::{GenerationIds, StoredCoverage};
 pub(crate) use timing::timing_context_is_comparable;
 pub(crate) use witness::{
     AcceptDecision, AcceptMode, ExecutionWitness, WitnessStatus, accept_witness,
-    all_misses_warm_skippable, identity_covers, miss_selectors_for_repair,
-    reclassify_statuses_with_gate, union_force_selectors_into_misses,
+    all_misses_warm_skippable, miss_selectors_for_repair, reclassify_statuses_with_gate,
+    union_force_selectors_into_misses,
 };
 pub(crate) use witness_summary::summary_from_witness_statuses;
 

@@ -233,14 +233,6 @@ fn cold_initialization_population_marks_missing_state_for_both_languages() {
             rust: Vec::new(),
         },
         vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed { python: 0, rust: 0 },
-        snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
-            python: 0,
-            rust: 0,
-        },
-        snapshot_delta_structural: crate::test_runner::language_keyed::LanguageKeyed {
-            python: false,
-            rust: false,
-        },
         prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
             python: Vec::new(),
             rust: Vec::new(),

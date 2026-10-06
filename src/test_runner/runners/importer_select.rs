@@ -135,6 +135,8 @@ fn importer_paths_of(ctx: &ContextDependencyGraph, test_paths: &[PathBuf]) -> Ve
     extra.into_iter().collect()
 }
 
+/// Python tests whose recorded coverage reached the changed test files. Rust runs keep
+/// no coverage; a changed Rust helper outside any test plans every Rust test instead.
 fn covering_selectors(repo_root: &Path, test_paths: &[PathBuf]) -> LanguageKeyed<Vec<String>> {
     let mut ids = LanguageKeyed::<Vec<String>>::default();
     if let Some(sels) =
@@ -143,17 +145,6 @@ fn covering_selectors(repo_root: &Path, test_paths: &[PathBuf]) -> LanguageKeyed
         )
     {
         ids.python.extend(sels);
-    }
-    if let Some(pop) = crate::test_runner::rust_coverage_index::load_current_rust_population_state(
-        repo_root,
-        None,
-        &[],
-    ) && let Some(sels) = crate::test_runner::rust_coverage_index::selectors_for_source_paths(
-        repo_root,
-        test_paths,
-        &pop.line_index,
-    ) {
-        ids.rust.extend(sels);
     }
     ids
 }

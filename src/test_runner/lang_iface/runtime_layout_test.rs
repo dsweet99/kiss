@@ -15,7 +15,7 @@ fn lang_iface_has_no_python_or_rust_impl_files() {
 }
 
 #[test]
-fn language_packages_own_llvm_cov_and_adapter_homes() {
+fn language_packages_own_runner_and_adapter_homes() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/test_runner");
     assert!(
         !root
@@ -24,12 +24,12 @@ fn language_packages_own_llvm_cov_and_adapter_homes() {
         "generation must not remain under python_coverage_index/"
     );
     assert!(
-        root.join("lang_rust/llvm_cov/mod.rs").is_file(),
-        "Rust llvm-cov adapter home must exist under lang_rust/llvm_cov/"
+        root.join("lang_rust/nextest/mod.rs").is_file(),
+        "Rust nextest runner must live under lang_rust/nextest/"
     );
     assert!(
-        !root.join("rust_llvm_cov.rs").is_file(),
-        "rust_llvm_cov.rs must move under lang_rust/llvm_cov/"
+        !root.join("lang_rust/llvm_cov").exists(),
+        "the llvm-cov runner is retired"
     );
     assert!(
         root.join("lang_python/collect.rs").is_file(),

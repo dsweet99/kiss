@@ -1,8 +1,6 @@
 #[cfg(test)]
 pub(crate) use crate::test_runner::lang_iface::WitnessStatus;
-pub(crate) use crate::test_runner::lang_rust::{
-    rust_identity_digest_from_batch, try_load_rust_execution_witness,
-};
+pub(crate) use crate::test_runner::lang_rust::try_load_rust_execution_witness;
 
 #[allow(unused_imports)]
 pub(crate) mod accept {

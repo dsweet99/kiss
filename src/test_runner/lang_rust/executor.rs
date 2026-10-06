@@ -1,6 +1,6 @@
 use crate::test_runner::coverage_decision::{LanguageExecutor, RunContext};
 use crate::test_runner::lang_rust::backer::RustModule;
-use crate::test_runner::runners::{self, SelectorExecutionSummary};
+use crate::test_runner::runners::SelectorExecutionSummary;
 
 impl LanguageExecutor for RustModule {
     fn language(&self) -> kiss::Language {
@@ -41,36 +41,16 @@ impl LanguageExecutor for RustModule {
         )
     }
 
-    fn rebuild_index(&self, ctx: &RunContext<'_, '_>) -> Result<(), String> {
-        let index = crate::test_runner::coverage_index::for_language(kiss::Language::Rust);
-        let _ = (
-            index.cache_root(&ctx.planned.repo_root),
-            index.index_file_present(&ctx.planned.repo_root),
-        );
-
-        let publication =
-            crate::test_runner::rust_coverage_index::rust_selective_rebuild_publication_selectors(
-                &ctx.planned.repo_root,
-                &ctx.planned.sel.rust,
-                ctx.options.extras.rust,
-            );
-        crate::test_runner::rust_coverage_index::publish_rust_derived_state_with_filter(
-            &ctx.planned.repo_root,
-            publication,
-            ctx.options.extras.rust,
-            |path, repo_root| self.is_indexable_source(path, repo_root),
-        )
-    }
-
-    fn write_manifest(&self, selectors: &[String], ctx: &RunContext<'_, '_>) -> Result<(), String> {
-        let _ = (self, selectors, ctx);
+    fn rebuild_index(&self, _ctx: &RunContext<'_, '_>) -> Result<(), String> {
         Ok(())
     }
 
-    fn is_indexable_source(&self, path: &std::path::Path, repo_root: &std::path::Path) -> bool {
-        crate::test_runner::coverage_index::for_language(kiss::Language::Rust)
-            .repo_relative_coverage_file(repo_root, &path.to_string_lossy())
-            .is_some()
+    fn write_manifest(
+        &self,
+        _selectors: &[String],
+        _ctx: &RunContext<'_, '_>,
+    ) -> Result<(), String> {
+        Ok(())
     }
 
     fn dry_run_lines(
@@ -82,11 +62,9 @@ impl LanguageExecutor for RustModule {
     ) -> Result<Vec<String>, String> {
         let mut lines = Vec::new();
         if population {
-            lines.push("RUST COVERAGE POPULATION".to_string());
+            lines.push("RUST POPULATION".to_string());
         }
-        lines.extend(runners::build_rust_coverage_batch_dry_run_lines(
-            selectors, extra, jobs,
-        )?);
+        lines.extend(super::nextest::dry_run_lines(selectors, extra, jobs)?);
         Ok(lines)
     }
 

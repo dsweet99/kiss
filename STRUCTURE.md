@@ -2,7 +2,7 @@
 
 Semantically, kiss is organized as a sequence of layers:
 
-1. Raw execution and data substrate: basic capabilities for reading source trees, parsing files, representing findings, storing cached facts, and running language-specific test and coverage tools. Python execution uses the rslip coverage and result cache plus a pytest runner boundary; Rust coverage execution uses an llvm-cov runner boundary.
+1. Raw execution and data substrate: basic capabilities for reading source trees, parsing files, representing findings, storing cached facts, and running language-specific test and coverage tools. Python execution uses the rslip coverage and result cache plus a pytest runner boundary; Rust test execution uses a cargo-nextest runner boundary.
 2. Language understanding: knowledge of individual Python and Rust files, including functions, types, modules, imports, statements, and code units.
 3. Structural interpretation: whole-codebase relationships such as dependency graphs, reachable modules, cycles, fan-out, and transitive dependencies.
 4. Quality measurement: maintainability signals such as complexity, size, duplication, and rule violations.

@@ -121,7 +121,7 @@ fn row_g_untracked_rust_source_commit_only() {
 }
 
 #[test]
-fn row_h_base_and_main_use_snapshot_delta_not_historical_sources() {
+fn row_h_base_and_main_count_every_rust_source_since_the_baseline() {
     let _cwd_guard = crate::cwd_test_lock::lock();
     with_locked_base_historical_repo(|repo, baseline, lib| {
         let base_planned = with_cwd(repo, || {

@@ -130,7 +130,7 @@ pub fn generate_lockfile(repo: &Path) {
     );
 }
 
-/// Strip parent `kiss test` / llvm-cov env so nested cargo work is not inflated under suite load.
+/// Strip parent build and profiling env so nested cargo work is not inflated under suite load.
 pub fn scrub_parent_coverage_env(cmd: &mut Command) {
     const KEYS: &[&str] = &[
         "LLVM_PROFILE_FILE",
@@ -141,9 +141,6 @@ pub fn scrub_parent_coverage_env(cmd: &mut Command) {
         "CARGO_ENCODED_RUSTFLAGS",
         "RUSTDOCFLAGS",
         "CARGO_TARGET_DIR",
-        "CARGO_LLVM_COV_TARGET_DIR",
-        "CARGO_LLVM_COV_BUILD_DIR",
-        "KISS_RUST_COVERAGE_PROFILE_POOL",
     ];
     for key in KEYS {
         cmd.env_remove(key);
@@ -168,7 +165,6 @@ pub fn preserve_toolchain_homes(cmd: &mut Command) {
 }
 
 pub type PythonRuntimeCoverageSeed<'a> = (&'a str, Vec<(&'a str, Vec<u32>)>);
-pub type RustRuntimeCoverageSeed<'a> = (&'a str, Vec<(&'a str, Vec<u32>)>);
 
 pub fn persistent_cargo_target(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join("kiss-test-targets").join(name);
@@ -713,208 +709,6 @@ fn write_seeded_rslip_entry(
         covered: files,
     };
     kiss::test_records::store_record(&kiss::rslip::python_records_dir(repo), &record).unwrap();
-}
-
-pub fn seed_rust_runtime_coverage(repo: &Path, entries: &[RustRuntimeCoverageSeed<'_>]) {
-    let repo = repo.canonicalize().unwrap();
-    let selectors = sorted_unique_selectors(entries.iter().map(|(selector, _)| *selector));
-    let mut req = rust_runtime_coverage_request(&repo, &selectors);
-    kiss::rust_llvm_cov_runner::resolve_batch_request_runners(&mut req).unwrap();
-    let tools = rust_runtime_coverage_tool_identity(&repo);
-    let identity = kiss::rust_llvm_cov_runner::batch_identity(&req, &tools).unwrap();
-    for (selector, coverage_files) in entries {
-        let fingerprint = kiss::rust_llvm_cov_runner::entry_fingerprint(
-            &identity.input_digest,
-            &req,
-            &tools,
-            selector,
-        );
-        let files = coverage_files
-            .iter()
-            .map(|(file, lines)| {
-                (
-                    coverage_seed_file(repo.as_path(), file),
-                    lines.iter().copied().collect::<BTreeSet<_>>(),
-                )
-            })
-            .collect::<BTreeMap<_, _>>();
-        let outcome = kiss::rust_llvm_cov_runner::RustLlvmCovOutcome {
-            selector: (*selector).to_string(),
-            status: kiss::rpytest_runner::TestStatus::Passed,
-            exit_code: Some(0),
-            duration: std::time::Duration::from_millis(1),
-            coverage: kiss::rust_llvm_cov_runner::RustLineCoverage { files },
-            test_binary_ids: vec!["test-bin".to_string()],
-            cache_status: kiss::rust_llvm_cov_runner::RustCovCacheStatus::MissStored,
-            stdout: None,
-            stderr: None,
-        };
-        let entry = kiss::rust_llvm_cov_runner::RustCovCacheEntry::from_outcome(
-            &outcome,
-            &identity.generation_fingerprint,
-        );
-        kiss::rust_llvm_cov_runner::store_rust_cov_cache_entry(
-            &req.cache_root,
-            &fingerprint,
-            &entry,
-        )
-        .unwrap();
-    }
-    kiss::rust_llvm_cov_runner::publish_derived_state(&req, &tools, &identity, &selectors, false)
-        .unwrap();
-}
-
-fn rust_runtime_coverage_request(
-    repo: &Path,
-    selectors: &[String],
-) -> kiss::rust_llvm_cov_runner::RustCoverageBatchRequest {
-    // Match live `rust_coverage_batch_request_from_parts`: empty runners, then resolve.
-    kiss::rust_llvm_cov_runner::RustCoverageBatchRequest {
-        cwd: repo.to_path_buf(),
-        source_root: repo.to_path_buf(),
-        cargo: PathBuf::from("cargo"),
-        cache_root: repo.join(".kiss").join("test").join("rust_llvm_cov_cache"),
-        logical_selectors: selectors.to_vec(),
-        cargo_args: vec!["--workspace".to_string()],
-        test_args: Vec::new(),
-        env: relevant_rust_env(),
-        force_rerun: false,
-        force_rerun_selectors: Vec::new(),
-        jobs: 1,
-        generated_config: repo
-            .join(".kiss")
-            .join("test")
-            .join("rust_llvm_cov_cache")
-            .join("runs")
-            .join("test-seed")
-            .join("nextest.toml"),
-        population_publication_selectors: Some(selectors.to_vec()),
-        delegated_runners: std::collections::BTreeMap::new(),
-        runner_map_fingerprint: String::new(),
-        host_platform: String::new(),
-        coverage_output_mode: kiss::rust_llvm_cov_runner::CoverageOutputMode::SelectorEntries,
-        selector_timeout_millis: std::collections::BTreeMap::new(),
-        cache_policy: kiss::test_cache_policy::TestCachePolicy::default(),
-    }
-}
-
-fn rust_runtime_coverage_tool_identity(
-    repo: &Path,
-) -> kiss::rust_llvm_cov_runner::RustCoverageToolIdentity {
-    // Match live `version_with_meta_tag` so seeded generation fingerprints hit.
-    kiss::rust_llvm_cov_runner::RustCoverageToolIdentity {
-        cargo_version: version_with_meta_tag(
-            command_output(repo, "cargo", &["--version"]),
-            Path::new("cargo"),
-        ),
-        llvm_cov_version: version_with_meta_tag(
-            command_output(repo, "cargo", &["llvm-cov", "--version"]),
-            Path::new("cargo-llvm-cov"),
-        ),
-        rustc_version: version_with_meta_tag(
-            command_output(repo, "rustc", &["-Vv"]),
-            Path::new("rustc"),
-        ),
-        cargo_nextest_version: version_with_meta_tag(
-            command_output(repo, "cargo", &["nextest", "--version"]),
-            Path::new("cargo-nextest"),
-        ),
-    }
-}
-
-fn version_with_meta_tag(version: String, program: &Path) -> String {
-    let resolved = resolve_on_path(program).unwrap_or_else(|| program.to_path_buf());
-    let Ok(meta) = fs::metadata(&resolved) else {
-        return version;
-    };
-    let mtime = meta
-        .modified()
-        .ok()
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| u64::try_from(d.as_nanos()).unwrap_or(u64::MAX))
-        .unwrap_or(0);
-    #[cfg(unix)]
-    let inode = {
-        use std::os::unix::fs::MetadataExt;
-        meta.ino()
-    };
-    #[cfg(not(unix))]
-    let inode = 0u64;
-    format!("{version}#{:x}-{:x}-{:x}", meta.len(), mtime, inode)
-}
-
-fn resolve_on_path(program: &Path) -> Option<PathBuf> {
-    std::env::var_os("PATH").and_then(|paths| {
-        for dir in std::env::split_paths(&paths) {
-            let candidate = dir.join(program);
-            if candidate.is_file() {
-                return Some(candidate);
-            }
-        }
-        None
-    })
-}
-
-fn relevant_rust_env() -> BTreeMap<String, String> {
-    // Mirror live `relevant_rust_batch_env`, but omit coverage-instrumentation keys that
-    // `scrub_parent_coverage_env` strips from nested kiss. Empty env was wrong: generation
-    // fingerprints hash `resolved_identity_tools(req.env)` which needs PATH, so seeds
-    // never matched and `--coverage-all` cold-ran llvm-cov (~60s+ TIMEOUT under suite load).
-    const CHILD_KEYS: &[&str] = &[
-        "PATH",
-        "HOME",
-        "USER",
-        "LOGNAME",
-        "SHELL",
-        "TMPDIR",
-        "TMP",
-        "TEMP",
-        "CARGO_HOME",
-        "RUSTUP_HOME",
-        "RUSTUP_TOOLCHAIN",
-        "LANG",
-        "LC_ALL",
-        "LC_CTYPE",
-        "SSL_CERT_FILE",
-        "SSL_CERT_DIR",
-        "LD_LIBRARY_PATH",
-        "CC",
-        "CXX",
-        "CONDA_PREFIX",
-        "PKG_CONFIG_PATH",
-    ];
-    const SURVIVING_COVERAGE_KEYS: &[&str] =
-        &["KISS_RUST_LLVM_COV_HOLD_BEFORE_GO_MS", "CMAKE_PREFIX_PATH"];
-    let mut env = kiss::env_map_from_allowlist(CHILD_KEYS);
-    env.extend(kiss::env_map_from_allowlist(SURVIVING_COVERAGE_KEYS));
-    env.extend(kiss::cargo_target_linker_env());
-    if !env.contains_key("CMAKE_PREFIX_PATH")
-        && let Some(conda) = env.get("CONDA_PREFIX").cloned()
-    {
-        env.insert("CMAKE_PREFIX_PATH".to_string(), conda);
-    }
-    env
-}
-
-fn command_output(repo: &Path, program: &str, args: &[&str]) -> String {
-    let output = Command::new(program)
-        .args(args)
-        .current_dir(repo)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{program} command failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8(output.stdout).unwrap().trim().to_string()
-}
-
-fn sorted_unique_selectors<'a>(selectors: impl Iterator<Item = &'a str>) -> Vec<String> {
-    let mut selectors = selectors.map(str::to_string).collect::<Vec<_>>();
-    selectors.sort();
-    selectors.dedup();
-    selectors
 }
 
 fn coverage_seed_file(repo: &Path, file: &str) -> String {

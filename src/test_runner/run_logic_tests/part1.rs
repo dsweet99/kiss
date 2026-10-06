@@ -282,14 +282,6 @@ fn planned_selectors_carry_population_decisions_without_selector_vectors() {
             rust: Vec::new(),
         },
         vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed { python: 0, rust: 0 },
-        snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
-            python: 0,
-            rust: 0,
-        },
-        snapshot_delta_structural: crate::test_runner::language_keyed::LanguageKeyed {
-            python: false,
-            rust: false,
-        },
         prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
             python: Vec::new(),
             rust: Vec::new(),
@@ -319,32 +311,6 @@ fn population_selector_count_comes_from_execution_phase() {
         0
     );
     assert_eq!(population_selector_count(&ExecutionPhase::NoWork), 0);
-}
-
-#[test]
-fn language_modules_expose_language_and_indexable_source_policy() {
-    let tmp = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
-    std::fs::write(tmp.path().join("app.py"), "VALUE = 1\n").unwrap();
-    std::fs::write(tmp.path().join("src").join("lib.rs"), "pub fn value() {}\n").unwrap();
-    let ignore = Vec::<String>::new();
-
-    assert!(
-        python_backer::PythonModule::for_execution(tmp.path(), &ignore)
-            .is_indexable_source(&tmp.path().join("app.py"), tmp.path())
-    );
-    assert!(
-        !python_backer::PythonModule::for_execution(tmp.path(), &ignore)
-            .is_indexable_source(Path::new("<frozen importlib>"), tmp.path())
-    );
-    assert!(
-        rust_backer::RustModule::for_execution(tmp.path(), &ignore)
-            .is_indexable_source(&tmp.path().join("src").join("lib.rs"), tmp.path())
-    );
-    assert!(
-        !rust_backer::RustModule::for_execution(tmp.path(), &ignore)
-            .is_indexable_source(Path::new(".kiss/runtime.rs"), tmp.path())
-    );
 }
 
 #[test]

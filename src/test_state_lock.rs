@@ -95,12 +95,9 @@ const RETIRED_PATHS: &[&str] = &[
     "check_runtime_coverage_locks",
     "test_last_status.json",
     "target-reports",
-    "rust_llvm_cov_cache/current_generation.json",
-    "rust_llvm_cov_cache/execution_witness.json",
-    "rust_llvm_cov_cache/generations",
-    "rust_llvm_cov_cache/pending_pins",
-    "rust_llvm_cov_cache/publication.lock",
-    "rust_llvm_cov_cache/reader_pins",
+    "rust_llvm_cov_cache",
+    "profraw",
+    "rust_tool_versions.json",
     "watch",
 ];
 const RETIRED_PREFIXES: &[&str] = &["cargo_roots_v1_", "cargo_roots_v2_"];
@@ -187,19 +184,14 @@ mod tests {
         }
         drop(lock_test_state_dir(state).unwrap());
         for gone in [
-            "rust_llvm_cov_cache/generations",
-            "rust_llvm_cov_cache/current_generation.json",
+            "rust_llvm_cov_cache",
             "target-reports",
             "test_last_status.json",
             "cargo_roots_v2_00.bin",
         ] {
             assert!(!state.join(gone).exists(), "{gone} must be discarded");
         }
-        for kept in [
-            "rust_llvm_cov_cache/entries",
-            "records/rust",
-            "cargo_roots_v3_00.bin",
-        ] {
+        for kept in ["records/rust", "cargo_roots_v3_00.bin"] {
             assert!(state.join(kept).exists(), "{kept} must stay");
         }
     }

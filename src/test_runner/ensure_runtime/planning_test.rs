@@ -20,14 +20,6 @@ fn ensure_request_from_planned_copies_selectors_and_root() {
             rust: vec![],
         },
         vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed { python: 0, rust: 0 },
-        snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
-            python: 0,
-            rust: 0,
-        },
-        snapshot_delta_structural: crate::test_runner::language_keyed::LanguageKeyed {
-            python: false,
-            rust: false,
-        },
         prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
             python: vec![],
             rust: vec![],
@@ -82,14 +74,6 @@ fn ensure_request_carries_session_gate_without_reload() {
             rust: vec![],
         },
         vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed { python: 0, rust: 0 },
-        snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
-            python: 0,
-            rust: 0,
-        },
-        snapshot_delta_structural: crate::test_runner::language_keyed::LanguageKeyed {
-            python: false,
-            rust: false,
-        },
         prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
             python: vec![],
             rust: vec![],

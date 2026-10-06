@@ -62,8 +62,6 @@ mod regression_check_focus_empty_dir;
 mod regression_check_ignore_filename;
 #[path = "slow/regression_check_mixed_runtime_line_coverage.rs"]
 mod regression_check_mixed_runtime_line_coverage;
-#[path = "slow/regression_check_rust_incremental_runtime_coverage.rs"]
-mod regression_check_rust_incremental_runtime_coverage;
 #[path = "slow/regression_check_stats_share_relative.rs"]
 mod regression_check_stats_share_relative;
 #[path = "slow/regression_check_synthetic_python_coverage_paths.rs"]

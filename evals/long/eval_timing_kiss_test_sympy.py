@@ -21,7 +21,7 @@ SYMPY_TARGETS = (
 
 
 def _clear_runtime_test_cache(repo: Path) -> None:
-    """Clear Python/runtime caches only (sympy has no Rust llvm-cov tree)."""
+    """Clear Python/runtime caches only (sympy has no Rust tests)."""
     kiss_dir = repo / ".kiss"
     shutil.rmtree(kiss_dir / "test" / "rslip_cache", ignore_errors=True)
     (kiss_dir / "test" / "cov_records_cache.json").unlink(missing_ok=True)

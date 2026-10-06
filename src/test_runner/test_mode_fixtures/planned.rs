@@ -19,14 +19,6 @@ pub(crate) fn empty_planned_selectors(repo_root: PathBuf) -> PlannedSelectors {
             rust: Vec::new(),
         },
         vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed { python: 0, rust: 0 },
-        snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
-            python: 0,
-            rust: 0,
-        },
-        snapshot_delta_structural: crate::test_runner::language_keyed::LanguageKeyed {
-            python: false,
-            rust: false,
-        },
         prior_failure_selectors: LanguageKeyed {
             python: Vec::new(),
             rust: Vec::new(),

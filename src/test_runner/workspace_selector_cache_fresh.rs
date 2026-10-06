@@ -64,6 +64,14 @@ impl Drop for InventorySessionGuard {
     }
 }
 
+pub(crate) fn forget_inventory(repo_root: &Path) {
+    let root = super::normalized_root(repo_root);
+    if let Ok(mut session) = INVENTORY_SESSION.lock() {
+        session.entries.retain(|(key, _), _| key != &root);
+        session.fingerprints.retain(|(key, _), _| key != &root);
+    }
+}
+
 fn ignored(rel: &str, ignore: &[String]) -> bool {
     kiss::path_ignored_by_prefixes(rel, ignore)
 }

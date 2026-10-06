@@ -1,7 +1,7 @@
 #![cfg(unix)]
 
 use crate::support::scenario::{
-    Reply, Scenario, assert_repeats, finish, kiss, skip_under_coverage, spawn_kiss,
+    Reply, Scenario, assert_repeats, finish, kiss, skip_under_kiss_test, spawn_kiss,
 };
 
 const EDIT: &str = "def f():\n    return 0 + 0\n";
@@ -50,7 +50,7 @@ fn retry_waits_for_plain_run(s: &Scenario) {
 
 #[test]
 fn retry_bad_waits_for_plain_run_and_skips_all_pass_target() {
-    if skip_under_coverage() {
+    if skip_under_kiss_test() {
         return;
     }
     let s = Scenario::new();

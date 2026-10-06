@@ -104,8 +104,8 @@ pub fn finish(child: Child) -> Reply {
     Reply::from_output(child.wait_with_output().expect("wait for kiss"))
 }
 
-pub fn skip_under_coverage() -> bool {
-    std::env::var_os("LLVM_PROFILE_FILE").is_some()
+pub fn skip_under_kiss_test() -> bool {
+    std::env::var("NEXTEST_PROFILE").is_ok_and(|profile| profile == "kiss")
 }
 
 pub struct Scenario {

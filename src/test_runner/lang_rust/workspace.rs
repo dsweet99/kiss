@@ -50,7 +50,7 @@ pub(crate) fn reject_non_member_rust_targets(
         return Ok(());
     }
     Err(format!(
-        "error: kiss test: nested Cargo crate(s) are not root workspace members (coverage unsupported): {}",
+        "error: kiss test: nested Cargo crate(s) are not root workspace members, so nextest cannot run their tests: {}",
         roots.join(", ")
     ))
 }

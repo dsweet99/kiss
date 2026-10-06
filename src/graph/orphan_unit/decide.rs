@@ -76,7 +76,7 @@ fn is_root(
     input: &crate::graph::orphan_unit::OrphanUnitInput<'_>,
     coverage_root: bool,
 ) -> bool {
-    if coverage_root {
+    if coverage_root || unit.trait_impl {
         return true;
     }
     if input.roles.role_at(&unit.file, unit.start_line) == crate::code_roles::CodeRole::TestOnly
@@ -104,9 +104,11 @@ fn mark_containers(units: &[UnitRef], idx: usize, reached: &mut [bool], queue: &
         if i == idx || unit.file != child.file || reached[i] {
             continue;
         }
-        let contains = unit.start_line <= child.start_line && child.end_line <= unit.end_line;
-        let is_container = matches!(unit.kind, CodeUnitKind::Class | CodeUnitKind::Module);
-        if contains && is_container {
+        let contains = unit.kind == CodeUnitKind::Module
+            || (unit.kind == CodeUnitKind::Class
+                && unit.start_line <= child.start_line
+                && child.end_line <= unit.end_line);
+        if contains {
             reached[i] = true;
             queue.push(i);
         }

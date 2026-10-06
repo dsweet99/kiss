@@ -1,6 +1,6 @@
 #![cfg(unix)]
 
-use crate::support::scenario::{Reply, Scenario, kiss, skip_under_coverage};
+use crate::support::scenario::{Reply, Scenario, kiss, skip_under_kiss_test};
 
 fn assert_summary(reply: &Reply, code: i32, summary: &str, phase: &str) {
     assert_eq!(reply.code, Some(code), "{phase}: {reply:?}");
@@ -9,7 +9,7 @@ fn assert_summary(reply: &Reply, code: i32, summary: &str, phase: &str) {
 
 #[test]
 fn python_fail_reruns_only_when_its_code_changes() {
-    if skip_under_coverage() {
+    if skip_under_kiss_test() {
         return;
     }
     let s = Scenario::new();

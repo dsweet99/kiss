@@ -49,12 +49,6 @@ impl LanguageExecutor for PythonModule {
         Ok(())
     }
 
-    fn is_indexable_source(&self, path: &std::path::Path, repo_root: &std::path::Path) -> bool {
-        crate::test_runner::coverage_index::for_language(kiss::Language::Python)
-            .repo_relative_coverage_file(repo_root, &path.to_string_lossy())
-            .is_some()
-    }
-
     fn dry_run_lines(
         &self,
         selectors: &[String],

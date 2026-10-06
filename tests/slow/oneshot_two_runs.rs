@@ -1,7 +1,7 @@
 #![cfg(unix)]
 
 use crate::support::scenario::{
-    Reply, Scenario, assert_repeats, finish, kiss, skip_under_coverage, spawn_kiss,
+    Reply, Scenario, assert_repeats, finish, kiss, skip_under_kiss_test, spawn_kiss,
 };
 
 const SUMMARY: &str = "✗ 2 passed · 1 failed · 0 timed out";
@@ -21,7 +21,7 @@ fn assert_cached_only(reply: &Reply, phase: &str) {
 
 #[test]
 fn second_oneshot_waits_for_lock_then_reruns_nothing() {
-    if skip_under_coverage() {
+    if skip_under_kiss_test() {
         return;
     }
     let s = Scenario::new();

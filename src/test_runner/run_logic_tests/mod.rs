@@ -1,7 +1,7 @@
 use super::*;
 
 use kiss::Language;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::test_runner::coverage_decision::LanguagePlanner;
@@ -137,10 +137,6 @@ impl crate::test_runner::coverage_decision::LanguageExecutor for FakeLanguageMod
     ) -> Result<(), String> {
         let _ = (self.language, selectors.len());
         Ok(())
-    }
-
-    fn is_indexable_source(&self, _path: &Path, _repo_root: &Path) -> bool {
-        true
     }
 
     fn stage_label(&self, population: bool) -> &'static str {

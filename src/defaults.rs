@@ -60,7 +60,7 @@ pub mod gate {
     pub const MAX_NUM_TESTS: usize = 999_999;
     pub const NUM_JOBS: usize = 4;
     pub const NUM_JOBS_PYTEST: usize = 16;
-    pub const NUM_JOBS_LLVM_COV: usize = 4;
+    pub const NUM_JOBS_NEXTEST: usize = 4;
     pub const MIN_MEMAVAILABLE_KIB: u64 = 262_144;
     pub const MIN_MEMAVAILABLE_PERCENT: u64 = 10;
 }
@@ -81,7 +81,7 @@ orphan_detection = false
 max_num_tests = {max_num_tests}
 num_jobs = {num_jobs}
 num_jobs_pytest = {num_jobs_pytest}
-num_jobs_llvm_cov = {num_jobs_llvm_cov}
+num_jobs_nextest = {num_jobs_nextest}
 pytest_plugins = []
 ignore = []
 
@@ -138,7 +138,7 @@ dependency_depth = {rs_dep_depth}
         max_num_tests = gate::MAX_NUM_TESTS,
         num_jobs = gate::NUM_JOBS,
         num_jobs_pytest = gate::NUM_JOBS_PYTEST,
-        num_jobs_llvm_cov = gate::NUM_JOBS_LLVM_COV,
+        num_jobs_nextest = gate::NUM_JOBS_NEXTEST,
         min_sim = duplication::MIN_SIMILARITY,
         py_statements = python::STATEMENTS_PER_FUNCTION,
         py_pos_args = python::POSITIONAL_ARGS,
@@ -238,7 +238,7 @@ mod tests {
         );
         assert!(
             toml.contains(
-                "num_jobs = 4\nnum_jobs_pytest = 16\nnum_jobs_llvm_cov = 4\npytest_plugins = []\nignore = []\n"
+                "num_jobs = 4\nnum_jobs_pytest = 16\nnum_jobs_nextest = 4\npytest_plugins = []\nignore = []\n"
             ),
             "init default must emit [test] runtime defaults:\n{toml}"
         );

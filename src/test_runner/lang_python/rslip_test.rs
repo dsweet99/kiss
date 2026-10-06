@@ -493,7 +493,7 @@ def test_b():\n    assert True\n",
     );
     assert_eq!(miss_out.matches("PASS: test_sample.py::test_a").count(), 1);
 
-    kiss::rust_llvm_cov_runner::reset_subprocess_observer();
+    kiss::subprocess_observer::reset_subprocess_observer();
     let cached_runner = PytestRunner::from_fn(|_| {
         panic!("cache hits must not invoke the pytest runner");
     });
@@ -515,7 +515,7 @@ def test_b():\n    assert True\n",
         assert_eq!(summary.max_passing_run_duration, Duration::ZERO);
         assert!(summary.failed_selectors.is_empty());
         assert_eq!(
-            kiss::rust_llvm_cov_runner::subprocess_observer_snapshot().pytest_invocations,
+            kiss::subprocess_observer::subprocess_observer_snapshot().pytest_invocations,
             0
         );
     });

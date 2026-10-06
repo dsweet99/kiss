@@ -330,9 +330,8 @@ fn rust_accept_under_fake_runs_zero_exports_and_delta_publish() {
         state.borrow().run_calls.is_empty(),
         "a cached FAIL with unchanged identity must not rerun"
     );
-    let observed = kiss::rust_llvm_cov_runner::subprocess_observer_snapshot();
-    assert_eq!(observed.llvm_export_invocations, 0);
-    assert_eq!(observed.cargo_invocations, 0);
+    let observed = kiss::subprocess_observer::subprocess_observer_snapshot();
+    assert_eq!(observed.nextest_invocations, 0);
 }
 
 fn rust_covering_miss_recaps_witness_complement(mode: AcceptMode) {

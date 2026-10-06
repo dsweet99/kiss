@@ -2,9 +2,6 @@ use std::path::Path;
 
 use crate::config::{ConfigError, check_unknown_keys, parse_string_list_key};
 
-pub const CACHE_POLICY_SCHEMA_VERSION: &str =
-    crate::rust_llvm_cov_runner::CACHE_POLICY_SCHEMA_VERSION;
-
 const CACHE_KEYS: &[&str] = &["non_cacheable", "inputs"];
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -53,22 +50,6 @@ impl TestCachePolicy {
         paths.sort();
         paths.dedup();
         paths
-    }
-
-    pub fn effective_digest(&self, selector: &str) -> String {
-        format!(
-            "{}:{}",
-            self.is_non_cacheable(selector),
-            self.declared_paths(selector).join(",")
-        )
-    }
-
-    pub fn digest(&self) -> String {
-        format!(
-            "{CACHE_POLICY_SCHEMA_VERSION}:{}:{}",
-            self.non_cacheable.join(","),
-            self.inputs.len()
-        )
     }
 }
 

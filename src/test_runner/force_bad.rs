@@ -72,6 +72,13 @@ fn typed_retry_by_lang(
             _ => {}
         }
     }
+    for selector in
+        crate::test_runner::lang_rust::nextest::bad_record_ids(&planned.repo_root, a.extras.rust)
+    {
+        if scope.selectors.contains(&selector) && !rust.contains(&selector) {
+            rust.push(selector);
+        }
+    }
     (python, rust)
 }
 

@@ -4,7 +4,6 @@ use super::types::{
 use crate::test_runner::runners::SelectorExecutionSummary;
 use crate::test_runner::{PlannedSelectors, SelectorRunOptions};
 use kiss::Language;
-use std::path::Path;
 
 pub(crate) trait SupportedLanguage {
     fn language(&self) -> Language;
@@ -46,7 +45,6 @@ macro_rules! define_language_policy_traits {
                 selectors: &[String],
                 ctx: &RunContext<'_, '_>,
             ) -> Result<(), String>;
-            fn is_indexable_source(&self, path: &Path, repo_root: &Path) -> bool;
             fn dry_run_lines(
                 &self,
                 selectors: &[String],

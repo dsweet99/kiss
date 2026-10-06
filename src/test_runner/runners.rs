@@ -4,9 +4,6 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use kiss::code_roles::is_test_only_file;
-use kiss::rust_llvm_cov_runner::{
-    CoverageOutputMode, RustCoverageBatchRequest, build_rust_coverage_batch_plan,
-};
 
 #[path = "runners/decision.rs"]
 mod decision;
@@ -62,8 +59,6 @@ pub(crate) use crate::test_runner::lang_python::rslip::{
 
 #[path = "runners/execution_summary.rs"]
 mod execution_summary;
-#[path = "runners/rust_batch_counters.rs"]
-mod rust_batch_counters;
 pub(crate) use execution_summary::{
     SelectorCacheRecord, SelectorExecutionRecord, SelectorExecutionSummary,
 };
@@ -132,7 +127,7 @@ pub(crate) fn roles_for_changed_paths(
 }
 
 pub(crate) fn is_rust_planning_source_path(path: &Path) -> bool {
-    kiss::Language::is_rust_path(path) || kiss::rust_llvm_cov_runner::is_rust_cov_cache_input(path)
+    crate::test_git::is_rust_planning_path(path)
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -322,50 +317,6 @@ pub fn build_pytest_argv(selectors: &[String], extra: &[String]) -> Vec<String> 
     v.extend(selectors.iter().cloned());
     v.extend(extra.iter().cloned());
     v
-}
-
-pub(crate) fn build_rust_coverage_batch_dry_run_lines(
-    selectors: &[String],
-    extra: &[String],
-    jobs: usize,
-) -> Result<Vec<String>, String> {
-    if selectors.is_empty() {
-        return Ok(Vec::new());
-    }
-    let (delegated_runners, runner_map_fingerprint, host_platform) =
-        kiss::rust_llvm_cov_runner::placeholder_delegated_runner_fields();
-    let req = RustCoverageBatchRequest {
-        cwd: PathBuf::from("."),
-        source_root: PathBuf::from("/kiss-dry-run-no-nextest-toml"),
-        cargo: PathBuf::from("cargo"),
-        cache_root: PathBuf::from("/kiss-dry-run-cache/rust_llvm_cov_cache"),
-        logical_selectors: selectors.to_vec(),
-        cargo_args: Vec::new(),
-        test_args: extra.to_vec(),
-        env: BTreeMap::new(),
-        force_rerun: false,
-        force_rerun_selectors: Vec::new(),
-        jobs,
-        generated_config: PathBuf::from("<generated-filter>"),
-        population_publication_selectors: None,
-        delegated_runners,
-        runner_map_fingerprint,
-        host_platform,
-        coverage_output_mode: CoverageOutputMode::SelectorEntries,
-        selector_timeout_millis: std::collections::BTreeMap::new(),
-        cache_policy: kiss::test_cache_policy::TestCachePolicy::default(),
-    };
-    let plan = build_rust_coverage_batch_plan(&req)?;
-    let mut lines = vec![
-        format!("RUST BATCH selectors={} jobs={jobs}", selectors.len()),
-        shell_quote_line(&plan.argv),
-    ];
-    lines.extend(
-        selectors
-            .iter()
-            .map(|selector| format!("RUST SELECTOR {selector}")),
-    );
-    Ok(lines)
 }
 
 pub(crate) fn command_stdout(program: &Path, args: &[&str], cwd: &Path) -> Result<String, String> {

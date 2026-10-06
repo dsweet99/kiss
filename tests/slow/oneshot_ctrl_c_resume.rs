@@ -1,14 +1,14 @@
 #![cfg(unix)]
 
 use crate::support::scenario::{
-    Scenario, ctrl_c, kiss, skip_under_coverage, spawn_kiss_in_own_group,
+    Scenario, ctrl_c, kiss, skip_under_kiss_test, spawn_kiss_in_own_group,
 };
 
 const SUMMARY: &str = "✗ 2 passed · 1 failed · 0 timed out";
 
 #[test]
 fn interrupted_plain_run_is_resumed_by_the_next_run() {
-    if skip_under_coverage() {
+    if skip_under_kiss_test() {
         return;
     }
     let s = Scenario::new();

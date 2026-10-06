@@ -11,8 +11,6 @@ pub(crate) struct PlannedSelectors {
     pub population_required: crate::test_runner::language_keyed::LanguageKeyed<bool>,
     pub source_paths: crate::test_runner::language_keyed::LanguageKeyed<Vec<PathBuf>>,
     pub vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed<usize>,
-    pub snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed<usize>,
-    pub snapshot_delta_structural: crate::test_runner::language_keyed::LanguageKeyed<bool>,
     pub prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed<Vec<String>>,
     pub coverage_decision_engine_used: bool,
     pub selection_basis: crate::test_runner::language_keyed::LanguageKeyed<
@@ -31,8 +29,6 @@ pub(crate) fn empty_planned(repo_root: PathBuf, ignore: Vec<String>) -> PlannedS
         population_required: LanguageKeyed::default(),
         source_paths: LanguageKeyed::default(),
         vcs_source_paths: LanguageKeyed::default(),
-        snapshot_delta_modified: LanguageKeyed::default(),
-        snapshot_delta_structural: LanguageKeyed::default(),
         prior_failure_selectors: LanguageKeyed::default(),
         coverage_decision_engine_used: false,
         selection_basis: LanguageKeyed::from_fn(|_| {

@@ -55,14 +55,14 @@ fn assert_rust_covering(mode: TestChangeMode) {
         })
         .unwrap_or_else(|e| panic!("{} plan failed: {e}", mode_label(mode)));
         assert!(
-            !planned.population_required.rust,
-            "{}: rust_population_required must be false",
+            planned.population_required.rust,
+            "{}: a Rust edit must rerun the Rust population",
             mode_label(mode)
         );
         assert_eq!(
             planned.sel.rust,
             vec![RS_COVERING_SELECTOR.to_string()],
-            "{}: covering Rust selector contract",
+            "{}: every Rust test must be planned",
             mode_label(mode)
         );
     });

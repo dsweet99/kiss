@@ -1,22 +1,8 @@
 use crate::shared_helpers::host_cpu_count;
 
-pub fn coverage_build_jobs(configured_jobs: usize) -> usize {
-    let configured = configured_jobs.max(1);
-    let host = host_cpu_count(configured);
-    configured.max(host)
-}
-
 pub fn check_rust_shard_count(file_count: usize) -> usize {
     let cpus = host_cpu_count(4);
     cpus.min(file_count.max(1)).max(1)
-}
-
-pub const ESTIMATED_CPUS_PER_LLVM_EXPORT: usize = 2;
-
-pub fn llvm_export_worker_cap() -> usize {
-    host_cpu_count(1)
-        .div_ceil(ESTIMATED_CPUS_PER_LLVM_EXPORT)
-        .max(1)
 }
 
 pub const PYTHON_COLLECT_SHARD_PATH_THRESHOLD: usize = 64;
@@ -37,29 +23,10 @@ mod tests {
     use std::path::Path;
 
     #[test]
-    fn coverage_build_jobs_tracks_host_without_fixed_ceiling() {
-        let host = host_cpu_count(1);
-        assert_eq!(coverage_build_jobs(1), host.max(1));
-        assert_eq!(
-            coverage_build_jobs(host.saturating_mul(2).max(2)),
-            host.saturating_mul(2).max(2)
-        );
-    }
-
-    #[test]
     fn check_rust_shard_count_follows_host() {
         assert_eq!(check_rust_shard_count(0), 1);
         let host = host_cpu_count(4);
         assert_eq!(check_rust_shard_count(10_000), host);
-    }
-
-    #[test]
-    fn llvm_export_worker_cap_divides_host() {
-        let available = host_cpu_count(1);
-        assert_eq!(
-            llvm_export_worker_cap(),
-            available.div_ceil(ESTIMATED_CPUS_PER_LLVM_EXPORT).max(1)
-        );
     }
 
     #[test]

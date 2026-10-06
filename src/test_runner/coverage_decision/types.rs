@@ -85,7 +85,6 @@ impl CoverageFreshness {
 pub(crate) enum SelectionBasis {
     #[default]
     Current,
-    ReusablePrior,
     Population,
 }
 
