@@ -192,7 +192,7 @@ fn generation_fingerprint_ignores_inherited_plan_owned_environment() {
     let mut req = request();
     req.source_root = tmp.path().to_path_buf();
     req.cwd = tmp.path().to_path_buf();
-    req.cache_root = tmp.path().join(".kiss/rust_llvm_cov_cache");
+    req.cache_root = tmp.path().join(".kiss/test/rust_llvm_cov_cache");
     let base = batch_identity(&req, &tools()).unwrap();
     for key in [
         "CARGO_TARGET_DIR",

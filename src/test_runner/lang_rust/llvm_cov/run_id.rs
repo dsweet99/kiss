@@ -11,6 +11,7 @@ pub(super) fn unique_rust_coverage_batch_config_path(repo_root: &Path) -> PathBu
         .as_nanos();
     repo_root
         .join(".kiss")
+        .join("test")
         .join("rust_llvm_cov_cache")
         .join("runs")
         .join(format!(

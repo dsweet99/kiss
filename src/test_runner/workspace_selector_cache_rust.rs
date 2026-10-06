@@ -84,6 +84,13 @@ pub(crate) fn cached_rust_selectors_if_rust_fingerprint_current(
             known.extend(cache.selectors);
         }
     }
+    if !found_current
+        && !super::workspace_lang_fingerprints(repo_root, &[])
+            .ok()?
+            .has_rust
+    {
+        return Some(Vec::new());
+    }
     found_current.then(|| known.into_iter().collect())
 }
 
@@ -110,6 +117,9 @@ pub(super) fn load_cached_rust_workspace_hit(
     let root = super::normalized_root(repo_root);
     if let Some(selectors) = recall_rust_selectors(&root, ignore, &fps.rust) {
         return Some((super::drop_ignored_selectors(selectors, ignore), fps.rust));
+    }
+    if !fps.has_rust {
+        return Some((Vec::new(), fps.rust));
     }
     let cache = cache.or_else(|| read_rust_cache(repo_root, ignore))?;
     if !rust_cache_matches(&cache, repo_root, ignore, &fps.rust) {
@@ -138,5 +148,8 @@ pub(crate) fn store_rust_workspace_selectors(
         &[],
     );
     remember_rust_selectors(&root, ignore, &fps.rust, rust_selectors);
+    if !fps.has_rust && rust_selectors.is_empty() {
+        return true;
+    }
     super::persist_selector_cache_for_identity(repo_root, super::RUST_CACHE_FILE, &cache)
 }

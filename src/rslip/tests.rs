@@ -1,5 +1,4 @@
 use super::*;
-use crate::rslip::cache::rslip_cache_fingerprint;
 use std::{cell::Cell, rc::Rc};
 
 #[test]
@@ -113,8 +112,8 @@ fn corrupt_cache_entry_is_treated_as_miss() {
     )
     .unwrap();
     let req = rslip_sample_request(tmp.path());
-    let fingerprint = rslip_cache_fingerprint(&req).unwrap();
-    let path = cache::rslip_cache_entry_path(&req.cache_root, &fingerprint);
+    let path =
+        crate::test_records::record_path(&cache::python_records_dir(&req.source_root), &req.nodeid);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(path, "{not json").unwrap();
 

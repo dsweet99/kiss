@@ -2,10 +2,28 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::time::{Duration, Instant};
 
-use crate::support::git::{commit_all, git_command, init_git_repo};
-use crate::support::watch_proc::{
-    WatchProc, spawn_watch_logged, start_watch_logged, write_kissconfig_with_threshold,
-};
+use crate::support::git::{commit_all, init_git_repo};
+
+pub fn write_kissconfig_with_threshold(root: &Path, threshold: u8) {
+    std::fs::write(
+        root.join(".kissconfig"),
+        format!(
+            "[global]\n\
+             duplication_enabled = false\n\
+             \n\
+             [test]\n\
+             test_coverage_threshold = {threshold}\n\
+             orphan_detection = false\n\
+             num_jobs = 1\n\
+             \n\
+             [test.max_unit_test_seconds]\n\
+             \"*\" = 60\n\
+             [python]\n\
+             [rust]\n"
+        ),
+    )
+    .unwrap();
+}
 
 pub struct Reply {
     pub code: Option<i32>,
@@ -112,10 +130,6 @@ impl Scenario {
         self.repo.path()
     }
 
-    pub fn log(&self) -> PathBuf {
-        self.side.path().join("watch.log")
-    }
-
     pub fn marker(&self) -> PathBuf {
         self.side.path().join("runs.txt")
     }
@@ -138,11 +152,6 @@ impl Scenario {
         commit_all(self.root(), "init");
     }
 
-    pub fn git(&self, args: &[&str]) {
-        let status = git_command(self.root()).args(args).status().unwrap();
-        assert!(status.success(), "git {args:?}");
-    }
-
     pub fn py_test(&self, name: &str, body: &str) -> String {
         format!(
             "def {name}():\n    with open({:?}, \"a\") as fh:\n        fh.write(\"{name}\\n\")\n    {body}\n\n\n",
@@ -150,7 +159,7 @@ impl Scenario {
         )
     }
 
-    pub fn python_pass_fail(&self, settle: f64) {
+    pub fn python_pass_fail(&self) {
         self.write(".gitignore", ".kiss/\n__pycache__/\ntarget/\n");
         self.write("lib_a.py", "def f():\n    return 0\n");
         self.write("lib_b.py", "def g():\n    return 1\n");
@@ -158,50 +167,17 @@ impl Scenario {
         self.write("test_a.py", &format!("from lib_a import f\n\n\n{pass}"));
         let fail = self.py_test("test_fail", "assert g() == 2");
         self.write("test_b.py", &format!("from lib_b import g\n\n\n{fail}"));
-        write_kissconfig_with_threshold(self.root(), settle, 0);
+        write_kissconfig_with_threshold(self.root(), 0);
     }
 
-    pub fn python_with_slow(&self, settle: f64) {
-        self.python_pass_fail(settle);
+    pub fn python_with_slow(&self) {
+        self.python_pass_fail();
         let fast = self.py_test("test_pass", "assert f() == 0");
         let slow = self.py_test("test_slow", "time.sleep(int(f()) + 7)");
         self.write(
             "test_a.py",
             &format!("import time\n\nfrom lib_a import f\n\n\n{fast}{slow}"),
         );
-    }
-
-    pub fn rust_with_slow(&self) {
-        self.rust_crate(
-            "pub fn value() -> u32 {\n    1\n}\n",
-            &[
-                ("rs_pass", "assert_eq!(demo::value(), 1);"),
-                ("rs_fail", "assert_eq!(demo::value(), 2);"),
-                (
-                    "rs_slow",
-                    "std::thread::sleep(std::time::Duration::from_secs(u64::from(demo::value()) * 4));",
-                ),
-            ],
-        );
-    }
-
-    pub fn rust_crate(&self, lib_body: &str, tests: &[(&str, &str)]) {
-        self.write(
-            "Cargo.toml",
-            "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
-        );
-        self.write("src/lib.rs", lib_body);
-        let mut rs = format!(
-            "fn mark(name: &str) {{\n    use std::io::Write;\n    let mut fh = std::fs::OpenOptions::new().create(true).append(true).open({:?}).unwrap();\n    writeln!(fh, \"{{name}}\").unwrap();\n}}\n",
-            self.marker().to_str().unwrap()
-        );
-        for (name, body) in tests {
-            rs.push_str(&format!(
-                "\n#[test]\nfn {name}() {{\n    mark(\"{name}\");\n    {body}\n}}\n"
-            ));
-        }
-        self.write("tests/it.rs", &rs);
-        crate::common::generate_lockfile(self.root());
     }
 
     pub fn wait_for_run(&self) {
@@ -235,119 +211,6 @@ impl Scenario {
             std::thread::sleep(Duration::from_millis(20));
         }
     }
-
-    pub fn start_watch(&self) -> WatchProc {
-        start_watch_logged(self.root(), &["test-watch"], &self.log())
-    }
-
-    pub fn spawn_watch(&self) -> WatchProc {
-        spawn_watch_logged(self.root(), &["test-watch"], &self.log())
-    }
-
-    pub fn log_text(&self) -> String {
-        std::fs::read_to_string(self.log()).unwrap_or_default()
-    }
-
-    pub fn starts(&self) -> usize {
-        self.log_text().matches("kiss test: Starting").count()
-    }
-
-    pub fn requests(&self) -> usize {
-        self.log_text().matches("kiss test: request ").count()
-    }
-
-    pub fn wait_log(&self, what: &str, done: impl Fn(&str) -> bool) {
-        let deadline = Instant::now() + Duration::from_secs(120);
-        while !done(&self.log_text()) {
-            assert!(
-                Instant::now() < deadline,
-                "watcher log never showed {what}; log={}",
-                self.log_text()
-            );
-            std::thread::sleep(Duration::from_millis(20));
-        }
-    }
-
-    pub fn wait_idle_after(&self, starts: usize) {
-        self.wait_log("an idle watcher", |text| {
-            text.matches("kiss test: Starting").count() >= starts
-                && text.trim_end().ends_with("kiss test: Waiting")
-        });
-    }
-
-    pub fn wait_settled(&self) {
-        loop {
-            self.wait_idle_after(1);
-            let before = self.log_text();
-            std::thread::sleep(Duration::from_millis(1500));
-            if self.log_text() == before {
-                return;
-            }
-        }
-    }
-
-    pub fn edit_until_testing(&self, rel: &str, contents: &str) {
-        let starts = self.starts();
-        self.write(rel, contents);
-        self.wait_running_after(starts + 1);
-        self.wait_log("the edit cycle running tests", |text| {
-            text.rsplit("kiss test: Starting")
-                .next()
-                .is_some_and(|tail| tail.contains("tests_remaining="))
-        });
-    }
-
-    pub fn wait_running_after(&self, starts: usize) {
-        self.wait_log("a running cycle", |text| {
-            text.matches("kiss test: Starting").count() >= starts
-                && !text.trim_end().ends_with("kiss test: Waiting")
-        });
-    }
-}
-
-pub const WATCH_USAGE_ERRORS: [&[&str]; 13] = [
-    &["--config", "ci.kissconfig"],
-    &["-j", "4"],
-    &["--metrics"],
-    &["--coverage-all"],
-    &["--ignore", "tests/unit/slow"],
-    &["--retry-bad", "tests/unit"],
-    &["--lang", "rust"],
-    &["--dry-run"],
-    &["--gobledygook"],
-    &["tests/unit"],
-    &["commit"],
-    &["--lang", "rust", "tests/unit"],
-    &["tests/unit", "--lang", "rust"],
-];
-
-pub fn assert_watch_usage_errors(dir: &Path) {
-    for extra in WATCH_USAGE_ERRORS {
-        let args: Vec<&str> = std::iter::once("test-watch")
-            .chain(extra.iter().copied())
-            .collect();
-        let reply = kiss(dir, &args);
-        assert_eq!(reply.code, Some(2), "{args:?}: {reply:?}");
-        let expected = if extra[0].starts_with('-') {
-            format!(
-                "error: kiss test-watch: option is not accepted: {}",
-                extra[0]
-            )
-        } else {
-            format!(
-                "error: kiss test-watch: TARGET is not accepted: {}",
-                extra[0]
-            )
-        };
-        assert!(
-            reply.stderr.contains(&expected),
-            "{args:?}: want {expected:?}; {reply:?}"
-        );
-        assert!(
-            !reply.stderr.contains("already running"),
-            "{args:?}: a usage error must not mention a running watcher; {reply:?}"
-        );
-    }
 }
 
 pub fn assert_repeats(reply: &Reply, needle: &str, phase: &str) {
@@ -356,8 +219,4 @@ pub fn assert_repeats(reply: &Reply, needle: &str, phase: &str) {
         waits >= 2,
         "{phase}: {needle:?} must repeat every 3 s; {reply:?}"
     );
-}
-
-pub fn assert_waits_for_watcher(reply: &Reply, phase: &str) {
-    assert_repeats(reply, "kiss test: waiting for watcher (pid ", phase);
 }

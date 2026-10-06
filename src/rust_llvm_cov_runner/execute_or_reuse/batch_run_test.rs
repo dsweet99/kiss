@@ -10,7 +10,11 @@ use crate::rust_llvm_cov_runner::{
 #[test]
 fn terminate_stale_cache_processes_kills_cmdline_match_and_skips_self() {
     let tmp = tempfile::tempdir().unwrap();
-    let cache_root = tmp.path().join(".kiss").join("rust_llvm_cov_cache");
+    let cache_root = tmp
+        .path()
+        .join(".kiss")
+        .join("test")
+        .join("rust_llvm_cov_cache");
     fs::create_dir_all(&cache_root).unwrap();
     let marker = cache_root.canonicalize().unwrap();
     let mut child = std::process::Command::new("python3")
@@ -46,7 +50,11 @@ fn terminate_stale_cache_processes_kills_cmdline_match_and_skips_self() {
 #[test]
 fn remove_stale_run_directories_failure_is_recoverable_on_next_run() {
     let tmp = tempfile::tempdir().unwrap();
-    let cache_root = tmp.path().join(".kiss").join("rust_llvm_cov_cache");
+    let cache_root = tmp
+        .path()
+        .join(".kiss")
+        .join("test")
+        .join("rust_llvm_cov_cache");
     let keep = cache_root.join("runs").join("run-keep");
     let stale = cache_root.join("runs").join("run-stale");
     fs::create_dir_all(&keep).unwrap();
@@ -72,7 +80,11 @@ fn remove_stale_run_directories_failure_is_recoverable_on_next_run() {
 #[test]
 fn remove_stale_run_directories_keeps_current_run() {
     let tmp = tempfile::tempdir().unwrap();
-    let cache_root = tmp.path().join(".kiss").join("rust_llvm_cov_cache");
+    let cache_root = tmp
+        .path()
+        .join(".kiss")
+        .join("test")
+        .join("rust_llvm_cov_cache");
     let keep = cache_root.join("runs").join("run-keep");
     let stale = cache_root.join("runs").join("run-stale");
     fs::create_dir_all(&keep).unwrap();
@@ -223,7 +235,11 @@ fn build_identity_helpers_are_executable_witnesses() {
     let mut req = RustCoverageBatchRequest::witness();
     req.source_root = tmp.path().to_path_buf();
     req.cwd = tmp.path().to_path_buf();
-    req.cache_root = tmp.path().join(".kiss").join("rust_llvm_cov_cache");
+    req.cache_root = tmp
+        .path()
+        .join(".kiss")
+        .join("test")
+        .join("rust_llvm_cov_cache");
     req.generated_config = req
         .cache_root
         .join("runs")
@@ -276,7 +292,11 @@ fn prepare_build_target_for_identity_retains_external_target_when_growth_limit_e
     let mut req = RustCoverageBatchRequest::witness();
     req.source_root = tmp.path().to_path_buf();
     req.cwd = tmp.path().to_path_buf();
-    req.cache_root = tmp.path().join(".kiss").join("rust_llvm_cov_cache");
+    req.cache_root = tmp
+        .path()
+        .join(".kiss")
+        .join("test")
+        .join("rust_llvm_cov_cache");
     req.generated_config = req
         .cache_root
         .join("runs")
@@ -301,7 +321,11 @@ fn prepare_build_target_for_identity_rebuilds_cache_owned_target_when_growth_lim
     let mut req = RustCoverageBatchRequest::witness();
     req.source_root = tmp.path().to_path_buf();
     req.cwd = tmp.path().to_path_buf();
-    req.cache_root = tmp.path().join(".kiss").join("rust_llvm_cov_cache");
+    req.cache_root = tmp
+        .path()
+        .join(".kiss")
+        .join("test")
+        .join("rust_llvm_cov_cache");
     req.generated_config = req
         .cache_root
         .join("runs")

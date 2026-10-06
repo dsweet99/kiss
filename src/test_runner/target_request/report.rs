@@ -49,13 +49,9 @@ pub(crate) struct ReportSnapshot {
     #[serde(default)]
     pub runner: String,
     #[serde(default)]
-    pub python_witness: Option<String>,
-    #[serde(default)]
-    pub python_coverage: Option<String>,
-    #[serde(default)]
-    pub rust_witness: Option<String>,
-    #[serde(default)]
-    pub rust_coverage: Option<String>,
+    pub generations: crate::test_runner::language_keyed::LanguageKeyed<
+        crate::test_runner::lang_iface::GenerationIds,
+    >,
     #[serde(default)]
     pub resolved: String,
     #[serde(default)]
@@ -180,7 +176,13 @@ impl TargetReport {
         );
         built.snapshot.graph_mutable = graph_mutable;
         let selectors: Vec<String> = built.rows.iter().map(|row| row.selector.clone()).collect();
-        built.labels = crate::test_runner::selector_ids::qualified_rust_report_ids(repo_root, &selectors);
+        built.labels = crate::test_runner::lang_registry::languages()
+            .into_iter()
+            .flat_map(|language| {
+                crate::test_runner::lang_registry::rules_for(language)
+                    .report_labels(repo_root, &selectors)
+            })
+            .collect();
         built
     }
 
@@ -259,27 +261,13 @@ fn coverage_maps_from_stores(
 ) {
     let mut lines: BTreeMap<String, BTreeSet<u32>> = BTreeMap::new();
     let mut coverable_lines: BTreeMap<String, BTreeSet<u32>> = BTreeMap::new();
-    if let Ok(pinned) =
-        crate::test_runner::python_coverage_index::try_load_pinned_python_generation(repo_root)
-            .or_else(|_| {
-                crate::test_runner::python_coverage_index::try_load_pinned_python_generation_warm(
-                    repo_root,
-                )
-            })
-    {
-        for (file, covered) in pinned.coverage {
+    for rules in crate::test_runner::lang_registry::all_rules() {
+        let stored = rules.stored_coverage(repo_root);
+        for (file, covered) in stored.covered {
             extend_focused(scope, &file, covered, &mut lines);
         }
-        for (file, indexed) in &pinned.line_index.files {
-            extend_focused(scope, file, indexed.keys().copied(), &mut coverable_lines);
-        }
-    }
-    let cache = crate::test_runner::rust_coverage_index::rust_coverage_cache_root(repo_root);
-    if let Ok((generation, _)) =
-        crate::test_runner::execution_generation::load_current_generation(&cache)
-    {
-        for (file, covered) in generation.covered_lines {
-            extend_focused(scope, &file, covered, &mut lines);
+        for (file, coverable) in stored.coverable {
+            extend_focused(scope, &file, coverable, &mut coverable_lines);
         }
     }
     extend_current_source_coverable(repo_root, scope, &mut coverable_lines);
@@ -288,23 +276,9 @@ fn coverage_maps_from_stores(
 
 fn workspace_covered_from_stores(repo_root: &Path) -> BTreeMap<String, BTreeSet<u32>> {
     let mut lines: BTreeMap<String, BTreeSet<u32>> = BTreeMap::new();
-    if let Ok(pinned) =
-        crate::test_runner::python_coverage_index::try_load_pinned_python_generation(repo_root)
-            .or_else(|_| {
-                crate::test_runner::python_coverage_index::try_load_pinned_python_generation_warm(
-                    repo_root,
-                )
-            })
-    {
-        for (file, covered) in pinned.coverage {
-            lines.entry(file).or_default().extend(covered);
-        }
-    }
-    let cache = crate::test_runner::rust_coverage_index::rust_coverage_cache_root(repo_root);
-    if let Ok((generation, _)) =
-        crate::test_runner::execution_generation::load_current_generation(&cache)
-    {
-        for (file, covered) in generation.covered_lines {
+    for rules in crate::test_runner::lang_registry::all_rules() {
+        let stored = rules.stored_coverage(repo_root);
+        for (file, covered) in stored.covered {
             lines.entry(file).or_default().extend(covered);
         }
     }
@@ -553,7 +527,7 @@ fn production_coverage_path(path: &str) -> bool {
 }
 
 fn production_coverage_abs(path: &Path) -> bool {
-    !kiss::is_python_test_module_path(path)
+    !crate::test_runner::lang_registry::all_rules().any(|rules| rules.is_test_source(path))
 }
 
 fn extend_focused(
@@ -662,12 +636,12 @@ fn gates_from_coverage(coverage: &ReportCoverage, gate: &kiss::GateConfig) -> Ve
     }
 }
 
-fn population_selectors_for_count(
+fn population_selector_count(
     repo_root: &Path,
     request: &super::types::TargetRequest,
     need: crate::test_runner::workspace_selector_cache::SelectorCountNeed,
-) -> Option<(Vec<String>, Vec<String>)> {
-    if let Some(cached) =
+) -> Option<usize> {
+    if let Some((first, second)) =
         crate::test_runner::workspace_selector_cache::load_workspace_selectors_for_count(
             repo_root,
             &request.ignore,
@@ -675,40 +649,19 @@ fn population_selectors_for_count(
             need,
         )
     {
-        return Some(cached);
+        return Some(first.len() + second.len());
     }
-    let python = if need.python {
-        crate::test_runner::runners::enumerate_workspace_python_selectors(
-            repo_root,
-            &request.ignore,
-            &[],
-        )
-        .ok()?
-    } else {
-        Vec::new()
-    };
-    let rust = if need.rust {
-        crate::test_runner::runners::enumerate_workspace_rust_selectors(repo_root, &request.ignore)
+    let mut count = 0;
+    for language in crate::test_runner::lang_registry::languages()
+        .into_iter()
+        .filter(|language| need.wants(*language))
+    {
+        count += crate::test_runner::lang_registry::rules_for(language)
+            .list_workspace_selectors(repo_root, &request.ignore, &[])
             .ok()?
-    } else {
-        Vec::new()
-    };
-    if need.python {
-        crate::test_runner::workspace_selector_cache::store_python_workspace_selectors(
-            repo_root,
-            &request.ignore,
-            &python,
-            &[],
-        );
+            .len();
     }
-    if need.rust {
-        crate::test_runner::workspace_selector_cache::store_rust_workspace_selectors(
-            repo_root,
-            &request.ignore,
-            &rust,
-        );
-    }
-    Some((python, rust))
+    Some(count)
 }
 
 fn gates_from_population(
@@ -716,18 +669,13 @@ fn gates_from_population(
     gate: &kiss::GateConfig,
     request: &super::types::TargetRequest,
 ) -> Vec<ReportGate> {
-    let (need_python, need_rust) = super::manifest::needed_langs(repo_root, request);
-    let need = crate::test_runner::workspace_selector_cache::SelectorCountNeed {
-        python: need_python && super::manifest::has_python_test_files(repo_root, request),
-        rust: need_rust,
-    };
-    let Some((py, rs)) = population_selectors_for_count(repo_root, request, need) else {
+    let need = super::manifest::population_count_need(repo_root, request);
+    let Some(count) = population_selector_count(repo_root, request, need) else {
         return vec![ReportGate {
             kind: "max_num_tests".into(),
             detail: "population evidence incomplete".into(),
         }];
     };
-    let count = py.len() + rs.len();
     if count > gate.max_num_tests {
         vec![ReportGate {
             kind: "max_num_tests".into(),
@@ -905,53 +853,6 @@ pub(crate) fn graph_repair_needed(
     .is_some_and(|key| super::graph_store::load_items(repo_root, &key).is_none())
 }
 
-// True when the report's pinned graph-evidence generation still holds under the
-// current covered/config mutable digest (and the evidence blob is still present).
-// Ready-report identity does not hash covered lines; without this check, watch/oneshot
-// coverage churn serves stale orphan gates under an unchanged stamp/request.
-//
-// After `load_identity_report` already matched worktree (source fingerprints), this
-// path must not re-digest workspace sources — only covered/config (+ presence).
-pub(crate) fn pinned_graph_generation_holds(
-    repo_root: &Path,
-    coverage_all: bool,
-    report: &TargetReport,
-) -> bool {
-    let gate = kiss::GateConfig::load_for_repo(repo_root);
-    let covered = workspace_covered_from_stores(repo_root);
-    let active = graph_generation_active(repo_root, &report.scope, &gate, coverage_all);
-    match (&report.graph_generation, active) {
-        (None, false) => true,
-        (Some(pinned), true) => {
-            let configuration = configuration_generation(repo_root);
-            let current_mutable = super::graph_store::evidence_mutable_digest(
-                &gate.orphan_allowed,
-                &covered,
-                &configuration,
-            );
-            match report.snapshot.graph_mutable.as_deref() {
-                Some(pinned_mutable) if pinned_mutable == current_mutable => {
-                    super::graph_store::evidence_present(repo_root, pinned)
-                }
-                // Legacy reports without graph_mutable: fall back to full key recompute.
-                None => {
-                    let current = graph_generation_id(
-                        repo_root,
-                        &report.scope,
-                        &gate,
-                        coverage_all,
-                        &covered,
-                    );
-                    matches!(current.as_deref(), Some(cur) if cur == pinned)
-                        && super::graph_store::evidence_present(repo_root, pinned)
-                }
-                Some(_) => false,
-            }
-        }
-        _ => false,
-    }
-}
-
 fn graph_generation_active(
     repo_root: &Path,
     scope: &ReportScope,
@@ -974,8 +875,6 @@ fn snapshot_token(
     gate: &kiss::GateConfig,
     coverage_all: bool,
 ) -> ReportSnapshot {
-    let (python_witness, python_coverage, rust_witness, rust_coverage) =
-        language_generation_ids(repo_root);
     ReportSnapshot {
         slice: stamp.clone(),
         evidence: evidence.clone(),
@@ -984,10 +883,7 @@ fn snapshot_token(
         worktree: super::stamp::capture_worktree_token(repo_root, request.language()),
         gate_policy: gate_policy_id(gate, coverage_all),
         runner: runner_identity(repo_root),
-        python_witness,
-        python_coverage,
-        rust_witness,
-        rust_coverage,
+        generations: language_generation_ids(repo_root),
         resolved: resolved_dependency_digest(repo_root, request),
         population: population_inventory_id(repo_root, request),
         configuration: configuration_generation(repo_root),
@@ -1013,76 +909,19 @@ pub(crate) fn runner_identity(repo_root: &Path) -> String {
     digest_bytes(&serde_json::to_vec(&runner_identity_parts(repo_root)).expect("runner identity"))
 }
 
-/// `None` while the cache records no runner yet, so a client that starts during
-/// a cold startup cycle does not carry a stale identity.
-pub(crate) fn known_runner_identity(repo_root: &Path) -> Option<String> {
-    let parts = runner_identity_parts(repo_root);
-    if parts.is_empty() {
-        return None;
-    }
-    Some(digest_bytes(
-        &serde_json::to_vec(&parts).expect("runner identity"),
-    ))
-}
-
 fn runner_identity_parts(repo_root: &Path) -> Vec<serde_json::Value> {
-    let mut parts = Vec::new();
-    if let Ok(pinned) =
-        crate::test_runner::python_coverage_index::try_load_pinned_python_generation_warm(repo_root)
-    {
-        let id = &pinned.plan.base_identity;
-        parts.push(serde_json::json!({
-            "lang": "python",
-            "runner_semantics_version": id.runner_semantics_version,
-            "python_version": id.python_version,
-            "pytest_version": id.pytest_version,
-            "pytest_args": id.pytest_args,
-            "interpreter_identity": id.interpreter_identity,
-        }));
-    }
-    if let Ok(witness) = crate::test_runner::lang_rust::try_load_rust_execution_witness(repo_root) {
-        parts.push(serde_json::json!({
-            "lang": "rust",
-            "identity_digest": witness.identity_digest,
-        }));
-    }
-    parts
+    crate::test_runner::lang_registry::all_rules()
+        .filter_map(|rules| rules.runner_identity_part(repo_root))
+        .collect()
 }
 
 fn language_generation_ids(
     repo_root: &Path,
-) -> (
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-) {
-    let python_witness =
-        crate::test_runner::python_coverage_index::try_load_pinned_python_generation_warm(
-            repo_root,
-        )
-        .ok()
-        .map(|pinned| pinned.generation_id);
-    let python_coverage =
-        crate::test_runner::python_coverage_index::python_coverage_snapshot_generation_id(
-            repo_root,
-        );
-    let rust_witness = crate::test_runner::lang_rust::try_load_rust_execution_witness(repo_root)
-        .ok()
-        .map(|witness| witness.generation_id);
-    let rust_coverage = crate::test_runner::execution_generation::load_current_generation(
-        &crate::test_runner::rust_coverage_index::rust_coverage_cache_root(repo_root),
-    )
-    .ok()
-    .map(|(generation, _)| generation.generation_id);
-    (python_witness, python_coverage, rust_witness, rust_coverage)
-}
-
-pub(crate) fn evaluation_key_tokens(repo_root: &Path, coverage_all: bool) -> (String, String) {
-    (
-        runner_identity(repo_root),
-        gate_policy_id(&kiss::GateConfig::load_for_repo(repo_root), coverage_all),
-    )
+) -> crate::test_runner::language_keyed::LanguageKeyed<crate::test_runner::lang_iface::GenerationIds>
+{
+    crate::test_runner::language_keyed::LanguageKeyed::from_fn(|language| {
+        crate::test_runner::lang_registry::rules_for(language).generation_ids(repo_root)
+    })
 }
 
 pub(crate) fn configuration_generation(repo_root: &Path) -> String {
@@ -1164,12 +1003,8 @@ fn population_inventory_id(
     repo_root: &Path,
     request: &super::types::TargetRequest,
 ) -> Option<String> {
-    let (need_python, need_rust) = super::manifest::needed_langs(repo_root, request);
-    let need = crate::test_runner::workspace_selector_cache::SelectorCountNeed {
-        python: need_python && super::manifest::has_python_test_files(repo_root, request),
-        rust: need_rust,
-    };
-    let (py, rs) =
+    let need = super::manifest::population_count_need(repo_root, request);
+    let (first, second) =
         crate::test_runner::workspace_selector_cache::load_workspace_selectors_for_count(
             repo_root,
             &request.ignore,
@@ -1177,8 +1012,7 @@ fn population_inventory_id(
             need,
         )?;
     let payload = serde_json::json!({
-        "python": py,
-        "rust": rs,
+        "selectors": [first, second],
         "ignore": request.ignore,
         "lang": format!("{:?}", request.lang),
     });
@@ -2018,32 +1852,11 @@ mod exit_gate_tests {
             "[test]\norphan_detection = true\n",
         )
         .unwrap();
-        let cache = crate::test_runner::rust_coverage_index::rust_coverage_cache_root(tmp.path());
-        let generation = crate::test_runner::execution_generation::FullExecutionGeneration {
-            schema_version: crate::test_runner::execution_generation::GENERATION_SCHEMA_VERSION
-                .to_string(),
-            execution_context_digest: "ctx".into(),
-            discovered_universe_digest: "uni".into(),
-            selectors: vec!["a".into()],
-            selector_evidence: vec![
-                crate::test_runner::execution_generation::SelectorEvidenceRecord {
-                    selector: "a".into(),
-                    raw_status: "passed".into(),
-                    duration_ns: Some(1),
-                    entry_content_digest: "blob-a".into(),
-                    evidence_state: "valid".into(),
-                    ..Default::default()
-                },
-            ],
-            functional_summary_all_pass: true,
-            covered_lines: BTreeMap::from([
-                ("utils.py".into(), vec![1, 2]),
-                ("other.py".into(), vec![1, 2]),
-            ]),
-            ..Default::default()
-        };
-        crate::test_runner::execution_generation::publish_full_generation(&cache, generation)
-            .unwrap();
+        let covered: BTreeMap<String, Vec<u32>> = BTreeMap::from([
+            ("utils.py".into(), vec![1, 2]),
+            ("other.py".into(), vec![1, 2]),
+        ]);
+        crate::test_runner::lang_python::store_test_record_covering(tmp.path(), "a", &covered);
         let scope = focused_utils_scope();
         assert!(
             graph_repair_needed(tmp.path(), &scope, false),

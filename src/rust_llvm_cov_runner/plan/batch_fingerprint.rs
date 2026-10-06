@@ -160,7 +160,11 @@ mod identity_memo_test {
             crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
         req.source_root = tmp.path().to_path_buf();
         req.cwd = tmp.path().to_path_buf();
-        req.cache_root = tmp.path().join(".kiss").join("rust_llvm_cov_cache");
+        req.cache_root = tmp
+            .path()
+            .join(".kiss")
+            .join("test")
+            .join("rust_llvm_cov_cache");
         let tools = crate::rust_llvm_cov_runner::test_support::witness_batch_tools();
         let _ = batch_identity(&req, &tools).unwrap();
         let _ = batch_identity(&req, &tools).unwrap();
@@ -249,6 +253,16 @@ pub(crate) fn selection_context_fingerprint(
     format!(
         "{:016x}",
         generation_hash(selection_context_source, req, tools, execution_policy)
+    )
+}
+
+pub(crate) fn toolchain_identity(
+    req: &RustCoverageBatchRequest,
+    tools: &RustCoverageToolIdentity,
+) -> String {
+    format!(
+        "{:016x}",
+        generation_hash("", req, tools, BATCH_EXECUTION_POLICY_VERSION)
     )
 }
 

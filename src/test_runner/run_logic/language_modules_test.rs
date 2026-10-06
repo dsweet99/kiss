@@ -261,31 +261,6 @@ fn language_executor_non_empty_runs_validate_jobs_before_spawning() {
 }
 
 #[test]
-fn cached_rust_check_aggregate_is_only_for_non_forced_selective_runs() {
-    assert!(should_try_cached_rust_check_aggregate(false, &None));
-    assert!(!should_try_cached_rust_check_aggregate(true, &None));
-    assert!(!should_try_cached_rust_check_aggregate(
-        false,
-        &Some(vec!["tests::population".to_string()])
-    ));
-}
-
-#[test]
-fn cached_check_aggregate_retry_bad_force_selectors_must_rerun() {
-    // --retry-bad leaves batch-wide force_rerun false and lists FAIL/TIMEOUT
-    // in prior_failure_selectors. A warm check-aggregate shortcut must not
-    // accept those selectors as PASS; intersecting priors become the rerun set.
-    let planned = vec!["tests::ok".to_string(), "tests::bad".to_string()];
-    let prior = vec!["tests::bad".to_string(), "tests::other".to_string()];
-    assert!(should_try_cached_rust_check_aggregate(false, &None));
-    assert_eq!(
-        prior_force_selectors_in_planned(&planned, &prior),
-        vec!["tests::bad".to_string()]
-    );
-    assert!(prior_force_selectors_in_planned(&planned, &[]).is_empty());
-}
-
-#[test]
 fn rust_population_phase_uses_selector_entries_not_check_aggregate() {
     use crate::test_runner::rust_llvm_cov::RustCoverageToolVersions;
     use kiss::rust_llvm_cov_runner::{
@@ -393,36 +368,5 @@ fn aggregate_selection_scope_is_conservative_not_per_test() {
     assert_eq!(
         summary.rust_entry_generation_count, 0,
         "aggregate-only cache must not claim per-test attribution"
-    );
-}
-
-#[test]
-fn rust_execution_helper_tries_cached_selective_before_falling_through() {
-    let tmp = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
-    std::fs::write(
-        tmp.path().join("Cargo.toml"),
-        "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
-    )
-    .unwrap();
-    std::fs::write(
-        tmp.path().join("src").join("lib.rs"),
-        "#[cfg(test)]\nmod tests {\n    #[test]\n    fn case() {}\n}\n",
-    )
-    .unwrap();
-    let mut planned = planned();
-    planned.repo_root = tmp.path().to_path_buf();
-    let mut options = super::dry_run_selector_options();
-    options.jobs = 0;
-    let ctx = crate::test_runner::coverage_decision::RunContext {
-        planned: &planned,
-        options: &options,
-    };
-
-    assert!(
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            run_rust_selectors_for_module(&["tests::case".to_string()], &ctx, None)
-        }))
-        .is_err()
     );
 }

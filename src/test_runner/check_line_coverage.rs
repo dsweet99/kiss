@@ -85,14 +85,6 @@ impl RuntimeCoverageLoadError {
             problem_selectors: Vec::new(),
         }
     }
-
-    fn incomplete_population(language: &'static str, problem_selectors: Vec<String>) -> Self {
-        Self {
-            language,
-            reason: "incomplete population".to_string(),
-            problem_selectors,
-        }
-    }
 }
 
 impl fmt::Display for RuntimeCoverageLoadError {
@@ -116,7 +108,6 @@ pub(crate) struct ValidatedCovInputs {
     pub(crate) snapshot: RuntimeCoverageSnapshot,
     #[allow(dead_code)]
     pub(crate) required: RequiredCoverageLanguages,
-    pub(crate) python_generation_id: Option<String>,
 }
 
 impl ValidatedCovInputs {
@@ -125,20 +116,8 @@ impl ValidatedCovInputs {
         snapshot: RuntimeCoverageSnapshot,
         repo_root: &Path,
     ) -> Self {
-        let python_generation_id = if required.python {
-            crate::test_runner::python_coverage_index::try_load_pinned_python_generation_warm(
-                repo_root,
-            )
-            .ok()
-            .map(|pinned| pinned.generation_id)
-        } else {
-            None
-        };
-        Self {
-            required,
-            snapshot,
-            python_generation_id,
-        }
+        let _ = repo_root;
+        Self { required, snapshot }
     }
 }
 
@@ -147,30 +126,13 @@ pub(crate) fn load_python_runtime_coverage(
     pytest_args: &[String],
     gate: &kiss::GateConfig,
 ) -> Result<BackendCoverage, RuntimeCoverageLoadError> {
-    crate::test_runner::python_coverage_index::generation::restamp_complete_pinned_from_cache(
-        repo_root,
-        pytest_args,
-        &|path, root| python_repo_relative_coverage_file(root, &path.to_string_lossy()).is_some(),
-        gate,
-    )
-    .map_err(|err| coverage_error("Python", &err))?;
-    if let Some(coverage) = try_coverage_from_generation(repo_root, pytest_args)? {
-        return Ok(coverage);
-    }
-
-    if crate::test_runner::python_coverage_index::try_migrate_complete_v1_generation(
-        repo_root,
-        pytest_args,
-        &|path, root| python_repo_relative_coverage_file(root, &path.to_string_lossy()).is_some(),
-    )
-    .ok()
-    .flatten()
-    .is_some()
-    {
-        crate::test_runner::python_coverage_index::clear_python_generation_warm_memo();
-        if let Some(coverage) = try_coverage_from_generation(repo_root, pytest_args)? {
-            return Ok(coverage);
-        }
+    use crate::test_runner::lang_iface::KernelRules;
+    let recorded = crate::test_runner::lang_python::PythonKernelRules.stored_coverage(repo_root);
+    if !recorded.covered.is_empty() {
+        return Ok(BackendCoverage {
+            identity: backend_identity("python", &[], &recorded.covered),
+            covered_lines: recorded.covered,
+        });
     }
     let population =
         stored_python_universe_population(repo_root, pytest_args, PYTHON_COVERAGE_ENV_KEYS)
@@ -185,64 +147,6 @@ pub(crate) fn load_python_runtime_coverage(
         ));
     }
     load_python_coverage_from_entries(repo_root, pytest_args, &population, gate)
-}
-
-fn try_coverage_from_generation(
-    repo_root: &Path,
-    pytest_args: &[String],
-) -> Result<Option<BackendCoverage>, RuntimeCoverageLoadError> {
-    let Ok(pinned) =
-        crate::test_runner::python_coverage_index::try_load_pinned_python_generation_warm(
-            repo_root,
-        )
-    else {
-        return Ok(None);
-    };
-    let exec = crate::test_runner::python_coverage_index::current_python_execution_identity(
-        repo_root,
-        pytest_args,
-    )
-    .map_err(|err| coverage_error("Python", &err))?;
-    if pinned.plan.base_identity != exec {
-        return Err(coverage_error(
-            "Python",
-            &format!(
-                "generation identity mismatch (pinned fingerprint {}, current {})",
-                pinned.plan.base_identity.input_fingerprint, exec.input_fingerprint
-            ),
-        ));
-    }
-    if let Some(stale) = pinned.timings.iter().find(|row| {
-        row.test_definition_digest.is_empty()
-            || row.test_definition_digest
-                != crate::test_runner::python_coverage_index::storage::
-                    python_selector_definition_digest(repo_root, &row.selector)
-    }) {
-        return Err(RuntimeCoverageLoadError {
-            language: "Python",
-            reason: format!("generation test definition mismatch for {}", stale.selector),
-            problem_selectors: vec![stale.selector.clone()],
-        });
-    }
-    if !pinned.complete {
-        let problems = crate::test_runner::python_coverage_index::problem_selectors_from_timings(
-            &pinned.timings,
-        );
-        return Err(RuntimeCoverageLoadError::incomplete_population(
-            "Python", problems,
-        ));
-    }
-    Ok(Some(BackendCoverage {
-        identity: backend_identity(
-            "python",
-            &[
-                ("generation".to_string(), pinned.generation_id.clone()),
-                ("selectors".to_string(), pinned.plan.selectors.join("\n")),
-            ],
-            &pinned.coverage,
-        ),
-        covered_lines: pinned.coverage,
-    }))
 }
 
 pub(super) fn backend_from_population(
@@ -353,9 +257,6 @@ fn backend_identity(
 mod identity;
 use identity::combined_identity;
 
-#[cfg(test)]
-#[path = "check_line_coverage_identity_test.rs"]
-mod identity_tests;
 #[cfg(test)]
 #[path = "check_line_coverage_test.rs"]
 mod tests;

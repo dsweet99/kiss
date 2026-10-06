@@ -9,7 +9,7 @@ use crate::analyze_cache::fnv1a64;
 use super::digest::{flush_persisted_digests, hash_file_contents};
 use super::{LangFingerprints, fresh};
 
-pub(crate) fn watch_support_gitignore(repo: &Path) -> Gitignore {
+pub(crate) fn support_gitignore(repo: &Path) -> Gitignore {
     let mut builder = GitignoreBuilder::new(repo);
     for name in [".gitignore", ".kissignore", ".git/info/exclude"] {
         let _ = builder.add(repo.join(name));
@@ -232,6 +232,8 @@ pub(super) fn workspace_lang_fingerprints_git(
     Ok(LangFingerprints {
         python: hash_rel_list(b"workspace-selectors-fp-v6-git-py", repo_root, &py_rels)?,
         rust: hash_rel_list(b"workspace-selectors-fp-v6-git-rs", repo_root, &rs_rels)?,
+        has_python: !py_rels.is_empty(),
+        has_rust: !rs_rels.is_empty(),
     })
 }
 
@@ -264,6 +266,8 @@ pub(super) fn workspace_lang_fingerprints_walk(
     Ok(LangFingerprints {
         python: format!("{py_h:016x}"),
         rust: format!("{rs_h:016x}"),
+        has_python: !py_rels.is_empty(),
+        has_rust: !rs_rels.is_empty(),
     })
 }
 

@@ -39,8 +39,7 @@ fn plan_once(
         },
         lang_filter,
         ignore,
-        extra_direct_python: &[],
-        extra_direct_rust: &[],
+        extra_direct: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
         include_prior_failures: false,
     })
     .expect("covering_select");

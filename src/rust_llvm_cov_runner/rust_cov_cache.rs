@@ -26,7 +26,10 @@ const BINARY_DIGEST_MEMO_FILE: &str = "binary_digest_memo.json";
 fn rust_cache_root_from_binary(path: &Path) -> Option<PathBuf> {
     let mut cursor = path.parent()?;
     loop {
-        let cache = cursor.join(".kiss").join("rust_llvm_cov_cache");
+        let cache = cursor
+            .join(".kiss")
+            .join("test")
+            .join("rust_llvm_cov_cache");
         if cache.is_dir() {
             return Some(cache);
         }
@@ -533,7 +536,13 @@ mod tests {
         fs::create_dir_all(tmp.path().join("src")).unwrap();
         fs::create_dir_all(tmp.path().join(".cargo")).unwrap();
         fs::create_dir_all(tmp.path().join("target")).unwrap();
-        fs::create_dir_all(tmp.path().join(".kiss").join("rust_llvm_cov_cache")).unwrap();
+        fs::create_dir_all(
+            tmp.path()
+                .join(".kiss")
+                .join("test")
+                .join("rust_llvm_cov_cache"),
+        )
+        .unwrap();
         fs::write(tmp.path().join("Cargo.toml"), "[package]\n").unwrap();
         fs::write(tmp.path().join("Cargo.lock"), "# lock\n").unwrap();
         fs::write(tmp.path().join("rust-toolchain.toml"), "[toolchain]\n").unwrap();
@@ -543,6 +552,7 @@ mod tests {
         fs::write(
             tmp.path()
                 .join(".kiss")
+                .join("test")
                 .join("rust_llvm_cov_cache")
                 .join("ignored.rs"),
             "ignored\n",
@@ -562,7 +572,7 @@ mod tests {
         assert!(names.contains(Path::new(".cargo/config.toml")));
         assert!(names.contains(Path::new("src/lib.rs")));
         assert!(!names.contains(Path::new("target/ignored.rs")));
-        assert!(!names.contains(Path::new(".kiss/rust_llvm_cov_cache/ignored.rs")));
+        assert!(!names.contains(Path::new(".kiss/test/rust_llvm_cov_cache/ignored.rs")));
         assert!(
             crate::rust_llvm_cov_runner::plan::shared_input::should_skip_rust_cov_dir(
                 &tmp.path().join("target")
@@ -570,7 +580,10 @@ mod tests {
         );
         assert!(
             crate::rust_llvm_cov_runner::plan::shared_input::is_kiss_rust_cov_cache_dir(
-                &tmp.path().join(".kiss").join("rust_llvm_cov_cache")
+                &tmp.path()
+                    .join(".kiss")
+                    .join("test")
+                    .join("rust_llvm_cov_cache")
             )
         );
     }

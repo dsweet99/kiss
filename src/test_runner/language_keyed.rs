@@ -8,6 +8,13 @@ pub(crate) struct LanguageKeyed<T> {
 }
 
 impl<T> LanguageKeyed<T> {
+    pub(crate) fn from_fn(mut f: impl FnMut(Language) -> T) -> Self {
+        Self {
+            python: f(Language::Python),
+            rust: f(Language::Rust),
+        }
+    }
+
     pub(crate) fn get(&self, language: Language) -> &T {
         match language {
             Language::Python => &self.python,
@@ -105,6 +112,7 @@ mod tests {
             &[],
         );
         let args = RunTestCmdArgs {
+            doubles: None,
             invocation: crate::test_runner::target_request::to_compat_invocation(&request),
             target_request: request,
             main_branch_cli: None,

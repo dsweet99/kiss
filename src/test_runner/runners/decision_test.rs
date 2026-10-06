@@ -1,12 +1,8 @@
 use super::*;
 use crate::test_runner::coverage_decision::{LanguagePlanner, SelectionDecision};
-use crate::test_runner::python_coverage_index::{
-    python_coverage_cache_root, rebuild_python_coverage_index,
-};
 use crate::test_runner::rust_coverage_index::rebuild_rust_coverage_index;
 use kiss::rpytest_runner::TestStatus;
 use kiss::rslip::LineCoverage;
-use std::time::Duration;
 
 #[path = "decision_line_coverage_test.rs"]
 mod line_coverage_tests;
@@ -73,20 +69,32 @@ fn decision_helper_splitters_preserve_language_and_line_filters() {
 fn prior_failure_and_basis_helpers_have_empty_cases() {
     let tmp = tempfile::TempDir::new().unwrap();
 
-    assert!(
-        prior_failures_for_language(tmp.path(), kiss::Language::Python, &[])
-            .unwrap()
-            .is_empty()
-    );
-    assert!(
-        prior_failures_for_language(tmp.path(), kiss::Language::Rust, &[])
-            .unwrap()
-            .is_empty()
-    );
+    assert!(prior_failures_for_language(tmp.path(), kiss::Language::Python).is_empty());
+    assert!(prior_failures_for_language(tmp.path(), kiss::Language::Rust).is_empty());
+}
+
+fn seed_record(root: &std::path::Path, language: kiss::Language, id: &str, status: TestStatus) {
+    let dir = kiss::test_records::records_dir(root, language.label());
+    std::fs::create_dir_all(&dir).unwrap();
+    kiss::test_records::store_record(
+        &dir,
+        &kiss::test_records::TestRecord {
+            schema: kiss::test_records::RECORD_SCHEMA.to_string(),
+            language: language.label().to_string(),
+            test_id: id.to_string(),
+            identity: "identity".to_string(),
+            deps: BTreeMap::new(),
+            status,
+            exit_code: None,
+            duration: std::time::Duration::ZERO,
+            covered: BTreeMap::new(),
+        },
+    )
+    .unwrap();
 }
 
 #[test]
-fn prior_failures_for_language_loads_rust_failures_with_live_identity() {
+fn prior_failures_for_language_reads_nonpassed_rust_records() {
     let tmp = tempfile::TempDir::new().unwrap();
     std::fs::write(
         tmp.path().join("Cargo.toml"),
@@ -99,48 +107,21 @@ fn prior_failures_for_language_loads_rust_failures_with_live_identity() {
         "pub fn value() -> u32 { 1 }\n",
     )
     .unwrap();
-
-    let cargo = PathBuf::from("cargo");
-    let rustc = PathBuf::from("rustc");
-    let cargo_version =
-        crate::test_runner::runners::command_stdout(&cargo, &["--version"], tmp.path())
-            .expect("cargo version");
-    let llvm_cov_version =
-        crate::test_runner::runners::command_stdout(&cargo, &["llvm-cov", "--version"], tmp.path())
-            .expect("llvm-cov version");
-    let cargo_nextest_version =
-        crate::test_runner::runners::command_stdout(&cargo, &["nextest", "--version"], tmp.path())
-            .expect("nextest version");
-    let rustc_version = crate::test_runner::runners::command_stdout(&rustc, &["-Vv"], tmp.path())
-        .expect("rustc version");
-    let runner_map_fingerprint =
-        crate::test_runner::rust_coverage_index::current_rust_runner_map_fingerprint(
-            tmp.path(),
-            &[],
-        )
-        .unwrap_or_default();
-    let identity = crate::test_runner::last_status::rust_last_status_identity(
-        &cargo_version,
-        &llvm_cov_version,
-        &rustc_version,
-        &cargo_nextest_version,
-        &[],
-        &runner_map_fingerprint,
-    );
-    crate::test_runner::last_status::record_statuses(
+    seed_record(
         tmp.path(),
         kiss::Language::Rust,
-        &identity,
-        &[(
-            "demo::tests::failed".to_string(),
-            kiss::rpytest_runner::TestStatus::Failed,
-        )],
-    )
-    .unwrap();
+        "demo::tests::failed",
+        TestStatus::Failed,
+    );
+    seed_record(
+        tmp.path(),
+        kiss::Language::Rust,
+        "demo::tests::passed",
+        TestStatus::Passed,
+    );
 
-    let loaded = prior_failures_for_language(tmp.path(), kiss::Language::Rust, &[]).unwrap();
     assert_eq!(
-        loaded,
+        prior_failures_for_language(tmp.path(), kiss::Language::Rust),
         vec![TestSelector::new(
             kiss::Language::Rust,
             "demo::tests::failed"
@@ -155,48 +136,35 @@ fn prior_failures_for_language_loads_rust_failures_with_live_identity() {
 }
 
 #[test]
-fn prior_failures_for_language_loads_python_failures_with_live_identity() {
+fn prior_failures_for_language_reads_nonpassed_python_records() {
     let tmp = tempfile::TempDir::new().unwrap();
-    let python = PathBuf::from("python");
-    let python_version = crate::test_runner::runners::command_stdout(
-        &python,
-        &[
-            "-c",
-            "import sys; print('.'.join(map(str, sys.version_info[:3])))",
-        ],
-        tmp.path(),
-    )
-    .expect("python version");
-    let pytest_version = crate::test_runner::runners::command_stdout(
-        &python,
-        &["-c", "import pytest; print(pytest.__version__)"],
-        tmp.path(),
-    )
-    .expect("pytest version");
-    let identity = crate::test_runner::last_status::python_last_status_identity(
-        &python_version,
-        &pytest_version,
-        &[],
-    );
-    crate::test_runner::last_status::record_statuses(
+    seed_record(
         tmp.path(),
         kiss::Language::Python,
-        &identity,
-        &[(
-            "tests/test_app.py::test_failed".to_string(),
-            kiss::rpytest_runner::TestStatus::Failed,
-        )],
-    )
-    .unwrap();
-
-    let loaded = prior_failures_for_language(tmp.path(), kiss::Language::Python, &[]).unwrap();
-    assert_eq!(
-        loaded,
-        vec![TestSelector::new(
-            kiss::Language::Python,
-            "tests/test_app.py::test_failed"
-        )]
+        "tests/test_app.py::test_failed",
+        TestStatus::Failed,
     );
+    seed_record(
+        tmp.path(),
+        kiss::Language::Python,
+        "tests/test_app.py::test_slow",
+        TestStatus::TimedOut,
+    );
+    seed_record(
+        tmp.path(),
+        kiss::Language::Python,
+        "tests/test_app.py::test_ok",
+        TestStatus::Passed,
+    );
+
+    assert_eq!(
+        prior_failures_for_language(tmp.path(), kiss::Language::Python),
+        vec![
+            TestSelector::new(kiss::Language::Python, "tests/test_app.py::test_failed"),
+            TestSelector::new(kiss::Language::Python, "tests/test_app.py::test_slow"),
+        ]
+    );
+    assert!(prior_failures_for_language(tmp.path(), kiss::Language::Rust).is_empty());
 }
 
 #[test]

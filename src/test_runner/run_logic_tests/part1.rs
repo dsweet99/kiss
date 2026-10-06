@@ -22,6 +22,7 @@ fn force_all_population_helper_keeps_targets_selective() {
     let mut planned = planned();
     planned.sel.python = vec!["tests/a.py::only".to_string()];
     let args = crate::test_runner::RunTestCmdArgs {
+        doubles: None,
         invocation: crate::bin_cli::args::TestInvocation::Targets(vec!["tests/a.py::only".into()]),
         target_request: crate::test_runner::target_request::operands_request(
             &["tests/a.py::only".into()],
@@ -58,6 +59,7 @@ fn force_all_population_helper_sets_population_for_all() {
     let mut planned = planned();
     planned.sel.python = vec!["tests/a.py::only".to_string()];
     let args = crate::test_runner::RunTestCmdArgs {
+        doubles: None,
         invocation: crate::bin_cli::args::TestInvocation::All,
         target_request: crate::test_runner::target_request::workspace_request(
             Some(Language::Python),
@@ -356,10 +358,6 @@ fn empty_module_runs_return_default_summaries_without_spawning() {
         options: &options,
     };
 
-    assert_eq!(
-        language_modules::run_rust_selectors_for_module(&[], &ctx, None).unwrap(),
-        SelectorExecutionSummary::default()
-    );
     let outcome: LanguagePhaseOutcome = execute_language_phase(
         &execution_module_python(&planned),
         &ExecutionPhase::NoWork,
@@ -416,7 +414,13 @@ fn python_outcome_records_index_rebuild_duration_in_metrics() {
         index_rebuild_duration: Duration::from_millis(3),
     };
 
-    record_python_outcome(&mut metrics, outcome);
+    let module = FakeLanguageModule {
+        language: Language::Python,
+        population_required: false,
+        selective: Vec::new(),
+        summary: SelectorExecutionSummary::default(),
+    };
+    record_language_outcome(&mut metrics, &module, outcome);
 
     assert_eq!(metrics.python.summary.total, 1);
     assert_eq!(metrics.python.duration, Duration::from_millis(7));

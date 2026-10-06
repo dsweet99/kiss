@@ -107,11 +107,7 @@ fn run_split_check(args: &CheckCommandArgs<'_>) -> i32 {
     crate::bin_cli::check_shards::run_split_check_sharded(&exe, args)
 }
 
-pub(crate) fn run_split_check_with_exe_legacy(exe: &Path, args: &CheckCommandArgs<'_>) -> i32 {
-    run_split_check_with_exe(exe, args)
-}
-
-fn run_split_check_with_exe(exe: &Path, args: &CheckCommandArgs<'_>) -> i32 {
+pub(crate) fn run_split_check_with_exe(exe: &Path, args: &CheckCommandArgs<'_>) -> i32 {
     let Ok(mut rust) = spawn_lang_check(exe, args, "rust") else {
         return run_check_in_process(args);
     };
@@ -348,10 +344,7 @@ mod coverage_witness {
         let args = sample_args(&path);
 
         assert_eq!(run_check_in_process_pub(&args), 0);
-        assert_eq!(
-            run_split_check_with_exe_legacy(Path::new("/bin/true"), &args),
-            0
-        );
+        assert_eq!(run_split_check_with_exe(Path::new("/bin/true"), &args), 0);
         forward_worker_stderr_pub(b"some stderr\n");
         assert_eq!(
             analyzed_add_pub(

@@ -1,12 +1,11 @@
 use std::collections::BTreeSet;
 
 use crate::test_runner::lang_iface::{
-    AcceptMode, EnsureRequest, EnsureRuntimeResult, LanguageEnsureResult, LanguageRuntime,
-    OutcomeBatch, PublishBatch, all_misses_warm_skippable, miss_selectors_for_repair,
-    reclassify_statuses_with_gate, session_timing_context_digest, timing_context_is_comparable,
+    AcceptMode, EnsureRequest, EnsureRuntimeResult, KernelRules, LanguageEnsureResult,
+    LanguageRuntime, OutcomeBatch, all_misses_warm_skippable, emit_kernel_stage,
+    reclassify_statuses_with_gate, timing_context_is_comparable,
 };
 use kiss::GateConfig;
-use kiss::Language;
 
 pub(crate) fn ensure_runtime_cache(
     request: &EnsureRequest,
@@ -22,10 +21,7 @@ pub(crate) fn ensure_runtime_cache(
         }
         let lang_result = ensure_one_language(request, *module, gate)?;
         let exit = lang_result.summary.exit_code;
-        match language {
-            Language::Python => result.by_language.python = Some(lang_result),
-            Language::Rust => result.by_language.rust = Some(lang_result),
-        }
+        *result.by_language.get_mut(language) = Some(lang_result);
         if exit != 0 {
             result.exit_code = exit;
         }
@@ -38,55 +34,47 @@ fn ensure_one_language(
     module: &dyn LanguageRuntime,
     gate: &GateConfig,
 ) -> Result<LanguageEnsureResult, String> {
-    let planned = request.planned_for(module.language()).to_vec();
-    module.bind_subprocess_observer(request);
-    if let Some(empty) = try_publish_empty_all(request, module, &planned)? {
+    rules(module).bind_subprocess_observer(request);
+    if let Some(empty) = try_publish_empty_all(request, module)? {
         return Ok(empty);
     }
-    let identity = timed_current_identity(request, module)?;
-    let loaded = timed_load_witness(request, module);
-    let mut witness = loaded.clone();
+    let listing = timed_list(request, module)?;
+    let (mut witness, holding) = match timed_load_witness(request, module, &listing) {
+        Some(stored) => (Some(stored.witness), stored.holding),
+        None => (None, BTreeSet::new()),
+    };
     timed_reclassify_witness(request, module, gate, &mut witness)?;
-    let misses = timed_compute_misses(request, module, &planned, &identity, &witness)?;
-    timed_accept_or_run(request, module, &planned, witness, &misses)
+    let misses = timed_compute_misses(
+        request,
+        module,
+        MissInputs {
+            planned: &listing.ids,
+            identity: &listing.identity,
+            witness: &witness,
+            holding: &holding,
+        },
+    )?;
+    timed_accept_or_run(request, module, &listing.ids, witness, &misses)
 }
 
-fn emit_rust_stage(language: Language, name: &str, started: std::time::Instant) {
-    if language == Language::Rust {
-        crate::test_runner::emit_stage_time(name, started.elapsed());
-    }
-}
-
-fn timed_current_identity(
+fn timed_list(
     request: &EnsureRequest,
     module: &dyn LanguageRuntime,
-) -> Result<String, String> {
+) -> Result<crate::test_runner::lang_iface::Listing, String> {
     let started = std::time::Instant::now();
-    let identity = module.current_identity(request)?;
-    match module.language() {
-        Language::Rust => emit_rust_stage(Language::Rust, "rust_identity", started),
-        Language::Python => {
-            crate::test_runner::emit_stage_time("python_source_fingerprint", started.elapsed());
-        }
-    }
-    Ok(identity)
+    let listing = module.list(request)?;
+    crate::test_runner::emit_stage_time(rules(module).identity_stage(), started.elapsed());
+    Ok(listing)
 }
 
 fn timed_load_witness(
     request: &EnsureRequest,
     module: &dyn LanguageRuntime,
-) -> Option<crate::test_runner::lang_iface::ExecutionWitness> {
+    listing: &crate::test_runner::lang_iface::Listing,
+) -> Option<super::rows::StoredRows> {
     let started = std::time::Instant::now();
-    let loaded = match module.load_full_witness(&request.repo_root) {
-        Ok(witness) => Some(witness),
-        Err(err) => {
-            if module.language() == Language::Rust && !err.contains("No such file") {
-                eprintln!("kiss test: rust witness load: {err}");
-            }
-            None
-        }
-    };
-    emit_rust_stage(module.language(), "rust_witness_load", started);
+    let loaded = super::rows::stored_rows(request, module, listing);
+    emit_kernel_stage(rules(module), "witness_load", started);
     loaded
 }
 
@@ -98,109 +86,53 @@ fn timed_reclassify_witness(
 ) -> Result<(), String> {
     let started = std::time::Instant::now();
     reclassify_loaded_witness(request, module, gate, witness)?;
-    emit_rust_stage(module.language(), "rust_reclassify", started);
+    emit_kernel_stage(rules(module), "reclassify", started);
     Ok(())
 }
 
-fn rust_or_default_misses(
-    module: &dyn LanguageRuntime,
-    request: &EnsureRequest,
-    planned: &[String],
-    identity: &str,
-    witness: Option<&crate::test_runner::lang_iface::ExecutionWitness>,
-) -> Vec<String> {
-    if module.language() == Language::Rust {
-        return crate::test_runner::lang_rust::rust_live_miss_selectors(
-            request, planned, identity, witness,
-        );
-    }
-    miss_selectors_for_repair(request.mode, planned, identity, witness, request.force)
+struct MissInputs<'a> {
+    planned: &'a [String],
+    identity: &'a str,
+    witness: &'a Option<crate::test_runner::lang_iface::ExecutionWitness>,
+    holding: &'a BTreeSet<String>,
 }
 
 fn timed_compute_misses(
     request: &EnsureRequest,
     module: &dyn LanguageRuntime,
-    planned: &[String],
-    identity: &str,
-    witness: &Option<crate::test_runner::lang_iface::ExecutionWitness>,
+    inputs: MissInputs<'_>,
 ) -> Result<Vec<String>, String> {
+    let MissInputs {
+        planned,
+        identity,
+        witness,
+        holding,
+    } = inputs;
     let started = std::time::Instant::now();
-    // The cycle after `--retry-bad` runs the PASS tests that request deferred.
-    if request.force_selectors.is_empty()
-        && let Some(deferred) = take_deferred_selectors_for(planned)
-    {
-        emit_rust_stage(module.language(), "rust_miss_select", started);
-        return Ok(deferred);
-    }
-    let mut misses = rust_or_default_misses(module, request, planned, identity, witness.as_ref());
+    let mut misses = rules(module).live_misses(request, planned, identity, witness.as_ref());
+    let not_holding: Vec<String> = planned
+        .iter()
+        .filter(|selector| !holding.contains(*selector))
+        .cloned()
+        .collect();
+    crate::test_runner::lang_iface::union_force_selectors_into_misses(
+        planned,
+        &mut misses,
+        &not_holding,
+    );
     crate::test_runner::lang_iface::union_force_selectors_into_misses(
         planned,
         &mut misses,
         &request.force_selectors,
     );
-    union_source_delta_misses(request, module, planned, &mut misses)?;
+    union_non_cacheable_misses(planned, &mut misses);
     union_incomparable_timing_misses(request, module, planned, witness, &mut misses);
-    // `--retry-bad` runs FAIL and TIMEOUT tests. A pending edit's PASS tests
-    // stay for the edit's own cycle.
+    // `--retry-bad` runs FAIL and TIMEOUT tests.
     if !request.force_selectors.is_empty() {
-        let dropped: Vec<String> = misses
-            .iter()
-            .filter(|sel| !request.force_selectors.iter().any(|forced| forced == *sel))
-            .cloned()
-            .collect();
         misses.retain(|sel| request.force_selectors.iter().any(|forced| forced == sel));
-        if !dropped.is_empty() {
-            remember_deferred_selectors(dropped);
-        }
     }
-    emit_rust_stage(module.language(), "rust_miss_select", started);
+    emit_kernel_stage(rules(module), "miss_select", started);
     Ok(misses)
-}
-
-static DEFERRED_EDIT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-static DEFERRED_SELECTORS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
-
-fn remember_deferred_selectors(selectors: Vec<String>) {
-    let mut held = DEFERRED_SELECTORS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    for selector in selectors {
-        if !held.iter().any(|item| item == &selector) {
-            held.push(selector);
-        }
-    }
-    DEFERRED_EDIT.store(true, std::sync::atomic::Ordering::SeqCst);
-}
-
-fn take_deferred_selectors_for(planned: &[String]) -> Option<Vec<String>> {
-    let mut held = DEFERRED_SELECTORS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if held.is_empty() {
-        return None;
-    }
-    let ready: Vec<String> = held
-        .iter()
-        .filter(|sel| planned.iter().any(|item| item == *sel))
-        .cloned()
-        .collect();
-    if ready.is_empty() {
-        return None;
-    }
-    held.retain(|sel| !ready.iter().any(|item| item == sel));
-    Some(ready)
-}
-
-pub(crate) fn deferred_edit_pending() -> bool {
-    DEFERRED_EDIT.load(std::sync::atomic::Ordering::SeqCst)
-        || !DEFERRED_SELECTORS
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .is_empty()
-}
-
-pub(crate) fn take_deferred_edit() -> bool {
-    DEFERRED_EDIT.swap(false, std::sync::atomic::Ordering::SeqCst)
 }
 
 fn timed_accept_or_run(
@@ -212,21 +144,14 @@ fn timed_accept_or_run(
 ) -> Result<LanguageEnsureResult, String> {
     let started = std::time::Instant::now();
     if let Some(accepted) = try_accept_or_warm_report(request, module, planned, &witness, misses)? {
-        emit_rust_stage(module.language(), "rust_accept", started);
+        emit_kernel_stage(rules(module), "accept", started);
         return Ok(accepted);
     }
-    emit_rust_stage(module.language(), "rust_accept", started);
+    emit_kernel_stage(rules(module), "accept", started);
     run_misses_and_maybe_publish(request, module, planned, witness, misses)
 }
 
-fn union_source_delta_misses(
-    request: &EnsureRequest,
-    module: &dyn LanguageRuntime,
-    planned: &[String],
-    misses: &mut Vec<String>,
-) -> Result<(), String> {
-    let extra = module.extra_source_delta_misses(request, planned)?;
-    crate::test_runner::lang_iface::union_force_selectors_into_misses(planned, misses, &extra);
+fn union_non_cacheable_misses(planned: &[String], misses: &mut Vec<String>) {
     let policy = kiss::TestSectionConfig::load().cache_policy;
     let banned: Vec<String> = planned
         .iter()
@@ -234,7 +159,6 @@ fn union_source_delta_misses(
         .cloned()
         .collect();
     crate::test_runner::lang_iface::union_force_selectors_into_misses(planned, misses, &banned);
-    Ok(())
 }
 
 fn reclassify_loaded_witness(
@@ -249,13 +173,13 @@ fn reclassify_loaded_witness(
     if w.raw_statuses.len() != w.statuses.len() {
         w.raw_statuses = w.statuses.clone();
     }
-    if !timing_context_matches(request, module.language()) {
+    if !timing_context_matches(request, module) {
         w.statuses = w.raw_statuses.clone();
         return Ok(());
     }
-    let gate_selectors = match module.selectors_for_time_gate(request, &w.selectors) {
+    let gate_selectors = match rules(module).selectors_for_time_gate(request, &w.selectors) {
         Ok(selectors) => selectors,
-        Err(err) if module.language() == Language::Python => return Err(err),
+        Err(err) if rules(module).time_gate_selector_error_is_fatal() => return Err(err),
         Err(_) => w.selectors.clone(),
     };
     w.statuses =
@@ -266,20 +190,11 @@ fn reclassify_loaded_witness(
 fn try_publish_empty_all(
     request: &EnsureRequest,
     module: &dyn LanguageRuntime,
-    planned: &[String],
 ) -> Result<Option<LanguageEnsureResult>, String> {
-    if !(planned.is_empty() && request.mode == AcceptMode::All) {
+    if !(request.planned_for(module.language()).is_empty() && request.mode == AcceptMode::All) {
         return Ok(None);
     }
-    let publish = PublishBatch {
-        selectors: vec![],
-        statuses: vec![],
-        durations_ns: vec![],
-        covered_lines: Default::default(),
-        publication_universe: Some(vec![]),
-        summary: Default::default(),
-    };
-    module.publish_outcomes(request, &publish)?;
+    module.run(request, &[], &mut |_| {})?;
     Ok(Some(LanguageEnsureResult {
         summary: Default::default(),
         published: true,
@@ -297,7 +212,7 @@ fn try_accept_or_warm_report(
     if misses.is_empty() {
         let w = witness.as_ref().expect("accept implies loaded witness");
         return Ok(Some(LanguageEnsureResult {
-            summary: module.accepted_summary(request, planned, w)?,
+            summary: rules(module).accepted_summary(request, planned, w)?,
             published: false,
             generation_id: Some(w.generation_id.clone()),
         }));
@@ -308,7 +223,7 @@ fn try_accept_or_warm_report(
         && all_misses_warm_skippable(w, misses)
     {
         return Ok(Some(LanguageEnsureResult {
-            summary: module.cached_witness_summary(request, planned, w),
+            summary: rules(module).cached_witness_summary(request, planned, w),
             published: false,
             generation_id: Some(w.generation_id.clone()),
         }));
@@ -317,7 +232,7 @@ fn try_accept_or_warm_report(
 }
 
 fn cached_selectors_for_run(
-    language: Language,
+    recap_stored: bool,
     planned: &[String],
     misses: &[String],
     witness: Option<&crate::test_runner::lang_iface::ExecutionWitness>,
@@ -327,9 +242,7 @@ fn cached_selectors_for_run(
         .filter(|selector| !misses.iter().any(|miss| miss == *selector))
         .cloned()
         .collect();
-    if language == Language::Rust
-        && let Some(stored) = witness
-    {
+    if recap_stored && let Some(stored) = witness {
         for selector in &stored.selectors {
             if !misses.iter().any(|miss| miss == selector) {
                 cached.insert(selector.clone());
@@ -346,32 +259,20 @@ fn run_misses_and_maybe_publish(
     witness: Option<crate::test_runner::lang_iface::ExecutionWitness>,
     misses: &[String],
 ) -> Result<LanguageEnsureResult, String> {
-    let cached_selectors =
-        cached_selectors_for_run(module.language(), planned, misses, witness.as_ref());
+    let cached_selectors = cached_selectors_for_run(
+        rules(module).recap_stored_selectors(),
+        planned,
+        misses,
+        witness.as_ref(),
+    );
     if !cached_selectors.is_empty()
         && let Some(w) = witness.as_ref()
     {
-        let _ = module.cached_witness_summary(request, &cached_selectors, w);
+        let _ = rules(module).cached_witness_summary(request, &cached_selectors, w);
     }
-    let batch = module.run_selectors(request, misses)?;
-
-    let publication_universe = batch.publication_universe.clone().or_else(|| {
-        if request.mode == AcceptMode::All && batch.selectors.len() == planned.len() {
-            Some(planned.to_vec())
-        } else {
-            None
-        }
-    });
-    let publish = PublishBatch {
-        selectors: batch.selectors.clone(),
-        statuses: batch.statuses.clone(),
-        durations_ns: batch.durations_ns.clone(),
-        covered_lines: batch.covered_lines.clone(),
-        publication_universe,
-        summary: batch.summary.clone(),
-    };
-
-    module.publish_outcomes(request, &publish)?;
+    let mut records = Vec::new();
+    let mut batch = module.run(request, misses, &mut |record| records.push(record))?;
+    batch.summary = std::mem::take(&mut batch.summary).with_records(records);
     Ok(LanguageEnsureResult {
         summary: merge_accept_and_run(&cached_selectors, witness.as_ref(), &batch),
         published: true,
@@ -428,9 +329,7 @@ fn union_incomparable_timing_misses(
     witness: &Option<crate::test_runner::lang_iface::ExecutionWitness>,
     misses: &mut Vec<String>,
 ) {
-    if request.gate.unit_test_time_gate_disabled()
-        || timing_context_matches(request, module.language())
-    {
+    if request.gate.unit_test_time_gate_disabled() || timing_context_matches(request, module) {
         return;
     }
     let Some(witness) = witness.as_ref() else {
@@ -457,25 +356,14 @@ fn union_incomparable_timing_misses(
     crate::test_runner::lang_iface::union_force_selectors_into_misses(planned, misses, &extra);
 }
 
-fn timing_context_matches(request: &EnsureRequest, language: Language) -> bool {
-    let current = match language {
-        Language::Rust => session_timing_context_digest(request.jobs),
-        Language::Python => session_timing_context_digest(0),
-    };
-    timing_context_is_comparable(&stored_timing_digest(request, language), &current)
+fn rules(module: &dyn LanguageRuntime) -> &'static dyn KernelRules {
+    crate::test_runner::lang_registry::rules_for(module.language())
 }
 
-fn stored_timing_digest(request: &EnsureRequest, language: Language) -> String {
-    match language {
-        Language::Python => session_timing_context_digest(0),
-        Language::Rust => {
-            let cache = crate::test_runner::rust_coverage_index::rust_coverage_cache_root(
-                &request.repo_root,
-            );
-            crate::test_runner::execution_generation::load_current_generation(&cache)
-                .ok()
-                .map(|(generation, _)| generation.timing_context_digest)
-                .unwrap_or_else(|| session_timing_context_digest(request.jobs))
-        }
-    }
+fn timing_context_matches(request: &EnsureRequest, module: &dyn LanguageRuntime) -> bool {
+    let rules = rules(module);
+    timing_context_is_comparable(
+        &rules.stored_timing_digest(request),
+        &rules.current_timing_digest(request),
+    )
 }

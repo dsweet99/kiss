@@ -34,7 +34,8 @@ pub(crate) use graph_python::{
 };
 pub use orphan::{collect_orphan_entry_callables, collect_orphan_entry_paths, orphan_violations};
 pub use orphan_unit::{
-    OrphanCoverage, OrphanUnitFinding, OrphanUnitInput, orphan_unit_findings, orphan_unit_violations,
+    OrphanCoverage, OrphanUnitFinding, OrphanUnitInput, orphan_unit_findings,
+    orphan_unit_violations,
 };
 pub(crate) use unused::GraphIsolation;
 

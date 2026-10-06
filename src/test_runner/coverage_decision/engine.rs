@@ -25,7 +25,7 @@ impl CoverageDecisionEngine {
             let mark = std::time::Instant::now();
             let changed_tests = planner.changed_tests(&diff);
             let (selected_part, population_part, needs_population) =
-                plan_language(planner.as_ref(), &diff, changed_tests)?;
+                plan_selective_or_population(planner.as_ref(), changed_tests)?;
             if plan_trace {
                 eprintln!(
                     "KISS_PLAN_TRACE engine_{:?}_ms={}",
@@ -51,42 +51,18 @@ impl CoverageDecisionEngine {
     }
 }
 
-fn plan_language(
-    planner: &dyn LanguagePlanner,
-    _diff: &ChangedDiff,
-    changed_tests: Vec<TestSelector>,
-) -> Result<(BTreeSet<TestSelector>, BTreeSet<TestSelector>, bool), String> {
-    match planner.language() {
-        kiss::Language::Rust => plan_rust_language(planner, changed_tests),
-        kiss::Language::Python => plan_python_language(planner, changed_tests),
-    }
-}
-
-fn plan_python_language(
-    planner: &dyn LanguagePlanner,
-    changed_tests: Vec<TestSelector>,
-) -> Result<(BTreeSet<TestSelector>, BTreeSet<TestSelector>, bool), String> {
-    plan_selective_or_population(planner, changed_tests)
-}
-
-fn plan_rust_language(
-    planner: &dyn LanguagePlanner,
-    changed_tests: Vec<TestSelector>,
-) -> Result<(BTreeSet<TestSelector>, BTreeSet<TestSelector>, bool), String> {
-    plan_selective_or_population(planner, changed_tests)
-}
-
 fn plan_selective_or_population(
     planner: &dyn LanguagePlanner,
     changed_tests: Vec<TestSelector>,
 ) -> Result<(BTreeSet<TestSelector>, BTreeSet<TestSelector>, bool), String> {
     let plan_trace = std::env::var_os("KISS_PLAN_TRACE").is_some();
+    let label = planner.language().label();
     let mut mark = std::time::Instant::now();
     let universe = planner.discover_universe()?;
     let freshness = planner.freshness(&universe)?;
     if plan_trace {
         eprintln!(
-            "KISS_PLAN_TRACE rust_freshness_ms={} requires_pop={}",
+            "KISS_PLAN_TRACE {label}_freshness_ms={} requires_pop={}",
             mark.elapsed().as_millis(),
             freshness.requires_population()
         );
@@ -98,7 +74,7 @@ fn plan_selective_or_population(
     let decision = planner.select()?;
     if plan_trace {
         eprintln!(
-            "KISS_PLAN_TRACE rust_select_ms={} complete={} selected={}",
+            "KISS_PLAN_TRACE {label}_select_ms={} complete={} selected={}",
             mark.elapsed().as_millis(),
             decision.complete,
             decision.selectors.len()
@@ -122,7 +98,7 @@ fn plan_selective_or_population(
     selected.extend(prior_failures);
     if plan_trace {
         eprintln!(
-            "KISS_PLAN_TRACE rust_assemble_ms={} total_selected={}",
+            "KISS_PLAN_TRACE {label}_assemble_ms={} total_selected={}",
             mark.elapsed().as_millis(),
             selected.len()
         );
@@ -134,11 +110,7 @@ fn plan_population(
     planner: &dyn LanguagePlanner,
     changed_tests: Vec<TestSelector>,
 ) -> Result<(BTreeSet<TestSelector>, BTreeSet<TestSelector>, bool), String> {
-    let universe = if planner.language() == kiss::Language::Rust {
-        crate::test_runner::rust_list_build::overlap_with_discover(|| planner.discover_universe())?
-    } else {
-        planner.discover_universe()?
-    };
+    let universe = planner.discover_universe()?;
     let universe_ids = universe
         .iter()
         .map(|selector| selector.id.clone())

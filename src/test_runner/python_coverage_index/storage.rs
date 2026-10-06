@@ -1,136 +1,73 @@
 use std::fs;
-use std::io::{self, Write};
+use std::io;
 use std::path::{Path, PathBuf};
 
 #[cfg(test)]
 use std::fs::{File, OpenOptions};
 
-use serde::{Deserialize, Serialize};
-
 use crate::test_runner::python_cache_path::python_rslip_cache_root;
 
-use super::{INDEX_SCHEMA_VERSION, PythonCoverageIndex};
+use super::PythonCoverageIndex;
 
 pub(crate) fn python_coverage_cache_root(repo_root: &Path) -> Result<PathBuf, String> {
     python_rslip_cache_root(repo_root)
 }
 
-pub(crate) fn python_coverage_index_path(repo_root: &Path) -> Result<PathBuf, String> {
-    Ok(python_coverage_cache_root(repo_root)?.join("index.json"))
-}
-
 pub(crate) fn python_coverage_index_file_present(repo_root: &Path) -> bool {
-    if super::generation::pinned_python_generation_artifacts_present(repo_root) {
-        return true;
-    }
-    python_coverage_index_path(repo_root)
-        .ok()
-        .is_some_and(|path| path.is_file())
+    !python_coverage_entry_paths(repo_root).is_empty()
 }
 
 pub(crate) fn python_population_manifest_path(repo_root: &Path) -> Result<PathBuf, String> {
     Ok(python_coverage_cache_root(repo_root)?.join("population.json"))
 }
 
-pub(crate) fn write_python_coverage_index_with_entries_fingerprint(
-    repo_root: &Path,
-    index: &PythonCoverageIndex,
-    entries_fingerprint: &str,
-    test_args: &[String],
-) -> Result<(), String> {
-    #[derive(Serialize)]
-    struct OnDiskIndex<'a> {
-        schema_version: &'a str,
-        source_root: String,
-        entries_fingerprint: String,
-        execution_identity: Option<super::generation::PythonExecutionIdentity>,
-        files: &'a PythonCoverageIndex,
-    }
-
-    let path = python_coverage_index_path(repo_root)?;
-    let parent = path
-        .parent()
-        .ok_or_else(|| "error: kiss test: Python coverage index path has no parent".to_string())?;
-    let tmp_path = parent.join(format!(".index.{}.tmp", python_unique_suffix()));
-    let payload = OnDiskIndex {
-        schema_version: INDEX_SCHEMA_VERSION,
-        source_root: normalized_python_repo_root(repo_root),
-        entries_fingerprint: entries_fingerprint.to_string(),
-        execution_identity: super::generation::current_python_execution_identity(
-            repo_root, test_args,
-        )
-        .ok(),
-        files: index,
-    };
-    kiss::kiss_publication_barrier::publish_atomically("python_index", &path, &tmp_path, |file| {
-        serde_json::to_writer_pretty(&mut *file, &payload).map_err(io::Error::other)?;
-        file.write_all(b"\n")?;
-        Ok(())
-    })
-    .map_err(|e| e.to_string())
-}
-
-pub(crate) fn legacy_python_index_execution_context_matches(
-    repo_root: &Path,
-    test_args: &[String],
-) -> bool {
-    #[derive(Deserialize)]
-    struct OnDiskIndexContext {
-        schema_version: String,
-        source_root: String,
-        execution_identity: Option<super::generation::PythonExecutionIdentity>,
-    }
-    let Ok(path) = python_coverage_index_path(repo_root) else {
-        return false;
-    };
-    let Ok(bytes) = fs::read(path) else {
-        return false;
-    };
-    let Ok(index) = serde_json::from_slice::<OnDiskIndexContext>(&bytes) else {
-        return false;
-    };
-    index.schema_version == INDEX_SCHEMA_VERSION
-        && index.source_root == normalized_python_repo_root(repo_root)
-        && index.execution_identity.is_some_and(|identity| {
-            super::generation::execution_context_matches_current(repo_root, &identity, test_args)
-        })
-}
-
+/// The tests whose records cover each repo-relative file; `None` without records.
 pub(crate) fn load_current_python_coverage_index(repo_root: &Path) -> Option<PythonCoverageIndex> {
-    if let Ok(pinned) =
-        super::generation::try_load_pinned_python_generation_without_line_index(repo_root)
+    let paths = python_coverage_entry_paths(repo_root);
+    if paths.is_empty() {
+        return None;
+    }
+    let test_file_exists = |test_id: &str| {
+        let file = test_id.split_once("::").map_or(test_id, |(file, _)| file);
+        repo_root.join(file).is_file()
+    };
+    let mut index = PythonCoverageIndex::new();
+    for record in paths
+        .iter()
+        .filter_map(|path| kiss::test_records::read_record(path))
+        .filter(|record| test_file_exists(&record.test_id))
     {
-        return Some(super::generation::generation_file_index(&pinned));
+        for (file, lines) in &record.covered {
+            if lines.is_empty() {
+                continue;
+            }
+            if let Some(rel) = python_repo_relative_coverage_file(repo_root, file)
+                && !kiss::is_python_test_module_path(Path::new(&rel))
+            {
+                index.entry(rel).or_default().insert(record.test_id.clone());
+            }
+        }
     }
-    #[derive(Deserialize)]
-    struct OnDiskIndex {
-        schema_version: String,
-        source_root: String,
-        entries_fingerprint: String,
-        files: PythonCoverageIndex,
-    }
-
-    let bytes = fs::read(python_coverage_index_path(repo_root).ok()?).ok()?;
-    let index: OnDiskIndex = serde_json::from_slice(&bytes).ok()?;
-    if index.schema_version != INDEX_SCHEMA_VERSION {
-        return None;
-    }
-    if index.source_root != normalized_python_repo_root(repo_root) {
-        return None;
-    }
-    let current_fingerprint =
-        python_entries_fingerprint(&python_coverage_cache_root(repo_root).ok()?).ok()?;
-    (index.entries_fingerprint == current_fingerprint).then_some(index.files)
+    Some(index)
 }
 
-pub(crate) fn python_coverage_entry_paths(cache_root: &Path) -> Vec<PathBuf> {
-    kiss::json_entry_paths(cache_root)
+pub(crate) fn python_coverage_entry_paths(repo_root: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(kiss::rslip::python_records_dir(repo_root)) else {
+        return Vec::new();
+    };
+    let mut paths: Vec<_> = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
+        .collect();
+    paths.sort();
+    paths
 }
 
-pub(crate) fn python_entries_fingerprint(cache_root: &Path) -> io::Result<String> {
+pub(crate) fn python_entries_fingerprint(repo_root: &Path) -> io::Result<String> {
     let mut h = 0xcbf2_9ce4_8422_2325;
-    h = python_fnv1a64(h, kiss::rslip::CACHE_SCHEMA_VERSION.as_bytes());
-    for path in python_coverage_entry_paths(cache_root) {
+    h = python_fnv1a64(h, kiss::test_records::RECORD_SCHEMA.as_bytes());
+    for path in python_coverage_entry_paths(repo_root) {
         let meta = fs::metadata(&path)?;
         let name = path
             .file_name()
@@ -184,10 +121,7 @@ fn visit_python_source_inputs(dir: &Path, out: &mut Vec<PathBuf>) -> io::Result<
                 continue;
             }
             visit_python_source_inputs(&path, out)?;
-        } else if file_type.is_file()
-            && is_python_source_input_path(&path)
-            && !is_python_test_module_path(&path)
-        {
+        } else if file_type.is_file() && is_python_source_input_path(&path) {
             out.push(path);
         }
     }
@@ -205,11 +139,6 @@ pub(crate) fn is_kiss_rslip_cache_dir(path: &Path) -> bool {
 
 pub(crate) fn is_python_source_input_path(path: &Path) -> bool {
     kiss::rslip::is_rslip_cache_input(path)
-}
-
-pub(crate) fn is_python_test_module_path(path: &Path) -> bool {
-    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-    name.ends_with(".py") && (name.starts_with("test_") || name.ends_with("_test.py"))
 }
 
 pub(crate) fn python_selector_definition_digest(repo_root: &Path, selector: &str) -> String {
@@ -260,6 +189,29 @@ pub(crate) fn normalized_python_repo_root(repo_root: &Path) -> String {
         .unwrap_or_else(|_| repo_root.to_path_buf())
         .to_string_lossy()
         .to_string()
+}
+
+#[cfg(test)]
+pub(crate) fn write_python_record_fixture(
+    repo_root: &Path,
+    selector: &str,
+    status: kiss::rpytest_runner::TestStatus,
+    coverage: kiss::rslip::LineCoverage,
+) -> PathBuf {
+    let dir = kiss::rslip::python_records_dir(repo_root);
+    let record = kiss::test_records::TestRecord {
+        schema: kiss::test_records::RECORD_SCHEMA.to_string(),
+        language: "python".to_string(),
+        test_id: selector.to_string(),
+        identity: "fixture".to_string(),
+        deps: std::collections::BTreeMap::new(),
+        status,
+        exit_code: Some(0),
+        duration: std::time::Duration::from_millis(1),
+        covered: coverage.files,
+    };
+    kiss::test_records::store_record(&dir, &record).unwrap();
+    kiss::test_records::record_path(&dir, selector)
 }
 
 #[cfg(test)]

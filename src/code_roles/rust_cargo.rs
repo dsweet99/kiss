@@ -133,8 +133,11 @@ fn manifest_has_workspace_table(path: &Path) -> bool {
     })
 }
 
-fn metadata_memo() -> &'static Mutex<HashMap<PathBuf, Vec<CargoRoot>>> {
-    static CACHE: OnceLock<Mutex<HashMap<PathBuf, Vec<CargoRoot>>>> = OnceLock::new();
+type RootsStamp = (Option<u64>, u64);
+type RootsMemo = HashMap<PathBuf, (RootsStamp, Vec<CargoRoot>)>;
+
+fn metadata_memo() -> &'static Mutex<RootsMemo> {
+    static CACHE: OnceLock<Mutex<RootsMemo>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -167,41 +170,87 @@ fn manifest_cache_key(workspace_manifest: &Path) -> Option<u64> {
 
 fn load_workspace_roots(workspace_manifest: &Path) -> Result<Vec<CargoRoot>, RoleBuildError> {
     let key = crate::rust_include::canonical_path(workspace_manifest);
-    if let Some(hit) = metadata_memo()
+    let manifest_key = manifest_cache_key(workspace_manifest);
+    let memo_hit = metadata_memo()
         .lock()
         .expect("cargo metadata cache")
         .get(&key)
-        .cloned()
+        .cloned();
+    if let Some((stamp, roots)) = memo_hit
+        && stamp == (manifest_key, target_inventory_stamp(&roots))
     {
-        return Ok(hit);
+        return Ok(roots);
     }
     let parent = workspace_manifest.parent().unwrap_or(workspace_manifest);
-    let disk_cache_path = manifest_cache_key(workspace_manifest).map(|hash| {
-        let kiss_dir = parent.join(".kiss");
+    let disk_cache_path = manifest_key.map(|hash| {
+        let kiss_dir = crate::test_state_dir(parent);
         let _ = std::fs::create_dir_all(&kiss_dir);
-        kiss_dir.join(format!("cargo_roots_v2_{hash:016x}.bin"))
+        kiss_dir.join(format!("cargo_roots_v3_{hash:016x}.bin"))
     });
     if let Some(ref path) = disk_cache_path
         && let Ok(bytes) = std::fs::read(path)
-        && let Ok(roots) = bincode::deserialize::<Vec<CargoRoot>>(&bytes)
+        && let Ok((inventory, roots)) = bincode::deserialize::<(u64, Vec<CargoRoot>)>(&bytes)
+        && inventory == target_inventory_stamp(&roots)
     {
-        metadata_memo()
-            .lock()
-            .expect("cargo metadata cache")
-            .insert(key, roots.clone());
+        remember_roots(key, (manifest_key, inventory), &roots);
         return Ok(roots);
     }
     let roots = load_workspace_roots_uncached(workspace_manifest)?;
+    let inventory = target_inventory_stamp(&roots);
     if let Some(ref path) = disk_cache_path
-        && let Ok(bytes) = bincode::serialize(&roots)
+        && let Ok(bytes) = bincode::serialize(&(inventory, &roots))
     {
         let _ = std::fs::write(path, bytes);
     }
+    remember_roots(key, (manifest_key, inventory), &roots);
+    Ok(roots)
+}
+
+fn remember_roots(key: PathBuf, stamp: RootsStamp, roots: &[CargoRoot]) {
     metadata_memo()
         .lock()
         .expect("cargo metadata cache")
-        .insert(key, roots.clone());
-    Ok(roots)
+        .insert(key, (stamp, roots.to_vec()));
+}
+
+fn target_inventory_stamp(roots: &[CargoRoot]) -> u64 {
+    let package_dirs: std::collections::BTreeSet<&Path> = roots
+        .iter()
+        .filter_map(|root| root.manifest_path.parent())
+        .collect();
+    let mut h = 0xcbf2_9ce4_8422_2325_u64;
+    let mut feed = |bytes: &[u8]| {
+        for byte in bytes.iter().chain(b"\0") {
+            h = (h ^ u64::from(*byte)).wrapping_mul(0x0100_0000_01b3);
+        }
+    };
+    for dir in package_dirs {
+        feed(dir.to_string_lossy().as_bytes());
+        for file in ["src/lib.rs", "src/main.rs", "build.rs"] {
+            if dir.join(file).is_file() {
+                feed(file.as_bytes());
+            }
+        }
+        for sub in ["src/bin", "tests", "examples", "benches"] {
+            let Ok(entries) = std::fs::read_dir(dir.join(sub)) else {
+                continue;
+            };
+            let mut names: Vec<String> = entries
+                .filter_map(Result::ok)
+                .filter(|entry| {
+                    let path = entry.path();
+                    path.extension().is_some_and(|ext| ext == "rs")
+                        || path.join("main.rs").is_file()
+                })
+                .map(|entry| format!("{sub}/{}", entry.file_name().to_string_lossy()))
+                .collect();
+            names.sort();
+            for name in names {
+                feed(name.as_bytes());
+            }
+        }
+    }
+    h
 }
 
 fn load_workspace_roots_uncached(
@@ -318,6 +367,28 @@ mod cargo_test {
         let (ctx, allow) = target_contexts(&[]);
         assert!(ctx.production);
         assert!(allow);
+    }
+
+    #[test]
+    fn target_inventory_stamp_moves_with_auto_discovered_targets_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        let tests = tmp.path().join("tests");
+        std::fs::create_dir_all(tests.join("common")).unwrap();
+        std::fs::write(tests.join("it.rs"), "").unwrap();
+        let roots = [CargoRoot {
+            src_path: tests.join("it.rs"),
+            allow_production: false,
+            workspace: tmp.path().to_path_buf(),
+            package: "p".into(),
+            name: "it".into(),
+            kinds: vec!["test".into()],
+            manifest_path: tmp.path().join("Cargo.toml"),
+        }];
+        let base = target_inventory_stamp(&roots);
+        std::fs::write(tests.join("common").join("mod.rs"), "").unwrap();
+        assert_eq!(base, target_inventory_stamp(&roots));
+        std::fs::write(tests.join("new.rs"), "").unwrap();
+        assert_ne!(base, target_inventory_stamp(&roots));
     }
 
     #[test]

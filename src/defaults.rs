@@ -66,7 +66,6 @@ pub mod gate {
     pub const NUM_JOBS_LLVM_COV: usize = 4;
     pub const MIN_MEMAVAILABLE_KIB: u64 = 262_144;
     pub const MIN_MEMAVAILABLE_PERCENT: u64 = 10;
-    pub const WATCH_SETTLE_SECONDS: f64 = 1.0;
 }
 
 pub fn default_config_toml() -> String {
@@ -88,7 +87,6 @@ max_num_tests = {max_num_tests}
 num_jobs = {num_jobs}
 num_jobs_pytest = {num_jobs_pytest}
 num_jobs_llvm_cov = {num_jobs_llvm_cov}
-watch_settle_seconds = {watch_settle:.1}
 pytest_plugins = []
 ignore = []
 
@@ -148,7 +146,6 @@ dependency_depth = {rs_dep_depth}
         num_jobs = gate::NUM_JOBS,
         num_jobs_pytest = gate::NUM_JOBS_PYTEST,
         num_jobs_llvm_cov = gate::NUM_JOBS_LLVM_COV,
-        watch_settle = gate::WATCH_SETTLE_SECONDS,
         min_sim = duplication::MIN_SIMILARITY,
         py_statements = python::STATEMENTS_PER_FUNCTION,
         py_pos_args = python::POSITIONAL_ARGS,
@@ -248,7 +245,7 @@ mod tests {
         );
         assert!(
             toml.contains(
-                "num_jobs = 4\nnum_jobs_pytest = 16\nnum_jobs_llvm_cov = 4\nwatch_settle_seconds = 1.0\npytest_plugins = []\nignore = []\n"
+                "num_jobs = 4\nnum_jobs_pytest = 16\nnum_jobs_llvm_cov = 4\npytest_plugins = []\nignore = []\n"
             ),
             "init default must emit [test] runtime defaults:\n{toml}"
         );

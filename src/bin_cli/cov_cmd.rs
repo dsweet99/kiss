@@ -221,7 +221,6 @@ pub fn run_cov_command(args: &CovCommandArgs<'_>) -> i32 {
 }
 
 pub(crate) fn run_cov_command_impl(args: &CovCommandArgs<'_>, print_empty: bool) -> i32 {
-    crate::test_runner::python_coverage_index::clear_python_generation_warm_memo();
     crate::test_runner::unit_test_timing::clear_rust_duration_pairs_memo();
     let _ = (args.py_config, args.rs_config);
     let ignore = merge_check_ignore_prefixes(args.ignore);
@@ -351,11 +350,6 @@ fn evaluate_gathered_cov(p: EvaluateGatheredCov<'_>) -> i32 {
         Ok(validated) => validated,
         Err(code) => return code,
     };
-    if p.args.timing
-        && let Some(id) = validated.python_generation_id.as_ref()
-    {
-        eprintln!("TIMING:python_generation_id:{id}");
-    }
     let records = match compute_and_store_records(
         &cache_key,
         &repo_root,
@@ -412,11 +406,6 @@ fn evaluate_cached_records_for_orphan(
         Ok(validated) => validated,
         Err(code) => return Some(code),
     };
-    if eval_ctx.args.timing
-        && let Some(id) = validated.python_generation_id.as_ref()
-    {
-        eprintln!("TIMING:python_generation_id:{id}");
-    }
     if eval_ctx.args.timing {
         eprintln!(
             "TIMING:coverage_snapshot_load_or_refresh_ms:{}",

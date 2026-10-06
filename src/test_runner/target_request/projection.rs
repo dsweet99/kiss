@@ -4,7 +4,6 @@ use kiss::Language;
 use serde::Serialize;
 
 use super::history::reverse_records;
-use super::plan_store;
 use super::resolved::{OperandClass, ResolvedTarget, ReverseRecord, SourceRegion};
 use super::slice::{TargetSliceStamp, stamp_from_projection};
 use super::stamp::GitDepStamp;
@@ -35,20 +34,6 @@ pub(crate) enum SliceProjection {
     },
 }
 
-pub(crate) fn remember_target_plan(
-    repo_root: &Path,
-    request: &TargetRequest,
-    resolved: &ResolvedTarget,
-) {
-    let (projection, complete) = build_slice_projection(repo_root, request, resolved);
-    let stamp = stamp_from_projection(&projection, complete);
-    if plan_store::publish(repo_root, request, &stamp).is_ok() {
-        let _ = plan_store::load_current(repo_root);
-        let _ = plan_store::load_plan_for_identity(repo_root, request, &stamp);
-    }
-    let _ = super::slice::target_slice_stamp(resolved, complete);
-}
-
 pub(crate) fn build_slice_projection(
     repo_root: &Path,
     request: &TargetRequest,
@@ -64,15 +49,16 @@ pub(crate) fn build_slice_projection(
 }
 
 fn workspace_projection(repo_root: &Path, request: &TargetRequest) -> SliceProjection {
-    let lang = request.lang.map(|filter| filter.to_language());
+    let lang = request.lang;
     let ignore = request.ignore.as_slice();
     let mut selectors = Vec::new();
-    let want_python = !matches!(lang, Some(Language::Rust));
-    let want_rust = !matches!(lang, Some(Language::Python));
-    if want_python {
-        selectors.extend(python_workspace_selectors(repo_root, ignore));
+    let want = crate::test_runner::language_keyed::LanguageKeyed::from_fn(|language| {
+        language.allowed_by(lang)
+    });
+    if want.python {
+        selectors.extend(python_workspace_selectors(repo_root, request));
     }
-    if want_rust {
+    if want.rust {
         selectors.extend(rust_workspace_selectors(repo_root, ignore));
     }
     selectors.sort();
@@ -83,7 +69,8 @@ fn workspace_projection(repo_root: &Path, request: &TargetRequest) -> SliceProje
     }
 }
 
-fn python_workspace_selectors(repo_root: &Path, ignore: &[String]) -> Vec<String> {
+fn python_workspace_selectors(repo_root: &Path, request: &TargetRequest) -> Vec<String> {
+    let ignore = request.ignore.as_slice();
     if let Some(cached) =
         crate::test_runner::workspace_selector_cache::load_cached_python_workspace_selectors(
             repo_root,
@@ -93,9 +80,12 @@ fn python_workspace_selectors(repo_root: &Path, ignore: &[String]) -> Vec<String
     {
         return cached;
     }
-    let Ok(found) = crate::test_runner::runners::enumerate_workspace_python_selectors(
-        repo_root, ignore, &[],
-    ) else {
+    if !super::manifest::has_python_test_files(repo_root, request) {
+        return Vec::new();
+    }
+    let Ok(found) =
+        crate::test_runner::runners::enumerate_workspace_python_selectors(repo_root, ignore, &[])
+    else {
         return Vec::new();
     };
     let _ = crate::test_runner::workspace_selector_cache::store_python_workspace_selectors(
@@ -197,14 +187,12 @@ fn reverse_for_regions(repo_root: &Path, regions: &[SourceRegion]) -> Vec<Revers
 
 fn current_sources(repo_root: &Path, ignore: &[String], lang: Option<Language>) -> Vec<String> {
     let root = repo_root.to_string_lossy().into_owned();
-    let (python, rust) = kiss::gather_files_by_lang(std::slice::from_ref(&root), None, ignore);
-    let files = match lang {
-        Some(Language::Python) => python,
-        Some(Language::Rust) => rust,
-        None => python.into_iter().chain(rust).collect(),
-    };
-    let mut sources: Vec<String> = files
+    let (python, rust) = kiss::gather_files_by_lang(std::slice::from_ref(&root), lang, ignore);
+    let mut by_language = crate::test_runner::language_keyed::LanguageKeyed { python, rust };
+    let mut sources: Vec<String> = Language::ALL
         .into_iter()
+        .filter(|language| language.allowed_by(lang))
+        .flat_map(|language| std::mem::take(by_language.get_mut(language)))
         .map(|path| rel_source(repo_root, &path))
         .collect();
     sources.sort();
@@ -336,7 +324,7 @@ fn git_projection_complete(repo_root: &Path, resolved: &ResolvedTarget) -> bool 
 }
 
 fn workspace_complete(repo_root: &Path, request: &TargetRequest) -> bool {
-    let lang = request.lang.map(|filter| filter.to_language());
+    let lang = request.lang;
     let Some((python, rust, _)) =
         crate::test_runner::workspace_selector_cache::load_cached_workspace_selectors_for_lang(
             repo_root,
@@ -376,6 +364,29 @@ pub(crate) fn slice_for(
 #[cfg(test)]
 mod coverage_region_tests {
     use super::*;
+
+    #[test]
+    fn rust_only_repo_lists_no_python_selectors_without_collecting() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+        std::fs::write(
+            tmp.path().join("Cargo.toml"),
+            "[package]\nname = \"t\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        std::fs::write(tmp.path().join("src/lib.rs"), "pub fn f() {}\n").unwrap();
+        let request = TargetRequest {
+            focus: TargetFocus::Workspace,
+            lang: None,
+            ignore: Vec::new(),
+        };
+        crate::test_runner::lang_python::collect::reset_full_suite_subprocess_collects_for_tests();
+        assert!(python_workspace_selectors(tmp.path(), &request).is_empty());
+        assert_eq!(
+            crate::test_runner::lang_python::collect::full_suite_subprocess_collects_for_tests(),
+            0
+        );
+    }
 
     #[test]
     fn workspace_projection_covers_workspace_all() {

@@ -219,7 +219,10 @@ mod official_text_tests {
             provenance: "witness".into(),
         });
         let text = official_report_text(&cached);
-        assert!(!text.lines().any(|line| line.starts_with("PASS ")), "{text}");
+        assert!(
+            !text.lines().any(|line| line.starts_with("PASS ")),
+            "{text}"
+        );
         assert!(text.contains("FAIL tests/a.py::test_bad"), "{text}");
         assert!(text.contains("TIMEOUT src/lib.rs::test_slow"), "{text}");
         assert!(text.contains("1 passed · 1 failed · 1 timed out"), "{text}");

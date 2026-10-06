@@ -1,14 +1,16 @@
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use kiss::GateConfig;
 use kiss::Language;
+use kiss::test_records::TestRecord;
 
-use super::source_delta::SourceDeltaMisses;
-use super::witness::{AcceptMode, ExecutionWitness, WitnessStatus};
-use super::witness_summary::summary_from_witness_statuses;
+use super::witness::AcceptMode;
+#[cfg(test)]
+use super::witness::ExecutionWitness;
+use crate::test_runner::coverage_decision::SupportedLanguage;
 use crate::test_runner::language_keyed::LanguageKeyed;
-use crate::test_runner::runners::SelectorExecutionSummary;
+use crate::test_runner::runners::{SelectorExecutionRecord, SelectorExecutionSummary};
 
 #[derive(Clone, Debug)]
 pub(crate) struct EnsureRequest {
@@ -47,21 +49,6 @@ impl EnsureRequest {
 pub(crate) struct OutcomeBatch {
     pub(crate) summary: SelectorExecutionSummary,
     pub(crate) selectors: Vec<String>,
-    pub(crate) statuses: Vec<WitnessStatus>,
-    pub(crate) durations_ns: Vec<Option<u64>>,
-    pub(crate) covered_lines: BTreeMap<String, Vec<u32>>,
-    pub(crate) publication_universe: Option<Vec<String>>,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct PublishBatch {
-    pub(crate) selectors: Vec<String>,
-    pub(crate) statuses: Vec<WitnessStatus>,
-    pub(crate) durations_ns: Vec<Option<u64>>,
-    pub(crate) covered_lines: BTreeMap<String, Vec<u32>>,
-    pub(crate) publication_universe: Option<Vec<String>>,
-    #[allow(dead_code)]
-    pub(crate) summary: SelectorExecutionSummary,
 }
 
 #[derive(Clone, Debug)]
@@ -88,94 +75,33 @@ impl EnsureRuntimeResult {
     }
 }
 
-#[derive(Clone, Debug, Default)]
-#[allow(dead_code)]
-pub(crate) struct CoverageSnapshot {
-    pub(crate) covered_lines: BTreeMap<String, Vec<u32>>,
+#[derive(Clone, Debug)]
+pub(crate) struct Listing {
+    pub(crate) ids: Vec<String>,
+    pub(crate) identity: String,
+    pub(crate) record_identity: String,
 }
 
-#[derive(Clone, Debug, Default)]
-#[allow(dead_code)]
-pub(crate) struct StatusTimingSnapshot {
-    pub(crate) selectors: Vec<String>,
-    pub(crate) statuses: Vec<WitnessStatus>,
-    pub(crate) durations_ns: Vec<Option<u64>>,
-}
+pub(crate) trait LanguageRuntime: SupportedLanguage {
+    /// The test ids to consider, the toolchain identity they run under, and the
+    /// identity their records are stored under.
+    fn list(&self, request: &EnsureRequest) -> Result<Listing, String>;
 
-#[allow(dead_code)]
-pub(crate) trait LanguageRuntime: SourceDeltaMisses {
-    fn language(&self) -> Language;
+    /// The current digests of the dependencies `row` recorded; `None` when the test no
+    /// longer exists or a dependency can no longer be read.
+    fn deps(&self, request: &EnsureRequest, row: &TestRecord) -> Option<BTreeMap<String, String>>;
 
-    fn discover_universe(&self, request: &EnsureRequest) -> Result<Vec<String>, String> {
-        Ok(request.planned_for(self.language()).to_vec())
-    }
-
-    fn current_identity(&self, request: &EnsureRequest) -> Result<String, String>;
-
-    fn load_full_witness(&self, repo_root: &Path) -> Result<ExecutionWitness, String>;
-
-    fn run_selectors(
+    /// Runs `ids`, persisting each test's record and passing it to `on_result`
+    /// once that test finishes. The returned batch carries only batch-level counters.
+    fn run(
         &self,
         request: &EnsureRequest,
-        miss_set: &[String],
+        ids: &[String],
+        on_result: &mut dyn FnMut(SelectorExecutionRecord),
     ) -> Result<OutcomeBatch, String>;
 
-    fn publish_outcomes(&self, request: &EnsureRequest, batch: &PublishBatch)
-    -> Result<(), String>;
-
-    fn coverage_snapshot(&self, repo_root: &Path) -> Result<CoverageSnapshot, String> {
-        let witness = self.load_full_witness(repo_root)?;
-        Ok(CoverageSnapshot {
-            covered_lines: witness.covered_lines,
-        })
-    }
-
-    fn status_timing_snapshot(&self, repo_root: &Path) -> Result<StatusTimingSnapshot, String> {
-        let witness = self.load_full_witness(repo_root)?;
-        Ok(StatusTimingSnapshot {
-            selectors: witness.selectors,
-            statuses: witness.statuses,
-            durations_ns: witness.durations_ns,
-        })
-    }
-
-    fn is_indexable_source(&self, path: &Path, repo_root: &Path) -> bool;
-
-    fn dry_run_lines(
-        &self,
-        selectors: &[String],
-        population: bool,
-        extra: &[String],
-        jobs: usize,
-    ) -> Result<Vec<String>, String>;
-
-    fn accepted_summary(
-        &self,
-        request: &EnsureRequest,
-        planned: &[String],
-        witness: &ExecutionWitness,
-    ) -> Result<SelectorExecutionSummary, String>;
-
-    fn cached_witness_summary(
-        &self,
-        request: &EnsureRequest,
-        planned: &[String],
-        witness: &ExecutionWitness,
-    ) -> SelectorExecutionSummary {
-        let _ = request;
-        summary_from_witness_statuses(planned, witness, |selector| selector.to_string(), false)
-    }
-
-    fn selectors_for_time_gate(
-        &self,
-        _request: &EnsureRequest,
-        selectors: &[String],
-    ) -> Result<Vec<String>, String> {
-        Ok(selectors.to_vec())
-    }
-
-    fn bind_subprocess_observer(&self, request: &EnsureRequest) {
-        let _ = request;
-        kiss::rust_llvm_cov_runner::reset_subprocess_observer();
+    #[cfg(test)]
+    fn seeded_rows(&self, _request: &EnsureRequest) -> Option<ExecutionWitness> {
+        None
     }
 }

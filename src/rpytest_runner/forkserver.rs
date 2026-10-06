@@ -159,8 +159,12 @@ fn send_worker_batch(
 ) {
     let indexes: Vec<usize> = batch.iter().map(|(index, _)| *index).collect();
     let reqs: Vec<PytestRunRequest> = batch.into_iter().map(|(_, req)| req).collect();
+    let mut sent = vec![false; indexes.len()];
     let outcomes = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        run_module_with_reused_controller(controller, reqs)
+        run_module_with_reused_controller(controller, reqs, &mut |position, result| {
+            sent[position] = true;
+            let _ = tx.send((indexes[position], result));
+        })
     }))
     .unwrap_or_else(|_| {
         indexes
@@ -168,14 +172,17 @@ fn send_worker_batch(
             .map(|_| Err(PytestRunError::WorkerPanic))
             .collect()
     });
-    for (index, result) in indexes.into_iter().zip(outcomes) {
-        let _ = tx.send((index, result));
+    for ((index, result), already_sent) in indexes.into_iter().zip(outcomes).zip(sent) {
+        if !already_sent {
+            let _ = tx.send((index, result));
+        }
     }
 }
 
 fn run_module_with_reused_controller(
     controller: &mut Option<ForkserverController>,
     reqs: Vec<PytestRunRequest>,
+    on_result: &mut dyn FnMut(usize, Result<PytestRunOutcome, PytestRunError>),
 ) -> Vec<Result<PytestRunOutcome, PytestRunError>> {
     if reqs.len() == 1 {
         let req = reqs.into_iter().next().expect("one request");
@@ -193,16 +200,27 @@ fn run_module_with_reused_controller(
             }
         }
     }
+    let mut streamed = vec![false; reqs.len()];
     let result = controller
         .as_mut()
         .expect("controller initialized")
-        .run_module_once(&reqs);
+        .run_module_once(&reqs, &mut |position, outcome| {
+            streamed[position] = true;
+            on_result(position, outcome);
+        });
     match result {
         Ok(outcomes) => outcomes,
-        Err(_) => {
+        Err(err) => {
             *controller = None;
             reqs.into_iter()
-                .map(|req| run_with_reused_controller(controller, req))
+                .zip(streamed)
+                .map(|(req, already_streamed)| {
+                    if already_streamed {
+                        Err(err.cloned())
+                    } else {
+                        run_with_reused_controller(controller, req)
+                    }
+                })
                 .collect()
         }
     }
@@ -249,6 +267,15 @@ fn assign_module_groups(
     if groups.len() < worker_count {
         return round_robin_requests(groups.into_iter().flatten().collect(), worker_count);
     }
+    let fair_share = groups
+        .iter()
+        .map(Vec::len)
+        .sum::<usize>()
+        .div_ceil(worker_count);
+    let mut groups: Vec<Vec<_>> = groups
+        .into_iter()
+        .flat_map(|group| split_oversized_group(group, fair_share))
+        .collect();
     groups.sort_by_key(|group| std::cmp::Reverse(group.len()));
     let mut workers: Vec<(usize, Vec<(usize, PytestRunRequest)>)> =
         (0..worker_count).map(|_| (0, Vec::new())).collect();
@@ -264,6 +291,21 @@ fn assign_module_groups(
         workers[index].1.extend(group);
     }
     workers.into_iter().map(|(_, reqs)| reqs).collect()
+}
+
+fn split_oversized_group(
+    group: Vec<(usize, PytestRunRequest)>,
+    fair_share: usize,
+) -> Vec<Vec<(usize, PytestRunRequest)>> {
+    if group.len() <= fair_share {
+        return vec![group];
+    }
+    let mut chunks = Vec::new();
+    let mut rest = group.into_iter().peekable();
+    while rest.peek().is_some() {
+        chunks.push(rest.by_ref().take(fair_share).collect());
+    }
+    chunks
 }
 
 fn round_robin_requests(
@@ -329,6 +371,17 @@ mod partition_tests {
     }
 
     #[test]
+    fn oversized_file_is_split_to_balance_workers() {
+        let mut reqs: Vec<_> = (0..6).map(|i| (i, req(&format!("big.py::t{i}")))).collect();
+        reqs.push((6, req("small.py::t1")));
+        reqs.push((7, req("tiny.py::t1")));
+        let parts = partition_requests_by_module(reqs, 4);
+        let mut sizes: Vec<_> = parts.iter().map(Vec::len).collect();
+        sizes.sort_unstable();
+        assert_eq!(sizes, vec![2, 2, 2, 2]);
+    }
+
+    #[test]
     fn few_files_still_use_requested_jobs() {
         let reqs = vec![
             (0, req("a.py::t1")),
@@ -358,7 +411,7 @@ mod partition_tests {
             controller_pipe_is_dead(&PytestRunError::Protocol(
                 "Broken pipe (os error 32)".into()
             )),
-            "watcher-kill broken pipe must restart the controller"
+            "a killed controller's broken pipe must restart it"
         );
     }
 
@@ -370,7 +423,7 @@ mod partition_tests {
             .nth(1)
             .expect("run_module_with_reused_controller");
         assert!(
-            fallback.contains("run_module_once(&reqs)"),
+            fallback.contains("run_module_once(&reqs,"),
             "batch path must use run_module_once so a protocol miss can fall back"
         );
         assert!(

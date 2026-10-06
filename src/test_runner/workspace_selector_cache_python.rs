@@ -4,7 +4,7 @@ use std::path::Path;
 use crate::analyze_cache::fnv1a64;
 
 use super::digest::hash_file_contents;
-use super::watch_support_gitignore;
+use super::support_gitignore;
 
 pub(super) const CONFIG_FILES: &[&str] = &[
     "pytest.ini",
@@ -30,7 +30,7 @@ pub(super) fn mix_collection_inventory(
 }
 
 fn hash_config_files(mut h: u64, repo_root: &Path, ignore: &[String]) -> io::Result<u64> {
-    let gitignore = watch_support_gitignore(repo_root);
+    let gitignore = support_gitignore(repo_root);
     for name in CONFIG_FILES {
         if kiss::path_ignored_by_prefixes(name, ignore) {
             h = fnv1a64(h, name.as_bytes());

@@ -14,6 +14,31 @@ pub fn workspace_input_digest(root: &Path) -> io::Result<String> {
     digest_input_files(root, &rust_cov_input_files(root)?)
 }
 
+pub(crate) fn rust_record_input_digest(root: &Path) -> io::Result<String> {
+    let files = rust_cov_input_files(root)?;
+    let rels: Vec<String> = files
+        .iter()
+        .filter_map(|file| {
+            crate::rust_llvm_cov_runner::rust_cov_cache::repo_relative_path(root, file)
+        })
+        .collect();
+    let surface = crate::rust_llvm_cov_runner::record_digest::compile_surface_digest(root, &rels);
+    Ok(format!("{}:{surface}", build_input_digest(root, files)?))
+}
+
+fn build_input_digest(root: &Path, files: Vec<PathBuf>) -> io::Result<String> {
+    let files: Vec<PathBuf> = files
+        .into_iter()
+        .filter(|file| {
+            let ordinary_source = file.extension().is_some_and(|ext| {
+                ext.eq_ignore_ascii_case("rs") || ext.eq_ignore_ascii_case("inc")
+            });
+            !ordinary_source || file.file_name().is_some_and(|name| name == "build.rs")
+        })
+        .collect();
+    digest_input_files(root, &files)
+}
+
 fn selection_context_input_files(
     root: &Path,
     req: &RustCoverageBatchRequest,
@@ -100,12 +125,14 @@ pub(crate) fn should_skip_rust_cov_dir(path: &Path) -> bool {
 }
 
 pub(crate) fn is_kiss_rust_cov_cache_dir(path: &Path) -> bool {
-    path.file_name().and_then(|name| name.to_str()) == Some("rust_llvm_cov_cache")
-        && path
-            .parent()
-            .and_then(|parent| parent.file_name())
-            .and_then(|name| name.to_str())
-            == Some(".kiss")
+    let test_dir = path.parent();
+    file_name_str(Some(path)) == Some("rust_llvm_cov_cache")
+        && file_name_str(test_dir) == Some("test")
+        && file_name_str(test_dir.and_then(Path::parent)) == Some(".kiss")
+}
+
+fn file_name_str(path: Option<&Path>) -> Option<&str> {
+    path?.file_name()?.to_str()
 }
 
 pub fn is_rust_cov_cache_input(path: &Path) -> bool {
@@ -249,7 +276,13 @@ mod tests {
     fn input_files_skip_target_and_cache_dirs() {
         let tmp = tempfile::tempdir().unwrap();
         fs::create_dir_all(tmp.path().join("target")).unwrap();
-        fs::create_dir_all(tmp.path().join(".kiss").join("rust_llvm_cov_cache")).unwrap();
+        fs::create_dir_all(
+            tmp.path()
+                .join(".kiss")
+                .join("test")
+                .join("rust_llvm_cov_cache"),
+        )
+        .unwrap();
         fs::write(tmp.path().join("Cargo.toml"), "[package]\n").unwrap();
         fs::write(tmp.path().join("target").join("ignored.rs"), "x\n").unwrap();
 
@@ -312,7 +345,11 @@ mod tests {
     #[test]
     fn skip_helpers_recognize_kiss_cache_and_git_dirs() {
         let tmp = tempfile::tempdir().unwrap();
-        let kiss_cache = tmp.path().join(".kiss").join("rust_llvm_cov_cache");
+        let kiss_cache = tmp
+            .path()
+            .join(".kiss")
+            .join("test")
+            .join("rust_llvm_cov_cache");
         assert!(is_kiss_rust_cov_cache_dir(&kiss_cache));
         assert!(should_skip_rust_cov_dir(&tmp.path().join(".git")));
         assert!(should_skip_rust_cov_dir(&tmp.path().join("target")));
@@ -391,6 +428,91 @@ mod tests {
         assert!(!rejects_lib);
         assert!(!rejects_credentials);
         assert!(!rejects_root_config);
+    }
+
+    #[test]
+    fn build_input_digest_moves_with_manifests_and_build_scripts_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(tmp.path().join("src")).unwrap();
+        fs::write(tmp.path().join("Cargo.toml"), "[package]\nname='a'\n").unwrap();
+        fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() { 1; }\n").unwrap();
+        let base = super::rust_record_input_digest(tmp.path()).unwrap();
+        fs::write(tmp.path().join("src").join("lib.rs"), "pub fn x() { 2; }\n").unwrap();
+        assert_eq!(base, super::rust_record_input_digest(tmp.path()).unwrap());
+        fs::write(tmp.path().join("build.rs"), "fn main() {}\n").unwrap();
+        let with_build = super::rust_record_input_digest(tmp.path()).unwrap();
+        assert_ne!(base, with_build);
+        fs::write(tmp.path().join("Cargo.toml"), "[package]\nname='b'\n").unwrap();
+        assert_ne!(
+            with_build,
+            super::rust_record_input_digest(tmp.path()).unwrap()
+        );
+    }
+
+    #[test]
+    fn record_input_digest_moves_with_compile_time_items_not_fn_bodies() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(tmp.path().join("src")).unwrap();
+        fs::write(tmp.path().join("Cargo.toml"), "[package]\nname='a'\n").unwrap();
+        let consts = tmp.path().join("src").join("consts.rs");
+        let text = |k: &str, body: &str, cbody: &str| {
+            format!(
+                "pub const K: i32 = {k};\npub fn f() -> i32 {{\n    {body}\n}}\npub const fn c() -> i32 {{\n    {cbody}\n}}\n"
+            )
+        };
+        let digest = || super::rust_record_input_digest(tmp.path()).unwrap();
+        fs::write(&consts, text("1", "1", "1")).unwrap();
+        let base = digest();
+        fs::write(&consts, text("1", "2", "1")).unwrap();
+        assert_eq!(base, digest(), "ordinary fn bodies belong to coverage deps");
+        fs::write(&consts, text("5", "2", "1")).unwrap();
+        let with_const = digest();
+        assert_ne!(base, with_const, "const edit");
+        fs::write(&consts, text("5", "2", "3")).unwrap();
+        assert_ne!(with_const, digest(), "const fn body edit");
+    }
+
+    #[test]
+    fn record_input_digest_moves_with_coverage_excluded_support_code_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        let tests = tmp.path().join("tests");
+        fs::create_dir_all(tests.join("common")).unwrap();
+        fs::write(tmp.path().join("Cargo.toml"), "[package]\nname='a'\n").unwrap();
+        fs::write(tests.join("common/mod.rs"), "pub fn want() -> i32 { 1 }\n").unwrap();
+        let it = |body: &str| format!("mod common;\ncheck!(m, 2);\n#[test]\nfn t() {{ {body} }}\n");
+        fs::write(tests.join("it.rs"), it("assert!(true);")).unwrap();
+        let digest = || super::rust_record_input_digest(tmp.path()).unwrap();
+        let base = digest();
+        fs::write(tests.join("it.rs"), it("assert!(1 == 1);")).unwrap();
+        assert_eq!(base, digest(), "test bodies belong to per-test deps");
+        let with_new_test = format!("{}#[test]\nfn added() {{}}\n", it("assert!(1 == 1);"));
+        fs::write(tests.join("it.rs"), with_new_test).unwrap();
+        assert_eq!(
+            base,
+            digest(),
+            "a new test is selected by its missing record"
+        );
+        let lib = tmp.path().join("src").join("lib.rs");
+        fs::create_dir_all(lib.parent().unwrap()).unwrap();
+        fs::write(&lib, "pub fn f() {}\n#[cfg(test)]\nmod tests {\n}\n").unwrap();
+        let with_lib = digest();
+        fs::write(
+            &lib,
+            "pub fn f() {}\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn t() {}\n}\n",
+        )
+        .unwrap();
+        assert_eq!(with_lib, digest(), "inline new test");
+        fs::write(tests.join("it.rs"), it("assert!(1 == 1);")).unwrap();
+        let base = digest();
+        fs::write(tests.join("common/mod.rs"), "pub fn want() -> i32 { 9 }\n").unwrap();
+        let helper = digest();
+        assert_ne!(base, helper, "shared helper edit");
+        fs::write(
+            tests.join("it.rs"),
+            it("assert!(1 == 1);").replace("check!(m, 2)", "check!(m, 3)"),
+        )
+        .unwrap();
+        assert_ne!(helper, digest(), "macro test invocation edit");
     }
 }
 

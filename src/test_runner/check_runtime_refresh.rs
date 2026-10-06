@@ -1,45 +1,9 @@
 use std::fmt;
-use std::fs::{File, OpenOptions};
-use std::io::ErrorKind;
 use std::path::Path;
 use std::sync::Mutex;
-use std::time::Duration;
 
-use fs2::FileExt;
-
-use crate::test_runner::check_line_coverage::{
-    RequiredCoverageLanguages, RuntimeCoverageLoadError, load_rust_runtime_coverage,
-};
-
-#[path = "check_runtime_refresh_repair.rs"]
-mod check_runtime_refresh_repair;
-use check_runtime_refresh_repair::try_repair_rust_check_aggregate_labeled;
-#[cfg(test)]
-pub(crate) use check_runtime_refresh_repair::{
-    CheckAggregateRepairDecision, classify_check_aggregate_repair,
-    classify_check_aggregate_repair_with_replacements,
-};
-
-#[path = "check_runtime_refresh_apply.rs"]
-mod check_runtime_refresh_apply;
-use check_runtime_refresh_apply::finalize_population_summary_labeled;
-#[cfg(test)]
-pub(crate) use check_runtime_refresh_apply::{
-    RerunRepairArgs, apply_identity_only_repair, apply_rerun_repair, finalize_population_summary,
-};
-
-#[path = "check_runtime_refresh_python.rs"]
-mod check_runtime_refresh_python;
-use check_runtime_refresh_python::ensure_python_runtime_coverage;
-
-#[path = "check_runtime_refresh_types.rs"]
-mod check_runtime_refresh_types;
-pub(crate) use check_runtime_refresh_types::CoverageRuntimeRefresh;
-use check_runtime_refresh_types::{PythonRuntimeRefresh, RustRuntimeRefresh};
-
-#[cfg(test)]
-#[path = "check_runtime_refresh_python_test.rs"]
-mod python_refresh_tests;
+use crate::test_runner::check_line_coverage::RequiredCoverageLanguages;
+use crate::test_runner::ensure_runtime::{ensure_languages_runtime, ensure_request_for_all};
 
 pub(crate) const COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV: &str = "KISS_COVERAGE_RUNTIME_REFRESH_ACTIVE";
 
@@ -47,26 +11,8 @@ pub(crate) fn test_runner_stdout_enabled() -> bool {
     std::env::var_os(COVERAGE_RUNTIME_REFRESH_ACTIVE_ENV).is_none()
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(crate) struct LanguageRefreshStats {
-    pub(crate) test_instances: usize,
-    pub(crate) aggregate_binaries: usize,
-    pub(crate) aggregate_exports: usize,
-    pub(crate) identity_only_repair: bool,
-    pub(crate) full_refresh: bool,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(crate) struct CoverageRefreshStats {
-    pub(crate) by_language: crate::test_runner::language_keyed::LanguageKeyed<LanguageRefreshStats>,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum CoverageRefreshError {
-    Lock {
-        language: &'static str,
-        reason: String,
-    },
     Discovery {
         language: &'static str,
         reason: String,
@@ -81,20 +27,9 @@ pub(crate) enum CoverageRefreshError {
         language: &'static str,
         reason: String,
     },
-    PostRefreshValidation {
-        language: &'static str,
-        reason: String,
-    },
 }
 
 impl CoverageRefreshError {
-    pub(crate) fn lock(language: &'static str, err: impl ToString) -> Self {
-        Self::Lock {
-            language,
-            reason: err.to_string(),
-        }
-    }
-
     pub(crate) fn discovery(language: &'static str, err: impl ToString) -> Self {
         Self::Discovery {
             language,
@@ -108,22 +43,11 @@ impl CoverageRefreshError {
             reason: err.to_string(),
         }
     }
-
-    pub(crate) fn validation(language: &'static str, err: RuntimeCoverageLoadError) -> Self {
-        Self::PostRefreshValidation {
-            language,
-            reason: err.reason,
-        }
-    }
 }
 
 impl fmt::Display for CoverageRefreshError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            CoverageRefreshError::Lock { language, reason } => write!(
-                f,
-                "error: kiss test: failed to refresh {language} runtime line coverage during lock acquisition: {reason}"
-            ),
             CoverageRefreshError::Discovery { language, reason } => write!(
                 f,
                 "error: kiss test: failed to refresh {language} runtime line coverage during test discovery: {reason}"
@@ -141,10 +65,6 @@ impl fmt::Display for CoverageRefreshError {
                 f,
                 "error: kiss test: failed to refresh {language} runtime line coverage during publication: {reason}"
             ),
-            CoverageRefreshError::PostRefreshValidation { language, reason } => write!(
-                f,
-                "error: kiss test: failed to refresh {language} runtime line coverage during post-refresh validation: {reason}"
-            ),
         }
     }
 }
@@ -157,57 +77,85 @@ pub(crate) fn ensure_check_runtime_coverage(
     pytest_args: &[String],
     gate: &kiss::GateConfig,
 ) -> Result<(), CoverageRefreshError> {
-    match (required.python, required.rust) {
-        (true, true) => {
-            refresh_python_and_rust_parallel(repo_root, ignore, jobs, pytest_args, gate).map(|_| ())
-        }
-        (true, false) => {
-            let refresh = PythonRuntimeRefresh;
-            debug_assert_eq!(refresh.language(), kiss::Language::Python);
-            refresh
-                .ensure(repo_root, ignore, jobs, pytest_args, gate)
-                .map(|_| ())
-        }
-        (false, true) => {
-            let refresh = RustRuntimeRefresh;
-            debug_assert_eq!(refresh.language(), kiss::Language::Rust);
-            refresh
-                .ensure(repo_root, ignore, jobs, pytest_args, gate)
-                .map(|_| ())
-        }
-        (false, false) => Ok(()),
+    let languages: Vec<kiss::Language> = [
+        (kiss::Language::Python, required.python),
+        (kiss::Language::Rust, required.rust),
+    ]
+    .into_iter()
+    .filter_map(|(language, wanted)| wanted.then_some(language))
+    .collect();
+    if languages.is_empty() {
+        return Ok(());
     }
+    let _refresh_env = ScopedRefreshEnvGuard::set();
+    std::thread::scope(|scope| {
+        let runs: Vec<_> = languages
+            .iter()
+            .map(|&language| {
+                let run = scope.spawn(move || {
+                    refresh_language(repo_root, ignore, jobs, pytest_args, gate, language)
+                });
+                (language, run)
+            })
+            .collect();
+        runs.into_iter().try_for_each(|(language, run)| {
+            run.join().unwrap_or_else(|_| {
+                Err(CoverageRefreshError::publication(
+                    display_name(language),
+                    "refresh thread panicked",
+                ))
+            })
+        })
+    })
 }
 
-fn refresh_python_and_rust_parallel(
+fn refresh_language(
     repo_root: &Path,
     ignore: &[String],
     jobs: usize,
     pytest_args: &[String],
     gate: &kiss::GateConfig,
-) -> Result<CoverageRefreshStats, CoverageRefreshError> {
-    std::thread::scope(|scope| {
-        let python = scope
-            .spawn(|| ensure_python_runtime_coverage(repo_root, ignore, jobs, pytest_args, gate));
-        let rust = ensure_rust_runtime_coverage(repo_root, ignore, jobs, gate)?;
-        let python = python.join().unwrap_or_else(|_| {
-            Err(CoverageRefreshError::publication(
-                "Python",
-                "python refresh thread panicked",
-            ))
-        })?;
-        Ok(CoverageRefreshStats {
-            by_language: crate::test_runner::language_keyed::LanguageKeyed {
-                python: python.by_language.python,
-                rust: rust.by_language.rust,
-            },
-        })
-    })
+    language: kiss::Language,
+) -> Result<(), CoverageRefreshError> {
+    let name = display_name(language);
+    let request = ensure_request_for_all(
+        repo_root,
+        ignore,
+        jobs,
+        Some(language),
+        false,
+        gate.clone(),
+        pytest_args.to_vec(),
+    )
+    .map_err(|err| CoverageRefreshError::discovery(name, err))?;
+    eprintln!(
+        "kiss test: refreshing {name} runtime coverage ({} tests)",
+        request.planned.get(language).len()
+    );
+    let result = ensure_languages_runtime(&request)
+        .map_err(|err| CoverageRefreshError::publication(name, err))?;
+    let summary = result
+        .by_language
+        .get(language)
+        .as_ref()
+        .map(|run| run.summary.clone())
+        .unwrap_or_default();
+    if summary.exit_code != 0 {
+        return Err(CoverageRefreshError::TestExecution {
+            language: name,
+            total: summary.total,
+            failed: summary.failed,
+            exit_code: summary.exit_code,
+        });
+    }
+    Ok(())
 }
 
-#[derive(Debug)]
-pub(super) struct RefreshLockGuard {
-    _file: File,
+fn display_name(language: kiss::Language) -> &'static str {
+    match language {
+        kiss::Language::Python => "Python",
+        kiss::Language::Rust => "Rust",
+    }
 }
 
 pub(crate) struct ScopedRefreshEnvGuard {
@@ -250,136 +198,6 @@ pub(crate) fn restore_refresh_active_env(old: Option<std::ffi::OsString>) {
     }
 }
 
-pub(super) fn lock_refresh(
-    repo_root: &Path,
-    language: &'static str,
-) -> Result<RefreshLockGuard, CoverageRefreshError> {
-    lock_refresh_for(repo_root, language, Duration::from_secs(30))
-}
-
-fn lock_refresh_for(
-    repo_root: &Path,
-    language: &'static str,
-    timeout: Duration,
-) -> Result<RefreshLockGuard, CoverageRefreshError> {
-    let path = repo_root
-        .join(".kiss")
-        .join("check_runtime_coverage_locks")
-        .join(format!("{language}.lock"));
-    let parent = path
-        .parent()
-        .ok_or_else(|| CoverageRefreshError::lock(language, "lock path has no parent"))?;
-    std::fs::create_dir_all(parent).map_err(|err| CoverageRefreshError::lock(language, err))?;
-    let file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(&path)
-        .map_err(|err| CoverageRefreshError::lock(language, err))?;
-    let mut reported_wait = false;
-    let deadline = std::time::Instant::now() + timeout;
-    loop {
-        match file.try_lock_exclusive() {
-            Ok(()) => break,
-            Err(err) if err.kind() == ErrorKind::WouldBlock => {
-                if !reported_wait {
-                    crate::test_runner::emit_test_progress(&format!(
-                        "kiss test: waiting for {language} runtime coverage refresh"
-                    ));
-                    reported_wait = true;
-                }
-                let now = std::time::Instant::now();
-                if now >= deadline {
-                    return Err(CoverageRefreshError::lock(
-                        language,
-                        std::io::Error::new(
-                            ErrorKind::TimedOut,
-                            format!("timed out after {}s", timeout.as_secs_f64()),
-                        ),
-                    ));
-                }
-                std::thread::sleep(
-                    deadline
-                        .saturating_duration_since(now)
-                        .min(Duration::from_millis(250)),
-                );
-            }
-            Err(err) => return Err(CoverageRefreshError::lock(language, err)),
-        }
-    }
-    Ok(RefreshLockGuard { _file: file })
-}
-
-pub(super) fn ensure_rust_runtime_coverage(
-    repo_root: &Path,
-    ignore: &[String],
-    jobs: usize,
-    gate: &kiss::GateConfig,
-) -> Result<CoverageRefreshStats, CoverageRefreshError> {
-    ensure_rust_runtime_coverage_with_stats_labeled(repo_root, ignore, jobs, "kiss test", gate)
-}
-
-fn ensure_rust_runtime_coverage_with_stats_labeled(
-    repo_root: &Path,
-    ignore: &[String],
-    jobs: usize,
-    caller_label: &str,
-    gate: &kiss::GateConfig,
-) -> Result<CoverageRefreshStats, CoverageRefreshError> {
-    let _guard = lock_refresh(repo_root, "Rust")?;
-    if load_rust_runtime_coverage(repo_root, ignore, gate).is_ok() {
-        return Ok(CoverageRefreshStats::default());
-    }
-    let request = crate::test_runner::ensure_runtime::ensure_request_for_all(
-        repo_root,
-        ignore,
-        jobs,
-        Some(kiss::Language::Rust),
-        false,
-        gate.clone(),
-        vec![],
-    )
-    .map_err(|err| CoverageRefreshError::discovery("Rust", err))?;
-
-    if let Some(stats) = try_repair_rust_check_aggregate_labeled(
-        repo_root,
-        ignore,
-        &request.planned.rust,
-        jobs,
-        caller_label,
-    )? {
-        return Ok(stats);
-    }
-    eprintln!(
-        "{caller_label}: refreshing Rust runtime coverage ({} tests)",
-        request.planned.rust.len()
-    );
-    let _refresh_env = ScopedRefreshEnvGuard::set();
-    let result = crate::test_runner::ensure_runtime::ensure_languages_runtime(&request)
-        .map_err(|err| CoverageRefreshError::publication("Rust", err))?;
-    let summary = result.rust().map(|r| r.summary.clone()).unwrap_or_default();
-    finalize_population_summary_labeled(repo_root, ignore, &summary, true, caller_label)
-}
-
-#[cfg(test)]
-pub(crate) fn try_repair_rust_check_aggregate(
-    repo_root: &Path,
-    ignore: &[String],
-    selectors: &[String],
-    jobs: usize,
-) -> Result<Option<CoverageRefreshStats>, CoverageRefreshError> {
-    try_repair_rust_check_aggregate_labeled(repo_root, ignore, selectors, jobs, "kiss test")
-}
-
 #[cfg(test)]
 #[path = "check_runtime_refresh_test.rs"]
 mod tests;
-
-#[cfg(test)]
-#[path = "check_runtime_refresh_apply_test.rs"]
-mod apply_tests;
-
-#[cfg(test)]
-#[path = "check_runtime_refresh_apply_b_test.rs"]
-mod apply_b_tests;

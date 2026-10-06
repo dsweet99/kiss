@@ -23,7 +23,12 @@ pub fn workspace_rust_test_modules(
             continue;
         };
         let mut modules = Vec::new();
-        collect_file_modules(&root.src_path, String::new(), &mut HashSet::new(), &mut modules);
+        collect_file_modules(
+            &root.src_path,
+            String::new(),
+            &mut HashSet::new(),
+            &mut modules,
+        );
         for (file, module_path) in modules {
             let entry = out.entry(file).or_default();
             let module = RustTestBinaryModule {
@@ -123,7 +128,11 @@ mod rust_test_binaries_test {
         std::fs::write(root.join("tests/it.rs"), "").unwrap();
 
         let map = workspace_rust_test_modules(root).unwrap();
-        let get = |rel: &str| map.get(&canonical_path(&root.join(rel))).cloned().unwrap_or_default();
+        let get = |rel: &str| {
+            map.get(&canonical_path(&root.join(rel)))
+                .cloned()
+                .unwrap_or_default()
+        };
         let module = |binary_prefix: &str, module_path: &str| RustTestBinaryModule {
             binary_prefix: binary_prefix.to_string(),
             module_path: module_path.to_string(),
@@ -132,7 +141,10 @@ mod rust_test_binaries_test {
         assert_eq!(get("src/lib.rs"), [module("demo-pkg::demo_pkg", "")]);
         assert_eq!(
             get("src/a.rs"),
-            [module("demo-pkg::demo-pkg", "a"), module("demo-pkg::demo_pkg", "a")]
+            [
+                module("demo-pkg::demo-pkg", "a"),
+                module("demo-pkg::demo_pkg", "a")
+            ]
         );
         assert_eq!(get("tests/it.rs"), [module("demo-pkg::it", "")]);
     }

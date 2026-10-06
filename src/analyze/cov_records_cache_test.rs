@@ -12,8 +12,14 @@ fn write_python_population(repo: &std::path::Path) {
     crate::analyze::cov_cache_test_support::write_python_population_for_cache_tests(repo, "abc");
 }
 
+fn rust_record_path(repo: &std::path::Path) -> std::path::PathBuf {
+    let dir = kiss::test_records::records_dir(repo, "rust");
+    fs::create_dir_all(&dir).unwrap();
+    dir.join("t.json")
+}
+
 fn write_rust_aggregate(repo: &std::path::Path) {
-    let cache = repo.join(".kiss/rust_llvm_cov_cache");
+    let cache = repo.join(".kiss/test/rust_llvm_cov_cache");
     fs::create_dir_all(&cache).unwrap();
     fs::write(
         cache.join("check_aggregate.json"),
@@ -98,11 +104,7 @@ fn cov_records_cache_misses_when_rust_backend_identity_changes() {
     let repo = tmp.path();
     write_python_population(repo);
     write_rust_aggregate(repo);
-    fs::write(
-        repo.join(".kiss/rust_llvm_cov_cache/execution_witness.json"),
-        "{}",
-    )
-    .unwrap();
+    fs::write(rust_record_path(repo), "{}").unwrap();
     let py = touch_source(&repo.join("a.py"), "pass\n");
     let rs = touch_source(&repo.join("lib.rs"), "fn g() {}\n");
     let key = CovRecordsCacheKey {
@@ -131,7 +133,7 @@ fn cov_records_cache_misses_when_rust_backend_identity_changes() {
     );
     assert!(try_load_cov_records(&key).is_some());
     fs::write(
-        repo.join(".kiss/rust_llvm_cov_cache/check_aggregate.json"),
+        repo.join(".kiss/test/rust_llvm_cov_cache/check_aggregate.json"),
         r#"{
             "integrity_fingerprint":"int2",
             "input_fingerprint":"in1",
@@ -143,13 +145,13 @@ fn cov_records_cache_misses_when_rust_backend_identity_changes() {
 }
 
 #[test]
-fn cov_records_cache_hashes_witness_contents_not_only_metadata() {
+fn cov_records_cache_hashes_record_contents_not_only_metadata() {
     let tmp = tempfile::tempdir().unwrap();
     let repo = tmp.path();
     write_rust_aggregate(repo);
-    let witness = repo.join(".kiss/rust_llvm_cov_cache/execution_witness.json");
-    fs::write(&witness, "{}").unwrap();
-    let original_mtime = fs::metadata(&witness).unwrap().modified().unwrap();
+    let record = rust_record_path(repo);
+    fs::write(&record, "{}").unwrap();
+    let original_mtime = fs::metadata(&record).unwrap().modified().unwrap();
     let rs = touch_source(&repo.join("lib.rs"), "fn g() {}\n");
     let key = CovRecordsCacheKey {
         repo_root: repo,
@@ -168,16 +170,16 @@ fn cov_records_cache_hashes_witness_contents_not_only_metadata() {
     store_cov_records(&key, &[]);
     assert!(try_load_cov_records(&key).is_some());
 
-    fs::write(&witness, "[]").unwrap();
+    fs::write(&record, "[]").unwrap();
     fs::File::options()
         .write(true)
-        .open(&witness)
+        .open(&record)
         .unwrap()
         .set_modified(original_mtime)
         .unwrap();
     assert!(
         try_load_cov_records(&key).is_none(),
-        "same-length, same-mtime witness replacement must invalidate records"
+        "same-length, same-mtime record replacement must invalidate cached coverage"
     );
 }
 
@@ -223,7 +225,7 @@ fn cov_records_cache_hits_with_rust_population_when_aggregate_missing() {
     let tmp = tempfile::tempdir().unwrap();
     let repo = tmp.path();
     write_python_population(repo);
-    let cache = repo.join(".kiss/rust_llvm_cov_cache");
+    let cache = repo.join(".kiss/test/rust_llvm_cov_cache");
     fs::create_dir_all(&cache).unwrap();
     fs::write(
         cache.join("population.json"),
@@ -265,16 +267,15 @@ fn cov_records_cache_hits_with_rust_population_when_aggregate_missing() {
 }
 
 #[test]
-fn cov_records_cache_misses_when_rust_generation_or_witness_changes() {
+fn cov_records_cache_misses_when_a_rust_record_changes_or_appears() {
     let tmp = tempfile::tempdir().unwrap();
     let repo = tmp.path();
     write_python_population(repo);
-    let cache = repo.join(".kiss/rust_llvm_cov_cache");
+    let cache = repo.join(".kiss/test/rust_llvm_cov_cache");
     fs::create_dir_all(&cache).unwrap();
-    let witness = cache.join("execution_witness.json");
-    fs::write(&witness, "{\"v\":1}\n").unwrap();
-    let generation = cache.join("current_generation.json");
-    fs::write(&generation, "{\"generation\":\"one\"}\n").unwrap();
+    let record = rust_record_path(repo);
+    fs::write(&record, "{\"v\":1}\n").unwrap();
+    let added_record = record.with_file_name("u.json");
     let py = touch_source(&repo.join("a.py"), "pass\n");
     let rs = touch_source(&repo.join("lib.rs"), "fn g() {}\n");
     let key = CovRecordsCacheKey {
@@ -302,7 +303,7 @@ fn cov_records_cache_misses_when_rust_generation_or_witness_changes() {
         }],
     );
     assert!(try_load_cov_records(&key).is_some());
-    fs::write(&generation, "{\"generation\":\"two\"}\n").unwrap();
+    fs::write(&added_record, "{\"added_record\":\"two\"}\n").unwrap();
     assert!(try_load_cov_records(&key).is_none());
     store_cov_records(
         &key,
@@ -316,10 +317,10 @@ fn cov_records_cache_misses_when_rust_generation_or_witness_changes() {
     );
     assert!(try_load_cov_records(&key).is_some());
     std::thread::sleep(Duration::from_millis(5));
-    fs::write(&witness, "{\"v\":2}\n").unwrap();
+    fs::write(&record, "{\"v\":2}\n").unwrap();
     let _ = fs::File::options()
         .write(true)
-        .open(&witness)
+        .open(&record)
         .unwrap()
         .set_modified(SystemTime::now())
         .ok();
@@ -425,8 +426,28 @@ fn concurrent_record_writers_publish_one_complete_cache() {
 #[test]
 fn record_cache_lock_wait_is_bounded() {
     let tmp = tempfile::tempdir().unwrap();
-    let _held = lock_cache_for(tmp.path(), Duration::from_millis(50)).unwrap();
+    let root = tmp.path().to_path_buf();
+    let (held_tx, held_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+    let holder = std::thread::spawn(move || {
+        let _held = lock_cache_for(&root, Duration::from_millis(50)).unwrap();
+        held_tx.send(()).unwrap();
+        release_rx.recv().unwrap();
+    });
+    held_rx.recv().unwrap();
     let started = Instant::now();
     assert!(lock_cache_for(tmp.path(), Duration::from_millis(75)).is_none());
+    assert!(started.elapsed() < Duration::from_secs(1));
+    release_tx.send(()).unwrap();
+    holder.join().unwrap();
+}
+
+#[test]
+fn record_cache_lock_nests_inside_the_writer_lock_on_one_thread() {
+    let tmp = tempfile::tempdir().unwrap();
+    let _writer =
+        kiss::test_state_lock::lock_test_state_dir(&kiss::test_state_dir(tmp.path())).unwrap();
+    let started = Instant::now();
+    assert!(lock_cache_for(tmp.path(), Duration::from_secs(5)).is_some());
     assert!(started.elapsed() < Duration::from_secs(1));
 }

@@ -3,80 +3,10 @@ use std::path::Path;
 use kiss::rust_llvm_cov_runner::{RustCovCacheStatus, RustCoverageBatchResult, RustLlvmCovOutcome};
 
 use crate::test_runner::lang_rust::llvm_cov::error::map_rust_llvm_cov_error;
-use crate::test_runner::last_status::{LastStatusIdentity, record_statuses};
 use crate::test_runner::runners::{
     SelectorCacheRecord, SelectorExecutionRecord, SelectorExecutionSummary,
 };
 use crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached;
-
-#[allow(dead_code)]
-pub(crate) fn cached_summary_from_check_aggregate_population(
-    repo_root: &Path,
-    selectors: &[String],
-    population: &kiss::rust_llvm_cov_runner::RustPopulationState,
-    gate: &kiss::GateConfig,
-) -> Result<Option<SelectorExecutionSummary>, String> {
-    if !population
-        .entries_fingerprint
-        .starts_with("check-aggregate:")
-    {
-        return Ok(None);
-    }
-    let cache_root = repo_root.join(".kiss").join("rust_llvm_cov_cache");
-    if !kiss::rust_llvm_cov_runner::current_test_binaries_match(repo_root, population)
-        || !kiss::rust_llvm_cov_runner::population_entries_all_pass(&cache_root, population)
-    {
-        return Ok(None);
-    }
-    let Some(pairs) =
-        kiss::rust_llvm_cov_runner::try_load_population_durations(&cache_root, population)
-    else {
-        return Ok(None);
-    };
-    let duration_by_selector: std::collections::BTreeMap<_, _> = pairs.into_iter().collect();
-    let report_ids = rust_logical_to_kiss_test_ids_cached(repo_root, &[])?;
-    let Some(summary) =
-        cached_summary_from_duration_pairs(selectors, &duration_by_selector, &report_ids, gate)
-    else {
-        return Ok(None);
-    };
-    if summary.total != selectors.len() {
-        return Ok(None);
-    }
-    Ok(Some(summary))
-}
-
-fn cached_summary_from_duration_pairs(
-    selectors: &[String],
-    duration_by_selector: &std::collections::BTreeMap<String, std::time::Duration>,
-    report_ids: &std::collections::BTreeMap<String, String>,
-    gate: &kiss::GateConfig,
-) -> Option<SelectorExecutionSummary> {
-    let mut summary = SelectorExecutionSummary::default();
-    for selector in selectors {
-        let report =
-            crate::test_runner::runners::require_kiss_test_report_id(report_ids, selector).ok()?;
-        let duration = duration_by_selector.get(selector).copied()?;
-        let effective = crate::test_runner::status_labels::apply_unit_test_time_limit(
-            kiss::rpytest_runner::TestStatus::Passed,
-            &report,
-            duration,
-            gate,
-        );
-        if effective != kiss::rpytest_runner::TestStatus::Passed {
-            return None;
-        }
-        summary.record(SelectorExecutionRecord {
-            selector: report,
-            status: kiss::rpytest_runner::TestStatus::Passed,
-            raw_status: None,
-            cache_record: SelectorCacheRecord::Hit,
-            exit_code: Some(0),
-            duration,
-        });
-    }
-    Some(summary)
-}
 
 fn print_rust_llvm_cov_outcome(
     outcome: &RustLlvmCovOutcome,
@@ -181,14 +111,13 @@ fn effective_status_for_completed_outcome(
 
 fn record_completed_outcome(
     summary: &mut SelectorExecutionSummary,
-    statuses: &mut Vec<(String, kiss::rpytest_runner::TestStatus)>,
+    on_result: &mut dyn FnMut(SelectorExecutionRecord),
     outcome: &RustLlvmCovOutcome,
     report_id: String,
     effective: kiss::rpytest_runner::TestStatus,
 ) {
     let raw = outcome.status;
-    statuses.push((outcome.selector.clone(), effective));
-    summary.record(SelectorExecutionRecord {
+    on_result(SelectorExecutionRecord {
         selector: report_id,
         status: effective,
         raw_status: Some(raw),
@@ -206,11 +135,25 @@ fn record_completed_outcome(
         .insert(outcome.selector.clone(), outcome.duration.as_nanos() as u64);
 }
 
+#[cfg(test)]
 pub(crate) fn finish_rust_coverage_batch_result(
     repo_root: &Path,
-    identity: &LastStatusIdentity,
     result: RustCoverageBatchResult,
     gate: &kiss::GateConfig,
+) -> Result<SelectorExecutionSummary, String> {
+    let mut records = Vec::new();
+    let summary =
+        finish_rust_coverage_batch_result_streaming(repo_root, result, gate, &mut |record| {
+            records.push(record)
+        })?;
+    Ok(summary.with_records(records))
+}
+
+pub(super) fn finish_rust_coverage_batch_result_streaming(
+    repo_root: &Path,
+    result: RustCoverageBatchResult,
+    gate: &kiss::GateConfig,
+    on_result: &mut dyn FnMut(SelectorExecutionRecord),
 ) -> Result<SelectorExecutionSummary, String> {
     let mut summary = SelectorExecutionSummary::default();
     summary.record_rust_batch_counters(&result.counters);
@@ -220,7 +163,6 @@ pub(crate) fn finish_rust_coverage_batch_result(
         .iter()
         .filter(|outcome| report_ids.contains_key(&outcome.selector))
         .collect();
-    let mut statuses = Vec::new();
     let emit_each = current_completed.len() <= 64;
     if !emit_each {
         emit_bulk_cached_pass_summary(&current_completed, &report_ids, gate);
@@ -232,9 +174,8 @@ pub(crate) fn finish_rust_coverage_batch_result(
         )?;
         let effective =
             effective_status_for_completed_outcome(outcome, &report_id, gate, emit_each);
-        record_completed_outcome(&mut summary, &mut statuses, outcome, report_id, effective);
+        record_completed_outcome(&mut summary, on_result, outcome, report_id, effective);
     }
-    record_statuses(repo_root, kiss::Language::Rust, identity, &statuses)?;
     if let Some(err) = result.batch_error {
         return Err(map_rust_llvm_cov_error(err));
     }

@@ -2,24 +2,16 @@ use super::*;
 
 fn write_python_entry(
     repo_root: &std::path::Path,
-    name: &str,
+    _name: &str,
     selector: &str,
     coverage: LineCoverage,
 ) {
-    let path = python_coverage_cache_root(repo_root)
-        .unwrap()
-        .join("entries")
-        .join(format!("{name}.json"));
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    let entry = serde_json::json!({
-        "schema_version": kiss::rslip::CACHE_SCHEMA_VERSION,
-        "nodeid": selector,
-        "status": TestStatus::Passed,
-        "exit_code": 0,
-        "duration": Duration::from_millis(1),
-        "coverage": coverage,
-    });
-    std::fs::write(path, serde_json::to_vec(&entry).unwrap()).unwrap();
+    crate::test_runner::python_coverage_index::storage::write_python_record_fixture(
+        repo_root,
+        selector,
+        TestStatus::Passed,
+        coverage,
+    );
 }
 
 fn write_rust_entry(
@@ -66,20 +58,8 @@ fn select_fresh_python_source_selectors_and_select_fresh_rust_source_selectors_c
             files: BTreeMap::from([(lib.to_string_lossy().to_string(), BTreeSet::from([1]))]),
         },
     );
-    rebuild_python_coverage_index(tmp.path()).unwrap();
-    // rebuild publishes the population from entry selectors; no second publish.
     rebuild_rust_coverage_index(tmp.path()).unwrap();
 
-    assert_eq!(
-        python_backer::select_fresh_python_source_selectors(
-            tmp.path(),
-            std::slice::from_ref(&app),
-            &single_line_change(&app),
-        ),
-        Some(BTreeSet::from(
-            ["tests/test_app.py::test_value".to_string()]
-        ))
-    );
     assert_eq!(
         select_fresh_rust_source_selectors(
             tmp.path(),
@@ -90,30 +70,7 @@ fn select_fresh_python_source_selectors_and_select_fresh_rust_source_selectors_c
         Some(BTreeSet::from(["tests::test_value".to_string()]))
     );
 
-    assert_python_module_selects(tmp.path(), &app);
     assert_rust_module_selects(tmp.path(), &lib);
-}
-
-fn assert_python_module_selects(repo: &std::path::Path, app: &std::path::Path) {
-    let python = python_backer::PythonModule::new(
-        repo,
-        std::slice::from_ref(&app.to_path_buf()),
-        &single_line_change(app),
-        &[],
-        &[],
-        &[],
-        &[],
-    );
-    assert_eq!(
-        <python_backer::PythonModule as LanguagePlanner>::select(&python).unwrap(),
-        SelectionDecision {
-            selectors: vec![TestSelector::new(
-                kiss::Language::Python,
-                "tests/test_app.py::test_value"
-            )],
-            complete: true,
-        }
-    );
 }
 
 fn assert_rust_module_selects(repo: &std::path::Path, lib: &std::path::Path) {

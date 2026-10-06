@@ -39,8 +39,7 @@ fn trim_ascii_whitespace(bytes: &[u8]) -> &[u8] {
 }
 
 fn host_scoped_python_rslip_cache_root(repo_root: &Path, host_component: &str) -> PathBuf {
-    repo_root
-        .join(".kiss")
+    crate::test_runner::test_state_dir(repo_root)
         .join("rslip_cache")
         .join("hosts")
         .join(host_component)

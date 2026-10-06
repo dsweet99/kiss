@@ -82,7 +82,10 @@ impl NestedLlvmCovLock {
     }
 
     pub(crate) fn acquire_exclusive() -> io::Result<Self> {
-        let path = nested_lock_path();
+        let path = crate::rust_llvm_cov_runner::plan::llvm_cov_active::nested_llvm_cov_lock_path();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
         let file = OpenOptions::new()
             .create(true)
             .write(true)
@@ -91,13 +94,6 @@ impl NestedLlvmCovLock {
         fs2::FileExt::lock_exclusive(&file)?;
         Ok(Self { _file: Some(file) })
     }
-}
-
-fn nested_lock_path() -> std::path::PathBuf {
-    std::env::temp_dir().join(format!(
-        "kiss-llvm-cov-nested-{}.lock",
-        crate::rust_llvm_cov_runner::execute_or_reuse::llvm_cov_process_budget::current_uid()
-    ))
 }
 
 #[cfg(test)]

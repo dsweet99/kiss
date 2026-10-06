@@ -59,7 +59,12 @@ fn binary_ids_compatible(expected: &str, shim_binary: &str) -> bool {
     if shim_binary == leaf {
         return true;
     }
-    if shim_binary.rsplit("::").next() == Some(leaf) {
+    let shim_leaf = shim_binary.rsplit("::").next().unwrap_or(shim_binary);
+    if shim_leaf == leaf
+        || shim_leaf
+            .rsplit_once('/')
+            .is_some_and(|(_, name)| name == leaf)
+    {
         return true;
     }
 
@@ -103,6 +108,20 @@ mod tests {
         let resolved = resolve_shim_metadata(&by_full_name, &items, "bin-b$case").unwrap();
 
         assert_eq!(resolved.full_name, "bin-b$case");
+    }
+
+    #[test]
+    fn resolves_bin_target_whose_shim_id_carries_the_target_kind() {
+        let items = vec![
+            shim("demo$a::tests::same"),
+            shim("demo::bin/tool$a::tests::same"),
+        ];
+        let by_full_name = BTreeMap::new();
+
+        let resolved =
+            resolve_shim_metadata(&by_full_name, &items, "demo::tool$a::tests::same").unwrap();
+
+        assert_eq!(resolved.full_name, "demo::bin/tool$a::tests::same");
     }
 
     #[test]

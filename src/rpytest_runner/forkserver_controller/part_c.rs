@@ -107,9 +107,9 @@ def _run_item_inprocess(
     return exit_code
 
 def _run_one_collected_result(item, test_req, shared_preload, collection_coverage):
-    stdout_fd, stdout_path = tempfile.mkstemp(prefix="rpytest-forkserver-out-")
-    stderr_fd, stderr_path = tempfile.mkstemp(prefix="rpytest-forkserver-err-")
-    duration_fd, duration_path = tempfile.mkstemp(prefix="rpytest-forkserver-dur-")
+    stdout_fd, stdout_path = tempfile.mkstemp(prefix="rpytest-forkserver-out-", dir=_SCRATCH)
+    stderr_fd, stderr_path = tempfile.mkstemp(prefix="rpytest-forkserver-err-", dir=_SCRATCH)
+    duration_fd, duration_path = tempfile.mkstemp(prefix="rpytest-forkserver-dur-", dir=_SCRATCH)
     os.close(stdout_fd)
     os.close(stderr_fd)
     os.close(duration_fd)
@@ -162,6 +162,7 @@ def _run_module_in_child(req):
     session.items = items
     by_nodeid = {item.nodeid: item for item in items}
     results = []
+    stream_path = req.get("stream_path")
     # Attribute collection-only lines once per module. Repeating them on every
     # selector makes a module-level edit unnecessarily select every test.
     collection_pending = collection_coverage
@@ -174,12 +175,14 @@ def _run_module_in_child(req):
                     {a["name"]: a["path"] for a in test.get("artifacts", [])},
                     False, None, "collected item missing",
                 ))
+                _append_module_stream(stream_path, results[-1])
                 continue
             test = dict(test)
             test["cwd"] = req.get("cwd") or test.get("cwd")
             results.append(
                 _run_one_collected_result(item, test, preload, collection_pending)
             )
+            _append_module_stream(stream_path, results[-1])
             collection_pending = {}
             if results[-1].get("timeout"):
                 break
@@ -196,11 +199,59 @@ def _module_wait_timeout_ms(tests):
         return None
     return int(sum(timeouts) + _SETUP_WAIT_MS)
 
+def _append_module_stream(stream_path, result):
+    if not stream_path:
+        return
+    with open(stream_path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(result, separators=(",", ":")) + "\n")
+        handle.flush()
+
+def _drain_module_stream(stream_path, offset):
+    try:
+        with open(stream_path, "rb") as handle:
+            handle.seek(offset)
+            data = handle.read()
+    except FileNotFoundError:
+        return offset
+    end = data.rfind(b"\n")
+    if end < 0:
+        return offset
+    for line in data[:end].split(b"\n"):
+        if line:
+            _respond({"progress": json.loads(line), "results": [], "error": None})
+    return offset + end + 1
+
+def _wait_module_child(pid, timeout_ms, stream_path):
+    deadline = None
+    if timeout_ms is not None:
+        deadline = time.monotonic() + max(float(timeout_ms) / 1000.0, 0.001)
+    offset = 0
+    forced_timeout = False
+    while True:
+        waited, _status = os.waitpid(pid, os.WNOHANG)
+        if waited != 0:
+            break
+        if deadline is not None and time.monotonic() >= deadline:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass
+            os.waitpid(pid, 0)
+            forced_timeout = True
+            break
+        offset = _drain_module_stream(stream_path, offset)
+        time.sleep(0.005)
+    _drain_module_stream(stream_path, offset)
+    return forced_timeout
+
 def _fork_module_chunk(req, tests):
-    fd, path = tempfile.mkstemp(prefix="rpytest-forkserver-mod-")
+    fd, path = tempfile.mkstemp(prefix="rpytest-forkserver-mod-", dir=_SCRATCH)
     os.close(fd)
+    stream_fd, stream_path = tempfile.mkstemp(prefix="rpytest-forkserver-stream-", dir=_SCRATCH)
+    os.close(stream_fd)
     chunk = dict(req)
     chunk["tests"] = tests
+    chunk["stream_path"] = stream_path
     pid = os.fork()
     if pid == 0:
         try:
@@ -215,7 +266,7 @@ def _fork_module_chunk(req, tests):
             pass
         os._exit(0)
     try:
-        _status, forced_timeout = _wait_status(pid, _module_wait_timeout_ms(tests))
+        forced_timeout = _wait_module_child(pid, _module_wait_timeout_ms(tests), stream_path)
         if forced_timeout:
             return {"results": [], "error": "module batch timed out"}
         try:
@@ -230,10 +281,11 @@ def _fork_module_chunk(req, tests):
             "error": payload.get("error"),
         }
     finally:
-        try:
-            os.unlink(path)
-        except FileNotFoundError:
-            pass
+        for leftover in (path, stream_path):
+            try:
+                os.unlink(leftover)
+            except FileNotFoundError:
+                pass
 
 def _handle_run_module(req):
     tests = list(req.get("tests") or [])

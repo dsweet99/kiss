@@ -150,33 +150,13 @@ fn test_section_config_try_load_rejects_local_nonpositive_num_jobs() {
 }
 
 #[test]
-fn test_section_config_defaults_watch_settle_to_one() {
-    assert!((TestSectionConfig::default().watch_settle_seconds - 1.0).abs() < f64::EPSILON);
-}
-
-#[test]
-fn test_section_config_reads_watch_settle_seconds() {
+fn test_section_config_accepts_and_ignores_watch_settle_seconds() {
     let cwd = tempfile::TempDir::new().unwrap();
     let _cwd_guard = CwdGuard::enter(cwd.path());
     let tmp = tempfile::NamedTempFile::new().unwrap();
-    std::fs::write(tmp.path(), "[test]\nwatch_settle_seconds = 2.5\n").unwrap();
-    assert!(
-        (TestSectionConfig::try_load_from(tmp.path())
-            .unwrap()
-            .watch_settle_seconds
-            - 2.5)
-            .abs()
-            < f64::EPSILON
-    );
-}
-
-#[test]
-fn test_section_config_rejects_nonpositive_watch_settle() {
-    let cwd = tempfile::TempDir::new().unwrap();
-    let _cwd_guard = CwdGuard::enter(cwd.path());
-    let tmp = tempfile::NamedTempFile::new().unwrap();
-    std::fs::write(tmp.path(), "[test]\nwatch_settle_seconds = 0\n").unwrap();
-    assert!(TestSectionConfig::try_load_from(tmp.path()).is_err());
+    std::fs::write(tmp.path(), "[test]\nwatch_settle_seconds = 0\nnum_jobs = 3\n").unwrap();
+    let config = TestSectionConfig::try_load_from(tmp.path()).unwrap();
+    assert_eq!(config.num_jobs, 3);
 }
 
 #[test]

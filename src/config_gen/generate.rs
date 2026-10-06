@@ -89,11 +89,6 @@ pub fn generate_config_toml_by_language(p: &GenerateConfigParams<'_>) -> String 
         "num_jobs_llvm_cov = {}",
         crate::defaults::gate::NUM_JOBS_LLVM_COV
     );
-    let _ = writeln!(
-        out,
-        "watch_settle_seconds = {:.1}",
-        crate::defaults::gate::WATCH_SETTLE_SECONDS
-    );
     let _ = writeln!(out, "pytest_plugins = []");
     write_toml_string_list(&mut out, "ignore", p.ignore);
     let _ = write!(

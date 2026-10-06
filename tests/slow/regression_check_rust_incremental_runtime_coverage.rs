@@ -58,7 +58,7 @@ fn init_git_repo(repo: &std::path::Path) {
 }
 
 fn passed_selector_entry_count(repo: &std::path::Path) -> usize {
-    let entries = repo.join(".kiss/rust_llvm_cov_cache/entries");
+    let entries = repo.join(".kiss/test/rust_llvm_cov_cache/entries");
     let mut selectors = std::collections::BTreeSet::new();
     let Ok(rd) = fs::read_dir(entries) else {
         return 0;

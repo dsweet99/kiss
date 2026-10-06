@@ -205,7 +205,7 @@ pub(crate) fn nextest_filter_string(value: &str, exact: bool) -> String {
     if exact {
         format!("/(^|\\$){escaped}$/")
     } else {
-        format!("/{escaped}/")
+        format!("/(^|::|\\$){escaped}(::|$)/")
     }
 }
 
@@ -269,7 +269,7 @@ mod tests {
         assert_eq!(escape_nextest_regex(value), r#"quote"slash\\line\n"#);
         assert_eq!(
             nextest_filter_string(value, false),
-            r#"/quote"slash\\line\n/"#
+            r#"/(^|::|\$)quote"slash\\line\n(::|$)/"#
         );
         assert_eq!(
             nextest_filter_string(value, true),
@@ -336,13 +336,13 @@ mod tests {
         );
         assert_eq!(
             plan.env.get("LLVM_PROFILE_FILE").map(String::as_str),
-            Some("/repo/.kiss/profraw/default_%m_%p.profraw")
+            Some("/repo/.kiss/test/profraw/default_%m_%p.profraw")
         );
         assert_eq!(
             plan.env
                 .get(crate::rust_llvm_cov_runner::kiss_profraw::KISS_PROFRAW_DIR_ENV)
                 .map(String::as_str),
-            Some("/repo/.kiss/profraw")
+            Some("/repo/.kiss/test/profraw")
         );
         assert!(
             !plan
@@ -424,6 +424,9 @@ mod tests {
     fn parse_nextest_default_test_threads_reads_profile_default() {
         let text = "# comment\n[profile.default]\n# note\ntest-threads = 1\n[profile.ci]\ntest-threads = 8\n";
         assert_eq!(parse_nextest_default_test_threads(text), Some(1));
-        assert_eq!(parse_nextest_default_test_threads("[profile.ci]\ntest-threads = 8\n"), None);
+        assert_eq!(
+            parse_nextest_default_test_threads("[profile.ci]\ntest-threads = 8\n"),
+            None
+        );
     }
 }

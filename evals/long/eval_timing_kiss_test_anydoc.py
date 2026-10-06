@@ -52,9 +52,9 @@ def _clear_runtime_test_cache(repo: Path) -> None:
     instrumented binary pushes the cold run over the eval budget.
     """
     kiss_dir = repo / ".kiss"
-    shutil.rmtree(kiss_dir / "rslip_cache", ignore_errors=True)
-    _clear_semantic_llvm_cache(kiss_dir / "rust_llvm_cov_cache")
-    (kiss_dir / "cov_records_cache.json").unlink(missing_ok=True)
+    shutil.rmtree(kiss_dir / "test" / "rslip_cache", ignore_errors=True)
+    _clear_semantic_llvm_cache(kiss_dir / "test" / "rust_llvm_cov_cache")
+    (kiss_dir / "test" / "cov_records_cache.json").unlink(missing_ok=True)
 
 
 def _ensure_code_cache(repo: Path, env: dict[str, str]) -> None:
@@ -76,7 +76,7 @@ def _ensure_instrumented_build(
     repo: Path, env: dict[str, str], argv: list[str]
 ) -> None:
     """Populate the llvm build depot when missing so timed cold stays under budget."""
-    build_target = repo / ".kiss" / "rust_llvm_cov_cache" / "build" / "target"
+    build_target = repo / ".kiss" / "test" / "rust_llvm_cov_cache" / "build" / "target"
     if build_target.is_dir():
         return
     outcome = run(

@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn storage_paths_hashes_and_input_filters_have_contracts() {
     let tmp = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(tmp.path().join(".kiss").join("rslip_cache")).unwrap();
+    std::fs::create_dir_all(tmp.path().join(".kiss").join("test").join("rslip_cache")).unwrap();
     std::fs::create_dir(tmp.path().join(".rslip_cache")).unwrap();
     std::fs::write(tmp.path().join("app.py"), "VALUE = 1\n").unwrap();
     std::fs::write(
@@ -14,6 +14,7 @@ fn storage_paths_hashes_and_input_filters_have_contracts() {
     std::fs::write(
         tmp.path()
             .join(".kiss")
+            .join("test")
             .join("rslip_cache")
             .join("ignored.py"),
         "VALUE = 2\n",
@@ -30,20 +31,17 @@ fn storage_paths_hashes_and_input_filters_have_contracts() {
         cache_root,
         tmp.path()
             .join(".kiss")
+            .join("test")
             .join("rslip_cache")
             .join("hosts")
             .join(cache_root.file_name().unwrap())
-    );
-    assert_eq!(
-        python_coverage_index_path(tmp.path()).unwrap(),
-        cache_root.join("index.json")
     );
     assert_eq!(
         python_population_manifest_path(tmp.path()).unwrap(),
         cache_root.join("population.json")
     );
     assert!(is_kiss_rslip_cache_dir(
-        &tmp.path().join(".kiss").join("rslip_cache")
+        &tmp.path().join(".kiss").join("test").join("rslip_cache")
     ));
     assert!(should_skip_python_source_input_dir(
         &tmp.path().join(".rslip_cache")
@@ -72,8 +70,8 @@ fn storage_paths_hashes_and_input_filters_have_contracts() {
         normalized_python_repo_root(tmp.path()),
         tmp.path().canonicalize().unwrap().display().to_string()
     );
-    assert_eq!(python_coverage_entry_paths(&cache_root).len(), 0);
-    assert!(python_entries_fingerprint(&cache_root).is_ok());
+    assert_eq!(python_coverage_entry_paths(tmp.path()).len(), 0);
+    assert!(python_entries_fingerprint(tmp.path()).is_ok());
     let created = tmp.path().join("created.txt");
     create_new_python_file(&created).unwrap();
     assert!(create_new_python_file(&created).is_err());
@@ -85,33 +83,12 @@ fn storage_paths_hashes_and_input_filters_have_contracts() {
 }
 
 #[test]
-fn stale_entries_fingerprint_makes_python_index_fail_closed() {
+fn source_input_fingerprint_moves_when_a_test_module_body_changes() {
     let tmp = tempfile::tempdir().unwrap();
-    let cache_root = python_coverage_cache_root(tmp.path()).unwrap();
-    let stale_fingerprint = python_entries_fingerprint(&cache_root).unwrap();
-    let entry = cache_root.join("entries").join("new.json");
-    std::fs::create_dir_all(entry.parent().unwrap()).unwrap();
-    std::fs::write(
-        entry,
-        serde_json::json!({
-            "schema_version": kiss::rslip::CACHE_SCHEMA_VERSION,
-            "nodeid": "tests/test_app.py::test_value",
-            "status": "passed",
-            "exit_code": 0,
-            "duration": {"secs": 0, "nanos": 1},
-            "coverage": {"files": {}},
-        })
-        .to_string(),
-    )
-    .unwrap();
-
-    write_python_coverage_index_with_entries_fingerprint(
-        tmp.path(),
-        &PythonCoverageIndex::new(),
-        &stale_fingerprint,
-        &[],
-    )
-    .unwrap();
-
-    assert!(load_current_python_coverage_index(tmp.path()).is_none());
+    std::fs::write(tmp.path().join("app.py"), "VALUE = 1\n").unwrap();
+    let test_module = tmp.path().join("test_app.py");
+    std::fs::write(&test_module, "def test_value():\n    assert True\n").unwrap();
+    let before = python_source_input_fingerprint(tmp.path()).unwrap();
+    std::fs::write(&test_module, "def test_value():\n    assert False\n").unwrap();
+    assert_ne!(before, python_source_input_fingerprint(tmp.path()).unwrap());
 }

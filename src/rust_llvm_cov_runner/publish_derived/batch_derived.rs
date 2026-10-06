@@ -51,7 +51,7 @@ pub(crate) fn try_publish_population_derived_state(
         tools,
         identity,
         population_selectors,
-        &legacy_test_binaries(population_selectors),
+        &placeholder_test_binaries(population_selectors),
     )
 }
 
@@ -204,7 +204,7 @@ pub fn publish_derived_state(
         tools,
         identity,
         selectors,
-        &legacy_test_binaries(selectors),
+        &placeholder_test_binaries(selectors),
         derived_repair,
     )
 }
@@ -384,7 +384,7 @@ pub fn publish_conservative_derived_state_from_check_aggregate(
     })
 }
 
-fn legacy_test_binaries(selectors: &[String]) -> Vec<RustTestBinaryIdentity> {
+fn placeholder_test_binaries(selectors: &[String]) -> Vec<RustTestBinaryIdentity> {
     if selectors.is_empty() {
         return Vec::new();
     }

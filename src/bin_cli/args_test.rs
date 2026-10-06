@@ -359,18 +359,7 @@ fn test_cli_parses_targets_and_rejects_removed_modes() {
 }
 
 #[test]
-fn test_watch_command_parses_without_options() {
-    let cli = Cli::try_parse_from(["kiss", "test-watch"]).unwrap();
-    assert!(matches!(cli.command, Commands::TestWatch));
+fn test_watch_command_is_not_a_subcommand() {
+    assert!(Cli::try_parse_from(["kiss", "test-watch"]).is_err());
     assert!(Cli::try_parse_from(["kiss", "test", "--watch", "commit"]).is_err());
-}
-
-#[test]
-fn test_watch_bg_flag_is_rejected_by_clap() {
-    let err = Cli::try_parse_from(["kiss", "test", "--watch-bg", "commit"]).unwrap_err();
-    let msg = err.to_string();
-    assert!(
-        msg.contains("unexpected argument") || msg.contains("--watch-bg"),
-        "msg={msg}"
-    );
 }

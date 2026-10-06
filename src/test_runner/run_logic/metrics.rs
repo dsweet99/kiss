@@ -57,8 +57,6 @@ pub(super) struct LocalRubricMetrics {
     pub(super) exit_code: i32,
     pub(super) prior_failures: usize,
     pub(super) forced: usize,
-    pub(super) publication_generation_id: String,
-    pub(super) parent_generation_id: String,
 }
 
 impl LocalRubricMetrics {
@@ -108,14 +106,24 @@ impl LocalRubricMetrics {
             prior_failures: planned.prior_failure_selectors.python.len()
                 + planned.prior_failure_selectors.rust.len(),
             forced: forced_selector_count(planned, options),
-            publication_generation_id: String::new(),
-            parent_generation_id: String::new(),
+        }
+    }
+
+    pub(super) fn stage_mut(&mut self, stage: &str) -> (&mut PhaseMetrics, &mut Duration) {
+        match stage {
+            "python" => (&mut self.python, &mut self.python_index_rebuild_duration),
+            "rust_population" => (
+                &mut self.rust_population,
+                &mut self.rust_index_rebuild_duration,
+            ),
+            "rust_final" => (&mut self.rust_final, &mut self.rust_index_rebuild_duration),
+            other => panic!("no metrics slot for stage `{other}`"),
         }
     }
 
     pub(super) fn capture_cache_shape(&mut self, repo_root: &Path) {
         let kiss_cache = repo_root.join(".kiss");
-        let rust_cache = kiss_cache.join("rust_llvm_cov_cache");
+        let rust_cache = kiss_cache.join("test").join("rust_llvm_cov_cache");
         self.kiss_cache_residual_bytes = path_size_bytes(&kiss_cache);
         self.rust_cache_residual_bytes = path_size_bytes(&rust_cache);
         self.rust_entry_cache_bytes = path_size_bytes(&rust_cache.join("entries"));
@@ -136,9 +144,6 @@ impl LocalRubricMetrics {
                 self.rust_transient_residual_count = usize::MAX;
             }
         }
-        let (publication, parent) = generation_pointer_ids(&rust_cache);
-        self.publication_generation_id = publication;
-        self.parent_generation_id = parent;
     }
 
     pub(super) fn print(&self) {
@@ -375,14 +380,6 @@ fn forced_selector_count(planned: &PlannedSelectors, options: &SelectorRunOption
     } else {
         planned.prior_failure_selectors.python.len() + planned.prior_failure_selectors.rust.len()
     }
-}
-
-fn generation_pointer_ids(rust_cache: &Path) -> (String, String) {
-    crate::test_runner::execution_generation::read_pointer(rust_cache)
-        .ok()
-        .flatten()
-        .map(|pointer| (pointer.generation_id, pointer.parent_generation_id))
-        .unwrap_or_default()
 }
 
 #[cfg(test)]

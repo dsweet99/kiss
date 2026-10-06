@@ -2,8 +2,7 @@
 
 .PHONY: all install test lint clean
 
-# Job count and memory limits come from .cargo/config.toml: admin/rustc_memlock.sh
-# shared-locks every rustc up to build.jobs.
+# Job count and the rustc wrapper (admin/rustc_sccache.sh) come from .cargo/config.toml.
 # release-local is the release profile plus incremental compilation (Cargo.toml).
 all:
 	cargo build --profile release-local
@@ -15,7 +14,7 @@ test:
 	pytest tests && cargo nextest run
 
 lint:
-	$(HOME)/kiss-tmp check
+	kiss check
 	ruff check .
 	cargo clippy --all-targets --all-features -- -D warnings -W clippy::cargo
 

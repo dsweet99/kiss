@@ -3,9 +3,6 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-pub(crate) use super::rust_llvm_cov::{
-    cached_rust_check_aggregate_selectors, run_rust_llvm_cov_selectors,
-};
 use kiss::code_roles::is_test_only_file;
 use kiss::rust_llvm_cov_runner::{
     CoverageOutputMode, RustCoverageBatchRequest, build_rust_coverage_batch_plan,
@@ -15,12 +12,16 @@ use kiss::rust_llvm_cov_runner::{
 mod decision;
 #[cfg(test)]
 pub(crate) use decision::combined_selectors;
+pub(crate) use decision::{
+    ChangedTestSelectors, changed_lines_for_sources, changed_test_selectors_by_language,
+    split_source_paths,
+};
 pub(crate) use decision::{CombinedSelectorInput, SelectorPlan, combined_selectors_with_direct};
 
-#[path = "runners/rust_enumerate.rs"]
-mod rust_enumerate;
-pub use rust_enumerate::enumerate_workspace_rust_selectors;
-pub(crate) use rust_enumerate::{rust_logical_to_kiss_test_ids, universe_rust_selectors_for_file};
+pub use crate::test_runner::lang_rust::rust_enumerate::enumerate_workspace_rust_selectors;
+pub(crate) use crate::test_runner::lang_rust::rust_enumerate::{
+    rust_logical_to_kiss_test_ids, universe_rust_selectors_for_file,
+};
 
 pub(crate) fn current_rust_selector_universe(repo_root: &Path) -> BTreeSet<String> {
     crate::test_runner::workspace_selector_cache::cached_rust_selectors_if_rust_fingerprint_current(
@@ -32,6 +33,7 @@ pub(crate) fn current_rust_selector_universe(repo_root: &Path) -> BTreeSet<Strin
     .collect()
 }
 
+#[cfg(test)]
 pub(crate) use crate::test_runner::lang_python::backer as python_backer;
 pub(crate) use crate::test_runner::lang_python::collect;
 use crate::test_runner::python_coverage_index::{
@@ -47,13 +49,13 @@ pub(crate) fn collect_python_nodeids_for_targets(
 ) -> Result<Vec<String>, String> {
     collect_python_nodeids(repo_root, paths, pytest_args)
 }
+#[cfg(test)]
 pub(crate) use crate::test_runner::lang_rust::backer as rust_backer;
 
 use crate::test_runner::lang_rust::workspace::{
     cargo_workspace_member_manifest_dirs, is_workspace_rust_selector_file,
 };
 
-pub(crate) use crate::test_runner::lang_python::rslip::run_rslip_selectors;
 pub(crate) use crate::test_runner::lang_python::rslip::{
     detect_rslip_versions, rslip_request_from_parts,
 };
@@ -336,7 +338,7 @@ pub(crate) fn build_rust_coverage_batch_dry_run_lines(
         cwd: PathBuf::from("."),
         source_root: PathBuf::from("/kiss-dry-run-no-nextest-toml"),
         cargo: PathBuf::from("cargo"),
-        cache_root: PathBuf::from("<cache>/rust_llvm_cov_cache"),
+        cache_root: PathBuf::from("/kiss-dry-run-cache/rust_llvm_cov_cache"),
         logical_selectors: selectors.to_vec(),
         cargo_args: Vec::new(),
         test_args: extra.to_vec(),

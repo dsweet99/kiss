@@ -1,7 +1,7 @@
 use crate::bin_cli::test_cmd::TestCommandArgs;
 use crate::test_runner::target_request::TargetRequest;
-use crate::test_runner::{RunTestCmdArgs, WatchCoverageParams, WatchCoverageResult};
 
+#[cfg(test)]
 fn coverage_from_ready_request(
     request: &TargetRequest,
     coverage_all: bool,
@@ -18,28 +18,6 @@ fn coverage_from_ready_request(
     1
 }
 
-pub(crate) fn evaluate_watch_coverage(
-    cycle: &RunTestCmdArgs<'_>,
-    cov: &WatchCoverageParams<'_>,
-) -> WatchCoverageResult {
-    coverage_result_from_exit(coverage_from_ready_request(
-        &crate::test_runner::target_request::request_from_run_args(cycle),
-        cov.coverage_all,
-        cycle.extras,
-    ))
-}
-
-pub(crate) fn coverage_result_from_exit(cov_code: i32) -> WatchCoverageResult {
-    if crate::test_runner::consume_rust_batch_interrupted() {
-        return WatchCoverageResult::interrupted();
-    }
-    if cov_code == 0 {
-        WatchCoverageResult::ok(0)
-    } else {
-        WatchCoverageResult::failed(cov_code, "coverage gate failed")
-    }
-}
-
 #[cfg(test)]
 pub(crate) fn finish_with_coverage(args: &TestCommandArgs<'_>, test_exit: i32) -> i32 {
     let python_extra_owned =
@@ -50,11 +28,7 @@ pub(crate) fn finish_with_coverage(args: &TestCommandArgs<'_>, test_exit: i32) -
     };
     let cov_code =
         coverage_from_ready_request(&request_from_test_args(args), args.coverage_all, extras);
-    if test_exit != 0 {
-        test_exit
-    } else {
-        cov_code
-    }
+    if test_exit != 0 { test_exit } else { cov_code }
 }
 
 pub(crate) fn request_from_test_args(args: &TestCommandArgs<'_>) -> TargetRequest {

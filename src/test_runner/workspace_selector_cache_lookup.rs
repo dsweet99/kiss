@@ -17,6 +17,9 @@ pub(crate) fn store_python_workspace_selectors(
     let Ok(fps) = workspace_lang_fingerprints(repo_root, ignore) else {
         return false;
     };
+    if !fps.has_python && python_selectors.is_empty() && python_extra.is_empty() {
+        return true;
+    }
     let cache = language_cache(
         normalized_root(repo_root),
         ignore,
@@ -79,42 +82,31 @@ pub(crate) fn load_cached_workspace_selectors(
     ignore: &[String],
     python_extra: &[String],
 ) -> Option<(Vec<String>, Vec<String>, String)> {
-    let plugins = kiss::TestSectionConfig::load().pytest_plugins;
-    let python = read_language_cache_for_identity(
-        repo_root,
-        PYTHON_CACHE_FILE,
-        "python",
-        ignore,
-        python_extra,
-        &plugins,
-    )?;
-    let rust =
-        read_language_cache_for_identity(repo_root, RUST_CACHE_FILE, "rust", ignore, &[], &[])?;
-    if !cache_identity_matches(&python, repo_root, ignore, python_extra, &plugins)
-        || !cache_identity_matches(&rust, repo_root, ignore, &[], &[])
-    {
-        return None;
-    }
     let fps = workspace_lang_fingerprints(repo_root, ignore).ok()?;
-    if !language_cache_matches(
-        &python,
-        repo_root,
-        ignore,
-        python_extra,
-        &plugins,
-        &fps.python,
-    ) || !language_cache_matches(&rust, repo_root, ignore, &[], &[], &fps.rust)
-    {
-        return None;
-    }
-    let python_selectors = drop_ignored_selectors(python.selectors, ignore);
-    let rust_selectors = drop_ignored_selectors(rust.selectors, ignore);
-    rust_memo::remember_rust_selectors(
-        &rust.source_root,
-        ignore,
-        &rust.files_fingerprint,
-        &rust_selectors,
-    );
+    let python_selectors = if fps.has_python || !python_extra.is_empty() {
+        load_cached_python_workspace_hit(repo_root, ignore, python_extra)?.0
+    } else {
+        Vec::new()
+    };
+    let rust_selectors = if fps.has_rust {
+        let rust =
+            read_language_cache_for_identity(repo_root, RUST_CACHE_FILE, "rust", ignore, &[], &[])?;
+        if !cache_identity_matches(&rust, repo_root, ignore, &[], &[])
+            || !language_cache_matches(&rust, repo_root, ignore, &[], &[], &fps.rust)
+        {
+            return None;
+        }
+        let selectors = drop_ignored_selectors(rust.selectors, ignore);
+        rust_memo::remember_rust_selectors(
+            &rust.source_root,
+            ignore,
+            &rust.files_fingerprint,
+            &selectors,
+        );
+        selectors
+    } else {
+        Vec::new()
+    };
     Some((
         python_selectors,
         rust_selectors,
@@ -146,6 +138,15 @@ pub(crate) fn load_cached_workspace_selectors_for_lang(
 pub(crate) struct SelectorCountNeed {
     pub(crate) python: bool,
     pub(crate) rust: bool,
+}
+
+impl SelectorCountNeed {
+    pub(crate) fn wants(self, language: kiss::Language) -> bool {
+        match language {
+            kiss::Language::Python => self.python,
+            kiss::Language::Rust => self.rust,
+        }
+    }
 }
 
 pub(crate) fn load_workspace_selectors_for_count(

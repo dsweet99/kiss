@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::time::Instant;
 
-use super::projection::{build_slice_projection, remember_target_plan, slice_for};
+use super::projection::{build_slice_projection, slice_for};
 use super::report::{TargetPlanPreview, TargetReport};
 use super::resolve::resolve_only;
 use super::scope::ReportScope;
@@ -78,19 +78,6 @@ impl EnsurePolicy {
     /// Idle / report query: complete membership, no retry-bad, no assembly repair.
     pub(crate) fn query(coverage_all: bool) -> Self {
         Self::complete(false, coverage_all)
-    }
-
-    /// Assemble a report from witnesses without running repair subprocesses.
-    #[cfg(test)]
-    pub(crate) fn assemble(coverage_all: bool) -> Self {
-        Self {
-            dry_run: false,
-            require_complete: false,
-            inject_mismatch: false,
-            retry_bad: false,
-            coverage_all,
-            assemble_only: true,
-        }
     }
 
     /// Soft materialize: may omit complete-membership errors (tests / tolerant paths).
@@ -194,13 +181,12 @@ fn try_snapshot(
     if stamp != stamp_again {
         return Err(EnsureError::ConcurrentMutation);
     }
-    remember_target_plan(repo_root, request, &resolved_again);
     let mut selectors = projection.selectors();
     selectors.extend(resolved.direct_selectors.clone());
     let mut scope =
         ReportScope::from_membership(projection.coverage_regions(), selectors, stamp.complete);
     apply_runner_extra(repo_root, &mut scope, args)?;
-    let available = super::rows::available_rows(repo_root, &scope);
+    let available = super::rows::available_rows(repo_root, &scope, runner_extras(args));
     let graph_repair = super::report::graph_repair_needed(repo_root, &scope, policy.coverage_all());
     let force = args.is_some_and(|item| item.force_rerun);
     let time_gate_active = time_gate_active(repo_root, args);
@@ -222,14 +208,16 @@ fn try_snapshot(
             plan,
         }));
     }
-    let deferred_edit = crate::test_runner::ensure_runtime::deferred_edit_pending();
-    if !policy.retry_bad() && !force && !deferred_edit {
+    if !policy.retry_bad() && !force {
         let extras = args
             .map(|item| item.extras)
             .unwrap_or(crate::test_runner::language_keyed::LanguageKeyed::EMPTY);
-        if let Some(ready) =
-            super::bind::load_ready_for_request(repo_root, request, policy.coverage_all(), extras)
-        {
+        if let Some(ready) = super::bind::load_ready_for_request(
+            repo_root,
+            request,
+            policy.coverage_all(),
+            extras,
+        ) {
             return Ok(SnapshotOutcome::Report(Box::new(ready)));
         }
     }
@@ -239,12 +227,13 @@ fn try_snapshot(
     }
     if !policy.assemble_only()
         && let Some(args) = args
-        && (!plan.known_execution_union().is_empty()
-            || plan.population_repair
-            || deferred_edit)
+        && (!plan.known_execution_union().is_empty() || plan.population_repair)
     {
-        execute_repair(args)?;
-        return assemble_after_repair(repo_root, request, policy, time_gate_active, args);
+        let facts = RunFacts {
+            time_gate_active,
+            runner_exit: execute_repair(args)?,
+        };
+        return assemble_after_repair(repo_root, request, policy, facts, args);
     }
     if args.is_some_and(|item| !item.extras.rust.is_empty())
         && scope.selectors.is_empty()
@@ -272,9 +261,18 @@ fn try_snapshot(
         policy,
         scope,
         stamp,
-        time_gate_active,
+        RunFacts {
+            time_gate_active,
+            runner_exit: 0,
+        },
         args,
     )
+}
+
+#[derive(Clone, Copy)]
+struct RunFacts {
+    time_gate_active: bool,
+    runner_exit: i32,
 }
 
 fn execute_repair(args: &crate::test_runner::RunTestCmdArgs<'_>) -> Result<i32, EnsureError> {
@@ -294,7 +292,7 @@ fn assemble_after_repair(
     repo_root: &Path,
     request: &TargetRequest,
     policy: &EnsurePolicy,
-    time_gate_active: bool,
+    facts: RunFacts,
     args: &crate::test_runner::RunTestCmdArgs<'_>,
 ) -> Result<SnapshotOutcome, EnsureError> {
     let prelim = resolve_only(repo_root, request).map_err(EnsureError::Planning)?;
@@ -316,7 +314,6 @@ fn assemble_after_repair(
     if stamp != stamp_again {
         return Err(EnsureError::ConcurrentMutation);
     }
-    remember_target_plan(repo_root, request, &resolved_again);
     let mut selectors = projection.selectors();
     selectors.extend(resolved.direct_selectors);
     let mut scope =
@@ -327,15 +324,7 @@ fn assemble_after_repair(
             crate::test_runner::runners::NO_COVERING_TESTS_MSG.into(),
         ));
     }
-    assemble_report(
-        repo_root,
-        request,
-        policy,
-        scope,
-        stamp,
-        time_gate_active,
-        Some(args),
-    )
+    assemble_report(repo_root, request, policy, scope, stamp, facts, Some(args))
 }
 
 fn refresh_python_witnesses(
@@ -349,32 +338,12 @@ fn refresh_python_witnesses(
         .filter(|selector| selector.contains(".py"))
         .cloned()
         .collect();
-    if let Ok(pinned) =
-        crate::test_runner::python_coverage_index::try_load_pinned_python_generation_warm(repo_root)
-        && python_scope_has_typed_rows(&pinned, &python)
-        && crate::test_runner::lang_python::generation::identity_matches_current(
-            repo_root,
-            &pinned.plan.base_identity,
-            args.extras.python,
-        )
-    {
-        store_live_python_selectors(repo_root, args.ignore(), &pinned.plan.selectors);
-        return Ok(());
-    }
-    let discovered = crate::test_runner::lang_python::collect::collect_python_nodeids(
+    let discovered = crate::test_runner::runners::enumerate_workspace_python_selectors(
         repo_root,
-        None,
+        args.ignore(),
         args.extras.python,
     )
     .unwrap_or_else(|_| python.clone());
-    if !discovered.is_empty() {
-        crate::test_runner::python_coverage_index::publish_python_generation_from_cached_selectors(
-            repo_root,
-            &discovered,
-            args.extras.python,
-            &args.gate_config,
-        )?;
-    }
     let stored = if discovered.is_empty() {
         Vec::new()
     } else {
@@ -385,7 +354,10 @@ fn refresh_python_witnesses(
 }
 
 fn store_live_python_selectors(repo_root: &Path, ignore: &[String], selectors: &[String]) {
-    let live = live_python_selectors(repo_root, selectors);
+    let live: Vec<String> = live_python_selectors(repo_root, selectors)
+        .into_iter()
+        .filter(|selector| !kiss::selector_ignored_by_prefixes(selector, ignore))
+        .collect();
     let _ = crate::test_runner::workspace_selector_cache::store_python_workspace_selectors(
         repo_root,
         ignore,
@@ -406,26 +378,6 @@ fn live_python_selectors(repo_root: &Path, selectors: &[String]) -> Vec<String> 
         })
         .cloned()
         .collect()
-}
-
-fn python_scope_has_typed_rows(
-    pinned: &crate::test_runner::python_coverage_index::generation::PinnedPythonGeneration,
-    python: &[String],
-) -> bool {
-    if python.is_empty() {
-        return false;
-    }
-    let witness = crate::test_runner::lang_python::python_witness_from_pinned(pinned);
-    python.iter().all(|selector| {
-        witness
-            .selectors
-            .iter()
-            .position(|item| item == selector)
-            .and_then(|idx| witness.raw_statuses.get(idx).copied())
-            .is_some_and(|status| {
-                status != crate::test_runner::lang_iface::WitnessStatus::Unresolved
-            })
-    })
 }
 
 fn apply_runner_extra(
@@ -457,14 +409,18 @@ fn assemble_report(
     policy: &EnsurePolicy,
     scope: ReportScope,
     stamp: super::slice::TargetSliceStamp,
-    time_gate_active: bool,
+    facts: RunFacts,
     args: Option<&crate::test_runner::RunTestCmdArgs<'_>>,
 ) -> Result<SnapshotOutcome, EnsureError> {
-    let rows = super::rows::rows_from_witnesses(repo_root, &scope)
+    let rows = super::rows::rows_from_witnesses(
+        repo_root,
+        &scope,
+        runner_extras(args),
+    )
+    .map_err(EnsureError::IncompleteEvidence)?;
+    super::rows::duration_evidence_holds(&rows, facts.time_gate_active)
         .map_err(EnsureError::IncompleteEvidence)?;
-    super::rows::duration_evidence_holds(&rows, time_gate_active)
-        .map_err(EnsureError::IncompleteEvidence)?;
-    let exit_code = TargetReport::exit_from_rows(&rows);
+    let exit_code = assembled_exit(&rows, facts.runner_exit);
     let mut report = TargetReport::assembled_in(
         repo_root,
         request,
@@ -480,6 +436,10 @@ fn assemble_report(
     Ok(SnapshotOutcome::Report(Box::new(report)))
 }
 
+pub(crate) fn assembled_exit(rows: &[super::report::SelectorRow], runner_exit: i32) -> i32 {
+    TargetReport::combine_exit(TargetReport::exit_from_rows(rows), runner_exit)
+}
+
 fn time_gate_active(
     repo_root: &Path,
     args: Option<&crate::test_runner::RunTestCmdArgs<'_>>,
@@ -488,4 +448,13 @@ fn time_gate_active(
         .map(|item| item.gate_config.clone())
         .unwrap_or_else(|| kiss::GateConfig::load_for_repo(repo_root));
     !gate.max_unit_test_seconds.is_empty()
+}
+
+fn runner_extras<'a>(
+    args: Option<&crate::test_runner::RunTestCmdArgs<'a>>,
+) -> crate::test_runner::language_keyed::LanguageKeyed<&'a [String]> {
+    args.map_or(
+        crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
+        |item| item.extras,
+    )
 }

@@ -143,6 +143,14 @@ impl crate::test_runner::coverage_decision::LanguageExecutor for FakeLanguageMod
         true
     }
 
+    fn stage_label(&self, population: bool) -> &'static str {
+        match (self.language, population) {
+            (Language::Python, _) => "python",
+            (Language::Rust, true) => "rust_population",
+            (Language::Rust, false) => "rust_final",
+        }
+    }
+
     fn dry_run_lines(
         &self,
         selectors: &[String],

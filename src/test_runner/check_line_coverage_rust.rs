@@ -319,7 +319,7 @@ mod tests {
         };
         let err = coverage_from_current_snapshots(
             tmp.path(),
-            &tmp.path().join(".kiss/rust_llvm_cov_cache"),
+            &tmp.path().join(".kiss/test/rust_llvm_cov_cache"),
             &identity,
             &["a".into()],
             true,
@@ -384,7 +384,7 @@ mod tests {
         assert!(
             try_load_rust_coverage_from_witness_prior(
                 tmp.path(),
-                &tmp.path().join(".kiss/rust_llvm_cov_cache"),
+                &tmp.path().join(".kiss/test/rust_llvm_cov_cache"),
                 &identity,
                 &selectors,
                 &kiss::GateConfig::default(),
@@ -395,9 +395,7 @@ mod tests {
 
     #[test]
     fn witness_coverage_uses_embedded_covered_lines_when_accepted() {
-        use crate::test_runner::execution_witness::{
-            PublishRustWitness, WitnessScope, WitnessStatus, publish_rust_execution_witness,
-        };
+        use crate::test_runner::execution_witness::WitnessStatus;
         let tmp = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(tmp.path().join("src")).unwrap();
         std::fs::write(
@@ -414,17 +412,23 @@ mod tests {
         };
         let selectors = vec!["a".into(), "b".into()];
         let covered = BTreeMap::from([("src/lib.rs".into(), BTreeSet::from([1u32, 2u32]))]);
-        let _ = publish_rust_execution_witness(PublishRustWitness {
-            repo_root: tmp.path(),
-            identity: &identity,
-            scope: WitnessScope::Full,
-            selectors: &selectors,
-            statuses: &[WitnessStatus::Passed, WitnessStatus::Passed],
-            durations_ns: &[Some(10), Some(20)],
-            covered_lines: &covered,
-            complete: true,
-            jobs: 1,
-        })
+        crate::test_runner::lang_rust::test_records::seed_rust_witness(
+            crate::test_runner::lang_rust::test_records::SeedRustWitness {
+                repo_root: tmp.path(),
+                identity: &identity,
+                selectors: &selectors,
+                statuses: &[WitnessStatus::Passed, WitnessStatus::Passed],
+                durations_ns: &[Some(10), Some(20)],
+                covered_lines: &covered,
+                complete: true,
+            },
+        )
+        .unwrap();
+        kiss::rust_llvm_cov_runner::write_ordinary_source_snapshot(
+            &rust_coverage_cache_root(tmp.path()),
+            tmp.path(),
+            &identity,
+        )
         .unwrap();
         let loaded = try_load_rust_coverage_from_witness(
             tmp.path(),
@@ -448,17 +452,17 @@ mod tests {
         );
 
         let empty = BTreeMap::new();
-        let _ = publish_rust_execution_witness(PublishRustWitness {
-            repo_root: tmp.path(),
-            identity: &identity,
-            scope: WitnessScope::Full,
-            selectors: &selectors,
-            statuses: &[WitnessStatus::Passed, WitnessStatus::Passed],
-            durations_ns: &[Some(10), Some(20)],
-            covered_lines: &empty,
-            complete: true,
-            jobs: 1,
-        })
+        crate::test_runner::lang_rust::test_records::seed_rust_witness(
+            crate::test_runner::lang_rust::test_records::SeedRustWitness {
+                repo_root: tmp.path(),
+                identity: &identity,
+                selectors: &selectors,
+                statuses: &[WitnessStatus::Passed, WitnessStatus::Passed],
+                durations_ns: &[Some(10), Some(20)],
+                covered_lines: &empty,
+                complete: true,
+            },
+        )
         .unwrap();
         assert!(
             try_load_rust_coverage_from_witness(
@@ -469,17 +473,17 @@ mod tests {
             )
             .is_none()
         );
-        let _ = publish_rust_execution_witness(PublishRustWitness {
-            repo_root: tmp.path(),
-            identity: &identity,
-            scope: WitnessScope::Full,
-            selectors: &selectors,
-            statuses: &[WitnessStatus::Failed, WitnessStatus::Passed],
-            durations_ns: &[Some(10), Some(20)],
-            covered_lines: &covered,
-            complete: false,
-            jobs: 1,
-        })
+        crate::test_runner::lang_rust::test_records::seed_rust_witness(
+            crate::test_runner::lang_rust::test_records::SeedRustWitness {
+                repo_root: tmp.path(),
+                identity: &identity,
+                selectors: &selectors,
+                statuses: &[WitnessStatus::Failed, WitnessStatus::Passed],
+                durations_ns: &[Some(10), Some(20)],
+                covered_lines: &covered,
+                complete: false,
+            },
+        )
         .unwrap();
         let incomplete =
             crate::test_runner::execution_witness::try_load_rust_execution_witness(tmp.path())
@@ -490,9 +494,7 @@ mod tests {
 
     #[test]
     fn witness_coverage_rejects_enumerator_extras() {
-        use crate::test_runner::execution_witness::{
-            PublishRustWitness, WitnessScope, WitnessStatus, publish_rust_execution_witness,
-        };
+        use crate::test_runner::execution_witness::WitnessStatus;
         let tmp = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(tmp.path().join("src")).unwrap();
         std::fs::write(
@@ -510,17 +512,17 @@ mod tests {
         let witness_selectors = vec!["a".into(), "b".into()];
         let enumerator = vec!["a".into(), "b".into(), "c".into()];
         let covered = BTreeMap::from([("src/lib.rs".into(), BTreeSet::from([1u32]))]);
-        let _ = publish_rust_execution_witness(PublishRustWitness {
-            repo_root: tmp.path(),
-            identity: &identity,
-            scope: WitnessScope::Full,
-            selectors: &witness_selectors,
-            statuses: &[WitnessStatus::Passed, WitnessStatus::Passed],
-            durations_ns: &[Some(12_000_000_000), Some(20)],
-            covered_lines: &covered,
-            complete: true,
-            jobs: 1,
-        })
+        crate::test_runner::lang_rust::test_records::seed_rust_witness(
+            crate::test_runner::lang_rust::test_records::SeedRustWitness {
+                repo_root: tmp.path(),
+                identity: &identity,
+                selectors: &witness_selectors,
+                statuses: &[WitnessStatus::Passed, WitnessStatus::Passed],
+                durations_ns: &[Some(12_000_000_000), Some(20)],
+                covered_lines: &covered,
+                complete: true,
+            },
+        )
         .unwrap();
         let tight = kiss::GateConfig {
             max_unit_test_seconds: vec![("*".into(), 5.0)],

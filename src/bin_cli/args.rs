@@ -93,7 +93,7 @@ pub fn parse_test_invocation(operands: &[String]) -> Result<TestInvocation, Stri
         return Ok(TestInvocation::All);
     }
     let first = &operands[0];
-    reject_legacy_all_operand(operands)?;
+    reject_all_operand(operands)?;
     if let Some(reserved) = parse_reserved_action(first, operands.len())? {
         return Ok(reserved);
     }
@@ -103,7 +103,7 @@ pub fn parse_test_invocation(operands: &[String]) -> Result<TestInvocation, Stri
     parse_path_or_directory_targets(operands, first)
 }
 
-fn reject_legacy_all_operand(operands: &[String]) -> Result<(), String> {
+fn reject_all_operand(operands: &[String]) -> Result<(), String> {
     if operands.iter().any(|operand| operand == "all") {
         Err("unknown test target 'all'. Use `kiss test .` instead of `kiss test all`.".to_string())
     } else {

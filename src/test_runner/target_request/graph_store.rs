@@ -1,20 +1,15 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 
 use super::digest::digest_bytes;
 
 const SCHEMA: &str = "graph-evidence-v3";
-/// Cap retained evidence keys (aligned with target-plans / target-reports).
+/// Cap retained evidence keys.
 const ENTRY_LIMIT: usize = 64;
-
-#[cfg(test)]
-static EVIDENCE_SOURCE_READS: std::sync::atomic::AtomicUsize =
-    std::sync::atomic::AtomicUsize::new(0);
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct GraphOrphanItem {
@@ -53,8 +48,6 @@ pub(crate) fn evidence_key(
             .strip_prefix(repo_root)
             .map(|item| item.to_string_lossy().into_owned())
             .unwrap_or_else(|_| path.to_string_lossy().into_owned());
-        #[cfg(test)]
-        EVIDENCE_SOURCE_READS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let digest = fs::read(path)
             .map(|bytes| digest_bytes(&bytes))
             .unwrap_or_default();
@@ -87,56 +80,13 @@ pub(crate) fn evidence_mutable_digest(
     digest_bytes(&serde_json::to_vec(&payload).expect("graph evidence mutable"))
 }
 
-/// Presence without full orphan-item deserialize: meta membership, else thin identity.
-pub(crate) fn evidence_present(repo_root: &Path, key: &str) -> bool {
-    let dir = store_dir(repo_root);
-    if !dir.is_dir() {
-        return false;
-    }
-    let Ok(_lock) = lock_store(&dir) else {
-        return false;
-    };
-    let meta = read_meta(&dir);
-    if meta.keys.iter().any(|item| item == key) && entry_path(repo_root, key).is_file() {
-        return true;
-    }
-    read_matching_identity(key, &entry_path(repo_root, key)).is_some()
-        || read_matching_identity(key, &legacy_entry_path(repo_root, key)).is_some()
-}
-
-#[derive(Deserialize)]
-struct StoredGraphIdentity {
-    schema: String,
-    key: String,
-}
-
-fn read_matching_identity(key: &str, path: &Path) -> Option<()> {
-    let stored: StoredGraphIdentity = serde_json::from_slice(&fs::read(path).ok()?).ok()?;
-    (stored.schema == SCHEMA && stored.key == key).then_some(())
-}
-
-#[cfg(test)]
-pub(crate) fn reset_evidence_source_reads() {
-    EVIDENCE_SOURCE_READS.store(0, std::sync::atomic::Ordering::Relaxed);
-}
-
-#[cfg(test)]
-pub(crate) fn evidence_source_reads() -> usize {
-    EVIDENCE_SOURCE_READS.load(std::sync::atomic::Ordering::Relaxed)
-}
-
 pub(crate) fn load_items(repo_root: &Path, key: &str) -> Option<Vec<GraphOrphanItem>> {
     let dir = store_dir(repo_root);
     if !dir.is_dir() {
         return None;
     }
-    // Hold the same exclusive flock as store_items so concurrent kiss test / watch
-    // publishers cannot tear dual-path (full-key + legacy) reads mid-migrate.
     let _lock = lock_store(&dir).ok()?;
-    // Prefer full-key path; fall back to legacy 16-hex filename with equality so
-    // upgraded kiss test processes still reuse pre-fix evidence (fail-closed on mismatch).
     read_matching_items(key, &entry_path(repo_root, key))
-        .or_else(|| read_matching_items(key, &legacy_entry_path(repo_root, key)))
 }
 
 fn read_matching_items(key: &str, path: &Path) -> Option<Vec<GraphOrphanItem>> {
@@ -151,7 +101,7 @@ pub(crate) fn store_items(
 ) -> Result<(), String> {
     let dir = store_dir(repo_root);
     fs::create_dir_all(&dir).map_err(|err| format!("graph evidence store: {err}"))?;
-    // Serialize concurrent kiss test / watch publishers (VISION: multi-process, no corruption).
+    // Serialize concurrent kiss test publishers (VISION: multi-process, no corruption).
     let _lock = lock_store(&dir)?;
     let stored = StoredGraph {
         schema: SCHEMA.into(),
@@ -163,7 +113,7 @@ pub(crate) fn store_items(
         fs::create_dir_all(parent).map_err(|err| format!("graph evidence store: {err}"))?;
     }
     // Full-key tmp name: colliding 16-hex prefixes must not share one tmp path under
-    // concurrent kiss test / watch assembly writers.
+    // concurrent kiss test assembly writers.
     let tmp = publish_tmp_path(&dir, key);
     let bytes = serde_json::to_vec(&stored).map_err(|err| format!("graph evidence json: {err}"))?;
     {
@@ -172,12 +122,6 @@ pub(crate) fn store_items(
             .map_err(|err| format!("graph evidence write: {err}"))?;
     }
     fs::rename(tmp, path).map_err(|err| format!("graph evidence publish: {err}"))?;
-    // Drop legacy truncated file only when it held this same identity (peer keys that
-    // still share the prefix path are left for their own equality-checked loads).
-    let legacy = legacy_entry_path(repo_root, key);
-    if read_matching_items(key, &legacy).is_some() {
-        let _ = fs::remove_file(&legacy);
-    }
     // Track published keys and prune oldest above ENTRY_LIMIT (kt_bug.md retention).
     let mut meta = read_meta(&dir);
     meta.keys.retain(|item| item != key);
@@ -188,35 +132,21 @@ pub(crate) fn store_items(
 }
 
 fn store_dir(repo_root: &Path) -> PathBuf {
-    repo_root
-        .join("target")
-        .join("kiss-plan")
-        .join("graph-evidence")
+    crate::test_runner::test_state_dir(repo_root).join("graph-evidence")
 }
 
 fn entry_path(repo_root: &Path, key: &str) -> PathBuf {
     store_dir(repo_root).join(format!("{key}.json"))
 }
 
-fn legacy_entry_path(repo_root: &Path, key: &str) -> PathBuf {
-    store_dir(repo_root).join(format!("{}.json", &key[..16.min(key.len())]))
-}
-
 fn publish_tmp_path(dir: &Path, key: &str) -> PathBuf {
     dir.join(format!(".{key}.tmp"))
 }
 
-fn lock_store(dir: &Path) -> Result<File, String> {
-    let file = OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .read(true)
-        .write(true)
-        .open(dir.join("lock"))
-        .map_err(|err| format!("graph evidence lock: {err}"))?;
-    file.lock_exclusive()
-        .map_err(|err| format!("graph evidence lock: {err}"))?;
-    Ok(file)
+fn lock_store(dir: &Path) -> Result<kiss::test_state_lock::TestStateLock, String> {
+    let state_dir = dir.parent().unwrap_or(dir);
+    crate::test_runner::lock_test_state(state_dir)
+        .map_err(|err| format!("graph evidence lock: {err}"))
 }
 
 fn read_meta(dir: &Path) -> StoreMeta {
@@ -242,11 +172,6 @@ fn prune_unlocked(repo_root: &Path, meta: &mut StoreMeta) {
     while meta.keys.len() > ENTRY_LIMIT {
         let oldest = meta.keys.remove(0);
         let _ = fs::remove_file(entry_path(repo_root, &oldest));
-        // Equality-checked legacy unlink: colliding-prefix peers may own the 16-hex path.
-        let legacy = legacy_entry_path(repo_root, &oldest);
-        if read_matching_items(&oldest, &legacy).is_some() {
-            let _ = fs::remove_file(&legacy);
-        }
     }
 }
 
@@ -288,20 +213,6 @@ mod tests {
     }
 
     #[test]
-    fn evidence_present_hits_meta_without_requiring_full_item_load() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let key = "a".repeat(64);
-        store_items(tmp.path(), &key, vec![stub_item("a")]).unwrap();
-        assert!(evidence_present(tmp.path(), &key));
-        assert!(!evidence_present(tmp.path(), &"b".repeat(64)));
-        let _ = fs::remove_file(entry_path(tmp.path(), &key));
-        assert!(
-            !evidence_present(tmp.path(), &key),
-            "meta membership alone must not claim presence when the blob is gone"
-        );
-    }
-
-    #[test]
     fn evidence_mutable_digest_moves_with_covered_not_with_unrelated_schema_noise() {
         let mut covered = BTreeMap::new();
         covered.insert("a.py".into(), BTreeSet::from([1u32]));
@@ -309,11 +220,18 @@ mod tests {
         covered.insert("b.py".into(), BTreeSet::from([1u32]));
         let b = evidence_mutable_digest(&[], &covered, "cfg");
         assert_ne!(a, b);
-        assert_eq!(a, evidence_mutable_digest(&[], &{
-            let mut again = BTreeMap::new();
-            again.insert("a.py".into(), BTreeSet::from([1u32]));
-            again
-        }, "cfg"));
+        assert_eq!(
+            a,
+            evidence_mutable_digest(
+                &[],
+                &{
+                    let mut again = BTreeMap::new();
+                    again.insert("a.py".into(), BTreeSet::from([1u32]));
+                    again
+                },
+                "cfg"
+            )
+        );
     }
 
     #[test]
@@ -328,10 +246,14 @@ mod tests {
             tmp_a, tmp_b,
             "concurrent writers must not share one truncated tmp path"
         );
-        let legacy_shared = dir.join(format!(".{}.tmp", &key_a[..16]));
-        assert_ne!(tmp_a, legacy_shared);
+        let truncated_shared = dir.join(format!(".{}.tmp", &key_a[..16]));
+        assert_ne!(tmp_a, truncated_shared);
         assert!(
-            tmp_a.file_name().unwrap().to_string_lossy().contains(&key_a),
+            tmp_a
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .contains(&key_a),
             "production tmp must embed the full key, got {}",
             tmp_a.display()
         );
@@ -368,9 +290,8 @@ mod tests {
         let held = lock_store(&dir).expect("hold exclusive lock");
         let repo = tmp.path().to_path_buf();
         let key = "d".repeat(64);
-        let handle = std::thread::spawn(move || {
-            store_items(&repo, &key, vec![stub_item("blocked")])
-        });
+        let handle =
+            std::thread::spawn(move || store_items(&repo, &key, vec![stub_item("blocked")]));
         let started = std::time::Instant::now();
         while started.elapsed() < std::time::Duration::from_millis(200) {
             if handle.is_finished() {
@@ -412,82 +333,11 @@ mod tests {
         assert!(
             !handle.is_finished(),
             "load_items must block on an already-held exclusive store lock so \
-             dual-path reads cannot race store_items migrate"
+             reads cannot race store_items"
         );
         drop(held);
         let loaded = handle.join().expect("load_items thread").expect("cached");
         assert_eq!(loaded[0].unit_name, "cached");
-    }
-
-    #[test]
-    fn load_items_reuses_legacy_16_hex_file_with_key_equality() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let (key_a, key_b) = colliding_keys();
-        let dir = store_dir(tmp.path());
-        fs::create_dir_all(&dir).unwrap();
-        // Simulate a pre-fix truncated publish for key A only.
-        let legacy = StoredGraph {
-            schema: SCHEMA.into(),
-            key: key_a.clone(),
-            items: vec![stub_item("legacy-a")],
-        };
-        let bytes = serde_json::to_vec(&legacy).unwrap();
-        fs::write(legacy_entry_path(tmp.path(), &key_a), bytes).unwrap();
-        assert!(
-            !entry_path(tmp.path(), &key_a).exists(),
-            "fixture must be legacy-only"
-        );
-
-        let loaded = load_items(tmp.path(), &key_a).expect("legacy A must load");
-        assert_eq!(loaded[0].unit_name, "legacy-a");
-        assert!(
-            load_items(tmp.path(), &key_b).is_none(),
-            "colliding-prefix peer B must not receive A's legacy payload"
-        );
-
-        // Full-key path must win when both filenames exist for the same identity.
-        let full = StoredGraph {
-            schema: SCHEMA.into(),
-            key: key_a.clone(),
-            items: vec![stub_item("full-a")],
-        };
-        fs::write(entry_path(tmp.path(), &key_a), serde_json::to_vec(&full).unwrap()).unwrap();
-        assert_eq!(
-            load_items(tmp.path(), &key_a).unwrap()[0].unit_name,
-            "full-a",
-            "full-key entry must be preferred over legacy"
-        );
-
-        // Publishing colliding-prefix B must not delete peer A's legacy file.
-        // (Rewrite legacy-only again after removing full-key to isolate peer publish.)
-        fs::remove_file(entry_path(tmp.path(), &key_a)).unwrap();
-        fs::write(
-            legacy_entry_path(tmp.path(), &key_a),
-            serde_json::to_vec(&legacy).unwrap(),
-        )
-        .unwrap();
-        store_items(tmp.path(), &key_b, vec![stub_item("b")]).unwrap();
-        assert!(
-            legacy_entry_path(tmp.path(), &key_a).is_file(),
-            "publishing B must not remove peer A's legacy prefix file"
-        );
-        assert_eq!(
-            load_items(tmp.path(), &key_a).unwrap()[0].unit_name,
-            "legacy-a"
-        );
-        assert_eq!(load_items(tmp.path(), &key_b).unwrap()[0].unit_name, "b");
-
-        // Republish migrates A to full-key path and removes matching legacy file.
-        store_items(tmp.path(), &key_a, vec![stub_item("migrated-a")]).unwrap();
-        assert!(entry_path(tmp.path(), &key_a).is_file());
-        assert!(
-            !legacy_entry_path(tmp.path(), &key_a).exists(),
-            "matching legacy file must be removed after full-key publish"
-        );
-        assert_eq!(
-            load_items(tmp.path(), &key_a).unwrap()[0].unit_name,
-            "migrated-a"
-        );
     }
 
     fn count_full_key_entries(repo_root: &Path) -> usize {
@@ -529,64 +379,6 @@ mod tests {
         assert_eq!(
             load_items(tmp.path(), &newest).unwrap()[0].unit_name,
             format!("k{}", ENTRY_LIMIT + 2)
-        );
-    }
-
-    #[test]
-    fn prune_removes_matching_legacy_entry_not_peer() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let (key_a, key_b) = colliding_keys();
-        let dir = store_dir(tmp.path());
-        fs::create_dir_all(&dir).unwrap();
-
-        // Full-key + legacy for A (same identity).
-        let payload_a = StoredGraph {
-            schema: SCHEMA.into(),
-            key: key_a.clone(),
-            items: vec![stub_item("a")],
-        };
-        fs::write(
-            entry_path(tmp.path(), &key_a),
-            serde_json::to_vec(&payload_a).unwrap(),
-        )
-        .unwrap();
-        fs::write(
-            legacy_entry_path(tmp.path(), &key_a),
-            serde_json::to_vec(&payload_a).unwrap(),
-        )
-        .unwrap();
-
-        // Peer B only on the shared 16-hex path would be wrong for this fixture:
-        // A owns that legacy file. Give B a full-key entry so it survives prune(A).
-        let payload_b = StoredGraph {
-            schema: SCHEMA.into(),
-            key: key_b.clone(),
-            items: vec![stub_item("b")],
-        };
-        fs::write(
-            entry_path(tmp.path(), &key_b),
-            serde_json::to_vec(&payload_b).unwrap(),
-        )
-        .unwrap();
-
-        let mut keys = vec![key_a.clone(), key_b.clone()];
-        keys.extend((0..ENTRY_LIMIT - 1).map(|i| format!("{i:064x}")));
-        assert_eq!(keys.len(), ENTRY_LIMIT + 1);
-        let mut meta = StoreMeta { keys };
-        prune_unlocked(tmp.path(), &mut meta);
-
-        assert!(
-            !entry_path(tmp.path(), &key_a).exists(),
-            "pruned A full-key entry must be gone"
-        );
-        assert!(
-            !legacy_entry_path(tmp.path(), &key_a).exists(),
-            "prune must remove matching legacy truncated entry for A"
-        );
-        assert_eq!(
-            load_items(tmp.path(), &key_b).unwrap()[0].unit_name,
-            "b",
-            "peer B must survive prune(A)"
         );
     }
 }

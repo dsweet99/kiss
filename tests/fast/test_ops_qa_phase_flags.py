@@ -8,12 +8,11 @@ from evals._harness import (
     force_publication_target,
     llvm_tool_uses_single_thread,
     publication_writer_command,
-    python_rslip_cache_root,
     sample_phase_flags,
 )
 
 
-def test_publication_writer_command_rust_selector_uses_file_targets_force_metrics() -> None:
+def test_publication_writer_command_rust_selector_uses_file_targets_force() -> None:
     assert python.__name__ == "python"
 
     artifact = next(iter(RUST_SELECTOR_PUBLISH_ARTIFACTS))
@@ -22,7 +21,7 @@ def test_publication_writer_command_rust_selector_uses_file_targets_force_metric
 
     test_idx = cmd.index("test")
     assert cmd[test_idx + 1 : test_idx + 3] == ["tests/alpha.rs", "tests/beta.rs"]
-    assert "--metrics" in cmd
+    assert "--metrics" not in cmd
     assert "-j" in cmd and "2" in cmd
     assert "commit" not in cmd
     assert "." not in cmd[test_idx + 1 :]
@@ -34,15 +33,15 @@ def test_publication_writer_command_rust_aggregate_uses_dot_force() -> None:
 
 
 def test_force_publication_target_clears_cov_records_cache(tmp_path: Path) -> None:
-    kiss = tmp_path / ".kiss"
-    kiss.mkdir()
+    kiss = tmp_path / ".kiss" / "test"
+    kiss.mkdir(parents=True)
     records = kiss / "cov_records_cache.json"
     records.write_text("{}", encoding="utf-8")
-    entries = python_rslip_cache_root(tmp_path) / "entries"
+    entries = tmp_path / ".kiss" / "test" / "records" / "python"
     entries.mkdir(parents=True)
     (entries / "e.json").write_text("{}", encoding="utf-8")
 
-    force_publication_target(tmp_path, "python", "rslip_selector_entry")
+    force_publication_target(tmp_path, "python", "test_record")
 
     assert not records.exists(), "cov_records_cache.json must be cleared to force republication"
     assert not entries.exists()

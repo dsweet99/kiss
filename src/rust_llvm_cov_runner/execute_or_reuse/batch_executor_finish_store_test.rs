@@ -180,3 +180,50 @@ fn store_completed_outcomes_reports_lowest_active_failure_and_stops_dispatch() {
         vec!["s0".to_string(), "s1".to_string(), "s2".to_string()]
     );
 }
+
+#[test]
+fn completed_outcomes_write_one_record_per_test_with_covered_deps() {
+    let repo = batch_executor_fixture_repo();
+    let req = batch_executor_request(repo.path());
+    let tools = witness_batch_tools();
+    let mut identity = batch_identity(&req, &tools).unwrap();
+    identity.ordinary_source_digests = BTreeMap::from([
+        ("src/lib.rs".to_string(), "lib-digest".to_string()),
+        ("src/other.rs".to_string(), "other-digest".to_string()),
+    ]);
+    let root = repo.path().canonicalize().unwrap();
+    let mut outcome = completed_outcome("t_alpha");
+    outcome.status = TestStatus::Failed;
+    outcome.coverage.files = BTreeMap::from([(
+        root.join("src/lib.rs").to_string_lossy().into_owned(),
+        BTreeSet::from([3]),
+    )]);
+
+    super::record_completed_outcomes(&req, &tools, &identity, std::slice::from_ref(&outcome))
+        .unwrap();
+
+    let dir = crate::test_records::records_dir(repo.path(), "rust");
+    let record = crate::test_records::load_record(&dir, "t_alpha").expect("record written");
+    assert_eq!(record.language, "rust");
+    let toolchain =
+        crate::rust_llvm_cov_runner::batch_fingerprint::toolchain_identity(&req, &tools);
+    let build =
+        crate::rust_llvm_cov_runner::plan::shared_input::rust_record_input_digest(&root).unwrap();
+    assert_eq!(record.identity, format!("{toolchain}:{build}"));
+    assert_ne!(
+        record.identity, identity.generation_fingerprint,
+        "record identity must exclude source inputs; those belong in deps"
+    );
+    assert_eq!(record.status, TestStatus::Failed);
+    assert_eq!(record.duration, outcome.duration);
+    assert_eq!(record.covered, outcome.coverage.files);
+    let text = std::fs::read_to_string(root.join("src/lib.rs")).unwrap();
+    let digest = crate::rust_llvm_cov_runner::record_digest::covered_items_digest(
+        &text,
+        &BTreeSet::from([3]),
+    );
+    assert_eq!(
+        record.deps,
+        BTreeMap::from([("src/lib.rs".to_string(), digest)])
+    );
+}

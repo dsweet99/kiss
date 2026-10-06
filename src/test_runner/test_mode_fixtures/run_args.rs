@@ -26,6 +26,7 @@ pub(crate) fn dry_run_cmd_args<'a>(
         ignore,
     );
     RunTestCmdArgs {
+        doubles: None,
         invocation: crate::test_runner::target_request::to_compat_invocation(&request),
         target_request: request,
         main_branch_cli: None,

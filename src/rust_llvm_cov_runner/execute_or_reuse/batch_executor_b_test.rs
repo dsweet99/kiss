@@ -35,30 +35,3 @@ fn apply_population_derived_publication_skips_errors_and_missing_selectors() {
     apply_population_derived_publication(&req, &tools, &identity, &mut no_population).unwrap();
     assert!(!no_population.counters.derived_state_published);
 }
-
-#[test]
-fn outcome_from_entry_replays_cache_entry_without_output() {
-    let entry = RustCovCacheEntry::from_outcome(
-        &crate::rust_llvm_cov_runner::RustLlvmCovOutcome {
-            selector: "alpha".to_string(),
-            status: TestStatus::Passed,
-            exit_code: Some(0),
-            duration: Duration::from_millis(1),
-            coverage: RustLineCoverage {
-                files: BTreeMap::from([("src/lib.rs".to_string(), BTreeSet::from([1]))]),
-            },
-            test_binary_ids: vec!["bin".to_string()],
-            cache_status: RustCovCacheStatus::MissStored,
-            stdout: Some(b"stdout".to_vec()),
-            stderr: Some(b"stderr".to_vec()),
-        },
-        "generation",
-    );
-
-    let outcome = outcome_from_entry(entry, RustCovCacheStatus::Hit);
-
-    assert_eq!(outcome.selector, "alpha");
-    assert_eq!(outcome.cache_status, RustCovCacheStatus::Hit);
-    assert_eq!(outcome.stdout, None);
-    assert_eq!(outcome.stderr, None);
-}

@@ -42,6 +42,7 @@ fn run_test_returns_nonzero_when_planning_fails_outside_git_repo() {
     let old = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
     let code = crate::test_runner::run_test(crate::test_runner::RunTestCmdArgs {
+        doubles: None,
         invocation: crate::bin_cli::args::TestInvocation::Commit,
         target_request: crate::test_runner::target_request::request_from_focus(
             crate::test_runner::target_request::TargetFocus::Git(
@@ -73,6 +74,7 @@ fn run_test_dry_run_commit_in_workspace_completes() {
     crate::test_runner::test_mode_fixtures::init_git(&tmp);
     let code = crate::test_runner::test_mode_fixtures::with_cwd(tmp.path(), || {
         crate::test_runner::run_test(crate::test_runner::RunTestCmdArgs {
+            doubles: None,
             invocation: crate::bin_cli::args::TestInvocation::Commit,
             target_request: crate::test_runner::target_request::request_from_focus(
                 crate::test_runner::target_request::TargetFocus::Git(
@@ -108,6 +110,7 @@ fn run_test_reports_run_selectors_error_for_unsupported_rust_extra() {
     let extra = ["--format".to_string()];
     let code = crate::test_runner::test_mode_fixtures::with_cwd(tmp.path(), || {
         crate::test_runner::run_test(crate::test_runner::RunTestCmdArgs {
+            doubles: None,
             invocation: crate::bin_cli::args::TestInvocation::All,
             target_request: crate::test_runner::target_request::workspace_request(
                 Some(Language::Rust),
@@ -148,6 +151,7 @@ fn cold_initialization_predicate_is_limited_to_unfiltered_base_or_main() {
             TestChangeMode::Main => crate::bin_cli::args::TestInvocation::Main,
         };
         crate::test_runner::RunTestCmdArgs {
+            doubles: None,
             invocation: invocation.clone(),
             target_request: crate::test_runner::target_request::request_from_invocation(
                 &invocation,
@@ -197,6 +201,7 @@ fn cold_initialization_predicate_is_limited_to_unfiltered_base_or_main() {
 fn cold_initialization_population_marks_missing_state_for_both_languages() {
     let tmp = tempfile::tempdir().unwrap();
     let args = crate::test_runner::RunTestCmdArgs {
+        doubles: None,
         invocation: crate::bin_cli::args::TestInvocation::Base,
         target_request: crate::test_runner::target_request::request_from_invocation(
             &crate::bin_cli::args::TestInvocation::Base,

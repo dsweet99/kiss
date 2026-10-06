@@ -43,17 +43,10 @@ pub(super) fn brief_lock_filter_rslip_miss_groups(
 ) -> Vec<RslipCacheCandidateGroup> {
     let mut runner_groups = Vec::new();
     for group in groups {
-        match crate::rslip::lock_rslip_cache_entry(
-            &group.representative.req.cache_root,
-            &group.fingerprint,
-        ) {
+        match crate::rslip::lock_rslip_state(&group.representative.req.cache_root) {
             Ok(_guard) => {
                 if !group.representative.req.force_rerun
-                    && let Some(entry) = load_reusable_rslip_cache_entry(
-                        &group.representative.req.cache_root,
-                        &group.fingerprint,
-                        &group.representative.req.source_root,
-                    )
+                    && let Some(entry) = load_reusable_rslip_cache_entry(&group.representative.req)
                 {
                     for index in group.indices {
                         out[index] = Some(Ok(rslip_outcome_from_cache(entry.clone())));

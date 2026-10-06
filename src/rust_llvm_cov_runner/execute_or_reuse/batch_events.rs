@@ -272,8 +272,20 @@ pub fn selector_matches_test(full_name: &str, selector: &str, exact: bool) -> bo
                 .rsplit_once('$')
                 .is_some_and(|(_, test)| test == selector)
     } else {
-        full_name.contains(selector)
+        contains_at_path_boundary(full_name, selector)
     }
+}
+
+fn contains_at_path_boundary(full_name: &str, selector: &str) -> bool {
+    if selector.is_empty() {
+        return true;
+    }
+    full_name.match_indices(selector).any(|(start, _)| {
+        let before = &full_name[..start];
+        let after = &full_name[start + selector.len()..];
+        (before.is_empty() || before.ends_with("::") || before.ends_with('$'))
+            && (after.is_empty() || after.starts_with("::"))
+    })
 }
 
 pub struct SelectorMatchIndex<'a> {

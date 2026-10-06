@@ -30,6 +30,7 @@ pub(crate) struct ForkserverController {
     stdout: BufReader<std::process::ChildStdout>,
     next_id: u64,
     shutting_down: bool,
+    scratch: Option<PathBuf>,
 }
 
 impl ForkserverController {
@@ -46,6 +47,10 @@ impl ForkserverController {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
+        let scratch = create_scratch_dir(&bootstrap.cwd);
+        if let Some(dir) = &scratch {
+            command.env(SCRATCH_ENV, dir);
+        }
         #[cfg(unix)]
         command.process_group(0);
         let mut child = command.spawn().map_err(|err| PytestRunError::Spawn {
@@ -62,6 +67,7 @@ impl ForkserverController {
             stdout: BufReader::new(stdout),
             next_id: 0,
             shutting_down: false,
+            scratch,
         };
         register_active_forkserver(controller.child.id());
         controller.bootstrap_parent(bootstrap)?;
@@ -110,6 +116,7 @@ impl ForkserverController {
     pub(crate) fn run_module_once(
         &mut self,
         reqs: &[PytestRunRequest],
+        on_result: &mut dyn FnMut(usize, Result<PytestRunOutcome, PytestRunError>),
     ) -> Result<Vec<Result<PytestRunOutcome, PytestRunError>>, PytestRunError> {
         for req in reqs {
             validate_request(req)?;
@@ -131,7 +138,19 @@ impl ForkserverController {
             child_preload_modules: first.child_preload_modules.clone(),
             tests,
         })?;
-        let response: WireModuleResponse = self.read_json()?;
+        let response = loop {
+            let mut response: WireModuleResponse = self.read_json()?;
+            let Some(progress) = response.progress.take() else {
+                break response;
+            };
+            if let Some(position) = ids.iter().position(|(id, _)| *id == progress.id) {
+                let (request_id, timeout) = ids[position];
+                on_result(
+                    position,
+                    outcome_from_response(progress, request_id, timeout, started),
+                );
+            }
+        };
         if let Some(error) = response.error {
             return Err(PytestRunError::Protocol(error));
         }
@@ -208,6 +227,57 @@ impl Drop for ForkserverController {
     fn drop(&mut self) {
         unregister_active_forkserver(self.child.id());
         self.shutdown();
+        if let Some(dir) = &self.scratch {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
+}
+
+const SCRATCH_ENV: &str = "KISS_FORKSERVER_SCRATCH";
+
+fn create_scratch_dir(cwd: &Path) -> Option<PathBuf> {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let state = cwd
+        .ancestors()
+        .map(crate::test_state_dir)
+        .find(|dir| dir.is_dir())?;
+    let base = state.join("forkserver-scratch");
+    sweep_dead_scratch_dirs(&base);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let dir = base.join(format!("{}-{n}", std::process::id()));
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir)
+}
+
+fn sweep_dead_scratch_dirs(base: &Path) {
+    let Ok(entries) = std::fs::read_dir(base) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let owner = name
+            .to_string_lossy()
+            .split('-')
+            .next()
+            .and_then(|pid| pid.parse::<u32>().ok());
+        if owner.is_some_and(|pid| !process_alive(pid)) {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
+}
+
+fn process_alive(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        let Ok(pid) = libc::pid_t::try_from(pid) else {
+            return false;
+        };
+        let signalled = unsafe { libc::kill(pid, 0) == 0 };
+        signalled || std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH)
+    }
+    #[cfg(not(unix))]
+    {
+        pid == std::process::id()
     }
 }
 

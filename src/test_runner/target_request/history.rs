@@ -11,44 +11,16 @@ pub(crate) fn historical_covering_selectors(
         .iter()
         .map(|path| repo_root.join(path))
         .collect();
+    let keys: Vec<String> = historical_paths
+        .iter()
+        .flat_map(|path| index_lookup_keys(repo_root, path))
+        .collect();
     let mut selectors = BTreeSet::new();
-    if let Some(index) =
-        crate::test_runner::python_coverage_index::load_current_python_coverage_index(repo_root)
-    {
-        for path in historical_paths {
-            for key in index_lookup_keys(repo_root, path) {
-                if let Some(found) = index.get(&key) {
-                    selectors.extend(found.iter().cloned());
-                }
-            }
-        }
-    }
-    if let Some(python) =
-        crate::test_runner::python_coverage_index::select_python_source_selectors_from_index(
-            repo_root, &abs,
-        )
-    {
-        selectors.extend(python);
-    }
-    if let Some(pop) = crate::test_runner::rust_coverage_index::load_current_rust_population_state(
-        repo_root,
-        None,
-        &[],
-    ) {
-        for path in historical_paths {
-            for key in index_lookup_keys(repo_root, path) {
-                if let Some(found) = pop.line_index.get(&key) {
-                    selectors.extend(found.iter().cloned());
-                }
-            }
-        }
-        if let Some(rust) = crate::test_runner::rust_coverage_index::selectors_for_source_paths(
-            repo_root,
-            &abs,
-            &pop.line_index,
-        ) {
-            selectors.extend(rust);
-        }
+    for language in kiss::Language::ALL {
+        selectors.extend(
+            crate::test_runner::lang_registry::rules_for(language)
+                .historical_covering_selectors(repo_root, &keys, &abs),
+        );
     }
     selectors.into_iter().collect()
 }
@@ -80,18 +52,8 @@ fn index_lookup_keys(repo_root: &Path, path: &str) -> Vec<String> {
 }
 
 fn index_has_path(repo_root: &Path, path: &str) -> bool {
-    let python =
-        crate::test_runner::python_coverage_index::load_current_python_coverage_index(repo_root);
-    let rust = crate::test_runner::rust_coverage_index::load_current_rust_population_state(
-        repo_root,
-        None,
-        &[],
-    );
     let keys = index_lookup_keys(repo_root, path);
-    keys.iter().any(|key| {
-        python.as_ref().is_some_and(|index| index.contains_key(key))
-            || rust
-                .as_ref()
-                .is_some_and(|pop| pop.line_index.contains_key(key))
+    kiss::Language::ALL.into_iter().any(|language| {
+        crate::test_runner::lang_registry::rules_for(language).indexes_path(repo_root, &keys)
     })
 }

@@ -55,6 +55,7 @@ fn test_args(force_bad: bool) -> RunTestCmdArgs<'static> {
         ..Default::default()
     };
     RunTestCmdArgs {
+        doubles: None,
         invocation: TestInvocation::Targets(vec![
             "test_lib.py::test_ok".into(),
             "test_lib.py::test_flip".into(),
@@ -103,8 +104,14 @@ fn retry_bad_keeps_prior_pass_cached_and_reruns_fail() {
     write_fixture(tmp.path(), &flag);
 
     let (code, out) = run_in(tmp.path(), false);
-    assert_eq!(code, 1, "first run must record test_flip as FAIL; out={out}");
-    assert!(out.contains("FAIL") && out.contains("test_flip"), "out={out}");
+    assert_eq!(
+        code, 1,
+        "first run must record test_flip as FAIL; out={out}"
+    );
+    assert!(
+        out.contains("FAIL") && out.contains("test_flip"),
+        "out={out}"
+    );
 
     fs::remove_file(&flag).unwrap();
     let (code, out) = run_in(tmp.path(), true);

@@ -5,17 +5,18 @@ pub(super) fn python_rslip_cache_root_for_repo(repo: &Path) -> PathBuf {
     let machine_id = fs::read("/etc/machine-id").unwrap();
     let host = hex_encode(trim_outer_ascii_whitespace(&machine_id));
     repo.join(".kiss")
+        .join("test")
         .join("rslip_cache")
         .join("hosts")
         .join(host)
 }
 
-pub(super) fn python_entries_fingerprint(cache_root: &Path) -> String {
+pub(super) fn python_entries_fingerprint(repo: &Path) -> String {
     let mut h = python_fnv1a64(
         0xcbf2_9ce4_8422_2325,
-        kiss::rslip::CACHE_SCHEMA_VERSION.as_bytes(),
+        kiss::test_records::RECORD_SCHEMA.as_bytes(),
     );
-    for path in kiss::json_entry_paths(cache_root) {
+    for path in python_record_paths(repo) {
         let meta = fs::metadata(&path).unwrap();
         let name = path
             .file_name()
@@ -53,7 +54,20 @@ pub(super) fn python_seeded_population_is_current(repo: &Path) -> bool {
         return false;
     };
     recorded_input == python_source_input_fingerprint(&repo)
-        && recorded_entries == python_entries_fingerprint(&cache_root)
+        && recorded_entries == python_entries_fingerprint(&repo)
+}
+
+fn python_record_paths(repo: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(kiss::rslip::python_records_dir(repo)) else {
+        return Vec::new();
+    };
+    let mut paths: Vec<_> = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
+        .collect();
+    paths.sort();
+    paths
 }
 
 pub(super) fn python_source_input_fingerprint(root: &Path) -> String {

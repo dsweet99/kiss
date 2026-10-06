@@ -1,37 +1,32 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
-use std::time::Duration;
 
 use kiss::rpytest_runner::TestStatus;
 use kiss::rslip::LineCoverage;
 
 use crate::test_runner::python_coverage_index::{
-    PYTHON_SELECTOR_DISCOVERY_VERSION, PythonPopulationManifestIdentity,
-    build_python_coverage_index, create_new_python_file, is_kiss_rslip_cache_dir,
-    load_python_entries_for_line_selection, load_python_entry_for_index,
-    normalized_python_repo_root, python_changed_line_rels, python_coverage_cache_root,
-    python_coverage_entry_paths, python_entries_fingerprint, python_fnv1a64,
+    PYTHON_SELECTOR_DISCOVERY_VERSION, PythonPopulationManifestIdentity, create_new_python_file,
+    is_kiss_rslip_cache_dir, load_python_entries_for_line_selection, load_python_entry_for_index,
+    normalized_python_repo_root, python_changed_line_rels, python_coverage_entry_paths,
+    python_entries_fingerprint, python_fnv1a64,
     python_population_manifest_is_current_with_identity, python_repo_relative_coverage_file,
     python_repo_relative_path, python_selectors_by_changed_file_line,
     python_selectors_for_source_paths, python_unique_suffix, read_python_population_manifest,
     write_python_population_manifest_with_identity,
 };
 
-fn write_entry(repo_root: &Path, name: &str, selector: &str, coverage: LineCoverage) {
-    let path = python_coverage_cache_root(repo_root)
-        .unwrap()
-        .join("entries")
-        .join(format!("{name}.json"));
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    let entry = serde_json::json!({
-        "schema_version": kiss::rslip::CACHE_SCHEMA_VERSION,
-        "nodeid": selector,
-        "status": TestStatus::Passed,
-        "exit_code": 0,
-        "duration": Duration::from_millis(1),
-        "coverage": coverage,
-    });
-    std::fs::write(path, serde_json::to_vec(&entry).unwrap()).unwrap();
+fn write_entry(
+    repo_root: &Path,
+    _name: &str,
+    selector: &str,
+    coverage: LineCoverage,
+) -> std::path::PathBuf {
+    crate::test_runner::python_coverage_index::storage::write_python_record_fixture(
+        repo_root,
+        selector,
+        TestStatus::Passed,
+        coverage,
+    )
 }
 
 #[test]
@@ -78,7 +73,7 @@ fn python_coverage_index_witnesses_storage_helpers() {
     let app = tmp.path().join("app.py");
     std::fs::write(&app, "def value():\n    return 1\n").unwrap();
     let selector = "tests/test_app.py::test_value".to_string();
-    write_entry(
+    let entry_path = write_entry(
         tmp.path(),
         "a",
         &selector,
@@ -87,18 +82,14 @@ fn python_coverage_index_witnesses_storage_helpers() {
         },
     );
 
-    let entry_path = python_coverage_cache_root(tmp.path())
-        .unwrap()
-        .join("entries")
-        .join("a.json");
     let loaded_entry = load_python_entry_for_index(&entry_path).unwrap();
     assert_eq!(loaded_entry.0, selector);
-    let cache_root = python_coverage_cache_root(tmp.path()).unwrap();
-    let entry_paths = python_coverage_entry_paths(&cache_root);
+    let entry_paths = python_coverage_entry_paths(tmp.path());
     assert_eq!(entry_paths.len(), 1);
-    let entries_fp = python_entries_fingerprint(&cache_root);
+    let entries_fp = python_entries_fingerprint(tmp.path());
     assert!(entries_fp.is_ok());
-    let is_cache_dir = is_kiss_rslip_cache_dir(&tmp.path().join(".kiss").join("rslip_cache"));
+    let is_cache_dir =
+        is_kiss_rslip_cache_dir(&tmp.path().join(".kiss").join("test").join("rslip_cache"));
     assert!(is_cache_dir);
     let rel_coverage = python_repo_relative_coverage_file(tmp.path(), &app.to_string_lossy());
     assert_eq!(rel_coverage, Some("app.py".to_string()));
@@ -132,7 +123,7 @@ fn python_coverage_index_witnesses_selection_helpers() {
         },
     );
 
-    let index = build_python_coverage_index(tmp.path());
+    let index = BTreeMap::from([("app.py".to_string(), BTreeSet::from([selector.clone()]))]);
     let source_selectors =
         python_selectors_for_source_paths(tmp.path(), &[app.clone(), empty], &index).unwrap();
     assert_eq!(source_selectors, BTreeSet::from([selector.clone()]));
@@ -152,7 +143,6 @@ fn python_coverage_index_witnesses_selection_helpers() {
         line_selectors,
         BTreeMap::from([("app.py".to_string(), BTreeSet::from([selector]))])
     );
-    let line_entries =
-        load_python_entries_for_line_selection(&python_coverage_cache_root(tmp.path()).unwrap());
+    let line_entries = load_python_entries_for_line_selection(tmp.path());
     assert_eq!(line_entries.len(), 1);
 }

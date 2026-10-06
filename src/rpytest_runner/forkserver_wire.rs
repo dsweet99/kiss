@@ -51,6 +51,8 @@ pub(crate) struct WireModuleResponse {
     #[serde(default)]
     pub(crate) results: Vec<WireResponse>,
     pub(crate) error: Option<String>,
+    #[serde(default)]
+    pub(crate) progress: Option<WireResponse>,
 }
 
 impl WireRequest {

@@ -132,8 +132,6 @@ fn after_tests_pass_coverage(root: &Path, invocation: TestInvocation) -> i32 {
     let _cwd = crate::cwd_test_lock::lock();
     with_cwd(root, || {
         let test_cfg = kiss::TestSectionConfig::default();
-        let py = kiss::Config::python_defaults();
-        let rs = kiss::Config::rust_defaults();
         let gate = kiss::GateConfig {
             test_coverage_threshold: 0,
             max_unit_test_seconds: Vec::new(),
@@ -148,19 +146,12 @@ fn after_tests_pass_coverage(root: &Path, invocation: TestInvocation) -> i32 {
                 retry_bad: false,
                 metrics: false,
                 coverage_all: false,
-                watch: false,
                 jobs: 1,
-                jobs_cli: Some(1),
                 ignore: &[],
-                cli_ignore: &[],
                 extra: &[],
                 lang_filter: None,
                 test_cfg: &test_cfg,
-                py_config: &py,
-                rs_config: &rs,
                 gate_config: &gate,
-                reload_kissconfig: false,
-                config_path: None,
                 language_tables: kiss::LanguageTablesPresent::both(),
             },
             0,

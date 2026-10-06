@@ -1,6 +1,6 @@
 use super::*;
 use crate::rpytest_runner::{PytestRunError, PytestRunOutcome, PytestRunRequest, PytestRunner};
-use crate::rslip::cache::{self, rslip_cache_fingerprint, store_rslip_cache_entry};
+use crate::rslip::cache::{self, store_rslip_cache_entry};
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs;
@@ -168,15 +168,14 @@ fn assert_third_started_before_first_finished(starts: &TimingSlots, ends: &Timin
 fn assert_concurrent_normal_entry_wins(root: &Path) {
     let mut req = rslip_sample_request(root);
     req.nodeid = "test_sample.py::test_normal".to_string();
-    let fingerprint = rslip_cache_fingerprint(&req).unwrap();
-    let cache_root = req.cache_root.clone();
+    let store_req = req.clone();
     let app_key = root.join("app.py").to_string_lossy().replace('\\', "/");
     let concurrent = cache::RslipCacheEntry::from_outcome(
         &passed_coverage_outcome(&req.nodeid, &app_key, BTreeSet::from([2, 4])),
         root,
     );
     let rslip = Rslip::new(PytestRunner::from_bounded_fn(move |reqs, _jobs| {
-        store_rslip_cache_entry(&cache_root, &fingerprint, &concurrent).unwrap();
+        store_rslip_cache_entry(&store_req, &concurrent).unwrap();
         reqs.into_iter().map(ok_coverage_outcome).collect()
     }));
     let outcomes = rslip.run_or_reuse_many_bounded(vec![req], 1);
@@ -190,12 +189,11 @@ fn assert_concurrent_normal_entry_wins(root: &Path) {
 fn assert_empty_concurrent_entry_does_not_win_over_timeout(root: &Path) {
     let mut req = rslip_sample_request(root);
     req.nodeid = "test_sample.py::test_timeout".to_string();
-    let fingerprint = rslip_cache_fingerprint(&req).unwrap();
-    let cache_root = req.cache_root.clone();
+    let store_req = req.clone();
     let concurrent =
         cache::RslipCacheEntry::from_outcome(&failed_empty_outcome(&req.nodeid, 7), root);
     let rslip = Rslip::new(PytestRunner::from_bounded_fn(move |reqs, _jobs| {
-        store_rslip_cache_entry(&cache_root, &fingerprint, &concurrent).unwrap();
+        store_rslip_cache_entry(&store_req, &concurrent).unwrap();
         reqs.into_iter()
             .map(|_| Err(PytestRunError::Timeout(Duration::from_millis(50))))
             .collect()

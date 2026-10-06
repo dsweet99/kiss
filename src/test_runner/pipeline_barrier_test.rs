@@ -4,14 +4,18 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar};
 use std::time::{Duration, Instant};
 
-use crate::test_runner::pipeline::{
-    COVERING_HOOKS, CoveringHooks, set_blocked_covering_language, unpark_blocked_covering,
-};
+use crate::test_runner::language_keyed::LanguageKeyed;
+use crate::test_runner::pipeline::PipelineDoubles;
 
 static BARRIER_STDOUT: Mutex<()> = Mutex::new(());
 
-fn run_args(dry_run: bool, lang: Option<Language>) -> crate::test_runner::RunTestCmdArgs<'static> {
+fn run_args(
+    dry_run: bool,
+    lang: Option<Language>,
+    doubles: Arc<PipelineDoubles>,
+) -> crate::test_runner::RunTestCmdArgs<'static> {
     crate::test_runner::RunTestCmdArgs {
+        doubles: Some(doubles),
         invocation: crate::bin_cli::args::TestInvocation::All,
         target_request: crate::test_runner::target_request::workspace_request(lang, &[]),
         main_branch_cli: None,
@@ -33,16 +37,6 @@ fn wait_flag(flag: &AtomicBool) {
     while !flag.load(Ordering::SeqCst) && started.elapsed() < Duration::from_secs(15) {
         std::thread::sleep(Duration::from_millis(10));
     }
-}
-
-fn clear_covering_hooks() {
-    set_blocked_covering_language(None);
-    *COVERING_HOOKS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = CoveringHooks {
-        python: None,
-        rust: None,
-    };
 }
 
 fn no_selector_dump(out: &str) -> bool {
@@ -74,15 +68,17 @@ fn covering_rust_running_appears_before_blocked_planner_returns() {
     std::fs::write(tmp.path().join("lib.rs"), "fn f() {}\n").unwrap();
     let reached = Arc::new(AtomicBool::new(false));
     let flag = Arc::clone(&reached);
-    *COVERING_HOOKS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = CoveringHooks {
-        python: None,
-        rust: Some(Arc::new(move || {
-            flag.store(true, Ordering::SeqCst);
-        })),
-    };
-    set_blocked_covering_language(Some(Language::Rust));
+    let doubles = Arc::new(PipelineDoubles {
+        covering: LanguageKeyed {
+            python: None,
+            rust: Some(Arc::new(move || {
+                flag.store(true, Ordering::SeqCst);
+            })),
+        },
+        block_covering: Some(Language::Rust),
+        ..PipelineDoubles::default()
+    });
+    let job_doubles = Arc::clone(&doubles);
     let old = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
     let _stdout = BARRIER_STDOUT
@@ -93,19 +89,18 @@ fn covering_rust_running_appears_before_blocked_planner_returns() {
     let out = crate::test_runner::capture_stdout::capture_stdout(|| {
         let job = std::thread::spawn(move || {
             let _ = crate::test_runner::pipeline::run_overlapped_test(
-                &run_args(true, Some(Language::Rust)),
+                &run_args(true, Some(Language::Rust), job_doubles),
                 Instant::now(),
             );
             done.store(true, Ordering::SeqCst);
         });
         wait_flag(&reached);
         let blocked = !finished.load(Ordering::SeqCst);
-        unpark_blocked_covering();
+        doubles.release_blocked_covering();
         job.join().expect("blocked covering job");
         assert!(blocked, "planner must still be parked after Running");
     });
     std::env::set_current_dir(old).unwrap();
-    clear_covering_hooks();
     let running = out
         .find("kiss test: Running covering_rust")
         .expect("Running covering_rust");
@@ -131,24 +126,25 @@ fn dry_run_omits_rust_selectors_until_python_covering_finishes() {
     let rust_started = Arc::new(AtomicBool::new(false));
     let hold_py = Arc::clone(&hold);
     let rust_flag = Arc::clone(&rust_started);
-    *COVERING_HOOKS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = CoveringHooks {
-        python: Some(Arc::new(move || {
-            let (lock, cvar) = &*hold_py;
-            let mut waiting = lock
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            while *waiting {
-                waiting = cvar
-                    .wait(waiting)
+    let doubles = Arc::new(PipelineDoubles {
+        covering: LanguageKeyed {
+            python: Some(Arc::new(move || {
+                let (lock, cvar) = &*hold_py;
+                let mut waiting = lock
+                    .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-            }
-        })),
-        rust: Some(Arc::new(move || {
-            rust_flag.store(true, Ordering::SeqCst);
-        })),
-    };
+                while *waiting {
+                    waiting = cvar
+                        .wait(waiting)
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                }
+            })),
+            rust: Some(Arc::new(move || {
+                rust_flag.store(true, Ordering::SeqCst);
+            })),
+        },
+        ..PipelineDoubles::default()
+    });
     let log = tmp.path().join("stdout.log");
     let old = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
@@ -158,7 +154,7 @@ fn dry_run_omits_rust_selectors_until_python_covering_finishes() {
     with_stdout_file(&log, || {
         let job = std::thread::spawn(move || {
             let _ = crate::test_runner::pipeline::run_overlapped_test(
-                &run_args(true, None),
+                &run_args(true, None, doubles),
                 Instant::now(),
             );
         });
@@ -179,7 +175,6 @@ fn dry_run_omits_rust_selectors_until_python_covering_finishes() {
         job.join().expect("dry-run barrier job");
     });
     std::env::set_current_dir(old).unwrap();
-    clear_covering_hooks();
 }
 
 #[cfg(unix)]

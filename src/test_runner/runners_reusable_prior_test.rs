@@ -19,7 +19,7 @@ fn reusable_prior_real_cache_fixture() {
         return;
     }
     let repo = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let population = repo.join(".kiss/rust_llvm_cov_cache/population.json");
+    let population = repo.join(".kiss/test/rust_llvm_cov_cache/population.json");
     assert!(population.is_file(), "expected warm .kiss population");
     let manifest =
         serde_json::from_str::<serde_json::Value>(&fs::read_to_string(&population).unwrap())
@@ -167,6 +167,7 @@ fn corrupt_prior_index_row_forces_population() {
     let index_path = tmp
         .path()
         .join(".kiss")
+        .join("test")
         .join("rust_llvm_cov_cache")
         .join("index.json");
     let mut value: serde_json::Value =

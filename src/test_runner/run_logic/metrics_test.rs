@@ -1,9 +1,9 @@
 use super::super::metrics_rust::{
     phase_rust_export_ms, rust_build_invocations, rust_build_target_baseline_bytes,
     rust_cache_pruned_entries, rust_current_index_generation, rust_derived_repair,
-    rust_entry_generation_count, rust_export_jobs, rust_legacy_cleanup_deferred,
-    rust_max_active_exports, rust_max_active_test_instances, rust_max_objects_per_export,
-    rust_process_residual_count, rust_test_instances, rust_unmatched_selectors,
+    rust_entry_generation_count, rust_export_jobs, rust_max_active_exports,
+    rust_max_active_test_instances, rust_max_objects_per_export, rust_process_residual_count,
+    rust_test_instances, rust_unmatched_selectors,
 };
 use super::*;
 use kiss::rust_llvm_cov_runner::RustCoverageBatchCounters;
@@ -50,7 +50,6 @@ fn rust_batch_derived_metric_helpers_merge_population_and_final_phases() {
     assert_eq!(rust_current_index_generation(&metrics), "gen-b");
     assert_eq!(rust_cache_pruned_entries(&metrics), 9);
     assert_eq!(rust_process_residual_count(&metrics), 13);
-    assert!(rust_legacy_cleanup_deferred(&metrics));
 }
 
 fn metrics_with_batch_counters() -> LocalRubricMetrics {
@@ -119,7 +118,6 @@ fn final_rust_summary() -> SelectorExecutionSummary {
         rust_current_index_generation: "gen-b".to_string(),
         rust_cache_pruned_entries: 5,
         rust_process_residual_count: 7,
-        rust_legacy_cleanup_deferred: true,
         ..SelectorExecutionSummary::default()
     }
 }
@@ -138,7 +136,11 @@ fn metrics_print_helpers_accept_empty_metrics() {
 #[test]
 fn cache_shape_records_entry_and_build_target_bytes() {
     let tmp = tempfile::tempdir().unwrap();
-    let rust_cache = tmp.path().join(".kiss").join("rust_llvm_cov_cache");
+    let rust_cache = tmp
+        .path()
+        .join(".kiss")
+        .join("test")
+        .join("rust_llvm_cov_cache");
     fs::create_dir_all(rust_cache.join("entries")).unwrap();
     fs::create_dir_all(rust_cache.join("build").join("target")).unwrap();
     fs::write(rust_cache.join("entries").join("case.json"), b"abc").unwrap();
@@ -153,14 +155,16 @@ fn cache_shape_records_entry_and_build_target_bytes() {
 
     assert_eq!(metrics.rust_entry_cache_bytes, 3);
     assert_eq!(metrics.rust_build_target_bytes, 4);
-    assert_eq!(metrics.publication_generation_id, "");
-    assert_eq!(metrics.parent_generation_id, "");
 }
 
 #[test]
 fn cache_shape_records_external_tmp_residuals() {
     let tmp = tempfile::tempdir().unwrap();
-    let rust_cache = tmp.path().join(".kiss").join("rust_llvm_cov_cache");
+    let rust_cache = tmp
+        .path()
+        .join(".kiss")
+        .join("test")
+        .join("rust_llvm_cov_cache");
     fs::create_dir_all(&rust_cache).unwrap();
     let external = rust_cov_cache_tmp_parent(&rust_cache);
     fs::create_dir_all(&external).unwrap();

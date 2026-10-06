@@ -1,8 +1,6 @@
 use super::*;
 use crate::test_runner::TestEnvVarGuard;
-use crate::test_runner::python_coverage_index::storage::{
-    normalized_python_repo_root, python_coverage_cache_root,
-};
+use crate::test_runner::python_coverage_index::storage::normalized_python_repo_root;
 use std::collections::BTreeMap;
 
 fn identity() -> PythonPopulationManifestIdentity {
@@ -188,10 +186,7 @@ fn manifest_identity_and_matching_helpers_have_contracts() {
         &identity
     ));
 
-    let entry_path = python_coverage_cache_root(tmp.path())
-        .unwrap()
-        .join("entries")
-        .join("new-entry.json");
+    let entry_path = kiss::rslip::python_records_dir(tmp.path()).join("new-entry.json");
     std::fs::create_dir_all(entry_path.parent().unwrap()).unwrap();
     std::fs::write(&entry_path, "{}").unwrap();
     assert!(!python_population_manifest_is_current_with_identity(
@@ -236,10 +231,7 @@ fn stored_python_universe_selectors_reads_current_manifest() {
         "current CLI ignore must filter a previously pinned/stored universe"
     );
 
-    let entry_path = python_coverage_cache_root(tmp.path())
-        .unwrap()
-        .join("entries")
-        .join("new-entry.json");
+    let entry_path = kiss::rslip::python_records_dir(tmp.path()).join("new-entry.json");
     std::fs::create_dir_all(entry_path.parent().unwrap()).unwrap();
     std::fs::write(&entry_path, "{}").unwrap();
     assert_eq!(

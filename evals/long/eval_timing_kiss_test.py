@@ -17,7 +17,10 @@ EVAL_TIMEOUT_S = 55
 
 
 def _ruff_kiss_cmd(*args: str) -> list[str]:
-    """Python-only ruff commands that skip fixture trees and ruff's .kissconfig."""
+    """Python-only ruff commands that skip fixture trees and ruff's .kissconfig.
+
+    `kiss test` has no `--ignore` flag; it reads `[test] ignore` from EVAL_CONFIG.
+    """
     cmd = [
         str(KISS),
         *args,
@@ -26,8 +29,9 @@ def _ruff_kiss_cmd(*args: str) -> list[str]:
         "--lang",
         "python",
     ]
-    for prefix in IGNORE_PREFIXES:
-        cmd.extend(["--ignore", prefix])
+    if args[0] == "check":
+        for prefix in IGNORE_PREFIXES:
+            cmd.extend(["--ignore", prefix])
     return cmd
 
 
@@ -38,8 +42,8 @@ def _clear_runtime_test_cache(repo: Path) -> None:
     and violates the eval time budget.
     """
     kiss_dir = repo / ".kiss"
-    shutil.rmtree(kiss_dir / "rslip_cache", ignore_errors=True)
-    (kiss_dir / "cov_records_cache.json").unlink(missing_ok=True)
+    shutil.rmtree(kiss_dir / "test" / "rslip_cache", ignore_errors=True)
+    (kiss_dir / "test" / "cov_records_cache.json").unlink(missing_ok=True)
 
 
 def _ensure_code_cache(repo: Path, env: dict[str, str]) -> None:
@@ -80,7 +84,7 @@ def timing_kiss_test() -> None:
     times the Python path against the large ruff tree (workspace planning +
     Python selectors) without forcing a multi-minute Rust rebuild.
 
-    `--ignore` skips intentional syntax-error fixtures. `--config` keeps the
+    Ignore prefixes skip intentional syntax-error fixtures. `--config` keeps the
     eval from writing language tables into ruff's .kissconfig.
     """
     assert KISS.is_file(), f"local binary missing: {KISS}"

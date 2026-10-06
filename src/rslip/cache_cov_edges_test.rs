@@ -9,7 +9,7 @@ use crate::rpytest_runner::{PytestRunOutcome, PytestRunner, TestStatus};
 
 use super::cache::{
     self, covered_file_digests, entry_is_reusable, load_reusable_rslip_cache_entry,
-    rslip_cache_fingerprint, store_rslip_cache_entry,
+    store_rslip_cache_entry,
 };
 use super::runtime;
 use super::{CacheStatus, LineCoverage, Rslip, RslipOutcome, rslip_sample_request};
@@ -215,14 +215,13 @@ fn old_empty_digest_entry_misses_once_then_hits_after_rewrite() {
 
     let mut req = rslip_sample_request(tmp.path());
     req.nodeid = nodeid.to_string();
-    let fingerprint = rslip_cache_fingerprint(&req).unwrap();
-    store_rslip_cache_entry(&req.cache_root, &fingerprint, &stale).unwrap();
-    assert!(load_reusable_rslip_cache_entry(&req.cache_root, &fingerprint, tmp.path()).is_none());
+    store_rslip_cache_entry(&req, &stale).unwrap();
+    assert!(load_reusable_rslip_cache_entry(&req).is_none());
 
     let rewritten =
         cache::RslipCacheEntry::from_outcome(&passed_outcome(nodeid, coverage), tmp.path());
-    store_rslip_cache_entry(&req.cache_root, &fingerprint, &rewritten).unwrap();
-    assert!(load_reusable_rslip_cache_entry(&req.cache_root, &fingerprint, tmp.path()).is_some());
+    store_rslip_cache_entry(&req, &rewritten).unwrap();
+    assert!(load_reusable_rslip_cache_entry(&req).is_some());
 }
 
 #[test]
@@ -238,14 +237,13 @@ fn run_or_reuse_rewrites_old_empty_digests_then_hits() {
 
     let mut req = rslip_sample_request(tmp.path());
     req.nodeid = nodeid.to_string();
-    let fingerprint = rslip_cache_fingerprint(&req).unwrap();
-    store_rslip_cache_entry(&req.cache_root, &fingerprint, &stale).unwrap();
+    store_rslip_cache_entry(&req, &stale).unwrap();
 
     let calls = Rc::new(Cell::new(0));
     let rslip = Rslip::new(mixed_runner(Rc::clone(&calls), real_key, type_key));
     let first = rslip.run_or_reuse(req.clone()).unwrap();
     let second = rslip.run_or_reuse(req.clone()).unwrap();
-    let rewritten = load_reusable_rslip_cache_entry(&req.cache_root, &fingerprint, tmp.path());
+    let rewritten = load_reusable_rslip_cache_entry(&req);
 
     assert_eq!(first.cache_status, CacheStatus::MissStored);
     assert_eq!(second.cache_status, CacheStatus::Hit);

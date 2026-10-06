@@ -220,6 +220,7 @@ fn assert_run_test_dry_run(mode: TestChangeMode, main: Option<&str>, base: Optio
             &[],
         );
         run_test(RunTestCmdArgs {
+            doubles: None,
             invocation: crate::test_runner::target_request::to_compat_invocation(&request),
             target_request: request,
             main_branch_cli: main,
@@ -289,6 +290,7 @@ fn row_k_run_test_base_without_other_refs_fails() {
     );
     let code = with_cwd(tmp.path(), || {
         run_test(RunTestCmdArgs {
+            doubles: None,
             invocation: crate::bin_cli::args::TestInvocation::Base,
             target_request: crate::test_runner::target_request::request_from_invocation(
                 &crate::bin_cli::args::TestInvocation::Base,

@@ -134,20 +134,18 @@ fn orphan_sweep_deletes_root_and_crate_orphans_not_instances() {
     let crate_dir = repo.join("crates").join("pkg");
     let instances = repo
         .join(".kiss")
+        .join("test")
         .join("rust_llvm_cov_cache")
         .join("runs")
         .join("run-a")
         .join("instances");
-    let legacy_tmp = repo.join(".kiss").join("tmp");
     let target_dir = repo.join("target");
     fs::create_dir_all(&crate_dir).unwrap();
     fs::create_dir_all(&instances).unwrap();
-    fs::create_dir_all(&legacy_tmp).unwrap();
     fs::create_dir_all(&target_dir).unwrap();
 
     fs::write(repo.join("default_root_0_1.profraw"), b"root").unwrap();
     fs::write(crate_dir.join("default_crate_0_2.profraw"), b"crate").unwrap();
-    fs::write(legacy_tmp.join("default_legacy_0_3.profraw"), b"legacy").unwrap();
     fs::write(instances.join("intentional.profraw"), b"keep").unwrap();
     fs::write(instances.join("default_should_keep_0_9.profraw"), b"keep").unwrap();
     fs::write(target_dir.join("default_target_0_4.profraw"), b"target").unwrap();
@@ -156,8 +154,6 @@ fn orphan_sweep_deletes_root_and_crate_orphans_not_instances() {
 
     assert!(!repo.join("default_root_0_1.profraw").exists());
     assert!(!crate_dir.join("default_crate_0_2.profraw").exists());
-    assert!(!legacy_tmp.exists() || !legacy_tmp.join("default_legacy_0_3.profraw").exists());
-    assert!(!legacy_tmp.exists());
     assert!(instances.join("intentional.profraw").exists());
     assert!(instances.join("default_should_keep_0_9.profraw").exists());
     assert!(
@@ -170,10 +166,10 @@ fn orphan_sweep_deletes_root_and_crate_orphans_not_instances() {
 fn ensure_kiss_profraw_env_sets_dir_and_discard_llvm_profile_file() {
     let mut env = std::collections::BTreeMap::new();
     ensure_kiss_profraw_env(&mut env, Path::new("/repo"));
-    assert_eq!(env[KISS_PROFRAW_DIR_ENV], "/repo/.kiss/profraw");
+    assert_eq!(env[KISS_PROFRAW_DIR_ENV], "/repo/.kiss/test/profraw");
     assert_eq!(
         env["LLVM_PROFILE_FILE"],
-        "/repo/.kiss/profraw/default_%m_%p.profraw"
+        "/repo/.kiss/test/profraw/default_%m_%p.profraw"
     );
 }
 
@@ -204,10 +200,6 @@ fn no_production_kiss_tmp_discard_references() {
     }
     let kiss_profraw = fs::read_to_string(src_root.join("kiss_profraw.rs")).unwrap();
     assert!(!kiss_profraw.contains("KISS_TMP"));
-    assert!(
-        kiss_profraw.contains("join(\"tmp\")"),
-        "orphan sweep must still clear leftover .kiss/tmp"
-    );
     assert!(
         !kiss_profraw.contains("KISS_TMP_ENV"),
         "discard env must be KISS_PROFRAW_DIR, not KISS_TMP"

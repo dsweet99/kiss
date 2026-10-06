@@ -9,6 +9,7 @@ pub(crate) struct FileLockGuard {
 }
 
 impl FileLockGuard {
+    #[cfg(test)]
     pub(crate) fn lock(path: &Path) -> io::Result<Self> {
         let file = open_lock_file(path)?;
         file.lock_exclusive()?;

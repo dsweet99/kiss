@@ -156,6 +156,7 @@ fn apply_force_all_population_only_for_all_invocation() {
             },
         };
         let args = crate::test_runner::RunTestCmdArgs {
+            doubles: None,
             invocation: case.invocation.clone(),
             target_request: crate::test_runner::target_request::request_from_invocation(
                 &case.invocation,

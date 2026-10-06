@@ -10,7 +10,6 @@ mod runtime;
 
 pub use batch::RslipBatchProgress;
 pub use batch::format_cached_status_dump;
-pub use batch::warm_hit_seal_exists;
 pub(crate) use outcomes_load::rslip_outcome_from_cache;
 pub use outcomes_load::{load_cached_outcomes_many, load_cached_outcomes_many_trusting_population};
 
@@ -33,8 +32,6 @@ mod cache_cov_edges_test;
 #[cfg(test)]
 mod cache_test;
 #[cfg(test)]
-mod lock_test;
-#[cfg(test)]
 #[path = "outcomes_load_test.rs"]
 mod outcomes_load_test;
 
@@ -48,11 +45,13 @@ use crate::rpytest_runner::{
     PytestRunError, PytestRunOutcome, PytestRunRequest, PytestRunner, RequestedArtifact, TestStatus,
 };
 use cache::rslip_unique_suffix;
-pub use cache::{is_kiss_rslip_cache_dir, is_rslip_cache_input, should_skip_rslip_dir};
-pub use lock::{LocalRslipLockGuard, lock_rslip_cache_entry, lock_rslip_derived_state};
+pub use cache::{
+    is_kiss_rslip_cache_dir, is_rslip_cache_input, python_records_dir, should_skip_rslip_dir,
+};
+pub use lock::lock_rslip_state;
 use serde::{Deserialize, Serialize};
 
-pub const CACHE_SCHEMA_VERSION: &str = "rslip-cache-v4";
+pub const CACHE_SCHEMA_VERSION: &str = "rslip-cache-v5";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RslipRequest {
@@ -67,7 +66,6 @@ pub struct RslipRequest {
     pub cache_root: PathBuf,
     pub force_rerun: bool,
     pub timeout: Option<Duration>,
-    pub content_fingerprint: Option<String>,
 }
 
 #[cfg(test)]
@@ -184,9 +182,16 @@ pub fn covered_file_digests_for(
     cache::covered_file_digests(source_root, nodeid, coverage)
 }
 
-pub fn cache_fingerprint_for_request(req: &RslipRequest) -> Result<String, RslipError> {
+pub fn cached_record_for_request(
+    req: &RslipRequest,
+) -> Result<Option<crate::test_records::TestRecord>, RslipError> {
     validate_rslip_request(req)?;
-    Ok(cache::rslip_cache_fingerprint(req)?)
+    Ok(cache::load_rslip_record(req))
+}
+
+pub fn record_identity_for_request(req: &RslipRequest) -> Result<String, RslipError> {
+    validate_rslip_request(req)?;
+    Ok(cache::rslip_request_context_fingerprint(req)?)
 }
 
 pub(crate) fn validate_rslip_request(req: &RslipRequest) -> Result<(), RslipError> {
@@ -237,11 +242,19 @@ fn build_pytest_runner_request(
             .to_string_lossy()
             .to_string(),
     );
+    let mut pytest_args = vec![
+        "-o".to_string(),
+        format!(
+            "cache_dir={}",
+            req.cache_root.join("pytest_cache").to_string_lossy()
+        ),
+    ];
+    pytest_args.extend(req.pytest_args.iter().cloned());
     PytestRunRequest::from_parts(
         req.nodeid.clone(),
         req.cwd.clone(),
         req.python.clone(),
-        req.pytest_args.clone(),
+        pytest_args,
         env,
         vec![runtime::MODULE_NAME.to_string()],
         vec![RequestedArtifact {
@@ -294,7 +307,6 @@ fn rslip_sample_request(root: &Path) -> RslipRequest {
         cache_root: root.join(".rslip_cache"),
         force_rerun: false,
         timeout: None,
-        content_fingerprint: None,
     }
 }
 

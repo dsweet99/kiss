@@ -59,16 +59,6 @@ fn wipe_selector_cache(root: &Path) {
     let _ = fs::remove_dir_all(root.join(".kiss"));
 }
 
-fn shrink_durable_plan_selectors(root: &Path) {
-    for name in ["python_test_selectors.json", "rust_test_selectors.json"] {
-        let path = root.join("target").join("kiss-plan").join(name);
-        let mut value: serde_json::Value =
-            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        value["selectors"] = serde_json::json!([]);
-        fs::write(path, serde_json::to_vec(&value).unwrap()).unwrap();
-    }
-}
-
 fn assert_both_languages(planned: &PlannedSelectors) {
     assert!(!planned.sel.python.is_empty());
     assert!(!planned.sel.rust.is_empty());
@@ -113,7 +103,6 @@ fn wiping_kiss_rediscovers_after_durable_plan_shrink() {
 
     let both = plan_all(None);
     assert_both_languages(&both);
-    shrink_durable_plan_selectors(tmp.path());
     wipe_selector_cache(tmp.path());
     crate::test_runner::workspace_selector_cache::clear_rust_selector_memo_for_tests();
     let after = plan_all(None);
@@ -133,7 +122,7 @@ fn emit_stage_time_format_includes_name_and_millis() {
 }
 
 #[test]
-fn watch_stage_names_use_kiss_test_stage_format() {
+fn stage_names_use_kiss_test_stage_format() {
     for name in [
         "python_generation_publish",
         "python_source_fingerprint",
@@ -237,13 +226,13 @@ fn python_all_plan_keeps_provided_universe_and_requires_population_without_index
         "tests/test_a.py::test_a".into(),
         "tests/test_b.py::test_b".into(),
     ];
-    let (sel, required) = super::plan_vcs::python_all_plan(tmp.path(), &[], provided.clone(), true);
+    let python_all_plan = crate::test_runner::lang_python::all_mode_plan::python_all_plan;
+    let (sel, required) = python_all_plan(tmp.path(), &[], provided.clone());
     assert_eq!(sel, provided);
     assert!(required);
-    let (skipped, skip_required) =
-        super::plan_vcs::python_all_plan(tmp.path(), &[], provided, false);
-    assert!(skipped.is_empty());
-    assert!(!skip_required);
+    let (empty, empty_required) = python_all_plan(tmp.path(), &[], Vec::new());
+    assert!(empty.is_empty());
+    assert!(!empty_required);
 }
 
 #[test]
@@ -395,6 +384,34 @@ fn all_mode_ordinary_edit_keeps_universe_without_population() {
         &identity,
     )
     .unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    let outcomes: Vec<_> = [
+        ("tests::a_ok", "src/lib.rs", 1),
+        ("tests::b_ok", "src/lib.rs", 2),
+        ("only_extra", "src/extra_test.rs", 2),
+    ]
+    .into_iter()
+    .map(
+        |(selector, file, line)| kiss::rust_llvm_cov_runner::RustLlvmCovOutcome {
+            selector: selector.to_string(),
+            status: kiss::rpytest_runner::TestStatus::Passed,
+            exit_code: Some(0),
+            duration: std::time::Duration::from_millis(1),
+            coverage: kiss::rust_llvm_cov_runner::RustLineCoverage {
+                files: std::collections::BTreeMap::from([(
+                    root.join(file).to_string_lossy().into_owned(),
+                    std::collections::BTreeSet::from([line]),
+                )]),
+            },
+            test_binary_ids: vec!["test-bin".into()],
+            cache_status: kiss::rust_llvm_cov_runner::RustCovCacheStatus::MissStored,
+            stdout: None,
+            stderr: None,
+        },
+    )
+    .collect();
+    kiss::rust_llvm_cov_runner::record_completed_outcomes(&req, &tools, &identity, &outcomes)
+        .unwrap();
     assert!(
         crate::test_runner::test_mode_fixtures::git_in(tmp.path())
             .args(["add", "."])
@@ -437,9 +454,11 @@ fn all_mode_ordinary_edit_keeps_universe_without_population() {
         !planned.population_required.rust,
         "ordinary lib.rs edit must not require a full Rust population"
     );
-    let misses =
-        crate::test_runner::lang_rust::rust_source_delta_misses(tmp.path(), &planned.sel.rust, &[])
-            .expect("source-delta misses");
+    let witness = crate::test_runner::lang_rust::try_load_rust_execution_witness(tmp.path()).ok();
+    let misses = crate::test_runner::lang_rust::records_witness::record_misses(
+        &planned.sel.rust,
+        witness.as_ref(),
+    );
     assert!(
         misses.iter().any(|s| s.contains("a_ok")),
         "changed line must miss a_ok: {misses:?}"

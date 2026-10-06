@@ -173,10 +173,10 @@ fn target_runner_shim_delegates_to_configured_runner() {
 fn target_runner_shim_list_phase_delegates_with_list_metadata_without_profile() {
     let _env_guard = shim_test_env_lock();
     let tmp = tempfile::tempdir().unwrap();
-    let kiss_profraw = tmp.path().join(".kiss").join("profraw");
+    let kiss_profraw = tmp.path().join(".kiss").join("test").join("profraw");
     let output = tmp
         .path()
-        .join(".kiss/rust_llvm_cov_cache/runs/run-a/instances");
+        .join(".kiss/test/rust_llvm_cov_cache/runs/run-a/instances");
     let runner_map = tmp.path().join("runner-map.json");
     let marker = tmp.path().join("marker");
     let script = tmp.path().join("list-child.sh");
@@ -184,7 +184,7 @@ fn target_runner_shim_list_phase_delegates_with_list_metadata_without_profile() 
     fs::write(
         &script,
         format!(
-            "#!/bin/sh\ncase \"${{LLVM_PROFILE_FILE:-}}\" in */.kiss/profraw/default_%m_%p.profraw) ;; *) exit 9 ;; esac\nprintf listed > \"{}\"\nprintf '{{\"type\":\"test\",\"event\":\"discovered\",\"name\":\"alpha\"}}\\n'\nexit 0\n",
+            "#!/bin/sh\ncase \"${{LLVM_PROFILE_FILE:-}}\" in */.kiss/test/profraw/default_%m_%p.profraw) ;; *) exit 9 ;; esac\nprintf listed > \"{}\"\nprintf '{{\"type\":\"test\",\"event\":\"discovered\",\"name\":\"alpha\"}}\\n'\nexit 0\n",
             marker.display()
         ),
     )

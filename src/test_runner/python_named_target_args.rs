@@ -5,6 +5,7 @@ use crate::test_runner::target_request::{operands_request, to_compat_invocation}
 pub(crate) fn python_named_target_args(target: &str, force_rerun: bool) -> RunTestCmdArgs<'static> {
     let request = operands_request(&[target.to_string()], Some(kiss::Language::Python), &[]);
     RunTestCmdArgs {
+        doubles: None,
         invocation: to_compat_invocation(&request),
         target_request: request,
         main_branch_cli: None,

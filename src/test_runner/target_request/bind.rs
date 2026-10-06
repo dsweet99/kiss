@@ -1,6 +1,5 @@
 use super::ensure::{Ensured, ensure_target_report_with, preview_target_plan_with};
 use super::report::TargetReport;
-use super::report_store;
 use super::snapshot::{EnsureError, EnsurePolicy};
 use super::{compat_matches, request_from_run_args, to_compat_invocation};
 
@@ -15,38 +14,95 @@ pub(crate) fn load_ready_for_request(
     coverage_all: bool,
     extras: crate::test_runner::language_keyed::LanguageKeyed<&[String]>,
 ) -> Option<TargetReport> {
+    load_ready(repo, request, coverage_all, extras, false)
+}
+
+/// Like [`load_ready_for_request`], but a complete scope with no members is ready:
+/// the run that just finished already settled that nothing is in scope.
+pub(crate) fn load_ready_after_run(
+    repo: &std::path::Path,
+    request: &super::types::TargetRequest,
+    coverage_all: bool,
+    extras: crate::test_runner::language_keyed::LanguageKeyed<&[String]>,
+) -> Option<TargetReport> {
+    load_ready(
+        repo,
+        request,
+        coverage_all,
+        extras,
+        true,
+    )
+}
+
+fn load_ready(
+    repo: &std::path::Path,
+    request: &super::types::TargetRequest,
+    coverage_all: bool,
+    extras: crate::test_runner::language_keyed::LanguageKeyed<&[String]>,
+    empty_is_ready: bool,
+) -> Option<TargetReport> {
     let resolved = super::resolve::resolve_only(repo, request).ok()?;
     let (projection, complete) =
         super::projection::build_slice_projection(repo, request, &resolved);
     let stamp = super::slice::stamp_from_projection(&projection, complete);
-    if stamp.complete {
-        load_identity_report(repo, request, &stamp, coverage_all, extras)
-    } else {
-        None
+    if !stamp.complete {
+        return None;
     }
+    let mut selectors = projection.selectors();
+    selectors.extend(resolved.direct_selectors);
+    let scope = super::scope::ReportScope::from_membership(
+        projection.coverage_regions(),
+        selectors,
+        stamp.complete,
+    );
+    if scope.selectors.is_empty() && !empty_is_ready {
+        return None;
+    }
+    derive_ready_report(repo, request, scope, stamp, coverage_all, extras)
 }
 
-fn load_identity_report(
+/// The report for `scope`, computed from the per-test records, when every member
+/// has a current record and nothing needs to run.
+fn derive_ready_report(
     repo: &std::path::Path,
     request: &super::types::TargetRequest,
-    stamp: &super::slice::TargetSliceStamp,
+    scope: super::scope::ReportScope,
+    stamp: super::slice::TargetSliceStamp,
     coverage_all: bool,
     extras: crate::test_runner::language_keyed::LanguageKeyed<&[String]>,
-) -> Option<super::report::TargetReport> {
-    report_store::load_report_for_identity(
-        repo,
-        request,
-        &stamp.digest,
-        stamp.complete,
-        coverage_all,
-        extras,
-    )
-    .filter(ready_report)
-    .filter(|report| {
-        report.snapshot.worktree == super::stamp::capture_worktree_token(repo, request.language())
-    })
-    .filter(|report| report.snapshot.extras.as_slices() == extras)
-    .filter(|report| super::report::pinned_graph_generation_holds(repo, coverage_all, report))
+) -> Option<TargetReport> {
+    let rows = super::rows::rows_from_witnesses(repo, &scope, extras).ok()?;
+    for language in crate::test_runner::lang_registry::languages() {
+        let language_extras = *extras.get(language);
+        let recorded = rows.iter().any(|row| row.language == language.label());
+        if (recorded || !language_extras.is_empty())
+            && !crate::test_runner::lang_registry::rules_for(language)
+                .stored_witness_matches_extras(repo, language_extras)
+        {
+            return None;
+        }
+    }
+    let time_gate_active = !kiss::GateConfig::load_for_repo(repo)
+        .max_unit_test_seconds
+        .is_empty();
+    let graph_repair = super::report::graph_repair_needed(repo, &scope, coverage_all);
+    let plan = super::rows::plan_from_available_rows_with(
+        &scope,
+        &rows,
+        false,
+        graph_repair,
+        false,
+        time_gate_active,
+    );
+    if !plan.known_execution_union().is_empty() || plan.population_repair || plan.graph_repair {
+        return None;
+    }
+    super::rows::duration_evidence_holds(&rows, time_gate_active).ok()?;
+    let exit_code = TargetReport::exit_from_rows(&rows);
+    let mut report =
+        TargetReport::assembled_in(repo, request, scope, rows, stamp, exit_code, coverage_all);
+    report.snapshot.extras = extras.owned_vecs();
+    Some(report).filter(ready_report)
 }
 
 /// Idle/query path for `kiss test --lang`: answer from a ready unscoped workspace
@@ -66,10 +122,7 @@ pub(crate) fn project_language_ready_from_parent_workspace(
     let mut parent_req = request.clone();
     parent_req.set_language(None);
     let parent = load_ready_for_request(repo, &parent_req, coverage_all, extras)?;
-    let label = match lang {
-        kiss::Language::Python => "python",
-        kiss::Language::Rust => "rust",
-    };
+    let label = lang.label();
     let rows: Vec<_> = parent
         .rows
         .iter()
@@ -94,105 +147,7 @@ pub(crate) fn project_language_ready_from_parent_workspace(
         TargetReport::assembled_in(repo, request, scope, rows, stamp, exit_code, coverage_all);
     built.snapshot.extras = parent.snapshot.extras.clone();
     built.snapshot.worktree = super::stamp::capture_worktree_token(repo, Some(lang));
-    let _ = report_store::publish_report(repo, request, &built);
     Some(built)
-}
-
-/// Answer an operand query from a ready workspace report. The client does not
-/// start a cycle; rows outside the operand are omitted.
-pub(crate) fn project_operand_ready_from_parent_workspace(
-    repo: &std::path::Path,
-    request: &super::types::TargetRequest,
-    coverage_all: bool,
-    extras: crate::test_runner::language_keyed::LanguageKeyed<&[String]>,
-) -> Option<TargetReport> {
-    let super::types::TargetFocus::Operands(operands) = &request.focus else {
-        return None;
-    };
-    let mut parent_req = request.clone();
-    parent_req.focus = super::types::TargetFocus::Workspace;
-    parent_req.set_language(None);
-    let parent = load_ready_for_request(repo, &parent_req, coverage_all, extras)
-        .or_else(|| report_store::load_current_report(repo))?;
-    let resolved = super::resolve::resolve_only(repo, request).ok()?;
-    let expected = operand_expected_selectors(repo, &resolved);
-    let lang = request.language().map(|language| match language {
-        kiss::Language::Python => "python",
-        kiss::Language::Rust => "rust",
-    });
-    let rows: Vec<_> = parent
-        .rows
-        .iter()
-        .filter(|row| lang.is_none_or(|label| row.language == label))
-        .filter(|row| selector_in_operand_scope(&row.selector, &expected, operands))
-        .cloned()
-        .collect();
-    let (projection, _) = super::projection::build_slice_projection(repo, request, &resolved);
-    let mut stamp = super::slice::stamp_from_projection(&projection, parent.stamp.complete);
-    stamp.complete = parent.stamp.complete;
-    if !stamp.complete {
-        return None;
-    }
-    let selectors: Vec<String> = rows.iter().map(|row| row.selector.clone()).collect();
-    let scope = super::scope::ReportScope::from_membership(
-        projection.coverage_regions(),
-        selectors,
-        stamp.complete,
-    );
-    let exit_code = TargetReport::exit_from_rows(&rows);
-    let mut built =
-        TargetReport::assembled_in(repo, request, scope, rows, stamp, exit_code, coverage_all);
-    built.snapshot.extras = parent.snapshot.extras.clone();
-    built.snapshot.worktree = super::stamp::capture_worktree_token(repo, request.language());
-    let _ = report_store::publish_report(repo, request, &built);
-    Some(built)
-}
-
-fn operand_expected_selectors(
-    repo: &std::path::Path,
-    resolved: &super::resolved::ResolvedTarget,
-) -> Vec<String> {
-    let mut expected = resolved.direct_selectors.clone();
-    let paths: Vec<String> = resolved
-        .regions
-        .iter()
-        .filter_map(|region| match region {
-            super::resolved::SourceRegion::FileAll { path }
-            | super::resolved::SourceRegion::FileLines { path, .. } => Some(path.clone()),
-            super::resolved::SourceRegion::WorkspaceAll => None,
-        })
-        .collect();
-    expected.extend(
-        super::history::reverse_records(repo, &paths)
-            .into_iter()
-            .flat_map(|record| record.selectors),
-    );
-    expected.sort();
-    expected.dedup();
-    expected
-}
-
-pub(super) fn selector_in_operand_scope(
-    selector: &str,
-    expected: &[String],
-    operands: &[super::types::OperandExpr],
-) -> bool {
-    let by_expected = expected
-        .iter()
-        .any(|item| selector == item || selector.starts_with(&format!("{item}::")));
-    if by_expected {
-        return true;
-    }
-    operands.iter().any(|operand| {
-        let raw = operand.raw.as_str();
-        if selector == raw
-            || selector.starts_with(&format!("{raw}::"))
-            || selector.starts_with(&format!("{raw}["))
-        {
-            return true;
-        }
-        !raw.contains("::") && !raw.is_empty() && selector.starts_with(&format!("{raw}/"))
-    })
 }
 
 /// Answer `commit` / `base` / `main` from the cached workspace results.
@@ -209,8 +164,7 @@ pub(crate) fn project_git_ready_from_parent_workspace(
     let mut parent_req = request.clone();
     parent_req.focus = super::types::TargetFocus::Workspace;
     parent_req.set_language(None);
-    let parent = load_ready_for_request(repo, &parent_req, coverage_all, extras)
-        .or_else(|| report_store::load_current_report(repo))?;
+    let parent = load_ready_for_request(repo, &parent_req, coverage_all, extras)?;
     let resolved = super::resolve::resolve_only(repo, request).ok()?;
     let selectors = git_answer_selectors(repo, request, &resolved);
     let rows = git_rows_for_selectors(repo, &parent, &selectors);
@@ -224,7 +178,6 @@ pub(crate) fn project_git_ready_from_parent_workspace(
         TargetReport::assembled_in(repo, request, scope, rows, stamp, exit_code, coverage_all);
     built.snapshot.extras = parent.snapshot.extras.clone();
     built.snapshot.worktree = super::stamp::capture_worktree_token(repo, request.language());
-    let _ = report_store::publish_report(repo, request, &built);
     Some(built)
 }
 
@@ -236,7 +189,7 @@ fn git_answer_selectors(
     let changed = git_changed_existing(resolved);
     let deleted: std::collections::BTreeSet<String> =
         resolved.historical_paths.iter().cloned().collect();
-    let gitignore = crate::test_runner::workspace_selector_cache::watch_support_gitignore(repo);
+    let gitignore = crate::test_runner::workspace_selector_cache::support_gitignore(repo);
     let mut universe = Vec::new();
     if let Some(python) =
         crate::test_runner::workspace_selector_cache::load_cached_python_workspace_selectors(
@@ -275,11 +228,8 @@ fn git_answer_selectors(
         }
     }
     if let Some(lang) = request.language() {
-        let needle = match lang {
-            kiss::Language::Python => ".py",
-            kiss::Language::Rust => ".rs",
-        };
-        selected.retain(|selector| selector.contains(needle));
+        let needle = format!(".{}", lang.extension());
+        selected.retain(|selector| selector.contains(&needle));
     }
     selected.sort();
     selected.dedup();
@@ -308,16 +258,19 @@ fn python_cached_outcomes(
     repo: &std::path::Path,
     selectors: &[String],
 ) -> std::collections::BTreeMap<String, kiss::rslip::RslipOutcome> {
+    let python: Vec<&String> = selectors
+        .iter()
+        .filter(|selector| selector.contains(".py"))
+        .collect();
+    if python.is_empty() {
+        return std::collections::BTreeMap::new();
+    }
     let Ok((python_version, pytest_version)) =
         crate::test_runner::lang_python::rslip_request::detect_rslip_versions(repo)
     else {
         return std::collections::BTreeMap::new();
     };
     let gate = kiss::GateConfig::load_for_repo(repo);
-    let python: Vec<&String> = selectors
-        .iter()
-        .filter(|selector| selector.contains(".py"))
-        .collect();
     let reqs: Vec<_> = python
         .iter()
         .filter_map(|selector| {
@@ -423,8 +376,12 @@ pub(crate) fn bind_and_prepare(
     let repo = crate::test_git::git_repo_root(&cwd)
         .map_err(|err| format!("error: kiss test requires a git repository ({err})"))?;
     if args.dry_run {
-        if args.target_request.language() != Some(kiss::Language::Python) {
-            crate::test_runner::rust_llvm_cov::validate_rust_extra_args(args.extras.rust)?;
+        for language in kiss::Language::ALL
+            .into_iter()
+            .filter(|language| language.allowed_by(args.target_request.language()))
+        {
+            crate::test_runner::lang_registry::rules_for(language)
+                .validate_extra_args(args.extras.get(language))?;
         }
         match preview_target_plan_with(
             &repo,
@@ -451,7 +408,6 @@ pub(crate) fn bind_and_prepare(
     ) {
         Ok(Ensured::Report(report)) => {
             let executed = super::counters::current().subprocess > 0;
-            let _ = report_store::publish_if_rows_hold(&repo, &request, &report);
             render_bound_report(&report, executed);
             super::counters::emit();
             Ok(BindDecision::Finished(report.exit_code))

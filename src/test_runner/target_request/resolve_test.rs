@@ -4,7 +4,7 @@ use std::path::Path;
 use crate::test_runner::test_mode_fixtures::{git_in, init_git};
 
 use super::canon::canonicalize_target_request;
-use super::resolve::resolve_target;
+use super::resolve::resolve_only;
 use super::resolved::{OperandClass, SourceRegion};
 use super::types::{GitFocus, OperandExpr, TargetFocus, TargetRequest};
 
@@ -70,7 +70,7 @@ fn ops(raws: &[&str]) -> TargetFocus {
 #[test]
 fn workspace_uses_sentinel_region() {
     let tmp = seed_python();
-    let resolved = resolve_target(tmp.path(), &req(TargetFocus::Workspace)).unwrap();
+    let resolved = resolve_only(tmp.path(), &req(TargetFocus::Workspace)).unwrap();
     assert_eq!(resolved.regions, vec![SourceRegion::WorkspaceAll]);
     assert!(resolved.historical_paths.is_empty());
     assert!(resolved.git_stamp.is_none());
@@ -80,7 +80,7 @@ fn workspace_uses_sentinel_region() {
 fn test_only_projection_has_empty_coverage_regions() {
     let tmp = seed_python();
     let request = req(ops(&["tests/test_app.py::test_value"]));
-    let resolved = resolve_target(tmp.path(), &request).unwrap();
+    let resolved = resolve_only(tmp.path(), &request).unwrap();
     let (projection, _) =
         crate::test_runner::target_request::build_slice_projection(tmp.path(), &request, &resolved);
     assert!(
@@ -93,8 +93,7 @@ fn test_only_projection_has_empty_coverage_regions() {
 #[test]
 fn test_only_nodeid_has_no_production_region() {
     let tmp = seed_python();
-    let resolved =
-        resolve_target(tmp.path(), &req(ops(&["tests/test_app.py::test_value"]))).unwrap();
+    let resolved = resolve_only(tmp.path(), &req(ops(&["tests/test_app.py::test_value"]))).unwrap();
     assert!(
         resolved.regions.is_empty(),
         "test-only target must not create a production region: {:?}",
@@ -114,7 +113,7 @@ fn test_only_nodeid_has_no_production_region() {
 fn operand_classes_cover_file_symbol_nodeid_and_directory() {
     let tmp = seed_python();
     let root = tmp.path();
-    let resolved = resolve_target(
+    let resolved = resolve_only(
         root,
         &req(ops(&[
             "pkg",
@@ -144,7 +143,7 @@ fn outside_repo_and_lang_conflict_are_rejected() {
     let tmp = seed_python();
     let outside = Path::new("/tmp/kiss-target-outside.py");
     fs::write(outside, "x = 1\n").unwrap();
-    let err = resolve_target(tmp.path(), &req(ops(&[outside.to_str().unwrap()]))).unwrap_err();
+    let err = resolve_only(tmp.path(), &req(ops(&[outside.to_str().unwrap()]))).unwrap_err();
     assert!(
         err.contains("escapes repository root")
             || err.contains("not found")
@@ -152,7 +151,7 @@ fn outside_repo_and_lang_conflict_are_rejected() {
     );
     let mut filtered = req(ops(&["pkg/app.py"]));
     filtered.lang = Some(super::types::LangFilter::Rust);
-    let err = resolve_target(tmp.path(), &filtered).unwrap_err();
+    let err = resolve_only(tmp.path(), &filtered).unwrap_err();
     assert!(err.contains("--lang") || err.contains("rust"));
 }
 
@@ -162,7 +161,7 @@ fn commit_deleted_path_selects_prior_covering_tests() {
     let root = tmp.path();
     crate::test_runner::test_mode_fixtures::publish_python_covering(root, &root.join("pkg/app.py"));
     fs::remove_file(root.join("pkg/app.py")).unwrap();
-    let resolved = resolve_target(root, &req(TargetFocus::Git(GitFocus::Commit))).unwrap();
+    let resolved = resolve_only(root, &req(TargetFocus::Git(GitFocus::Commit))).unwrap();
     assert!(
         resolved
             .historical_paths

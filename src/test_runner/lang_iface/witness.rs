@@ -8,12 +8,6 @@ use super::witness_reuse::{miss_is_warm_skippable, reusable_without_rerun};
 use crate::test_runner::status_labels::apply_unit_test_time_limit;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum WitnessScope {
-    Full,
-    Subset,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum AcceptMode {
     All,
     Subset,
@@ -54,6 +48,7 @@ impl WitnessStatus {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn parse(raw: &str) -> Self {
         match raw {
             "passed" | "Passed" | "PASS" => Self::Passed,
@@ -67,7 +62,6 @@ impl WitnessStatus {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ExecutionWitness {
     pub(crate) language: String,
-    pub(crate) scope: WitnessScope,
     pub(crate) identity_digest: String,
     pub(crate) selectors: Vec<String>,
     pub(crate) statuses: Vec<WitnessStatus>,
@@ -155,13 +149,12 @@ fn repair_planned(planned: &[String], witness: &ExecutionWitness) -> Vec<String>
                     .copied()
                     .unwrap_or(witness.statuses[i]);
                 // A recorded FAIL or TIMEOUT stays cached. An edit does not rerun it.
-                if matches!(
-                    raw,
-                    WitnessStatus::Failed | WitnessStatus::TimedOut
-                ) || matches!(
-                    witness.statuses[i],
-                    WitnessStatus::Failed | WitnessStatus::TimedOut
-                ) {
+                if matches!(raw, WitnessStatus::Failed | WitnessStatus::TimedOut)
+                    || matches!(
+                        witness.statuses[i],
+                        WitnessStatus::Failed | WitnessStatus::TimedOut
+                    )
+                {
                     return false;
                 }
                 !reusable_without_rerun(witness, i) || witness.durations_ns[i].is_none()
@@ -202,9 +195,6 @@ fn accept_all_preconditions(
     planned: &[String],
     witness: &ExecutionWitness,
 ) -> Option<AcceptDecision> {
-    if witness.scope != WitnessScope::Full {
-        return Some(AcceptDecision::Miss("scope_subset"));
-    }
     if !witness.complete {
         return Some(AcceptDecision::Miss("incomplete"));
     }
@@ -243,36 +233,6 @@ pub(crate) fn selector_index(selectors: &[String]) -> BTreeMap<&str, usize> {
         .enumerate()
         .map(|(i, s)| (s.as_str(), i))
         .collect()
-}
-
-pub(crate) fn prune_witness_to_known_selectors(
-    witness: &mut ExecutionWitness,
-    known: &std::collections::BTreeSet<String>,
-) {
-    let mut selectors = Vec::with_capacity(witness.selectors.len());
-    let mut statuses = Vec::with_capacity(witness.statuses.len());
-    let mut durations_ns = Vec::with_capacity(witness.durations_ns.len());
-    let mut raw_statuses = Vec::with_capacity(witness.raw_statuses.len());
-    for (i, ((sel, st), dur)) in witness
-        .selectors
-        .iter()
-        .zip(witness.statuses.iter())
-        .zip(witness.durations_ns.iter())
-        .enumerate()
-    {
-        if known.contains(sel) {
-            selectors.push(sel.clone());
-            statuses.push(*st);
-            durations_ns.push(*dur);
-            if let Some(raw) = witness.raw_statuses.get(i) {
-                raw_statuses.push(*raw);
-            }
-        }
-    }
-    witness.selectors = selectors;
-    witness.statuses = statuses;
-    witness.durations_ns = durations_ns;
-    witness.raw_statuses = raw_statuses;
 }
 
 pub(crate) fn reclassify_statuses_with_gate(

@@ -7,17 +7,21 @@ fn kiss_profraw_dir_is_under_dot_kiss() {
     let tmp = tempfile::tempdir().unwrap();
     assert_eq!(
         kiss_profraw_dir(tmp.path()),
-        tmp.path().join(".kiss").join("profraw")
+        tmp.path().join(".kiss").join("test").join("profraw")
     );
 }
 
 #[test]
 fn kiss_profraw_from_cache_root_is_sibling_of_rust_llvm_cov_cache() {
     let tmp = tempfile::tempdir().unwrap();
-    let cache = tmp.path().join(".kiss").join("rust_llvm_cov_cache");
+    let cache = tmp
+        .path()
+        .join(".kiss")
+        .join("test")
+        .join("rust_llvm_cov_cache");
     assert_eq!(
         kiss_profraw_from_cache_root(&cache),
-        tmp.path().join(".kiss").join("profraw")
+        tmp.path().join(".kiss").join("test").join("profraw")
     );
 }
 
@@ -41,6 +45,7 @@ fn resolve_kiss_profraw_prefers_env_then_output_dir_layout() {
     let output = tmp
         .path()
         .join(".kiss")
+        .join("test")
         .join("rust_llvm_cov_cache")
         .join("runs")
         .join("run-a")
@@ -56,7 +61,10 @@ fn resolve_kiss_profraw_prefers_env_then_output_dir_layout() {
         Some(value) => unsafe { std::env::set_var(KISS_PROFRAW_DIR_ENV, value) },
         None => unsafe { std::env::remove_var(KISS_PROFRAW_DIR_ENV) },
     }
-    assert_eq!(derived, tmp.path().join(".kiss").join("profraw"));
+    assert_eq!(
+        derived,
+        tmp.path().join(".kiss").join("test").join("profraw")
+    );
 }
 
 #[test]
@@ -88,6 +96,7 @@ fn redirect_this_process_sets_absolute_discard_path_and_is_idempotent() {
     let first = redirect_this_process(&repo).unwrap();
     let expected = repo
         .join(".kiss")
+        .join("test")
         .join("profraw")
         .join(DISCARD_PROFILE_PATTERN);
     assert_eq!(first, expected);
@@ -96,7 +105,7 @@ fn redirect_this_process_sets_absolute_discard_path_and_is_idempotent() {
         std::env::var_os("LLVM_PROFILE_FILE").as_deref(),
         Some(first.as_os_str())
     );
-    assert!(repo.join(".kiss").join("profraw").is_dir());
+    assert!(!repo.join(".kiss").exists());
     let second = redirect_this_process(&repo).unwrap();
     assert_eq!(second, first);
     assert_eq!(
@@ -117,6 +126,7 @@ fn redirect_this_process_overwrites_prior_env_deliberate_delegation_resets() {
     let repo = tmp.path().canonicalize().unwrap();
     let intentional = repo
         .join(".kiss")
+        .join("test")
         .join("rust_llvm_cov_cache")
         .join("runs")
         .join("run-a")
@@ -211,5 +221,8 @@ fn kiss_profraw_process_guard_for_current_process() {
     let tmp = tempfile::tempdir().unwrap();
     let guard = KissProfrawProcessGuard::for_current_process(tmp.path());
     assert_eq!(guard.pid, std::process::id());
-    assert_eq!(guard.kiss_profraw, tmp.path().join(".kiss").join("profraw"));
+    assert_eq!(
+        guard.kiss_profraw,
+        tmp.path().join(".kiss").join("test").join("profraw")
+    );
 }

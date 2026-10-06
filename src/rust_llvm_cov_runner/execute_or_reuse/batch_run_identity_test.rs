@@ -15,7 +15,11 @@ fn identity_harness() -> IdentityHarness {
     let mut req = RustCoverageBatchRequest::witness();
     req.source_root = tmp.path().to_path_buf();
     req.cwd = tmp.path().to_path_buf();
-    req.cache_root = tmp.path().join(".kiss").join("rust_llvm_cov_cache");
+    req.cache_root = tmp
+        .path()
+        .join(".kiss")
+        .join("test")
+        .join("rust_llvm_cov_cache");
     req.generated_config = req
         .cache_root
         .join("runs")
@@ -61,6 +65,19 @@ fn persistent_restart_reuse_target() -> std::path::PathBuf {
     let dir = std::env::temp_dir().join("kiss-test-targets").join(label);
     fs::create_dir_all(&dir).unwrap();
     dir
+}
+
+fn lock_persistent_restart_reuse_target() -> fs::File {
+    use fs2::FileExt;
+    let lock_path = persistent_restart_reuse_target().with_extension("lock");
+    let file = fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(&lock_path)
+        .unwrap();
+    file.lock_exclusive().unwrap();
+    file
 }
 
 fn run_llvm_cov_and_read_fresh(root: &std::path::Path, plan: &RustCoverageBatchPlan) -> Vec<bool> {
@@ -270,7 +287,7 @@ fn inherited_profile_path_does_not_replace_cargo_artifacts() {
         loaded_identity(&h.req.cache_root).input.env["LLVM_PROFILE_FILE"],
         h.req
             .source_root
-            .join(".kiss/profraw/default_%m_%p.profraw")
+            .join(".kiss/test/profraw/default_%m_%p.profraw")
             .to_string_lossy()
     );
 }
@@ -322,6 +339,7 @@ fn duplicate_path_launch_reuses_real_llvm_cov_cargo_artifacts() {
     if skip_real_llvm_cov_under_outer_batch() {
         return;
     }
+    let _target_lock = lock_persistent_restart_reuse_target();
     let mut h = identity_harness();
     write_cargo_fixture(&h.req.source_root);
     let path = std::env::var("PATH").unwrap();
@@ -352,6 +370,7 @@ fn unused_path_prefix_reuses_real_llvm_cov_cargo_artifacts() {
     if skip_real_llvm_cov_under_outer_batch() {
         return;
     }
+    let _target_lock = lock_persistent_restart_reuse_target();
     let mut h = identity_harness();
     write_cargo_fixture(&h.req.source_root);
     let path = std::env::var("PATH").unwrap();

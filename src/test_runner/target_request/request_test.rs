@@ -105,10 +105,7 @@ fn repo_root_dot_is_workspace_when_root_is_known() {
     let tmp = tempfile::TempDir::new().unwrap();
     let root = tmp.path().canonicalize().unwrap();
     let abs_dot = root.join(".");
-    let collapsed = canon(
-        operands(&[abs_dot.to_str().unwrap()]),
-        Some(&root),
-    );
+    let collapsed = canon(operands(&[abs_dot.to_str().unwrap()]), Some(&root));
     assert!(is_workspace_focus(&collapsed.focus));
     let sub = canon(operands(&["src"]), Some(&root));
     assert!(!is_workspace_focus(&sub.focus));
@@ -430,12 +427,10 @@ fn is_workspace_run_is_true_only_for_all() {
 
 #[test]
 fn lang_filter_maps_both_languages() {
-    assert_eq!(
-        LangFilter::from_language(Language::Python).to_language(),
-        Language::Python
-    );
-    assert_eq!(
-        LangFilter::from_language(Language::Rust).to_language(),
-        Language::Rust
-    );
+    for language in Language::ALL {
+        let filter: LangFilter = language;
+        let json = serde_json::to_string(&filter).unwrap();
+        assert_eq!(json, format!("\"{}\"", language.label()));
+        assert_eq!(serde_json::from_str::<LangFilter>(&json).unwrap(), language);
+    }
 }

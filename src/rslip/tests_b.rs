@@ -1,5 +1,4 @@
 use super::*;
-use crate::rslip::cache::rslip_cache_fingerprint;
 
 #[test]
 fn builds_pytest_runner_request_with_runtime_env_and_artifact() {
@@ -13,7 +12,12 @@ fn builds_pytest_runner_request_with_runtime_env_and_artifact() {
     assert_eq!(runner_req.nodeid, req.nodeid);
     assert_eq!(runner_req.cwd, req.cwd);
     assert_eq!(runner_req.python, req.python);
-    assert_eq!(runner_req.pytest_args, req.pytest_args);
+    let cache_dir = format!(
+        "cache_dir={}",
+        req.cache_root.join("pytest_cache").to_string_lossy()
+    );
+    assert_eq!(runner_req.pytest_args[..2], ["-o".to_string(), cache_dir]);
+    assert_eq!(runner_req.pytest_args[2..], req.pytest_args[..]);
     assert_eq!(
         runner_req.child_preload_modules,
         vec![runtime::MODULE_NAME.to_string()]
@@ -126,10 +130,8 @@ fn load_cached_outcomes_many_handles_empty_and_mixed_contexts() {
             stdout: None,
             stderr: None,
         };
-        let fingerprint = rslip_cache_fingerprint(req).unwrap();
         cache::store_rslip_cache_entry(
-            &req.cache_root,
-            &fingerprint,
+            req,
             &cache::RslipCacheEntry::from_outcome(&outcome, tmp.path()),
         )
         .unwrap();
@@ -172,10 +174,8 @@ fn load_cached_outcomes_many_reads_current_entries_without_runner() {
             stdout: Some(b"fresh stdout must not be replayed".to_vec()),
             stderr: Some(b"fresh stderr must not be replayed".to_vec()),
         };
-        let fingerprint = rslip_cache_fingerprint(req).unwrap();
         cache::store_rslip_cache_entry(
-            &req.cache_root,
-            &fingerprint,
+            req,
             &cache::RslipCacheEntry::from_outcome(&outcome, tmp.path()),
         )
         .unwrap();

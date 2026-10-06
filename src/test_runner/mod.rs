@@ -8,7 +8,6 @@ mod coverage_decision;
 pub(crate) mod coverage_index;
 pub(crate) mod duration;
 pub(crate) mod ensure_runtime;
-mod execution_generation;
 pub(crate) mod execution_witness;
 pub(crate) mod force_bad;
 pub(crate) use force_bad::apply_force_bad;
@@ -17,7 +16,6 @@ pub(crate) mod lang_iface;
 pub(crate) mod lang_python;
 pub(crate) mod lang_rust;
 pub(crate) mod language_keyed;
-pub(crate) mod last_status;
 mod line_selection;
 mod planned_selectors;
 mod python_cache_path;
@@ -35,13 +33,14 @@ pub(crate) use targets::expand_target_operands;
 mod kiss_test_report;
 pub(crate) mod tests_remaining;
 pub(crate) mod unit_test_timing;
-mod watch;
+#[cfg(test)]
+pub(crate) use kiss_test_report::KissTestReport;
 pub(crate) use kiss_test_report::{
-    KissTestReport, clone_run_args, kiss_report_from_ensure_outcome, kiss_report_from_ensure_query,
-    repo_can_assemble_reports,
+    clone_run_args, kiss_report_from_ensure_outcome, repo_can_assemble_reports,
 };
 #[cfg(test)]
 pub(crate) use kiss_test_report::{run_kiss_test_report, run_kiss_test_report_reuse};
+pub(crate) use lang_rust::llvm_cov as rust_llvm_cov;
 #[cfg(test)]
 pub(crate) use planned_selectors::should_force_cold_initialization;
 pub(crate) use planned_selectors::{PlannedSelectors, SelectorRunOptions, empty_planned};
@@ -50,10 +49,6 @@ pub(crate) use planned_selectors::{
     apply_cold_initialization_population, apply_force_all_population,
 };
 pub(crate) use rust_batch_interrupt::consume_rust_batch_interrupted;
-#[cfg(test)]
-pub(crate) use rust_batch_interrupt::note_rust_batch_interrupted;
-
-pub(crate) use lang_rust::llvm_cov as rust_llvm_cov;
 
 use kiss::Language;
 
@@ -101,6 +96,7 @@ pub struct RunTestCmdArgs<'a> {
     pub extras: language_keyed::LanguageKeyed<&'a [String]>,
     pub config_main_branch: Option<&'a str>,
     pub gate_config: kiss::GateConfig,
+    pub(crate) doubles: Option<std::sync::Arc<pipeline::PipelineDoubles>>,
 }
 
 impl RunTestCmdArgs<'_> {
@@ -123,10 +119,6 @@ impl RunTestCmdArgs<'_> {
     pub(crate) fn set_lang_filter(&mut self, lang_filter: Option<Language>) {
         self.target_request.set_language(lang_filter);
         self.invocation = target_request::to_compat_invocation(&self.target_request);
-    }
-
-    pub(crate) fn set_ignore(&mut self, ignore: &[String]) {
-        self.target_request.ignore = ignore.to_vec();
     }
 
     fn refresh_target_request(&mut self) {
@@ -157,6 +149,16 @@ pub fn run_test(a: RunTestCmdArgs<'_>) -> i32 {
         RunTestOnceOutcome::Interrupted => 130,
         RunTestOnceOutcome::EngineError(_) => 1,
     }
+}
+
+pub(crate) fn test_state_dir(repo_root: &std::path::Path) -> std::path::PathBuf {
+    kiss::test_state_dir(repo_root)
+}
+
+pub(crate) fn lock_test_state(
+    state_dir: &std::path::Path,
+) -> std::io::Result<kiss::test_state_lock::TestStateLock> {
+    kiss::test_state_lock::lock_test_state_dir(state_dir)
 }
 
 pub(crate) fn emit_test_progress(message: &str) {
@@ -199,17 +201,6 @@ pub(crate) fn run_live_overlapped_test(
     pipeline::run_overlapped_test(a, process_started)
 }
 
-#[cfg(unix)]
-pub(crate) use watch::control::{
-    NudgeReplyMsg, NudgeRequestMsg, nudge_watcher_with_retry_on_wait, probe_live_watcher,
-    reclaim_stale_watch_session,
-};
-#[cfg(unix)]
-pub(crate) use watch::{OneshotPeer, WatchLockGuard, wait_oneshot_peer};
-pub(crate) use watch::{
-    WatchCoverageParams, WatchCoverageResult, WatchReloadSeed, oneshot_client_reply, run_test_watch,
-};
-
 #[cfg(test)]
 fn plan_for_invocation(a: &RunTestCmdArgs<'_>) -> Result<PlannedSelectors, String> {
     use crate::test_runner::target_request::{
@@ -247,9 +238,9 @@ fn plan_for_invocation(a: &RunTestCmdArgs<'_>) -> Result<PlannedSelectors, Strin
     }
 }
 
+mod lang_registry;
 mod pipeline;
 mod plan;
-mod rust_list_build;
 pub(crate) mod workspace_selector_cache;
 #[cfg(test)]
 pub(crate) use plan::{

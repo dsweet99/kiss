@@ -580,7 +580,7 @@ def identity_still_valid(pid: int, pgid: int) -> bool:
 
 
 def live_shim_roles_from_metadata(repo_root: Path) -> dict[str, int]:
-    cache_root = repo_root / ".kiss/rust_llvm_cov_cache"
+    cache_root = repo_root / ".kiss/test/rust_llvm_cov_cache"
     roles: dict[str, int] = {}
     if not cache_root.is_dir():
         return roles
@@ -1308,6 +1308,20 @@ def selector_entry_payloads(cache_root: Path) -> list[dict]:
     return [load_json(path) for path in entries]
 
 
+def python_records_dir(repo_root: Path) -> Path:
+    return repo_root / ".kiss" / "test" / "records" / "python"
+
+
+def python_record_payloads(repo_root: Path) -> list[dict]:
+    records = sorted(python_records_dir(repo_root).glob("*.json"))
+    assert records, f"missing Python test records in {python_records_dir(repo_root)}"
+    payloads = []
+    for path in records:
+        record = load_json(path)
+        payloads.append({"selector": record["test_id"], "coverage": {"files": record["covered"]}})
+    return payloads
+
+
 def entry_lines(entry: dict, source: str) -> set[int]:
     files = entry.get("coverage", {}).get("files", {})
     matched: set[int] = set()
@@ -1444,15 +1458,18 @@ def load_python_generation_population(cache: Path) -> dict:
     return {"selectors": selectors}
 
 
-def assert_dry_run_selects_exactly(
+def assert_commit_runs_exactly(
     outcome: Outcome,
     expected_part: str,
     excluded_part: str,
 ) -> None:
-    plan = rendered_plan(outcome)
-    assert expected_part in plan, plan
-    assert excluded_part not in plan, plan
-    assert "PASSED:" not in plan and "FAILED:" not in plan, plan
+    results = [
+        line
+        for line in outcome.stdout.splitlines()
+        if line.startswith(("PASS", "FAIL", "TIMEOUT"))
+    ]
+    assert any(expected_part in line for line in results), outcome.stdout
+    assert not any(excluded_part in line for line in results), outcome.stdout
 
 
 def run_witness_check(
@@ -1473,12 +1490,11 @@ def run_witness_check(
     return outcome
 
 
-def run_witness_dry_run(language: str, repo: Path, marker_dir: Path) -> Outcome:
+def run_witness_commit(language: str, repo: Path, marker_dir: Path) -> Outcome:
     env = witness_env(repo, marker_dir)
-    env.pop("RUSTFLAGS", None)
     return run(
-        f"{language}-witness-dry-run",
-        [str(KISS), "--lang", language, "test", "commit", "--dry-run", "--metrics"],
+        f"{language}-witness-commit",
+        [str(KISS), "--lang", language, "test", "commit"],
         repo,
         env,
     )
@@ -1545,14 +1561,14 @@ def assert_python_coverage_witness(repo: Path, marker_dir: Path) -> None:
     run_witness_test("python", repo, marker_dir)
     assert marker_names(marker_dir) == {"python-alpha", "python-beta"}
     cache = python_rslip_cache_root(repo)
-    entry_payloads = selector_entry_payloads(cache)
+    entry_payloads = python_record_payloads(repo)
     assert_disjoint_entry_lines(entry_payloads, "app.py", 2, 5, 8)
     index = load_python_generation_line_index(cache)
     manifest = load_python_generation_population(cache)
     assert_index_source_selectors(index, "app.py", ("test_alpha", "test_beta"))
     assert_population_selectors(manifest, ("test_alpha", "test_beta"))
     gen_dir = pinned_python_generation_dir(cache)
-    artifact_paths = sorted((cache / "entries").glob("*.json")) + [
+    artifact_paths = sorted(python_records_dir(repo).glob("*.json")) + [
         cache / "population.json",
         gen_dir / "line_index.json",
         gen_dir / "manifest.json",
@@ -1566,13 +1582,14 @@ def assert_python_coverage_witness(repo: Path, marker_dir: Path) -> None:
     assert marker_names(marker_dir) == set()
     assert cache_tree_bytes(cache, artifact_paths) == post_test_bytes
     changed_text(repo / "app.py", "    return 'alpha'", "    return str('alpha')")
-    dry = run_witness_dry_run("python", repo, marker_dir)
-    assert_dry_run_selects_exactly(dry, "test_alpha", "test_beta")
+    commit = run_witness_commit("python", repo, marker_dir)
+    assert_commit_runs_exactly(commit, "test_alpha", "test_beta")
+    assert marker_names(marker_dir) == {"python-alpha"}
 
 
 def assert_rust_coverage_witness(repo: Path, marker_dir: Path) -> None:
     run_witness_test("rust", repo, marker_dir, jobs=4)
-    cache = repo / ".kiss/rust_llvm_cov_cache"
+    cache = repo / ".kiss/test/rust_llvm_cov_cache"
     entry_paths = sorted((cache / "entries").glob("*.json"))
     assert entry_paths, f"missing Rust selector entries in {cache / 'entries'}"
     entry_payloads = rust_coverage_payloads(cache)
@@ -1600,8 +1617,8 @@ def assert_rust_coverage_witness(repo: Path, marker_dir: Path) -> None:
     assert cache_tree_bytes(cache, artifact_paths) == post_test_bytes
     assert_rust_reverse_cache_integrity(repo)
     changed_text(repo / "src/lib.rs", "    \"alpha\"", "    { \"alpha\" }")
-    dry = run_witness_dry_run("rust", repo, marker_dir)
-    assert_dry_run_selects_exactly(dry, "test_alpha", "test_beta")
+    commit = run_witness_commit("rust", repo, marker_dir)
+    assert_commit_runs_exactly(commit, "test_alpha", "test_beta")
 
 
 def wait_for_barrier_ready(barrier_dir: Path, artifact: str, phase: str) -> dict:
@@ -1621,14 +1638,14 @@ def wait_for_barrier_ready(barrier_dir: Path, artifact: str, phase: str) -> dict
 def force_publication_target(repo: Path, language: str, artifact: str) -> None:
     # Warm cov_records_cache short-circuits kiss test before language caches
     # republish; clear it so publication barriers and recovery paths run.
-    (repo / ".kiss" / "cov_records_cache.json").unlink(missing_ok=True)
+    (repo / ".kiss" / "test" / "cov_records_cache.json").unlink(missing_ok=True)
     if language == "python":
         cache = python_rslip_cache_root(repo)
-        if artifact == "rslip_selector_entry":
-            # Per-entry files alone are not enough: a warm generation/population
-            # still yields PASS (cached) and never republishes rslip_selector_entry,
+        if artifact == "test_record":
+            # Per-test records alone are not enough: a warm generation/population
+            # still yields PASS (cached) and never republishes test_record,
             # so the crash-recovery barrier waiter hangs forever.
-            shutil.rmtree(cache / "entries", ignore_errors=True)
+            shutil.rmtree(python_records_dir(repo), ignore_errors=True)
             shutil.rmtree(cache / "generations", ignore_errors=True)
             shutil.rmtree(cache / "testmon", ignore_errors=True)
             (cache / "population.json").unlink(missing_ok=True)
@@ -1639,7 +1656,7 @@ def force_publication_target(repo: Path, language: str, artifact: str) -> None:
         else:
             raise AssertionError(f"unknown Python publication artifact: {artifact}")
     else:
-        cache = repo / ".kiss/rust_llvm_cov_cache"
+        cache = repo / ".kiss/test/rust_llvm_cov_cache"
         if artifact == "rust_selector_entry":
             shutil.rmtree(cache / "entries", ignore_errors=True)
             (cache / "check_aggregate.json").unlink(missing_ok=True)
@@ -1728,7 +1745,6 @@ def publication_writer_command(
             "python",
             "test",
             ".",
-            "--metrics",
         ]
         if jobs is not None:
             command.extend(["-j", str(jobs)])
@@ -1750,7 +1766,6 @@ def publication_writer_command(
             "rust",
             "test",
             *targets,
-            "--metrics",
         ]
         if jobs is not None:
             command.extend(["-j", str(jobs)])
@@ -1766,7 +1781,7 @@ def prepare_rust_selector_publish_diff(repo: Path) -> None:
 
 
 def assert_cache_json_integrity(repo: Path, language: str) -> None:
-    cache = python_rslip_cache_root(repo) if language == "python" else repo / ".kiss/rust_llvm_cov_cache"
+    cache = python_rslip_cache_root(repo) if language == "python" else repo / ".kiss/test/rust_llvm_cov_cache"
     assert_json_integrity(cache)
 
 
@@ -1871,7 +1886,7 @@ def reset_rust_check_aggregate_outputs(repo: Path) -> None:
     # Timing trials must re-populate coverage. Clearing only check_aggregate.json
     # leaves selector entries warm, so `kiss cov` can exit in tens of milliseconds
     # without refreshing or re-running tests.
-    rust_cache = repo / ".kiss/rust_llvm_cov_cache"
+    rust_cache = repo / ".kiss/test/rust_llvm_cov_cache"
     shutil.rmtree(rust_cache, ignore_errors=True)
 
 
@@ -1996,7 +2011,7 @@ def python_rslip_cache_root(repo_root: Path) -> Path:
     machine_id = Path("/etc/machine-id").read_text().strip()
     assert machine_id, "Linux machine id must not be empty"
     host_component = machine_id.encode("ascii").hex()
-    return repo_root / ".kiss" / "rslip_cache" / "hosts" / host_component
+    return repo_root / ".kiss" / "test" / "rslip_cache" / "hosts" / host_component
 
 
 def assert_repo_relative_index(index: dict, expected_source: str) -> None:
@@ -2148,7 +2163,7 @@ def coverage_no_xdg_hydrate() -> None:
         assert_check_gate_allowed(cold)
         kiss_dir = repo / ".kiss"
         assert kiss_dir.is_dir()
-        prime_aggregate = (kiss_dir / "rust_llvm_cov_cache" / "check_aggregate.json").read_bytes()
+        prime_aggregate = (kiss_dir / "test" / "rust_llvm_cov_cache" / "check_aggregate.json").read_bytes()
         durable_root = cache_home / "kiss" / "kiss-cov-durable"
         planted_gen = durable_root / "planted-lease"
         planted_gen.mkdir(parents=True)
@@ -2175,7 +2190,7 @@ def coverage_no_xdg_hydrate() -> None:
         assert "hydrated durable coverage generation" not in rebuilt.combined
         assert kiss_dir.is_dir()
         assert not (kiss_dir / "PLANTED_LEASE_MARKER").exists()
-        rebuilt_aggregate = kiss_dir / "rust_llvm_cov_cache" / "check_aggregate.json"
+        rebuilt_aggregate = kiss_dir / "test" / "rust_llvm_cov_cache" / "check_aggregate.json"
         assert rebuilt_aggregate.is_file()
         rebuilt_bytes = rebuilt_aggregate.read_bytes()
         assert rebuilt_bytes != b'{"planted": true}\n'
@@ -2193,7 +2208,7 @@ def coverage_publication_crash_recovery() -> None:
     """Crash coverage publication at debug barriers and verify recovery."""
     assert KISS.is_file(), f"local binary missing: {KISS}"
     scenarios = [
-        ("python", "rslip_selector_entry"),
+        ("python", "test_record"),
     ]
     phases = ["after_rename"]
     with tempfile.TemporaryDirectory(prefix="kq-crash-", dir="/tmp") as tmp:
@@ -2208,7 +2223,7 @@ def _avg(values: list[float]) -> float:
 
 
 def assert_rust_reverse_cache_integrity(repo: Path) -> None:
-    cache = repo / ".kiss/rust_llvm_cov_cache"
+    cache = repo / ".kiss/test/rust_llvm_cov_cache"
     assert_json_integrity(cache)
     population = load_json(cache / "population.json")
     reverse = population.get("reverse_line_index")
@@ -2230,7 +2245,7 @@ def assert_rust_reverse_cache_integrity(repo: Path) -> None:
 
 
 def rust_forward_entry_oracle_selectors(repo: Path, rel_file: str) -> set[str]:
-    cache = repo / ".kiss/rust_llvm_cov_cache"
+    cache = repo / ".kiss/test/rust_llvm_cov_cache"
     population = load_json(cache / "population.json")
     generation = population["generation_fingerprint"]
     selected: set[str] = set()
@@ -2312,18 +2327,16 @@ def reverse_index_concurrency_stress() -> None:
         run_witness_test("rust", repo, markers, jobs=2)
         assert_rust_reverse_cache_integrity(repo)
         env = witness_env(repo, markers)
-        dry = [
+        cmd = [
             str(KISS),
             "--lang",
             "rust",
             "test",
             "commit",
-            "--dry-run",
-            "--metrics",
             "-j",
             "2",
         ]
-        outcomes = run_concurrent("rev-dry", [(dry, repo), (dry, repo)], env)
+        outcomes = run_concurrent("rev-commit", [(cmd, repo), (cmd, repo)], env)
         assert all(item.returncode == 0 for item in outcomes)
 
 
@@ -2340,8 +2353,8 @@ def coverage_stress() -> None:
         clear_markers(markers)
         warm = run_witness_check("python", repo, markers)
         assert "refreshing Python runtime coverage" not in warm.stderr
-        dry = run_witness_dry_run("python", repo, markers)
-        assert dry.returncode == 0
+        commit = run_witness_commit("python", repo, markers)
+        assert commit.returncode == 0
 
 
 def timing_rust_throughput(
@@ -2379,13 +2392,13 @@ def path_isolation() -> None:
         env = witness_env(repo, markers)
         from_root = run(
             "path-root",
-            [str(KISS), "--lang", "python", "test", "commit", "--dry-run"],
+            [str(KISS), "--lang", "python", "test", "commit"],
             repo,
             env,
         )
         from_nested = run(
             "path-nested",
-            [str(KISS), "--lang", "python", "test", "commit", "--dry-run"],
+            [str(KISS), "--lang", "python", "test", "commit"],
             nested,
             env,
         )
@@ -2401,7 +2414,7 @@ def concurrent_cache_recovery() -> None:
         markers = Path(tmp) / "m"
         write_python_witness_repo(repo)
         env = witness_env(repo, markers)
-        cmd = [str(KISS), "--lang", "python", "test", ".", "--metrics", "-j", "2"]
+        cmd = [str(KISS), "--lang", "python", "test", ".", "-j", "2"]
         first = run("ccr-prime", cmd, repo, env)
         assert first.returncode == 0
         cache = python_rslip_cache_root(repo)
@@ -2415,23 +2428,16 @@ def concurrent_cache_recovery() -> None:
 
 
 def rust_batch_e2e() -> None:
-    """E2E batch QA: nocapture relay, forced serialization, derived repair, Ctrl-C."""
+    """E2E batch QA: cold batch, Ctrl-C, and recovery."""
     assert KISS.is_file(), f"local binary missing: {KISS}"
     with tempfile.TemporaryDirectory(prefix="kq-e2e-", dir="/tmp") as tmp:
         repo = Path(tmp) / "r"
         markers = Path(tmp) / "m"
         write_rust_witness_repo(repo)
         env = witness_env(repo, markers)
-        cmd = witness_test_command("rust", repo, jobs=2) + ["--metrics"]
+        cmd = witness_test_command("rust", repo, jobs=2)
         cold = run_observed("e2e-cold", cmd, repo, env)
         assert cold.returncode == 0
-        dry = run(
-            "e2e-nocapture-dry",
-            [str(KISS), "--lang", "rust", "test", ".", "--dry-run", "--", "--nocapture"],
-            repo,
-            env,
-        )
-        assert dry.returncode == 0
         run_interrupted("e2e-int", cmd, repo, env, signal_after=0.4)
         recovered = run("e2e-recover", cmd, repo, env)
         assert recovered.returncode == 0
@@ -2446,7 +2452,7 @@ def aggregate_coverage() -> None:
         write_rust_witness_repo(repo)
         cold = run_witness_test("rust", repo, markers, jobs=2)
         assert cold.returncode == 0
-        cache = repo / ".kiss/rust_llvm_cov_cache"
+        cache = repo / ".kiss/test/rust_llvm_cov_cache"
         assert (cache / "population.json").is_file() or (
             cache / "check_aggregate.json"
         ).is_file()
@@ -2462,12 +2468,14 @@ def timing_aggregate_parallel() -> None:
         markers = Path(tmp) / "m"
         write_rust_witness_repo(repo)
         env = witness_env(repo, markers)
+        reset_rust_check_aggregate_outputs(repo)
         serial = run(
             "agg-j1",
             witness_test_command("rust", repo, jobs=1),
             repo,
             env,
         )
+        reset_rust_check_aggregate_outputs(repo)
         parallel = run(
             "agg-j2",
             witness_test_command("rust", repo, jobs=2),
@@ -2488,7 +2496,7 @@ def rust_phase_interrupt() -> None:
         markers = Path(tmp) / "m"
         write_rust_witness_repo(repo)
         env = witness_env(repo, markers)
-        cmd = witness_test_command("rust", repo, jobs=2) + ["--metrics"]
+        cmd = witness_test_command("rust", repo, jobs=2)
         warm = run("phase-warm", cmd, repo, env)
         assert warm.returncode == 0
         run_interrupted("phase-int", cmd, repo, env, signal_after=0.3)
@@ -2506,7 +2514,7 @@ def rust_full_repo_observer(jobs: int = 2) -> None:
         env = witness_env(repo, markers)
         outcome = run_observed(
             "observer-cold",
-            witness_test_command("rust", repo, jobs=jobs) + ["--metrics"],
+            witness_test_command("rust", repo, jobs=jobs),
             repo,
             env,
             timeout=50,
@@ -2527,7 +2535,7 @@ def rust_retained_cache_audit() -> None:
         markers = Path(tmp) / "m"
         write_rust_witness_repo(repo)
         run_witness_test("rust", repo, markers, jobs=2)
-        cache = repo / ".kiss/rust_llvm_cov_cache"
+        cache = repo / ".kiss/test/rust_llvm_cov_cache"
         size = directory_size_bytes(cache) if cache.is_dir() else 0
         assert size >= 0
         emit_eval("rust_retained_cache_bytes", "SMALLER", size)
@@ -2541,7 +2549,7 @@ def rust_distinct_groups_interrupt() -> None:
         markers = Path(tmp) / "m"
         write_rust_witness_repo(repo)
         env = witness_env(repo, markers)
-        cmd = witness_test_command("rust", repo, jobs=2) + ["--metrics"]
+        cmd = witness_test_command("rust", repo, jobs=2)
         warm = run("groups-warm", cmd, repo, env)
         assert warm.returncode == 0
         run_interrupted("groups-int", cmd, repo, env, signal_after=0.3)
@@ -2565,7 +2573,7 @@ def _unlink_default_profraw(directory: Path) -> None:
 
 
 def _discard_profraw_names(repo: Path) -> set[str]:
-    discard = repo / ".kiss" / "profraw"
+    discard = repo / ".kiss" / "test" / "profraw"
     if not discard.is_dir():
         return set()
     return {path.name for path in discard.glob("*.profraw")}
@@ -2586,9 +2594,9 @@ def _run_kiss_help(cwd: Path, env: dict[str, str]) -> None:
 def profraw_discard_sink() -> None:
     """Prove CLI redirect keeps default_*.profraw out of CWD and cleans discard sinks."""
     assert KISS.is_file(), f"local binary missing: {KISS}"
-    nested = ROOT / "crates" / "rust-llvm-cov-runner"
+    nested = ROOT / "src" / "rust_llvm_cov_runner"
     assert nested.is_dir(), nested
-    discard = ROOT / ".kiss" / "profraw"
+    discard = ROOT / ".kiss" / "test" / "profraw"
     env = os.environ.copy()
     env.pop("LLVM_PROFILE_FILE", None)
     env.pop("KISS_PROFRAW_DIR", None)

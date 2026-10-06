@@ -14,10 +14,6 @@ pub(crate) use batch_process_tree_groups::{
 pub(super) use batch_process_tree_subreaper::child_subreaper_is_set;
 pub(super) use batch_process_tree_subreaper::{clear_child_subreaper, install_child_subreaper};
 
-pub fn reap_orphaned_zombies() {
-    batch_process_tree_reap::reap_zombies();
-}
-
 use std::io;
 use std::process::{Child, Command};
 use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
@@ -168,8 +164,9 @@ impl BatchProcessTreeGuard {
             }
             #[cfg(target_os = "linux")]
             batch_process_tree_reap::kill_reparented_children();
-            batch_process_tree_reap::reap_zombies();
-            return self.registry.residual_count();
+            return batch_process_tree_reap::reap_until_clear(grace, || {
+                self.registry.residual_count()
+            });
         }
         self.reap_lingering_descendants(grace)
     }

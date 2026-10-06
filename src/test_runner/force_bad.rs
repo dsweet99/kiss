@@ -3,68 +3,6 @@ use kiss::Language;
 use super::target_request::TargetFocus;
 use super::{PlannedSelectors, RunTestCmdArgs};
 
-pub(crate) fn target_has_retry_bad(
-    repo: &std::path::Path,
-    request: &super::target_request::TargetRequest,
-) -> bool {
-    let Ok(resolved) = super::target_request::resolve_only(repo, request) else {
-        return false;
-    };
-    let (projection, complete) =
-        super::target_request::build_slice_projection(repo, request, &resolved);
-    let mut selectors = projection.selectors();
-    selectors.extend(resolved.direct_selectors.iter().cloned());
-    let scope = super::target_request::ReportScope::from_membership(
-        resolved.regions.clone(),
-        selectors,
-        complete,
-    );
-    let rows = super::target_request::available_rows(repo, &scope);
-    if !super::target_request::plan_from_available_rows(&scope, &rows, true, false)
-        .retry_bad
-        .is_empty()
-    {
-        return true;
-    }
-    let Some(report) = super::target_request::load_current_report(repo) else {
-        return false;
-    };
-    report.rows.iter().any(|row| {
-        matches!(
-            row.effective,
-            super::target_request::EffectiveStatus::Fail
-                | super::target_request::EffectiveStatus::Timeout
-        ) && selector_under_request(repo, &row.selector, request)
-    })
-}
-
-fn selector_under_request(
-    repo: &std::path::Path,
-    selector: &str,
-    request: &super::target_request::TargetRequest,
-) -> bool {
-    let Some(raws) = super::target_request::operand_raws(&request.focus) else {
-        return true;
-    };
-    let repo_s = repo.to_string_lossy();
-    raws.iter().any(|raw| {
-        let path = raw.split_once("::").map_or(raw.as_str(), |(path, _)| path);
-        let rel = path
-            .strip_prefix(repo_s.as_ref())
-            .unwrap_or(path)
-            .trim_start_matches('/');
-        let symbol = raw.split_once("::").map(|(_, symbol)| symbol);
-        match symbol {
-            Some(symbol) => selector == format!("{rel}::{symbol}"),
-            None => {
-                selector == rel
-                    || selector.starts_with(&format!("{rel}::"))
-                    || selector.starts_with(&format!("{rel}/"))
-            }
-        }
-    })
-}
-
 pub(crate) fn apply_force_bad(
     a: &RunTestCmdArgs<'_>,
     planned: &mut PlannedSelectors,
@@ -72,7 +10,8 @@ pub(crate) fn apply_force_bad(
     if !a.force_bad {
         return Ok(());
     }
-    let (python, rust) = typed_retry_by_lang(a, planned);    merge_lang_priors(a, planned, Language::Python, python);
+    let (python, rust) = typed_retry_by_lang(a, planned);
+    merge_lang_priors(a, planned, Language::Python, python);
     merge_lang_priors(a, planned, Language::Rust, rust);
     Ok(())
 }
@@ -117,7 +56,7 @@ fn typed_retry_by_lang(
     selectors.extend(planned.sel.rust.iter().cloned());
     let scope =
         super::target_request::ReportScope::from_membership(resolved.regions, selectors, complete);
-    let rows = super::target_request::available_rows(&planned.repo_root, &scope);
+    let rows = super::target_request::available_rows(&planned.repo_root, &scope, a.extras);
     let mut python = Vec::new();
     let mut rust = Vec::new();
     for selector in

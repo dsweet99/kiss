@@ -2,7 +2,7 @@ use std::cell::{Cell, RefCell};
 use std::io::IsTerminal;
 use std::time::Duration;
 
-use kiss::rust_llvm_cov_runner::WatchSuiteTotals;
+use kiss::watch_report::WatchSuiteTotals;
 
 use super::duration::format_test_duration;
 use super::runners::SelectorExecutionSummary;
@@ -101,10 +101,7 @@ fn watch_suite_totals(summary: &FinalTestSummary, total_duration: Duration) -> W
 }
 
 fn record_watch_suite_totals(summary: &FinalTestSummary, total_duration: Duration) {
-    kiss::rust_llvm_cov_runner::record_watch_suite_totals(watch_suite_totals(
-        summary,
-        total_duration,
-    ));
+    kiss::watch_report::record_watch_suite_totals(watch_suite_totals(summary, total_duration));
 }
 
 fn flush_final_test_summary() {

@@ -207,7 +207,7 @@ fn stale_index_is_not_loaded() {
     fs::write(
         index_path,
         serde_json::json!({
-            "schema_version": LEGACY_INDEX_SCHEMA_VERSION,
+            "schema_version": "rust-llvm-cov-index-v1",
             "source_root": normalized_repo_root(tmp.path()),
             "entries_fingerprint": "stale",
             "files": {}

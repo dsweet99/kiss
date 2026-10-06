@@ -25,16 +25,9 @@ impl PartialOrd for TestSelector {
 
 impl Ord for TestSelector {
     fn cmp(&self, other: &Self) -> Ordering {
-        language_sort_key(self.language)
-            .cmp(&language_sort_key(other.language))
+        self.language
+            .cmp(&other.language)
             .then_with(|| self.id.cmp(&other.id))
-    }
-}
-
-pub(crate) fn language_sort_key(language: Language) -> u8 {
-    match language {
-        Language::Python => 0,
-        Language::Rust => 1,
     }
 }
 

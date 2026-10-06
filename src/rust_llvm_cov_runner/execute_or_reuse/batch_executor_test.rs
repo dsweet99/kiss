@@ -78,148 +78,26 @@ fn write_check_aggregate_hit_durations(
 }
 
 #[test]
-fn all_hit_batch_returns_without_batch_lock_or_spawn() {
+fn stored_entries_do_not_skip_requested_selectors() {
     let repo = batch_executor_fixture_repo();
     let req = batch_executor_request(repo.path());
     store_batch_executor_selector(repo.path(), &req, "alpha");
     store_batch_executor_selector(repo.path(), &req, "beta");
 
-    let result = execute_rust_coverage_batch(&req, &tools()).unwrap();
-    assert_eq!(result.completed.len(), 2);
-    assert!(result.batch_error.is_none());
-    assert_eq!(result.counters.cache_hits, 2);
-    assert_eq!(result.counters.build_invocations, 0);
-    assert!(
-        result
-            .completed
-            .iter()
-            .all(|outcome| { outcome.cache_status == RustCovCacheStatus::Hit })
-    );
-    assert!(
-        result
-            .completed
-            .iter()
-            .all(|outcome| outcome.duration == Duration::from_millis(7)),
-        "warm hits must preserve entry durations"
-    );
-    assert!(
-        result
-            .completed
-            .iter()
-            .all(|outcome| !outcome.coverage.files.is_empty()),
-        "warm hits must carry non-empty coverage"
-    );
-}
-
-#[test]
-fn sealed_all_hit_refuses_force_rerun_selectors_for_retry_bad() {
-    let repo = batch_executor_fixture_repo();
-    let mut req = batch_executor_request(repo.path());
-    store_batch_executor_selector(repo.path(), &req, "alpha");
-    store_batch_executor_selector(repo.path(), &req, "beta");
-    let tools = tools();
-    // Warm seal from an all-pass batch (raw Passed), as --retry-bad leaves force_rerun=false.
-    let _ = execute_rust_coverage_batch(&req, &tools).unwrap();
-    req.force_rerun = false;
-    req.force_rerun_selectors = vec!["alpha".to_string()];
-    let identity = batch_identity(&req, &tools).unwrap();
-    assert!(
-        super::super::batch_executor_sealed::try_sealed_all_hit(&req, &identity, &tools).is_none(),
-        "force_rerun_selectors must block sealed all-hit reuse"
-    );
-    let mut fresh_called = false;
+    let mut ran = Vec::new();
     let result =
-        execute_rust_coverage_batch_with_fresh(&req, &tools, |req, _tools, _identity, _plan| {
-            fresh_called = true;
+        execute_rust_coverage_batch_with_fresh(&req, &tools(), |req, _tools, _identity, _plan| {
+            ran = req.logical_selectors.clone();
             Ok(RustCoverageBatchResult {
-                completed: req
-                    .logical_selectors
-                    .iter()
-                    .map(|selector| RustLlvmCovOutcome {
-                        selector: selector.clone(),
-                        status: TestStatus::Passed,
-                        exit_code: Some(0),
-                        duration: Duration::from_millis(3),
-                        coverage: RustLineCoverage {
-                            files: BTreeMap::from([(
-                                "src/lib.rs".to_string(),
-                                BTreeSet::from([1]),
-                            )]),
-                        },
-                        test_binary_ids: vec!["test-bin".to_string()],
-                        cache_status: RustCovCacheStatus::MissStored,
-                        stdout: None,
-                        stderr: None,
-                    })
-                    .collect(),
+                completed: Vec::new(),
                 batch_error: None,
                 counters: RustCoverageBatchCounters::default(),
                 test_binaries: Vec::new(),
             })
         })
         .unwrap();
-    assert!(
-        fresh_called,
-        "retry-bad forced selectors must not take sealed all-hit; prepare/fresh must run"
-    );
-    assert!(
-        result
-            .completed
-            .iter()
-            .any(|outcome| outcome.selector == "alpha"
-                && outcome.cache_status != RustCovCacheStatus::Hit),
-        "forced selector must not remain a warm Hit"
-    );
-}
-
-#[test]
-fn all_hit_rejects_empty_coverage_pass_entries() {
-    let repo = batch_executor_fixture_repo();
-    let req = batch_executor_request(repo.path());
-    store_batch_executor_selector(repo.path(), &req, "alpha");
-    store_batch_executor_selector(repo.path(), &req, "beta");
-
-    let tools = tools();
-    let identity = batch_identity(&req, &tools).unwrap();
-    let fingerprint = entry_fingerprint(&identity.input_digest, &req, &tools, "alpha");
-    let path = crate::rust_llvm_cov_runner::rust_cov_cache::rust_cov_cache_entry_path(
-        &req.cache_root,
-        &fingerprint,
-    );
-    let poison = RustCovCacheEntry::from_outcome(
-        &crate::rust_llvm_cov_runner::RustLlvmCovOutcome {
-            selector: "alpha".to_string(),
-            status: TestStatus::Passed,
-            exit_code: Some(0),
-            duration: Duration::from_millis(1),
-            coverage: RustLineCoverage {
-                files: BTreeMap::new(),
-            },
-            test_binary_ids: Vec::new(),
-            cache_status: RustCovCacheStatus::MissStored,
-            stdout: None,
-            stderr: None,
-        },
-        &identity.generation_fingerprint,
-    );
-
-    fs::write(&path, serde_json::to_vec(&poison).unwrap()).unwrap();
-
-    let result =
-        execute_rust_coverage_batch_with_fresh(&req, &tools, |_req, _tools, _identity, _plan| {
-            Ok(RustCoverageBatchResult {
-                completed: Vec::new(),
-                counters: RustCoverageBatchCounters {
-                    build_invocations: 1,
-                    ..Default::default()
-                },
-                batch_error: None,
-                test_binaries: Vec::new(),
-            })
-        })
-        .unwrap();
-    assert_eq!(result.counters.build_invocations, 1);
-    assert_eq!(result.counters.cache_hits, 1);
+    assert_eq!(ran, req.logical_selectors);
+    assert_eq!(result.counters.cache_hits, 0);
 }
 
 #[test]
@@ -241,74 +119,6 @@ fn zero_limit_selectors_are_banned_without_fresh_execution() {
             .iter()
             .all(|outcome| outcome.status == TestStatus::TimedOut)
     );
-    assert_eq!(result.counters.build_invocations, 0);
-}
-
-#[test]
-fn all_hit_derived_repair_acquires_batch_lock_without_spawn() {
-    let repo = batch_executor_fixture_repo();
-    let req = batch_executor_request(repo.path());
-    store_batch_executor_selector(repo.path(), &req, "alpha");
-    store_batch_executor_selector(repo.path(), &req, "beta");
-    let mut population_req = req.clone();
-    population_req.population_publication_selectors =
-        Some(vec!["alpha".to_string(), "beta".to_string()]);
-
-    let result = execute_rust_coverage_batch(&population_req, &tools()).unwrap();
-    assert_eq!(result.counters.cache_hits, 2);
-    assert_eq!(result.counters.build_invocations, 0);
-    assert!(result.counters.derived_state_published);
-    assert!(result.counters.derived_repair);
-}
-
-#[test]
-fn all_hit_derived_repair_reports_deferred_legacy_cleanup() {
-    let repo = batch_executor_fixture_repo();
-    let req = batch_executor_request(repo.path());
-    store_batch_executor_selector(repo.path(), &req, "alpha");
-    store_batch_executor_selector(repo.path(), &req, "beta");
-    let mut population_req = req.clone();
-    population_req.population_publication_selectors =
-        Some(vec!["alpha".to_string(), "beta".to_string()]);
-    fs::create_dir_all(population_req.cache_root.join("workers").join("slot-0")).unwrap();
-    let _slot_guard = crate::rust_llvm_cov_runner::execute_or_reuse::worker::lock_worker_for_test(
-        &population_req.cache_root,
-        0,
-    )
-    .unwrap();
-
-    let result = execute_rust_coverage_batch(&population_req, &tools()).unwrap();
-
-    assert_eq!(result.counters.cache_hits, 2);
-    assert!(result.counters.legacy_cleanup_deferred);
-}
-
-#[test]
-fn post_lock_recheck_becomes_hit_after_another_process_stores_entry() {
-    let repo = batch_executor_fixture_repo();
-    let req = batch_executor_request(repo.path());
-    let mut alpha_req = req.clone();
-    alpha_req.logical_selectors = vec!["alpha".to_string()];
-    let cache_root = req.cache_root.clone();
-    let publisher_req = req.clone();
-
-    let (lock_acquired_tx, lock_acquired_rx) = mpsc::channel();
-    let publisher = std::thread::spawn(move || {
-        let _guard = lock_batch(&cache_root).unwrap();
-        lock_acquired_tx.send(()).expect("publisher lock signal");
-        std::thread::sleep(Duration::from_millis(100));
-        store_batch_executor_selector(publisher_req.cwd.as_path(), &publisher_req, "alpha");
-    });
-
-    lock_acquired_rx
-        .recv()
-        .expect("publisher must acquire batch lock before recheck");
-    let result = execute_rust_coverage_batch(&alpha_req, &tools()).unwrap();
-    publisher.join().unwrap();
-
-    assert_eq!(result.completed.len(), 1);
-    assert_eq!(result.completed[0].cache_status, RustCovCacheStatus::Hit);
-    assert_eq!(result.counters.cache_hits, 1);
     assert_eq!(result.counters.build_invocations, 0);
 }
 
@@ -384,28 +194,6 @@ fn failed_selective_fresh_batch_preserves_population_through_executor() {
         manifest.generation_fingerprint,
         population_identity.generation_fingerprint
     );
-}
-
-#[test]
-fn finalize_after_fresh_batch_marks_legacy_cleanup_for_check_aggregate_mode() {
-    let repo = batch_executor_fixture_repo();
-    let mut req = batch_executor_request(repo.path());
-    req.coverage_output_mode = CoverageOutputMode::CheckAggregate {
-        publication_binary_ids: None,
-        repair_publication: None,
-    };
-    let tools = tools();
-    let identity = batch_identity(&req, &tools).unwrap();
-    let mut result = RustCoverageBatchResult {
-        completed: Vec::new(),
-        batch_error: None,
-        counters: RustCoverageBatchCounters::default(),
-        test_binaries: Vec::new(),
-    };
-
-    finalize_after_fresh_batch(&req, &tools, &identity, true, &mut result).unwrap();
-
-    assert!(result.counters.legacy_cleanup_deferred);
 }
 
 #[test]

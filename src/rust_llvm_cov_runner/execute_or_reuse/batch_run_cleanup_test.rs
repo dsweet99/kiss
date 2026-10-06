@@ -49,10 +49,10 @@ fn current_run_lifecycle_guard_cleans_up_on_drop() {
     let tmp = tempfile::tempdir().unwrap();
     let repo = tmp.path();
     let kiss = repo.join(".kiss");
-    let cache_root = kiss.join("rust_llvm_cov_cache");
+    let cache_root = kiss.join("test").join("rust_llvm_cov_cache");
     let run_root = cache_root.join("runs").join("run-a");
     let other_instances = cache_root.join("runs").join("other").join("instances");
-    let kiss_profraw = kiss.join("profraw");
+    let kiss_profraw = kiss.join("test").join("profraw");
     let crate_dir = repo.join("crates").join("pkg");
     fs::create_dir_all(&run_root).unwrap();
     fs::create_dir_all(&other_instances).unwrap();
@@ -206,17 +206,11 @@ fn begin_with_layout_sweeps_orphan_default_profraw() {
     let tmp = tempfile::tempdir().unwrap();
     let repo = tmp.path();
     let kiss = repo.join(".kiss");
-    let cache_root = kiss.join("rust_llvm_cov_cache");
+    let cache_root = kiss.join("test").join("rust_llvm_cov_cache");
     let crate_dir = repo.join("crates").join("pkg");
     fs::create_dir_all(&crate_dir).unwrap();
-    fs::create_dir_all(kiss.join("tmp")).unwrap();
     fs::write(repo.join("default_root_0_1.profraw"), b"root").unwrap();
     fs::write(crate_dir.join("default_crate_0_2.profraw"), b"crate").unwrap();
-    fs::write(
-        kiss.join("tmp").join("default_legacy_0_3.profraw"),
-        b"legacy",
-    )
-    .unwrap();
 
     let mut req = crate::rust_llvm_cov_runner::RustCoverageBatchRequest::witness();
     req.source_root = repo.to_path_buf();
@@ -226,10 +220,9 @@ fn begin_with_layout_sweeps_orphan_default_profraw() {
     let scope =
         FreshBatchRunScope::begin_with_layout(&cache_root, &plan, CurrentRunCleanup::default())
             .unwrap();
-    assert!(kiss.join("profraw").is_dir());
+    assert!(kiss.join("test").join("profraw").is_dir());
     assert!(!repo.join("default_root_0_1.profraw").exists());
     assert!(!crate_dir.join("default_crate_0_2.profraw").exists());
-    assert!(!kiss.join("tmp").exists());
 
     fs::write(
         plan.target_runner_output_dir.join("intentional.profraw"),

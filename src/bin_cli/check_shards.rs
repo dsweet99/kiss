@@ -24,7 +24,7 @@ pub(crate) fn run_split_check_sharded(exe: &Path, args: &CheckCommandArgs<'_>) -
     let (_, rs_files) = crate::analyze::gather_files(universe, Some(Language::Rust), &ignore);
     let shard_count = rust_shard_count(rs_files.len());
     if shard_count <= 1 || rs_files.len() < 64 {
-        return crate::bin_cli::check_cmd::run_split_check_with_exe_legacy(exe, args);
+        return crate::bin_cli::check_cmd::run_split_check_with_exe(exe, args);
     }
     let shards = partition_paths(rs_files, shard_count);
     let Ok(mut python) = spawn_lang(exe, args, "python", None) else {

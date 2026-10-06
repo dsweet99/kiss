@@ -3,6 +3,7 @@ import importlib
 import io
 import json
 import os
+import shutil
 import signal
 import sys
 import tempfile
@@ -10,6 +11,30 @@ import threading
 import time
 import traceback
 
+_SCRATCH_PREFIX = "rpytest-forkserver-"
+
+def _sweep_dead_scratch_dirs(base):
+    try:
+        names = os.listdir(base)
+    except OSError:
+        return
+    for name in names:
+        owner = name[len(_SCRATCH_PREFIX):].split("-", 1)[0]
+        if not name.startswith(_SCRATCH_PREFIX) or not owner.isdigit():
+            continue
+        try:
+            os.kill(int(owner), 0)
+            continue
+        except ProcessLookupError:
+            pass
+        except OSError:
+            continue
+        shutil.rmtree(os.path.join(base, name), ignore_errors=True)
+
+_SCRATCH = os.environ.pop("KISS_FORKSERVER_SCRATCH", "")
+if not _SCRATCH:
+    _sweep_dead_scratch_dirs(tempfile.gettempdir())
+    _SCRATCH = tempfile.mkdtemp(prefix="%s%d-" % (_SCRATCH_PREFIX, os.getpid()))
 _CONFIG = None
 _PROTOCOL_IN = os.fdopen(os.dup(0), "r", buffering=1)
 

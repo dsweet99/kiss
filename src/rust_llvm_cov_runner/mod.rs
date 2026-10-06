@@ -11,6 +11,8 @@ mod build_depot;
 mod file_lock;
 mod kiss_profraw;
 mod ordinary_source_snapshot;
+mod record_digest;
+mod record_select;
 mod rust_cov_cache;
 mod source_diff;
 mod subprocess_observer;
@@ -35,8 +37,8 @@ pub(crate) use execute_or_reuse::batch_executor_finish_bans;
 pub(crate) use execute_or_reuse::batch_executor_finish_entries;
 pub(crate) use execute_or_reuse::batch_executor_finish_export;
 pub(crate) use execute_or_reuse::batch_executor_finish_store;
+pub use execute_or_reuse::batch_executor_finish_store::record_completed_outcomes;
 pub(crate) use execute_or_reuse::batch_executor_fresh;
-pub use execute_or_reuse::batch_executor_prepare::PreparedRustBatch;
 pub(crate) use execute_or_reuse::batch_export;
 pub(crate) use execute_or_reuse::batch_export_catalog;
 #[cfg(test)]
@@ -51,7 +53,7 @@ pub(crate) use execute_or_reuse::batch_output_channel;
 pub(crate) use execute_or_reuse::batch_output_channel_frame;
 pub(crate) use execute_or_reuse::batch_output_channel_token;
 pub(crate) use execute_or_reuse::batch_process_tree;
-pub use execute_or_reuse::batch_process_tree::{cancel_active_batch_scope, reap_orphaned_zombies};
+pub use execute_or_reuse::batch_process_tree::cancel_active_batch_scope;
 pub(crate) use execute_or_reuse::batch_result;
 pub(crate) use execute_or_reuse::batch_run;
 pub(crate) use execute_or_reuse::batch_shim;
@@ -59,7 +61,6 @@ pub(crate) use execute_or_reuse::batch_shim;
 pub(crate) use execute_or_reuse::batch_shim_delegated;
 pub(crate) use execute_or_reuse::batch_shim_lookup;
 pub(crate) use execute_or_reuse::batch_shim_synthesize;
-pub(crate) use execute_or_reuse::batch_warm_hit_seal;
 pub(crate) use execute_or_reuse::llvm_cov_json;
 #[cfg(test)]
 pub use execute_or_reuse::progress::live_rust_hook_test_guard;
@@ -70,15 +71,6 @@ pub use execute_or_reuse::progress::{
 pub use execute_or_reuse::progress_heartbeat::ProgressWatchdog;
 pub use execute_or_reuse::progress_prepared_hits::{
     emit_prepared_rust_cache_hits, install_prepared_rust_cache_hits_hook,
-};
-pub use execute_or_reuse::progress_watch_report::{
-    ProgressLanguageGuard, WatchNamed, WatchNamedOutcome, WatchReportTaken, WatchSuiteTotals,
-    begin_watch_report_capture, record_watch_suite_totals, take_watch_report_capture,
-    take_watch_report_lines, take_watch_report_parts, take_watch_report_taken,
-    transcript_from_lines,
-};
-pub use execute_or_reuse::progress_watch_suite::{
-    SuiteOutcome, WatchSuiteReport, merge_watch_exit,
 };
 pub(crate) use execute_or_reuse::worker;
 #[cfg(test)]
@@ -132,6 +124,10 @@ pub(crate) use publish_derived::batch_reverse_query;
 pub(crate) use publish_derived::batch_reverse_query_metrics;
 #[cfg(test)]
 pub(crate) use publish_derived::batch_reverse_test_support;
+pub use record_select::{
+    RustRecordDeps, rust_record_identity, rust_record_misses, rust_records_holding,
+    rust_selectors_without_records,
+};
 
 use std::io;
 use std::path::PathBuf;

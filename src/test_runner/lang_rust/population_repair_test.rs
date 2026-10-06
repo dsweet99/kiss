@@ -127,6 +127,7 @@ fn stale_derived_index_repair_preserves_binary_authority() {
     fs::write(
         tmp.path()
             .join(".kiss")
+            .join("test")
             .join("rust_llvm_cov_cache")
             .join("index.json"),
         "{ broken",

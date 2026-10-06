@@ -1,28 +1,32 @@
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::{self, Write};
+use std::io;
 use std::path::{Path, PathBuf};
 
 #[cfg(test)]
 use std::fs::{File, OpenOptions};
 
 use crate::rpytest_runner::TestStatus;
-use serde::{Deserialize, Serialize};
 
 use crate::rslip::{CACHE_SCHEMA_VERSION, LineCoverage, RslipOutcome, RslipRequest};
-
 mod memo;
+mod record;
+mod statement_digest;
 pub(crate) use memo::{DigestMemo, load_reusable_rslip_cache_entry_with_memo};
+use record::deps_still_hold;
+pub use record::python_records_dir;
+pub(crate) use record::{
+    load_reusable_rslip_cache_entry, load_rslip_cache_entry, load_rslip_record,
+    store_rslip_cache_entry,
+};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub(crate) struct RslipCacheEntry {
-    schema_version: String,
     pub(crate) nodeid: String,
     pub(crate) status: TestStatus,
     pub(crate) exit_code: Option<i32>,
     pub(crate) duration: std::time::Duration,
     pub(crate) coverage: LineCoverage,
-    #[serde(default)]
     pub(crate) covered_digests: BTreeMap<String, String>,
 }
 
@@ -39,7 +43,6 @@ impl RslipCacheEntry {
         memo: &mut DigestMemo,
     ) -> Self {
         Self {
-            schema_version: CACHE_SCHEMA_VERSION.to_string(),
             nodeid: outcome.nodeid.clone(),
             status: outcome.status,
             exit_code: outcome.exit_code,
@@ -56,69 +59,21 @@ impl RslipCacheEntry {
     }
 }
 
-pub(crate) fn load_rslip_cache_entry(
-    cache_root: &Path,
-    fingerprint: &str,
-) -> Option<RslipCacheEntry> {
-    let path = rslip_cache_entry_path(cache_root, fingerprint);
-    let bytes = fs::read(path).ok()?;
-    let entry: RslipCacheEntry = serde_json::from_slice(&bytes).ok()?;
-    (entry.schema_version == CACHE_SCHEMA_VERSION).then_some(entry)
-}
-
-pub(crate) fn load_reusable_rslip_cache_entry(
-    cache_root: &Path,
-    fingerprint: &str,
-    source_root: &Path,
-) -> Option<RslipCacheEntry> {
-    let entry = load_rslip_cache_entry(cache_root, fingerprint)?;
-    entry_is_reusable(&entry, source_root).then_some(entry)
-}
-
 pub(crate) fn entry_is_reusable(entry: &RslipCacheEntry, source_root: &Path) -> bool {
-    status_allows_reuse(entry)
-        && covered_file_digests(source_root, &entry.nodeid, &entry.coverage)
-            .is_some_and(|expected| expected == entry.covered_digests)
+    has_dependency_evidence(entry)
+        && deps_still_hold(
+            entry,
+            covered_file_digests(source_root, &entry.nodeid, &entry.coverage).as_ref(),
+        )
 }
 
-fn status_allows_reuse(entry: &RslipCacheEntry) -> bool {
-    match entry.status {
-        TestStatus::Passed => !entry.coverage.files.is_empty(),
-        TestStatus::Failed | TestStatus::TimedOut => !entry.covered_digests.is_empty(),
-    }
-}
-
-pub(crate) fn store_rslip_cache_entry(
-    cache_root: &Path,
-    fingerprint: &str,
-    entry: &RslipCacheEntry,
-) -> io::Result<()> {
-    let path = rslip_cache_entry_path(cache_root, fingerprint);
-    let parent = path
-        .parent()
-        .ok_or_else(|| io::Error::other("cache path has no parent"))?;
-    let tmp_path = parent.join(format!(".{}.{}.tmp", fingerprint, rslip_unique_suffix()));
-    crate::kiss_publication_barrier::publish_atomically_without_parent_sync(
-        "rslip_selector_entry",
-        &path,
-        &tmp_path,
-        |file| {
-            serde_json::to_writer(&mut *file, entry).map_err(io::Error::other)?;
-            file.write_all(b"\n")?;
-            Ok(())
-        },
-    )
+fn has_dependency_evidence(entry: &RslipCacheEntry) -> bool {
+    !entry.coverage.files.is_empty()
 }
 
 #[cfg(test)]
 pub(crate) fn create_new_rslip_cache_file(path: &Path) -> io::Result<File> {
     OpenOptions::new().write(true).create_new(true).open(path)
-}
-
-pub(crate) fn rslip_cache_entry_path(cache_root: &Path, fingerprint: &str) -> PathBuf {
-    cache_root
-        .join("entries")
-        .join(format!("{fingerprint}.json"))
 }
 
 pub(crate) fn rslip_unique_suffix() -> String {
@@ -141,6 +96,7 @@ fn compute_rslip_request_context_fingerprint(req: &RslipRequest) -> io::Result<S
     h = rslip_fnv1a64(h, req.pytest_version.as_bytes());
     h = rslip_fnv1a64(h, req.cwd.to_string_lossy().as_bytes());
     h = rslip_fnv1a64(h, req.source_root.to_string_lossy().as_bytes());
+    h = rslip_fnv1a64(h, req.cache_root.to_string_lossy().as_bytes());
     for arg in &req.pytest_args {
         h = rslip_fnv1a64(h, arg.as_bytes());
         h = rslip_fnv1a64(h, &[0]);
@@ -170,28 +126,16 @@ pub(crate) fn covered_file_digests(
     nodeid: &str,
     coverage: &LineCoverage,
 ) -> Option<BTreeMap<String, String>> {
-    if coverage.files.is_empty() {
-        return module_digest_only(source_root, nodeid);
-    }
-    let mut digests = BTreeMap::new();
-    for recorded in coverage.files.keys() {
-        if is_non_digestable_coverage_path(recorded) {
-            continue;
-        }
-        let digest = digest_recorded_path(source_root, recorded)?;
-        digests.insert(recorded.clone(), digest);
-    }
-    let module = test_module_path_from_nodeid(nodeid);
-    if !module.is_empty()
-        && !is_non_digestable_coverage_path(module)
-        && let Some(digest) = digest_recorded_path(source_root, module)
-    {
-        digests.insert(module.to_string(), digest);
-    }
-    if digests.is_empty() {
-        return Some(digests);
-    }
-    Some(digests)
+    memo::covered_file_digests_with_memo(source_root, nodeid, coverage, &mut DigestMemo::new())
+}
+
+pub(super) fn uses_statement_granularity(recorded: &str, test_module: &str) -> bool {
+    recorded != test_module && recorded.ends_with(".py")
+}
+
+pub(super) fn read_recorded_text(source_root: &Path, recorded: &str) -> Option<String> {
+    let bytes = fs::read(resolve_recorded_path(source_root, recorded)).ok()?;
+    Some(String::from_utf8_lossy(&bytes).into_owned())
 }
 
 fn module_digest_only(source_root: &Path, nodeid: &str) -> Option<BTreeMap<String, String>> {
@@ -224,6 +168,31 @@ pub(crate) fn digest_recorded_path(source_root: &Path, recorded: &str) -> Option
     let bytes = fs::read(path).ok()?;
     let h = rslip_fnv1a64(0xcbf2_9ce4_8422_2325, &bytes);
     Some(format!("{h:016x}"))
+}
+
+const CHANGED_DURING_RUN: &str = "changed-during-run:";
+
+pub(crate) fn mark_deps_changed_during_run(
+    source_root: &Path,
+    deps: &mut BTreeMap<String, String>,
+    since: std::time::SystemTime,
+    prior: Option<&BTreeMap<String, String>>,
+) {
+    for (recorded, digest) in deps.iter_mut() {
+        if !modified_after(source_root, recorded, since) {
+            continue;
+        }
+        let marked = format!("{CHANGED_DURING_RUN}{digest}");
+        if prior.and_then(|prior| prior.get(recorded)) != Some(&marked) {
+            *digest = marked;
+        }
+    }
+}
+
+fn modified_after(source_root: &Path, recorded: &str, since: std::time::SystemTime) -> bool {
+    fs::metadata(resolve_recorded_path(source_root, recorded))
+        .and_then(|meta| meta.modified())
+        .map_or(true, |modified| modified > since)
 }
 
 fn resolve_recorded_path(source_root: &Path, recorded: &str) -> PathBuf {
@@ -278,12 +247,14 @@ pub fn should_skip_rslip_dir(path: &Path) -> bool {
 }
 
 pub fn is_kiss_rslip_cache_dir(path: &Path) -> bool {
-    path.file_name().and_then(|name| name.to_str()) == Some("rslip_cache")
-        && path
-            .parent()
-            .and_then(|parent| parent.file_name())
-            .and_then(|name| name.to_str())
-            == Some(".kiss")
+    let test_dir = path.parent();
+    file_name_str(Some(path)) == Some("rslip_cache")
+        && file_name_str(test_dir) == Some("test")
+        && file_name_str(test_dir.and_then(Path::parent)) == Some(".kiss")
+}
+
+fn file_name_str(path: Option<&Path>) -> Option<&str> {
+    path?.file_name()?.to_str()
 }
 
 pub fn is_rslip_cache_input(path: &Path) -> bool {

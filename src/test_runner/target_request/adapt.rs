@@ -3,7 +3,7 @@ use crate::test_git::TestChangeMode;
 use crate::test_runner::RunTestCmdArgs;
 
 use super::canon::canonicalize_target_request;
-use super::types::{CompatKind, GitFocus, LangFilter, OperandExpr, TargetFocus, TargetRequest};
+use super::types::{CompatKind, GitFocus, OperandExpr, TargetFocus, TargetRequest};
 
 pub(crate) fn is_workspace_focus(focus: &TargetFocus) -> bool {
     matches!(focus, TargetFocus::Workspace)
@@ -17,7 +17,7 @@ pub(crate) fn request_from_focus(
     canonicalize_target_request(
         TargetRequest {
             focus,
-            lang: lang.map(LangFilter::from_language),
+            lang,
             ignore: ignore.to_vec(),
         },
         None,

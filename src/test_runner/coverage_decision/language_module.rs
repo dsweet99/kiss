@@ -54,6 +54,10 @@ macro_rules! define_language_policy_traits {
                 extra: &[String],
                 jobs: usize,
             ) -> Result<Vec<String>, String>;
+            fn stage_label(&self, population: bool) -> &'static str;
+            fn population_from_plan(&self) -> bool {
+                false
+            }
         }
 
         pub(crate) trait LanguageTestModule: LanguagePlanner + LanguageExecutor {}

@@ -34,15 +34,37 @@ fn rslip_cache_round_trips_entries_atomically() {
     )
     .unwrap();
     let entry = cache::RslipCacheEntry::from_outcome(&outcome(), tmp.path());
+    let req = rslip_sample_request(tmp.path());
 
-    cache::store_rslip_cache_entry(tmp.path(), "abc123", &entry).unwrap();
-    let loaded = cache::load_rslip_cache_entry(tmp.path(), "abc123").unwrap();
+    cache::store_rslip_cache_entry(&req, &entry).unwrap();
+    let loaded = cache::load_rslip_cache_entry(&req).unwrap();
 
     assert_eq!(loaded.nodeid, "test_sample.py::test_ok");
     assert_eq!(loaded.status, TestStatus::Passed);
     assert_eq!(loaded.coverage.files["app.py"], BTreeSet::from([1, 2]));
-    assert!(cache::rslip_cache_entry_path(tmp.path(), "abc123").ends_with("entries/abc123.json"));
-    assert!(cache::load_rslip_cache_entry(tmp.path(), "missing").is_none());
+    assert!(
+        cache::python_records_dir(tmp.path()).ends_with(Path::new(".kiss/test/records/python"))
+    );
+    let mut missing = req.clone();
+    missing.nodeid = "test_sample.py::missing".to_string();
+    assert!(cache::load_rslip_cache_entry(&missing).is_none());
+}
+
+#[test]
+fn record_written_under_another_toolchain_identity_is_not_loaded() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::write(tmp.path().join("app.py"), "x = 1\n").unwrap();
+    let entry = cache::RslipCacheEntry::from_outcome(&outcome(), tmp.path());
+    let req = rslip_sample_request(tmp.path());
+    cache::store_rslip_cache_entry(&req, &entry).unwrap();
+
+    let mut other = req.clone();
+    other.python_version = "3.99.0".to_string();
+    assert!(cache::load_rslip_cache_entry(&other).is_none());
+    let mut other_host = req.clone();
+    other_host.cache_root = tmp.path().join("other-host-cache");
+    assert!(cache::load_rslip_cache_entry(&other_host).is_none());
+    assert!(cache::load_rslip_cache_entry(&req).is_some());
 }
 
 #[test]
@@ -77,7 +99,7 @@ fn rslip_cache_inputs_include_python_config_and_skip_cache_dirs() {
     let tmp = tempfile::tempdir().unwrap();
     fs::create_dir(tmp.path().join(".rslip_cache")).unwrap();
     fs::create_dir(tmp.path().join(".kiss")).unwrap();
-    fs::create_dir(tmp.path().join(".kiss").join("rslip_cache")).unwrap();
+    fs::create_dir_all(tmp.path().join(".kiss").join("test").join("rslip_cache")).unwrap();
     fs::write(tmp.path().join("pytest.ini"), "[pytest]\n").unwrap();
     fs::write(tmp.path().join("app.py"), "x = 1\n").unwrap();
     fs::write(

@@ -62,19 +62,22 @@ fn mix_collection_audit(mut h: u64, repo_root: &Path) -> u64 {
 }
 
 fn persist_collection_audit(repo_root: &Path, observed: &[String]) {
+    let mut listed: Vec<String> = observed
+        .iter()
+        .filter(|rel| rel.ends_with(".py") && !rel.contains("__pycache__"))
+        .cloned()
+        .collect();
+    if listed.is_empty() {
+        return;
+    }
+    listed.sort();
+    listed.dedup();
     let Ok(dir) =
         crate::test_runner::python_coverage_index::storage::python_coverage_cache_root(repo_root)
     else {
         return;
     };
     let _ = fs::create_dir_all(&dir);
-    let mut listed: Vec<String> = observed
-        .iter()
-        .filter(|rel| rel.ends_with(".py") && !rel.contains("__pycache__"))
-        .cloned()
-        .collect();
-    listed.sort();
-    listed.dedup();
     if let Ok(bytes) = serde_json::to_vec(&listed) {
         let _ = fs::write(dir.join("collection_audit.json"), bytes);
     }

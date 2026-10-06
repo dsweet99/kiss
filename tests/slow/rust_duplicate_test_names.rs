@@ -27,7 +27,7 @@ fn marked_test(s: &Scenario, label: &str, name: &str, body: &str) -> String {
 
 fn demo_crate(s: &Scenario, lib: &str) {
     s.write(".gitignore", ".kiss/\ntarget/\n");
-    crate::support::watch_proc::write_kissconfig_with_threshold(s.root(), 0.5, 0);
+    crate::support::scenario::write_kissconfig_with_threshold(s.root(), 0);
     s.write(
         "Cargo.toml",
         "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
@@ -40,7 +40,12 @@ fn integration_file(s: &Scenario, file: &str, same_body: &str, ok_name: &str) ->
     format!(
         "{}\n{}",
         marked_test(s, &format!("{label}::t_same"), "t_same", same_body),
-        marked_test(s, &format!("{label}::{ok_name}"), ok_name, "assert_eq!(demo::value(), 7);")
+        marked_test(
+            s,
+            &format!("{label}::{ok_name}"),
+            ok_name,
+            "assert_eq!(demo::value(), 7);"
+        )
     )
 }
 
@@ -75,7 +80,10 @@ fn same_named_integration_tests_in_two_files_are_two_tests() {
         ],
         "every test has its own line, attributed to its own file: {first:?}"
     );
-    assert_eq!(s.take_runs(), ["a::t_ok_a", "a::t_same", "b::t_ok_b", "b::t_same"]);
+    assert_eq!(
+        s.take_runs(),
+        ["a::t_ok_a", "a::t_same", "b::t_ok_b", "b::t_same"]
+    );
 
     let cached = kiss(s.root(), &["test"]);
     assert_summary(&cached, 1, broken, "cached run");
@@ -96,7 +104,12 @@ fn same_named_integration_tests_in_two_files_are_two_tests() {
         &integration_file(&s, "a.rs", "assert_eq!(demo::value(), 7);", "t_ok_a"),
     );
     let fixed_a = kiss(s.root(), &["test"]);
-    assert_summary(&fixed_a, 1, "✗ 3 passed · 1 failed · 0 timed out", "after fixing a.rs");
+    assert_summary(
+        &fixed_a,
+        1,
+        "✗ 3 passed · 1 failed · 0 timed out",
+        "after fixing a.rs",
+    );
     assert!(
         fixed_a.stdout.contains("tests/b.rs::t_same")
             && !fixed_a.stdout.contains("FAIL: tests/a.rs"),

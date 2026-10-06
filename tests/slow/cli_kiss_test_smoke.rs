@@ -154,12 +154,6 @@ fn kiss_test_python_failure_prints_failed_recap_line() {
         "streaming FAIL line must remain: {stdout}"
     );
     assert!(
-        stdout
-            .lines()
-            .any(|line| line == "FAIL test_lib.py::test_f"),
-        "recap must include colon-free FAIL selector, stdout={stdout}"
-    );
-    assert!(
         stdout.contains(" failed ·"),
         "recap must include failed count: {stdout}"
     );

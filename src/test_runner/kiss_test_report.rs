@@ -1,8 +1,8 @@
-use kiss::rust_llvm_cov_runner::{WatchNamed, WatchNamedOutcome, WatchSuiteTotals};
+use kiss::watch_report::{WatchNamed, WatchNamedOutcome, WatchSuiteTotals};
 
 use super::RunTestCmdArgs;
 #[cfg(test)]
-use super::{RunTestOnceOutcome, WatchCoverageResult};
+use super::RunTestOnceOutcome;
 use crate::test_runner::target_request::{
     EffectiveStatus, TargetReport, request_from_run_args, to_compat_invocation,
 };
@@ -15,27 +15,6 @@ pub(crate) const EXIT_INTERRUPTED: i32 = 130;
 
 #[allow(dead_code)]
 pub(crate) const KISS_TEST_ALLOW_REFRESH: bool = false;
-
-pub(crate) fn kiss_report_from_ensure_query(
-    args: &RunTestCmdArgs<'_>,
-    repo_root: Option<&std::path::Path>,
-) -> Option<KissTestReport> {
-    if args.dry_run || args.force_rerun || args.force_bad {
-        return None;
-    }
-    let repo = repo_root?;
-    match crate::test_runner::target_request::ensure_target_report_query(
-        repo,
-        &request_from_run_args(args),
-        &crate::test_runner::target_request::EnsurePolicy::query(args.coverage_all),
-        args.extras,
-    ) {
-        Ok(crate::test_runner::target_request::Ensured::Report(report)) => {
-            kiss_report_from_target(&report)
-        }
-        Err(_) => None,
-    }
-}
 
 pub(crate) fn kiss_report_from_target(report: &TargetReport) -> Option<KissTestReport> {
     let output = crate::test_runner::target_request::official_report_text(report);
@@ -61,15 +40,11 @@ pub(crate) fn kiss_report_from_target(report: &TargetReport) -> Option<KissTestR
                 WatchNamedOutcome::Timeout
             }
         };
-        let language = match row.language.as_str() {
-            "python" => kiss::Language::Python,
-            "rust" => kiss::Language::Rust,
-            _ => continue,
+        let Some(language) = crate::test_runner::lang_registry::language_for_label(&row.language)
+        else {
+            continue;
         };
-        let i = match language {
-            kiss::Language::Python => 0,
-            kiss::Language::Rust => 1,
-        };
+        let i = language.index();
         match outcome {
             WatchNamedOutcome::Pass => lang_passed[i] += 1,
             WatchNamedOutcome::Fail => lang_failed[i] += 1,
@@ -156,7 +131,7 @@ pub(crate) fn kiss_report_from_ensure_outcome(
             }
         }
         crate::test_runner::target_request::EnsureOutcome::Moved { exit_code } => {
-            let taken = kiss::rust_llvm_cov_runner::take_watch_report_taken().unwrap_or_default();
+            let taken = kiss::watch_report::take_watch_report_taken().unwrap_or_default();
             let mut report = report_from_taken(exit_code, None, false, taken);
             let (text, _) = result_text(&report.lines);
             report.output = (!text.is_empty()).then_some(text);
@@ -166,32 +141,24 @@ pub(crate) fn kiss_report_from_ensure_outcome(
 }
 
 #[cfg(test)]
-pub(crate) fn run_kiss_test_report<F, C>(
-    args: RunTestCmdArgs<'_>,
-    run_tests: F,
-    run_cov: C,
-) -> KissTestReport
+pub(crate) fn run_kiss_test_report<F>(args: RunTestCmdArgs<'_>, run_tests: F) -> KissTestReport
 where
     F: FnMut(RunTestCmdArgs<'_>) -> RunTestOnceOutcome,
-    C: FnMut(&RunTestCmdArgs<'_>) -> WatchCoverageResult,
 {
     let owned = cli_report_repo();
-    run_kiss_test_report_reuse(args, run_tests, run_cov, true, owned.as_deref())
+    run_kiss_test_report_reuse(args, run_tests, true, owned.as_deref())
 }
 
 #[cfg(test)]
-pub(crate) fn run_kiss_test_report_reuse<F, C>(
+pub(crate) fn run_kiss_test_report_reuse<F>(
     args: RunTestCmdArgs<'_>,
     run_tests: F,
-    run_cov: C,
     reuse: bool,
     repo_root: Option<&std::path::Path>,
 ) -> KissTestReport
 where
     F: FnMut(RunTestCmdArgs<'_>) -> RunTestOnceOutcome,
-    C: FnMut(&RunTestCmdArgs<'_>) -> WatchCoverageResult,
 {
-    let _ = run_cov;
     kiss_report_from_ensure_outcome(crate::test_runner::target_request::ensure_target_report(
         repo_root, &args, reuse, false, run_tests,
     ))
@@ -202,7 +169,7 @@ pub(crate) fn repo_can_assemble_reports(repo_root: Option<&std::path::Path>) -> 
 }
 
 fn interrupted_empty() -> KissTestReport {
-    let _ = kiss::rust_llvm_cov_runner::take_watch_report_taken();
+    let _ = kiss::watch_report::take_watch_report_taken();
     KissTestReport {
         exit_code: EXIT_INTERRUPTED,
         interrupted: true,
@@ -215,7 +182,7 @@ fn typed_without_transcript(
     error: Option<String>,
     engine_aborted: bool,
 ) -> KissTestReport {
-    let taken = kiss::rust_llvm_cov_runner::take_watch_report_taken().unwrap_or_default();
+    let taken = kiss::watch_report::take_watch_report_taken().unwrap_or_default();
     let mut report = report_from_taken(exit_code, error, false, taken);
     report.engine_aborted = engine_aborted;
     if let Some(output) = cached_result_text(&report.lines) {
@@ -277,7 +244,7 @@ fn finish_report(exit_code: i32, error: Option<String>, engine_aborted: bool) ->
         exit_code,
         error,
         false,
-        kiss::rust_llvm_cov_runner::take_watch_report_taken().unwrap_or_default(),
+        kiss::watch_report::take_watch_report_taken().unwrap_or_default(),
     );
     report.engine_aborted = engine_aborted;
     report
@@ -287,9 +254,9 @@ fn report_from_taken(
     exit_code: i32,
     error: Option<String>,
     interrupted: bool,
-    taken: kiss::rust_llvm_cov_runner::WatchReportTaken,
+    taken: kiss::watch_report::WatchReportTaken,
 ) -> KissTestReport {
-    let output = kiss::rust_llvm_cov_runner::transcript_from_lines(&taken.lines);
+    let output = kiss::watch_report::transcript_from_lines(&taken.lines);
     KissTestReport {
         exit_code,
         output,
@@ -308,6 +275,7 @@ fn report_from_taken(
 pub(crate) fn clone_run_args<'a>(args: &RunTestCmdArgs<'a>) -> RunTestCmdArgs<'a> {
     let request = request_from_run_args(args);
     RunTestCmdArgs {
+        doubles: args.doubles.clone(),
         invocation: to_compat_invocation(&request),
         target_request: request,
         main_branch_cli: args.main_branch_cli,

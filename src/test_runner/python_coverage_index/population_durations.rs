@@ -33,29 +33,6 @@ pub(crate) fn load_current_python_population_durations(
     repo_root: &Path,
     pytest_args: &[String],
 ) -> Option<Vec<(String, Duration)>> {
-    if let Ok(pinned) = super::generation::try_load_pinned_python_generation_warm(repo_root) {
-        if !pinned.complete {
-            return None;
-        }
-        let exec =
-            super::generation::current_python_execution_identity(repo_root, pytest_args).ok()?;
-        if pinned.plan.base_identity == exec {
-            if let Some(pairs) = super::generation::try_load_generation_durations_pairs(repo_root) {
-                return Some(pairs);
-            }
-            return Some(
-                pinned
-                    .timings
-                    .into_iter()
-                    .filter_map(|row| {
-                        row.duration_ns
-                            .map(|ns| (row.selector, Duration::from_nanos(ns)))
-                    })
-                    .collect(),
-            );
-        }
-        return None;
-    }
     let population =
         stored_python_universe_population(repo_root, pytest_args, PYTHON_COVERAGE_ENV_KEYS)?;
     let manifest = read_python_population_manifest(repo_root)?;
@@ -68,34 +45,10 @@ pub(crate) fn load_current_python_population_durations(
     Some(pairs)
 }
 
-fn pinned_generation_max_duration(repo_root: &Path, pytest_args: &[String]) -> Option<Duration> {
-    let pinned = super::generation::try_load_pinned_python_generation_warm(repo_root).ok()?;
-    if !pinned.complete {
-        return None;
-    }
-    let exec = super::generation::current_python_execution_identity(repo_root, pytest_args).ok()?;
-    if pinned.plan.base_identity != exec {
-        return None;
-    }
-    if let Some(max) = super::generation::try_load_generation_max_duration(repo_root) {
-        return Some(max);
-    }
-    let max_ns = pinned
-        .timings
-        .iter()
-        .filter_map(|row| row.duration_ns)
-        .max()
-        .unwrap_or(0);
-    Some(Duration::from_nanos(max_ns))
-}
-
 pub(crate) fn load_current_python_population_max_duration(
     repo_root: &Path,
     pytest_args: &[String],
 ) -> Option<Duration> {
-    if super::generation::try_load_pinned_python_generation_warm(repo_root).is_ok() {
-        return pinned_generation_max_duration(repo_root, pytest_args);
-    }
     let identity =
         super::manifest::current_python_population_manifest_identity(repo_root, pytest_args)
             .ok()?;
@@ -137,25 +90,9 @@ pub(crate) fn load_current_python_population_max_duration(
 pub(crate) fn load_current_python_population_path_maxes(
     repo_root: &Path,
     pytest_args: &[String],
-) -> Option<Vec<super::generation::PathMaxDuration>> {
-    if let Ok(pinned) = super::generation::try_load_pinned_python_generation_warm(repo_root) {
-        if !pinned.complete {
-            return None;
-        }
-        let exec =
-            super::generation::current_python_execution_identity(repo_root, pytest_args).ok()?;
-        if pinned.plan.base_identity != exec {
-            return None;
-        }
-        if let Some(path_maxes) = super::generation::try_load_generation_path_maxes_only(repo_root)
-        {
-            return Some(path_maxes);
-        }
-    }
+) -> Option<Vec<PathMaxDuration>> {
     let pairs = load_current_python_population_durations(repo_root, pytest_args)?;
-    Some(super::generation::path_maxes_from_selector_durations(
-        &pairs,
-    ))
+    Some(path_maxes_from_selector_durations(&pairs))
 }
 
 #[derive(Deserialize)]
@@ -274,48 +211,21 @@ pub(crate) fn write_population_durations(
     .map_err(|e| e.to_string())
 }
 
-#[derive(Deserialize)]
-struct DurationProbeEntry {
-    nodeid: String,
-    status: TestStatus,
-    duration: Duration,
-}
-
 fn load_durations_from_entry_probes(
     repo_root: &Path,
     pytest_args: &[String],
     selectors: &[String],
 ) -> Option<Vec<(String, Duration)>> {
-    load_durations_from_entry_probes_inner(repo_root, pytest_args, selectors, true)
-}
-
-pub(crate) fn load_durations_from_entry_probes_allow_non_passed(
-    repo_root: &Path,
-    pytest_args: &[String],
-    selectors: &[String],
-) -> Option<Vec<(String, Duration)>> {
-    load_durations_from_entry_probes_inner(repo_root, pytest_args, selectors, false)
-}
-
-fn load_durations_from_entry_probes_inner(
-    repo_root: &Path,
-    pytest_args: &[String],
-    selectors: &[String],
-    require_passed: bool,
-) -> Option<Vec<(String, Duration)>> {
-    if let Some(out) =
-        load_durations_from_fingerprinted_probes(repo_root, pytest_args, selectors, require_passed)
-    {
+    if let Some(out) = load_durations_from_fingerprinted_probes(repo_root, pytest_args, selectors) {
         return Some(out);
     }
-    load_durations_from_scanned_probes(repo_root, selectors, require_passed)
+    load_durations_from_scanned_probes(repo_root, selectors)
 }
 
 fn load_durations_from_fingerprinted_probes(
     repo_root: &Path,
     pytest_args: &[String],
     selectors: &[String],
-    require_passed: bool,
 ) -> Option<Vec<(String, Duration)>> {
     let (python_version, pytest_version) = detect_rslip_versions(repo_root).ok()?;
     let mut out = Vec::with_capacity(selectors.len());
@@ -330,20 +240,11 @@ fn load_durations_from_fingerprinted_probes(
             &kiss::GateConfig::load_for_repo(repo_root),
         )
         .ok()?;
-        let fingerprint = kiss::rslip::cache_fingerprint_for_request(&req).ok()?;
-        let path = req
-            .cache_root
-            .join("entries")
-            .join(format!("{fingerprint}.json"));
-        let bytes = fs::read(path).ok()?;
-        let entry: DurationProbeEntry = serde_json::from_slice(&bytes).ok()?;
-        if entry.nodeid != *selector {
+        let record = kiss::rslip::cached_record_for_request(&req).ok()??;
+        if record.status != TestStatus::Passed {
             return None;
         }
-        if require_passed && entry.status != TestStatus::Passed {
-            return None;
-        }
-        out.push((selector.clone(), entry.duration));
+        out.push((selector.clone(), record.duration));
     }
     Some(out)
 }
@@ -351,25 +252,17 @@ fn load_durations_from_fingerprinted_probes(
 fn load_durations_from_scanned_probes(
     repo_root: &Path,
     selectors: &[String],
-    require_passed: bool,
 ) -> Option<Vec<(String, Duration)>> {
-    let cache_root = python_coverage_cache_root(repo_root).ok()?;
     let wanted: std::collections::BTreeSet<_> = selectors.iter().cloned().collect();
     let mut found = std::collections::BTreeMap::<String, Duration>::new();
-    for path in super::storage::python_coverage_entry_paths(&cache_root) {
-        let Ok(bytes) = fs::read(&path) else {
+    for path in super::storage::python_coverage_entry_paths(repo_root) {
+        let Some(record) = kiss::test_records::read_record(&path) else {
             continue;
         };
-        let Ok(entry) = serde_json::from_slice::<DurationProbeEntry>(&bytes) else {
-            continue;
-        };
-        if !wanted.contains(&entry.nodeid) {
+        if !wanted.contains(&record.test_id) || record.status != TestStatus::Passed {
             continue;
         }
-        if require_passed && entry.status != TestStatus::Passed {
-            continue;
-        }
-        found.insert(entry.nodeid, entry.duration);
+        found.insert(record.test_id, record.duration);
     }
     if selectors
         .iter()
@@ -383,6 +276,47 @@ fn load_durations_from_scanned_probes(
             .map(|selector| (selector.clone(), found[selector]))
             .collect(),
     )
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub(crate) struct PathMaxDuration {
+    pub(crate) path: String,
+    pub(crate) max_duration_ns: u64,
+    pub(crate) example_selector: String,
+}
+
+pub(crate) fn path_maxes_from_selector_durations(
+    pairs: &[(String, std::time::Duration)],
+) -> Vec<PathMaxDuration> {
+    use std::collections::BTreeMap;
+    let mut by_path: BTreeMap<String, (u64, String)> = BTreeMap::new();
+    for (selector, duration) in pairs {
+        let ns = u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX);
+        let path = selector
+            .split_once("::")
+            .map_or(selector.as_str(), |(p, _)| p)
+            .to_string();
+        match by_path.get_mut(&path) {
+            Some((max_ns, example)) if ns > *max_ns => {
+                *max_ns = ns;
+                *example = selector.clone();
+            }
+            Some(_) => {}
+            None => {
+                by_path.insert(path, (ns, selector.clone()));
+            }
+        }
+    }
+    by_path
+        .into_iter()
+        .map(
+            |(path, (max_duration_ns, example_selector))| PathMaxDuration {
+                path,
+                max_duration_ns,
+                example_selector,
+            },
+        )
+        .collect()
 }
 
 #[cfg(test)]

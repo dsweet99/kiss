@@ -364,11 +364,7 @@ fn python_only_cached_coverage_matches_uncached() {
         )],
     );
     commit_all(repo.path(), "init");
-    assert_coverage_identity(
-        home.path(),
-        repo.path(),
-        &["test", "--lang", "python"],
-    );
+    assert_coverage_identity(home.path(), repo.path(), &["test", "--lang", "python"]);
 }
 
 #[test]

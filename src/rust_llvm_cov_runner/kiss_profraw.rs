@@ -7,7 +7,7 @@ pub(crate) const KISS_PROFRAW_DIR_ENV: &str = "KISS_PROFRAW_DIR";
 pub(crate) const DISCARD_PROFILE_PATTERN: &str = "default_%m_%p.profraw";
 
 pub(crate) fn kiss_profraw_dir(repo_root: &Path) -> PathBuf {
-    repo_root.join(".kiss").join("profraw")
+    repo_root.join(".kiss").join("test").join("profraw")
 }
 
 pub(crate) fn kiss_profraw_from_cache_root(cache_root: &Path) -> PathBuf {
@@ -21,8 +21,9 @@ pub(crate) fn repo_root_from_cache_root(cache_root: &Path) -> Option<PathBuf> {
     if cache_root.file_name()?.to_str()? != "rust_llvm_cov_cache" {
         return None;
     }
-    let kiss = cache_root.parent()?;
-    if kiss.file_name()?.to_str()? != ".kiss" {
+    let test_dir = cache_root.parent()?;
+    let kiss = test_dir.parent()?;
+    if test_dir.file_name()?.to_str()? != "test" || kiss.file_name()?.to_str()? != ".kiss" {
         return None;
     }
     Some(kiss.parent()?.to_path_buf())
@@ -115,9 +116,9 @@ pub fn redirect_this_process(repo_root: &Path) -> io::Result<PathBuf> {
     let kiss_profraw = kiss_profraw_dir(&repo_root);
     let path = discard_llvm_profile_path(&kiss_profraw);
     let already_redirected = llvm_profile_file_is(&path);
-    let path = redirect_llvm_profile_file_to_kiss_profraw(&kiss_profraw)?;
 
     unsafe {
+        std::env::set_var("LLVM_PROFILE_FILE", &path);
         std::env::set_var(KISS_PROFRAW_DIR_ENV, &kiss_profraw);
     }
     if !cfg!(test) && !already_redirected {
@@ -227,11 +228,6 @@ pub fn sweep_orphan_default_profraw(repo_root: &Path) -> io::Result<()> {
         }
         Err(err) if err.kind() == io::ErrorKind::NotFound => {}
         Err(err) => return Err(err),
-    }
-    let legacy_tmp = repo_root.join(".kiss").join("tmp");
-    if legacy_tmp.is_dir() {
-        delete_default_profraw_in_dir(&legacy_tmp)?;
-        ignore_absent_or_nonempty(fs::remove_dir(&legacy_tmp))?;
     }
     Ok(())
 }

@@ -30,7 +30,6 @@ pub(crate) struct CacheDecisionMetrics {
     pub(crate) forced: usize,
     pub(crate) gate_reclassified: usize,
     pub(crate) publication_generation_id: String,
-    pub(crate) parent_generation_id: String,
 }
 
 impl CacheDecisionMetrics {
@@ -69,8 +68,7 @@ impl CacheDecisionMetrics {
             gate_reclassified: gate_reclassified_count(&metrics.python.summary)
                 + gate_reclassified_count(&metrics.rust_population.summary)
                 + gate_reclassified_count(&metrics.rust_final.summary),
-            publication_generation_id: publication_generation_id(metrics),
-            parent_generation_id: metrics.parent_generation_id.clone(),
+            publication_generation_id: rust_current_index_generation(metrics).to_string(),
         }
     }
 
@@ -93,7 +91,6 @@ impl CacheDecisionMetrics {
             "publication_generation_id={}",
             self.publication_generation_id
         );
-        println!("parent_generation_id={}", self.parent_generation_id);
     }
 }
 
@@ -113,15 +110,6 @@ fn gate_reclassified_count(summary: &SelectorExecutionSummary) -> usize {
             **raw == TestStatus::Passed && summary.timed_out_selectors.iter().any(|s| s == *sel)
         })
         .count()
-}
-
-fn publication_generation_id(metrics: &LocalRubricMetrics) -> String {
-    let from_run = rust_current_index_generation(metrics);
-    if from_run.is_empty() {
-        metrics.publication_generation_id.clone()
-    } else {
-        from_run.to_string()
-    }
 }
 
 #[cfg(test)]
@@ -163,6 +151,5 @@ mod tests {
         assert_eq!(metrics.forced, 0);
         assert_eq!(metrics.gate_reclassified, 0);
         assert_eq!(metrics.publication_generation_id, "");
-        assert_eq!(metrics.parent_generation_id, "");
     }
 }

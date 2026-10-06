@@ -9,7 +9,7 @@ fn real_kiss_cache_index_matches_derived_entries_when_env_set() {
         return;
     }
     let repo = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let cache = repo.join(".kiss/rust_llvm_cov_cache");
+    let cache = repo.join(".kiss/test/rust_llvm_cov_cache");
     let manifest = read_population_manifest(&cache).expect("population manifest");
     let index_bytes = std::fs::read(cache.join("index.json")).unwrap();
     let index: serde_json::Value = serde_json::from_slice(&index_bytes).unwrap();
@@ -26,7 +26,7 @@ fn real_kiss_cache_load_current_when_env_set() {
         return;
     }
     let repo = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let cache = repo.join(".kiss/rust_llvm_cov_cache");
+    let cache = repo.join(".kiss/test/rust_llvm_cov_cache");
     let seal: serde_json::Value =
         serde_json::from_slice(&std::fs::read(cache.join("input_mtime_seal.json")).unwrap())
             .unwrap();

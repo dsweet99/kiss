@@ -274,7 +274,7 @@ fn merge_adds_test_section_from_new_when_missing() {
     std::fs::write(&path, "[python]\nstatements_per_function = 1\n").unwrap();
     let merged = merge_config_toml(
         &path,
-        "[python]\nstatements_per_function = 2\n[test]\nnum_jobs = 4\nnum_jobs_pytest = 16\nnum_jobs_llvm_cov = 4\nwatch_settle_seconds = 1.0\npytest_plugins = []\nignore = []\n",
+        "[python]\nstatements_per_function = 2\n[test]\nnum_jobs = 4\nnum_jobs_pytest = 16\nnum_jobs_llvm_cov = 4\npytest_plugins = []\nignore = []\n",
         MergeLanguageUpdate::PythonOnly,
     );
     assert!(

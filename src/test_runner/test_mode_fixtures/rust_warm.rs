@@ -25,6 +25,7 @@ pub(crate) const RS_COVERING_SELECTOR: &str = "tests::gets_value";
 pub(crate) fn seeded_population_matches_current_context(root: &Path) -> bool {
     let population = root
         .join(".kiss")
+        .join("test")
         .join("rust_llvm_cov_cache")
         .join("population.json");
     let Ok(bytes) = fs::read(&population) else {
@@ -89,6 +90,7 @@ fn lock_fixture(mutex: &'static Mutex<()>, lock_name: &str) -> FixtureLock {
 
 fn population_json(root: &Path) -> PathBuf {
     root.join(".kiss")
+        .join("test")
         .join("rust_llvm_cov_cache")
         .join("population.json")
 }

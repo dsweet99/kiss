@@ -26,9 +26,9 @@ pub mod config;
 pub mod config_gen;
 pub mod defaults;
 pub mod gate_config;
+pub mod host_parallelism;
 pub mod py_imports;
 pub mod py_metrics;
-pub mod host_parallelism;
 pub mod shared_helpers;
 pub mod violation;
 
@@ -45,12 +45,19 @@ pub mod parsing;
 pub mod stats;
 pub mod stats_detailed;
 pub mod test_cache_policy;
+pub mod test_records;
 pub mod test_refs;
 pub mod test_section_config;
+pub mod test_state_lock;
 pub(crate) mod test_toml;
 pub mod units;
+pub mod watch_report;
 
 pub mod code_roles;
+
+pub fn test_state_dir(repo_root: &std::path::Path) -> std::path::PathBuf {
+    repo_root.join(".kiss").join("test")
+}
 pub mod lang_analysis;
 pub mod rust_counts;
 pub mod rust_coverage_off;

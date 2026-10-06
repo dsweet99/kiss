@@ -1,9 +1,7 @@
 use std::fs;
-use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use fs2::FileExt;
 use kiss::check_cache::CachedViolation;
 use kiss::check_universe_cache::CachedLineCoverageRecord;
 use serde::{Deserialize, Serialize};
@@ -170,30 +168,17 @@ pub(crate) fn mark_cached_records_orphan_clean(key: &CovRecordsCacheKey<'_>, pol
     mark_cached_records_orphan_result(key, policy, &[]);
 }
 
-fn lock_cache(repo_root: &Path) -> Option<fs::File> {
+fn lock_cache(repo_root: &Path) -> Option<kiss::test_state_lock::TestStateLock> {
     lock_cache_for(repo_root, Duration::from_secs(30))
 }
 
-fn lock_cache_for(repo_root: &Path, timeout: Duration) -> Option<fs::File> {
-    let dir = repo_root.join(".kiss");
-    fs::create_dir_all(&dir).ok()?;
-    let file = fs::OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .read(true)
-        .write(true)
-        .open(dir.join("cov_records_cache.lock"))
-        .ok()?;
-    let deadline = Instant::now() + timeout;
-    loop {
-        match file.try_lock_exclusive() {
-            Ok(()) => return Some(file),
-            Err(err) if err.kind() == ErrorKind::WouldBlock && Instant::now() < deadline => {
-                std::thread::sleep(Duration::from_millis(25));
-            }
-            Err(_) => return None,
-        }
-    }
+fn lock_cache_for(
+    repo_root: &Path,
+    timeout: Duration,
+) -> Option<kiss::test_state_lock::TestStateLock> {
+    kiss::test_state_lock::lock_test_state_dir_within(&kiss::test_state_dir(repo_root), timeout)
+        .ok()
+        .flatten()
 }
 
 fn load_cache(path: &Path) -> Option<CovRecordsCache> {
@@ -218,7 +203,7 @@ fn publish_cache_bytes(path: &Path, bytes: &[u8]) {
 }
 
 fn cache_path(repo_root: &Path) -> PathBuf {
-    repo_root.join(".kiss").join("cov_records_cache.json")
+    kiss::test_state_dir(repo_root).join("cov_records_cache.json")
 }
 
 fn cov_records_fingerprint(key: &CovRecordsCacheKey<'_>) -> Option<String> {
@@ -274,13 +259,8 @@ where
 }
 
 fn python_backend_identity(repo_root: &Path) -> Option<String> {
-    if let Ok(pinned) =
-        crate::test_runner::python_coverage_index::try_load_pinned_python_generation_warm(repo_root)
-    {
-        return Some(format!(
-            "py-gen:{}:{}",
-            pinned.generation_id, pinned.plan.base_identity.input_fingerprint
-        ));
+    if let Some(digest) = test_records_digest(repo_root, "python") {
+        return Some(format!("py-records:{digest:016x}"));
     }
     let path = python_coverage_cache_root_population(repo_root)?;
     let bytes = fs::read(path).ok()?;
@@ -297,6 +277,20 @@ fn python_backend_identity(repo_root: &Path) -> Option<String> {
     ))
 }
 
+fn test_records_digest(repo_root: &Path, language: &str) -> Option<u64> {
+    let mut files: Vec<PathBuf> =
+        fs::read_dir(kiss::test_records::records_dir(repo_root, language))
+            .ok()?
+            .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+            .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
+            .collect();
+    if files.is_empty() {
+        return None;
+    }
+    files.sort();
+    mix_sorted_source_contents(0xcbf2_9ce4_8422_2325, &files)
+}
+
 fn python_coverage_cache_root_population(repo_root: &Path) -> Option<PathBuf> {
     let cache =
         crate::test_runner::python_coverage_index::python_coverage_cache_root(repo_root).ok()?;
@@ -305,14 +299,13 @@ fn python_coverage_cache_root_population(repo_root: &Path) -> Option<PathBuf> {
 }
 
 fn rust_backend_identity(repo_root: &Path) -> Option<String> {
-    let cache = repo_root.join(".kiss").join("rust_llvm_cov_cache");
-    let witness = cache.join("execution_witness.json");
+    let cache = repo_root
+        .join(".kiss")
+        .join("test")
+        .join("rust_llvm_cov_cache");
     let mut parts = Vec::new();
-    if let Some(identity) = file_content_identity(&witness) {
-        parts.push(format!("wit:{identity}"));
-    }
-    if let Some(identity) = file_content_identity(&cache.join("current_generation.json")) {
-        parts.push(format!("gen:{identity}"));
+    if let Some(digest) = test_records_digest(repo_root, "rust") {
+        parts.push(format!("rec:{digest:016x}"));
     }
     if let Some(identity) = rust_check_aggregate_backend_identity(&cache) {
         parts.push(identity);
@@ -321,15 +314,6 @@ fn rust_backend_identity(repo_root: &Path) -> Option<String> {
         parts.push(identity);
     }
     (!parts.is_empty()).then(|| format!("rs:{}", parts.join("|")))
-}
-
-fn file_content_identity(path: &Path) -> Option<String> {
-    let bytes = fs::read(path).ok()?;
-    Some(format!(
-        "{}:{:016x}",
-        bytes.len(),
-        fnv1a64(0xcbf2_9ce4_8422_2325, &bytes)
-    ))
 }
 
 fn rust_check_aggregate_backend_identity(cache: &Path) -> Option<String> {

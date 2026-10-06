@@ -1,4 +1,4 @@
-"""Measure post-SIGINT restart work reuse via cached PASS lines."""
+"""Measure post-SIGINT restart work reuse via reused (cache-hit) tests."""
 
 from __future__ import annotations
 
@@ -9,7 +9,16 @@ import tempfile
 import time
 from pathlib import Path
 
-from evals._harness import KISS, commit_fixture_baseline, emit_eval, report_eval, run
+from evals._harness import (
+    KISS,
+    commit_fixture_baseline,
+    emit_eval,
+    python_records_dir,
+    report_eval,
+    run,
+)
+
+SLOW_TEST_SECONDS = 8
 
 
 def _write_python_fast_slow_repo(repo: Path) -> None:
@@ -36,13 +45,13 @@ def _write_python_fast_slow_repo(repo: Path) -> None:
         "\n"
         "\n"
         "def test_slow():\n"
-        "    time.sleep(8)\n"
+        f"    time.sleep({SLOW_TEST_SECONDS})\n"
         "    assert True\n"
     )
     commit_fixture_baseline(repo)
 
 
-def _interrupt_after_first_pass(repo: Path, env: dict[str, str], timeout: float) -> None:
+def _interrupt_after_first_pass(repo: Path, env: dict[str, str], timeout: float) -> float:
     started = time.monotonic()
     with (
         tempfile.TemporaryFile("w+t") as stdout_file,
@@ -59,11 +68,11 @@ def _interrupt_after_first_pass(repo: Path, env: dict[str, str], timeout: float)
         )
         deadline = started + timeout
         saw_pass = False
+        interrupted_after = 0.0
         while process.poll() is None and time.monotonic() < deadline:
-            stdout_file.seek(0)
-            snap = stdout_file.read()
-            if "PASS: test_lib.py::test_fast" in snap or "PASS: test_fast" in snap:
+            if any(python_records_dir(repo).glob("*.json")):
                 saw_pass = True
+                interrupted_after = time.monotonic() - started
                 os.killpg(os.getpgid(process.pid), signal.SIGINT)
                 break
             time.sleep(0.05)
@@ -76,7 +85,7 @@ def _interrupt_after_first_pass(repo: Path, env: dict[str, str], timeout: float)
                 process.kill()
                 process.wait()
             raise AssertionError(
-                "no test_fast PASS line before SIGINT window closed\n"
+                "no test record written before SIGINT window closed\n"
                 f"rc={process.returncode}\nstdout:\n{stdout}\nstderr:\n{stderr}"
             )
         try:
@@ -85,10 +94,19 @@ def _interrupt_after_first_pass(repo: Path, env: dict[str, str], timeout: float)
             process.kill()
             process.wait()
             raise
+        return interrupted_after
+
+
+def _rslip_prepared_hits(stdout: str) -> int:
+    prefix = "kiss test: rslip prepared hits="
+    for line in stdout.splitlines():
+        if line.startswith(prefix):
+            return int(line.removeprefix(prefix).split()[0])
+    return 0
 
 
 def timing_kiss_test_sigint_work_reuse() -> None:
-    """SIGINT after first PASS, then count cached PASS lines on restart."""
+    """SIGINT after the first test record lands, then count reused tests on restart."""
     assert KISS.is_file(), f"local binary missing: {KISS}"
     with tempfile.TemporaryDirectory(prefix="kq-sir-") as tmp:
         repo = Path(tmp) / "repo"
@@ -98,7 +116,11 @@ def timing_kiss_test_sigint_work_reuse() -> None:
         env["PYTHONPATH"] = str(repo)
         env.pop("RUSTFLAGS", None)
 
-        _interrupt_after_first_pass(repo, env, timeout=50)
+        interrupted_after = _interrupt_after_first_pass(repo, env, timeout=50)
+        assert interrupted_after < SLOW_TEST_SECONDS, (
+            "test_fast's record must land while test_slow is still running; "
+            f"first record appeared after {interrupted_after:.2f}s"
+        )
         restart = run(
             "kiss-test-post-interrupt-reuse",
             [str(KISS), "test", "--lang", "python", "."],
@@ -107,19 +129,15 @@ def timing_kiss_test_sigint_work_reuse() -> None:
             expected=0,
             timeout=50,
         )
-        cached_lines = sum(
-            1
-            for line in restart.stdout.splitlines()
-            if "PASS (cached)" in line
-        )
-        assert cached_lines >= 1, (
+        reused = _rslip_prepared_hits(restart.stdout)
+        assert reused >= 1, (
             "restart must reuse at least one PASS from before SIGINT\n"
             f"stdout:\n{restart.stdout}\nstderr:\n{restart.stderr}"
         )
         emit_eval(
-            "kiss_test_sigint_restart_cached_pass_lines",
+            "kiss_test_sigint_restart_reused_tests",
             "LARGER",
-            cached_lines,
+            reused,
         )
         emit_eval(
             "kiss_test_sigint_restart_reuse_elapsed_s",

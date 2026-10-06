@@ -80,8 +80,8 @@ fn kiss_cache_untracked_is_commit_hit() {
     let tmp = seed_repo();
     let root = tmp.path();
     let before = stamp(root, &GitFocus::Commit);
-    fs::create_dir_all(root.join(".kiss").join("watch")).unwrap();
-    fs::write(root.join(".kiss").join("watch").join("session.json"), "{}\n").unwrap();
+    fs::create_dir_all(root.join(".kiss").join("test")).unwrap();
+    fs::write(root.join(".kiss").join("test").join("state.json"), "{}\n").unwrap();
     fs::create_dir_all(root.join("target").join("kiss-plan")).unwrap();
     fs::write(
         root.join("target").join("kiss-plan").join("pointer.json"),

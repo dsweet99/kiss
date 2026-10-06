@@ -50,14 +50,23 @@ fn parser_ignores_non_json_noise_lines() {
 }
 
 #[test]
-fn selector_matching_shares_substring_and_exact_semantics() {
-    let full = "pkg::bin$alpha_beta";
-    assert!(selector_matches_test(full, "alpha", false));
-    assert!(!selector_matches_test(full, "alpha", true));
-    assert!(selector_matches_test(full, "alpha_beta", true));
+fn selector_matching_shares_path_boundary_and_exact_semantics() {
+    let full = "pkg::bin$mod_a::alpha_beta";
+    assert!(!selector_matches_test(full, "alpha", false));
+    assert!(selector_matches_test(full, "alpha_beta", false));
+    assert!(!selector_matches_test(full, "mod_a::alpha", true));
+    assert!(selector_matches_test(full, "mod_a::alpha_beta", true));
     assert_eq!(
-        aggregate_selectors_for_test(full, &["alpha".to_string(), "beta".to_string()], false),
-        vec!["alpha".to_string(), "beta".to_string()]
+        aggregate_selectors_for_test(
+            full,
+            &[
+                "alpha".to_string(),
+                "alpha_beta".to_string(),
+                "mod_a::alpha_beta".to_string()
+            ],
+            false
+        ),
+        vec!["alpha_beta".to_string(), "mod_a::alpha_beta".to_string()]
     );
 }
 
@@ -221,4 +230,19 @@ fn private_deserialize_record_types_round_trip() {
     }))
     .unwrap();
     assert_eq!(decoded_record.event, record.event);
+}
+
+#[test]
+fn non_exact_selector_matches_only_at_path_boundaries() {
+    assert!(selector_matches_test("crate$tests::t7", "t7", false));
+    assert!(selector_matches_test("tests::t7", "t7", false));
+    assert!(selector_matches_test("tests::t7::case_1", "t7", false));
+    assert!(selector_matches_test("crate$t7", "t7", false));
+    assert!(!selector_matches_test("crate$tests::t70", "t7", false));
+    assert!(!selector_matches_test("crate$tests::foo_t7", "t7", false));
+    assert!(selector_matches_test(
+        "crate$a::tests::same",
+        "tests::same",
+        false
+    ));
 }

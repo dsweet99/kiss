@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import subprocess
@@ -161,11 +160,6 @@ def timing_kiss_test() -> None:
         env["PYTHONPATH"] = str(repo)
         env.pop("RUSTFLAGS", None)
         cold = _run_kiss_test("kiss-test-complex-cold", repo, env)
-        for name in ("python_test_selectors.json", "rust_test_selectors.json"):
-            path = repo / "target/kiss-plan" / name
-            body = json.loads(path.read_text())
-            body["selectors"] = [] if "rust" in name else body["selectors"][:1]
-            path.write_text(json.dumps(body))
         shutil.rmtree(repo / ".kiss", ignore_errors=True)
         wiped = _run_kiss_test("kiss-test-complex-kiss-wipe", repo, env)
         warm = _run_kiss_test("kiss-test-complex-warm", repo, env)

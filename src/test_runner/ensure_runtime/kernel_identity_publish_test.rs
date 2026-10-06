@@ -4,7 +4,6 @@ fn python_state(status: WitnessStatus, duration: Option<u64>) -> Rc<RefCell<Fake
     Rc::new(RefCell::new(FakeState {
         witness: Some(ExecutionWitness {
             language: "python".into(),
-            scope: WitnessScope::Full,
             identity_digest: "id".into(),
             selectors: vec!["a".into()],
             statuses: vec![status],
@@ -50,7 +49,6 @@ fn identity_drift_with_unchanged_outcomes_still_publishes() {
     let state = Rc::new(RefCell::new(FakeState {
         witness: Some(ExecutionWitness {
             language: "python".into(),
-            scope: WitnessScope::Full,
             identity_digest: "old-id".into(),
             selectors: vec!["a".into()],
             statuses: vec![WitnessStatus::Passed],
@@ -104,7 +102,6 @@ fn partial_run_summary_includes_accepted_cache_hits() {
     let state = Rc::new(RefCell::new(FakeState {
         witness: Some(ExecutionWitness {
             language: "python".into(),
-            scope: WitnessScope::Full,
             identity_digest: "id".into(),
             selectors: vec!["a".into(), "b".into()],
             statuses: vec![WitnessStatus::Passed, WitnessStatus::Passed],
@@ -134,7 +131,6 @@ fn rust_warm_accept_still_emits_rust_identity_without_run() {
     let state = Rc::new(RefCell::new(FakeState {
         witness: Some(ExecutionWitness {
             language: "rust".into(),
-            scope: WitnessScope::Full,
             identity_digest: "id".into(),
             selectors: vec!["a".into()],
             statuses: vec![WitnessStatus::Passed],

@@ -25,11 +25,11 @@ fn rslip_request_from_parts_uses_selector_and_kiss_cache() {
     assert_eq!(req.pytest_version, "8.2.0");
     assert!(
         req.cache_root
-            .starts_with(tmp.path().join(".kiss/rslip_cache/hosts"))
+            .starts_with(tmp.path().join(".kiss/test/rslip_cache/hosts"))
     );
     assert_eq!(
         req.cache_root.components().count(),
-        tmp.path().components().count() + 4
+        tmp.path().components().count() + 5
     );
     assert!(req.force_rerun);
 }

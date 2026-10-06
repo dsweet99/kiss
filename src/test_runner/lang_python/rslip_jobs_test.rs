@@ -38,7 +38,6 @@ fn observe_rslip_jobs(repo_root: &std::path::Path, requested_jobs: usize) -> usi
             force_rerun: false,
             force_rerun_selectors: &[],
             jobs: requested_jobs,
-            content_fingerprint: None,
             gate: kiss::GateConfig::default(),
         },
         runner,

@@ -85,15 +85,10 @@ fn scanned_python_coverage_for_selectors(
     repo_root: &Path,
     selectors: &[String],
 ) -> Result<Option<BTreeMap<String, BTreeSet<u32>>>, RuntimeCoverageLoadError> {
-    let Ok(cache_root) =
-        crate::test_runner::python_coverage_index::python_coverage_cache_root(repo_root)
-    else {
-        return Ok(None);
-    };
     let wanted: BTreeSet<_> = selectors.iter().cloned().collect();
     let mut found = BTreeMap::<String, kiss::rslip::LineCoverage>::new();
     for path in
-        crate::test_runner::python_coverage_index::storage::python_coverage_entry_paths(&cache_root)
+        crate::test_runner::python_coverage_index::storage::python_coverage_entry_paths(repo_root)
     {
         let Some((selector, status, coverage)) = load_python_entry_for_index(&path) else {
             continue;
@@ -214,7 +209,6 @@ mod tests {
     #[test]
     fn scanned_python_coverage_reads_stored_entries() {
         use std::collections::{BTreeMap, BTreeSet};
-        use std::time::Duration;
 
         use kiss::rpytest_runner::TestStatus;
         use kiss::rslip::LineCoverage;
@@ -224,24 +218,14 @@ mod tests {
         std::fs::create_dir_all(repo.join(".git")).unwrap();
         let app = repo.join("app.py");
         std::fs::write(&app, "VALUE = 1\n").unwrap();
-        let cache = crate::test_runner::python_coverage_index::python_coverage_cache_root(repo)
-            .expect("cache root");
-        let entry_path = cache.join("entries").join("a.json");
-        std::fs::create_dir_all(entry_path.parent().unwrap()).unwrap();
-        let entry = serde_json::json!({
-            "schema_version": kiss::rslip::CACHE_SCHEMA_VERSION,
-            "nodeid": "app.py::test_x",
-            "status": TestStatus::Passed,
-            "exit_code": 0,
-            "duration": Duration::from_millis(1),
-            "coverage": LineCoverage {
-                files: BTreeMap::from([(
-                    app.to_string_lossy().to_string(),
-                    BTreeSet::from([1]),
-                )]),
+        crate::test_runner::python_coverage_index::storage::write_python_record_fixture(
+            repo,
+            "app.py::test_x",
+            TestStatus::Passed,
+            LineCoverage {
+                files: BTreeMap::from([(app.to_string_lossy().to_string(), BTreeSet::from([1]))]),
             },
-        });
-        std::fs::write(&entry_path, serde_json::to_vec(&entry).unwrap()).unwrap();
+        );
         let scanned =
             super::scanned_python_coverage_for_selectors(repo, &["app.py::test_x".into()])
                 .expect("scan")

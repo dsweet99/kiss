@@ -44,7 +44,7 @@ impl RustCoverageBatchRequest {
             cwd: PathBuf::from("/repo"),
             source_root: PathBuf::from("/repo"),
             cargo: PathBuf::from("cargo"),
-            cache_root: PathBuf::from("/repo/.kiss/rust_llvm_cov_cache"),
+            cache_root: PathBuf::from("/repo/.kiss/test/rust_llvm_cov_cache"),
             logical_selectors: vec!["alpha".to_string(), "beta".to_string()],
             cargo_args: vec!["--workspace".to_string()],
             test_args: vec!["--exact".to_string()],
@@ -53,7 +53,7 @@ impl RustCoverageBatchRequest {
             force_rerun_selectors: Vec::new(),
             jobs: 4,
             generated_config: PathBuf::from(
-                "/repo/.kiss/rust_llvm_cov_cache/runs/run-witness/nextest.toml",
+                "/repo/.kiss/test/rust_llvm_cov_cache/runs/run-witness/nextest.toml",
             ),
             population_publication_selectors: None,
             delegated_runners: BTreeMap::from([(
@@ -181,7 +181,10 @@ pub(crate) fn effective_coverage_environment(
     ensure_coverage_line_tables_only(&mut env);
     ensure_coverage_codegen_units(&mut env);
     crate::rust_llvm_cov_runner::kiss_profraw::ensure_kiss_profraw_env(&mut env, &req.source_root);
-    crate::rust_llvm_cov_runner::plan::llvm_cov_active::mark_llvm_cov_active(&mut env);
+    crate::rust_llvm_cov_runner::plan::llvm_cov_active::mark_llvm_cov_active(
+        &mut env,
+        &req.cache_root.join("locks").join("llvm_cov_nested.lock"),
+    );
     env.remove("KISS_RUST_COVERAGE_PROFILE_POOL");
 
     let build_target = req.cache_root.join("build").join("target");

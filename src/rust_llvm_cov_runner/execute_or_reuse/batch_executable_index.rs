@@ -472,7 +472,7 @@ mod tests {
         permissions.set_mode(0o755);
         std::fs::set_permissions(&bin, permissions).unwrap();
 
-        let kiss_profraw = tmp.path().join(".kiss").join("profraw");
+        let kiss_profraw = tmp.path().join(".kiss").join("test").join("profraw");
         let err =
             super::list_test_names_from_executable(&bin, "bin-id", &kiss_profraw, Some(tmp.path()))
                 .unwrap_err();
@@ -485,11 +485,11 @@ mod tests {
     #[test]
     fn list_test_names_sets_discard_llvm_profile_under_kiss_profraw() {
         let tmp = tempfile::tempdir().unwrap();
-        let kiss_profraw = tmp.path().join(".kiss").join("profraw");
+        let kiss_profraw = tmp.path().join(".kiss").join("test").join("profraw");
         let bin = tmp.path().join("test-bin");
         std::fs::write(
             &bin,
-            "#!/bin/sh\ncase \"${LLVM_PROFILE_FILE:-}\" in */.kiss/profraw/default_%m_%p.profraw) ;; *) echo \"bad:$LLVM_PROFILE_FILE\" >&2; exit 9 ;; esac\nprintf 'alpha::passes: test\\n'\n",
+            "#!/bin/sh\ncase \"${LLVM_PROFILE_FILE:-}\" in */.kiss/test/profraw/default_%m_%p.profraw) ;; *) echo \"bad:$LLVM_PROFILE_FILE\" >&2; exit 9 ;; esac\nprintf 'alpha::passes: test\\n'\n",
         )
         .unwrap();
         let mut permissions = std::fs::metadata(&bin).unwrap().permissions();
@@ -510,7 +510,7 @@ mod tests {
         let package = tmp.path().join("crate_a");
         std::fs::create_dir_all(package.join("resources")).unwrap();
         std::fs::write(package.join("resources").join("marker"), b"ok").unwrap();
-        let kiss_profraw = tmp.path().join(".kiss").join("profraw");
+        let kiss_profraw = tmp.path().join(".kiss").join("test").join("profraw");
         let bin = tmp.path().join("fixtures-bin");
         std::fs::write(
             &bin,

@@ -373,8 +373,7 @@ mod coverage_witness {
         );
     }
 
-    #[test]
-    fn witness_collect_subprocess_paths() {
+    fn collect_fixture() -> (tempfile::TempDir, PathBuf, PathBuf) {
         let tmp = tempfile::tempdir().unwrap();
         let tests = tmp.path().join("tests");
         fs::create_dir_all(&tests).unwrap();
@@ -385,9 +384,15 @@ mod coverage_witness {
         .unwrap();
         let python =
             PathBuf::from(std::env::var("PYTHON").unwrap_or_else(|_| "python3".to_string()));
+        (tmp, tests, python)
+    }
+
+    #[test]
+    fn witness_collect_subprocess_paths() {
+        let (tmp, tests, python) = collect_fixture();
         let request = PytestCollectRequest {
             cwd: tmp.path().to_path_buf(),
-            python: python.clone(),
+            python,
             paths: vec![tests.join("test_ok.py")],
             pytest_args: vec!["-q".into()],
             env: BTreeMap::from([("KISS_COLLECT_ENV".into(), "1".into())]),
@@ -397,17 +402,28 @@ mod coverage_witness {
             success.nodeids,
             vec!["tests/test_ok.py::test_ok".to_string()]
         );
+    }
 
+    #[test]
+    fn witness_collect_subprocess_full_suite() {
+        let (tmp, _tests, python) = collect_fixture();
         let full_suite = collect_subprocess(PytestCollectRequest {
             cwd: tmp.path().to_path_buf(),
-            python: python.clone(),
+            python,
             paths: Vec::new(),
             pytest_args: Vec::new(),
             env: BTreeMap::new(),
         })
         .unwrap();
-        assert_eq!(full_suite.nodeids, success.nodeids);
+        assert_eq!(
+            full_suite.nodeids,
+            vec!["tests/test_ok.py::test_ok".to_string()]
+        );
+    }
 
+    #[test]
+    fn witness_collect_subprocess_import_error() {
+        let (tmp, tests, python) = collect_fixture();
         fs::write(
             tests.join("test_bad.py"),
             "import missing_module\n\ndef test_bad():\n    pass\n",

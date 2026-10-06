@@ -349,7 +349,6 @@ pub fn persistent_python_coverage_gap_repo() -> PathBuf {
     use std::sync::OnceLock;
     static REPO: OnceLock<PathBuf> = OnceLock::new();
     REPO.get_or_init(|| {
-        // Keep the path short: Unix sockets under .kiss/watch must fit sun_path (~108).
         let root = std::env::temp_dir().join("kiss-pcg");
         let stamp = root.join(".kiss").join("fixture_inplace_ok");
         if root.join(".git").join("HEAD").is_file()
@@ -390,7 +389,6 @@ pub fn persistent_python_coverage_gap_repo() -> PathBuf {
              \n\
 [test]\n\
              test_coverage_threshold = 0\n\
-             watch_settle_seconds = 0.005\n\
              orphan_detection = false\n\
              num_jobs = 1\n\
              \n\
@@ -445,7 +443,6 @@ pub fn with_python_coverage_gap_repo<T>(f: impl FnOnce(&Path) -> T) -> T {
          \n\
 [test]\n\
          test_coverage_threshold = 0\n\
-         watch_settle_seconds = 0.005\n\
          orphan_detection = false\n\
          num_jobs = 1\n\
          \n\
@@ -455,29 +452,16 @@ pub fn with_python_coverage_gap_repo<T>(f: impl FnOnce(&Path) -> T) -> T {
          [rust]\n",
     )
     .unwrap();
-    let _ = fs::remove_dir_all(root.join(".kiss").join("watch"));
-    // Drop warm seals so a threshold reload re-scores instead of echoing a sealed pass.
-    if let Ok(entries) = fs::read_dir(root.join(".kiss").join("rslip_cache").join("hosts")) {
-        for host in entries.flatten() {
-            let _ = fs::remove_file(host.path().join("warm_hit_seal.json"));
-        }
-    }
     f(&root)
 }
 
 pub fn fresh_python_coverage_gap_repo() -> tempfile::TempDir {
     let tmp = tempfile::TempDir::new().expect("coverage-gap tempdir");
     copy_repo_tree(&persistent_python_coverage_gap_repo(), tmp.path());
-    let _ = fs::remove_dir_all(tmp.path().join(".kiss").join("watch"));
-    if let Ok(entries) = fs::read_dir(tmp.path().join(".kiss").join("rslip_cache").join("hosts")) {
-        for host in entries.flatten() {
-            let _ = fs::remove_file(host.path().join("warm_hit_seal.json"));
-        }
-    }
     tmp
 }
 
-fn write_seeded_python_watch_sources(root: &Path) {
+fn write_seeded_python_sources(root: &Path) {
     fs::write(root.join("lib.py"), "def f():\n    return 0\n").unwrap();
     fs::write(
         root.join("test_lib.py"),
@@ -486,50 +470,50 @@ fn write_seeded_python_watch_sources(root: &Path) {
     .unwrap();
 }
 
-/// Cross-process lock for the shared seeded-python-watch fixture.
+/// Cross-process lock for the shared seeded-python fixture.
 /// nextest workers are separate OS processes; an in-process Mutex does not
 /// serialize rewrite of the persistent tree against concurrent `cp -a` clones.
 /// Uses an exclusive flock (same class as production kiss-plan stores / force-python
 /// fixture). A mkdir lock with timed steal can interrupt a live holder still
 /// cloning under nextest -j12 load.
-struct SeededPythonWatchFixtureLock {
+struct SeededPythonFixtureLock {
     _file: fs::File,
 }
 
-fn seeded_python_watch_fixture_lock() -> SeededPythonWatchFixtureLock {
+fn seeded_python_fixture_lock() -> SeededPythonFixtureLock {
     ensure_tmpfs();
-    let path = std::env::temp_dir().join("kiss-seeded-python-watch-fixture-v3.lock");
+    let path = std::env::temp_dir().join("kiss-seeded-python-fixture-v4.lock");
     let file = OpenOptions::new()
         .create(true)
         .read(true)
         .write(true)
         .truncate(false)
         .open(&path)
-        .unwrap_or_else(|err| panic!("seeded python watch fixture lock {}: {err}", path.display()));
+        .unwrap_or_else(|err| panic!("seeded python fixture lock {}: {err}", path.display()));
     file.lock_exclusive().unwrap_or_else(|err| {
         panic!(
-            "seeded python watch fixture lock_exclusive {}: {err}",
+            "seeded python fixture lock_exclusive {}: {err}",
             path.display()
         )
     });
-    SeededPythonWatchFixtureLock { _file: file }
+    SeededPythonFixtureLock { _file: file }
 }
 
-/// Caller must hold `seeded_python_watch_fixture_lock`.
-fn persistent_seeded_python_watch_repo_unlocked() -> PathBuf {
+/// Caller must hold `seeded_python_fixture_lock`.
+fn persistent_seeded_python_repo_unlocked() -> PathBuf {
     use std::sync::OnceLock;
     static REPO: OnceLock<PathBuf> = OnceLock::new();
     REPO.get_or_init(|| {
-        // v3: ship a .gitignore so `.kiss/` / `target/` are never tracked. Older
-        // fixtures committed those paths; watcher dirt then flapped commit stamps.
-        let root = std::env::temp_dir().join("kiss-seeded-python-watch-fixture-v3");
+        // Ship a .gitignore so `.kiss/` / `target/` are never tracked; tracked
+        // state dirt would flap commit stamps.
+        let root = std::env::temp_dir().join("kiss-seeded-python-fixture-v4");
         if root.join(".git").join("HEAD").is_file() {
             // Reset sources under the flock so concurrent clones cannot tear a
             // mid-write lib.py / test_lib.py pair.
-            write_seeded_python_watch_sources(&root);
+            write_seeded_python_sources(&root);
             return root;
         }
-        fs::create_dir_all(&root).expect("seeded python watch fixture root");
+        fs::create_dir_all(&root).expect("seeded python fixture root");
         let init = kiss::scrubbed_git_command(&root)
             .args(["init", "-q", "-b", "main"])
             .output()
@@ -543,10 +527,10 @@ fn persistent_seeded_python_watch_repo_unlocked() -> PathBuf {
         }
         fs::write(
             root.join(".gitignore"),
-            "target/\n.kiss/\nwatch.log\n__pycache__/\n*.pyc\n",
+            "target/\n.kiss/\n__pycache__/\n*.pyc\n",
         )
         .unwrap();
-        write_seeded_python_watch_sources(&root);
+        write_seeded_python_sources(&root);
         fs::write(
             root.join(".kissconfig"),
             "[global]\n\
@@ -554,7 +538,6 @@ fn persistent_seeded_python_watch_repo_unlocked() -> PathBuf {
              \n\
 [test]\n\
              test_coverage_threshold = 0\n\
-             watch_settle_seconds = 0.005\n\
              orphan_detection = false\n\
              num_jobs = 1\n\
              \n\
@@ -583,38 +566,35 @@ fn persistent_seeded_python_watch_repo_unlocked() -> PathBuf {
     .clone()
 }
 
-pub fn persistent_seeded_python_watch_repo() -> PathBuf {
-    let _lock = seeded_python_watch_fixture_lock();
-    persistent_seeded_python_watch_repo_unlocked()
+pub fn persistent_seeded_python_repo() -> PathBuf {
+    let _lock = seeded_python_fixture_lock();
+    persistent_seeded_python_repo_unlocked()
 }
 
-pub fn fresh_seeded_python_watch_repo() -> tempfile::TempDir {
+pub fn fresh_seeded_python_repo() -> tempfile::TempDir {
     // Hold the lock across clone so peers cannot rewrite sources mid-`cp -a`.
-    let _lock = seeded_python_watch_fixture_lock();
-    let tmp = tempfile::TempDir::new().expect("seeded python watch tempdir");
-    copy_repo_tree(
-        &persistent_seeded_python_watch_repo_unlocked(),
-        tmp.path(),
-    );
+    let _lock = seeded_python_fixture_lock();
+    let tmp = tempfile::TempDir::new().expect("seeded python tempdir");
+    copy_repo_tree(&persistent_seeded_python_repo_unlocked(), tmp.path());
     tmp
 }
 
-pub struct LockedSeededPythonWatchRepo {
+pub struct LockedSeededPythonRepo {
     _tmp: tempfile::TempDir,
     path: PathBuf,
 }
 
-impl LockedSeededPythonWatchRepo {
+impl LockedSeededPythonRepo {
     pub fn path(&self) -> &Path {
         &self.path
     }
 }
 
-/// Isolated clone of the seeded python watch fixture.
-pub fn locked_seeded_python_watch_repo() -> LockedSeededPythonWatchRepo {
-    let tmp = fresh_seeded_python_watch_repo();
+/// Isolated clone of the seeded python fixture.
+pub fn locked_seeded_python_repo() -> LockedSeededPythonRepo {
+    let tmp = fresh_seeded_python_repo();
     let path = tmp.path().to_path_buf();
-    LockedSeededPythonWatchRepo { _tmp: tmp, path }
+    LockedSeededPythonRepo { _tmp: tmp, path }
 }
 
 pub fn seed_python_runtime_coverage(repo: &Path, entries: &[PythonRuntimeCoverageSeed<'_>]) {
@@ -634,7 +614,7 @@ fn seed_python_runtime_coverage_with_status(
 ) {
     let repo = repo.canonicalize().unwrap();
     let cache_root = python_rslip_cache_root_for_repo(&repo);
-    fs::create_dir_all(cache_root.join("entries")).unwrap();
+    fs::create_dir_all(&cache_root).unwrap();
     let python_version = python_command_output(
         &repo,
         &[
@@ -676,7 +656,7 @@ fn seed_python_runtime_coverage_with_status(
         "pytest_args": [],
         "env": env_json,
         "input_fingerprint": python_source_input_fingerprint(&repo),
-        "entries_fingerprint": python_entries_fingerprint(&cache_root),
+        "entries_fingerprint": python_entries_fingerprint(&repo),
         "selectors": selectors,
     });
     fs::write(
@@ -710,9 +690,8 @@ fn write_seeded_rslip_entry(
         cache_root: cache_root.to_path_buf(),
         force_rerun: false,
         timeout: None,
-        content_fingerprint: None,
     };
-    let fingerprint = kiss::rslip::cache_fingerprint_for_request(&req).unwrap();
+    let identity = kiss::rslip::record_identity_for_request(&req).unwrap();
     let files = coverage_files
         .iter()
         .map(|(file, lines)| {
@@ -725,28 +704,19 @@ fn write_seeded_rslip_entry(
     let coverage = kiss::rslip::LineCoverage {
         files: files.clone(),
     };
-    let covered_digests =
-        kiss::rslip::covered_file_digests_for(repo, selector, &coverage).unwrap_or_default();
-    let files_json = files
-        .iter()
-        .map(|(file, lines)| (file.clone(), serde_json::json!(lines)))
-        .collect::<serde_json::Map<_, _>>();
-    let payload = serde_json::json!({
-        "schema_version": kiss::rslip::CACHE_SCHEMA_VERSION,
-        "nodeid": selector,
-        "status": status,
-        "exit_code": exit_code,
-        "duration": { "secs": 0, "nanos": 1_000_000 },
-        "coverage": { "files": files_json },
-        "covered_digests": covered_digests,
-    });
-    fs::write(
-        cache_root
-            .join("entries")
-            .join(format!("{fingerprint}.json")),
-        format!("{}\n", serde_json::to_string(&payload).unwrap()),
-    )
-    .unwrap();
+    let deps = kiss::rslip::covered_file_digests_for(repo, selector, &coverage).unwrap_or_default();
+    let record = kiss::test_records::TestRecord {
+        schema: kiss::test_records::RECORD_SCHEMA.to_string(),
+        language: "python".to_string(),
+        test_id: selector.to_string(),
+        identity,
+        deps,
+        status: serde_json::from_value(serde_json::json!(status)).unwrap(),
+        exit_code: Some(exit_code),
+        duration: std::time::Duration::from_millis(1),
+        covered: files,
+    };
+    kiss::test_records::store_record(&kiss::rslip::python_records_dir(repo), &record).unwrap();
 }
 
 pub fn seed_rust_runtime_coverage(repo: &Path, entries: &[RustRuntimeCoverageSeed<'_>]) {
@@ -807,7 +777,7 @@ fn rust_runtime_coverage_request(
         cwd: repo.to_path_buf(),
         source_root: repo.to_path_buf(),
         cargo: PathBuf::from("cargo"),
-        cache_root: repo.join(".kiss").join("rust_llvm_cov_cache"),
+        cache_root: repo.join(".kiss").join("test").join("rust_llvm_cov_cache"),
         logical_selectors: selectors.to_vec(),
         cargo_args: vec!["--workspace".to_string()],
         test_args: Vec::new(),
@@ -817,6 +787,7 @@ fn rust_runtime_coverage_request(
         jobs: 1,
         generated_config: repo
             .join(".kiss")
+            .join("test")
             .join("rust_llvm_cov_cache")
             .join("runs")
             .join("test-seed")

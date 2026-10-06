@@ -60,7 +60,7 @@ struct ToolIdentityCache {
 static TOOLS_CACHE: Mutex<Option<ToolIdentityCache>> = Mutex::new(None);
 
 fn rust_tool_versions_cache_path(repo_root: &Path) -> PathBuf {
-    repo_root.join(".kiss").join("rust_tool_versions.json")
+    crate::test_runner::test_state_dir(repo_root).join("rust_tool_versions.json")
 }
 
 pub(super) fn system_time_to_nanos(ts: SystemTime) -> Option<u64> {
@@ -351,7 +351,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_cache_without_schema_is_ignored() {
+    fn cache_without_schema_is_ignored() {
         let tmp = tempfile::tempdir().unwrap();
         let path = rust_tool_versions_cache_path(tmp.path());
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();

@@ -27,7 +27,7 @@ fn warm_cov_caches_after_tests_is_callable_without_panicking() {
     let gate = kiss::GateConfig::default();
 
     warm_cov_caches_after_tests(repo, Some(kiss::Language::Python), &[], &gate, &[]);
-    assert!(!repo.join(".kiss/cov_records_cache.json").exists());
+    assert!(!repo.join(".kiss/test/cov_records_cache.json").exists());
 }
 
 #[test]
@@ -54,7 +54,7 @@ fn warm_cov_caches_after_tests_writes_records_when_snapshot_present() {
     let gate = kiss::GateConfig::load();
     warm_cov_caches_after_tests(repo, Some(kiss::Language::Python), &[], &gate, &[]);
     assert!(
-        repo.join(".kiss/cov_records_cache.json").is_file(),
+        repo.join(".kiss/test/cov_records_cache.json").is_file(),
         "expected records cache after successful warm"
     );
     assert!(
@@ -66,12 +66,12 @@ fn warm_cov_caches_after_tests_writes_records_when_snapshot_present() {
         "expected coverable-denom cache after successful warm"
     );
 
-    let before = fs::metadata(repo.join(".kiss/cov_records_cache.json"))
+    let before = fs::metadata(repo.join(".kiss/test/cov_records_cache.json"))
         .unwrap()
         .modified()
         .unwrap();
     warm_cov_caches_after_tests(repo, Some(kiss::Language::Python), &[], &gate, &[]);
-    let after = fs::metadata(repo.join(".kiss/cov_records_cache.json"))
+    let after = fs::metadata(repo.join(".kiss/test/cov_records_cache.json"))
         .unwrap()
         .modified()
         .unwrap();

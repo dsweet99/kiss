@@ -50,14 +50,6 @@ mod tests {
 "#,
     )
     .unwrap();
-    let identity = rust_last_status_identity(
-        "cargo 1.88.0",
-        "cargo-llvm-cov 0.6.0",
-        "rustc 1.88.0",
-        "cargo-nextest 0.9.0",
-        &[],
-        "0000000000000000",
-    );
     let result = RustCoverageBatchResult {
         completed: vec![RustLlvmCovOutcome {
             selector: "tests::gets_value".to_string(),
@@ -77,13 +69,9 @@ mod tests {
         test_binaries: Vec::new(),
     };
 
-    let summary = finish_rust_coverage_batch_result(
-        tmp.path(),
-        &identity,
-        result,
-        &kiss::GateConfig::default(),
-    )
-    .unwrap();
+    let summary =
+        finish_rust_coverage_batch_result(tmp.path(), result, &kiss::GateConfig::default())
+            .unwrap();
     assert_eq!(
         summary.timed_out_selectors,
         vec!["src/lib.rs::gets_value".to_string()]
@@ -94,14 +82,6 @@ mod tests {
 fn finish_rust_failure_recap_uses_path_symbol_report_id() {
     let tmp = tempfile::tempdir().unwrap();
     super::tests::write_rust_test_crate(tmp.path(), &["gets_value"]);
-    let identity = rust_last_status_identity(
-        "cargo 1.88.0",
-        "cargo-llvm-cov 0.6.0",
-        "rustc 1.88.0",
-        "cargo-nextest 0.9.0",
-        &[],
-        "0000000000000000",
-    );
     let result = RustCoverageBatchResult {
         completed: vec![RustLlvmCovOutcome {
             selector: "tests::gets_value".to_string(),
@@ -122,13 +102,9 @@ fn finish_rust_failure_recap_uses_path_symbol_report_id() {
     };
 
     let out = crate::test_runner::capture_stdout::capture_stdout(|| {
-        let summary = finish_rust_coverage_batch_result(
-            tmp.path(),
-            &identity,
-            result,
-            &kiss::GateConfig::default(),
-        )
-        .unwrap();
+        let summary =
+            finish_rust_coverage_batch_result(tmp.path(), result, &kiss::GateConfig::default())
+                .unwrap();
         assert_eq!(
             summary.failed_selectors,
             vec!["src/lib.rs::gets_value".to_string()]
@@ -164,14 +140,6 @@ fn finish_rust_coverage_batch_result_prints_cached_and_failed_outcomes() {
     super::tests::write_rust_test_crate(
         tmp.path(),
         &["cached_pass", "fresh_pass", "cached_fail", "fresh_fail"],
-    );
-    let identity = rust_last_status_identity(
-        "cargo 1.88.0",
-        "cargo-llvm-cov 0.6.0",
-        "rustc 1.88.0",
-        "cargo-nextest 0.9.0",
-        &[],
-        "0000000000000000",
     );
     let result = RustCoverageBatchResult {
         completed: vec![
@@ -233,13 +201,9 @@ fn finish_rust_coverage_batch_result_prints_cached_and_failed_outcomes() {
         test_binaries: Vec::new(),
     };
 
-    let summary = finish_rust_coverage_batch_result(
-        tmp.path(),
-        &identity,
-        result,
-        &kiss::GateConfig::default(),
-    )
-    .unwrap();
+    let summary =
+        finish_rust_coverage_batch_result(tmp.path(), result, &kiss::GateConfig::default())
+            .unwrap();
     assert_eq!(summary.total, 4);
     assert_eq!(summary.failed, 2);
     assert_eq!(
@@ -258,14 +222,6 @@ fn finish_rust_coverage_batch_result_prints_fresh_unstored_outcomes() {
     super::tests::write_rust_test_crate(
         tmp.path(),
         &["fresh_pass", "fresh_fail", "fresh_fail_empty_stderr"],
-    );
-    let identity = rust_last_status_identity(
-        "cargo 1.88.0",
-        "cargo-llvm-cov 0.6.0",
-        "rustc 1.88.0",
-        "cargo-nextest 0.9.0",
-        &[],
-        "0000000000000000",
     );
     let result = RustCoverageBatchResult {
         completed: vec![
@@ -314,13 +270,9 @@ fn finish_rust_coverage_batch_result_prints_fresh_unstored_outcomes() {
         test_binaries: Vec::new(),
     };
 
-    let summary = finish_rust_coverage_batch_result(
-        tmp.path(),
-        &identity,
-        result,
-        &kiss::GateConfig::default(),
-    )
-    .unwrap();
+    let summary =
+        finish_rust_coverage_batch_result(tmp.path(), result, &kiss::GateConfig::default())
+            .unwrap();
     assert_eq!(summary.total, 3);
     assert_eq!(summary.failed, 2);
     assert_eq!(

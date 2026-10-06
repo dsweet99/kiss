@@ -23,7 +23,7 @@ fn batch_request_public_data_contract_preserves_every_field() {
     assert_eq!(req.cargo, PathBuf::from("cargo"));
     assert_eq!(
         req.cache_root,
-        PathBuf::from("/repo/.kiss/rust_llvm_cov_cache")
+        PathBuf::from("/repo/.kiss/test/rust_llvm_cov_cache")
     );
     assert_eq!(req.logical_selectors, ["alpha", "beta"]);
     assert_eq!(req.cargo_args, ["--workspace"]);
@@ -33,14 +33,14 @@ fn batch_request_public_data_contract_preserves_every_field() {
     assert_eq!(req.jobs, 4);
     assert_eq!(
         req.generated_config,
-        PathBuf::from("/repo/.kiss/rust_llvm_cov_cache/runs/run-witness/nextest.toml")
+        PathBuf::from("/repo/.kiss/test/rust_llvm_cov_cache/runs/run-witness/nextest.toml")
     );
 }
 
 #[test]
 fn batch_plan_uses_one_shared_build_target_and_bounded_nextest_jobs() {
     let plan = build_rust_coverage_batch_plan(&request()).unwrap();
-    let build_target = "/repo/.kiss/rust_llvm_cov_cache/build/target";
+    let build_target = "/repo/.kiss/test/rust_llvm_cov_cache/build/target";
 
     assert_eq!(plan.build_target, PathBuf::from(build_target));
     assert_eq!(plan.env["CARGO_TARGET_DIR"], build_target);
@@ -51,8 +51,13 @@ fn batch_plan_uses_one_shared_build_target_and_bounded_nextest_jobs() {
         "a one-file edit must be allowed to reuse rustc incremental artifacts"
     );
     assert_eq!(
-        plan.env[crate::rust_llvm_cov_runner::plan::llvm_cov_active::KISS_LLVM_COV_ACTIVE_ENV],
-        "1"
+        PathBuf::from(
+            &plan.env[crate::rust_llvm_cov_runner::plan::llvm_cov_active::KISS_LLVM_COV_ACTIVE_ENV]
+        ),
+        request()
+            .cache_root
+            .join("locks")
+            .join("llvm_cov_nested.lock")
     );
     assert_eq!(plan.env["NEXTEST_EXPERIMENTAL_LIBTEST_JSON"], "1");
     assert_eq!(plan.env["KEEP_ME"], "1");
@@ -151,20 +156,20 @@ fn batch_plan_public_data_contract_preserves_every_field() {
     assert!(format!("{plan:?}").contains("RustCoverageBatchPlan"));
     assert_eq!(
         plan.build_target,
-        PathBuf::from("/repo/.kiss/rust_llvm_cov_cache/build/target")
+        PathBuf::from("/repo/.kiss/test/rust_llvm_cov_cache/build/target")
     );
     assert_eq!(
         plan.target_runner_output_dir,
-        PathBuf::from("/repo/.kiss/rust_llvm_cov_cache/runs/run-witness/instances")
+        PathBuf::from("/repo/.kiss/test/rust_llvm_cov_cache/runs/run-witness/instances")
     );
     assert_eq!(plan.env["KEEP_ME"], "1");
     assert_eq!(
         plan.env[crate::rust_llvm_cov_runner::kiss_profraw::KISS_PROFRAW_DIR_ENV],
-        "/repo/.kiss/profraw"
+        "/repo/.kiss/test/profraw"
     );
     assert_eq!(
         plan.env["LLVM_PROFILE_FILE"],
-        "/repo/.kiss/profraw/default_%m_%p.profraw"
+        "/repo/.kiss/test/profraw/default_%m_%p.profraw"
     );
     assert_eq!(plan.argv[0], "cargo");
     assert!(plan.generated_config_toml.contains("[profile.kiss]"));
@@ -175,7 +180,7 @@ fn batch_plan_public_data_contract_preserves_every_field() {
     );
     assert!(plan.argv.windows(2).any(|args| {
         args[0] == "--config"
-            && args[1] == "/repo/.kiss/rust_llvm_cov_cache/runs/run-witness/cargo-runner.toml"
+            && args[1] == "/repo/.kiss/test/rust_llvm_cov_cache/runs/run-witness/cargo-runner.toml"
     }));
 }
 
@@ -194,7 +199,7 @@ fn batch_plan_constructs_nextest_command_without_legacy_no_clean() {
     assert!(plan.argv.windows(2).any(|args| args
         == [
             "--config-file",
-            "/repo/.kiss/rust_llvm_cov_cache/runs/run-witness/nextest.toml",
+            "/repo/.kiss/test/rust_llvm_cov_cache/runs/run-witness/nextest.toml",
         ]));
     assert_eq!(
         &plan.argv[plan.argv.len() - 3..],
@@ -238,7 +243,11 @@ fn rewrite_plan_argv_skip_llvm_cov_wrapper_remaps_check_aggregate_profile_pool()
 fn publish_generated_nextest_config_writes_run_scoped_config_atomically() {
     let tmp = tempfile::tempdir().unwrap();
     let mut req = request();
-    req.cache_root = tmp.path().join(".kiss").join("rust_llvm_cov_cache");
+    req.cache_root = tmp
+        .path()
+        .join(".kiss")
+        .join("test")
+        .join("rust_llvm_cov_cache");
     req.generated_config = req
         .cache_root
         .join("runs")
@@ -274,7 +283,7 @@ fn batch_plan_generates_escaped_nextest_filter_config() {
 
     assert!(plan.generated_config_toml.contains("[profile.kiss]"));
     assert!(plan.generated_config_toml.contains(
-        r#"default-filter = "test(/alpha::case/) | test(/quote\"slash\\\\case/) | test(/line\\nbreak/) | test(/foo\"\\) \\| all\\(\\) \\| test\\(\"bar/)""#
+        r#"default-filter = "test(/(^|::|\\$)alpha::case(::|$)/) | test(/(^|::|\\$)quote\"slash\\\\case(::|$)/) | test(/(^|::|\\$)line\\nbreak(::|$)/) | test(/(^|::|\\$)foo\"\\) \\| all\\(\\) \\| test\\(\"bar(::|$)/)""#
     ));
 
     req.test_args = vec!["--exact".to_string()];

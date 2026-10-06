@@ -65,7 +65,6 @@ fn dispatch_analyze(
 
 fn dispatch_tools(
     lang: Option<kiss::Language>,
-    config: Option<std::path::PathBuf>,
     command: Commands,
     cfg: &TriConfig<'_>,
     test_section: &TestSectionConfig,
@@ -107,38 +106,10 @@ fn dispatch_tools(
             language_tables: cfg.language_tables,
         }),
         test_command @ Commands::Test { .. } => {
-            dispatch_test_command(lang, config.as_ref(), test_command, cfg, test_section)
-        }
-        Commands::TestWatch => {
-            if lang.is_some() || config.is_some() {
-                eprintln!("error: kiss test-watch: option is not accepted");
-                return 2;
-            }
-            dispatch_test_watch(cfg, test_section)
+            dispatch_test_command(lang, test_command, cfg, test_section)
         }
         _ => 2,
     }
-}
-
-fn dispatch_test_watch(cfg: &TriConfig<'_>, test_section: &TestSectionConfig) -> i32 {
-    dispatch_test(TestDispatchOptions {
-        lang: None,
-        invocation: crate::bin_cli::args::TestInvocation::All,
-        main_branch: None,
-        base_branch: None,
-        dry_run: false,
-        retry_bad: false,
-        metrics: false,
-        coverage_all: false,
-        watch: true,
-        jobs: None,
-        ignore: Vec::new(),
-        extra: Vec::new(),
-        test_cfg: test_section,
-        cfg,
-        reload_kissconfig: false,
-        config_path: None,
-    })
 }
 
 fn absolutize_test_invocation(
@@ -174,7 +145,6 @@ fn absolutize_operand(raw: String) -> String {
 
 fn dispatch_test_command(
     lang: Option<kiss::Language>,
-    config_path: Option<&std::path::PathBuf>,
     command: Commands,
     cfg: &TriConfig<'_>,
     test_section: &TestSectionConfig,
@@ -215,14 +185,11 @@ fn dispatch_test_command(
                 retry_bad,
                 metrics: false,
                 coverage_all: false,
-                watch: false,
                 jobs,
                 ignore: Vec::new(),
                 extra: Vec::new(),
                 test_cfg: test_section,
                 cfg,
-                reload_kissconfig: true,
-                config_path,
             })
         }
         _ => 2,
@@ -250,10 +217,6 @@ pub fn dispatch(
             config,
             command: command @ (Commands::Check { .. } | Commands::Stats { .. }),
         } => dispatch_analyze(lang, config, command, &cfg, test_section),
-        Cli {
-            lang,
-            config,
-            command,
-        } => dispatch_tools(lang, config, command, &cfg, test_section),
+        Cli { lang, command, .. } => dispatch_tools(lang, command, &cfg, test_section),
     }
 }

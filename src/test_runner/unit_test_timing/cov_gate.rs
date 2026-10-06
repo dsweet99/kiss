@@ -145,7 +145,7 @@ fn try_evaluate_multi_prefix_path_max_gate(opts: CovTimeGateOpts<'_>) -> Option<
 }
 
 pub(super) fn evaluate_path_max_runtime_violations(
-    path_maxes: &[crate::test_runner::python_coverage_index::generation::PathMaxDuration],
+    path_maxes: &[crate::test_runner::python_coverage_index::population_durations::PathMaxDuration],
     limits: &[(String, f64)],
     ignore: &[String],
 ) -> Vec<RuntimeGateViolation> {

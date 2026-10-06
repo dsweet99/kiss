@@ -10,6 +10,15 @@ pub enum TestLangFilter {
     Rust,
 }
 
+impl From<kiss::Language> for TestLangFilter {
+    fn from(language: kiss::Language) -> Self {
+        match language {
+            kiss::Language::Python => Self::Python,
+            kiss::Language::Rust => Self::Rust,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 pub enum TestChangeMode {
     Commit,

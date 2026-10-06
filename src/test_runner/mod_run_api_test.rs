@@ -25,6 +25,7 @@ impl RunTestCmdArgs<'_> {
             extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
             config_main_branch: None,
             gate_config: kiss::GateConfig::default(),
+            doubles: None,
         }
     }
 }

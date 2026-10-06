@@ -54,7 +54,7 @@ fn oneshot_waits_for_peer_kiss_test_on_tmp_repo() {
     if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
         return;
     }
-    let tmp = crate::common::fresh_seeded_python_watch_repo();
+    let tmp = crate::common::fresh_seeded_python_repo();
     let mut first = spawn_oneshot(tmp.path());
     let first_out = collect_stdout(&mut first);
     wait_contains(&first_out, "kiss test: Planning", Duration::from_secs(15));

@@ -28,7 +28,6 @@ fn miss_run_ignores_stale_same_size_pyc_for_rewritten_source() {
         cache_root: root.join(".rslip_cache"),
         force_rerun: false,
         timeout: None,
-        content_fingerprint: None,
     };
     let rslip = Rslip::new(forkserver_pytest_runner());
 
@@ -103,7 +102,6 @@ fn ordinary_miss_run_keeps_existing_pycache() {
         cache_root: root.join(".rslip_cache"),
         force_rerun: false,
         timeout: None,
-        content_fingerprint: None,
     };
     let outcome = Rslip::new(forkserver_pytest_runner())
         .run_or_reuse(req)

@@ -85,7 +85,7 @@ fn kiss_test_sigint_caches_passed_tests_as_it_goes() {
     });
 
     let deadline = Instant::now() + Duration::from_secs(60);
-    let selector_cache = tmp.path().join("target/kiss-plan/python_test_selectors.json");
+    let selector_cache = tmp.path().join(".kiss/test/python_test_selectors.json");
     loop {
         let snap = collected
             .lock()

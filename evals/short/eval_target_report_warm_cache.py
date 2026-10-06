@@ -21,7 +21,6 @@ WARM_QUERIES: list[tuple[str, list[str]]] = [
     ("union", ["pkg/app.py", "src/lib.rs"]),
     ("rust-source", ["src/lib.rs"]),
     ("nested-dir", ["tests/nested"]),
-    ("dry-nodeid", ["--dry-run", "tests/test_functions.py::test_alpha"]),
     ("commit", ["commit"]),
     ("base", ["base"]),
     ("explicit-base", ["base", "--base-branch", "main"]),
@@ -83,7 +82,7 @@ def warm_cache_queries() -> None:
             return total
 
         plans = repo / "target/kiss-plan/target-plans"
-        reports = repo / "target/kiss-plan/target-reports"
+        reports = repo / ".kiss/test/target-reports"
         pointers = reports / "pointers"
         pointer_n = len(list(pointers.glob("*.json"))) if pointers.is_dir() else 0
         emit_eval("target_report_seed_s", "SMALLER", f"{seed_s:.4f}")
@@ -103,7 +102,7 @@ def warm_cache_queries() -> None:
         emit_eval("target_report_index_rebuild_n", "SMALLER", kernel_sum("index"))
         emit_eval("target_report_graph_n", "SMALLER", kernel_sum("graph"))
         emit_eval("target_report_snapshot_retry_n", "SMALLER", kernel_sum("snapshot"))
-        emit_eval("target_report_plan_store", "LARGER", int(plans.is_dir()))
+        emit_eval("target_report_no_plan_store", "LARGER", int(not plans.exists()))
         emit_eval("target_report_report_store", "LARGER", int(reports.is_dir()))
         emit_eval("target_report_pointer_files", "LARGER", pointer_n)
 

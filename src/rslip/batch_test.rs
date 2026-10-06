@@ -1,7 +1,7 @@
 use super::*;
 use crate::rpytest_runner::{PytestRunError, PytestRunOutcome, PytestRunner};
 use crate::rslip::batch::{PreparedRslipMisses, RslipCacheCandidate, RslipCacheCandidateGroup};
-use crate::rslip::cache::{rslip_cache_fingerprint, store_rslip_cache_entry};
+use crate::rslip::cache::store_rslip_cache_entry;
 use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::fs;
@@ -97,10 +97,8 @@ fn batch_all_cache_hits_does_not_call_runner() {
     )
     .unwrap();
     let req = rslip_sample_request(tmp.path());
-    let fingerprint = rslip_cache_fingerprint(&req).unwrap();
     store_rslip_cache_entry(
-        &req.cache_root,
-        &fingerprint,
+        &req,
         &cache::RslipCacheEntry::from_outcome(&RslipOutcome::witness(), tmp.path()),
     )
     .unwrap();
@@ -127,19 +125,15 @@ fn all_hit_batch_does_not_wait_for_entry_lock() {
     )
     .unwrap();
     let req = rslip_sample_request(tmp.path());
-    let fingerprint = rslip_cache_fingerprint(&req).unwrap();
     store_rslip_cache_entry(
-        &req.cache_root,
-        &fingerprint,
+        &req,
         &cache::RslipCacheEntry::from_outcome(&RslipOutcome::witness(), tmp.path()),
     )
     .unwrap();
     let (locked_tx, locked_rx) = mpsc::channel();
     let root_for_lock = req.cache_root.clone();
-    let fingerprint_for_lock = fingerprint.clone();
     let lock_holder = thread::spawn(move || {
-        let _guard =
-            crate::rslip::lock_rslip_cache_entry(&root_for_lock, &fingerprint_for_lock).unwrap();
+        let _guard = crate::rslip::lock_rslip_state(&root_for_lock).unwrap();
         locked_tx.send(()).unwrap();
         thread::sleep(Duration::from_millis(200));
     });
@@ -436,4 +430,35 @@ fn repeated_forced_misses_do_not_leave_testmon_files() {
         leftover, 0,
         "testmon files are per-miss scratch; leftover files={leftover}"
     );
+}
+
+#[test]
+fn finished_miss_writes_record_matching_rslip_entry() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_sample_tree(tmp.path());
+    let calls = Rc::new(Cell::new(0));
+    let rslip = Rslip::new(fake_runner(Rc::clone(&calls)));
+    let mut req = rslip_sample_request(tmp.path());
+    req.nodeid = "test_sample.py::test_a".to_string();
+
+    let outcome = rslip.run_or_reuse(req.clone()).unwrap();
+    assert_eq!(outcome.cache_status, CacheStatus::MissStored);
+
+    let entry = crate::rslip::cache::load_rslip_cache_entry(&req).expect("rslip entry stored");
+    let dir = crate::test_records::records_dir(&req.source_root, "python");
+    let record = crate::test_records::load_record(&dir, &req.nodeid).expect("record stored");
+    assert_eq!(record.language, "python");
+    assert_eq!(
+        record.identity,
+        crate::rslip::cache::rslip_request_context_fingerprint(&req).unwrap()
+    );
+    assert_eq!(record.status, entry.status);
+    assert_eq!(record.exit_code, entry.exit_code);
+    assert_eq!(record.duration, entry.duration);
+    assert_eq!(record.covered, entry.coverage.files);
+    assert_eq!(record.deps, entry.covered_digests);
+
+    let again = rslip.run_or_reuse(req).unwrap();
+    assert_eq!(again.cache_status, CacheStatus::Hit);
+    assert_eq!(calls.get(), 1);
 }

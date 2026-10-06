@@ -26,7 +26,7 @@ struct RustReportIdCache {
 }
 
 fn cache_path(repo_root: &Path) -> PathBuf {
-    repo_root.join(".kiss").join(CACHE_FILE_NAME)
+    crate::test_runner::test_state_dir(repo_root).join(CACHE_FILE_NAME)
 }
 
 type ReportIdMemoEntry = (String, Vec<String>, String, BTreeMap<String, String>);

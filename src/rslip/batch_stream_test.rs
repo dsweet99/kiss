@@ -1,6 +1,6 @@
 use super::*;
 use crate::rpytest_runner::{PytestRunError, PytestRunOutcome, PytestRunner};
-use crate::rslip::cache::{load_rslip_cache_entry, rslip_cache_fingerprint};
+use crate::rslip::cache::load_rslip_cache_entry;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -81,8 +81,7 @@ fn miss_entry_is_durable_before_later_streaming_completions() {
     let tmp = tempfile::tempdir().unwrap();
     write_ok_sample(tmp.path());
     let reqs = numbered_requests(tmp.path(), 3);
-    let first_fp = rslip_cache_fingerprint(&reqs[0]).unwrap();
-    let cache_root = reqs[0].cache_root.clone();
+    let first_req = reqs[0].clone();
     let saw_first_on_disk = Arc::new(Mutex::new(false));
     let saw_for_runner = Arc::clone(&saw_first_on_disk);
     let rslip = Rslip::new(PytestRunner::from_streaming_bounded_fn(
@@ -91,7 +90,7 @@ fn miss_entry_is_durable_before_later_streaming_completions() {
                 on_complete(index, ok_coverage_outcome(req));
                 if index == 0 {
                     assert!(
-                        load_rslip_cache_entry(&cache_root, &first_fp).is_some(),
+                        load_rslip_cache_entry(&first_req).is_some(),
                         "first miss must be durable before later completions"
                     );
                     *saw_for_runner.lock().unwrap() = true;
@@ -204,11 +203,13 @@ fn prepare_hits_emit_cached_dump_without_tests_remaining() {
     write_ok_sample(tmp.path());
     let mut hit = rslip_sample_request(tmp.path());
     hit.nodeid = "test_sample.py::test_hit".to_string();
-    let fingerprint = rslip_cache_fingerprint(&hit).unwrap();
+    let hit_outcome = RslipOutcome {
+        nodeid: hit.nodeid.clone(),
+        ..RslipOutcome::witness()
+    };
     crate::rslip::cache::store_rslip_cache_entry(
-        &hit.cache_root,
-        &fingerprint,
-        &crate::rslip::cache::RslipCacheEntry::from_outcome(&RslipOutcome::witness(), tmp.path()),
+        &hit,
+        &crate::rslip::cache::RslipCacheEntry::from_outcome(&hit_outcome, tmp.path()),
     )
     .unwrap();
     let mut miss = rslip_sample_request(tmp.path());

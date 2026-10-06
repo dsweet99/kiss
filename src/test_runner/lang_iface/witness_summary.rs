@@ -8,14 +8,6 @@ use crate::test_runner::runners::{
     SelectorCacheRecord, SelectorExecutionRecord, SelectorExecutionSummary,
 };
 
-pub(crate) fn summary_from_accepted_witness(
-    planned_selectors: &[String],
-    witness: &ExecutionWitness,
-    report_id: impl Fn(&str) -> String,
-) -> SelectorExecutionSummary {
-    summary_from_witness_statuses(planned_selectors, witness, report_id, true)
-}
-
 pub(crate) fn summary_from_witness_statuses(
     planned_selectors: &[String],
     witness: &ExecutionWitness,
@@ -53,7 +45,9 @@ fn planned_witness_records(
 ) -> Option<Vec<(String, TestStatus, Duration)>> {
     let mut records = Vec::with_capacity(planned.len());
     for selector in planned {
-        let i = index[selector.as_str()];
+        let Some(&i) = index.get(selector.as_str()) else {
+            continue;
+        };
         let status = witness.statuses[i]
             .to_test_status()
             .unwrap_or(TestStatus::Failed);

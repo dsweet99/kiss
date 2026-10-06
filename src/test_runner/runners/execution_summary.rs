@@ -38,7 +38,6 @@ pub(crate) struct SelectorExecutionSummary {
     pub(crate) rust_current_index_generation: String,
     pub(crate) rust_cache_pruned_entries: usize,
     pub(crate) rust_process_residual_count: usize,
-    pub(crate) rust_legacy_cleanup_deferred: bool,
     pub(crate) rust_reverse_query_hits: u64,
     pub(crate) rust_reverse_unavailable_schema: u64,
     pub(crate) rust_reverse_unavailable_generation: u64,
@@ -69,6 +68,16 @@ pub(crate) struct SelectorExecutionRecord {
 }
 
 impl SelectorExecutionSummary {
+    pub(crate) fn with_records(
+        mut self,
+        records: impl IntoIterator<Item = SelectorExecutionRecord>,
+    ) -> Self {
+        for record in records {
+            self.record(record);
+        }
+        self
+    }
+
     pub(crate) fn record(&mut self, record: SelectorExecutionRecord) {
         self.total += 1;
         self.selector_durations_ns
@@ -143,9 +152,6 @@ impl SelectorExecutionSummary {
         }
         self.rust_cache_pruned_entries += counters.cache_pruned_entries;
         self.rust_process_residual_count += counters.process_residual_count;
-        if counters.legacy_cleanup_deferred {
-            self.rust_legacy_cleanup_deferred = true;
-        }
         rust_batch_counters::record_reverse_batch_counters(self, counters);
     }
 }

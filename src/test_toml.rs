@@ -9,6 +9,7 @@ const TEST_SECTION_KEYS: &[&str] = &[
     "num_jobs",
     "num_jobs_pytest",
     "num_jobs_llvm_cov",
+    // Accepted and ignored so existing `.kissconfig` files that set it still load.
     "watch_settle_seconds",
     "pytest_plugins",
     "ignore",
@@ -213,9 +214,6 @@ fn apply_strict_runtime(
         config.num_jobs_llvm_cov = val;
         config.num_jobs_llvm_cov_explicit = Some(val);
     }
-    if let Some(v) = table.get("watch_settle_seconds") {
-        config.watch_settle_seconds = parse_positive_f64(v, "watch_settle_seconds")?;
-    }
     if let Some(v) = table.get("pytest_plugins") {
         config.pytest_plugins = parse_string_list_key(v, "pytest_plugins", "plugin names")?;
     }
@@ -242,25 +240,6 @@ fn parse_positive_usize(value: &toml::Value, key: &str) -> Result<usize, ConfigE
             key: key.into(),
             message: "expected a positive integer".into(),
         })
-}
-
-#[allow(clippy::cast_precision_loss)]
-fn parse_positive_f64(value: &toml::Value, key: &str) -> Result<f64, ConfigError> {
-    let n = value
-        .as_float()
-        .or_else(|| value.as_integer().map(|i| i as f64))
-        .ok_or_else(|| ConfigError::InvalidValue {
-            key: key.into(),
-            message: "expected a finite number greater than zero".into(),
-        })?;
-    if n.is_finite() && n > 0.0 {
-        Ok(n)
-    } else {
-        Err(ConfigError::InvalidValue {
-            key: key.into(),
-            message: "expected a finite number greater than zero".into(),
-        })
-    }
 }
 
 fn apply_lenient_positive_usize(table: &toml::Table, key: &str, dest: &mut usize) {
@@ -292,14 +271,6 @@ fn apply_lenient_runtime(
     }
     if table.contains_key("num_jobs_llvm_cov") {
         config.num_jobs_llvm_cov_explicit = Some(config.num_jobs_llvm_cov);
-    }
-    if let Some(v) = table.get("watch_settle_seconds") {
-        match parse_positive_f64(v, "watch_settle_seconds") {
-            Ok(n) => config.watch_settle_seconds = n,
-            Err(_) => eprintln!(
-                "Warning: Config key 'watch_settle_seconds' expected a finite number greater than zero"
-            ),
-        }
     }
     apply_lenient_string_list(table, "pytest_plugins", "plugin names", |v| {
         config.pytest_plugins = v;

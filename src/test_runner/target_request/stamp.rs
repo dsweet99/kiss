@@ -142,20 +142,19 @@ fn main_fallback_names(name: &str) -> Vec<String> {
     ]
 }
 
-pub(crate) fn capture_worktree_token(
-    repo: &Path,
-    lang: Option<kiss::Language>,
-) -> String {
+pub(crate) fn capture_worktree_token(repo: &Path, lang: Option<kiss::Language>) -> String {
     // Semantic B (kt_bug.md #15): when `--lang` partitions the request, omit the
     // other language's tracked/untracked source paths and source fingerprints so
-    // identity matches WatchPathFilter's lang deny (no oneshot false-miss / watch
-    // idle diverge on other-lang edits). Non-source support paths stay bilingual.
+    // other-language edits do not miss the cache. Non-source support paths stay
+    // bilingual.
     let tracked = capture_tracked_for_worktree(repo, lang)
         .map(|stamp| stamp.digest)
         .unwrap_or_default();
     let untracked = worktree_untracked_digest(repo, lang).unwrap_or_default();
-    let include_python = !matches!(lang, Some(kiss::Language::Rust));
-    let include_rust = !matches!(lang, Some(kiss::Language::Python));
+    let allowed = crate::test_runner::language_keyed::LanguageKeyed::from_fn(|language| {
+        language.allowed_by(lang)
+    });
+    let (include_python, include_rust) = (allowed.python, allowed.rust);
     let python = if include_python {
         crate::test_runner::python_coverage_index::storage::python_source_input_fingerprint(repo)
             .unwrap_or_default()
@@ -172,7 +171,7 @@ pub(crate) fn capture_worktree_token(
     // that the rust_full / git-untracked stamps omit; fold those bytes in so worktree
     // match remains a sound premise for skipping source re-digest on ready freshness.
     let rust_includes = if include_rust {
-        rust_expanded_include_extras_fingerprint(repo)
+        crate::test_runner::lang_rust::rust_expanded_include_extras_fingerprint(repo, digest_bytes)
     } else {
         String::new()
     };
@@ -188,19 +187,7 @@ pub(crate) fn capture_worktree_token(
 /// Whether a repo-relative path feeds the lang-partitioned worktree token.
 /// Other-language *sources* are omitted; support / config / non-source stay in.
 fn path_feeds_lang_worktree(path: &str, lang: Option<kiss::Language>) -> bool {
-    let rel = Path::new(path);
-    let is_py = rel
-        .extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("py"));
-    let is_rs = kiss::Language::is_rust_path(rel)
-        || rel
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("rs"));
-    match lang {
-        None => true,
-        Some(kiss::Language::Rust) => !is_py,
-        Some(kiss::Language::Python) => !is_rs,
-    }
+    kiss::Language::from_path(Path::new(path)).is_none_or(|source| source.allowed_by(lang))
 }
 
 fn filter_ls_files_stage_z(raw: &[u8], lang: Option<kiss::Language>) -> Vec<u8> {
@@ -255,44 +242,7 @@ fn filter_raw_diff_z(raw: &[u8], lang: Option<kiss::Language>) -> Vec<u8> {
     out
 }
 
-/// Content fingerprint of Rust paths reached only via `include!` / `#[path]` expansion
-/// (not walk/git discovery).
-fn rust_expanded_include_extras_fingerprint(repo: &Path) -> String {
-    let root = repo.to_string_lossy().into_owned();
-    let (_, discovered) = kiss::gather_files_by_lang_opts(
-        std::slice::from_ref(&root),
-        Some(kiss::Language::Rust),
-        &[],
-        false,
-    );
-    let expanded = kiss::expand_rust_files(discovered.clone());
-    let baseline: std::collections::HashSet<_> = discovered.into_iter().collect();
-    let mut extras = Vec::new();
-    for path in expanded {
-        if !baseline.contains(&path) {
-            let rel = path
-                .strip_prefix(repo)
-                .map(|item| item.to_string_lossy().into_owned())
-                .unwrap_or_else(|_| path.to_string_lossy().into_owned());
-            let bytes = std::fs::read(&path).unwrap_or_default();
-            extras.push((rel, digest_bytes(&[&bytes])));
-        }
-    }
-    extras.sort();
-    let mut parts: Vec<u8> = Vec::new();
-    for (rel, digest) in extras {
-        parts.extend_from_slice(rel.as_bytes());
-        parts.push(0);
-        parts.extend_from_slice(digest.as_bytes());
-        parts.push(0);
-    }
-    digest_bytes(&[&parts])
-}
-
-fn worktree_untracked_digest(
-    repo: &Path,
-    lang: Option<kiss::Language>,
-) -> Result<String, String> {
+fn worktree_untracked_digest(repo: &Path, lang: Option<kiss::Language>) -> Result<String, String> {
     let listed = git_stdout_raw(repo, &["ls-files", "-z", "--others", "--exclude-standard"])?;
     let filtered: Vec<u8> = listed
         .split(|byte| *byte == 0)
@@ -312,10 +262,7 @@ fn capture_tracked_for_worktree(
     lang: Option<kiss::Language>,
 ) -> Result<TrackedTreeStamp, String> {
     let index = filter_ls_files_stage_z(&git_stdout_raw(repo, &["ls-files", "-s", "-z"])?, lang);
-    let dirty = filter_raw_diff_z(
-        &git_stdout_raw(repo, &["diff-files", "-z", "--raw"])?,
-        lang,
-    );
+    let dirty = filter_raw_diff_z(&git_stdout_raw(repo, &["diff-files", "-z", "--raw"])?, lang);
     let staged = filter_raw_diff_z(
         &git_stdout_raw(repo, &["diff-index", "-z", "--cached", "--raw", "HEAD"])?,
         lang,
@@ -390,117 +337,5 @@ fn digest_bytes(parts: &[&[u8]]) -> String {
 }
 
 #[cfg(test)]
-mod lang_partition_tests {
-    use super::capture_worktree_token;
-    use crate::test_runner::test_mode_fixtures::{git_in, init_git};
-    use crate::test_runner::watch::WatchPathFilter;
-    use crate::test_runner::target_request::workspace_request;
-    use std::fs;
-    use std::path::Path;
-
-    fn bilingual_repo() -> tempfile::TempDir {
-        let tmp = tempfile::TempDir::new().unwrap();
-        init_git(&tmp);
-        fs::write(tmp.path().join(".gitignore"), "/target\n/.kiss\n").unwrap();
-        fs::create_dir_all(tmp.path().join("src")).unwrap();
-        fs::write(tmp.path().join("app.py"), "x = 1\n").unwrap();
-        fs::write(tmp.path().join("src/lib.rs"), "pub fn a() {}\n").unwrap();
-        assert!(
-            git_in(tmp.path())
-                .args(["add", "-A"])
-                .status()
-                .unwrap()
-                .success()
-        );
-        assert!(
-            git_in(tmp.path())
-                .args(["commit", "-m", "bilingual"])
-                .status()
-                .unwrap()
-                .success()
-        );
-        tmp
-    }
-
-    #[test]
-
-    fn lang_filtered_worktree_ignores_other_language() {
-        // kt_bug.md class #15 lock (semantic B): `--lang rust` worktree must ignore
-        // Python-only edits; `--lang python` must ignore Rust-only edits. Watch may
-        // keep denying the other language once identity matches.
-        let tmp = bilingual_repo();
-        let root = tmp.path();
-
-        let rust_before = capture_worktree_token(root, Some(kiss::Language::Rust));
-        fs::write(root.join("app.py"), "x = 2\n").unwrap();
-        let rust_after_py = capture_worktree_token(root, Some(kiss::Language::Rust));
-        assert_eq!(
-            rust_before, rust_after_py,
-            "--lang rust worktree must not move on Python-only edit"
-        );
-        fs::write(root.join("src/lib.rs"), "pub fn a() { /* edited */ }\n").unwrap();
-        let rust_after_rs = capture_worktree_token(root, Some(kiss::Language::Rust));
-        assert_ne!(
-            rust_after_py, rust_after_rs,
-            "--lang rust worktree must move on Rust source edit"
-        );
-
-        // Reset Rust, probe Python partition.
-        fs::write(root.join("src/lib.rs"), "pub fn a() {}\n").unwrap();
-        fs::write(root.join("app.py"), "x = 1\n").unwrap();
-        let py_before = capture_worktree_token(root, Some(kiss::Language::Python));
-        fs::write(root.join("src/lib.rs"), "pub fn a() { /* again */ }\n").unwrap();
-        let py_after_rs = capture_worktree_token(root, Some(kiss::Language::Python));
-        assert_eq!(
-            py_before, py_after_rs,
-            "--lang python worktree must not move on Rust-only edit"
-        );
-        fs::write(root.join("app.py"), "x = 3\n").unwrap();
-        let py_after_py = capture_worktree_token(root, Some(kiss::Language::Python));
-        assert_ne!(
-            py_after_rs, py_after_py,
-            "--lang python worktree must move on Python source edit"
-        );
-
-        // None stays bilingual: other-lang edits still move the token.
-        fs::write(root.join("app.py"), "x = 1\n").unwrap();
-        fs::write(root.join("src/lib.rs"), "pub fn a() {}\n").unwrap();
-        let none_before = capture_worktree_token(root, None);
-        fs::write(root.join("app.py"), "x = 9\n").unwrap();
-        let none_after_py = capture_worktree_token(root, None);
-        assert_ne!(
-            none_before, none_after_py,
-            "unfiltered worktree must still move on Python edit"
-        );
-
-        // Mirror production `reload::path_filter`: lang_filter is request.language().
-        let rust_filter = WatchPathFilter::build(
-            root,
-            &[],
-            Some(kiss::Language::Rust),
-            &workspace_request(Some(kiss::Language::Rust), &[]),
-        );
-        assert!(
-            !rust_filter.is_relevant(Path::new("app.py")),
-            "watch --lang rust may keep denying app.py once identity matches"
-        );
-        assert!(
-            rust_filter.is_relevant(Path::new("src/lib.rs")),
-            "watch --lang rust must stay relevant for Rust sources"
-        );
-        let py_filter = WatchPathFilter::build(
-            root,
-            &[],
-            Some(kiss::Language::Python),
-            &workspace_request(Some(kiss::Language::Python), &[]),
-        );
-        assert!(
-            !py_filter.is_relevant(Path::new("src/lib.rs")),
-            "watch --lang python may keep denying src/lib.rs once identity matches"
-        );
-        assert!(
-            py_filter.is_relevant(Path::new("app.py")),
-            "watch --lang python must stay relevant for Python sources"
-        );
-    }
-}
+#[path = "stamp_unit_test.rs"]
+mod lang_partition_tests;

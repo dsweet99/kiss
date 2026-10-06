@@ -45,17 +45,17 @@ fn workspace_selector_cache_round_trips_then_misses_on_touch() {
         &[],
     );
     assert!(
-        root.join(".kiss")
+        root.join(".kiss/test")
             .join("python_test_selectors.json")
             .is_file()
     );
     assert!(
-        root.join(".kiss")
+        root.join(".kiss/test")
             .join("rust_test_selectors.json")
             .is_file()
     );
     assert!(
-        root.join(".kiss")
+        root.join(".kiss/test")
             .join("selector_source_digests.json")
             .is_file(),
         "per-file digest records must persist"
@@ -395,7 +395,10 @@ fn load_workspace_selectors_for_count_requires_matching_ignore() {
         )
         .is_some()
     );
-    fs::remove_file(super::cache_path(root, super::RUST_CACHE_FILE)).unwrap();
+    assert!(
+        !super::cache_path(root, super::RUST_CACHE_FILE).exists(),
+        "a repo without Rust inputs must not get a Rust selector cache"
+    );
     super::clear_rust_selector_memo_for_tests();
     assert!(
         super::load_workspace_selectors_for_count(
@@ -503,10 +506,15 @@ fn python_selector_cache_hits_without_rust_cache() {
     .unwrap();
     assert_eq!(python_only.0, vec!["tests/test_a.py::test_a".to_string()]);
     assert!(python_only.1.is_empty());
+    let combined = load_cached_workspace_selectors(root, &[], &[])
+        .expect("without Rust inputs the combined load needs no Rust cache");
+    assert!(combined.1.is_empty());
+    fs::write(root.join("lib.rs"), "#[test]\nfn t() {}\n").unwrap();
     assert!(
         load_cached_workspace_selectors(root, &[], &[]).is_none(),
-        "combined load still requires rust"
+        "once Rust inputs exist the combined load requires a Rust cache"
     );
+    fs::remove_file(root.join("lib.rs")).unwrap();
     assert!(
         load_cached_python_workspace_selectors(root, &[], &["-q".into()]).is_none(),
         "python extra args must miss the language cache"
@@ -775,7 +783,7 @@ fn git_fingerprint_includes_untracked_sources() {
 }
 
 #[test]
-fn durable_plan_is_ignored_when_kiss_dir_is_absent() {
+fn selector_cache_lives_only_under_kiss_dir() {
     let tmp = tempdir().unwrap();
     let root = tmp.path();
     fs::create_dir_all(root.join("tests")).unwrap();
@@ -793,20 +801,17 @@ fn durable_plan_is_ignored_when_kiss_dir_is_absent() {
         &[],
     );
     assert!(load_cached_workspace_selectors(root, &[], &[]).is_some());
-    assert!(
-        root.join("target/kiss-plan/python_test_selectors.json")
-            .is_file()
-    );
+    assert!(root.join(".kiss/test/python_test_selectors.json").is_file());
+    assert!(!root.join("target/kiss-plan").exists());
     fs::remove_dir_all(root.join(".kiss")).unwrap();
     super::clear_rust_selector_memo_for_tests();
     assert!(
         load_cached_workspace_selectors(root, &[], &[]).is_none(),
-        "rm -rf .kiss must not reuse target/kiss-plan as the workspace universe"
+        "rm -rf .kiss must leave no selector cache"
     );
     assert!(load_cached_python_workspace_selectors(root, &[], &[]).is_none());
     assert!(load_cached_rust_workspace_selectors(root, &[]).is_none());
 }
-
 
 #[test]
 fn mix_collection_inventory_marks_ignored_and_absent_configs() {
@@ -828,11 +833,9 @@ fn mix_collection_inventory_marks_ignored_and_absent_configs() {
     )
     .unwrap();
     assert_eq!(ignored, again);
-    let different = super::python_inventory::mix_collection_inventory(
-        root,
-        &[],
-        "py-fp",
-    )
-    .unwrap();
-    assert_ne!(ignored, different, "ignore prefixes must change the inventory mix");
+    let different = super::python_inventory::mix_collection_inventory(root, &[], "py-fp").unwrap();
+    assert_ne!(
+        ignored, different,
+        "ignore prefixes must change the inventory mix"
+    );
 }

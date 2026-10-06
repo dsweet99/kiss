@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use crate::test_runner::lang_iface::{ExecutionWitness, WitnessStatus};
+use crate::test_runner::language_keyed::LanguageKeyed;
 
 use super::report::{EffectiveStatus, SelectorRow};
 use super::scope::{ExecutionPlan, ReportScope};
@@ -9,11 +10,12 @@ use super::scope::{ExecutionPlan, ReportScope};
 pub(crate) fn rows_from_witnesses(
     repo_root: &Path,
     scope: &ReportScope,
+    extras: LanguageKeyed<&[String]>,
 ) -> Result<Vec<SelectorRow>, String> {
     if scope.selectors.is_empty() {
         return Ok(Vec::new());
     }
-    let by_selector = witness_map(repo_root);
+    let by_selector = witness_map(repo_root, extras);
     let mut rows = Vec::new();
     for selector in &scope.selectors {
         let Some(row) = by_selector.get(selector) else {
@@ -24,11 +26,15 @@ pub(crate) fn rows_from_witnesses(
     Ok(rows)
 }
 
-pub(crate) fn available_rows(repo_root: &Path, scope: &ReportScope) -> Vec<SelectorRow> {
+pub(crate) fn available_rows(
+    repo_root: &Path,
+    scope: &ReportScope,
+    extras: LanguageKeyed<&[String]>,
+) -> Vec<SelectorRow> {
     if scope.selectors.is_empty() {
         return Vec::new();
     }
-    let by_selector = witness_map(repo_root);
+    let by_selector = witness_map(repo_root, extras);
     scope
         .selectors
         .iter()
@@ -123,34 +129,21 @@ fn have_member(scope: &ReportScope, selector: &str) -> bool {
     scope.selectors.iter().any(|item| item == selector)
 }
 
-fn witness_map(repo_root: &Path) -> BTreeMap<String, SelectorRow> {
+fn witness_map(
+    repo_root: &Path,
+    extras: LanguageKeyed<&[String]>,
+) -> BTreeMap<String, SelectorRow> {
     let mut by_selector = BTreeMap::new();
-    extend_witness(&mut by_selector, python_witness(repo_root));
-    extend_witness(&mut by_selector, rust_witness(repo_root));
-    by_selector
-}
-
-fn python_witness(repo_root: &Path) -> Option<ExecutionWitness> {
-    let pinned = crate::test_runner::python_coverage_index::try_load_pinned_python_generation_warm(
-        repo_root,
-    )
-    .ok()?;
-    Some(crate::test_runner::lang_python::python_witness_from_pinned(
-        &pinned,
-    ))
-}
-
-/// A Rust row stands only while no source edit since its run could change it.
-fn rust_witness(repo_root: &Path) -> Option<ExecutionWitness> {
-    let mut witness = crate::test_runner::lang_rust::try_load_rust_execution_witness(repo_root).ok()?;
-    let stale =
-        crate::test_runner::lang_rust::rust_source_delta_misses(repo_root, &witness.selectors, &[])
-            .unwrap_or_else(|_| witness.selectors.clone());    for (selector, raw) in witness.selectors.iter().zip(witness.raw_statuses.iter_mut()) {
-        if stale.contains(selector) {
-            *raw = WitnessStatus::Unresolved;
-        }
+    for language in kiss::Language::ALL {
+        extend_witness(
+            &mut by_selector,
+            crate::test_runner::lang_registry::rules_for(language).stored_witness(
+                repo_root,
+                extras.get(language),
+            ),
+        );
     }
-    Some(witness)
+    by_selector
 }
 
 fn extend_witness(out: &mut BTreeMap<String, SelectorRow>, witness: Option<ExecutionWitness>) {

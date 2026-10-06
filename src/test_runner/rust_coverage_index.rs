@@ -10,13 +10,13 @@ use kiss::rust_llvm_cov_runner::{
 use std::collections::{BTreeMap, BTreeSet};
 #[cfg(test)]
 use std::fs;
+#[cfg(test)]
 use std::fs::OpenOptions;
+#[cfg(test)]
 use std::io;
 use std::path::{Path, PathBuf};
 
 pub(crate) const CACHE_SCHEMA_VERSION: &str = kiss::rust_llvm_cov_runner::CACHE_SCHEMA_VERSION;
-#[cfg(test)]
-pub(crate) const LEGACY_INDEX_SCHEMA_VERSION: &str = "rust-llvm-cov-index-v1";
 
 pub(crate) const RUST_COVERAGE_ENV_KEYS: &[&str] = &[
     "RUSTFLAGS",
@@ -66,17 +66,22 @@ fn fill_cmake_prefix_from_conda(env: &mut BTreeMap<String, String>) {
 }
 
 pub(crate) fn rust_coverage_cache_root(repo_root: &Path) -> PathBuf {
-    repo_root.join(".kiss").join("rust_llvm_cov_cache")
+    repo_root
+        .join(".kiss")
+        .join("test")
+        .join("rust_llvm_cov_cache")
 }
 
 pub(crate) fn rust_coverage_entry_paths(cache_root: &Path) -> Vec<PathBuf> {
     kiss::json_entry_paths(cache_root)
 }
 
+#[cfg(test)]
 pub(crate) fn create_new_file(path: &Path) -> io::Result<std::fs::File> {
     OpenOptions::new().write(true).create_new(true).open(path)
 }
 
+#[cfg(test)]
 pub(crate) fn unique_suffix() -> String {
     kiss::kiss_publication_barrier::unique_process_suffix()
 }
@@ -94,14 +99,6 @@ pub(crate) fn current_rust_coverage_batch_identity(
     let (req, tools) = resolved_rust_batch_request_parts(repo_root, test_args)?;
     kiss::rust_llvm_cov_runner::batch_identity(&req, &tools)
         .map_err(|err| format!("batch identity: {err}"))
-}
-
-pub(crate) fn current_rust_runner_map_fingerprint(
-    repo_root: &Path,
-    test_args: &[String],
-) -> Result<String, String> {
-    let (req, _) = resolved_rust_batch_request_parts(repo_root, test_args)?;
-    Ok(req.runner_map_fingerprint)
 }
 
 pub(crate) fn resolved_rust_batch_request_parts(
@@ -122,7 +119,7 @@ pub(crate) fn resolved_rust_batch_request_parts(
         force_rerun: false,
         force_rerun_selectors: Vec::new(),
         jobs: 1,
-        generated_config: repo_root.join(".kiss/rust_llvm_cov_cache/runs/plan/nextest.toml"),
+        generated_config: repo_root.join(".kiss/test/rust_llvm_cov_cache/runs/plan/nextest.toml"),
         population_publication_selectors: None,
         delegated_runners,
         runner_map_fingerprint,

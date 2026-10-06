@@ -57,10 +57,6 @@ pub(super) fn print_rust_batch_metrics(metrics: &LocalRubricMetrics) {
         "rust_process_residual_count={}",
         rust_process_residual_count(metrics)
     );
-    println!(
-        "rust_legacy_cleanup_deferred={}",
-        rust_legacy_cleanup_deferred(metrics)
-    );
     print_rust_reverse_metrics(metrics);
 }
 
@@ -199,11 +195,6 @@ pub(super) fn rust_cache_pruned_entries(metrics: &LocalRubricMetrics) -> usize {
 pub(super) fn rust_process_residual_count(metrics: &LocalRubricMetrics) -> usize {
     metrics.rust_population.summary.rust_process_residual_count
         + metrics.rust_final.summary.rust_process_residual_count
-}
-
-pub(super) fn rust_legacy_cleanup_deferred(metrics: &LocalRubricMetrics) -> bool {
-    metrics.rust_population.summary.rust_legacy_cleanup_deferred
-        || metrics.rust_final.summary.rust_legacy_cleanup_deferred
 }
 
 pub(super) fn rust_reverse_published(metrics: &LocalRubricMetrics) -> bool {

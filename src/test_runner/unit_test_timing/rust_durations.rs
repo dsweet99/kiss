@@ -212,8 +212,7 @@ mod tests {
 
     #[test]
     fn load_rust_duration_pairs_from_witness_present_returns_pairs() {
-        use crate::test_runner::execution_witness::{WitnessScope, WitnessStatus};
-        use crate::test_runner::lang_rust::{PublishRustWitness, publish_rust_execution_witness};
+        use crate::test_runner::execution_witness::WitnessStatus;
 
         let tmp = tempfile::tempdir().unwrap();
         let identity = kiss::rust_llvm_cov_runner::RustCoverageBatchIdentity {
@@ -228,17 +227,17 @@ mod tests {
         let durations_ns = vec![Some(2_000_000_000)];
         let covered_lines = std::collections::BTreeMap::new();
 
-        publish_rust_execution_witness(PublishRustWitness {
-            repo_root: tmp.path(),
-            identity: &identity,
-            scope: WitnessScope::Full,
-            selectors: &selectors,
-            statuses: &statuses,
-            durations_ns: &durations_ns,
-            covered_lines: &covered_lines,
-            complete: true,
-            jobs: 1,
-        })
+        crate::test_runner::lang_rust::test_records::seed_rust_witness(
+            crate::test_runner::lang_rust::test_records::SeedRustWitness {
+                repo_root: tmp.path(),
+                identity: &identity,
+                selectors: &selectors,
+                statuses: &statuses,
+                durations_ns: &durations_ns,
+                covered_lines: &covered_lines,
+                complete: true,
+            },
+        )
         .unwrap();
 
         let pairs = load_rust_duration_pairs_from_witness(tmp.path(), &identity).unwrap();

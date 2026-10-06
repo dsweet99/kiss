@@ -338,7 +338,7 @@ fn fixture_request(root: &Path) -> RustCoverageBatchRequest {
     let mut req = RustCoverageBatchRequest::witness();
     req.cwd = root.to_path_buf();
     req.source_root = root.to_path_buf();
-    req.cache_root = root.join(".kiss").join("rust_llvm_cov_cache");
+    req.cache_root = root.join(".kiss").join("test").join("rust_llvm_cov_cache");
     req.generated_config = req
         .cache_root
         .join("runs")

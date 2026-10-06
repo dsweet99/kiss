@@ -132,41 +132,23 @@ fn quiet_timeout_err_records_timed_out_not_failed() {
         "module batch timed out".to_string(),
     ));
     let mut summary = SelectorExecutionSummary::default();
-    let mut statuses = Vec::new();
-    record_rslip_selector_result(
-        "mod.py::test_a",
-        Err(quiet_err),
-        &gate,
-        &mut summary,
-        &mut statuses,
-    );
-    assert_eq!(
-        statuses,
-        vec![("mod.py::test_a".to_string(), TestStatus::TimedOut)],
-        "quiet protocol Err must record TimedOut, not Failed"
-    );
+    record_rslip_selector_result("mod.py::test_a", Err(quiet_err), &gate, &mut summary);
     assert_eq!(
         summary.timed_out_selectors,
-        vec!["mod.py::test_a".to_string()]
+        vec!["mod.py::test_a".to_string()],
+        "quiet protocol Err must record TimedOut, not Failed"
     );
     assert!(summary.failed_selectors.is_empty());
     assert_eq!(summary.exit_code, 124);
 
-    let progress = progress_statuses_from_finalized(
-        &[(
-            0,
-            Err(RslipError::Runner(
-                kiss::rpytest_runner::PytestRunError::Protocol(
-                    "module batch result missing: JSONDecodeError".to_string(),
-                ),
-            )),
-        )],
-        &["mod.py::test_b".to_string()],
-        &gate,
-    );
+    let (progress_status, _) = status_for_rslip_error(&RslipError::Runner(
+        kiss::rpytest_runner::PytestRunError::Protocol(
+            "module batch result missing: JSONDecodeError".to_string(),
+        ),
+    ));
     assert_eq!(
-        progress,
-        vec![("mod.py::test_b".to_string(), TestStatus::TimedOut)],
+        progress_status,
+        TestStatus::TimedOut,
         "progress path must also map quiet protocol Err to TimedOut"
     );
 }
@@ -183,7 +165,6 @@ fn run_rslip_selectors_rejects_zero_jobs_before_spawning() {
         false,
         &[],
         0,
-        None,
         &kiss::GateConfig::default(),
     );
 }
@@ -249,7 +230,6 @@ max_unit_test_seconds = [["tests/allowed", 60], ["*", 0]]
             force_rerun: true,
             force_rerun_selectors: &[],
             jobs: 1,
-            content_fingerprint: None,
             gate,
         },
         runner,
@@ -267,32 +247,6 @@ max_unit_test_seconds = [["tests/allowed", 60], ["*", 0]]
         vec!["tests/banned/test_sample.py::test_banned".to_string()]
     );
     assert_eq!(summary.exit_code, 124);
-}
-
-#[test]
-fn zero_sla_immediate_timeout_enters_last_status_before_batch() {
-    let tmp = tempfile::tempdir().unwrap();
-    let identity = python_last_status_identity("3.12.0", "8.0.0", &[]);
-    let mut summary = SelectorExecutionSummary::default();
-    let mut statuses = Vec::new();
-    record_immediate_timeout(
-        tmp.path(),
-        &identity,
-        "tests/banned/test_sample.py::test_banned",
-        &mut summary,
-        &mut statuses,
-    );
-    assert_eq!(
-        crate::test_runner::last_status::prior_failures(
-            tmp.path(),
-            kiss::Language::Python,
-            &identity
-        )
-        .unwrap(),
-        vec!["tests/banned/test_sample.py::test_banned".to_string()],
-        "zero-SLA TIMEOUT must be retry-bad eligible before the rslip batch runs"
-    );
-    assert_eq!(summary.timed_out_selectors.len(), 1);
 }
 
 #[test]
@@ -316,18 +270,6 @@ fn rslip_request_and_version_contracts_are_explicit() {
     assert!(req.force_rerun);
 
     assert_eq!(req.timeout, Some(Duration::from_secs(2)));
-    assert!(req.content_fingerprint.is_some());
-    let unscoped = rslip_request_from_parts(
-        tmp.path(),
-        "tests/test_app.py::test_ok",
-        &[],
-        "3.12.1",
-        "8.3.0",
-        true,
-        &kiss::GateConfig::default(),
-    )
-    .unwrap();
-    assert_ne!(req.content_fingerprint, unscoped.content_fingerprint);
     assert!(python_version_supports_rslip("3.12.0"));
     assert!(python_version_supports_rslip("4.0.0"));
     assert!(!python_version_supports_rslip("3.11.9"));
@@ -399,7 +341,6 @@ def test_b():\n    assert False\n",
             force_rerun: false,
             force_rerun_selectors: &[],
             jobs: 3,
-            content_fingerprint: None,
             gate: kiss::GateConfig::default(),
         },
         runner,
@@ -441,7 +382,6 @@ def test_global_starts_clean():\n    assert stateful.VALUE == 0\n",
         true,
         &[],
         1,
-        None,
         &kiss::GateConfig::default(),
     )
     .unwrap();
@@ -537,7 +477,6 @@ def test_b():\n    assert True\n",
                 force_rerun: false,
                 force_rerun_selectors: &[],
                 jobs: 2,
-                content_fingerprint: None,
                 gate: kiss::GateConfig::default(),
             },
             runner,
@@ -567,7 +506,6 @@ def test_b():\n    assert True\n",
                 force_rerun: false,
                 force_rerun_selectors: &[],
                 jobs: 2,
-                content_fingerprint: None,
                 gate: kiss::GateConfig::default(),
             },
             cached_runner,
@@ -632,13 +570,11 @@ fn rslip_progress_error_and_stderr_paths_are_covered() {
     emit_progress_lines("\n\nprogress\n");
 
     let mut summary = SelectorExecutionSummary::default();
-    let mut statuses = Vec::new();
     record_rslip_selector_result(
         "t.py::t",
         Err(RslipError::InvalidRequest("x".to_string())),
         &gate,
         &mut summary,
-        &mut statuses,
     );
     assert_eq!(summary.failed, 1);
     record_rslip_selector_result(
@@ -657,7 +593,6 @@ fn rslip_progress_error_and_stderr_paths_are_covered() {
         }),
         &gate,
         &mut summary,
-        &mut statuses,
     );
     assert!(
         summary
@@ -684,260 +619,6 @@ fn rslip_progress_error_and_stderr_paths_are_covered() {
             stderr: Some(b"boom\n".to_vec()),
         },
         &gate,
-    );
-}
-
-#[test]
-fn progress_failures_are_persisted_before_the_batch_ends() {
-    let tmp = tempfile::tempdir().unwrap();
-    let identity = python_last_status_identity("3.12.0", "8.0.0", &[]);
-    let gate = kiss::GateConfig::default();
-    persist_rslip_progress_statuses(
-        tmp.path(),
-        &identity,
-        &["t.py::fail".to_string()],
-        &RslipBatchProgress::SelectorFinalized {
-            outcomes: vec![(
-                0,
-                Ok(RslipOutcome {
-                    nodeid: "t.py::fail".to_string(),
-                    status: TestStatus::Failed,
-                    exit_code: Some(1),
-                    duration: Duration::from_millis(1),
-                    coverage: LineCoverage {
-                        files: BTreeMap::new(),
-                    },
-                    cache_status: PyCacheStatus::MissStored,
-                    stdout: None,
-                    stderr: None,
-                }),
-            )],
-        },
-        &gate,
-    );
-    assert_eq!(
-        crate::test_runner::last_status::prior_failures(
-            tmp.path(),
-            kiss::Language::Python,
-            &identity
-        )
-        .unwrap(),
-        vec!["t.py::fail".to_string()]
-    );
-}
-
-#[test]
-fn progress_timeouts_are_persisted_as_failures() {
-    let tmp = tempfile::tempdir().unwrap();
-    let identity = python_last_status_identity("3.12.0", "8.0.0", &[]);
-    let gate = kiss::GateConfig::default();
-    persist_rslip_progress_statuses(
-        tmp.path(),
-        &identity,
-        &["t.py::slow".to_string()],
-        &RslipBatchProgress::SelectorFinalized {
-            outcomes: vec![(
-                0,
-                Ok(RslipOutcome {
-                    nodeid: "t.py::slow".to_string(),
-                    status: TestStatus::TimedOut,
-                    exit_code: Some(124),
-                    duration: Duration::from_secs(5),
-                    coverage: LineCoverage {
-                        files: BTreeMap::new(),
-                    },
-                    cache_status: PyCacheStatus::MissStored,
-                    stdout: None,
-                    stderr: None,
-                }),
-            )],
-        },
-        &gate,
-    );
-    assert_eq!(
-        crate::test_runner::last_status::prior_failures(
-            tmp.path(),
-            kiss::Language::Python,
-            &identity
-        )
-        .unwrap(),
-        vec!["t.py::slow".to_string()]
-    );
-}
-
-#[test]
-fn progress_time_gate_timeout_from_raw_pass_is_persisted() {
-    let tmp = tempfile::tempdir().unwrap();
-    let identity = python_last_status_identity("3.12.0", "8.0.0", &[]);
-    let gate = kiss::GateConfig {
-        max_unit_test_seconds: vec![("*".into(), 0.5)],
-        ..kiss::GateConfig::default()
-    };
-    persist_rslip_progress_statuses(
-        tmp.path(),
-        &identity,
-        &["t.py::over".to_string()],
-        &RslipBatchProgress::SelectorFinalized {
-            outcomes: vec![(
-                0,
-                Ok(RslipOutcome {
-                    nodeid: "t.py::over".to_string(),
-                    status: TestStatus::Passed,
-                    exit_code: Some(0),
-                    duration: Duration::from_secs(2),
-                    coverage: LineCoverage {
-                        files: BTreeMap::new(),
-                    },
-                    cache_status: PyCacheStatus::MissStored,
-                    stdout: None,
-                    stderr: None,
-                }),
-            )],
-        },
-        &gate,
-    );
-    assert_eq!(
-        crate::test_runner::last_status::prior_failures(
-            tmp.path(),
-            kiss::Language::Python,
-            &identity
-        )
-        .unwrap(),
-        vec!["t.py::over".to_string()],
-        "effective TimedOut from time gate must be retry-bad eligible mid-batch"
-    );
-}
-
-#[test]
-fn progress_cached_hit_time_gate_timeout_is_persisted() {
-    let tmp = tempfile::tempdir().unwrap();
-    let identity = python_last_status_identity("3.12.0", "8.0.0", &[]);
-    let gate = kiss::GateConfig {
-        max_unit_test_seconds: vec![("*".into(), 0.5)],
-        ..kiss::GateConfig::default()
-    };
-    persist_rslip_progress_statuses(
-        tmp.path(),
-        &identity,
-        &[],
-        &RslipBatchProgress::CachedStatusDump {
-            outcomes: vec![RslipOutcome {
-                nodeid: "t.py::cached_over".to_string(),
-                status: TestStatus::Passed,
-                exit_code: Some(0),
-                duration: Duration::from_secs(2),
-                coverage: LineCoverage {
-                    files: BTreeMap::new(),
-                },
-                cache_status: PyCacheStatus::Hit,
-                stdout: None,
-                stderr: None,
-            }],
-        },
-        &gate,
-    );
-    assert_eq!(
-        crate::test_runner::last_status::prior_failures(
-            tmp.path(),
-            kiss::Language::Python,
-            &identity
-        )
-        .unwrap(),
-        vec!["t.py::cached_over".to_string()],
-        "prepare-time cache hits must apply time gate for retry-bad mid-batch"
-    );
-}
-
-#[test]
-fn progress_pass_clears_prior_failure_mid_batch() {
-    let tmp = tempfile::tempdir().unwrap();
-    let identity = python_last_status_identity("3.12.0", "8.0.0", &[]);
-    let gate = kiss::GateConfig::default();
-    let selector = "t.py::fixed".to_string();
-    crate::test_runner::last_status::record_statuses(
-        tmp.path(),
-        kiss::Language::Python,
-        &identity,
-        &[(selector.clone(), TestStatus::Failed)],
-    )
-    .unwrap();
-    persist_rslip_progress_statuses(
-        tmp.path(),
-        &identity,
-        std::slice::from_ref(&selector),
-        &RslipBatchProgress::SelectorFinalized {
-            outcomes: vec![(
-                0,
-                Ok(RslipOutcome {
-                    nodeid: selector.clone(),
-                    status: TestStatus::Passed,
-                    exit_code: Some(0),
-                    duration: Duration::from_millis(1),
-                    coverage: LineCoverage {
-                        files: BTreeMap::new(),
-                    },
-                    cache_status: PyCacheStatus::MissStored,
-                    stdout: None,
-                    stderr: None,
-                }),
-            )],
-        },
-        &gate,
-    );
-    assert!(
-        crate::test_runner::last_status::prior_failures(
-            tmp.path(),
-            kiss::Language::Python,
-            &identity
-        )
-        .unwrap()
-        .is_empty(),
-        "mid-batch PASS must clear prior FAIL so --retry-bad does not keep a stale mark"
-    );
-}
-
-#[test]
-fn progress_cached_pass_clears_prior_failure_mid_batch() {
-    let tmp = tempfile::tempdir().unwrap();
-    let identity = python_last_status_identity("3.12.0", "8.0.0", &[]);
-    let gate = kiss::GateConfig::default();
-    let selector = "t.py::cached_fixed".to_string();
-    crate::test_runner::last_status::record_statuses(
-        tmp.path(),
-        kiss::Language::Python,
-        &identity,
-        &[(selector.clone(), TestStatus::TimedOut)],
-    )
-    .unwrap();
-    persist_rslip_progress_statuses(
-        tmp.path(),
-        &identity,
-        std::slice::from_ref(&selector),
-        &RslipBatchProgress::CachedStatusDump {
-            outcomes: vec![RslipOutcome {
-                nodeid: selector.clone(),
-                status: TestStatus::Passed,
-                exit_code: Some(0),
-                duration: Duration::from_millis(1),
-                coverage: LineCoverage {
-                    files: BTreeMap::new(),
-                },
-                cache_status: PyCacheStatus::Hit,
-                stdout: None,
-                stderr: None,
-            }],
-        },
-        &gate,
-    );
-    assert!(
-        crate::test_runner::last_status::prior_failures(
-            tmp.path(),
-            kiss::Language::Python,
-            &identity
-        )
-        .unwrap()
-        .is_empty(),
-        "prepare-time cache PASS must clear prior TIMEOUT mid-batch"
     );
 }
 
@@ -1027,7 +708,6 @@ fn timeouts_are_not_retried() {
             force_rerun: true,
             force_rerun_selectors: &[],
             jobs: 8,
-            content_fingerprint: None,
             gate: kiss::GateConfig::default(),
         },
         runner,

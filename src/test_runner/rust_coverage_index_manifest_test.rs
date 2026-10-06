@@ -117,8 +117,10 @@ fn empty_sources_and_empty_cache_have_empty_selection_contracts() {
 
     assert!(index.is_empty());
     assert!(selected.is_empty());
-    assert!(rust_coverage_cache_root(tmp.path()).ends_with(".kiss/rust_llvm_cov_cache"));
-    assert!(rust_coverage_index_path(tmp.path()).ends_with(".kiss/rust_llvm_cov_cache/index.json"));
+    assert!(rust_coverage_cache_root(tmp.path()).ends_with(".kiss/test/rust_llvm_cov_cache"));
+    assert!(
+        rust_coverage_index_path(tmp.path()).ends_with(".kiss/test/rust_llvm_cov_cache/index.json")
+    );
 }
 
 #[test]
@@ -145,7 +147,7 @@ fn bad_index_files_are_rejected() {
     fs::write(
         &index_path,
         serde_json::json!({
-            "schema_version": LEGACY_INDEX_SCHEMA_VERSION,
+            "schema_version": "rust-llvm-cov-index-v1",
             "source_root": "/not/this/repo",
             "entries_fingerprint": test_entries_fingerprint(tmp.path(), &[]),
             "files": {}

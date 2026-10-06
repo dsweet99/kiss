@@ -1,13 +1,12 @@
 use kiss::GateConfig;
 
 use super::witness::{
-    AcceptDecision, AcceptMode, ExecutionWitness, WitnessScope, WitnessStatus, accept_witness,
+    AcceptDecision, AcceptMode, ExecutionWitness, WitnessStatus, accept_witness,
     all_misses_warm_skippable, identity_covers, miss_selectors_for_repair,
     reclassify_statuses_with_gate,
 };
 
 fn witness(
-    scope: WitnessScope,
     identity: &str,
     selectors: &[&str],
     statuses: &[WitnessStatus],
@@ -15,7 +14,6 @@ fn witness(
 ) -> ExecutionWitness {
     ExecutionWitness {
         language: "rust".into(),
-        scope,
         identity_digest: identity.into(),
         selectors: selectors.iter().map(|s| (*s).to_string()).collect(),
         statuses: statuses.to_vec(),
@@ -30,7 +28,6 @@ fn witness(
 #[test]
 fn all_mode_accepts_full_complete_equality() {
     let w = witness(
-        WitnessScope::Full,
         "id",
         &["a", "b"],
         &[WitnessStatus::Passed, WitnessStatus::Passed],
@@ -43,29 +40,8 @@ fn all_mode_accepts_full_complete_equality() {
 }
 
 #[test]
-fn all_mode_rejects_subset_scope() {
-    let w = witness(
-        WitnessScope::Subset,
-        "id",
-        &["a"],
-        &[WitnessStatus::Passed],
-        true,
-    );
-    assert_eq!(
-        accept_witness(AcceptMode::All, &["a".into()], "id", &w),
-        AcceptDecision::Miss("scope_subset")
-    );
-}
-
-#[test]
 fn all_mode_rejects_identity_mismatch() {
-    let w = witness(
-        WitnessScope::Full,
-        "old",
-        &["a"],
-        &[WitnessStatus::Passed],
-        true,
-    );
+    let w = witness("old", &["a"], &[WitnessStatus::Passed], true);
     assert_eq!(
         accept_witness(AcceptMode::All, &["a".into()], "new", &w),
         AcceptDecision::Miss("identity")
@@ -75,7 +51,6 @@ fn all_mode_rejects_identity_mismatch() {
 #[test]
 fn all_mode_accepts_unsorted_selectors_with_exact_identity() {
     let w = witness(
-        WitnessScope::Full,
         "rs:abc123:gen:ctx",
         &["b", "a"],
         &[WitnessStatus::Passed, WitnessStatus::Passed],
@@ -95,7 +70,6 @@ fn all_mode_accepts_unsorted_selectors_with_exact_identity() {
 #[test]
 fn all_mode_rejects_generation_context_drift() {
     let w = witness(
-        WitnessScope::Full,
         "rs:abc123:oldgen:oldctx",
         &["a"],
         &[WitnessStatus::Passed],
@@ -115,7 +89,6 @@ fn all_mode_rejects_generation_context_drift() {
 #[test]
 fn all_mode_rejects_selector_lag() {
     let w = witness(
-        WitnessScope::Full,
         "id",
         &["a", "b"],
         &[WitnessStatus::Passed, WitnessStatus::Passed],
@@ -144,24 +117,12 @@ fn all_mode_rejects_selector_lag() {
 
 #[test]
 fn all_mode_rejects_incomplete_and_failed() {
-    let incomplete = witness(
-        WitnessScope::Full,
-        "id",
-        &["a"],
-        &[WitnessStatus::Passed],
-        false,
-    );
+    let incomplete = witness("id", &["a"], &[WitnessStatus::Passed], false);
     assert_eq!(
         accept_witness(AcceptMode::All, &["a".into()], "id", &incomplete),
         AcceptDecision::Miss("incomplete")
     );
-    let failed = witness(
-        WitnessScope::Full,
-        "id",
-        &["a"],
-        &[WitnessStatus::Failed],
-        true,
-    );
+    let failed = witness("id", &["a"], &[WitnessStatus::Failed], true);
     assert_eq!(
         accept_witness(AcceptMode::All, &["a".into()], "id", &failed),
         AcceptDecision::Miss("non_passed")
@@ -171,7 +132,6 @@ fn all_mode_rejects_incomplete_and_failed() {
 #[test]
 fn subset_mode_accepts_membership_under_full_or_subset() {
     let full = witness(
-        WitnessScope::Full,
         "id",
         &["a", "b", "c"],
         &[
@@ -186,7 +146,6 @@ fn subset_mode_accepts_membership_under_full_or_subset() {
         AcceptDecision::Accept
     );
     let subset = witness(
-        WitnessScope::Subset,
         "id",
         &["b", "c"],
         &[WitnessStatus::Passed, WitnessStatus::Passed],
@@ -201,7 +160,6 @@ fn subset_mode_accepts_membership_under_full_or_subset() {
 #[test]
 fn subset_mode_rejects_missing_or_failed() {
     let w = witness(
-        WitnessScope::Full,
         "id",
         &["a", "b"],
         &[WitnessStatus::Passed, WitnessStatus::Failed],
@@ -233,7 +191,7 @@ fn time_limit_reclassify_marks_timeout_without_repair_rerun() {
         effective,
         vec![WitnessStatus::TimedOut, WitnessStatus::TimedOut]
     );
-    let mut w = witness(WitnessScope::Full, "id", &["a", "b"], &effective, true);
+    let mut w = witness("id", &["a", "b"], &effective, true);
     w.statuses = effective;
     w.raw_statuses = vec![WitnessStatus::Passed, WitnessStatus::Passed];
     assert_eq!(
@@ -309,13 +267,7 @@ fn missing_duration_fails_closed_under_active_time_gate() {
 
 #[test]
 fn shape_mismatch_rejects() {
-    let mut w = witness(
-        WitnessScope::Full,
-        "id",
-        &["a"],
-        &[WitnessStatus::Passed],
-        true,
-    );
+    let mut w = witness("id", &["a"], &[WitnessStatus::Passed], true);
     w.statuses.push(WitnessStatus::Passed);
     assert_eq!(
         accept_witness(AcceptMode::All, &["a".into()], "id", &w),
@@ -326,7 +278,6 @@ fn shape_mismatch_rejects() {
 #[test]
 fn incomplete_full_miss_repairs_non_passed_not_scope() {
     let w = witness(
-        WitnessScope::Full,
         "id",
         &["a", "b"],
         &[WitnessStatus::Passed, WitnessStatus::Failed],
@@ -356,7 +307,6 @@ fn force_and_missing_witness_run_all_planned() {
         planned
     );
     let w = witness(
-        WitnessScope::Full,
         "id",
         &["a", "b"],
         &[WitnessStatus::Passed, WitnessStatus::Passed],
@@ -372,7 +322,6 @@ fn force_and_missing_witness_run_all_planned() {
 #[test]
 fn missing_duration_rejects_accept_and_repairs_selector() {
     let mut w = witness(
-        WitnessScope::Full,
         "id",
         &["a", "b"],
         &[WitnessStatus::Passed, WitnessStatus::Passed],
@@ -405,46 +354,22 @@ fn missing_duration_rejects_accept_and_repairs_selector() {
 
 #[test]
 fn unresolved_is_not_warm_skippable() {
-    let mut w = witness(
-        WitnessScope::Full,
-        "id",
-        &["a"],
-        &[WitnessStatus::Unresolved],
-        false,
-    );
+    let mut w = witness("id", &["a"], &[WitnessStatus::Unresolved], false);
     w.durations_ns[0] = None;
     assert!(!all_misses_warm_skippable(&w, &["a".into()]));
-    let with_duration = witness(
-        WitnessScope::Full,
-        "id",
-        &["a"],
-        &[WitnessStatus::Unresolved],
-        false,
-    );
+    let with_duration = witness("id", &["a"], &[WitnessStatus::Unresolved], false);
     assert!(!all_misses_warm_skippable(&with_duration, &["a".into()]));
 }
 
 #[test]
 fn raw_timeout_is_not_warm_skippable() {
-    let w = witness(
-        WitnessScope::Full,
-        "id",
-        &["a"],
-        &[WitnessStatus::TimedOut],
-        false,
-    );
+    let w = witness("id", &["a"], &[WitnessStatus::TimedOut], false);
     assert!(!all_misses_warm_skippable(&w, &["a".into()]));
 }
 
 #[test]
 fn gate_derived_timeout_from_raw_pass_is_not_warm_skippable() {
-    let mut w = witness(
-        WitnessScope::Full,
-        "id",
-        &["a"],
-        &[WitnessStatus::TimedOut],
-        false,
-    );
+    let mut w = witness("id", &["a"], &[WitnessStatus::TimedOut], false);
     w.raw_statuses = vec![WitnessStatus::Passed];
     assert!(!all_misses_warm_skippable(&w, &["a".into()]));
 }
@@ -452,7 +377,6 @@ fn gate_derived_timeout_from_raw_pass_is_not_warm_skippable() {
 #[test]
 fn gate_derived_timeout_is_not_a_repair_miss() {
     let mut w = witness(
-        WitnessScope::Full,
         "id",
         &["a", "b"],
         &[WitnessStatus::TimedOut, WitnessStatus::Passed],
@@ -483,7 +407,6 @@ fn identity_covers_rejects_shared_input_when_full_digest_differs() {
         "a shared digest prefix is not identity coverage"
     );
     let w = witness(
-        WitnessScope::Full,
         "rs:input:gen-a:sel-a",
         &["a"],
         &[WitnessStatus::Passed],
@@ -499,7 +422,6 @@ fn identity_covers_rejects_shared_input_when_full_digest_differs() {
 fn force_selectors_invalidate_stale_passed_without_batch_force() {
     let planned = vec!["a".into(), "b".into()];
     let w = witness(
-        WitnessScope::Full,
         "id",
         &["a", "b"],
         &[WitnessStatus::Passed, WitnessStatus::Passed],

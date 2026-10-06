@@ -164,6 +164,43 @@ def test_c():\n    assert True\n",
 }
 
 #[test]
+fn same_module_batch_reports_each_test_before_the_module_finishes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let marker = tmp.path().join("first_reported");
+    fs::write(
+        tmp.path().join("test_sample.py"),
+        format!(
+            "import os, time\n\n\
+def test_a():\n    assert True\n\n\
+def test_b():\n    deadline = time.monotonic() + 20\n    \
+while not os.path.exists({marker:?}) and time.monotonic() < deadline:\n        \
+time.sleep(0.01)\n    assert os.path.exists({marker:?})\n"
+        ),
+    )
+    .unwrap();
+    let mut statuses = vec![None, None];
+
+    ForkserverPytestRunner::new().run_many_bounded_with_on_complete(
+        vec![
+            passing_req(tmp.path(), "test_sample.py::test_a"),
+            passing_req(tmp.path(), "test_sample.py::test_b"),
+        ],
+        1,
+        |index, result| {
+            if index == 0 {
+                fs::write(&marker, b"").unwrap();
+            }
+            statuses[index] = Some(result.unwrap().status);
+        },
+    );
+
+    assert_eq!(
+        statuses,
+        vec![Some(TestStatus::Passed), Some(TestStatus::Passed)]
+    );
+}
+
+#[test]
 fn forkserver_controller_pid_is_reused_for_multiple_requests() {
     let tmp = tempfile::tempdir().unwrap();
     fs::write(

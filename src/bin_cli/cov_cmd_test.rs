@@ -317,6 +317,8 @@ fn try_evaluate_records_with_time_falls_through_on_incomplete() {
         rs_files: vec![PathBuf::from("src/lib.rs")],
     };
     let tmp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+    std::fs::write(tmp.path().join("src/lib.rs"), "#[test]\nfn t() {}\n").unwrap();
     let focus = FocusFilter::unrestricted();
     let records = [analyze::line_coverage::LineCoverageRecord {
         file: PathBuf::from("src/lib.rs"),

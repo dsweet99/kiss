@@ -77,7 +77,10 @@ fn rust_cov_cache_inputs_include_cargo_files_and_skip_generated_dirs() {
         &tmp.path().join("target")
     ));
     assert!(shared_input::is_kiss_rust_cov_cache_dir(
-        &tmp.path().join(".kiss").join("rust_llvm_cov_cache")
+        &tmp.path()
+            .join(".kiss")
+            .join("test")
+            .join("rust_llvm_cov_cache")
     ));
 }
 
@@ -92,7 +95,7 @@ fn create_rust_cov_input_dirs(root: &Path) {
     fs::create_dir_all(root.join("src")).unwrap();
     fs::create_dir_all(root.join(".cargo")).unwrap();
     fs::create_dir_all(root.join("target")).unwrap();
-    fs::create_dir_all(root.join(".kiss").join("rust_llvm_cov_cache")).unwrap();
+    fs::create_dir_all(root.join(".kiss").join("test").join("rust_llvm_cov_cache")).unwrap();
 }
 
 fn write_rust_cov_input_files(root: &Path) {
@@ -168,7 +171,11 @@ fn repo_relative_and_generation_entry_fingerprint_helpers() {
             .as_deref(),
         Some("src/lib.rs")
     );
-    let cache_root = repo.path().join(".kiss").join("rust_llvm_cov_cache");
+    let cache_root = repo
+        .path()
+        .join(".kiss")
+        .join("test")
+        .join("rust_llvm_cov_cache");
     fs::create_dir_all(cache_root.join("entries")).unwrap();
     let entry = RustCovCacheEntry::from_outcome(&outcome(), "gen-a");
     rust_cov_cache::store_rust_cov_cache_entry(&cache_root, "abc123", &entry).unwrap();

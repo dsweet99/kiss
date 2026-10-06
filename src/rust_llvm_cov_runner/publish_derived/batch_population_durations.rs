@@ -51,10 +51,10 @@ pub(crate) fn invalidate_population_durations_for_entry_write(cache_root: &Path)
 
 pub(crate) fn population_durations_lock(
     cache_root: &Path,
-) -> io::Result<crate::rust_llvm_cov_runner::file_lock::FileLockGuard> {
-    crate::rust_llvm_cov_runner::file_lock::FileLockGuard::lock(
-        &cache_root.join("locks").join("population_durations.lock"),
-    )
+) -> io::Result<crate::test_state_lock::TestStateLock> {
+    crate::test_state_lock::lock_test_state_dir(&crate::test_state_lock::owning_test_state_dir(
+        cache_root,
+    )?)
 }
 
 pub fn population_entries_all_pass(cache_root: &Path, population: &RustPopulationState) -> bool {

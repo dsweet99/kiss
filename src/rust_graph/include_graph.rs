@@ -296,11 +296,7 @@ mod include_graph_tests {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().join("lib.rs");
         let child = tmp.path().join("hidden.rs");
-        std::fs::write(
-            &root,
-            "mod hidden;\npub fn prod() -> i32 { hidden::f() }\n",
-        )
-        .unwrap();
+        std::fs::write(&root, "mod hidden;\npub fn prod() -> i32 { hidden::f() }\n").unwrap();
         std::fs::write(&child, "pub fn f() -> i32 { 1 }\n").unwrap();
         let expanded = expand_rust_files(vec![root.clone()]);
         assert!(
@@ -316,11 +312,7 @@ mod include_graph_tests {
         let nested_dir = tmp.path().join("hidden");
         std::fs::create_dir(&nested_dir).unwrap();
         let nested = nested_dir.join("mod.rs");
-        std::fs::write(
-            &root,
-            "mod hidden;\npub fn prod() -> i32 { hidden::f() }\n",
-        )
-        .unwrap();
+        std::fs::write(&root, "mod hidden;\npub fn prod() -> i32 { hidden::f() }\n").unwrap();
         std::fs::write(&nested, "pub fn f() -> i32 { 1 }\n").unwrap();
         let expanded = expand_rust_files(vec![root.clone()]);
         assert!(
@@ -331,7 +323,9 @@ mod include_graph_tests {
 
     #[test]
     fn source_may_have_mod_path_attr_detects_path_forms() {
-        assert!(source_may_have_mod_path_attr("#[path = \"alt.rs\"]\nmod hidden;"));
+        assert!(source_may_have_mod_path_attr(
+            "#[path = \"alt.rs\"]\nmod hidden;"
+        ));
         assert!(source_may_have_mod_path_attr(
             "#[cfg_attr(unix, path = \"u.rs\")]\nmod hidden;"
         ));

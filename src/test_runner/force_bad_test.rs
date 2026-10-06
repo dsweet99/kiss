@@ -31,6 +31,7 @@ fn apply_force_bad_noop_when_flag_off_and_merges_when_on() {
     let mut planned = empty_planned(tmp.path().to_path_buf(), Vec::new());
     planned.sel.python = vec!["tests/a.py::t".into()];
     let args = crate::test_runner::RunTestCmdArgs {
+        doubles: None,
         invocation: TestInvocation::All,
         target_request: crate::test_runner::target_request::workspace_request(None, &[]),
         main_branch_cli: None,
@@ -48,6 +49,7 @@ fn apply_force_bad_noop_when_flag_off_and_merges_when_on() {
     apply_force_bad(&args, &mut planned).unwrap();
     assert!(planned.prior_failure_selectors.python.is_empty());
     let args_on = crate::test_runner::RunTestCmdArgs {
+        doubles: None,
         force_bad: true,
         ..args
     };

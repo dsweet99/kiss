@@ -2,7 +2,7 @@ use std::path::Path;
 
 use super::types::{
     COLLECTOR_SEMANTICS_VERSION, GENERATION_SCHEMA_VERSION, PythonExecutionIdentity,
-    PythonPopulationPlan, RUNNER_SEMANTICS_VERSION,
+    RUNNER_SEMANTICS_VERSION,
 };
 use crate::test_runner::python_coverage_index::PYTHON_SELECTOR_DISCOVERY_VERSION;
 use crate::test_runner::python_coverage_index::manifest::{
@@ -48,44 +48,6 @@ pub(crate) fn identity_from_manifest_identity(
         selector_discovery_version: PYTHON_SELECTOR_DISCOVERY_VERSION.to_string(),
         cache_schema_version: base.cache_schema_version.clone(),
     })
-}
-
-pub(crate) fn population_plan_for_selectors(
-    repo_root: &Path,
-    selectors: &[String],
-    test_args: &[String],
-) -> Result<PythonPopulationPlan, String> {
-    let mut selectors = selectors.to_vec();
-    selectors.sort();
-    selectors.dedup();
-    Ok(PythonPopulationPlan {
-        base_identity: current_python_execution_identity(repo_root, test_args)?,
-        selectors,
-    })
-}
-
-pub(crate) fn identity_matches_current(
-    repo_root: &Path,
-    identity: &PythonExecutionIdentity,
-    test_args: &[String],
-) -> bool {
-    let Ok(current) = current_python_execution_identity(repo_root, test_args) else {
-        return false;
-    };
-    identity == &current
-}
-
-pub(crate) fn execution_context_matches_current(
-    repo_root: &Path,
-    identity: &PythonExecutionIdentity,
-    test_args: &[String],
-) -> bool {
-    let Ok(current) = current_python_execution_identity(repo_root, test_args) else {
-        return false;
-    };
-    let mut prior_context = identity.clone();
-    prior_context.input_fingerprint = current.input_fingerprint.clone();
-    prior_context == current
 }
 
 fn plugin_identities_from_args(args: &[String]) -> Vec<String> {

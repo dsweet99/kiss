@@ -7,33 +7,7 @@ use crate::bin_cli::dispatch::dispatch;
 use clap::Parser;
 
 pub fn run_cli_entrypoint() -> i32 {
-    #[cfg(not(test))]
-    {
-        let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
-        if let Some(code) = reject_test_watch_argv(&args) {
-            return code;
-        }
-    }
     run_with_cli(parse_cli())
-}
-
-pub(crate) fn reject_test_watch_argv(args: &[std::ffi::OsString]) -> Option<i32> {
-    let index = args.iter().position(|arg| arg == "test-watch")?;
-    if let Some(arg) = args.iter().take(index).nth(1) {
-        let text = arg.to_string_lossy();
-        eprintln!("error: kiss test-watch: option is not accepted: {text}");
-        return Some(2);
-    }
-    if let Some(arg) = args.get(index + 1) {
-        let text = arg.to_string_lossy();
-        if text.starts_with('-') {
-            eprintln!("error: kiss test-watch: option is not accepted: {text}");
-        } else {
-            eprintln!("error: kiss test-watch: TARGET is not accepted: {text}");
-        }
-        return Some(2);
-    }
-    None
 }
 
 pub(crate) fn run_with_cli(cli: Cli) -> i32 {
@@ -98,28 +72,6 @@ mod run_coverage {
     use super::{parse_cli_from, run_cli_entrypoint, run_with_cli};
     use crate::bin_cli::args::{Cli, Commands};
     use std::fs;
-
-    #[test]
-    fn test_watch_argv_rejects_options_and_targets() {
-        let opt = std::ffi::OsString::from("--config");
-        let args = [
-            std::ffi::OsString::from("kiss"),
-            std::ffi::OsString::from("test-watch"),
-            opt,
-        ];
-        assert_eq!(super::reject_test_watch_argv(&args), Some(2));
-        let target = [
-            std::ffi::OsString::from("kiss"),
-            std::ffi::OsString::from("test-watch"),
-            std::ffi::OsString::from("tests/unit"),
-        ];
-        assert_eq!(super::reject_test_watch_argv(&target), Some(2));
-        let bare = [
-            std::ffi::OsString::from("kiss"),
-            std::ffi::OsString::from("test-watch"),
-        ];
-        assert_eq!(super::reject_test_watch_argv(&bare), None);
-    }
 
     #[test]
     fn run_with_cli_rejects_watch_combined_with_dry_run() {

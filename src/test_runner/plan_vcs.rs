@@ -1,7 +1,6 @@
 use kiss::Language;
 
 use super::runners;
-use super::rust_llvm_cov;
 use super::{PlannedSelectors, planned_from_selector_plan};
 use crate::test_git::TestChangeMode;
 
@@ -55,12 +54,10 @@ pub(crate) fn plan_vcs_workspace_at(
             crate::test_git::changed_lines_since(&repo_root, diff_target.as_ref().unwrap())?
         }
     };
-    let lang_filter = req.lang_filter.map(|l| match l {
-        Language::Python => crate::test_git::TestLangFilter::Python,
-        Language::Rust => crate::test_git::TestLangFilter::Rust,
-    });
-    if matches!(lang_filter, Some(crate::test_git::TestLangFilter::Rust)) {
-        rust_llvm_cov::validate_rust_extra_args(req.extras.rust)?;
+    let lang_filter = req.lang_filter.map(crate::test_git::TestLangFilter::from);
+    if let Some(language) = req.lang_filter {
+        crate::test_runner::lang_registry::rules_for(language)
+            .validate_extra_args(req.extras.get(language))?;
     }
     let abs_paths = crate::test_git::resolve_changed_source_paths(
         &repo_root,
@@ -105,8 +102,7 @@ pub(crate) fn plan_selectors_from_workspace(
         test_args: extras,
         lang_filter,
         ignore: &ws.ignore_norm,
-        extra_direct_python: &[],
-        extra_direct_rust: &[],
+        extra_direct: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
         include_prior_failures: true,
     })?;
     Ok(planned_from_selector_plan(
@@ -114,34 +110,6 @@ pub(crate) fn plan_selectors_from_workspace(
         selector_plan,
         ws.ignore_norm.clone(),
     ))
-}
-
-pub(crate) fn python_all_plan(
-    repo_root: &std::path::Path,
-    python_extra: &[String],
-    py_sel: Vec<String>,
-    cover_python: bool,
-) -> (Vec<String>, bool) {
-    if !cover_python {
-        return (Vec::new(), false);
-    }
-    if py_sel.is_empty() {
-        return (py_sel, false);
-    }
-    let index_present =
-        crate::test_runner::python_coverage_index::python_coverage_index_file_present(repo_root);
-    if !index_present {
-        return (py_sel, true);
-    }
-    let fingerprint_started = std::time::Instant::now();
-    let current = crate::test_runner::python_coverage_index::python_population_manifest_is_current_for_args_with_env_keys(
-        repo_root,
-        &py_sel,
-        python_extra,
-        crate::test_runner::python_coverage_index::PYTHON_COVERAGE_ENV_KEYS,
-    );
-    crate::test_runner::emit_stage_time("python_source_fingerprint", fingerprint_started.elapsed());
-    (py_sel, !current)
 }
 
 #[cfg_attr(not(test), allow(dead_code))]

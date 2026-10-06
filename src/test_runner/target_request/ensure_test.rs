@@ -3,8 +3,8 @@ use std::fs;
 
 use super::canon::canonicalize_target_request;
 use super::ensure::{
-    EnsureOutcome, assemble_target_report_query, ensure_target_report, ensure_target_report_query,
-    materialize_target_report, preview_target_plan_with,
+    EnsureOutcome, ensure_target_report, ensure_target_report_query, materialize_target_report,
+    preview_target_plan_with,
 };
 use super::snapshot::{EnsureError, EnsurePolicy, MAX_SNAPSHOT_ATTEMPTS};
 use super::types::{OperandExpr, TargetFocus, TargetRequest};
@@ -27,7 +27,10 @@ fn ensure_policy_named_modes_exclude_invalid_dry_run_require_complete() {
         );
     }
     assert!(EnsurePolicy::query(true).coverage_all());
-    assert_eq!(EnsurePolicy::query(false), EnsurePolicy::complete(false, false));
+    assert_eq!(
+        EnsurePolicy::query(false),
+        EnsurePolicy::complete(false, false)
+    );
 }
 
 fn workspace_req() -> TargetRequest {
@@ -62,6 +65,24 @@ fn python_repo() -> tempfile::TempDir {
     );
     seed_population_cache(tmp.path());
     tmp
+}
+
+/// Makes the Rust test `a` a member, so a ready report has a row to derive.
+fn seed_rust_member(repo: &std::path::Path) {
+    assert!(
+        crate::test_runner::workspace_selector_cache::store_rust_workspace_selectors(
+            repo,
+            &[],
+            &["a".into()]
+        )
+    );
+    crate::test_runner::lang_rust::test_records::store(
+        repo,
+        &[(
+            "a".into(),
+            crate::test_runner::lang_iface::WitnessStatus::Passed,
+        )],
+    );
 }
 
 fn seed_population_cache(repo: &std::path::Path) {
@@ -112,22 +133,6 @@ fn incomplete_workspace_fails_closed_when_required() {
     .unwrap_err();
     assert!(matches!(err, EnsureError::IncompleteEvidence(_)));
     assert_eq!(err.exit_code(), 1);
-}
-
-#[test]
-fn query_assembles_a_complete_report_not_yet_in_the_store() {
-    let tmp = python_repo();
-    let policy = EnsurePolicy::assemble(false);
-    let report = assemble_target_report_query(
-        tmp.path(),
-        &workspace_req(),
-        &policy,
-        crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
-    )
-        .expect("complete cached evidence must assemble without a stored report");
-    let super::ensure::Ensured::Report(report) = report;
-    assert!(report.stamp.complete);
-    assert!(report.rows.is_empty());
 }
 
 #[test]
@@ -209,6 +214,14 @@ fn ensure_target_report_runs_execute_on_miss() {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     let tmp = python_repo();
+    assert!(
+        crate::test_runner::workspace_selector_cache::store_rust_workspace_selectors(
+            tmp.path(),
+            &[],
+            &["a".into()]
+        ),
+        "a member without a record must run"
+    );
     let mut args =
         crate::test_runner::test_mode_fixtures::dry_run_cmd_args(TestInvocation::All, &[], 1, None);
     args.dry_run = false;
@@ -237,7 +250,12 @@ fn missing_typed_row_fails_closed() {
         vec!["tests/a.py::test_a".into()],
         true,
     );
-    let err = super::rows::rows_from_witnesses(tmp.path(), &scope).unwrap_err();
+    let err = super::rows::rows_from_witnesses(
+        tmp.path(),
+        &scope,
+        crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
+    )
+    .unwrap_err();
     assert!(err.contains("tests/a.py::test_a"));
 }
 
@@ -245,7 +263,12 @@ fn missing_typed_row_fails_closed() {
 fn empty_scope_has_no_typed_rows() {
     let tmp = python_repo();
     let scope = super::scope::ReportScope::from_membership(Vec::new(), Vec::new(), true);
-    let rows = super::rows::rows_from_witnesses(tmp.path(), &scope).unwrap();
+    let rows = super::rows::rows_from_witnesses(
+        tmp.path(),
+        &scope,
+        crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
+    )
+    .unwrap();
     assert!(rows.is_empty());
 }
 
@@ -338,180 +361,16 @@ fn exit_from_rows_prefers_timeout_then_fail() {
 }
 
 #[test]
-fn publish_holds_when_recaptured_rows_match() {
-    let tmp = python_repo();
-    let report = materialize_target_report(
-        tmp.path(),
-        &workspace_req(),
-        &EnsurePolicy::soft(false, false),
-    )
-    .unwrap();
-    assert!(!report.evidence.digest.is_empty());
-    super::report_store::publish_if_rows_hold(tmp.path(), &workspace_req(), &report).unwrap();
-    let recaptured =
-        super::recapture::recapture_report(tmp.path(), &workspace_req(), &report).unwrap();
-    assert_eq!(recaptured.stamp, report.stamp);
-    assert_eq!(recaptured.evidence, report.evidence);
-    assert!(!report.snapshot.worktree.is_empty());
-    assert!(!report.snapshot.gate_policy.is_empty());
-    assert_eq!(recaptured.snapshot.worktree, report.snapshot.worktree);
-    assert_eq!(recaptured.snapshot.gate_policy, report.snapshot.gate_policy);
-    assert!(!report.snapshot.runner.is_empty());
-    assert_eq!(recaptured.snapshot.runner, report.snapshot.runner);
-    assert_eq!(
-        recaptured.snapshot.python_witness,
-        report.snapshot.python_witness
-    );
-    assert_eq!(
-        recaptured.snapshot.python_coverage,
-        report.snapshot.python_coverage
-    );
-    assert_eq!(
-        recaptured.snapshot.rust_witness,
-        report.snapshot.rust_witness
-    );
-    assert_eq!(
-        recaptured.snapshot.rust_coverage,
-        report.snapshot.rust_coverage
-    );
-    assert!(!report.snapshot.resolved.is_empty());
-    assert_eq!(recaptured.snapshot.resolved, report.snapshot.resolved);
-    assert!(report.snapshot.population.is_some());
-    assert_eq!(recaptured.snapshot.population, report.snapshot.population);
-    assert!(!report.snapshot.configuration.is_empty());
-    assert_eq!(
-        recaptured.snapshot.configuration,
-        report.snapshot.configuration
-    );
-    assert!(
-        super::report_store::load_report_for_identity(
-            tmp.path(),
-            &workspace_req(),
-            &report.stamp.digest,
-            report.stamp.complete,
-            false,
-            crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
-        )
-        .is_some()
-    );
-    assert!(
-        super::report_store::load_report_for_identity(
-            tmp.path(),
-            &workspace_req(),
-            &report.stamp.digest,
-            report.stamp.complete,
-            true,
-            crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
-        )
-        .is_none(),
-        "gate-policy flip must miss"
-    );
-    assert!(
-        super::report_store::load_report_for_identity(
-            tmp.path(),
-            &workspace_req(),
-            "other-digest",
-            report.stamp.complete,
-            false,
-            crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
-        )
-        .is_none()
-    );
-    let rust_extra = ["-k".to_string(), "does_not_match".to_string()];
-    assert!(
-        super::report_store::load_report_for_identity(
-            tmp.path(),
-            &workspace_req(),
-            &report.stamp.digest,
-            report.stamp.complete,
-            false,
-            crate::test_runner::language_keyed::LanguageKeyed {
-                python: &[],
-                rust: rust_extra.as_slice(),
-            },
-        )
-        .is_none(),
-        "runner extra must miss the unfiltered report"
-    );
-}
-
-#[test]
-fn recapture_rejects_worktree_move() {
-    let tmp = python_repo();
-    let report = materialize_target_report(
-        tmp.path(),
-        &workspace_req(),
-        &EnsurePolicy::soft(false, false),
-    )
-    .unwrap();
-    super::recapture::recapture_report(tmp.path(), &workspace_req(), &report).unwrap();
-    fs::write(tmp.path().join("extra.py"), "x = 1\n").unwrap();
-    let err =
-        super::recapture::recapture_report(tmp.path(), &workspace_req(), &report).unwrap_err();
-    assert_eq!(err, "concurrent mutation");
-}
-
-#[test]
-fn recapture_rejects_generation_move() {
-    let tmp = python_repo();
-    let report = materialize_target_report(
-        tmp.path(),
-        &workspace_req(),
-        &EnsurePolicy::soft(false, false),
-    )
-    .unwrap();
-    super::recapture::recapture_report(tmp.path(), &workspace_req(), &report).unwrap();
-    let mut moved = report.clone();
-    moved.snapshot.runner = "moved-runner".into();
-    let err = super::recapture::recapture_report(tmp.path(), &workspace_req(), &moved).unwrap_err();
-    assert_eq!(err, "concurrent mutation");
-    moved = report.clone();
-    moved.snapshot.python_witness = Some("moved-python-witness".into());
-    let err = super::recapture::recapture_report(tmp.path(), &workspace_req(), &moved).unwrap_err();
-    assert_eq!(err, "concurrent mutation");
-    moved = report.clone();
-    moved.snapshot.python_coverage = Some("moved-python-coverage".into());
-    let err = super::recapture::recapture_report(tmp.path(), &workspace_req(), &moved).unwrap_err();
-    assert_eq!(err, "concurrent mutation");
-    moved = report.clone();
-    moved.snapshot.rust_coverage = Some("moved-rust-coverage".into());
-    let err = super::recapture::recapture_report(tmp.path(), &workspace_req(), &moved).unwrap_err();
-    assert_eq!(err, "concurrent mutation");
-    moved = report.clone();
-    moved.snapshot.resolved = "moved-resolved".into();
-    let err = super::recapture::recapture_report(tmp.path(), &workspace_req(), &moved).unwrap_err();
-    assert_eq!(err, "concurrent mutation");
-    moved = report.clone();
-    moved.snapshot.population = Some("moved-population".into());
-    let err = super::recapture::recapture_report(tmp.path(), &workspace_req(), &moved).unwrap_err();
-    assert_eq!(err, "concurrent mutation");
-    moved = report.clone();
-    moved.snapshot.configuration = "moved-configuration".into();
-    let err = super::recapture::recapture_report(tmp.path(), &workspace_req(), &moved).unwrap_err();
-    assert_eq!(err, "concurrent mutation");
-}
-
-#[test]
-fn recapture_rejects_population_inventory_move() {
-    let tmp = python_repo();
-    let report = materialize_target_report(
-        tmp.path(),
-        &workspace_req(),
-        &EnsurePolicy::soft(false, false),
-    )
-    .unwrap();
-    super::recapture::recapture_report(tmp.path(), &workspace_req(), &report).unwrap();
-    assert!(
-        crate::test_runner::workspace_selector_cache::store_python_workspace_selectors(
-            tmp.path(),
-            &[],
-            &["tests/test_moved.py::test_x".into()],
-            &[],
-        )
-    );
-    let err =
-        super::recapture::recapture_report(tmp.path(), &workspace_req(), &report).unwrap_err();
-    assert_eq!(err, "concurrent mutation");
+fn assembled_exit_keeps_runner_failure_when_rows_pass() {
+    use super::report::EffectiveStatus;
+    use super::snapshot::assembled_exit;
+    let pass = [sample_row("tests/a.py::test_a", EffectiveStatus::Pass)];
+    let fail = [sample_row("tests/a.py::test_a", EffectiveStatus::Fail)];
+    assert_eq!(assembled_exit(&pass, 0), 0);
+    assert_eq!(assembled_exit(&pass, 1), 1);
+    assert_eq!(assembled_exit(&pass, 124), 1);
+    assert_eq!(assembled_exit(&pass, 130), 130);
+    assert_eq!(assembled_exit(&fail, 0), 1);
 }
 
 #[test]
@@ -789,7 +648,7 @@ fn dry_run_preview_does_not_repair_graph() {
 
 #[test]
 fn ready_load_misses_when_covered_map_churns_graph_generation() {
-    // kt_bug: ready-report identity ignores covered-map ITE key. Watch/oneshot can
+    // kt_bug: ready-report identity ignores covered-map ITE key. A run can
     // publish more coverage without changing stamp/request; load_ready must not
     // serve a report whose pinned graph_generation is stale vs current covered.
     let tmp = python_repo();
@@ -816,32 +675,14 @@ fn ready_load_misses_when_covered_map_churns_graph_generation() {
     );
     seed_population_cache(tmp.path());
 
-    let cache = crate::test_runner::rust_coverage_index::rust_coverage_cache_root(tmp.path());
-    let mut generation = crate::test_runner::execution_generation::FullExecutionGeneration {
-        schema_version: crate::test_runner::execution_generation::GENERATION_SCHEMA_VERSION
-            .to_string(),
-        execution_context_digest: "ctx".into(),
-        discovered_universe_digest: "uni".into(),
-        selectors: vec!["a".into()],
-        selector_evidence: vec![crate::test_runner::execution_generation::SelectorEvidenceRecord {
-            selector: "a".into(),
-            raw_status: "passed".into(),
-            duration_ns: Some(1),
-            entry_content_digest: "blob-a".into(),
-            evidence_state: "valid".into(),
-            ..Default::default()
-        }],
-        functional_summary_all_pass: true,
-        covered_lines: std::collections::BTreeMap::from([("utils.py".into(), vec![1, 2])]),
-        ..Default::default()
-    };
-    crate::test_runner::execution_generation::publish_full_generation(&cache, generation.clone())
-        .unwrap();
+    let mut covered: std::collections::BTreeMap<String, Vec<u32>> =
+        std::collections::BTreeMap::from([("utils.py".into(), vec![1, 2])]);
+    crate::test_runner::lang_python::store_test_record_covering(tmp.path(), "a", &covered);
 
+    seed_rust_member(tmp.path());
     let req = workspace_req();
     let built = materialize_target_report(tmp.path(), &req, &live_policy()).unwrap();
     assert!(built.graph_generation.is_some(), "{built:?}");
-    crate::test_runner::target_request::publish_report(tmp.path(), &req, &built).unwrap();
     assert!(
         crate::test_runner::target_request::load_ready_for_request(
             tmp.path(),
@@ -856,10 +697,8 @@ fn ready_load_misses_when_covered_map_churns_graph_generation() {
         "published report must leave graph evidence warm under covered map A"
     );
 
-    generation
-        .covered_lines
-        .insert("other.py".into(), vec![1, 2]);
-    crate::test_runner::execution_generation::publish_full_generation(&cache, generation).unwrap();
+    covered.insert("other.py".into(), vec![1, 2]);
+    crate::test_runner::lang_python::store_test_record_covering(tmp.path(), "a", &covered);
     assert!(
         super::report::graph_repair_needed(tmp.path(), &built.scope, false),
         "covered-map churn must miss the graph-evidence ITE key"
@@ -878,7 +717,7 @@ fn ready_load_misses_when_covered_map_churns_graph_generation() {
 
 #[test]
 fn ready_load_misses_when_pinned_graph_evidence_blob_is_gone() {
-    // kt_bug: pinned_graph_generation_holds also requires the evidence blob to load.
+    // kt_bug: a ready report also requires the graph evidence blob to load.
     let tmp = python_repo();
     fs::write(
         tmp.path().join(".kissconfig"),
@@ -900,34 +739,17 @@ fn ready_load_misses_when_pinned_graph_evidence_blob_is_gone() {
             .success()
     );
     seed_population_cache(tmp.path());
-    let cache = crate::test_runner::rust_coverage_index::rust_coverage_cache_root(tmp.path());
-    let generation = crate::test_runner::execution_generation::FullExecutionGeneration {
-        schema_version: crate::test_runner::execution_generation::GENERATION_SCHEMA_VERSION
-            .to_string(),
-        execution_context_digest: "ctx".into(),
-        discovered_universe_digest: "uni".into(),
-        selectors: vec!["a".into()],
-        selector_evidence: vec![crate::test_runner::execution_generation::SelectorEvidenceRecord {
-            selector: "a".into(),
-            raw_status: "passed".into(),
-            duration_ns: Some(1),
-            entry_content_digest: "blob-a".into(),
-            evidence_state: "valid".into(),
-            ..Default::default()
-        }],
-        functional_summary_all_pass: true,
-        covered_lines: std::collections::BTreeMap::from([("app.py".into(), vec![1])]),
-        ..Default::default()
-    };
-    crate::test_runner::execution_generation::publish_full_generation(&cache, generation).unwrap();
+    let covered: std::collections::BTreeMap<String, Vec<u32>> =
+        std::collections::BTreeMap::from([("app.py".into(), vec![1])]);
+    crate::test_runner::lang_python::store_test_record_covering(tmp.path(), "a", &covered);
 
+    seed_rust_member(tmp.path());
     let req = workspace_req();
     let built = materialize_target_report(tmp.path(), &req, &live_policy()).unwrap();
     let key = built
         .graph_generation
         .clone()
         .expect("materialized report must pin a graph generation");
-    crate::test_runner::target_request::publish_report(tmp.path(), &req, &built).unwrap();
     assert!(
         crate::test_runner::target_request::load_ready_for_request(
             tmp.path(),
@@ -938,15 +760,8 @@ fn ready_load_misses_when_pinned_graph_evidence_blob_is_gone() {
         .is_some()
     );
 
-    let dir = tmp
-        .path()
-        .join("target")
-        .join("kiss-plan")
-        .join("graph-evidence");
-    let full = dir.join(format!("{key}.json"));
-    let legacy = dir.join(format!("{}.json", &key[..16.min(key.len())]));
-    let _ = fs::remove_file(&full);
-    let _ = fs::remove_file(&legacy);
+    let dir = tmp.path().join(".kiss").join("test").join("graph-evidence");
+    let _ = fs::remove_file(dir.join(format!("{key}.json")));
     assert!(
         super::graph_store::load_items(tmp.path(), &key).is_none(),
         "probe: graph evidence blob must be gone for {key}"
@@ -966,109 +781,6 @@ fn ready_load_misses_when_pinned_graph_evidence_blob_is_gone() {
         "ready-load must miss when pinned graph_generation key matches but evidence blob is gone"
     );
 }
-
-
-#[test]
-fn ready_freshness_after_worktree_skips_evidence_source_redigest() {
-    // kt_bug.md: after worktree match, pinned_graph_generation_holds must not
-    // re-digest workspace sources; covered/config (+ presence) are the remaining signals.
-    let tmp = python_repo();
-    fs::write(tmp.path().join("utils.py"), "def helper():\n    return 1\n").unwrap();
-    fs::write(tmp.path().join("other.py"), "def unused():\n    return 2\n").unwrap();
-    fs::write(
-        tmp.path().join(".kissconfig"),
-        "[test]\norphan_detection = true\n",
-    )
-    .unwrap();
-    assert!(
-        git_in(tmp.path())
-            .args(["add", "-A"])
-            .status()
-            .unwrap()
-            .success()
-    );
-    assert!(
-        git_in(tmp.path())
-            .args(["commit", "-m", "sources"])
-            .status()
-            .unwrap()
-            .success()
-    );
-    seed_population_cache(tmp.path());
-
-    let cache = crate::test_runner::rust_coverage_index::rust_coverage_cache_root(tmp.path());
-    let mut generation = crate::test_runner::execution_generation::FullExecutionGeneration {
-        schema_version: crate::test_runner::execution_generation::GENERATION_SCHEMA_VERSION
-            .to_string(),
-        execution_context_digest: "ctx".into(),
-        discovered_universe_digest: "uni".into(),
-        selectors: vec!["a".into()],
-        selector_evidence: vec![crate::test_runner::execution_generation::SelectorEvidenceRecord {
-            selector: "a".into(),
-            raw_status: "passed".into(),
-            duration_ns: Some(1),
-            entry_content_digest: "blob-a".into(),
-            evidence_state: "valid".into(),
-            ..Default::default()
-        }],
-        functional_summary_all_pass: true,
-        covered_lines: std::collections::BTreeMap::from([("utils.py".into(), vec![1, 2])]),
-        ..Default::default()
-    };
-    crate::test_runner::execution_generation::publish_full_generation(&cache, generation.clone())
-        .unwrap();
-
-    let req = workspace_req();
-    let built = materialize_target_report(tmp.path(), &req, &live_policy()).unwrap();
-    assert!(built.graph_generation.is_some(), "{built:?}");
-    assert!(
-        built.snapshot.graph_mutable.is_some(),
-        "assembled reports must pin graph_mutable for cheap ready freshness: {built:?}"
-    );
-    crate::test_runner::target_request::publish_report(tmp.path(), &req, &built).unwrap();
-
-    super::graph_store::reset_evidence_source_reads();
-    assert!(
-        super::report::pinned_graph_generation_holds(tmp.path(), false, &built),
-        "warm pinned generation must hold under stable covered/config"
-    );
-    assert_eq!(
-        super::graph_store::evidence_source_reads(),
-        0,
-        "after worktree-validated sources, ready freshness must not re-digest evidence sources"
-    );
-    super::graph_store::reset_evidence_source_reads();
-    assert!(
-        crate::test_runner::target_request::load_ready_for_request(
-            tmp.path(),
-            &req,
-            false,
-            crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
-        )
-        .is_some()
-    );
-    assert_eq!(
-        super::graph_store::evidence_source_reads(),
-        0,
-        "full load_ready_for_request warm path must not re-digest evidence sources"
-    );
-
-    generation
-        .covered_lines
-        .insert("other.py".into(), vec![1, 2]);
-    crate::test_runner::execution_generation::publish_full_generation(&cache, generation).unwrap();
-    super::graph_store::reset_evidence_source_reads();
-    assert!(
-        !super::report::pinned_graph_generation_holds(tmp.path(), false, &built),
-        "covered-map churn must miss without relying on source re-digest"
-    );
-    assert_eq!(
-        super::graph_store::evidence_source_reads(),
-        0,
-        "covered-map miss path must also skip evidence source re-digest"
-    );
-}
-
 
 #[test]
 fn ready_misses_when_gitignored_rust_include_target_changes() {
@@ -1103,34 +815,17 @@ fn ready_misses_when_gitignored_rust_include_target_changes() {
     );
     seed_population_cache(tmp.path());
 
-    let cache = crate::test_runner::rust_coverage_index::rust_coverage_cache_root(tmp.path());
-    let generation = crate::test_runner::execution_generation::FullExecutionGeneration {
-        schema_version: crate::test_runner::execution_generation::GENERATION_SCHEMA_VERSION
-            .to_string(),
-        execution_context_digest: "ctx".into(),
-        discovered_universe_digest: "uni".into(),
-        selectors: vec!["a".into()],
-        selector_evidence: vec![crate::test_runner::execution_generation::SelectorEvidenceRecord {
-            selector: "a".into(),
-            raw_status: "passed".into(),
-            duration_ns: Some(1),
-            entry_content_digest: "blob-a".into(),
-            evidence_state: "valid".into(),
-            ..Default::default()
-        }],
-        functional_summary_all_pass: true,
-        covered_lines: std::collections::BTreeMap::from([("lib.rs".into(), vec![1, 2])]),
-        ..Default::default()
-    };
-    crate::test_runner::execution_generation::publish_full_generation(&cache, generation).unwrap();
+    let covered: std::collections::BTreeMap<String, Vec<u32>> =
+        std::collections::BTreeMap::from([("lib.rs".into(), vec![1, 2])]);
+    crate::test_runner::lang_python::store_test_record_covering(tmp.path(), "a", &covered);
 
+    seed_rust_member(tmp.path());
     let req = workspace_req();
     let built = materialize_target_report(tmp.path(), &req, &live_policy()).unwrap();
     assert!(
         built.graph_generation.is_some(),
         "orphan graph must be active for include lock: {built:?}"
     );
-    crate::test_runner::target_request::publish_report(tmp.path(), &req, &built).unwrap();
     assert!(
         crate::test_runner::target_request::load_ready_for_request(
             tmp.path(),
@@ -1172,7 +867,11 @@ fn ready_misses_when_gitignored_rust_path_attr_target_changes() {
         "#[path = \"alt.rs\"]\nmod hidden;\npub fn prod() -> i32 { hidden::via_path() }\n",
     )
     .unwrap();
-    fs::write(tmp.path().join("alt.rs"), "pub fn via_path() -> i32 { 1 }\n").unwrap();
+    fs::write(
+        tmp.path().join("alt.rs"),
+        "pub fn via_path() -> i32 { 1 }\n",
+    )
+    .unwrap();
     fs::write(
         tmp.path().join(".kissconfig"),
         "[test]\norphan_detection = true\n",
@@ -1194,34 +893,17 @@ fn ready_misses_when_gitignored_rust_path_attr_target_changes() {
     );
     seed_population_cache(tmp.path());
 
-    let cache = crate::test_runner::rust_coverage_index::rust_coverage_cache_root(tmp.path());
-    let generation = crate::test_runner::execution_generation::FullExecutionGeneration {
-        schema_version: crate::test_runner::execution_generation::GENERATION_SCHEMA_VERSION
-            .to_string(),
-        execution_context_digest: "ctx".into(),
-        discovered_universe_digest: "uni".into(),
-        selectors: vec!["a".into()],
-        selector_evidence: vec![crate::test_runner::execution_generation::SelectorEvidenceRecord {
-            selector: "a".into(),
-            raw_status: "passed".into(),
-            duration_ns: Some(1),
-            entry_content_digest: "blob-a".into(),
-            evidence_state: "valid".into(),
-            ..Default::default()
-        }],
-        functional_summary_all_pass: true,
-        covered_lines: std::collections::BTreeMap::from([("lib.rs".into(), vec![1, 2, 3])]),
-        ..Default::default()
-    };
-    crate::test_runner::execution_generation::publish_full_generation(&cache, generation).unwrap();
+    let covered: std::collections::BTreeMap<String, Vec<u32>> =
+        std::collections::BTreeMap::from([("lib.rs".into(), vec![1, 2, 3])]);
+    crate::test_runner::lang_python::store_test_record_covering(tmp.path(), "a", &covered);
 
+    seed_rust_member(tmp.path());
     let req = workspace_req();
     let built = materialize_target_report(tmp.path(), &req, &live_policy()).unwrap();
     assert!(
         built.graph_generation.is_some(),
         "orphan graph must be active for path-attr lock: {built:?}"
     );
-    crate::test_runner::target_request::publish_report(tmp.path(), &req, &built).unwrap();
     assert!(
         crate::test_runner::target_request::load_ready_for_request(
             tmp.path(),
@@ -1234,7 +916,11 @@ fn ready_misses_when_gitignored_rust_path_attr_target_changes() {
     );
 
     let before_wt = super::stamp::capture_worktree_token(tmp.path(), None);
-    fs::write(tmp.path().join("alt.rs"), "pub fn via_path() -> i32 { 2 }\n").unwrap();
+    fs::write(
+        tmp.path().join("alt.rs"),
+        "pub fn via_path() -> i32 { 2 }\n",
+    )
+    .unwrap();
     let after_wt = super::stamp::capture_worktree_token(tmp.path(), None);
     assert_ne!(
         before_wt, after_wt,
@@ -1257,13 +943,21 @@ fn ready_misses_when_gitignored_rust_conventional_mod_target_changes() {
     // kt_bug.md class #9: evidence_key / worktree must follow conventional
     // `mod name;` targets (name.rs / name/mod.rs), including gitignored.
     let tmp = python_repo();
-    fs::write(tmp.path().join(".gitignore"), "/target\n/.kiss\nhidden.rs\n").unwrap();
+    fs::write(
+        tmp.path().join(".gitignore"),
+        "/target\n/.kiss\nhidden.rs\n",
+    )
+    .unwrap();
     fs::write(
         tmp.path().join("lib.rs"),
         "mod hidden;\npub fn prod() -> i32 { hidden::via_conv() }\n",
     )
     .unwrap();
-    fs::write(tmp.path().join("hidden.rs"), "pub fn via_conv() -> i32 { 1 }\n").unwrap();
+    fs::write(
+        tmp.path().join("hidden.rs"),
+        "pub fn via_conv() -> i32 { 1 }\n",
+    )
+    .unwrap();
     fs::write(
         tmp.path().join(".kissconfig"),
         "[test]\norphan_detection = true\n",
@@ -1285,34 +979,17 @@ fn ready_misses_when_gitignored_rust_conventional_mod_target_changes() {
     );
     seed_population_cache(tmp.path());
 
-    let cache = crate::test_runner::rust_coverage_index::rust_coverage_cache_root(tmp.path());
-    let generation = crate::test_runner::execution_generation::FullExecutionGeneration {
-        schema_version: crate::test_runner::execution_generation::GENERATION_SCHEMA_VERSION
-            .to_string(),
-        execution_context_digest: "ctx".into(),
-        discovered_universe_digest: "uni".into(),
-        selectors: vec!["a".into()],
-        selector_evidence: vec![crate::test_runner::execution_generation::SelectorEvidenceRecord {
-            selector: "a".into(),
-            raw_status: "passed".into(),
-            duration_ns: Some(1),
-            entry_content_digest: "blob-a".into(),
-            evidence_state: "valid".into(),
-            ..Default::default()
-        }],
-        functional_summary_all_pass: true,
-        covered_lines: std::collections::BTreeMap::from([("lib.rs".into(), vec![1, 2])]),
-        ..Default::default()
-    };
-    crate::test_runner::execution_generation::publish_full_generation(&cache, generation).unwrap();
+    let covered: std::collections::BTreeMap<String, Vec<u32>> =
+        std::collections::BTreeMap::from([("lib.rs".into(), vec![1, 2])]);
+    crate::test_runner::lang_python::store_test_record_covering(tmp.path(), "a", &covered);
 
+    seed_rust_member(tmp.path());
     let req = workspace_req();
     let built = materialize_target_report(tmp.path(), &req, &live_policy()).unwrap();
     assert!(
         built.graph_generation.is_some(),
         "orphan graph must be active for conventional-mod lock: {built:?}"
     );
-    crate::test_runner::target_request::publish_report(tmp.path(), &req, &built).unwrap();
     assert!(
         crate::test_runner::target_request::load_ready_for_request(
             tmp.path(),
@@ -1325,7 +1002,11 @@ fn ready_misses_when_gitignored_rust_conventional_mod_target_changes() {
     );
 
     let before_wt = super::stamp::capture_worktree_token(tmp.path(), None);
-    fs::write(tmp.path().join("hidden.rs"), "pub fn via_conv() -> i32 { 2 }\n").unwrap();
+    fs::write(
+        tmp.path().join("hidden.rs"),
+        "pub fn via_conv() -> i32 { 2 }\n",
+    )
+    .unwrap();
     let after_wt = super::stamp::capture_worktree_token(tmp.path(), None);
     assert_ne!(
         before_wt, after_wt,
@@ -1340,87 +1021,5 @@ fn ready_misses_when_gitignored_rust_conventional_mod_target_changes() {
         )
         .is_none(),
         "gitignored conventional mod target edit must miss ready"
-    );
-}
-
-#[test]
-fn lang_ready_load_does_not_slice_parent_workspace_report() {
-    let tmp = python_repo();
-    let parent = workspace_req();
-    let built = materialize_target_report(tmp.path(), &parent, &live_policy()).unwrap();
-    crate::test_runner::target_request::publish_if_rows_hold(tmp.path(), &parent, &built).unwrap();
-    assert!(
-        crate::test_runner::target_request::load_ready_for_request(
-            tmp.path(),
-            &parent,
-            false,
-            crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
-        )
-        .is_some()
-    );
-    let mut rust = parent.clone();
-    rust.lang = Some(super::types::LangFilter::Rust);
-    assert!(
-        crate::test_runner::target_request::load_ready_for_request(
-            tmp.path(),
-            &rust,
-            false,
-            crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
-        )
-        .is_none(),
-        "language-filtered ready-load must not slice a parent workspace report"
-    );
-}
-
-#[test]
-fn ready_load_distinguishes_python_extras() {
-    let tmp = python_repo();
-    let parent = workspace_req();
-    let mut built = materialize_target_report(tmp.path(), &parent, &live_policy()).unwrap();
-    built.snapshot.extras = crate::test_runner::language_keyed::LanguageKeyed {
-        python: vec!["-k".into(), "foo".into()],
-        rust: Vec::new(),
-    };
-    crate::test_runner::target_request::publish_report(tmp.path(), &parent, &built).unwrap();
-
-    let py_foo = vec!["-k".to_string(), "foo".to_string()];
-    let py_bar = vec!["-k".to_string(), "bar".to_string()];
-    let match_extras = crate::test_runner::language_keyed::LanguageKeyed {
-        python: py_foo.as_slice(),
-        rust: &[][..],
-    };
-    let other_extras = crate::test_runner::language_keyed::LanguageKeyed {
-        python: py_bar.as_slice(),
-        rust: &[][..],
-    };
-    assert!(
-        crate::test_runner::target_request::load_ready_for_request(
-            tmp.path(),
-            &parent,
-            false,
-            match_extras,
-        )
-        .is_some(),
-        "same language-keyed extras must reuse the ready report"
-    );
-    assert!(
-        crate::test_runner::target_request::load_ready_for_request(
-            tmp.path(),
-            &parent,
-            false,
-            other_extras,
-        )
-        .is_none(),
-        "different python extras must not reuse a ready report"
-    );
-    assert!(
-        crate::test_runner::target_request::load_ready_for_request(
-            tmp.path(),
-            &parent,
-            false,
-            crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
-        )
-        .is_none(),
-        "empty extras must not reuse a report keyed with python extras"
     );
 }

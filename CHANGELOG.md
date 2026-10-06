@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Removed
+
+- The watcher (`kiss test-watch`). `kiss test` always runs in the foreground; concurrent `kiss test` runs in one repository still wait for each other.
+- The `[test] watch_settle_seconds` setting. Existing `.kissconfig` files that set it still load; the value is ignored.
+
 ## 0.4.11 — 2026-09-17
 
 Release of the `dsweet/iml_2` line (version bump since 0.4.10 on crates.io).

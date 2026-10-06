@@ -129,7 +129,7 @@ impl LanguagePlanner for PythonModule {
             .is_some();
         if has_current_population {
             Ok(CoverageFreshness::Fresh)
-        } else if has_line_precise_entries || python_generation_context_reusable(self) {
+        } else if has_line_precise_entries {
             Ok(CoverageFreshness::ReusablePrior)
         } else {
             Ok(CoverageFreshness::Stale)
@@ -160,18 +160,6 @@ impl LanguagePlanner for PythonModule {
     fn manifest_env_allowlist(&self) -> &'static [&'static str] {
         PYTHON_COVERAGE_ENV_KEYS
     }
-}
-
-fn python_generation_context_reusable(module: &PythonModule) -> bool {
-    let Some(plan) = super::generation::try_load_complete_pinned_python_plan(&module.repo_root)
-    else {
-        return false;
-    };
-    super::generation::execution_context_matches_current(
-        &module.repo_root,
-        &plan.base_identity,
-        &module.test_args,
-    )
 }
 
 pub(crate) fn python_population_backer(
@@ -308,152 +296,5 @@ mod tests {
         );
         assert_eq!(module.prior_failures(), vec![prior]);
         assert_eq!(module.manifest_env_allowlist(), PYTHON_COVERAGE_ENV_KEYS);
-    }
-
-    #[test]
-    fn legacy_changed_line_cache_is_bound_to_execution_context() {
-        let tmp = tempfile::tempdir().unwrap();
-        let app = tmp.path().join("app.py");
-        fs::write(&app, "def alpha():\n    return 'alpha'\n").unwrap();
-        let cache_root =
-            crate::test_runner::python_coverage_index::python_coverage_cache_root(tmp.path())
-                .unwrap();
-        fs::create_dir_all(cache_root.join("entries")).unwrap();
-        fs::write(
-            cache_root.join("entries/alpha.json"),
-            format!(
-                "{{\"schema_version\":\"{}\",\"nodeid\":\"tests/test_app.py::test_alpha\",\"status\":\"Passed\",\"coverage\":{{\"files\":{{\"{}\":[2]}}}}}}\n",
-                kiss::rslip::CACHE_SCHEMA_VERSION,
-                app.display()
-            ),
-        )
-        .unwrap();
-        let test_args = vec!["-p".into(), "stored_plugin".into()];
-        crate::test_runner::python_coverage_index::publish_python_derived_state_with_filter(
-            tmp.path(),
-            None,
-            &test_args,
-            &kiss::GateConfig::default(),
-            |path, repo_root| {
-                crate::test_runner::python_coverage_index::repo_relative_coverage_file(
-                    repo_root,
-                    &path.to_string_lossy(),
-                )
-                .is_some()
-            },
-        )
-        .unwrap();
-        let changed_lines = BTreeMap::from([(app.clone(), BTreeSet::from([2_u32]))]);
-        let module = PythonModule::new(
-            tmp.path(),
-            std::slice::from_ref(&app),
-            &changed_lines,
-            &test_args,
-            &[],
-            &[],
-            &[],
-        );
-        let universe = vec![
-            TestSelector::new(kiss::Language::Python, "tests/test_app.py::test_alpha"),
-            TestSelector::new(kiss::Language::Python, "tests/test_app.py::test_beta"),
-        ];
-
-        assert_eq!(
-            module.freshness(&universe).unwrap(),
-            CoverageFreshness::ReusablePrior
-        );
-        assert!(
-            !crate::test_runner::python_coverage_index::python_index_covers_source_paths(
-                tmp.path(),
-                std::slice::from_ref(&app),
-                &["-p".into(), "different_plugin".into()],
-            )
-        );
-        let uncovered = tmp.path().join("uncovered.py");
-        fs::write(&uncovered, "def beta():\n    return 'beta'\n").unwrap();
-        let uncovered_lines = BTreeMap::from([(uncovered.clone(), BTreeSet::from([2_u32]))]);
-        let source_paths = vec![app, uncovered];
-        let uncovered_module = PythonModule::new(
-            tmp.path(),
-            &source_paths,
-            &uncovered_lines,
-            &[],
-            &[],
-            &[],
-            &[],
-        );
-        assert_eq!(
-            uncovered_module.freshness(&universe).unwrap(),
-            CoverageFreshness::Stale,
-            "reusable-prior selection must fail closed for an uncovered source"
-        );
-    }
-
-    #[test]
-    fn pythonpath_mismatch_forces_stale_even_with_line_precise_entries() {
-        use crate::test_runner::TestEnvVarGuard;
-        use crate::test_runner::python_coverage_index::GenerationReason;
-        use crate::test_runner::python_coverage_index::generation::{
-            PopulationEvidence, SelectorEvidence, TimingCacheDisposition,
-            population_plan_for_selectors, publish_python_population_generation,
-        };
-        use std::time::Duration;
-
-        let tmp = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(tmp.path().join(".git")).unwrap();
-        let app = tmp.path().join("app.py");
-        fs::write(&app, "def alpha():\n    return 'alpha'\n").unwrap();
-        let Ok((_py, _pt)) = crate::test_runner::runners::detect_rslip_versions(tmp.path()) else {
-            return;
-        };
-        let root = tmp.path().canonicalize().unwrap();
-        let recorded = format!("{}:recorded", root.display());
-        let changed = format!("{}:changed", root.display());
-        let _pythonpath = TestEnvVarGuard::set("PYTHONPATH", &recorded);
-        let selector = "tests/test_app.py::test_alpha".to_string();
-        let plan = population_plan_for_selectors(tmp.path(), std::slice::from_ref(&selector), &[])
-            .unwrap();
-        let mut evidence = PopulationEvidence::from_ordered_selectors(&plan.selectors);
-        evidence.absorb_selector(SelectorEvidence {
-            selector: selector.clone(),
-            raw_status: kiss::rpytest_runner::TestStatus::Passed,
-            effective_status: kiss::rpytest_runner::TestStatus::Passed,
-            duration: Some(Duration::from_millis(1)),
-            cache_disposition: TimingCacheDisposition::MissStored,
-            reason: None,
-            coverage: BTreeMap::from([("app.py".to_string(), BTreeSet::from([2u32]))]),
-        });
-        publish_python_population_generation(
-            tmp.path(),
-            &plan,
-            &evidence,
-            GenerationReason::Complete,
-        )
-        .unwrap();
-        let changed_lines = BTreeMap::from([(app.clone(), BTreeSet::from([2_u32]))]);
-        let module = PythonModule::new(
-            tmp.path(),
-            std::slice::from_ref(&app),
-            &changed_lines,
-            &[],
-            &[],
-            &[],
-            &[],
-        );
-        let universe = vec![TestSelector::new(
-            kiss::Language::Python,
-            "tests/test_app.py::test_alpha",
-        )];
-
-        assert_eq!(
-            module.freshness(&universe).unwrap(),
-            CoverageFreshness::Fresh
-        );
-        drop(_pythonpath);
-        let _pythonpath_b = TestEnvVarGuard::set("PYTHONPATH", &changed);
-        assert_eq!(
-            module.freshness(&universe).unwrap(),
-            CoverageFreshness::Stale
-        );
     }
 }

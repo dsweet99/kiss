@@ -111,7 +111,7 @@ def test_sample_phase_flags_export_with_nextest_parent() -> None:
 def test_sample_phase_flags_with_repo_arms_test_from_live_metadata(
     tmp_path: Path,
 ) -> None:
-    cache = tmp_path / ".kiss/rust_llvm_cov_cache/runs/r1/instances"
+    cache = tmp_path / ".kiss/test/rust_llvm_cov_cache/runs/r1/instances"
     cache.mkdir(parents=True)
     (cache / "a.shim-start.json").write_text(
         json.dumps({"shim_identity": {"pid": os.getpid(), "pgid": os.getpgid(0)}}),

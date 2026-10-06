@@ -76,7 +76,7 @@ pub(crate) fn batch_executor_request(
         cwd: repo.to_path_buf(),
         source_root: repo.to_path_buf(),
         cargo: PathBuf::from("cargo"),
-        cache_root: repo.join(".kiss").join("rust_llvm_cov_cache"),
+        cache_root: repo.join(".kiss").join("test").join("rust_llvm_cov_cache"),
         logical_selectors: vec!["alpha".to_string(), "beta".to_string()],
         cargo_args: Vec::new(),
         test_args: Vec::new(),
@@ -86,6 +86,7 @@ pub(crate) fn batch_executor_request(
         jobs: 2,
         generated_config: repo
             .join(".kiss")
+            .join("test")
             .join("rust_llvm_cov_cache")
             .join("runs")
             .join("run-test")
@@ -300,7 +301,7 @@ pub(crate) fn derived_fixture_request(
         cwd: repo.to_path_buf(),
         source_root: repo.to_path_buf(),
         cargo: PathBuf::from("cargo"),
-        cache_root: repo.join(".kiss").join("rust_llvm_cov_cache"),
+        cache_root: repo.join(".kiss").join("test").join("rust_llvm_cov_cache"),
         logical_selectors: vec!["alpha".to_string()],
         cargo_args: Vec::new(),
         test_args: Vec::new(),
@@ -308,7 +309,7 @@ pub(crate) fn derived_fixture_request(
         force_rerun: false,
         force_rerun_selectors: Vec::new(),
         jobs: 1,
-        generated_config: repo.join(".kiss/rust_llvm_cov_cache/runs/run-test/nextest.toml"),
+        generated_config: repo.join(".kiss/test/rust_llvm_cov_cache/runs/run-test/nextest.toml"),
         population_publication_selectors: Some(vec!["alpha".to_string()]),
         delegated_runners,
         runner_map_fingerprint,
@@ -364,7 +365,7 @@ pub(crate) fn runner_resolve_base_request(
         cwd: repo.to_path_buf(),
         source_root: repo.to_path_buf(),
         cargo: PathBuf::from("cargo"),
-        cache_root: repo.join(".kiss/rust_llvm_cov_cache"),
+        cache_root: repo.join(".kiss/test/rust_llvm_cov_cache"),
         logical_selectors: vec!["alpha".to_string()],
         cargo_args: Vec::new(),
         test_args: Vec::new(),
@@ -372,7 +373,7 @@ pub(crate) fn runner_resolve_base_request(
         force_rerun: false,
         force_rerun_selectors: Vec::new(),
         jobs: 1,
-        generated_config: repo.join(".kiss/rust_llvm_cov_cache/runs/run-test/nextest.toml"),
+        generated_config: repo.join(".kiss/test/rust_llvm_cov_cache/runs/run-test/nextest.toml"),
         population_publication_selectors: None,
         delegated_runners,
         runner_map_fingerprint,

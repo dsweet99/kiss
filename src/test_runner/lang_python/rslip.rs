@@ -7,10 +7,9 @@ use kiss::rslip::{
     CacheStatus as PyCacheStatus, Rslip, RslipBatchProgress, RslipError, RslipOutcome, RslipRequest,
 };
 
-use crate::test_runner::last_status::{python_last_status_identity, record_statuses};
-use crate::test_runner::runners::{
-    SelectorCacheRecord, SelectorExecutionRecord, SelectorExecutionSummary,
-};
+#[cfg(test)]
+use crate::test_runner::runners::SelectorExecutionSummary;
+use crate::test_runner::runners::{SelectorCacheRecord, SelectorExecutionRecord};
 
 #[cfg(test)]
 pub(super) use super::rslip_emit::{
@@ -36,6 +35,7 @@ fn clamp_rslip_jobs(requested: usize) -> usize {
     }
 }
 
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run_rslip_selectors(
     repo_root: &Path,
@@ -44,21 +44,50 @@ pub(crate) fn run_rslip_selectors(
     force_rerun: bool,
     force_rerun_selectors: &[String],
     jobs: usize,
-    content_fingerprint: Option<String>,
     gate: &kiss::GateConfig,
 ) -> Result<SelectorExecutionSummary, String> {
-    run_rslip_selectors_with_runner(
-        RslipBatchArgs {
+    let mut records = Vec::new();
+    run_rslip_selectors_streaming(
+        RslipSelectorsArgs {
             repo_root,
             selectors,
             extra,
             force_rerun,
             force_rerun_selectors,
             jobs,
-            content_fingerprint,
-            gate: gate.clone(),
+            gate,
+        },
+        &mut |record| records.push(record),
+    )?;
+    Ok(SelectorExecutionSummary::default().with_records(records))
+}
+
+pub(crate) struct RslipSelectorsArgs<'a> {
+    pub(crate) repo_root: &'a Path,
+    pub(crate) selectors: &'a [String],
+    pub(crate) extra: &'a [String],
+    pub(crate) force_rerun: bool,
+    pub(crate) force_rerun_selectors: &'a [String],
+    pub(crate) jobs: usize,
+    pub(crate) gate: &'a kiss::GateConfig,
+}
+
+pub(crate) fn run_rslip_selectors_streaming(
+    args: RslipSelectorsArgs<'_>,
+    on_result: &mut dyn FnMut(SelectorExecutionRecord),
+) -> Result<(), String> {
+    run_rslip_selectors_with_runner_streaming(
+        RslipBatchArgs {
+            repo_root: args.repo_root,
+            selectors: args.selectors,
+            extra: args.extra,
+            force_rerun: args.force_rerun,
+            force_rerun_selectors: args.force_rerun_selectors,
+            jobs: args.jobs,
+            gate: args.gate.clone(),
         },
         selected_rslip_pytest_runner(),
+        on_result,
     )
 }
 
@@ -69,14 +98,24 @@ struct RslipBatchArgs<'a> {
     force_rerun: bool,
     force_rerun_selectors: &'a [String],
     jobs: usize,
-    content_fingerprint: Option<String>,
     gate: kiss::GateConfig,
 }
 
+#[cfg(test)]
 fn run_rslip_selectors_with_runner(
     args: RslipBatchArgs<'_>,
     runner: PytestRunner,
 ) -> Result<SelectorExecutionSummary, String> {
+    let mut records = Vec::new();
+    run_rslip_selectors_with_runner_streaming(args, runner, &mut |record| records.push(record))?;
+    Ok(SelectorExecutionSummary::default().with_records(records))
+}
+
+fn run_rslip_selectors_with_runner_streaming(
+    args: RslipBatchArgs<'_>,
+    runner: PytestRunner,
+    on_result: &mut dyn FnMut(SelectorExecutionRecord),
+) -> Result<(), String> {
     assert!(args.jobs > 0, "jobs must be greater than zero");
     let jobs = clamp_rslip_jobs(args.jobs);
     if jobs < args.jobs {
@@ -86,7 +125,6 @@ fn run_rslip_selectors_with_runner(
         ));
     }
     let (python_version, pytest_version) = detect_rslip_versions(args.repo_root)?;
-    let identity = python_last_status_identity(&python_version, &pytest_version, args.extra);
     let force_set: BTreeSet<&str> = args
         .force_rerun_selectors
         .iter()
@@ -95,7 +133,7 @@ fn run_rslip_selectors_with_runner(
 
     let gate = &args.gate;
 
-    let mut template = rslip_request_from_parts(
+    let template = rslip_request_from_parts(
         args.repo_root,
         "",
         args.extra,
@@ -104,46 +142,47 @@ fn run_rslip_selectors_with_runner(
         false,
         gate,
     )?;
-    template.content_fingerprint = args.content_fingerprint;
-    let mut summary = SelectorExecutionSummary::default();
-    let mut statuses = Vec::new();
     let (reqs, runnable_selectors) = partition_rslip_requests(
         PartitionInput {
-            repo_root: args.repo_root,
-            identity: &identity,
             selectors: args.selectors,
             template: &template,
             force_rerun: args.force_rerun,
             force_set: &force_set,
             gate,
         },
-        &mut summary,
-        &mut statuses,
+        on_result,
     );
     let rslip = Rslip::new(runner);
+    let mut streamed = vec![false; runnable_selectors.len()];
     let results = rslip.run_or_reuse_many_bounded_with_progress(reqs, jobs, |event| {
-        if let RslipBatchProgress::Prepared { elapsed, .. } = &event {
-            crate::test_runner::emit_stage_time("rslip_prepare", *elapsed);
+        match &event {
+            RslipBatchProgress::Prepared { elapsed, .. } => {
+                crate::test_runner::emit_stage_time("rslip_prepare", *elapsed);
+            }
+            RslipBatchProgress::SelectorFinalized { outcomes } => {
+                for (index, result) in outcomes {
+                    if let (Some(selector), Some(seen)) =
+                        (runnable_selectors.get(*index), streamed.get_mut(*index))
+                        && !*seen
+                    {
+                        *seen = true;
+                        on_result(rslip_selector_record(selector, result, gate));
+                    }
+                }
+            }
+            _ => {}
         }
-        persist_rslip_progress_statuses(
-            args.repo_root,
-            &identity,
-            &runnable_selectors,
-            &event,
-            gate,
-        );
         handle_rslip_batch_progress(event, &runnable_selectors, gate);
     });
-    for (selector, result) in runnable_selectors.iter().zip(results) {
-        record_rslip_selector_result(selector, result, gate, &mut summary, &mut statuses);
+    for ((selector, result), seen) in runnable_selectors.iter().zip(results).zip(streamed) {
+        if !seen {
+            on_result(rslip_selector_record(selector, &result, gate));
+        }
     }
-    record_statuses(args.repo_root, kiss::Language::Python, &identity, &statuses)?;
-    Ok(summary)
+    Ok(())
 }
 
 struct PartitionInput<'a> {
-    repo_root: &'a Path,
-    identity: &'a crate::test_runner::last_status::LastStatusIdentity,
     selectors: &'a [String],
     template: &'a RslipRequest,
     force_rerun: bool,
@@ -153,8 +192,7 @@ struct PartitionInput<'a> {
 
 fn partition_rslip_requests(
     input: PartitionInput<'_>,
-    summary: &mut SelectorExecutionSummary,
-    statuses: &mut Vec<(String, kiss::rpytest_runner::TestStatus)>,
+    on_result: &mut dyn FnMut(SelectorExecutionRecord),
 ) -> (Vec<RslipRequest>, Vec<String>) {
     let mut reqs = Vec::new();
     let mut runnable = Vec::new();
@@ -162,7 +200,7 @@ fn partition_rslip_requests(
         let timeout = timeout_for_selector_with_gate(input.gate, selector);
 
         if timeout.is_zero() {
-            record_immediate_timeout(input.repo_root, input.identity, selector, summary, statuses);
+            on_result(immediate_timeout_record(selector));
             continue;
         }
         let mut req = input.template.clone();
@@ -176,13 +214,7 @@ fn partition_rslip_requests(
     (reqs, runnable)
 }
 
-fn record_immediate_timeout(
-    repo_root: &Path,
-    identity: &crate::test_runner::last_status::LastStatusIdentity,
-    selector: &str,
-    summary: &mut SelectorExecutionSummary,
-    statuses: &mut Vec<(String, kiss::rpytest_runner::TestStatus)>,
-) {
+fn immediate_timeout_record(selector: &str) -> SelectorExecutionRecord {
     let status = kiss::rpytest_runner::TestStatus::TimedOut;
     crate::test_runner::status_labels::print_classified_status_line(
         status,
@@ -191,30 +223,31 @@ fn record_immediate_timeout(
         None,
         false,
     );
-    statuses.push((selector.to_string(), status));
-    summary.record(SelectorExecutionRecord {
+    SelectorExecutionRecord {
         selector: selector.to_string(),
         status,
         raw_status: None,
         cache_record: SelectorCacheRecord::MissUnstored,
         exit_code: Some(124),
         duration: Duration::ZERO,
-    });
-    let _ = record_statuses(
-        repo_root,
-        kiss::Language::Python,
-        identity,
-        &[(selector.to_string(), status)],
-    );
+    }
 }
 
+#[cfg(test)]
 fn record_rslip_selector_result(
     selector: &str,
     result: Result<RslipOutcome, RslipError>,
     gate: &kiss::GateConfig,
     summary: &mut SelectorExecutionSummary,
-    statuses: &mut Vec<(String, kiss::rpytest_runner::TestStatus)>,
 ) {
+    summary.record(rslip_selector_record(selector, &result, gate));
+}
+
+fn rslip_selector_record(
+    selector: &str,
+    result: &Result<RslipOutcome, RslipError>,
+    gate: &kiss::GateConfig,
+) -> SelectorExecutionRecord {
     match result {
         Ok(outcome) => {
             let raw = outcome.status;
@@ -224,8 +257,7 @@ fn record_rslip_selector_result(
                 outcome.duration,
                 gate,
             );
-            statuses.push((outcome.nodeid.clone(), effective));
-            summary.record(SelectorExecutionRecord {
+            SelectorExecutionRecord {
                 selector: outcome.nodeid.clone(),
                 status: effective,
                 raw_status: Some(raw),
@@ -240,13 +272,11 @@ fn record_rslip_selector_result(
                 },
                 exit_code: outcome.exit_code,
                 duration: outcome.duration,
-            });
+            }
         }
-
         Err(err) => {
-            let (status, exit_code) = status_for_rslip_error(&err);
-            statuses.push((selector.to_string(), status));
-            summary.record(SelectorExecutionRecord {
+            let (status, exit_code) = status_for_rslip_error(err);
+            SelectorExecutionRecord {
                 selector: selector.to_string(),
                 status,
                 raw_status: None,
@@ -257,70 +287,9 @@ fn record_rslip_selector_result(
                 } else {
                     Duration::ZERO
                 },
-            });
+            }
         }
     }
-}
-
-fn persist_rslip_progress_statuses(
-    repo_root: &Path,
-    identity: &crate::test_runner::last_status::LastStatusIdentity,
-    selectors: &[String],
-    event: &RslipBatchProgress,
-    gate: &kiss::GateConfig,
-) {
-    let statuses = match event {
-        RslipBatchProgress::SelectorFinalized { outcomes } => {
-            progress_statuses_from_finalized(outcomes, selectors, gate)
-        }
-        RslipBatchProgress::CachedStatusDump { outcomes } => {
-            progress_statuses_from_cached_hits(outcomes, gate)
-        }
-        _ => return,
-    };
-    let _ = record_statuses(repo_root, kiss::Language::Python, identity, &statuses);
-}
-
-fn progress_statuses_from_finalized(
-    outcomes: &[(usize, Result<RslipOutcome, RslipError>)],
-    selectors: &[String],
-    gate: &kiss::GateConfig,
-) -> Vec<(String, kiss::rpytest_runner::TestStatus)> {
-    outcomes
-        .iter()
-        .filter_map(|(index, result)| match result {
-            Ok(outcome) => Some(progress_status_update(outcome, gate)),
-            Err(err) => {
-                let (status, _) = status_for_rslip_error(err);
-                selectors
-                    .get(*index)
-                    .map(|selector| (selector.clone(), status))
-            }
-        })
-        .collect()
-}
-
-fn progress_statuses_from_cached_hits(
-    outcomes: &[RslipOutcome],
-    gate: &kiss::GateConfig,
-) -> Vec<(String, kiss::rpytest_runner::TestStatus)> {
-    outcomes
-        .iter()
-        .map(|outcome| progress_status_update(outcome, gate))
-        .collect()
-}
-
-fn progress_status_update(
-    outcome: &RslipOutcome,
-    gate: &kiss::GateConfig,
-) -> (String, kiss::rpytest_runner::TestStatus) {
-    let effective = crate::test_runner::status_labels::apply_unit_test_time_limit(
-        outcome.status,
-        &outcome.nodeid,
-        outcome.duration,
-        gate,
-    );
-    (outcome.nodeid.clone(), effective)
 }
 
 #[cfg(target_os = "linux")]

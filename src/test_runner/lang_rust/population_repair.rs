@@ -7,7 +7,13 @@ pub(super) fn repair_stale_population_on_all_mode_accept(
     request: &EnsureRequest,
     planned: &[String],
 ) -> Result<bool, String> {
-    if planned.is_empty() {
+    if planned.is_empty()
+        || crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(
+            &request.repo_root,
+            &request.extras.rust,
+        )
+        .is_err()
+    {
         return Ok(false);
     }
     if rust_population_manifest_is_current_for_args(

@@ -1,313 +1,181 @@
-use std::collections::BTreeMap;
 use std::path::Path;
 
 use kiss::Language;
-use kiss::rpytest_runner::TestStatus;
 
 use crate::test_runner::lang_iface::{
-    EnsureRequest, ExecutionWitness, LanguageRuntime, OutcomeBatch, PublishBatch,
-    SourceDeltaMisses, WitnessStatus, summary_from_witness_statuses,
+    EnsureRequest, ExecutionWitness, LanguageRuntime, Listing, OutcomeBatch,
 };
-use crate::test_runner::python_coverage_index::generation::{
-    SelectorEvidence, current_python_execution_identity, execution_context_matches_current,
-};
-use crate::test_runner::python_coverage_index::{
-    GenerationReason, publish_python_derived_state_with_filter, repo_relative_coverage_file,
-    restamp_and_repair_python_population_generation, selector_deltas_from_fresh_outcomes,
-    try_load_pinned_python_generation_warm,
-};
-use crate::test_runner::runners::SelectorExecutionSummary;
-
-use super::witness_view::{python_identity_digest, python_witness_from_pinned};
+use crate::test_runner::runners::{SelectorExecutionRecord, SelectorExecutionSummary};
 
 pub(crate) struct PythonRuntime;
 
-impl SourceDeltaMisses for PythonRuntime {
-    fn extra_source_delta_misses(
+pub(crate) struct PythonKernelRules;
+
+impl crate::test_runner::lang_iface::KernelRules for PythonKernelRules {
+    fn identity_stage(&self) -> &'static str {
+        "python_source_fingerprint"
+    }
+
+    fn all_mode_plan(
+        &self,
+        repo_root: &Path,
+        extras: &[String],
+        selectors: Vec<String>,
+        _gate: &kiss::GateConfig,
+    ) -> crate::test_runner::lang_iface::AllModePlan {
+        let (planned, population_required) =
+            super::all_mode_plan::python_all_plan(repo_root, extras, selectors);
+        crate::test_runner::lang_iface::AllModePlan {
+            planned,
+            population_required,
+        }
+    }
+
+    fn all_mode_skips_index_rebuild(&self) -> bool {
+        true
+    }
+
+    fn live_misses(
         &self,
         request: &EnsureRequest,
         planned: &[String],
+        identity: &str,
+        _witness: Option<&ExecutionWitness>,
+    ) -> Vec<String> {
+        crate::test_runner::lang_iface::miss_selectors_for_repair(
+            request.mode,
+            planned,
+            identity,
+            None,
+            request.force,
+        )
+    }
+
+    fn stored_coverage(&self, repo_root: &Path) -> crate::test_runner::lang_iface::StoredCoverage {
+        super::stored::stored_coverage(repo_root)
+    }
+
+    fn runner_identity_part(&self, _repo_root: &Path) -> Option<serde_json::Value> {
+        None
+    }
+
+    fn generation_ids(&self, repo_root: &Path) -> crate::test_runner::lang_iface::GenerationIds {
+        super::stored::generation_ids(repo_root)
+    }
+
+    fn stored_witness(
+        &self,
+        repo_root: &Path,
+        extras: &[String],
+    ) -> Option<ExecutionWitness> {
+        if !kiss::rslip::python_records_dir(repo_root).is_dir() {
+            return None;
+        }
+        super::stored::stored_witness(repo_root, extras)
+    }
+
+    fn stored_witness_matches_extras(&self, _repo_root: &Path, _extras: &[String]) -> bool {
+        true
+    }
+
+    fn historical_covering_selectors(
+        &self,
+        repo_root: &Path,
+        keys: &[String],
+        abs: &[std::path::PathBuf],
+    ) -> std::collections::BTreeSet<String> {
+        super::stored::historical_covering_selectors(repo_root, keys, abs)
+    }
+
+    fn indexes_path(&self, repo_root: &Path, keys: &[String]) -> bool {
+        super::stored::indexes_path(repo_root, keys)
+    }
+
+    fn is_test_source(&self, path: &Path) -> bool {
+        kiss::is_python_test_module_path(path)
+    }
+
+    fn list_workspace_selectors(
+        &self,
+        repo_root: &Path,
+        ignore: &[String],
+        extras: &[String],
     ) -> Result<Vec<String>, String> {
-        let Ok(pinned) = try_load_pinned_python_generation_warm(&request.repo_root) else {
-            return Ok(Vec::new());
-        };
-        let stored: BTreeMap<&str, &str> = pinned
-            .timings
-            .iter()
-            .map(|row| (row.selector.as_str(), row.test_definition_digest.as_str()))
-            .collect();
-        let mut current_by_file = BTreeMap::<String, String>::new();
-        let mut misses = Vec::new();
-        for selector in planned {
-            let file = selector
-                .split_once("::")
-                .map(|(file, _)| file)
-                .unwrap_or(selector);
-            let current = current_by_file.entry(file.to_string()).or_insert_with(|| {
-                crate::test_runner::python_coverage_index::storage::
-                    python_selector_definition_digest(&request.repo_root, file)
-            });
-            let stored_digest = stored.get(selector.as_str()).copied().unwrap_or("");
-            if stored_digest == current.as_str() {
-                continue;
-            }
-            let recorded_problem = pinned.timings.iter().any(|row| {
-                row.selector == *selector
-                    && matches!(row.raw_status.as_str(), "failed" | "timed_out")
-            });
-            // A missing digest is not evidence the test file changed. A recorded
-            // FAIL or TIMEOUT is not rerun unless its stored definition digest differs.
-            if recorded_problem && stored_digest.is_empty() {
-                continue;
-            }
-            misses.push(selector.clone());
-        }
-        // A covered source file can change while the test file stays the same.
-        // A PASS or FAIL whose rslip entry no longer matches those files has to run.
-        let passed: Vec<&String> = planned
-            .iter()
-            .filter(|selector| !misses.iter().any(|item| item == *selector))
-            .filter(|selector| {
-                pinned.timings.iter().any(|row| {
-                    row.selector == **selector
-                        && matches!(row.raw_status.as_str(), "passed" | "failed")
-                })
-            })
-            .collect();
-        if !passed.is_empty()
-            && let Ok((python_version, pytest_version)) =
-                super::rslip_request::detect_rslip_versions(&request.repo_root)
+        use crate::test_runner::workspace_selector_cache as selector_cache;
+        if let Some(cached) =
+            selector_cache::load_cached_python_workspace_selectors(repo_root, ignore, extras)
         {
-            let reqs: Vec<_> = passed
-                .iter()
-                .filter_map(|selector| {
-                    super::rslip_request::rslip_request_from_parts(
-                        &request.repo_root,
-                        selector,
-                        &request.extras.python,
-                        &python_version,
-                        &pytest_version,
-                        false,
-                        &request.gate,
-                    )
-                    .ok()
-                })
-                .collect();
-            if reqs.len() == passed.len() {
-                for (selector, outcome) in passed
-                    .iter()
-                    .zip(kiss::rslip::load_cached_outcomes_many(&reqs))
-                {
-                    if matches!(outcome, Ok(None)) {
-                        misses.push((*selector).clone());
-                    }
-                }
-            }
+            return Ok(cached);
         }
-        Ok(misses)
+        let out = crate::test_runner::runners::enumerate_workspace_python_selectors(
+            repo_root, ignore, extras,
+        );
+        if let Ok(ids) = out.as_ref() {
+            selector_cache::store_python_workspace_selectors(repo_root, ignore, ids, extras);
+            crate::test_runner::target_request::add_index();
+        }
+        out
+    }
+
+    fn cancel_active_work(&self) {
+        kiss::rpytest_runner::cancel_active_forkservers();
     }
 }
 
 impl LanguageRuntime for PythonRuntime {
-    fn language(&self) -> Language {
-        Language::Python
-    }
-
-    fn current_identity(&self, request: &EnsureRequest) -> Result<String, String> {
-        if let Ok(pinned) = try_load_pinned_python_generation_warm(&request.repo_root)
-            && execution_context_matches_current(
-                &request.repo_root,
-                &pinned.plan.base_identity,
-                &request.extras.python,
-            )
-        {
-            return Ok(python_identity_digest(&pinned));
-        }
-        let exec = current_python_execution_identity(&request.repo_root, &request.extras.python)?;
-        Ok(format!("py:{}:pending", exec.input_fingerprint))
-    }
-
-    fn load_full_witness(&self, repo_root: &Path) -> Result<ExecutionWitness, String> {
-        let pinned = try_load_pinned_python_generation_warm(repo_root)
-            .map_err(|e| format!("python witness load: {e:?}"))?;
-        Ok(python_witness_from_pinned(&pinned))
-    }
-
-    fn run_selectors(
-        &self,
-        request: &EnsureRequest,
-        miss_set: &[String],
-    ) -> Result<OutcomeBatch, String> {
-        if miss_set.is_empty() {
-            return Ok(OutcomeBatch::default());
-        }
-        let summary = crate::test_runner::runners::run_rslip_selectors(
-            &request.repo_root,
-            miss_set,
-            &request.extras.python,
-            request.force,
-            &request.force_selectors,
-            request.jobs,
-            crate::test_runner::workspace_selector_cache::workspace_files_fingerprint_for_cache(
-                &request.repo_root,
-                &request.ignore,
-            )
-            .ok(),
-            &request.gate,
-        )?;
-        let (statuses, durations_ns) = statuses_from_summary(&summary, miss_set);
-
-        let publication_universe = match request.mode {
-            crate::test_runner::lang_iface::AcceptMode::All
-                if miss_set.len() == request.planned.python.len() =>
-            {
-                Some(request.planned.python.clone())
-            }
-            _ => None,
-        };
-        Ok(OutcomeBatch {
-            summary,
-            selectors: miss_set.to_vec(),
-            statuses,
-            durations_ns,
-            covered_lines: BTreeMap::new(),
-            publication_universe,
+    fn list(&self, request: &EnsureRequest) -> Result<Listing, String> {
+        let record_identity =
+            super::stored::record_identity(&request.repo_root, &request.extras.python)
+                .ok_or("error: kiss: python runner identity unavailable")?;
+        Ok(Listing {
+            ids: request.planned.python.clone(),
+            identity: format!("py:{record_identity}"),
+            record_identity,
         })
     }
 
-    fn publish_outcomes(
+    fn deps(
         &self,
         request: &EnsureRequest,
-        batch: &PublishBatch,
-    ) -> Result<(), String> {
-        let is_indexable = |path: &Path, repo_root: &Path| {
-            repo_relative_coverage_file(repo_root, &path.to_string_lossy()).is_some()
-        };
-        if let Some(universe) = batch.publication_universe.as_ref() {
-            crate::test_runner::emit_test_progress("kiss test: Running python_generation_publish");
-            let started = std::time::Instant::now();
-            let restamped = !request.force
-                && crate::test_runner::lang_python::generation::try_restamp_matching_pinned_universe(
-                    &request.repo_root,
-                    universe,
-                    &request.extras.python,
-                    &is_indexable,
-                    &request.gate,
-                    Some(batch.summary.cache_miss_selectors.as_slice()),
-                )?;
-            if !restamped {
-                publish_python_derived_state_with_filter(
-                    &request.repo_root,
-                    Some(universe),
-                    &request.extras.python,
-                    &request.gate,
-                    is_indexable,
-                )?;
-            }
-            crate::test_runner::emit_stage_time("python_generation_publish", started.elapsed());
-        } else {
-            let started = std::time::Instant::now();
-            let misses = &batch.summary.cache_miss_selectors;
-            if !misses.is_empty() {
-                crate::test_runner::emit_test_progress("kiss test: Running selective_index_repair");
-                let deltas = selector_deltas_from_fresh_outcomes(
-                    &request.repo_root,
-                    misses,
-                    &batch.summary,
-                    &request.extras.python,
-                    &is_indexable,
-                    &request.gate,
-                )?;
-                if deltas.len() != misses.len() {
-                    return Err("error: kiss: incomplete fresh Python generation evidence".into());
-                }
-                let deltas = in_population_deltas(&request.repo_root, deltas);
-                if !deltas.is_empty() {
-                    let _ = restamp_and_repair_python_population_generation(
-                        &request.repo_root,
-                        &request.extras.python,
-                        &deltas,
-                        GenerationReason::IncompleteRepair,
-                    )?;
-                }
-            }
-            crate::test_runner::emit_stage_time("selective_index_repair", started.elapsed());
-        }
-        crate::test_runner::python_coverage_index::clear_python_generation_warm_memo();
-        Ok(())
+        row: &kiss::test_records::TestRecord,
+    ) -> Option<std::collections::BTreeMap<String, String>> {
+        super::stored::current_deps(&request.repo_root, row)
     }
 
-    fn is_indexable_source(&self, path: &Path, repo_root: &Path) -> bool {
-        repo_relative_coverage_file(repo_root, &path.to_string_lossy()).is_some()
-    }
-
-    fn dry_run_lines(
+    fn run(
         &self,
-        selectors: &[String],
-        population: bool,
-        extra: &[String],
-        _jobs: usize,
-    ) -> Result<Vec<String>, String> {
-        let mut lines = Vec::new();
-        if population {
-            lines.push("PYTHON COVERAGE POPULATION".to_string());
-        }
-        if !selectors.is_empty() {
-            let argv = crate::test_runner::runners::build_pytest_argv(selectors, extra);
-            lines.push(crate::test_runner::runners::shell_quote_line(&argv));
-        }
-        Ok(lines)
-    }
-
-    fn accepted_summary(
-        &self,
-        _request: &EnsureRequest,
-        planned: &[String],
-        witness: &ExecutionWitness,
-    ) -> Result<SelectorExecutionSummary, String> {
-        Ok(summary_from_witness_statuses(
-            planned,
-            witness,
-            |selector| selector.to_string(),
-            false,
-        ))
+        request: &EnsureRequest,
+        ids: &[String],
+        on_result: &mut dyn FnMut(SelectorExecutionRecord),
+    ) -> Result<OutcomeBatch, String> {
+        run_python_selectors(request, ids, on_result)
     }
 }
 
-fn in_population_deltas(repo_root: &Path, deltas: Vec<SelectorEvidence>) -> Vec<SelectorEvidence> {
-    let Ok(pinned) = try_load_pinned_python_generation_warm(repo_root) else {
-        return Vec::new();
-    };
-    deltas
-        .into_iter()
-        .filter(|delta| pinned.plan.selectors.iter().any(|s| s == &delta.selector))
-        .collect()
-}
-
-fn statuses_from_summary(
-    summary: &SelectorExecutionSummary,
-    selectors: &[String],
-) -> (Vec<WitnessStatus>, Vec<Option<u64>>) {
-    let mut statuses = Vec::with_capacity(selectors.len());
-    let mut durations = Vec::with_capacity(selectors.len());
-    for sel in selectors {
-        let status = match summary.raw_statuses.get(sel).copied().unwrap_or_else(|| {
-            if summary.timed_out_selectors.iter().any(|s| s == sel) {
-                TestStatus::TimedOut
-            } else if summary.failed_selectors.iter().any(|s| s == sel) {
-                TestStatus::Failed
-            } else {
-                TestStatus::Passed
-            }
-        }) {
-            TestStatus::TimedOut => WitnessStatus::TimedOut,
-            TestStatus::Failed => WitnessStatus::Failed,
-            TestStatus::Passed => WitnessStatus::Passed,
-        };
-        statuses.push(status);
-        durations.push(summary.selector_durations_ns.get(sel).copied());
+pub(super) fn run_python_selectors(
+    request: &EnsureRequest,
+    miss_set: &[String],
+    on_result: &mut dyn FnMut(SelectorExecutionRecord),
+) -> Result<OutcomeBatch, String> {
+    if miss_set.is_empty() {
+        return Ok(OutcomeBatch::default());
     }
-    (statuses, durations)
+    super::rslip::run_rslip_selectors_streaming(
+        super::rslip::RslipSelectorsArgs {
+            repo_root: &request.repo_root,
+            selectors: miss_set,
+            extra: &request.extras.python,
+            force_rerun: request.force,
+            force_rerun_selectors: &request.force_selectors,
+            jobs: request.jobs,
+            gate: &request.gate,
+        },
+        on_result,
+    )?;
+    Ok(OutcomeBatch {
+        summary: SelectorExecutionSummary::default(),
+        selectors: miss_set.to_vec(),
+    })
 }
 
 impl crate::test_runner::coverage_decision::SupportedLanguage for PythonRuntime {

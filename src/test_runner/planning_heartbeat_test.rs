@@ -6,6 +6,7 @@ fn run_test_emits_planning_heartbeat_before_plan_work() {
     std::env::set_current_dir(tmp.path()).unwrap();
     let out = crate::test_runner::capture_stdout::capture_stdout(|| {
         let code = crate::test_runner::run_test(crate::test_runner::RunTestCmdArgs {
+            doubles: None,
             invocation: crate::bin_cli::args::TestInvocation::Commit,
             target_request: crate::test_runner::target_request::request_from_focus(
                 crate::test_runner::target_request::TargetFocus::Git(

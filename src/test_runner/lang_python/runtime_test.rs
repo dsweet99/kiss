@@ -1,34 +1,17 @@
 use super::PythonRuntime;
+use crate::test_runner::coverage_decision::SupportedLanguage;
+use crate::test_runner::lang_iface::KernelRules;
 use crate::test_runner::lang_iface::{
-    AcceptMode, EnsureRequest, ExecutionWitness, LanguageRuntime, PublishBatch, WitnessScope,
-    WitnessStatus,
+    AcceptMode, EnsureRequest, ExecutionWitness, LanguageRuntime, WitnessStatus,
 };
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
 
 #[test]
-fn python_runtime_language_dry_run_and_indexable() {
+fn python_runtime_language_and_no_generation_publish() {
     let rt = PythonRuntime;
     assert_eq!(rt.language(), kiss::Language::Python);
-    let lines = rt
-        .dry_run_lines(&["t.py::a".into()], true, &[], 1)
-        .expect("dry run");
-    assert!(
-        lines
-            .iter()
-            .any(|l| l.contains("PYTHON") || l.contains("pytest") || l.contains("t.py"))
-    );
-    let root = PathBuf::from(".");
-    let _ = rt.is_indexable_source(Path::new("app.py"), &root);
     let src = include_str!("runtime.rs");
-    assert!(
-        src.contains("kiss test: Running python_generation_publish"),
-        "generation publish must announce Running before the work"
-    );
-    assert!(
-        src.contains("kiss test: Running selective_index_repair"),
-        "index repair must announce Running before the work"
-    );
+    assert!(!src.contains("python_generation_publish"));
 }
 
 #[test]
@@ -55,7 +38,6 @@ fn python_accepted_summary_counts_hits() {
     };
     let witness = ExecutionWitness {
         language: "python".into(),
-        scope: WitnessScope::Full,
         identity_digest: "id".into(),
         selectors: vec!["a".into()],
         statuses: vec![WitnessStatus::Passed],
@@ -65,11 +47,15 @@ fn python_accepted_summary_counts_hits() {
         generation_id: "g".into(),
         raw_statuses: Vec::new(),
     };
-    let summary = rt.accepted_summary(&req, &["a".into()], &witness).unwrap();
+    let summary = KernelRules::accepted_summary(
+        &crate::test_runner::lang_python::PythonKernelRules,
+        &req,
+        &["a".into()],
+        &witness,
+    )
+    .unwrap();
     assert_eq!(summary.cache_hits, 1);
-    let _ = rt.discover_universe(&req);
-    let _ = rt.coverage_snapshot(tmp.path());
-    let _ = rt.status_timing_snapshot(tmp.path());
+    let _ = rt.list(&req);
 }
 
 #[test]
@@ -95,22 +81,10 @@ fn python_runtime_empty_run_and_identity_paths() {
             rust: vec![],
         },
     };
-    let batch = rt.run_selectors(&req, &[]).expect("empty");
+    let batch = super::runtime::run_python_selectors(&req, &[], &mut |_| {}).expect("empty");
     assert_eq!(batch.summary.total, 0);
-    assert!(rt.load_full_witness(tmp.path()).is_err());
-    let _ = rt.current_identity(&req);
-    let publish = PublishBatch {
-        selectors: vec![],
-        statuses: vec![],
-        durations_ns: vec![],
-        covered_lines: BTreeMap::new(),
-        publication_universe: Some(vec![]),
-        summary: Default::default(),
-    };
-    let _ = rt.publish_outcomes(&req, &publish);
-    let covering = PublishBatch {
-        publication_universe: None,
-        ..publish
-    };
-    let _ = rt.publish_outcomes(&req, &covering);
+    if let Ok(listing) = rt.list(&req) {
+        assert!(crate::test_runner::ensure_runtime::stored_rows(&req, &rt, &listing).is_none());
+    }
+    let _ = rt.list(&req).map(|listing| listing.identity);
 }

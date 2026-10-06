@@ -8,15 +8,6 @@ use crate::test_runner::runners::command_stdout;
 
 pub(crate) const DEFAULT_PYTEST_TIMEOUT: Duration = Duration::from_secs(180);
 
-fn python_collection_args_digest(extra: &[String]) -> String {
-    let mut h = crate::analyze_cache::fnv1a64(0xcbf2_9ce4_8422_2325, b"rslip-collection-args-v1");
-    for arg in extra {
-        h = crate::analyze_cache::fnv1a64(h, arg.as_bytes());
-        h = crate::analyze_cache::fnv1a64(h, &[0]);
-    }
-    format!("{h:016x}")
-}
-
 pub(crate) fn rslip_request_from_parts(
     repo_root: &Path,
     selector: &str,
@@ -49,7 +40,6 @@ pub(crate) fn rslip_request_from_parts(
         cache_root: python_coverage_cache_root(&repo_root)?,
         force_rerun,
         timeout: Some(timeout_for_selector_with_gate(gate, selector)),
-        content_fingerprint: Some(python_collection_args_digest(extra)),
     })
 }
 
@@ -97,7 +87,7 @@ struct PythonToolVersionsCache {
 }
 
 fn python_tool_versions_cache_path(repo_root: &Path) -> PathBuf {
-    repo_root.join(".kiss").join("python_tool_versions.json")
+    crate::test_runner::test_state_dir(repo_root).join("python_tool_versions.json")
 }
 
 fn file_stamp(path: &Path) -> Option<(u64, u64)> {
@@ -228,9 +218,9 @@ mod tests {
     #[test]
     fn stale_python_tool_version_cache_is_redetected() {
         let tmp = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(tmp.path().join(".kiss")).unwrap();
+        std::fs::create_dir_all(tmp.path().join(".kiss/test")).unwrap();
         std::fs::write(
-            tmp.path().join(".kiss").join("python_tool_versions.json"),
+            tmp.path().join(".kiss/test").join("python_tool_versions.json"),
             r#"{"python":"0.0.0","pytest":"0.0.0","python_exe":"/nope","python_mtime_nanos":1,"python_len":1,"pytest_file":"/nope","pytest_mtime_nanos":1,"pytest_len":1,"path_python":"/nope","path_python_mtime_nanos":1,"path_python_len":1}"#,
         )
         .unwrap();

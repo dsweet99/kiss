@@ -27,14 +27,11 @@ fn witness_opt_batch_c() {
         retry_bad: true,
         metrics: true,
         coverage_all: true,
-        watch: false,
         jobs: Some(4),
         ignore: vec![".venv".into()],
         extra: vec!["-q".into()],
         test_cfg: &test_cfg,
         cfg: &cfg,
-        reload_kissconfig: true,
-        config_path: None,
     };
     assert!(test.coverage_all);
     assert_eq!(test.jobs, Some(4));

@@ -377,9 +377,12 @@ fn supported_language_unifies_planner_and_runtime_stacks() {
         Language::Python
     );
     assert_eq!(
-        <RustRuntime as SupportedLanguage>::language(&RustRuntime),
+        <RustRuntime as SupportedLanguage>::language(&RustRuntime::default()),
         Language::Rust
     );
-    assert_eq!(LanguageRuntime::language(&PythonRuntime), Language::Python);
-    assert_eq!(LanguageRuntime::language(&RustRuntime), Language::Rust);
+    let runtimes: [&dyn LanguageRuntime; 2] = [&PythonRuntime, &RustRuntime::default()];
+    assert_eq!(
+        runtimes.map(|runtime| runtime.language()),
+        [Language::Python, Language::Rust]
+    );
 }

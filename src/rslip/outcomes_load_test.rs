@@ -3,7 +3,7 @@ use std::fs;
 use std::time::Duration;
 
 use crate::rpytest_runner::TestStatus;
-use crate::rslip::cache::{RslipCacheEntry, rslip_cache_fingerprint, store_rslip_cache_entry};
+use crate::rslip::cache::{RslipCacheEntry, store_rslip_cache_entry};
 use crate::rslip::{
     CacheStatus, LineCoverage, RslipOutcome, load_cached_outcomes_many_trusting_population,
 };
@@ -36,14 +36,14 @@ fn trusting_load_does_not_union_coverage_from_other_fingerprints() {
     )
     .unwrap();
     let req = rslip_sample_request(root);
-    fs::create_dir_all(req.cache_root.join("entries")).unwrap();
-    let current_fp = rslip_cache_fingerprint(&req).unwrap();
+    let mut other = req.clone();
+    other.pytest_args = vec!["-k".to_string(), "other".to_string()];
     let thin =
         RslipCacheEntry::from_outcome(&outcome_with_lines(&req.nodeid, "app.py", &[3]), root);
     let fat =
         RslipCacheEntry::from_outcome(&outcome_with_lines(&req.nodeid, "app.py", &[1, 2, 3]), root);
-    store_rslip_cache_entry(&req.cache_root, &current_fp, &thin).unwrap();
-    store_rslip_cache_entry(&req.cache_root, "other-fingerprint", &fat).unwrap();
+    store_rslip_cache_entry(&other, &fat).unwrap();
+    store_rslip_cache_entry(&req, &thin).unwrap();
     let loaded = load_cached_outcomes_many_trusting_population(&[req]);
     let outcome = loaded[0].as_ref().unwrap().as_ref().unwrap();
     assert_eq!(
@@ -63,15 +63,15 @@ fn trusting_load_skips_sibling_files_with_stale_digests() {
     )
     .unwrap();
     let req = rslip_sample_request(root);
-    fs::create_dir_all(req.cache_root.join("entries")).unwrap();
+    let mut other = req.clone();
+    other.pytest_args = vec!["-k".to_string(), "stale".to_string()];
     let stale =
         RslipCacheEntry::from_outcome(&outcome_with_lines(&req.nodeid, "app.py", &[1, 2, 9]), root);
     fs::write(root.join("app.py"), "new\n").unwrap();
-    let current_fp = rslip_cache_fingerprint(&req).unwrap();
     let thin =
         RslipCacheEntry::from_outcome(&outcome_with_lines(&req.nodeid, "app.py", &[1]), root);
-    store_rslip_cache_entry(&req.cache_root, "stale-fingerprint", &stale).unwrap();
-    store_rslip_cache_entry(&req.cache_root, &current_fp, &thin).unwrap();
+    store_rslip_cache_entry(&other, &stale).unwrap();
+    store_rslip_cache_entry(&req, &thin).unwrap();
     let loaded = load_cached_outcomes_many_trusting_population(&[req]);
     let outcome = loaded[0].as_ref().unwrap().as_ref().unwrap();
     assert_eq!(

@@ -29,7 +29,7 @@ fn rebuild_index_maps_covered_files_to_selectors() {
                 (lib.to_string_lossy().to_string(), BTreeSet::from([1])),
                 ("<frozen rust runtime>".to_string(), BTreeSet::from([1])),
                 (
-                    ".kiss/rust_llvm_cov_cache/runtime.rs".to_string(),
+                    ".kiss/test/rust_llvm_cov_cache/runtime.rs".to_string(),
                     BTreeSet::from([1]),
                 ),
                 ("/outside.rs".to_string(), BTreeSet::from([1])),

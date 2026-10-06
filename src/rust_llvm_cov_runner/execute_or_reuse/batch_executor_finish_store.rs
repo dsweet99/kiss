@@ -110,12 +110,123 @@ pub(crate) fn store_completed_outcomes_with(
     let jobs = entry_store_jobs(req, tools, identity, completed);
     let results = run_entry_store_jobs(req.jobs, &req.cache_root, jobs, store)?;
     reconcile_entry_store_results(completed, results)?;
+    record_completed_outcomes(req, tools, identity, completed).map_err(RustLlvmCovError::Io)?;
     crate::rust_llvm_cov_runner::write_ordinary_source_snapshot(
         &req.cache_root,
         &req.source_root,
         identity,
     )
     .map_err(RustLlvmCovError::Io)
+}
+
+pub fn record_completed_outcomes(
+    req: &RustCoverageBatchRequest,
+    tools: &RustCoverageToolIdentity,
+    identity: &RustCoverageBatchIdentity,
+    completed: &[RustLlvmCovOutcome],
+) -> io::Result<()> {
+    let dir = crate::test_records::records_dir(&req.source_root, "rust");
+    let root = req
+        .source_root
+        .canonicalize()
+        .unwrap_or_else(|_| req.source_root.clone());
+    let toolchain = crate::rust_llvm_cov_runner::rust_record_identity(req, tools)?;
+    let mut parsed = std::collections::HashMap::new();
+    let definitions = if completed.is_empty() {
+        std::collections::HashMap::new()
+    } else {
+        test_definitions_by_leaf(&root, &identity.ordinary_source_digests)
+    };
+    for outcome in completed {
+        let mut deps = covered_deps(
+            &root,
+            &outcome.coverage.files,
+            &identity.ordinary_source_digests,
+            &mut parsed,
+        );
+        let leaf = crate::rust_llvm_cov_runner::record_digest::selector_leaf(&outcome.selector);
+        let own: Vec<(String, String)> = definitions
+            .get(leaf)
+            .into_iter()
+            .flatten()
+            .filter(|(key, _)| {
+                key.strip_suffix("::")
+                    .is_none_or(|rel| !deps.contains_key(rel))
+            })
+            .cloned()
+            .collect();
+        deps.extend(own);
+        let record = crate::test_records::TestRecord {
+            schema: crate::test_records::RECORD_SCHEMA.to_string(),
+            language: "rust".to_string(),
+            test_id: outcome.selector.clone(),
+            identity: toolchain.clone(),
+            deps,
+            status: outcome.status,
+            exit_code: outcome.exit_code,
+            duration: outcome.duration,
+            covered: outcome.coverage.files.clone(),
+        };
+        crate::test_records::store_record(&dir, &record)?;
+    }
+    Ok(())
+}
+
+fn test_definitions_by_leaf(
+    root: &Path,
+    ordinary: &std::collections::BTreeMap<String, String>,
+) -> std::collections::HashMap<String, Vec<(String, String)>> {
+    let mut by_leaf: std::collections::HashMap<String, Vec<(String, String)>> =
+        std::collections::HashMap::new();
+    for rel in ordinary.keys().filter(|rel| rel.ends_with(".rs")) {
+        let Ok(text) = std::fs::read_to_string(root.join(rel)) else {
+            continue;
+        };
+        let mut digests =
+            crate::rust_llvm_cov_runner::record_digest::test_definition_digests(rel, &text);
+        let support_key = crate::rust_llvm_cov_runner::record_digest::test_support_key(rel);
+        let Some(support) = digests.remove(&support_key) else {
+            continue;
+        };
+        for (key, digest) in digests {
+            let leaf = crate::rust_llvm_cov_runner::record_digest::selector_leaf(&key).to_string();
+            let entry = by_leaf.entry(leaf).or_default();
+            entry.push((key, digest));
+            entry.push((support_key.clone(), support.clone()));
+        }
+    }
+    by_leaf
+}
+
+fn covered_deps(
+    root: &Path,
+    covered: &std::collections::BTreeMap<String, std::collections::BTreeSet<u32>>,
+    ordinary: &std::collections::BTreeMap<String, String>,
+    parsed: &mut std::collections::HashMap<
+        String,
+        Option<crate::rust_llvm_cov_runner::record_digest::ParsedItems>,
+    >,
+) -> std::collections::BTreeMap<String, String> {
+    covered
+        .iter()
+        .filter_map(|(file, lines)| {
+            let rel = Path::new(file)
+                .strip_prefix(root)
+                .ok()?
+                .to_string_lossy()
+                .into_owned();
+            ordinary.get(&rel)?;
+            let items = parsed
+                .entry(file.clone())
+                .or_insert_with(|| {
+                    std::fs::read_to_string(file)
+                        .ok()
+                        .map(crate::rust_llvm_cov_runner::record_digest::ParsedItems::parse)
+                })
+                .as_ref()?;
+            Some((rel, items.covered_digest(lines)))
+        })
+        .collect()
 }
 
 fn entry_store_jobs(

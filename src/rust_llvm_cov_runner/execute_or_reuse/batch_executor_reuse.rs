@@ -49,38 +49,11 @@ pub(super) fn banned_timeout_batch_result(
     ))
 }
 
-pub(super) fn try_reuse_before_lock(
-    req: &RustCoverageBatchRequest,
-    tools: &RustCoverageToolIdentity,
-    identity: &RustCoverageBatchIdentity,
-) -> Result<Option<RustCoverageBatchResult>, RustLlvmCovError> {
-    if matches!(
-        req.coverage_output_mode,
-        CoverageOutputMode::SelectorEntries
-    ) && !super::super::batch_warm_hit_seal::force_rerun_blocks_all_hit_reuse(req)
-        && let Some(result) =
-            crate::rust_llvm_cov_runner::execute_or_reuse::batch_executor_sealed::try_sealed_all_hit(
-                req, identity, tools,
-            )
-    {
-        crate::rust_llvm_cov_runner::execute_or_reuse::progress_prepared_hits::emit_prepared_rust_cache_hits(
-            &result.completed,
-        );
-        return Ok(Some(with_process_reverse_query_counters(result)));
-    }
-    if !super::super::batch_warm_hit_seal::force_rerun_blocks_all_hit_reuse(req)
-        && let Some(result) = try_check_aggregate_hit(req, identity)?
-    {
-        return Ok(Some(with_process_reverse_query_counters(result)));
-    }
-    Ok(None)
-}
-
 pub(super) fn try_check_aggregate_hit(
     req: &RustCoverageBatchRequest,
     identity: &RustCoverageBatchIdentity,
 ) -> Result<Option<RustCoverageBatchResult>, RustLlvmCovError> {
-    if super::super::batch_warm_hit_seal::force_rerun_blocks_all_hit_reuse(req) {
+    if force_rerun_blocks_reuse(req) {
         return Ok(None);
     }
     if !matches!(
@@ -168,4 +141,12 @@ fn population_duration_hit_completed(
             })
         })
         .collect()
+}
+
+fn force_rerun_blocks_reuse(req: &RustCoverageBatchRequest) -> bool {
+    req.force_rerun
+        || req
+            .force_rerun_selectors
+            .iter()
+            .any(|forced| req.logical_selectors.contains(forced))
 }

@@ -6,19 +6,9 @@ use kiss::Language;
 use kiss::code_roles::is_python_test_module_path;
 
 use super::history::historical_covering_selectors;
-use super::projection::remember_target_plan;
 use super::resolved::{OperandClass, ResolvedTarget, SourceRegion};
 use super::stamp::capture_git_dep_stamp;
 use super::types::{GitFocus, OperandExpr, TargetFocus, TargetRequest};
-
-pub(crate) fn resolve_target(
-    repo_root: &Path,
-    request: &TargetRequest,
-) -> Result<ResolvedTarget, String> {
-    let resolved = resolve_only(repo_root, request)?;
-    remember_target_plan(repo_root, request, &resolved);
-    Ok(resolved)
-}
 
 pub(crate) fn resolve_only(
     repo_root: &Path,
@@ -67,7 +57,7 @@ fn resolve_git(
             rel_lines.entry(path).or_default().extend(lines);
         }
     }
-    let lang = request.lang.map(super::types::LangFilter::to_language);
+    let lang = request.lang;
     Ok(git_resolved(
         repo_root,
         &rel_changed,
@@ -139,7 +129,7 @@ fn resolve_operands(
     operands: &[OperandExpr],
 ) -> Result<ResolvedTarget, String> {
     super::counters::add_parse();
-    let lang = request.lang.map(super::types::LangFilter::to_language);
+    let lang = request.lang;
     let raws: Vec<String> = operands.iter().map(|operand| operand.raw.clone()).collect();
     let expanded = crate::test_runner::targets::expand_target_operands(
         repo_root,

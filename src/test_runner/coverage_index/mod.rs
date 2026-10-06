@@ -39,7 +39,7 @@ impl SupportedLanguage for RustCoverageIndex {
 impl CoverageIndex for PythonCoverageIndex {
     fn cache_root(&self, repo_root: &Path) -> PathBuf {
         python::python_coverage_cache_root(repo_root)
-            .unwrap_or_else(|_| repo_root.join(".kiss").join("rslip_cache"))
+            .unwrap_or_else(|_| crate::test_runner::test_state_dir(repo_root).join("rslip_cache"))
     }
 
     fn index_file_present(&self, repo_root: &Path) -> bool {

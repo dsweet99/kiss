@@ -242,9 +242,12 @@ mod tests {
 
     #[test]
     fn two_selectors_matching_one_instance_union_coverage_once() {
-        let instances = vec![instance("pkg::bin$alpha", true, 1)];
-        let (outcomes, counters) =
-            aggregate_logical_selectors(&["alpha".to_string(), "a".to_string()], false, &instances);
+        let instances = vec![instance("pkg::bin$mod_a::alpha", true, 1)];
+        let (outcomes, counters) = aggregate_logical_selectors(
+            &["alpha".to_string(), "mod_a::alpha".to_string()],
+            false,
+            &instances,
+        );
         assert_eq!(outcomes.len(), 2);
         assert!(
             outcomes

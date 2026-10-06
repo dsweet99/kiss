@@ -19,7 +19,8 @@ pub(crate) fn ensure_request_for_all(
     let ignore_norm = kiss::normalize_ignore_prefixes(ignore);
     let mut planned_python = Vec::new();
     let mut planned_rust = Vec::new();
-    if lang_filter != Some(Language::Rust) {
+    let allowed = LanguageKeyed::from_fn(|language| language.allowed_by(lang_filter));
+    if allowed.python {
         planned_python =
             crate::test_runner::workspace_selector_cache::load_cached_python_workspace_selectors(
                 repo_root,
@@ -37,7 +38,7 @@ pub(crate) fn ensure_request_for_all(
                 Ok,
             )?;
     }
-    if lang_filter != Some(Language::Python) {
+    if allowed.rust {
         planned_rust =
             crate::test_runner::workspace_selector_cache::load_cached_rust_workspace_selectors(
                 repo_root,
@@ -87,39 +88,6 @@ pub(crate) fn ensure_request_from_planned(args: EnsureFromPlanned<'_>) -> Ensure
         planned: LanguageKeyed {
             python: args.planned.sel.python.clone(),
             rust: args.planned.sel.rust.clone(),
-        },
-    }
-}
-
-pub(crate) struct EnsureSelectorsArgs<'a> {
-    pub repo_root: &'a Path,
-    pub ignore: &'a [String],
-    pub jobs: usize,
-    pub lang_filter: Language,
-    pub force: bool,
-    pub python: Vec<String>,
-    pub rust: Vec<String>,
-    pub gate: GateConfig,
-    pub pytest_args: Vec<String>,
-}
-
-pub(crate) fn ensure_request_for_selectors(args: EnsureSelectorsArgs<'_>) -> EnsureRequest {
-    EnsureRequest {
-        repo_root: args.repo_root.to_path_buf(),
-        mode: AcceptMode::All,
-        lang_filter: Some(args.lang_filter),
-        ignore: args.ignore.to_vec(),
-        force: args.force,
-        force_selectors: Vec::new(),
-        jobs: args.jobs,
-        gate: args.gate,
-        extras: LanguageKeyed {
-            python: args.pytest_args,
-            rust: vec![],
-        },
-        planned: LanguageKeyed {
-            python: args.python,
-            rust: args.rust,
         },
     }
 }

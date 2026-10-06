@@ -8,7 +8,7 @@ pub(crate) fn ensure_languages_runtime(
     request: &EnsureRequest,
 ) -> Result<EnsureRuntimeResult, String> {
     let python = PythonRuntime;
-    let rust = RustRuntime;
+    let rust = RustRuntime::default();
     let mut modules: Vec<&dyn LanguageRuntime> = Vec::new();
     if request.requires(SupportedLanguage::language(&python)) {
         modules.push(&python);

@@ -123,11 +123,6 @@ pub enum Commands {
         )]
         jobs: Option<usize>,
     },
-    #[command(
-        name = "test-watch",
-        about = "Run covering tests when sources change and answer later kiss test commands"
-    )]
-    TestWatch,
     #[command(name = "__rust-llvm-cov-target-runner", hide = true)]
     RustLlvmCovTargetRunner {
         #[arg(long, value_name = "DIR")]

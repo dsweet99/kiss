@@ -23,7 +23,6 @@ pub struct RustCoverageBatchCounters {
     pub current_index_generation: String,
     pub cache_pruned_entries: usize,
     pub process_residual_count: usize,
-    pub legacy_cleanup_deferred: bool,
     pub reverse_query_hits: u64,
     pub reverse_unavailable: ReverseUnavailableCounts,
     pub reverse_published: bool,

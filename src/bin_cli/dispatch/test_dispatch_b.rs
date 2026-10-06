@@ -127,7 +127,6 @@ fn dispatch_test_command_routes_valid_test_mode() {
     };
     let code = super::dispatch_test_command(
         None,
-        None,
         Commands::Test {
             operands: vec!["commit".to_string()],
             main_branch: None,
@@ -161,7 +160,6 @@ fn dispatch_test_command_rejects_removed_validate_selection() {
     };
     let code = super::dispatch_test_command(
         Some(kiss::Language::Python),
-        None,
         Commands::Test {
             operands: vec!["validate-selection".to_string()],
             main_branch: None,

@@ -1,5 +1,5 @@
 use super::*;
-use crate::test_runner::{RunTestOnceOutcome, WatchCoverageResult};
+use crate::test_runner::RunTestOnceOutcome;
 
 fn dry_args() -> RunTestCmdArgs<'static> {
     crate::test_runner::test_mode_fixtures::python_dry_run_args(vec!["tests/a.py".into()])
@@ -8,18 +8,14 @@ fn dry_args() -> RunTestCmdArgs<'static> {
 #[test]
 fn shared_report_is_the_captured_transcript_not_a_rebuild() {
     let args = dry_args();
-    let report = run_kiss_test_report(
-        args,
-        |_a| {
-            crate::test_runner::emit_test_progress("kiss test: Planning ...");
-            crate::test_runner::emit_test_progress("PASS: tests/a.py::test_a (0.01s)");
-            crate::test_runner::emit_test_progress(
-                "✓ 1 passed · 0 failed · 0 timed out · 0.01s total · 0s max pass",
-            );
-            RunTestOnceOutcome::Code(0)
-        },
-        |_a| WatchCoverageResult::ok(0),
-    );
+    let report = run_kiss_test_report(args, |_a| {
+        crate::test_runner::emit_test_progress("kiss test: Planning ...");
+        crate::test_runner::emit_test_progress("PASS: tests/a.py::test_a (0.01s)");
+        crate::test_runner::emit_test_progress(
+            "✓ 1 passed · 0 failed · 0 timed out · 0.01s total · 0s max pass",
+        );
+        RunTestOnceOutcome::Code(0)
+    });
     let out = report.output.unwrap_or_default();
     assert!(out.contains("kiss test: Planning ..."), "{out}");
     assert!(out.contains("PASS: tests/a.py::test_a"), "{out}");
@@ -33,42 +29,29 @@ fn shared_report_is_the_captured_transcript_not_a_rebuild() {
 fn shared_report_skips_coverage_on_test_failure() {
     let mut args = dry_args();
     args.dry_run = false;
-    let covs = std::sync::atomic::AtomicUsize::new(0);
-    let report = run_kiss_test_report(
-        args,
-        |_a| RunTestOnceOutcome::Code(2),
-        |_a| {
-            covs.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            WatchCoverageResult::ok(0)
-        },
-    );
+    let report = run_kiss_test_report(args, |_a| RunTestOnceOutcome::Code(2));
     assert_eq!(report.exit_code, 2);
-    assert_eq!(covs.load(std::sync::atomic::Ordering::SeqCst), 0);
 }
 
 #[test]
 fn shared_report_puts_recap_after_coverage_violations() {
     let mut args = dry_args();
     args.dry_run = false;
-    let report = run_kiss_test_report(
-        args,
-        |_a| {
-            crate::test_runner::final_summary::note_violation_kind("test_coverage", 2);
-            crate::test_runner::emit_test_progress(
-                "VIOLATION:test_coverage:foo.py:1:foo: 0% covered (0/4). Need 3 more lines to reach 75%.",
-            );
-            crate::test_runner::final_summary::print_final_test_summary(
-                &crate::test_runner::final_summary::FinalTestSummary {
-                    passed: 1,
-                    failed: 0,
-                    ..crate::test_runner::final_summary::FinalTestSummary::default()
-                },
-                std::time::Duration::from_millis(10),
-            );
-            RunTestOnceOutcome::Code(1)
-        },
-        |_a| panic!("must not run_cov"),
-    );
+    let report = run_kiss_test_report(args, |_a| {
+        crate::test_runner::final_summary::note_violation_kind("test_coverage", 2);
+        crate::test_runner::emit_test_progress(
+            "VIOLATION:test_coverage:foo.py:1:foo: 0% covered (0/4). Need 3 more lines to reach 75%.",
+        );
+        crate::test_runner::final_summary::print_final_test_summary(
+            &crate::test_runner::final_summary::FinalTestSummary {
+                passed: 1,
+                failed: 0,
+                ..crate::test_runner::final_summary::FinalTestSummary::default()
+            },
+            std::time::Duration::from_millis(10),
+        );
+        RunTestOnceOutcome::Code(1)
+    });
     assert!(
         report.output.is_none(),
         "assemblable miss must not use transcript as official output: {:?}",
@@ -103,7 +86,6 @@ fn shared_report_carries_structured_totals() {
             );
             RunTestOnceOutcome::Code(1)
         },
-        |_a| WatchCoverageResult::ok(0),
         true,
         Some(std::path::Path::new(".")),
     );
@@ -111,18 +93,6 @@ fn shared_report_carries_structured_totals() {
     assert_eq!(totals.passed, 11816);
     assert_eq!(totals.failed, 2);
     assert_eq!(totals.timed_out, 1);
-    let mut suite = kiss::rust_llvm_cov_runner::WatchSuiteReport::default();
-    suite.merge_unscoped_lines(&report.lines);
-    suite.apply_totals(&totals);
-    let recap = suite.format();
-    assert_eq!(suite.passed(), 11816, "{recap}");
-    assert!(
-        recap.contains("11816 passed")
-            && recap.contains("2 failed")
-            && recap.contains("1 timed out"),
-        "{recap}"
-    );
-    assert!(!recap.contains("2633 passed"), "{recap}");
 }
 
 #[test]
@@ -133,7 +103,6 @@ fn ready_target_report_after_tests_skips_run_cov() {
     };
     use crate::test_runner::test_mode_fixtures::{git_in, init_git};
     use crate::test_runner::workspace_selector_cache::store_rust_workspace_selectors;
-    use std::sync::atomic::{AtomicUsize, Ordering};
 
     let tmp = tempfile::tempdir().unwrap();
     init_git(&tmp);
@@ -167,18 +136,12 @@ fn ready_target_report_after_tests_skips_run_cov() {
         Some(kiss::Language::Rust),
     );
     args.dry_run = false;
-    let covs = AtomicUsize::new(0);
     let report = run_kiss_test_report_reuse(
         args,
         |_a| {
+            record_rust_pass(tmp.path());
             let request = workspace_request(Some(kiss::Language::Rust), &[]);
-            let built = materialize_target_report(
-                tmp.path(),
-                &request,
-                &EnsurePolicy::soft(false, false),
-            )
-            .unwrap();
-            crate::test_runner::target_request::publish_if_rows_hold(tmp.path(), &request, &built)
+            materialize_target_report(tmp.path(), &request, &EnsurePolicy::soft(false, false))
                 .unwrap();
             assert!(
                 crate::test_runner::target_request::load_ready_for_request(
@@ -192,14 +155,9 @@ fn ready_target_report_after_tests_skips_run_cov() {
             );
             RunTestOnceOutcome::Code(0)
         },
-        |_a| {
-            covs.fetch_add(1, Ordering::SeqCst);
-            panic!("ready TargetReport must skip run_cov");
-        },
         true,
         Some(tmp.path()),
     );
-    assert_eq!(covs.load(Ordering::SeqCst), 0);
     assert_eq!(report.exit_code, 0);
 }
 
@@ -211,7 +169,6 @@ fn ready_target_report_with_coverage_gates_skips_run_cov() {
     };
     use crate::test_runner::test_mode_fixtures::{git_in, init_git};
     use crate::test_runner::workspace_selector_cache::store_rust_workspace_selectors;
-    use std::sync::atomic::{AtomicUsize, Ordering};
 
     let tmp = tempfile::tempdir().unwrap();
     init_git(&tmp);
@@ -246,34 +203,23 @@ fn ready_target_report_with_coverage_gates_skips_run_cov() {
         Some(kiss::Language::Rust),
     );
     args.dry_run = false;
-    let covs = AtomicUsize::new(0);
     let report = run_kiss_test_report_reuse(
         args,
         |_a| {
             let request = workspace_request(Some(kiss::Language::Rust), &[]);
-            let built = materialize_target_report(
-                tmp.path(),
-                &request,
-                &EnsurePolicy::soft(false, false),
-            )
-            .unwrap();
+            let built =
+                materialize_target_report(tmp.path(), &request, &EnsurePolicy::soft(false, false))
+                    .unwrap();
             assert!(
                 built.gates.iter().any(|gate| gate.kind == "test_coverage"),
                 "uncovered app.py must emit a coverage gate: {:?}",
                 built.gates
             );
-            crate::test_runner::target_request::publish_if_rows_hold(tmp.path(), &request, &built)
-                .unwrap();
             RunTestOnceOutcome::Code(0)
-        },
-        |_a| {
-            covs.fetch_add(1, Ordering::SeqCst);
-            panic!("ready TargetReport with coverage gates must skip run_cov");
         },
         true,
         Some(tmp.path()),
     );
-    assert_eq!(covs.load(Ordering::SeqCst), 0);
     assert_eq!(report.exit_code, 1);
 }
 
@@ -286,4 +232,22 @@ fn workspace_request_sorts_ignore_prefixes() {
     );
     assert!(matches!(request.focus, TargetFocus::Workspace));
     assert_eq!(request.ignore, vec!["a".to_string(), "z".to_string()]);
+}
+
+/// What a Rust run that passed one test leaves behind.
+fn record_rust_pass(repo: &std::path::Path) {
+    assert!(
+        crate::test_runner::workspace_selector_cache::store_rust_workspace_selectors(
+            repo,
+            &[],
+            &["t_ok".into()]
+        )
+    );
+    crate::test_runner::lang_rust::test_records::store(
+        repo,
+        &[(
+            "t_ok".into(),
+            crate::test_runner::lang_iface::WitnessStatus::Passed,
+        )],
+    );
 }

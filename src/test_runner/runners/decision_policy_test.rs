@@ -6,9 +6,7 @@ use kiss::rust_llvm_cov_runner::RustLineCoverage;
 use crate::test_runner::coverage_decision::{
     CoverageFreshness, LanguagePlanner, PopulationPlan, SelectionDecision, TestSelector,
 };
-use crate::test_runner::python_coverage_index::{
-    rebuild_python_coverage_index, write_python_population_manifest_for_args,
-};
+use crate::test_runner::python_coverage_index::write_python_population_manifest_for_args;
 use crate::test_runner::runners::python_backer;
 use crate::test_runner::runners::rust_backer::RustModule;
 use crate::test_runner::rust_coverage_index::{
@@ -34,7 +32,6 @@ fn planner_parity_cases(
     lib: &std::path::Path,
     universe: &[TestSelector; 2],
 ) -> Vec<PlannerParityCase> {
-    rebuild_python_coverage_index(repo_root).unwrap();
     write_test_entry(
         repo_root,
         "value",
@@ -46,6 +43,14 @@ fn planner_parity_cases(
     );
     // Empty coverage: publish population directly (rebuild would omit the selector).
     write_rust_population_manifest_for_args(repo_root, &[universe[1].id.clone()], &[]).unwrap();
+    crate::test_runner::python_coverage_index::storage::write_python_record_fixture(
+        repo_root,
+        &universe[0].id,
+        TestStatus::Passed,
+        kiss::rslip::LineCoverage {
+            files: BTreeMap::new(),
+        },
+    );
     write_python_population_manifest_for_args(repo_root, &[universe[0].id.clone()], &[]).unwrap();
 
     vec![

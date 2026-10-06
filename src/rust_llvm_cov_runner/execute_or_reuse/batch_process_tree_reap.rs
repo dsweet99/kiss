@@ -10,6 +10,18 @@ pub(crate) fn reap_zombies_count() -> usize {
     reaped
 }
 
+pub(crate) fn reap_until_clear(grace: std::time::Duration, residual: impl Fn() -> usize) -> usize {
+    let deadline = std::time::Instant::now() + grace;
+    loop {
+        reap_zombies();
+        let remaining = residual();
+        if remaining == 0 || std::time::Instant::now() >= deadline {
+            return remaining;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+}
+
 fn reap_one_zombie() -> bool {
     let pid = unsafe { libc::waitpid(-1, std::ptr::null_mut(), libc::WNOHANG) };
     pid > 0

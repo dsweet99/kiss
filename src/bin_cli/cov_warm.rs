@@ -32,7 +32,6 @@ fn warm_cov_caches_after_tests_inner(
     gate: &GateConfig,
     pytest_args: &[String],
 ) {
-    crate::test_runner::python_coverage_index::clear_python_generation_warm_memo();
     let ignore = merge_check_ignore_prefixes(ignore_user);
     if gate.test_coverage_threshold == 0 && gate.unit_test_time_gate_disabled() {
         return;

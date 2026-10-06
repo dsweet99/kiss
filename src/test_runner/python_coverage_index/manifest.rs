@@ -5,8 +5,8 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use super::storage::{
-    normalized_python_repo_root, python_coverage_cache_root, python_entries_fingerprint,
-    python_population_manifest_path, python_source_input_fingerprint, python_unique_suffix,
+    normalized_python_repo_root, python_entries_fingerprint, python_population_manifest_path,
+    python_source_input_fingerprint, python_unique_suffix,
 };
 use super::{POPULATION_SCHEMA_VERSION, PYTHON_SELECTOR_DISCOVERY_VERSION};
 
@@ -34,9 +34,6 @@ pub(crate) fn python_population_manifest_is_current_for_args_with_env_keys(
         return false;
     };
 
-    if super::generation::current_generation_plan_matches(repo_root, selectors, test_args) {
-        return true;
-    }
     python_population_manifest_is_current_with_identity(repo_root, selectors, &identity)
 }
 
@@ -46,8 +43,7 @@ pub(crate) fn write_python_population_manifest_with_identity(
     selectors: &[String],
     identity: &PythonPopulationManifestIdentity,
 ) -> Result<(), String> {
-    let entries_fingerprint = python_entries_fingerprint(&python_coverage_cache_root(repo_root)?)
-        .map_err(|e| e.to_string())?;
+    let entries_fingerprint = python_entries_fingerprint(repo_root).map_err(|e| e.to_string())?;
     write_python_population_manifest_with_identity_and_entries_fingerprint(
         repo_root,
         selectors,
@@ -150,15 +146,6 @@ fn stored_python_universe_names(
     test_args: &[String],
     env_keys: &[&str],
 ) -> Option<Vec<String>> {
-    if let Some(plan) = super::generation::try_load_complete_pinned_python_plan(repo_root)
-        && super::generation::execution_context_matches_current(
-            repo_root,
-            &plan.base_identity,
-            test_args,
-        )
-    {
-        return Some(plan.selectors);
-    }
     let identity =
         current_python_population_manifest_identity_with_env_keys(repo_root, test_args, env_keys)
             .ok()?;
@@ -181,16 +168,6 @@ pub(crate) fn stored_python_universe_population(
     env_keys: &[&str],
 ) -> Option<StoredPythonPopulation> {
     let selectors = stored_python_universe_names(repo_root, test_args, env_keys)?;
-    if let Ok(pinned) = super::generation::try_load_pinned_python_generation(repo_root) {
-        let exec =
-            super::generation::current_python_execution_identity(repo_root, test_args).ok()?;
-        if pinned.plan.base_identity == exec && pinned.complete {
-            return Some(StoredPythonPopulation {
-                selectors,
-                identity: format!("gen:{}", pinned.generation_id),
-            });
-        }
-    }
     let identity =
         current_python_population_manifest_identity_with_env_keys(repo_root, test_args, env_keys)
             .ok()?;
@@ -210,35 +187,6 @@ pub(crate) fn stored_python_universe_population(
     }
 }
 
-pub(crate) fn stored_python_universe_selectors_for_current_inputs(
-    repo_root: &Path,
-    test_args: &[String],
-    env_keys: &[&str],
-) -> Option<Vec<String>> {
-    if let Ok(pinned) = super::generation::try_load_pinned_python_generation(repo_root) {
-        let exec =
-            super::generation::current_python_execution_identity(repo_root, test_args).ok()?;
-        if pinned.plan.base_identity == exec {
-            valid_stored_selectors(&pinned.plan.selectors)?;
-            return Some(pinned.plan.selectors.clone());
-        }
-        return None;
-    }
-    let identity =
-        current_python_population_manifest_identity_with_env_keys(repo_root, test_args, env_keys)
-            .ok()?;
-    let manifest = read_python_population_manifest(repo_root)?;
-    let input_fingerprint = python_source_input_fingerprint(repo_root).ok()?;
-    if manifest.matches_python_identity(&identity, &normalized_python_repo_root(repo_root))
-        && manifest.input_fingerprint == input_fingerprint
-    {
-        valid_stored_selectors(&manifest.selectors)?;
-        Some(manifest.selectors.clone())
-    } else {
-        None
-    }
-}
-
 pub(crate) fn python_population_environment_mismatch(
     repo_root: &Path,
     test_args: &[String],
@@ -247,10 +195,6 @@ pub(crate) fn python_population_environment_mismatch(
     let identity =
         current_python_population_manifest_identity_with_env_keys(repo_root, test_args, env_keys)
             .ok()?;
-    if let Ok(pinned) = super::generation::try_load_pinned_python_generation(repo_root) {
-        return (pinned.plan.base_identity.env != identity.env)
-            .then_some((pinned.plan.base_identity.env.clone(), identity.env));
-    }
     let manifest = read_python_population_manifest(repo_root)?;
     (manifest.env != identity.env).then_some((manifest.env, identity.env))
 }
@@ -295,8 +239,7 @@ fn stable_population_identity(manifest: &PythonPopulationManifest) -> String {
 }
 
 fn current_python_entries_fingerprint(repo_root: &Path) -> Option<String> {
-    let cache_root = python_coverage_cache_root(repo_root).ok()?;
-    python_entries_fingerprint(&cache_root).ok()
+    python_entries_fingerprint(repo_root).ok()
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

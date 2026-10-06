@@ -1,6 +1,3 @@
-use super::batch_executor_prepare::{
-    PreparedRustBatch, merge_prepared, outcome_from_entry, prepare_rust_batch,
-};
 use crate::rust_llvm_cov_runner::RustLlvmCovError;
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_executor_fresh::execute_fresh_batch_with_exporter;
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_export::SubprocessInstanceExporter;
@@ -10,7 +7,6 @@ use crate::rust_llvm_cov_runner::execute_or_reuse::batch_result::{
     RustCoverageBatchCounters, RustCoverageBatchResult,
 };
 use crate::rust_llvm_cov_runner::execute_or_reuse::batch_run::default_batch_subprocess_runner;
-use crate::rust_llvm_cov_runner::execute_or_reuse::worker::cleanup_legacy_worker_data_nonblocking;
 use crate::rust_llvm_cov_runner::file_lock::FileLockGuard;
 use crate::rust_llvm_cov_runner::plan::batch_fingerprint::{
     RustCoverageBatchIdentity, RustCoverageToolIdentity,
@@ -137,8 +133,8 @@ where
     if let Some(result) = banned_timeout_batch_result(req) {
         return Ok(result);
     }
-    if let Some(result) = try_reuse_before_lock(req, tools, &identity)? {
-        return Ok(result);
+    if let Some(result) = try_check_aggregate_hit(req, &identity)? {
+        return Ok(with_process_reverse_query_counters(result));
     }
 
     let held = HELD_LOCK.with(|slot| slot.borrow_mut().take());
@@ -148,35 +144,6 @@ where
         LOCK_BATCH_COUNT.with(|c| c.set(c.get() + 1));
         lock_batch_with_progress(&req.cache_root)?
     };
-    let mut prepared = None;
-    if matches!(
-        req.coverage_output_mode,
-        CoverageOutputMode::SelectorEntries
-    ) && !super::batch_warm_hit_seal::force_rerun_blocks_all_hit_reuse(req)
-    {
-        match try_all_hit_fast_path(req, tools, &identity)? {
-            FastPathProbe::Hit(result) => {
-                return finalize_all_hit_fast_path(req, &identity, *result);
-            }
-            FastPathProbe::Miss(probed) => prepared = probed,
-        }
-    }
-    let legacy_cleanup = cleanup_legacy_worker_data_nonblocking(&req.cache_root)?;
-
-    if matches!(
-        req.coverage_output_mode,
-        CoverageOutputMode::SelectorEntries
-    ) && !req.force_rerun
-    {
-        return run_locked_selector_entries(
-            req,
-            tools,
-            &identity,
-            fresh,
-            legacy_cleanup.deferred,
-            prepared,
-        );
-    }
 
     let plan = crate::rust_llvm_cov_runner::execute_or_reuse::progress::log_named_step(
         "batch-plan",
@@ -186,73 +153,19 @@ where
             })
         },
     )?;
-    if let Some(mut result) = try_check_aggregate_hit(req, &identity)? {
-        result.counters.legacy_cleanup_deferred = legacy_cleanup.deferred;
+    if let Some(result) = try_check_aggregate_hit(req, &identity)? {
         return Ok(with_process_reverse_query_counters(result));
     }
 
     fresh(req, tools, &identity, &plan).and_then(|mut result| {
-        finalize_after_fresh_batch(req, tools, &identity, legacy_cleanup.deferred, &mut result)?;
+        finalize_after_fresh_batch(req, tools, &identity, &mut result)?;
         Ok(with_process_reverse_query_counters(result))
     })
 }
 
 #[path = "batch_executor_reuse.rs"]
 mod reuse;
-use reuse::{
-    banned_timeout_batch_result, resolve_batch_identity, try_check_aggregate_hit,
-    try_reuse_before_lock,
-};
-
-fn run_locked_selector_entries<F>(
-    req: &RustCoverageBatchRequest,
-    tools: &RustCoverageToolIdentity,
-    identity: &RustCoverageBatchIdentity,
-    fresh: F,
-    deferred: bool,
-    prepared: Option<PreparedRustBatch>,
-) -> Result<RustCoverageBatchResult, RustLlvmCovError>
-where
-    F: FnOnce(
-        &RustCoverageBatchRequest,
-        &RustCoverageToolIdentity,
-        &RustCoverageBatchIdentity,
-        &RustCoverageBatchPlan,
-    ) -> Result<RustCoverageBatchResult, RustLlvmCovError>,
-{
-    let prepared = match prepared {
-        Some(prepared) => prepared,
-        None => prepare_rust_batch(req, tools, identity)?,
-    };
-    if prepared.misses_empty() {
-        let result = prepared.hit_result(&req.logical_selectors);
-        let hits: Vec<_> = prepared.hits_by_selector.values().cloned().collect();
-        super::progress_prepared_hits::emit_prepared_rust_cache_hits(&hits);
-        return maybe_publish_derived_after_all_hit(req, tools, identity, result).map(
-            |mut result| {
-                result.counters.legacy_cleanup_deferred = deferred;
-                with_process_reverse_query_counters(result)
-            },
-        );
-    }
-    let mut miss_req = req.clone();
-    miss_req.logical_selectors = prepared.misses.clone();
-    let miss_plan = crate::rust_llvm_cov_runner::execute_or_reuse::progress::log_named_step(
-        "batch-plan",
-        || {
-            build_rust_coverage_batch_plan(&miss_req).map_err(|message| {
-                RustLlvmCovError::InvalidRequest(format!("batch plan: {message}"))
-            })
-        },
-    )?;
-    let hits: Vec<_> = prepared.hits_by_selector.values().cloned().collect();
-    super::progress_prepared_hits::emit_prepared_rust_cache_hits(&hits);
-    fresh(&miss_req, tools, identity, &miss_plan).and_then(|fresh_result| {
-        let mut result = merge_prepared(&prepared, &req.logical_selectors, Some(fresh_result));
-        finalize_after_fresh_batch(req, tools, identity, deferred, &mut result)?;
-        Ok(with_process_reverse_query_counters(result))
-    })
-}
+use reuse::{banned_timeout_batch_result, resolve_batch_identity, try_check_aggregate_hit};
 
 pub(super) fn with_process_reverse_query_counters(
     mut result: RustCoverageBatchResult,
@@ -265,34 +178,20 @@ fn finalize_after_fresh_batch(
     req: &RustCoverageBatchRequest,
     tools: &RustCoverageToolIdentity,
     identity: &RustCoverageBatchIdentity,
-    legacy_cleanup_deferred: bool,
     result: &mut RustCoverageBatchResult,
 ) -> Result<(), RustLlvmCovError> {
     if !matches!(
         req.coverage_output_mode,
         CoverageOutputMode::SelectorEntries
     ) {
-        result.counters.legacy_cleanup_deferred = legacy_cleanup_deferred;
         return Ok(());
     }
     apply_population_derived_publication(req, tools, identity, result)?;
     crate::rust_llvm_cov_runner::publish_derived::batch_derived::maybe_prune_obsolete_selective_after_batch(
         req, identity, result,
     )?;
-    super::batch_executor_sealed::write_seal_after_complete_pass(req, identity, result);
-    result.counters.legacy_cleanup_deferred = legacy_cleanup_deferred;
+    super::batch_executor_sealed::publish_durations_after_complete_pass(req, identity, result);
     Ok(())
-}
-
-fn maybe_publish_derived_after_all_hit(
-    req: &RustCoverageBatchRequest,
-    tools: &RustCoverageToolIdentity,
-    identity: &RustCoverageBatchIdentity,
-    mut result: RustCoverageBatchResult,
-) -> Result<RustCoverageBatchResult, RustLlvmCovError> {
-    apply_population_derived_publication(req, tools, identity, &mut result)?;
-    super::batch_executor_sealed::write_seal_after_complete_pass(req, identity, &result);
-    Ok(result)
 }
 
 fn apply_population_derived_publication(
@@ -328,43 +227,6 @@ fn apply_population_derived_publication(
     Ok(())
 }
 
-enum FastPathProbe {
-    Hit(Box<RustCoverageBatchResult>),
-    Miss(Option<PreparedRustBatch>),
-}
-
-fn finalize_all_hit_fast_path(
-    req: &RustCoverageBatchRequest,
-    identity: &RustCoverageBatchIdentity,
-    mut result: RustCoverageBatchResult,
-) -> Result<RustCoverageBatchResult, RustLlvmCovError> {
-    super::progress_prepared_hits::emit_prepared_rust_cache_hits(&result.completed);
-    super::batch_executor_sealed::write_seal_after_complete_pass(req, identity, &result);
-    result.counters.legacy_cleanup_deferred =
-        cleanup_legacy_worker_data_nonblocking(&req.cache_root)?.deferred;
-    Ok(with_process_reverse_query_counters(result))
-}
-
-fn try_all_hit_fast_path(
-    req: &RustCoverageBatchRequest,
-    tools: &RustCoverageToolIdentity,
-    identity: &RustCoverageBatchIdentity,
-) -> Result<FastPathProbe, RustLlvmCovError> {
-    if let Some(result) = super::batch_executor_sealed::try_sealed_all_hit(req, identity, tools) {
-        return Ok(FastPathProbe::Hit(Box::new(result)));
-    }
-    if population_derived_state_stale(req, tools, identity)? {
-        return Ok(FastPathProbe::Miss(None));
-    }
-    let prepared = prepare_rust_batch(req, tools, identity)?;
-    if !prepared.misses_empty() {
-        return Ok(FastPathProbe::Miss(Some(prepared)));
-    }
-    Ok(FastPathProbe::Hit(Box::new(
-        prepared.hit_result(&req.logical_selectors),
-    )))
-}
-
 #[cfg(test)]
 #[path = "batch_executor_test.rs"]
 mod tests;
@@ -372,14 +234,6 @@ mod tests;
 #[cfg(test)]
 #[path = "batch_executor_b_test.rs"]
 mod tests_b;
-
-#[cfg(test)]
-#[path = "batch_executor_all_hit_lock_test.rs"]
-mod all_hit_lock_tests;
-
-#[cfg(test)]
-#[path = "batch_executor_partition_test.rs"]
-mod partition_tests;
 
 #[cfg(test)]
 mod held_lock_test {

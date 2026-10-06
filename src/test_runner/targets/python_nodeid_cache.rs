@@ -86,7 +86,7 @@ fn content_fingerprint(path: &Path) -> Option<String> {
 }
 
 fn cache_path(repo_root: &Path) -> PathBuf {
-    repo_root.join(".kiss").join(CACHE_FILE)
+    crate::test_runner::test_state_dir(repo_root).join(CACHE_FILE)
 }
 
 fn read_cache(repo_root: &Path) -> Option<FileNodeidCache> {
@@ -96,7 +96,7 @@ fn read_cache(repo_root: &Path) -> Option<FileNodeidCache> {
 }
 
 fn write_cache(repo_root: &Path, cache: &FileNodeidCache) -> bool {
-    let dir = repo_root.join(".kiss");
+    let dir = crate::test_runner::test_state_dir(repo_root);
     if fs::create_dir_all(&dir).is_err() {
         return false;
     }

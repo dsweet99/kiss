@@ -1,4 +1,4 @@
-use super::{EnsureSelectorsArgs, ensure_request_for_selectors, ensure_request_from_planned};
+use super::ensure_request_from_planned;
 use crate::test_runner::PlannedSelectors;
 use crate::test_runner::lang_iface::AcceptMode;
 use std::path::PathBuf;
@@ -133,21 +133,4 @@ fn ensure_request_carries_session_gate_without_reload() {
             .abs()
             < f64::EPSILON
     );
-}
-
-#[test]
-fn ensure_request_for_selectors_sets_lang_filter() {
-    let req = ensure_request_for_selectors(EnsureSelectorsArgs {
-        repo_root: PathBuf::from("/r").as_path(),
-        ignore: &[],
-        jobs: 1,
-        lang_filter: kiss::Language::Rust,
-        force: false,
-        python: vec![],
-        rust: vec!["t".into()],
-        gate: kiss::GateConfig::default(),
-        pytest_args: vec![],
-    });
-    assert_eq!(req.lang_filter, Some(kiss::Language::Rust));
-    assert_eq!(req.planned.rust, vec!["t".to_string()]);
 }

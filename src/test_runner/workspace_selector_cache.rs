@@ -26,7 +26,7 @@ mod inventory;
 pub(crate) use fresh::begin_inventory_session;
 pub(crate) use inventory::{
     rust_full_source_fingerprint, rust_selector_inputs_fingerprint_for_cache,
-    watch_support_gitignore, workspace_source_inventory_fingerprint_for_cache,
+    support_gitignore, workspace_source_inventory_fingerprint_for_cache,
 };
 #[path = "workspace_selector_cache_lookup.rs"]
 mod lookup;
@@ -60,14 +60,12 @@ pub(super) struct LanguageSelectorCache {
 pub(super) struct LangFingerprints {
     python: String,
     rust: String,
+    has_python: bool,
+    has_rust: bool,
 }
 
 fn cache_path(repo_root: &Path, name: &str) -> PathBuf {
-    repo_root.join(".kiss").join(name)
-}
-
-fn durable_cache_path(repo_root: &Path, name: &str) -> PathBuf {
-    repo_root.join("target").join("kiss-plan").join(name)
+    crate::test_runner::test_state_dir(repo_root).join(name)
 }
 
 fn identity_cache_name(
@@ -138,19 +136,6 @@ fn workspace_fingerprint_computation_count() -> usize {
 
 pub(super) fn combined_files_fingerprint(fp: &LangFingerprints) -> String {
     format!("{}:{}", fp.python, fp.rust)
-}
-
-fn workspace_files_fingerprint(repo_root: &Path, ignore: &[String]) -> io::Result<String> {
-    Ok(combined_files_fingerprint(&workspace_lang_fingerprints(
-        repo_root, ignore,
-    )?))
-}
-
-pub(crate) fn workspace_files_fingerprint_for_cache(
-    repo_root: &Path,
-    ignore: &[String],
-) -> io::Result<String> {
-    workspace_files_fingerprint(repo_root, ignore)
 }
 
 pub(crate) fn normalized_root(repo_root: &Path) -> String {
@@ -225,7 +210,7 @@ pub(super) fn read_all_language_caches(repo_root: &Path, name: &str) -> Vec<Lang
     let stem = name.strip_suffix(".json").unwrap_or(name);
     let keyed_prefix = format!("{stem}.");
     let mut paths = Vec::new();
-    for dir in [repo_root.join(".kiss")] {
+    for dir in [crate::test_runner::test_state_dir(repo_root)] {
         let Ok(entries) = fs::read_dir(dir) else {
             continue;
         };
@@ -276,9 +261,7 @@ pub(super) fn persist_selector_cache(
     name: &str,
     cache: &LanguageSelectorCache,
 ) -> bool {
-    let primary_ok = write_cache_at(&cache_path(repo_root, name), cache).is_ok();
-    let durable_ok = write_cache_at(&durable_cache_path(repo_root, name), cache).is_ok();
-    primary_ok || durable_ok
+    write_cache_at(&cache_path(repo_root, name), cache).is_ok()
 }
 
 pub(super) fn persist_selector_cache_for_identity(
@@ -322,6 +305,33 @@ pub(super) fn language_cache(
     }
 }
 
+pub(crate) fn store_workspace_selector_sets(
+    repo_root: &Path,
+    ignore: &[String],
+    selectors: &crate::test_runner::language_keyed::LanguageKeyed<Vec<String>>,
+    extras: crate::test_runner::language_keyed::LanguageKeyed<&[String]>,
+) -> Option<String> {
+    let crate::test_runner::language_keyed::LanguageKeyed { python, rust } = selectors;
+    store_workspace_selectors(repo_root, ignore, python, rust, extras.python)
+}
+
+pub(crate) fn load_cached_workspace_selector_sets(
+    repo_root: &Path,
+    ignore: &[String],
+    extras: crate::test_runner::language_keyed::LanguageKeyed<&[String]>,
+    lang_filter: Option<kiss::Language>,
+) -> Option<(
+    crate::test_runner::language_keyed::LanguageKeyed<Vec<String>>,
+    String,
+)> {
+    let (python, rust, fp) =
+        load_cached_workspace_selectors_for_lang(repo_root, ignore, extras.python, lang_filter)?;
+    Some((
+        crate::test_runner::language_keyed::LanguageKeyed { python, rust },
+        fp,
+    ))
+}
+
 pub(crate) fn store_workspace_selectors(
     repo_root: &Path,
     ignore: &[String],
@@ -349,8 +359,10 @@ pub(crate) fn store_workspace_selectors(
         rust_selectors,
         &[],
     );
-    let python_ok = persist_selector_cache_for_identity(repo_root, PYTHON_CACHE_FILE, &python);
-    let rust_ok = persist_selector_cache_for_identity(repo_root, RUST_CACHE_FILE, &rust);
+    let python_ok = (!fps.has_python && python_selectors.is_empty() && python_extra.is_empty())
+        || persist_selector_cache_for_identity(repo_root, PYTHON_CACHE_FILE, &python);
+    let rust_ok = (!fps.has_rust && rust_selectors.is_empty())
+        || persist_selector_cache_for_identity(repo_root, RUST_CACHE_FILE, &rust);
     if python_ok && rust_ok {
         rust_memo::remember_rust_selectors(&root, ignore, &fps.rust, rust_selectors);
         Some(combined_files_fingerprint(&fps))

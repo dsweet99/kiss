@@ -4,26 +4,19 @@ use crate::bin_cli::args::TestInvocation;
 use crate::test_runner::RunTestCmdArgs;
 use crate::test_runner::test_mode_fixtures::{init_git, with_cwd};
 use crate::test_runner::{
-    KissTestReport, RunTestOnceOutcome, WatchCoverageResult, run_kiss_test_report,
-    run_kiss_test_report_reuse,
+    KissTestReport, RunTestOnceOutcome, run_kiss_test_report, run_kiss_test_report_reuse,
 };
 
-fn run_transcript_report<F, C>(args: RunTestCmdArgs<'_>, run_tests: F, run_cov: C) -> KissTestReport
+fn run_transcript_report<F>(args: RunTestCmdArgs<'_>, run_tests: F) -> KissTestReport
 where
     F: FnMut(RunTestCmdArgs<'_>) -> RunTestOnceOutcome,
-    C: FnMut(&RunTestCmdArgs<'_>) -> WatchCoverageResult,
 {
-    run_kiss_test_report_reuse(
-        args,
-        run_tests,
-        run_cov,
-        true,
-        Some(std::path::Path::new(".")),
-    )
+    run_kiss_test_report_reuse(args, run_tests, true, Some(std::path::Path::new(".")))
 }
 
 fn live_all_args() -> RunTestCmdArgs<'static> {
     RunTestCmdArgs {
+        doubles: None,
         invocation: TestInvocation::All,
         target_request: crate::test_runner::target_request::workspace_request(None, &[]),
         main_branch_cli: None,
@@ -56,12 +49,11 @@ fn emit_bilingual_run() -> RunTestOnceOutcome {
     crate::test_runner::emit_test_progress("kiss test: rslip prepared hits=2 misses=0");
     crate::test_runner::emit_test_progress("kiss test: tests_remaining=2");
     {
-        let _guard =
-            kiss::rust_llvm_cov_runner::ProgressLanguageGuard::enter(kiss::Language::Python);
+        let _guard = kiss::watch_report::ProgressLanguageGuard::enter(kiss::Language::Python);
         crate::test_runner::emit_test_progress("PASS (cached): 2 selectors");
     }
     {
-        let _guard = kiss::rust_llvm_cov_runner::ProgressLanguageGuard::enter(kiss::Language::Rust);
+        let _guard = kiss::watch_report::ProgressLanguageGuard::enter(kiss::Language::Rust);
         crate::test_runner::emit_test_progress("PASS (cached): 3 selectors");
     }
     crate::test_runner::final_summary::print_final_test_summary(
@@ -108,15 +100,16 @@ fn publish_rust_ready(repo: &std::path::Path) {
         EnsurePolicy, materialize_target_report, workspace_request,
     };
     use crate::test_runner::workspace_selector_cache::store_rust_workspace_selectors;
-    assert!(store_rust_workspace_selectors(repo, &[], &[]));
-    let request = workspace_request(Some(kiss::Language::Rust), &[]);
-    let built = materialize_target_report(
+    assert!(store_rust_workspace_selectors(repo, &[], &["t_ok".into()]));
+    crate::test_runner::lang_rust::test_records::store(
         repo,
-        &request,
-        &EnsurePolicy::soft(false, false),
-    )
-    .unwrap();
-    crate::test_runner::target_request::publish_if_rows_hold(repo, &request, &built).unwrap();
+        &[(
+            "t_ok".into(),
+            crate::test_runner::lang_iface::WitnessStatus::Passed,
+        )],
+    );
+    let request = workspace_request(Some(kiss::Language::Rust), &[]);
+    materialize_target_report(repo, &request, &EnsurePolicy::soft(false, false)).unwrap();
     assert!(
         crate::test_runner::target_request::load_ready_for_request(
             repo,
@@ -124,7 +117,7 @@ fn publish_rust_ready(repo: &std::path::Path) {
             false,
             crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
         )
-            .is_some(),
+        .is_some(),
         "published rust-ready report must load"
     );
 }
@@ -142,16 +135,15 @@ fn all_hit_replays_compact_recap_without_running() {
                 runs.fetch_add(1, Ordering::SeqCst);
                 emit_sample_run()
             },
-            |_a| WatchCoverageResult::ok(0),
             true,
             Some(tmp.path()),
         );
         assert_eq!(runs.load(Ordering::SeqCst), 1);
-        assert_eq!(first.exit_code, 1);
         assert_eq!(
-            first.error.as_deref(),
-            Some("target membership is not proven complete")
+            first.exit_code, 0,
+            "no Rust tests: the run settles an empty scope"
         );
+        assert_eq!(first.error, None);
         publish_rust_ready(tmp.path());
         assert!(
             tmp.path().join(".kiss").join("suite_report.json").is_file()
@@ -172,7 +164,6 @@ fn all_hit_replays_compact_recap_without_running() {
                 runs.fetch_add(1, Ordering::SeqCst);
                 panic!("source-stable oneshot must not re-enter the engine")
             },
-            |_a| panic!("source-stable oneshot must not run coverage"),
             true,
             Some(tmp.path()),
         );
@@ -180,7 +171,7 @@ fn all_hit_replays_compact_recap_without_running() {
         assert_eq!(second.exit_code, 0);
         let replayed = second.output.unwrap_or_default();
         assert!(
-            replayed.contains("0 passed") && replayed.contains("report members=0"),
+            replayed.contains("1 passed") && replayed.contains("report members=1"),
             "{replayed}"
         );
         assert!(!replayed.contains("rslip prepared"), "{replayed}");
@@ -195,23 +186,15 @@ fn source_edit_misses_and_reruns() {
     seed_repo(&tmp);
     with_cwd(tmp.path(), || {
         let runs = AtomicUsize::new(0);
-        let _ = run_kiss_test_report(
-            live_all_args(),
-            |_a| {
-                runs.fetch_add(1, Ordering::SeqCst);
-                emit_sample_run()
-            },
-            |_a| WatchCoverageResult::ok(0),
-        );
+        let _ = run_kiss_test_report(live_all_args(), |_a| {
+            runs.fetch_add(1, Ordering::SeqCst);
+            emit_sample_run()
+        });
         std::fs::write(tmp.path().join("t.py"), "def test_a():\n    assert False\n").unwrap();
-        let _ = run_kiss_test_report(
-            live_all_args(),
-            |_a| {
-                runs.fetch_add(1, Ordering::SeqCst);
-                emit_sample_run()
-            },
-            |_a| WatchCoverageResult::ok(0),
-        );
+        let _ = run_kiss_test_report(live_all_args(), |_a| {
+            runs.fetch_add(1, Ordering::SeqCst);
+            emit_sample_run()
+        });
         assert_eq!(runs.load(Ordering::SeqCst), 2);
     });
 }
@@ -229,27 +212,19 @@ fn rust_body_edit_misses_and_reruns() {
     .unwrap();
     with_cwd(tmp.path(), || {
         let runs = AtomicUsize::new(0);
-        let _ = run_kiss_test_report(
-            live_all_args(),
-            |_a| {
-                runs.fetch_add(1, Ordering::SeqCst);
-                emit_sample_run()
-            },
-            |_a| WatchCoverageResult::ok(0),
-        );
+        let _ = run_kiss_test_report(live_all_args(), |_a| {
+            runs.fetch_add(1, Ordering::SeqCst);
+            emit_sample_run()
+        });
         std::fs::write(
             tmp.path().join("src/lib.rs"),
             "pub fn add(a: i32, b: i32) -> i32 { a + b + 0 }\n",
         )
         .unwrap();
-        let _ = run_kiss_test_report(
-            live_all_args(),
-            |_a| {
-                runs.fetch_add(1, Ordering::SeqCst);
-                emit_sample_run()
-            },
-            |_a| WatchCoverageResult::ok(0),
-        );
+        let _ = run_kiss_test_report(live_all_args(), |_a| {
+            runs.fetch_add(1, Ordering::SeqCst);
+            emit_sample_run()
+        });
         assert_eq!(
             runs.load(Ordering::SeqCst),
             2,
@@ -265,24 +240,16 @@ fn force_bad_misses_and_reruns() {
     seed_repo(&tmp);
     with_cwd(tmp.path(), || {
         let runs = AtomicUsize::new(0);
-        let _ = run_kiss_test_report(
-            live_all_args(),
-            |_a| {
-                runs.fetch_add(1, Ordering::SeqCst);
-                emit_sample_run()
-            },
-            |_a| WatchCoverageResult::ok(0),
-        );
+        let _ = run_kiss_test_report(live_all_args(), |_a| {
+            runs.fetch_add(1, Ordering::SeqCst);
+            emit_sample_run()
+        });
         let mut forced = live_all_args();
         forced.force_bad = true;
-        let _ = run_kiss_test_report(
-            forced,
-            |_a| {
-                runs.fetch_add(1, Ordering::SeqCst);
-                emit_sample_run()
-            },
-            |_a| WatchCoverageResult::ok(0),
-        );
+        let _ = run_kiss_test_report(forced, |_a| {
+            runs.fetch_add(1, Ordering::SeqCst);
+            emit_sample_run()
+        });
         assert_eq!(runs.load(Ordering::SeqCst), 2);
     });
 }
@@ -293,23 +260,15 @@ fn assert_edit_misses(edit: impl FnOnce(&std::path::Path)) {
     seed_repo(&tmp);
     with_cwd(tmp.path(), || {
         let runs = AtomicUsize::new(0);
-        let _ = run_kiss_test_report(
-            live_all_args(),
-            |_a| {
-                runs.fetch_add(1, Ordering::SeqCst);
-                emit_sample_run()
-            },
-            |_a| WatchCoverageResult::ok(0),
-        );
+        let _ = run_kiss_test_report(live_all_args(), |_a| {
+            runs.fetch_add(1, Ordering::SeqCst);
+            emit_sample_run()
+        });
         edit(tmp.path());
-        let _ = run_kiss_test_report(
-            live_all_args(),
-            |_a| {
-                runs.fetch_add(1, Ordering::SeqCst);
-                emit_sample_run()
-            },
-            |_a| WatchCoverageResult::ok(0),
-        );
+        let _ = run_kiss_test_report(live_all_args(), |_a| {
+            runs.fetch_add(1, Ordering::SeqCst);
+            emit_sample_run()
+        });
         assert_eq!(runs.load(Ordering::SeqCst), 2);
     });
 }
@@ -365,23 +324,15 @@ fn custom_config_edit_misses_and_reruns() {
     let _guard = kiss::ConfigPathOverrideGuard::enter(Some(&custom));
     with_cwd(tmp.path(), || {
         let runs = AtomicUsize::new(0);
-        let _ = run_kiss_test_report(
-            live_all_args(),
-            |_a| {
-                runs.fetch_add(1, Ordering::SeqCst);
-                emit_sample_run()
-            },
-            |_a| WatchCoverageResult::ok(0),
-        );
+        let _ = run_kiss_test_report(live_all_args(), |_a| {
+            runs.fetch_add(1, Ordering::SeqCst);
+            emit_sample_run()
+        });
         std::fs::write(&custom, "[test]\nnum_jobs = 2\n").unwrap();
-        let _ = run_kiss_test_report(
-            live_all_args(),
-            |_a| {
-                runs.fetch_add(1, Ordering::SeqCst);
-                emit_sample_run()
-            },
-            |_a| WatchCoverageResult::ok(0),
-        );
+        let _ = run_kiss_test_report(live_all_args(), |_a| {
+            runs.fetch_add(1, Ordering::SeqCst);
+            emit_sample_run()
+        });
         assert_eq!(runs.load(Ordering::SeqCst), 2);
     });
 }
@@ -394,23 +345,15 @@ fn gitignored_pyproject_does_not_rerun() {
     std::fs::write(tmp.path().join(".gitignore"), "pyproject.toml\n").unwrap();
     with_cwd(tmp.path(), || {
         let runs = AtomicUsize::new(0);
-        let _ = run_kiss_test_report(
-            live_all_args(),
-            |_a| {
-                runs.fetch_add(1, Ordering::SeqCst);
-                emit_sample_run()
-            },
-            |_a| WatchCoverageResult::ok(0),
-        );
+        let _ = run_kiss_test_report(live_all_args(), |_a| {
+            runs.fetch_add(1, Ordering::SeqCst);
+            emit_sample_run()
+        });
         std::fs::write(tmp.path().join("pyproject.toml"), "[project]\nname='x'\n").unwrap();
-        let second = run_kiss_test_report(
-            live_all_args(),
-            |_a| {
-                runs.fetch_add(1, Ordering::SeqCst);
-                emit_sample_run()
-            },
-            |_a| panic!("must not run_cov"),
-        );
+        let second = run_kiss_test_report(live_all_args(), |_a| {
+            runs.fetch_add(1, Ordering::SeqCst);
+            emit_sample_run()
+        });
         assert_eq!(runs.load(Ordering::SeqCst), 2);
         assert_eq!(second.exit_code, 1);
         assert_eq!(
@@ -428,23 +371,15 @@ fn gitignored_inc_does_not_rerun() {
     std::fs::write(tmp.path().join(".gitignore"), "*.inc\n").unwrap();
     with_cwd(tmp.path(), || {
         let runs = AtomicUsize::new(0);
-        let _ = run_kiss_test_report(
-            live_all_args(),
-            |_a| {
-                runs.fetch_add(1, Ordering::SeqCst);
-                emit_sample_run()
-            },
-            |_a| WatchCoverageResult::ok(0),
-        );
+        let _ = run_kiss_test_report(live_all_args(), |_a| {
+            runs.fetch_add(1, Ordering::SeqCst);
+            emit_sample_run()
+        });
         std::fs::write(tmp.path().join("foo.inc"), "// fragment\n").unwrap();
-        let second = run_kiss_test_report(
-            live_all_args(),
-            |_a| {
-                runs.fetch_add(1, Ordering::SeqCst);
-                emit_sample_run()
-            },
-            |_a| panic!("must not run_cov"),
-        );
+        let second = run_kiss_test_report(live_all_args(), |_a| {
+            runs.fetch_add(1, Ordering::SeqCst);
+            emit_sample_run()
+        });
         assert_eq!(runs.load(Ordering::SeqCst), 2);
         assert_eq!(second.exit_code, 1);
         assert_eq!(
@@ -461,34 +396,22 @@ fn unscoped_then_python_then_unscoped_skips_engine() {
     seed_repo(&tmp);
     with_cwd(tmp.path(), || {
         let runs = AtomicUsize::new(0);
-        let first = run_kiss_test_report(
-            live_all_args(),
-            |_a| {
-                runs.fetch_add(1, Ordering::SeqCst);
-                emit_bilingual_run()
-            },
-            |_a| WatchCoverageResult::ok(0),
-        );
+        let first = run_kiss_test_report(live_all_args(), |_a| {
+            runs.fetch_add(1, Ordering::SeqCst);
+            emit_bilingual_run()
+        });
         assert_eq!(runs.load(Ordering::SeqCst), 1);
         assert_eq!(first.exit_code, 1);
-        let python = run_kiss_test_report(
-            python_all_args(),
-            |_a| {
-                runs.fetch_add(1, Ordering::SeqCst);
-                emit_bilingual_run()
-            },
-            |_a| panic!("must not run_cov"),
-        );
+        let python = run_kiss_test_report(python_all_args(), |_a| {
+            runs.fetch_add(1, Ordering::SeqCst);
+            emit_bilingual_run()
+        });
         assert_eq!(runs.load(Ordering::SeqCst), 2);
         assert_eq!(python.exit_code, 1);
-        let third = run_kiss_test_report(
-            live_all_args(),
-            |_a| {
-                runs.fetch_add(1, Ordering::SeqCst);
-                emit_bilingual_run()
-            },
-            |_a| panic!("must not run_cov"),
-        );
+        let third = run_kiss_test_report(live_all_args(), |_a| {
+            runs.fetch_add(1, Ordering::SeqCst);
+            emit_bilingual_run()
+        });
         assert_eq!(runs.load(Ordering::SeqCst), 3);
         assert_eq!(third.exit_code, 1);
     });
@@ -497,8 +420,7 @@ fn unscoped_then_python_then_unscoped_skips_engine() {
 fn emit_python_only_covering_miss() -> RunTestOnceOutcome {
     crate::test_runner::emit_test_progress("kiss test: rslip prepared hits=2 misses=0");
     {
-        let _guard =
-            kiss::rust_llvm_cov_runner::ProgressLanguageGuard::enter(kiss::Language::Python);
+        let _guard = kiss::watch_report::ProgressLanguageGuard::enter(kiss::Language::Python);
         crate::test_runner::emit_test_progress("PASS (cached): 2 selectors");
     }
     crate::test_runner::final_summary::print_final_test_summary(
@@ -515,12 +437,11 @@ fn emit_python_only_covering_miss() -> RunTestOnceOutcome {
 fn emit_covering_abort() -> RunTestOnceOutcome {
     crate::test_runner::emit_test_progress("kiss test: rslip prepared hits=2 misses=0");
     {
-        let _guard =
-            kiss::rust_llvm_cov_runner::ProgressLanguageGuard::enter(kiss::Language::Python);
+        let _guard = kiss::watch_report::ProgressLanguageGuard::enter(kiss::Language::Python);
         crate::test_runner::emit_test_progress("PASS (cached): 2 selectors");
     }
     {
-        let _guard = kiss::rust_llvm_cov_runner::ProgressLanguageGuard::enter(kiss::Language::Rust);
+        let _guard = kiss::watch_report::ProgressLanguageGuard::enter(kiss::Language::Rust);
         crate::test_runner::emit_test_progress("PASS (cached): 2 selectors");
     }
     crate::test_runner::final_summary::print_final_test_summary(
@@ -549,14 +470,10 @@ fn unscoped_covering_miss_without_rust_counts_does_not_wipe_bilingual() {
     .unwrap();
     with_cwd(tmp.path(), || {
         let runs = AtomicUsize::new(0);
-        let first = run_kiss_test_report(
-            live_all_args(),
-            |_a| {
-                runs.fetch_add(1, Ordering::SeqCst);
-                emit_bilingual_run()
-            },
-            |_a| WatchCoverageResult::ok(0),
-        );
+        let first = run_kiss_test_report(live_all_args(), |_a| {
+            runs.fetch_add(1, Ordering::SeqCst);
+            emit_bilingual_run()
+        });
         assert_eq!(runs.load(Ordering::SeqCst), 1);
         assert_eq!(first.exit_code, 1);
         std::fs::write(
@@ -564,22 +481,14 @@ fn unscoped_covering_miss_without_rust_counts_does_not_wipe_bilingual() {
             "pub fn add(a: i32, b: i32) -> i32 { a + b }\n// covering-miss\n",
         )
         .unwrap();
-        let _ = run_kiss_test_report(
-            live_all_args(),
-            |_a| {
-                runs.fetch_add(1, Ordering::SeqCst);
-                emit_python_only_covering_miss()
-            },
-            |_a| WatchCoverageResult::ok(0),
-        );
-        let retry = run_kiss_test_report(
-            live_all_args(),
-            |_a| {
-                runs.fetch_add(1, Ordering::SeqCst);
-                emit_bilingual_run()
-            },
-            |_a| panic!("must not run_cov"),
-        );
+        let _ = run_kiss_test_report(live_all_args(), |_a| {
+            runs.fetch_add(1, Ordering::SeqCst);
+            emit_python_only_covering_miss()
+        });
+        let retry = run_kiss_test_report(live_all_args(), |_a| {
+            runs.fetch_add(1, Ordering::SeqCst);
+            emit_bilingual_run()
+        });
         assert_eq!(runs.load(Ordering::SeqCst), 3);
         assert_eq!(retry.exit_code, 1);
     });
@@ -598,14 +507,10 @@ fn rust_covering_abort_does_not_persist_partial_recap() {
     .unwrap();
     with_cwd(tmp.path(), || {
         let runs = AtomicUsize::new(0);
-        let first = run_kiss_test_report(
-            live_all_args(),
-            |_a| {
-                runs.fetch_add(1, Ordering::SeqCst);
-                emit_bilingual_run()
-            },
-            |_a| WatchCoverageResult::ok(0),
-        );
+        let first = run_kiss_test_report(live_all_args(), |_a| {
+            runs.fetch_add(1, Ordering::SeqCst);
+            emit_bilingual_run()
+        });
         assert_eq!(runs.load(Ordering::SeqCst), 1);
         assert_eq!(first.exit_code, 1);
         std::fs::write(
@@ -613,23 +518,15 @@ fn rust_covering_abort_does_not_persist_partial_recap() {
             "pub fn add(a: i32, b: i32) -> i32 { a + b }\n// covering-abort\n",
         )
         .unwrap();
-        let abort = run_kiss_test_report(
-            live_all_args(),
-            |_a| {
-                runs.fetch_add(1, Ordering::SeqCst);
-                emit_covering_abort()
-            },
-            |_a| WatchCoverageResult::ok(0),
-        );
+        let abort = run_kiss_test_report(live_all_args(), |_a| {
+            runs.fetch_add(1, Ordering::SeqCst);
+            emit_covering_abort()
+        });
         assert_eq!(abort.exit_code, 1);
-        let retry = run_kiss_test_report(
-            live_all_args(),
-            |_a| {
-                runs.fetch_add(1, Ordering::SeqCst);
-                emit_bilingual_run()
-            },
-            |_a| WatchCoverageResult::ok(0),
-        );
+        let retry = run_kiss_test_report(live_all_args(), |_a| {
+            runs.fetch_add(1, Ordering::SeqCst);
+            emit_bilingual_run()
+        });
         assert_eq!(
             runs.load(Ordering::SeqCst),
             3,
@@ -657,34 +554,22 @@ fn rust_scoped_unattributed_persist_does_not_wipe_bilingual() {
     .unwrap();
     with_cwd(tmp.path(), || {
         let runs = AtomicUsize::new(0);
-        let first = run_kiss_test_report(
-            live_all_args(),
-            |_a| {
-                runs.fetch_add(1, Ordering::SeqCst);
-                emit_bilingual_run()
-            },
-            |_a| WatchCoverageResult::ok(0),
-        );
+        let first = run_kiss_test_report(live_all_args(), |_a| {
+            runs.fetch_add(1, Ordering::SeqCst);
+            emit_bilingual_run()
+        });
         assert_eq!(runs.load(Ordering::SeqCst), 1);
         assert_eq!(first.exit_code, 1);
         let mut rust_forced = rust_all_args();
         rust_forced.force_rerun = true;
-        let _ = run_kiss_test_report(
-            rust_forced,
-            |_a| {
-                runs.fetch_add(1, Ordering::SeqCst);
-                emit_sample_run()
-            },
-            |_a| WatchCoverageResult::ok(0),
-        );
-        let third = run_kiss_test_report(
-            live_all_args(),
-            |_a| {
-                runs.fetch_add(1, Ordering::SeqCst);
-                emit_bilingual_run()
-            },
-            |_a| panic!("must not run_cov"),
-        );
+        let _ = run_kiss_test_report(rust_forced, |_a| {
+            runs.fetch_add(1, Ordering::SeqCst);
+            emit_sample_run()
+        });
+        let third = run_kiss_test_report(live_all_args(), |_a| {
+            runs.fetch_add(1, Ordering::SeqCst);
+            emit_bilingual_run()
+        });
         assert_eq!(runs.load(Ordering::SeqCst), 3);
         assert_eq!(third.exit_code, 1);
     });
@@ -712,11 +597,7 @@ fn persist_skips_deleted_but_indexed_rust_file() {
     );
     assert_eq!(listed, "src/evaluate.rs");
     with_cwd(tmp.path(), || {
-        let _ = run_kiss_test_report(
-            live_all_args(),
-            |_a| emit_sample_run(),
-            |_a| WatchCoverageResult::ok(0),
-        );
+        let _ = run_kiss_test_report(live_all_args(), |_a| emit_sample_run());
         assert!(
             !tmp.path().join(".kiss").join("suite_report.json").exists(),
             "legacy suite_report.json must not be written"
@@ -732,11 +613,7 @@ fn target_scoped_run_does_not_persist() {
     with_cwd(tmp.path(), || {
         let mut args = live_all_args();
         args.set_invocation(TestInvocation::Targets(vec!["t.py".into()]));
-        let _ = run_kiss_test_report(
-            args,
-            |_a| emit_sample_run(),
-            |_a| WatchCoverageResult::ok(0),
-        );
+        let _ = run_kiss_test_report(args, |_a| emit_sample_run());
         assert!(!tmp.path().join(".kiss").join("suite_report.json").exists());
     });
 }
@@ -748,38 +625,31 @@ fn warm_replay_lists_cached_fail_and_timeout_names_without_pass_names() {
     seed_repo(&tmp);
     with_cwd(tmp.path(), || {
         let runs = AtomicUsize::new(0);
-        let first = run_transcript_report(
-            live_all_args(),
-            |_a| {
-                runs.fetch_add(1, Ordering::SeqCst);
-                {
-                    let _guard = kiss::rust_llvm_cov_runner::ProgressLanguageGuard::enter(
-                        kiss::Language::Python,
-                    );
-                    crate::test_runner::emit_test_progress("PASS (cached): 40 selectors");
-                }
-                {
-                    let _guard = kiss::rust_llvm_cov_runner::ProgressLanguageGuard::enter(
-                        kiss::Language::Rust,
-                    );
-                    crate::test_runner::emit_test_progress("PASS (cached): 30 selectors");
-                }
-                crate::test_runner::emit_test_progress("FAIL: tests/b.py::test_b (0.01s)");
-                crate::test_runner::emit_test_progress("TIMEOUT: src/lib.rs::t_slow (3.00s)");
-                crate::test_runner::final_summary::print_final_test_summary(
-                    &crate::test_runner::final_summary::FinalTestSummary {
-                        passed: 70,
-                        failed: 2,
-                        failed_selectors: vec!["tests/b.py::test_b".into()],
-                        timed_out_selectors: vec!["src/lib.rs::t_slow".into()],
-                        ..crate::test_runner::final_summary::FinalTestSummary::default()
-                    },
-                    std::time::Duration::from_millis(10),
-                );
-                RunTestOnceOutcome::Code(1)
-            },
-            |_a| WatchCoverageResult::ok(0),
-        );
+        let first = run_transcript_report(live_all_args(), |_a| {
+            runs.fetch_add(1, Ordering::SeqCst);
+            {
+                let _guard =
+                    kiss::watch_report::ProgressLanguageGuard::enter(kiss::Language::Python);
+                crate::test_runner::emit_test_progress("PASS (cached): 40 selectors");
+            }
+            {
+                let _guard = kiss::watch_report::ProgressLanguageGuard::enter(kiss::Language::Rust);
+                crate::test_runner::emit_test_progress("PASS (cached): 30 selectors");
+            }
+            crate::test_runner::emit_test_progress("FAIL: tests/b.py::test_b (0.01s)");
+            crate::test_runner::emit_test_progress("TIMEOUT: src/lib.rs::t_slow (3.00s)");
+            crate::test_runner::final_summary::print_final_test_summary(
+                &crate::test_runner::final_summary::FinalTestSummary {
+                    passed: 70,
+                    failed: 2,
+                    failed_selectors: vec!["tests/b.py::test_b".into()],
+                    timed_out_selectors: vec!["src/lib.rs::t_slow".into()],
+                    ..crate::test_runner::final_summary::FinalTestSummary::default()
+                },
+                std::time::Duration::from_millis(10),
+            );
+            RunTestOnceOutcome::Code(1)
+        });
         assert_eq!(runs.load(Ordering::SeqCst), 1);
         assert_eq!(first.exit_code, 1);
         assert!(
@@ -787,7 +657,7 @@ fn warm_replay_lists_cached_fail_and_timeout_names_without_pass_names() {
                 .named
                 .iter()
                 .any(|row| row.selector == "tests/b.py::test_b"
-                    && row.outcome == kiss::rust_llvm_cov_runner::WatchNamedOutcome::Fail),
+                    && row.outcome == kiss::watch_report::WatchNamedOutcome::Fail),
             "cold capture must name FAIL without ProgressLanguageGuard; named={:?}",
             first.named
         );
@@ -796,31 +666,27 @@ fn warm_replay_lists_cached_fail_and_timeout_names_without_pass_names() {
                 .named
                 .iter()
                 .any(|row| row.selector == "src/lib.rs::t_slow"
-                    && row.outcome == kiss::rust_llvm_cov_runner::WatchNamedOutcome::Timeout),
+                    && row.outcome == kiss::watch_report::WatchNamedOutcome::Timeout),
             "cold capture must name TIMEOUT without ProgressLanguageGuard; named={:?}",
             first.named
         );
 
-        let second = run_transcript_report(
-            live_all_args(),
-            |_a| {
-                runs.fetch_add(1, Ordering::SeqCst);
-                crate::test_runner::emit_test_progress("FAIL: tests/b.py::test_b (0.01s)");
-                crate::test_runner::emit_test_progress("TIMEOUT: src/lib.rs::t_slow (3.00s)");
-                crate::test_runner::final_summary::print_final_test_summary(
-                    &crate::test_runner::final_summary::FinalTestSummary {
-                        passed: 70,
-                        failed: 2,
-                        failed_selectors: vec!["tests/b.py::test_b".into()],
-                        timed_out_selectors: vec!["src/lib.rs::t_slow".into()],
-                        ..crate::test_runner::final_summary::FinalTestSummary::default()
-                    },
-                    std::time::Duration::from_millis(10),
-                );
-                RunTestOnceOutcome::Code(1)
-            },
-            |_a| panic!("must not run_cov"),
-        );
+        let second = run_transcript_report(live_all_args(), |_a| {
+            runs.fetch_add(1, Ordering::SeqCst);
+            crate::test_runner::emit_test_progress("FAIL: tests/b.py::test_b (0.01s)");
+            crate::test_runner::emit_test_progress("TIMEOUT: src/lib.rs::t_slow (3.00s)");
+            crate::test_runner::final_summary::print_final_test_summary(
+                &crate::test_runner::final_summary::FinalTestSummary {
+                    passed: 70,
+                    failed: 2,
+                    failed_selectors: vec!["tests/b.py::test_b".into()],
+                    timed_out_selectors: vec!["src/lib.rs::t_slow".into()],
+                    ..crate::test_runner::final_summary::FinalTestSummary::default()
+                },
+                std::time::Duration::from_millis(10),
+            );
+            RunTestOnceOutcome::Code(1)
+        });
         assert_eq!(runs.load(Ordering::SeqCst), 2);
         assert_eq!(second.exit_code, 1);
     });
@@ -833,26 +699,22 @@ fn unscoped_violations_persist_across_replay() {
     seed_repo(&tmp);
     with_cwd(tmp.path(), || {
         let runs = AtomicUsize::new(0);
-        let first = run_transcript_report(
-            live_all_args(),
-            |_a| {
-                runs.fetch_add(1, Ordering::SeqCst);
-                crate::test_runner::final_summary::note_violation_kind("test_coverage", 1);
-                crate::test_runner::emit_test_progress(
-                    "VIOLATION:test_coverage:foo.py:1:foo: 0% covered (0/4). Need 3 more lines to reach 75%.",
-                );
-                crate::test_runner::final_summary::print_final_test_summary(
-                    &crate::test_runner::final_summary::FinalTestSummary {
-                        passed: 3,
-                        failed: 0,
-                        ..crate::test_runner::final_summary::FinalTestSummary::default()
-                    },
-                    std::time::Duration::from_millis(10),
-                );
-                RunTestOnceOutcome::Code(1)
-            },
-            |_a| panic!("must not run_cov"),
-        );
+        let first = run_transcript_report(live_all_args(), |_a| {
+            runs.fetch_add(1, Ordering::SeqCst);
+            crate::test_runner::final_summary::note_violation_kind("test_coverage", 1);
+            crate::test_runner::emit_test_progress(
+                "VIOLATION:test_coverage:foo.py:1:foo: 0% covered (0/4). Need 3 more lines to reach 75%.",
+            );
+            crate::test_runner::final_summary::print_final_test_summary(
+                &crate::test_runner::final_summary::FinalTestSummary {
+                    passed: 3,
+                    failed: 0,
+                    ..crate::test_runner::final_summary::FinalTestSummary::default()
+                },
+                std::time::Duration::from_millis(10),
+            );
+            RunTestOnceOutcome::Code(1)
+        });
         assert_eq!(runs.load(Ordering::SeqCst), 1);
         assert_eq!(first.exit_code, 1);
         let first_out = first.output.clone().unwrap_or_default();
@@ -860,30 +722,25 @@ fn unscoped_violations_persist_across_replay() {
             first_out.contains("VIOLATION:test_coverage:"),
             "cold run must show violations; out={first_out}"
         );
-        let second = run_transcript_report(
-            live_all_args(),
-            |_a| {
-                runs.fetch_add(1, Ordering::SeqCst);
-                crate::test_runner::emit_test_progress(
-                    "VIOLATION:test_coverage:foo.py:1:foo: 0% covered (0/4). Need 3 more lines to reach 75%.",
-                );
-                crate::test_runner::final_summary::print_final_test_summary(
-                    &crate::test_runner::final_summary::FinalTestSummary {
-                        passed: 3,
-                        failed: 0,
-                        ..crate::test_runner::final_summary::FinalTestSummary::default()
-                    },
-                    std::time::Duration::from_millis(10),
-                );
-                RunTestOnceOutcome::Code(1)
-            },
-            |_a| panic!("must not run_cov"),
-        );
+        let second = run_transcript_report(live_all_args(), |_a| {
+            runs.fetch_add(1, Ordering::SeqCst);
+            crate::test_runner::emit_test_progress(
+                "VIOLATION:test_coverage:foo.py:1:foo: 0% covered (0/4). Need 3 more lines to reach 75%.",
+            );
+            crate::test_runner::final_summary::print_final_test_summary(
+                &crate::test_runner::final_summary::FinalTestSummary {
+                    passed: 3,
+                    failed: 0,
+                    ..crate::test_runner::final_summary::FinalTestSummary::default()
+                },
+                std::time::Duration::from_millis(10),
+            );
+            RunTestOnceOutcome::Code(1)
+        });
         assert_eq!(runs.load(Ordering::SeqCst), 2);
         assert_eq!(second.exit_code, 1);
     });
 }
-
 
 #[test]
 fn replay_suite_report_skips_absent_and_empty_output() {

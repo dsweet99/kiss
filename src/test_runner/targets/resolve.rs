@@ -24,6 +24,30 @@ pub(crate) struct TargetSelectionQuery {
     unresolved_rust_test_module: bool,
 }
 
+impl TargetSelectionQuery {
+    pub(crate) fn direct(&self, language: Language) -> &BTreeSet<String> {
+        match language {
+            Language::Python => &self.direct_python,
+            Language::Rust => &self.direct_rust,
+        }
+    }
+
+    pub(crate) fn source_files(&self, language: Language) -> Vec<PathBuf> {
+        let (files, lines) = match language {
+            Language::Python => (&self.python_files, &self.python_lines),
+            Language::Rust => (&self.rust_files, &self.rust_lines),
+        };
+        files.iter().chain(lines.keys()).cloned().collect()
+    }
+
+    pub(crate) fn lines(&self, language: Language) -> &BTreeMap<PathBuf, BTreeSet<u32>> {
+        match language {
+            Language::Python => &self.python_lines,
+            Language::Rust => &self.rust_lines,
+        }
+    }
+}
+
 pub(crate) fn resolve_target_operands(
     repo_root: &Path,
     operands: &[String],
@@ -96,8 +120,9 @@ fn qualify_rust_model(
     if model.language != Language::Rust || model.direct_tests.is_empty() {
         return;
     }
-    let universe = universe
-        .get_or_insert_with(|| crate::test_runner::runners::current_rust_selector_universe(repo_root));
+    let universe = universe.get_or_insert_with(|| {
+        crate::test_runner::runners::current_rust_selector_universe(repo_root)
+    });
     let parsed: Vec<String> = model
         .direct_tests
         .iter()

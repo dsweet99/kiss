@@ -35,7 +35,6 @@ fn coverage_gated_reuse_hits_when_covered_files_unchanged() {
         files: BTreeMap::from([(app.to_string_lossy().into_owned(), BTreeSet::from([1]))]),
     };
     let entry = RslipCacheEntry {
-        schema_version: CACHE_SCHEMA_VERSION.to_string(),
         nodeid: "test_sample.py::test_ok".to_string(),
         status: TestStatus::Passed,
         exit_code: Some(0),
@@ -55,7 +54,6 @@ fn coverage_gated_reuse_hits_when_covered_files_unchanged() {
 fn empty_coverage_is_never_reusable() {
     let tmp = tempfile::tempdir().unwrap();
     let entry = RslipCacheEntry {
-        schema_version: CACHE_SCHEMA_VERSION.to_string(),
         nodeid: "test_sample.py::test_ok".to_string(),
         status: TestStatus::Passed,
         exit_code: Some(0),
@@ -126,7 +124,7 @@ fn conservative_inputs_include_pytest_config_and_skip_cache_dirs() {
     let tmp = tempfile::tempdir().unwrap();
     fs::create_dir(tmp.path().join(".rslip_cache")).unwrap();
     fs::create_dir(tmp.path().join(".kiss")).unwrap();
-    fs::create_dir(tmp.path().join(".kiss").join("rslip_cache")).unwrap();
+    fs::create_dir_all(tmp.path().join(".kiss").join("test").join("rslip_cache")).unwrap();
     fs::write(tmp.path().join("pytest.ini"), "[pytest]\n").unwrap();
     fs::write(tmp.path().join("a.py"), "x = 1\n").unwrap();
     fs::write(
@@ -137,6 +135,7 @@ fn conservative_inputs_include_pytest_config_and_skip_cache_dirs() {
     fs::write(
         tmp.path()
             .join(".kiss")
+            .join("test")
             .join("rslip_cache")
             .join("ignored.py"),
         "x = 3\n",

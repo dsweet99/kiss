@@ -1,9 +1,10 @@
 use std::path::Path;
 
-use super::resolve::resolve_target;
+use super::resolve::resolve_only;
 use super::resolved::{ResolvedTarget, SourceRegion};
 use super::types::{TargetFocus, TargetRequest};
 
+#[cfg(test)]
 pub(crate) fn coverage_exit_from_ready_request(
     request: &TargetRequest,
     coverage_all: bool,
@@ -11,8 +12,7 @@ pub(crate) fn coverage_exit_from_ready_request(
 ) -> Option<i32> {
     let cwd = std::env::current_dir().ok()?;
     let repo = crate::test_git::git_repo_root(&cwd).ok()?;
-    let report =
-        super::bind::load_ready_for_request(&repo, request, coverage_all, extras)?;
+    let report = super::bind::load_ready_for_request(&repo, request, coverage_all, extras)?;
     for line in super::render::official_coverage_text(&report).lines() {
         crate::test_runner::emit_test_progress(line);
     }
@@ -32,7 +32,7 @@ pub(crate) fn focused_coverage_paths(
     match &request.focus {
         TargetFocus::Workspace => Ok(vec![".".into()]),
         TargetFocus::Git(_) | TargetFocus::Operands(_) => {
-            let resolved = resolve_target(repo_root, request)?;
+            let resolved = resolve_only(repo_root, request)?;
             Ok(region_paths(repo_root, &resolved))
         }
     }
@@ -145,9 +145,7 @@ mod coverage_path_tests {
 
     #[test]
     fn coverage_exit_rejects_empty_extras_report_when_query_has_python_extras() {
-        use crate::test_runner::target_request::{
-            EnsurePolicy, materialize_target_report, publish_report,
-        };
+        use crate::test_runner::target_request::{EnsurePolicy, materialize_target_report};
 
         let _cwd = crate::cwd_test_lock::lock();
         let tmp = tempfile::TempDir::new().unwrap();
@@ -174,7 +172,6 @@ mod coverage_path_tests {
             materialize_target_report(tmp.path(), &parent, &EnsurePolicy::soft(false, false))
                 .unwrap();
         assert!(built.snapshot.extras.both_empty());
-        publish_report(tmp.path(), &parent, &built).unwrap();
 
         let py = vec!["-k".to_string(), "foo".to_string()];
         let query_extras = crate::test_runner::language_keyed::LanguageKeyed {

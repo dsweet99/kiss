@@ -7,7 +7,7 @@ use std::time::Duration;
 #[test]
 fn load_manifest_generation_entries_ignores_non_json_and_stale_entries() {
     let repo = snapshot_repo();
-    let cache = repo.path().join(".kiss/rust_llvm_cov_cache");
+    let cache = repo.path().join(".kiss/test/rust_llvm_cov_cache");
     std::fs::create_dir_all(cache.join("entries")).unwrap();
     std::fs::write(cache.join("entries/readme.txt"), "ignored").unwrap();
     store_entry(
@@ -49,7 +49,7 @@ fn load_manifest_generation_entries_rejects_invalid_current_entries() {
     ));
 
     let repo = snapshot_repo();
-    let cache = repo.path().join(".kiss/rust_llvm_cov_cache");
+    let cache = repo.path().join(".kiss/test/rust_llvm_cov_cache");
     store_entry(
         &cache,
         "alpha-a",
@@ -76,7 +76,7 @@ fn load_manifest_generation_entries_rejects_invalid_current_entries() {
 #[test]
 fn load_manifest_generation_entries_requires_exact_selector_population() {
     let repo = snapshot_repo();
-    let cache = repo.path().join(".kiss/rust_llvm_cov_cache");
+    let cache = repo.path().join(".kiss/test/rust_llvm_cov_cache");
     store_entry(
         &cache,
         "alpha",
@@ -91,7 +91,7 @@ fn load_manifest_generation_entries_requires_exact_selector_population() {
 
 fn assert_rejects_entry(entry: RustCovCacheEntry) {
     let repo = snapshot_repo();
-    let cache = repo.path().join(".kiss/rust_llvm_cov_cache");
+    let cache = repo.path().join(".kiss/test/rust_llvm_cov_cache");
     store_entry(&cache, "alpha", entry);
     assert!(
         load_manifest_generation_entries(&cache, repo.path(), &population(&["alpha"])).is_none()

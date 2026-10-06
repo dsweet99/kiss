@@ -84,14 +84,11 @@ fn call_handler_dispatchers(
         retry_bad: false,
         metrics: false,
         coverage_all: false,
-        watch: false,
         jobs: None,
         ignore: vec![],
         extra: vec![],
         test_cfg: test,
         cfg,
-        reload_kissconfig: true,
-        config_path: None,
     });
 }
 
@@ -113,7 +110,7 @@ fn call_router_dispatchers(
         cfg,
         test,
     );
-    assert_eq!(dispatch_tools(None, None, Commands::Rules, cfg, test), 0);
+    assert_eq!(dispatch_tools(None, Commands::Rules, cfg, test), 0);
     assert_eq!(
         dispatch(
             Cli {
@@ -154,7 +151,6 @@ fn dispatch_test_command_rejects_invalid_modes_before_running_tests() {
     assert_eq!(
         super::dispatch_test_command(
             None,
-            None,
             Commands::Test {
                 operands: vec!["all".to_string()],
                 main_branch: None,
@@ -168,12 +164,11 @@ fn dispatch_test_command_rejects_invalid_modes_before_running_tests() {
         2
     );
     assert_eq!(
-        super::dispatch_test_command(None, None, Commands::Rules, &cfg, &test),
+        super::dispatch_test_command(None, Commands::Rules, &cfg, &test),
         2
     );
     assert_eq!(
         super::dispatch_test_command(
-            None,
             None,
             Commands::Test {
                 operands: vec![".".to_string(), "-q".to_string()],
@@ -208,7 +203,6 @@ fn dispatch_private_routers_reject_commands_from_the_other_group() {
     );
     assert_eq!(
         dispatch_tools(
-            None,
             None,
             Commands::Check {
                 paths: vec![".".to_string()],
@@ -253,7 +247,6 @@ fn dispatch_private_routers_cover_additional_command_variants() {
         &test,
     );
     let _ = dispatch_tools(
-        None,
         None,
         Commands::Dry {
             path: ".".to_string(),

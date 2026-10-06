@@ -11,7 +11,6 @@ use kiss::rust_llvm_cov_runner::{
 };
 
 use crate::test_runner::lang_rust::llvm_cov::error::format_rust_llvm_cov_error;
-use crate::test_runner::last_status::prior_failures;
 
 pub(crate) fn write_rust_test_crate(root: &Path, test_fns: &[&str]) {
     std::fs::create_dir_all(root.join("src")).unwrap();
@@ -56,14 +55,9 @@ fn finish_ignores_outcomes_outside_current_rust_universe() {
         counters: RustCoverageBatchCounters::default(),
         test_binaries: Vec::new(),
     };
-    let identity = rust_last_status_identity("c", "l", "r", "n", &[], "map");
-    let summary = finish_rust_coverage_batch_result(
-        tmp.path(),
-        &identity,
-        result,
-        &kiss::GateConfig::default(),
-    )
-    .unwrap();
+    let summary =
+        finish_rust_coverage_batch_result(tmp.path(), result, &kiss::GateConfig::default())
+            .unwrap();
     assert_eq!(summary.total, 0);
 }
 
@@ -77,17 +71,9 @@ fn format_rust_llvm_cov_error_preserves_context_and_message() {
 }
 
 #[test]
-fn batch_result_records_completed_outcomes_before_returning_late_error() {
+fn batch_result_returns_late_error_after_completed_outcomes() {
     let tmp = tempfile::tempdir().unwrap();
     write_rust_test_crate(tmp.path(), &["failing_case"]);
-    let identity = rust_last_status_identity(
-        "cargo 1.88.0",
-        "cargo-llvm-cov 0.6.0",
-        "rustc 1.88.0",
-        "cargo-nextest 0.9.0",
-        &[],
-        "0000000000000000",
-    );
     let result = RustCoverageBatchResult {
         completed: vec![RustLlvmCovOutcome {
             selector: "tests::failing_case".to_string(),
@@ -109,33 +95,16 @@ fn batch_result_records_completed_outcomes_before_returning_late_error() {
         test_binaries: Vec::new(),
     };
 
-    let err = finish_rust_coverage_batch_result(
-        tmp.path(),
-        &identity,
-        result,
-        &kiss::GateConfig::default(),
-    )
-    .unwrap_err();
+    let err = finish_rust_coverage_batch_result(tmp.path(), result, &kiss::GateConfig::default())
+        .unwrap_err();
 
     assert!(err.contains("late derived publication failed"));
-    assert_eq!(
-        prior_failures(tmp.path(), kiss::Language::Rust, &identity).unwrap(),
-        ["tests::failing_case"]
-    );
 }
 
 #[test]
 fn fresh_unstored_batch_outcome_is_counted_explicitly() {
     let tmp = tempfile::tempdir().unwrap();
     write_rust_test_crate(tmp.path(), &["passed_but_unstored"]);
-    let identity = rust_last_status_identity(
-        "cargo 1.88.0",
-        "cargo-llvm-cov 0.6.0",
-        "rustc 1.88.0",
-        "cargo-nextest 0.9.0",
-        &[],
-        "0000000000000000",
-    );
     let result = RustCoverageBatchResult {
         completed: vec![RustLlvmCovOutcome {
             selector: "tests::passed_but_unstored".to_string(),
@@ -155,13 +124,9 @@ fn fresh_unstored_batch_outcome_is_counted_explicitly() {
         test_binaries: Vec::new(),
     };
 
-    let summary = finish_rust_coverage_batch_result(
-        tmp.path(),
-        &identity,
-        result,
-        &kiss::GateConfig::default(),
-    )
-    .unwrap();
+    let summary =
+        finish_rust_coverage_batch_result(tmp.path(), result, &kiss::GateConfig::default())
+            .unwrap();
 
     assert_eq!(summary.total, 1);
     assert_eq!(summary.cache_misses, 1);
@@ -336,273 +301,7 @@ fn check_aggregate_population_request_carries_population_selectors() {
 }
 
 #[test]
-fn check_aggregate_population_can_return_cached_summary() {
-    let tmp = tempfile::tempdir().unwrap();
-    write_rust_test_crate(tmp.path(), &["case", "other"]);
-    std::fs::create_dir_all(tmp.path().join("target")).unwrap();
-    let binary_path = tmp.path().join("target/test-bin");
-    std::fs::write(&binary_path, b"binary-a").unwrap();
-    let selectors = vec!["tests::case".to_string(), "tests::other".to_string()];
-    let population = kiss::rust_llvm_cov_runner::RustPopulationState {
-        input_fingerprint: "input".to_string(),
-        generation_fingerprint: "generation".to_string(),
-        selection_context_fingerprint: "selection".to_string(),
-        entries_fingerprint: "check-aggregate:abc".to_string(),
-        selectors: selectors.clone(),
-        line_index: BTreeMap::new(),
-        ordinary_source_digests: BTreeMap::new(),
-        test_binaries: BTreeMap::from([(
-            "test-bin".to_string(),
-            kiss::rust_llvm_cov_runner::RustTestBinaryIdentity {
-                id: "test-bin".to_string(),
-                executable: binary_path.to_string_lossy().to_string(),
-                digest: format!(
-                    "{:016x}",
-                    b"binary-a"
-                        .iter()
-                        .fold(0xcbf2_9ce4_8422_2325u64, |hash, byte| (hash
-                            ^ u64::from(*byte))
-                        .wrapping_mul(0x0100_0000_01b3))
-                ),
-            },
-        )]),
-    };
-    let cache_root = tmp.path().join(".kiss").join("rust_llvm_cov_cache");
-    std::fs::create_dir_all(&cache_root).unwrap();
-    for (index, selector) in selectors.iter().enumerate() {
-        let entry = kiss::rust_llvm_cov_runner::RustCovCacheEntry::from_outcome(
-            &RustLlvmCovOutcome {
-                selector: selector.clone(),
-                status: kiss::rpytest_runner::TestStatus::Passed,
-                exit_code: Some(0),
-                duration: Duration::from_millis(1),
-                coverage: RustLineCoverage::default(),
-                test_binary_ids: Vec::new(),
-                cache_status: RustCovCacheStatus::Hit,
-                stdout: None,
-                stderr: None,
-            },
-            "generation",
-        );
-        kiss::rust_llvm_cov_runner::store_rust_cov_cache_entry(
-            &cache_root,
-            &format!("status-{index}"),
-            &entry,
-        )
-        .unwrap();
-    }
-    std::fs::remove_dir_all(cache_root.join("entries")).unwrap();
-    let revision = kiss::rust_llvm_cov_runner::publish_next_entry_state(
-        &cache_root,
-        "generation",
-        "check-aggregate:abc",
-    )
-    .unwrap();
-    std::fs::write(
-        cache_root.join("population_durations.json"),
-        format!(
-            r#"{{"schema_version":"rust-population-durations-v2","cache_schema_version":"{}","generation_fingerprint":"generation","input_fingerprint":"input","entries_fingerprint":"check-aggregate:abc","entry_state_revision":{},"entries_stamp":null,"durations":{{"tests::case":12000000,"tests::other":34000000}}}}"#,
-            kiss::rust_llvm_cov_runner::CACHE_SCHEMA_VERSION,
-            revision,
-        ),
-    )
-    .unwrap();
-
-    let gate = kiss::GateConfig::default();
-    let summary =
-        cached_summary_from_check_aggregate_population(tmp.path(), &selectors, &population, &gate)
-            .unwrap()
-            .expect("check-aggregate population must reconstruct a cached summary");
-
-    assert_eq!(summary.total, 2);
-    assert_eq!(summary.cache_hits, 2);
-    assert_eq!(summary.cache_misses, 0);
-    assert_eq!(
-        summary.selector_durations_ns.values().copied().sum::<u64>(),
-        46_000_000
-    );
-    let mut incomplete_mapping = selectors.clone();
-    incomplete_mapping.push("missing::selector".into());
-    assert!(
-        cached_summary_from_check_aggregate_population(
-            tmp.path(),
-            &incomplete_mapping,
-            &population,
-            &gate,
-        )
-        .unwrap()
-        .is_none(),
-        "a cached summary must not silently omit an unmapped selector"
-    );
-    std::fs::write(&binary_path, b"binary-b").unwrap();
-    assert!(
-        cached_summary_from_check_aggregate_population(tmp.path(), &selectors, &population, &gate,)
-            .unwrap()
-            .is_none()
-    );
-    std::fs::write(&binary_path, b"binary-a").unwrap();
-    let failed = kiss::rust_llvm_cov_runner::RustCovCacheEntry::from_outcome(
-        &RustLlvmCovOutcome {
-            selector: selectors[0].clone(),
-            status: kiss::rpytest_runner::TestStatus::Failed,
-            exit_code: Some(1),
-            duration: Duration::from_millis(1),
-            coverage: RustLineCoverage::default(),
-            test_binary_ids: Vec::new(),
-            cache_status: RustCovCacheStatus::FreshUnstored,
-            stdout: None,
-            stderr: None,
-        },
-        "generation",
-    );
-    kiss::rust_llvm_cov_runner::store_rust_cov_cache_entry(
-        &cache_root,
-        "failed-status-proof",
-        &failed,
-    )
-    .unwrap();
-    assert!(
-        cached_summary_from_check_aggregate_population(tmp.path(), &selectors, &population, &gate,)
-            .unwrap()
-            .is_none()
-    );
-
-    let mut entry_backed = population;
-    entry_backed.entries_fingerprint = "entry-fingerprint".to_string();
-    assert!(
-        cached_summary_from_check_aggregate_population(
-            tmp.path(),
-            &selectors,
-            &entry_backed,
-            &gate,
-        )
-        .unwrap()
-        .is_none()
-    );
-}
-
-#[test]
-fn check_aggregate_cached_summary_refuses_time_gate_violations() {
-    let tmp = tempfile::tempdir().unwrap();
-    write_rust_test_crate(tmp.path(), &["case", "other"]);
-    std::fs::create_dir_all(tmp.path().join("target")).unwrap();
-    let binary_path = tmp.path().join("target/test-bin");
-    std::fs::write(&binary_path, b"binary-a").unwrap();
-    let selectors = vec!["tests::case".to_string(), "tests::other".to_string()];
-    let population = kiss::rust_llvm_cov_runner::RustPopulationState {
-        input_fingerprint: "input".to_string(),
-        generation_fingerprint: "generation".to_string(),
-        selection_context_fingerprint: "selection".to_string(),
-        entries_fingerprint: "check-aggregate:abc".to_string(),
-        selectors: selectors.clone(),
-        line_index: BTreeMap::new(),
-        ordinary_source_digests: BTreeMap::new(),
-        test_binaries: BTreeMap::from([(
-            "test-bin".to_string(),
-            kiss::rust_llvm_cov_runner::RustTestBinaryIdentity {
-                id: "test-bin".to_string(),
-                executable: binary_path.to_string_lossy().to_string(),
-                digest: format!(
-                    "{:016x}",
-                    b"binary-a"
-                        .iter()
-                        .fold(0xcbf2_9ce4_8422_2325u64, |hash, byte| (hash
-                            ^ u64::from(*byte))
-                        .wrapping_mul(0x0100_0000_01b3))
-                ),
-            },
-        )]),
-    };
-    let cache_root = tmp.path().join(".kiss").join("rust_llvm_cov_cache");
-    std::fs::create_dir_all(&cache_root).unwrap();
-    for (index, selector) in selectors.iter().enumerate() {
-        let entry = kiss::rust_llvm_cov_runner::RustCovCacheEntry::from_outcome(
-            &RustLlvmCovOutcome {
-                selector: selector.clone(),
-                status: kiss::rpytest_runner::TestStatus::Passed,
-                exit_code: Some(0),
-                duration: Duration::from_millis(1),
-                coverage: RustLineCoverage::default(),
-                test_binary_ids: Vec::new(),
-                cache_status: RustCovCacheStatus::Hit,
-                stdout: None,
-                stderr: None,
-            },
-            "generation",
-        );
-        kiss::rust_llvm_cov_runner::store_rust_cov_cache_entry(
-            &cache_root,
-            &format!("status-{index}"),
-            &entry,
-        )
-        .unwrap();
-    }
-    std::fs::remove_dir_all(cache_root.join("entries")).unwrap();
-    let revision = kiss::rust_llvm_cov_runner::publish_next_entry_state(
-        &cache_root,
-        "generation",
-        "check-aggregate:abc",
-    )
-    .unwrap();
-    // 5.0s cached duration exceeds the default 2.0s unit-test SLA.
-    std::fs::write(
-        cache_root.join("population_durations.json"),
-        format!(
-            r#"{{"schema_version":"rust-population-durations-v2","cache_schema_version":"{}","generation_fingerprint":"generation","input_fingerprint":"input","entries_fingerprint":"check-aggregate:abc","entry_state_revision":{},"entries_stamp":null,"durations":{{"tests::case":5000000000,"tests::other":34000000}}}}"#,
-            kiss::rust_llvm_cov_runner::CACHE_SCHEMA_VERSION,
-            revision,
-        ),
-    )
-    .unwrap();
-
-    let gate = kiss::GateConfig::default();
-    assert!(
-        cached_summary_from_check_aggregate_population(tmp.path(), &selectors, &population, &gate,)
-            .unwrap()
-            .is_none(),
-        "over-limit check-aggregate durations must not warm-reuse as PASS"
-    );
-    let loose = kiss::GateConfig {
-        max_unit_test_seconds: vec![("*".into(), 3600.0)],
-        ..kiss::GateConfig::default()
-    };
-    assert!(
-        cached_summary_from_check_aggregate_population(
-            tmp.path(),
-            &selectors,
-            &population,
-            &loose,
-        )
-        .unwrap()
-        .is_some(),
-        "loose gate must still warm-reuse under-limit aggregate durations"
-    );
-}
-
-#[test]
-fn cached_check_aggregate_selectors_returns_none_without_population() {
-    let tmp = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
-    std::fs::write(
-        tmp.path().join("Cargo.toml"),
-        "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
-    )
-    .unwrap();
-    std::fs::write(tmp.path().join("src").join("lib.rs"), "pub fn value() {}\n").unwrap();
-
-    let cached = cached_rust_check_aggregate_selectors(
-        tmp.path(),
-        &["tests::case".to_string()],
-        &[],
-        &kiss::GateConfig::default(),
-    )
-    .unwrap();
-
-    assert!(cached.is_none());
-}
-
-#[test]
-fn rust_selector_wrappers_return_empty_summary_without_tool_detection() {
+fn rust_selector_wrapper_returns_empty_summary_without_tool_detection() {
     let tmp = tempfile::tempdir().unwrap();
 
     let selector_summary = run_rust_llvm_cov_selectors(
@@ -616,11 +315,8 @@ fn rust_selector_wrappers_return_empty_summary_without_tool_detection() {
         &kiss::GateConfig::default(),
     )
     .unwrap();
-    let aggregate_summary =
-        run_rust_llvm_cov_check_aggregate_selectors(tmp.path(), &[], &[], 1, None, None).unwrap();
 
     assert_eq!(selector_summary.total, 0);
-    assert_eq!(aggregate_summary.total, 0);
 }
 
 #[test]

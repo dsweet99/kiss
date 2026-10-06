@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 
 use super::digest::digest_bytes;
 use super::projection::SliceProjection;
-use super::resolved::ResolvedTarget;
 
 pub(crate) const TARGET_SLICE_SCHEMA: &str = "target-slice-v1";
 
@@ -34,49 +33,5 @@ pub(crate) fn stamp_from_projection(
         digest: digest_bytes(&bytes),
         complete,
         index_schema: TARGET_SLICE_SCHEMA.to_string(),
-    }
-}
-
-pub(crate) fn target_slice_stamp(resolved: &ResolvedTarget, complete: bool) -> TargetSliceStamp {
-    stamp_from_projection(&projection_from_resolved(resolved), complete)
-}
-
-fn projection_from_resolved(resolved: &ResolvedTarget) -> SliceProjection {
-    if resolved
-        .regions
-        .first()
-        .is_some_and(|region| matches!(region, super::resolved::SourceRegion::WorkspaceAll))
-        && resolved.historical_paths.is_empty()
-    {
-        return SliceProjection::Workspace {
-            selectors: resolved.direct_selectors.clone(),
-            sources: Vec::new(),
-        };
-    }
-    if let Some(git) = &resolved.git_stamp {
-        return SliceProjection::Vcs {
-            git: git.clone(),
-            historical_reverse: resolved
-                .historical_paths
-                .iter()
-                .map(|path| super::resolved::ReverseRecord {
-                    path: path.clone(),
-                    selectors: Vec::new(),
-                })
-                .collect(),
-            regions: resolved.regions.clone(),
-            selectors: resolved.direct_selectors.clone(),
-        };
-    }
-    SliceProjection::SourceRegions {
-        regions: resolved.regions.clone(),
-        reverse: resolved
-            .historical_paths
-            .iter()
-            .map(|path| super::resolved::ReverseRecord {
-                path: path.clone(),
-                selectors: Vec::new(),
-            })
-            .collect(),
     }
 }
