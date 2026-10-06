@@ -11,9 +11,7 @@ use tempfile::TempDir;
 
 use crate::test_runner::PlannedSelectors;
 use crate::test_runner::coverage_decision::SelectionBasis;
-use crate::test_runner::rust_coverage_index::{
-    rebuild_rust_coverage_index, write_rust_population_manifest_for_args, write_test_entry,
-};
+use crate::test_runner::rust_coverage_index::{rebuild_rust_coverage_index, write_test_entry};
 
 use super::git::{commit_all, ensure_main_branch, git_in, git_stdout, init_git, init_git_dir};
 
@@ -162,45 +160,6 @@ pub(crate) fn publish_lib_population(root: &Path) {
     rebuild_rust_coverage_index(root).unwrap();
 }
 
-/// After `clone_warm_committed_repo`, restamp cached entries for the clone's identity
-/// without rewriting coverage payloads or rebuilding the line index from scratch.
-pub(crate) fn republish_cloned_lib_population(root: &Path) {
-    let test_args: &[String] = &[];
-    let identity = crate::test_runner::rust_coverage_index::current_rust_coverage_batch_identity(
-        root, test_args,
-    )
-    .expect("batch identity for cloned republish");
-    let cache_root = crate::test_runner::rust_coverage_index::rust_coverage_cache_root(root);
-    let entries_dir = cache_root.join("entries");
-    if entries_dir.is_dir() {
-        for entry in fs::read_dir(&entries_dir).expect("entries dir").flatten() {
-            let path = entry.path();
-            if path.file_name().is_some_and(|name| name != "abc.json") {
-                let _ = fs::remove_file(&path);
-                continue;
-            }
-            if path.extension().is_none_or(|ext| ext != "json") {
-                continue;
-            }
-            let Ok(bytes) = fs::read(&path) else {
-                continue;
-            };
-            let Ok(mut value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
-                continue;
-            };
-            if value.get("generation_fingerprint").is_some() {
-                value["generation_fingerprint"] =
-                    serde_json::Value::String(identity.generation_fingerprint.clone());
-                fs::write(&path, serde_json::to_vec(&value).expect("entry json"))
-                    .expect("write entry");
-            }
-        }
-        kiss::rust_llvm_cov_runner::invalidate_entry_state(&cache_root);
-    }
-    write_rust_population_manifest_for_args(root, &[RS_COVERING_SELECTOR.to_string()], test_args)
-        .expect("republish cloned lib population");
-}
-
 fn write_demo_crate(root: &Path, value: u32) -> PathBuf {
     fs::create_dir_all(root.join("src")).unwrap();
     fs::write(
@@ -257,16 +216,6 @@ pub(crate) fn clone_warm_committed_repo(dst: &Path) -> PathBuf {
     let _lock = lock_fixture(warm_committed_mutex(), "kiss-warm-committed-fixture.lock");
     copy_repo_tree(&ensure_warm_committed_repo(), dst);
     dst.join("src").join("lib.rs")
-}
-
-/// Clone the warm committed fixture, restamp identity, then run `f` **without** holding the
-/// shared fixture lock. Prefer this over [`with_locked_warm_committed_repo`] for tests that only
-/// need a private copy (avoids queueing behind other lock holders under high `-j`).
-pub(crate) fn with_cloned_warm_committed_repo<T>(f: impl FnOnce(&Path, PathBuf) -> T) -> T {
-    let tmp = tempfile::tempdir().expect("warm committed clone tempdir");
-    let lib = clone_warm_committed_repo(tmp.path());
-    republish_cloned_lib_population(tmp.path());
-    f(tmp.path(), lib)
 }
 
 struct RestoreLibSource {

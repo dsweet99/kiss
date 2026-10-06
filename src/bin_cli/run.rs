@@ -167,11 +167,7 @@ mod run_coverage {
     fn run_with_cli_rejects_invalid_test_num_jobs_config() {
         let _cwd_guard = crate::cwd_test_lock::lock();
         let tmp = tempfile::tempdir().unwrap();
-        fs::write(
-            tmp.path().join(".kissconfig"),
-            "[test]\nnum_jobs = 0\ntest_coverage_threshold = 0\n",
-        )
-        .unwrap();
+        fs::write(tmp.path().join(".kissconfig"), "[test]\nnum_jobs = 0\n").unwrap();
         fs::write(tmp.path().join("sample.py"), "def f():\n    return 1\n").unwrap();
         let original = std::env::current_dir().unwrap();
         std::env::set_current_dir(tmp.path()).unwrap();
@@ -192,7 +188,7 @@ mod run_coverage {
         let tmp = tempfile::tempdir().unwrap();
         fs::write(
             tmp.path().join(".kissconfig"),
-            "[global]\nduplication_enabled = false\n[test]\ntest_coverage_threshold = 0\n[python]\n[rust]\n",
+            "[global]\nduplication_enabled = false\n[test]\n[python]\n[rust]\n",
         )
         .unwrap();
         fs::write(

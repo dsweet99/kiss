@@ -32,7 +32,6 @@ fn write_two_python_tests(root: &Path) {
 
 fn force_gate() -> kiss::GateConfig {
     kiss::GateConfig {
-        test_coverage_threshold: 0,
         orphan_detection: false,
         max_unit_test_seconds: Vec::new(),
         ..Default::default()

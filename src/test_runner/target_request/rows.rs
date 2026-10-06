@@ -137,10 +137,8 @@ fn witness_map(
     for language in kiss::Language::ALL {
         extend_witness(
             &mut by_selector,
-            crate::test_runner::lang_registry::rules_for(language).stored_witness(
-                repo_root,
-                extras.get(language),
-            ),
+            crate::test_runner::lang_registry::rules_for(language)
+                .stored_witness(repo_root, extras.get(language)),
         );
     }
     by_selector

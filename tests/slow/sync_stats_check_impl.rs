@@ -12,7 +12,6 @@ const NON_SHARED_METRICS: &[&str] = &[
     "duplication",
     "orphan_module",
     "comment",
-    "test_coverage",
     "fan_in",
     "fan_out",
     "dependency_depth",
@@ -212,7 +211,6 @@ min_similarity = 1.0
 duplication_enabled = false
 
 [test]
-test_coverage_threshold = 0
 [python]
 [rust]
 [thresholds]

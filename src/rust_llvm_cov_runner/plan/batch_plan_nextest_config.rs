@@ -3,8 +3,6 @@ use std::path::{Path, PathBuf};
 use crate::rust_llvm_cov_runner::plan::batch_plan::{CoverageOutputMode, RustCoverageBatchRequest};
 use crate::rust_llvm_cov_runner::plan::batch_plan_shim_const::TARGET_RUNNER_SHIM_SUBCOMMAND;
 
-const MAX_REFRESH_NEXTEST_THREADS: usize = 4;
-
 pub(crate) fn build_nextest_config_toml(
     req: &RustCoverageBatchRequest,
     _runner_map_path: &Path,
@@ -34,9 +32,6 @@ pub(crate) fn test_args_request_nocapture(test_args: &[String]) -> bool {
 pub(crate) fn nextest_test_threads(req: &RustCoverageBatchRequest) -> String {
     if test_args_request_nocapture(&req.test_args) {
         return "1".to_string();
-    }
-    if std::env::var_os("KISS_COVERAGE_RUNTIME_REFRESH_ACTIVE").is_some() {
-        return req.jobs.min(MAX_REFRESH_NEXTEST_THREADS).to_string();
     }
     let cfg = crate::test_section_config::TestSectionConfig::load();
     if let Some(threads) = cfg.num_jobs_llvm_cov_explicit {
@@ -256,9 +251,8 @@ fn target_runner_argv(req: &RustCoverageBatchRequest, runner_map_path: &Path) ->
 #[cfg(test)]
 mod tests {
     use super::{
-        MAX_REFRESH_NEXTEST_THREADS, build_target_runner_cargo_config_toml, escape_nextest_regex,
-        nextest_filter_string, nextest_test_threads, parse_nextest_default_test_threads,
-        toml_basic_string,
+        build_target_runner_cargo_config_toml, escape_nextest_regex, nextest_filter_string,
+        nextest_test_threads, parse_nextest_default_test_threads, toml_basic_string,
     };
     use std::path::Path;
 
@@ -350,24 +344,6 @@ mod tests {
                 .iter()
                 .any(|arg| arg.contains("__rust-llvm-cov-target-runner"))
         );
-    }
-
-    #[test]
-    fn refresh_guard_bounds_nextest_threads_without_serializing() {
-        let req =
-            crate::rust_llvm_cov_runner::plan::batch_plan::RustCoverageBatchRequest::witness();
-
-        unsafe {
-            std::env::set_var("KISS_COVERAGE_RUNTIME_REFRESH_ACTIVE", "1");
-        }
-        assert_eq!(
-            nextest_test_threads(&req),
-            req.jobs.min(MAX_REFRESH_NEXTEST_THREADS).to_string()
-        );
-
-        unsafe {
-            std::env::remove_var("KISS_COVERAGE_RUNTIME_REFRESH_ACTIVE");
-        }
     }
 
     #[test]

@@ -4,23 +4,20 @@ use std::time::{Duration, Instant};
 
 use crate::support::git::{commit_all, init_git_repo};
 
-pub fn write_kissconfig_with_threshold(root: &Path, threshold: u8) {
+pub fn write_kissconfig(root: &Path) {
     std::fs::write(
         root.join(".kissconfig"),
-        format!(
-            "[global]\n\
-             duplication_enabled = false\n\
-             \n\
-             [test]\n\
-             test_coverage_threshold = {threshold}\n\
-             orphan_detection = false\n\
-             num_jobs = 1\n\
-             \n\
-             [test.max_unit_test_seconds]\n\
-             \"*\" = 60\n\
-             [python]\n\
-             [rust]\n"
-        ),
+        "[global]\n\
+         duplication_enabled = false\n\
+         \n\
+         [test]\n\
+         orphan_detection = false\n\
+         num_jobs = 1\n\
+         \n\
+         [test.max_unit_test_seconds]\n\
+         \"*\" = 60\n\
+         [python]\n\
+         [rust]\n",
     )
     .unwrap();
 }
@@ -167,7 +164,7 @@ impl Scenario {
         self.write("test_a.py", &format!("from lib_a import f\n\n\n{pass}"));
         let fail = self.py_test("test_fail", "assert g() == 2");
         self.write("test_b.py", &format!("from lib_b import g\n\n\n{fail}"));
-        write_kissconfig_with_threshold(self.root(), 0);
+        write_kissconfig(self.root());
     }
 
     pub fn python_with_slow(&self) {

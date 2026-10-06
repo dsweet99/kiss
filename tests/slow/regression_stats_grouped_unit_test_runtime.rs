@@ -8,7 +8,6 @@ const CONFIG: &str = "[global]\n\
 duplication_enabled = false\n\
 \n\
 [test]\n\
-test_coverage_threshold = 0\n\
 [python]\n\
 [rust]\n\
 \n\

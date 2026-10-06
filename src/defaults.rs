@@ -56,9 +56,6 @@ pub mod duplication {
 }
 
 pub mod gate {
-    pub const TEST_COVERAGE_THRESHOLD: usize = 90;
-    pub const TEST_COVERAGE_SCOPE: &str = "codebase";
-    pub const TEST_COVERAGE_SCOPE_TOML: &str = "\"codebase\"";
     pub const MAX_UNIT_TEST_SECONDS: f64 = 2.0;
     pub const MAX_NUM_TESTS: usize = 999_999;
     pub const NUM_JOBS: usize = 4;
@@ -80,8 +77,6 @@ docs_allowed = []
 orphan_allowed = []
 
 [test]
-test_coverage_threshold = {gate_coverage}
-test_coverage_scope = {gate_scope}
 orphan_detection = false
 max_num_tests = {max_num_tests}
 num_jobs = {num_jobs}
@@ -139,8 +134,6 @@ cycle_size = {cycle_size}
 indirect_dependencies = {rs_indirect_deps}
 dependency_depth = {rs_dep_depth}
 "#,
-        gate_coverage = gate::TEST_COVERAGE_THRESHOLD,
-        gate_scope = gate::TEST_COVERAGE_SCOPE_TOML,
         max_unit_test_seconds = gate::MAX_UNIT_TEST_SECONDS,
         max_num_tests = gate::MAX_NUM_TESTS,
         num_jobs = gate::NUM_JOBS,
@@ -200,7 +193,7 @@ mod tests {
     fn test_defaults_are_reasonable() {
         assert!(python::STATEMENTS_PER_FUNCTION > 0);
         assert!(rust::STATEMENTS_PER_FUNCTION > 0);
-        assert!(gate::TEST_COVERAGE_THRESHOLD <= 100);
+        assert!(gate::MAX_NUM_TESTS > 0);
     }
 
     #[test]
@@ -236,8 +229,8 @@ mod tests {
             "init default must emit orphan_allowed=[]:\n{toml}"
         );
         assert!(
-            toml.contains("test_coverage_threshold = 90"),
-            "init default must emit coverage under [test]:\n{toml}"
+            !toml.contains("test_coverage"),
+            "init default must not emit coverage keys:\n{toml}"
         );
         assert!(
             toml.contains("max_num_tests = 999999"),

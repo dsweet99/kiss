@@ -1,4 +1,4 @@
-use kiss::{Config, ConfigLanguage, GateConfig, TestCoverageScope, default_config_toml};
+use kiss::{Config, ConfigLanguage, GateConfig, default_config_toml};
 
 #[test]
 fn default_config_has_reasonable_values() {
@@ -18,8 +18,6 @@ fn default_config_has_reasonable_values() {
 }
 
 fn verify_gate_defaults(gate: &GateConfig) {
-    assert_eq!(gate.test_coverage_threshold, 90);
-    assert_eq!(gate.test_coverage_scope, TestCoverageScope::Codebase);
     assert!((gate.min_similarity - 0.9).abs() < f64::EPSILON);
     assert!(gate.duplication_enabled);
     assert!(!gate.orphan_detection);
@@ -96,7 +94,7 @@ fn test_load_from_nonexistent() {
 #[test]
 fn test_gate_config_defaults() {
     let gate = GateConfig::default();
-    assert!(gate.test_coverage_threshold > 0);
+    assert!(gate.max_num_tests > 0);
     assert!(gate.min_similarity > 0.0 && gate.min_similarity <= 1.0);
 }
 
@@ -104,8 +102,6 @@ fn test_gate_config_defaults() {
 fn test_gate_config_load() {
     let gate = GateConfig::load();
     assert!(gate.min_similarity > 0.0 && gate.min_similarity <= 1.0);
-
-    assert!(gate.test_coverage_threshold <= 100);
 }
 
 #[test]

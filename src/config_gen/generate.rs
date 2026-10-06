@@ -29,7 +29,6 @@ pub fn auto_created_gate_config() -> GateConfig {
         orphan_detection: false,
         comment_removal_enabled: false,
         docs_allowed: vec!["./".to_string()],
-        test_coverage_threshold: 0,
         max_unit_test_seconds: vec![("*".to_string(), 99999.0)],
         ..GateConfig::default()
     }
@@ -66,16 +65,6 @@ pub fn generate_config_toml_by_language(p: &GenerateConfigParams<'_>) -> String 
     write_toml_string_list(&mut out, "orphan_allowed", &p.gate.orphan_allowed);
     out.push('\n');
     let _ = writeln!(out, "[test]");
-    let _ = writeln!(
-        out,
-        "test_coverage_threshold = {}",
-        p.gate.test_coverage_threshold
-    );
-    let _ = writeln!(
-        out,
-        "test_coverage_scope = \"{}\"",
-        p.gate.test_coverage_scope
-    );
     let _ = writeln!(out, "orphan_detection = {}", p.gate.orphan_detection);
     let _ = writeln!(out, "max_num_tests = {}", p.gate.max_num_tests);
     let _ = writeln!(out, "num_jobs = {}", crate::defaults::gate::NUM_JOBS);
@@ -185,7 +174,6 @@ mod coverage_witness {
         assert!(!gate.orphan_detection);
         assert!(!gate.comment_removal_enabled);
         assert_eq!(gate.docs_allowed, vec!["./".to_string()]);
-        assert_eq!(gate.test_coverage_threshold, 0);
         assert_eq!(gate.max_unit_test_seconds, vec![("*".to_string(), 99999.0)]);
         let py = MetricStats::default();
         let rs = MetricStats::default();
@@ -224,8 +212,8 @@ mod coverage_witness {
             "auto-created orphan_allowed:\n{toml}"
         );
         assert!(
-            toml.contains("test_coverage_threshold = 0\n"),
-            "auto-created coverage:\n{toml}"
+            !toml.contains("test_coverage"),
+            "auto-created config must not write coverage keys:\n{toml}"
         );
         assert!(
             toml.contains("[test.max_unit_test_seconds]\n\"*\" = 99999\n"),
@@ -264,9 +252,7 @@ mod coverage_witness {
             "global orphan_allowed emission:\n{toml}"
         );
         assert!(
-            toml.contains(
-                "test_coverage_threshold = 90\ntest_coverage_scope = \"codebase\"\norphan_detection = false\nmax_num_tests = 999999\n"
-            ),
+            toml.contains("[test]\norphan_detection = false\nmax_num_tests = 999999\n"),
             "test gate emission:\n{toml}"
         );
         assert!(

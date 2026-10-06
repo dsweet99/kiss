@@ -85,6 +85,5 @@ pub(super) fn generation_ids(repo_root: &Path) -> GenerationIds {
         witness: super::try_load_rust_execution_witness(repo_root)
             .ok()
             .map(|witness| witness.generation_id),
-        coverage: None,
     }
 }

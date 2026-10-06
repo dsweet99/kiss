@@ -200,9 +200,7 @@ pub fn try_run_cached_all(
 }
 
 pub(crate) fn repo_root_for_universe(universe: &str) -> PathBuf {
-    crate::test_runner::check_line_coverage::repository_root_for_universe(std::path::Path::new(
-        universe,
-    ))
+    crate::test_runner::universe_root::repository_root_for_universe(std::path::Path::new(universe))
 }
 
 pub fn graph_counts(

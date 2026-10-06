@@ -11,9 +11,8 @@ pub(crate) const PYTHON_SELECTOR_DISCOVERY_VERSION: &str = "python-selector-disc
 
 pub(crate) mod manifest;
 pub(crate) use manifest::{
-    PYTHON_COVERAGE_ENV_KEYS, StoredPythonPopulation, python_population_environment_mismatch,
-    python_population_manifest_is_current_for_args_with_env_keys,
-    stored_python_universe_population, stored_python_universe_selectors,
+    PYTHON_COVERAGE_ENV_KEYS, python_population_environment_mismatch,
+    python_population_manifest_is_current_for_args_with_env_keys, stored_python_universe_selectors,
 };
 #[cfg(test)]
 pub(crate) use manifest::{
@@ -23,18 +22,7 @@ pub(crate) use manifest::{
 };
 
 pub(crate) mod population_durations;
-#[cfg(test)]
-pub(crate) use population_durations::write_population_durations;
-pub(crate) use population_durations::{
-    load_current_python_population_durations, load_current_python_population_max_duration,
-    load_current_python_population_path_maxes,
-};
-
-pub(crate) mod coverage_snapshot;
-pub(crate) use coverage_snapshot::{
-    python_coverage_snapshot_generation_id, try_load_python_coverage_snapshot,
-    write_python_coverage_snapshot,
-};
+pub(crate) use population_durations::load_current_python_population_durations;
 
 pub(crate) mod storage;
 #[cfg(test)]
@@ -49,9 +37,6 @@ pub(crate) use storage::{
     python_repo_relative_coverage_file as repo_relative_coverage_file,
     python_repo_relative_path as repo_relative_path,
 };
-
-pub(crate) use crate::test_runner::lang_python::generation;
-pub(crate) use generation::current_python_execution_identity;
 
 pub(crate) type PythonCoverageIndex = BTreeMap<String, BTreeSet<String>>;
 

@@ -19,7 +19,6 @@ fn synthetic_python_runtime_coverage_paths_do_not_make_check_malformed() {
          duplication_enabled = false\n\
 \n\
 [test]\n\
-         test_coverage_threshold = 0\n\
          orphan_detection = false\n\
          num_jobs = 1\n\
          [python]\n\
@@ -103,7 +102,6 @@ fn cold_python_check_refreshes_runtime_coverage_and_warm_check_reuses_cache() {
          duplication_enabled = false\n\
 \n\
 [test]\n\
-         test_coverage_threshold = 0\n\
          orphan_detection = false\n\
          num_jobs = 1\n\
          [python]\n\
@@ -158,8 +156,8 @@ fn failed_python_check_refresh_does_not_publish_full_check_cache() {
     );
     assert!(
         failed_stdout.contains("FAIL: test_lib.py::test_value")
-            && failed_stdout.contains("skipping coverage because tests failed"),
-        "failure should report the failing test and skip coverage. \
+            && !failed_stdout.contains("coverage"),
+        "failure should report the failing test without coverage text. \
          stdout:\n{failed_stdout}\nstderr:\n{failed_stderr}"
     );
     assert!(
@@ -228,9 +226,8 @@ fn kiss_check_succeeds_when_tests_fail_while_cov_fails_refresh() {
         "kiss test must fail when the population tests fail.\nstdout:\n{cov_stdout}\nstderr:\n{cov_stderr}"
     );
     assert!(
-        cov_stdout.contains("FAIL: test_lib.py::test_value")
-            && cov_stdout.contains("skipping coverage because tests failed"),
-        "kiss test must report the failing test and skip coverage.\nstdout:\n{cov_stdout}\nstderr:\n{cov_stderr}"
+        cov_stdout.contains("FAIL: test_lib.py::test_value") && !cov_stdout.contains("coverage"),
+        "kiss test must report the failing test without coverage text.\nstdout:\n{cov_stdout}\nstderr:\n{cov_stderr}"
     );
 }
 
@@ -248,7 +245,6 @@ fn write_refreshable_python_repo(repo: &TempDir, assertion: &str) {
          duplication_enabled = false\n\
 \n\
 [test]\n\
-         test_coverage_threshold = 0\n\
          orphan_detection = false\n\
          num_jobs = 1\n\
          [python]\n\

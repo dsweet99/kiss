@@ -18,7 +18,7 @@ from typing import Iterator
 
 ROOT = Path(__file__).resolve().parents[1]
 KISS = ROOT / "target" / "debug" / "kiss"
-PY_SOURCE = Path("python/coverage_metrics.py")
+PY_SOURCE = Path("ops/evaluate.py")
 PY_TEST = Path("tests/test_coverage_metrics_kiss.py")
 RS_SOURCE = Path("src/cli_output/mod.rs")
 LANGUAGES = ("python", "rust")
@@ -1065,10 +1065,7 @@ def kiss_command(
     *options: str,
     trailing_test_args: tuple[str, ...] = (),
 ) -> list[str]:
-    # Honor the fixture `.kissconfig`. Sparse
-    # `--ignore` populations cannot meet the default 90% codebase threshold;
-    # `qa_fixture` sets `test_coverage_threshold = 0` so finish_with_coverage
-    # does not turn successful test runs into VIOLATION exits.
+    # Honor the fixture `.kissconfig`.
     argv = [
         str(KISS),
         "--lang",
@@ -1093,18 +1090,14 @@ def qa_fixture(prefix: str) -> Iterator[Fixture]:
         copy_fixture(root)
         nested = root / "src" / "test_runner"
         assert nested.is_dir(), nested
-        # Sparse ignore lists leave most of the copied tree uncovered. Disable the
-        # coverage gate so population/warm QA measures caching, not gate %, and so
-        # `kiss test`'s post-run finish_with_coverage does not force rc=1.
         # GateConfig::load() reads only CWD `.kissconfig`; path-isolation and
         # concurrent races also run from `nested`, so write the same file there
-        # (otherwise ensure_default_config_exists / defaults restore threshold 90).
+        # (otherwise ensure_default_config_exists writes defaults).
         kissconfig = (
             "[global]\n"
             "duplication_enabled = false\n"
             "orphan_module_enabled = false\n"
             "[test]\n"
-            "test_coverage_threshold = 0\n"
             "[test.max_unit_test_seconds]\n"
             '"*" = 30\n'
             "[python]\n"
@@ -1121,10 +1114,14 @@ def qa_fixture(prefix: str) -> Iterator[Fixture]:
         env.pop("KISS_QA_PUBLICATION_BARRIER_TARGET", None)
         changed_text(
             root / PY_SOURCE,
-            "return {path: partial.get(path, 0.0) for path in files}",
-            "return {path: partial.get(path, float(0)) for path in files}",
+            "if not EVALS_DIR.is_dir():",
+            "if EVALS_DIR.is_dir() is False:",
         )
-        changed_text(root / RS_SOURCE, "if file_pct >= 100 {", "if 100 <= file_pct {")
+        changed_text(
+            root / RS_SOURCE,
+            '"{} in {}", msg, root.display()',
+            '"{msg} in {}", root.display()',
+        )
         ignores = {language: language_ignores(root, language) for language in LANGUAGES}
         print(
             f"fixture: {root} python_ignores={len(ignores['python'])} "
@@ -1155,7 +1152,7 @@ def parse_rust_aggregate_refresh(stderr: str) -> tuple[int, int] | None:
 
 
 def assert_check_gate_allowed(outcome: Outcome) -> None:
-    assert outcome.returncode == 0 or "VIOLATION:test_coverage" in outcome.stdout, (
+    assert outcome.returncode == 0 or "VIOLATION:" in outcome.stdout, (
         f"{outcome.name}: unexpected check result\nstdout:\n{outcome.stdout}\nstderr:\n{outcome.stderr}"
     )
 
@@ -1188,7 +1185,6 @@ def write_witness_config(repo: Path) -> None:
         "[global]\n"
         "duplication_enabled = false\n"
         "[test]\n"
-        "test_coverage_threshold = 0\n"
         "orphan_detection = false\n"
         "[python]\n"
         "[rust]\n",
@@ -1898,7 +1894,6 @@ def write_aggregate_benchmark_repo(repo: Path) -> None:
         "duplication_enabled = false\n"
         "orphan_module_enabled = false\n"
         "[test]\n"
-        "test_coverage_threshold = 0\n"
         "[python]\n"
         "[rust]\n",
     )

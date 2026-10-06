@@ -13,7 +13,6 @@ pub(crate) struct TestDispatchOptions<'a> {
     pub dry_run: bool,
     pub retry_bad: bool,
     pub metrics: bool,
-    pub coverage_all: bool,
     pub jobs: Option<usize>,
     pub ignore: Vec<String>,
     pub extra: Vec<String>,

@@ -12,13 +12,13 @@ use super::types::{OperandExpr, TargetFocus, TargetRequest};
 #[test]
 fn ensure_policy_named_modes_exclude_invalid_dry_run_require_complete() {
     // PWS: free bool bags allowed dry_run∧require_complete; named modes must not.
-    let query = EnsurePolicy::query(false);
-    let preview = EnsurePolicy::preview(true, true);
-    let complete = EnsurePolicy::complete(true, false);
+    let query = EnsurePolicy::complete(false);
+    let preview = EnsurePolicy::preview(true);
+    let complete = EnsurePolicy::complete(true);
     assert!(!query.dry_run() && query.require_complete());
     assert!(!query.retry_bad() && !query.inject_mismatch() && !query.assemble_only());
     assert!(preview.dry_run() && !preview.require_complete());
-    assert!(preview.retry_bad() && preview.coverage_all());
+    assert!(preview.retry_bad());
     assert!(!complete.dry_run() && complete.require_complete() && complete.retry_bad());
     for policy in [&query, &preview, &complete] {
         assert!(
@@ -26,11 +26,6 @@ fn ensure_policy_named_modes_exclude_invalid_dry_run_require_complete() {
             "named modes must not encode dry_run with require_complete"
         );
     }
-    assert!(EnsurePolicy::query(true).coverage_all());
-    assert_eq!(
-        EnsurePolicy::query(false),
-        EnsurePolicy::complete(false, false)
-    );
 }
 
 fn workspace_req() -> TargetRequest {
@@ -106,12 +101,9 @@ fn seed_population_cache(repo: &std::path::Path) {
 #[test]
 fn dry_run_preview_does_not_require_complete_membership() {
     let tmp = python_repo();
-    let preview = preview_target_plan_with(
-        tmp.path(),
-        &workspace_req(),
-        &EnsurePolicy::preview(false, false),
-    )
-    .unwrap();
+    let preview =
+        preview_target_plan_with(tmp.path(), &workspace_req(), &EnsurePolicy::preview(false))
+            .unwrap();
     assert!(preview.deferred || preview.membership_complete);
     assert_eq!(preview.plan.known_execution_union(), Vec::<String>::new());
 }
@@ -127,7 +119,6 @@ fn incomplete_workspace_fails_closed_when_required() {
     let err = ensure_target_report_query(
         tmp.path(),
         &workspace_req(),
-        &EnsurePolicy::query(false),
         crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
     )
     .unwrap_err();
@@ -147,7 +138,7 @@ fn query_snapshot_repairs_graph_once() {
     let outcome = super::snapshot::run_snapshot_kernel(
         tmp.path(),
         &workspace_req(),
-        &EnsurePolicy::query(false),
+        &EnsurePolicy::complete(false),
     );
     assert!(
         outcome
@@ -157,12 +148,9 @@ fn query_snapshot_repairs_graph_once() {
         "a query either assembles or reports incomplete evidence"
     );
     assert_eq!(super::counters::current().graph, 1);
-    let preview = preview_target_plan_with(
-        tmp.path(),
-        &workspace_req(),
-        &EnsurePolicy::preview(false, false),
-    )
-    .unwrap();
+    let preview =
+        preview_target_plan_with(tmp.path(), &workspace_req(), &EnsurePolicy::preview(false))
+            .unwrap();
     assert!(!preview.plan.graph_repair);
 }
 
@@ -200,7 +188,6 @@ fn operand_without_evidence_fails_closed() {
     let err = ensure_target_report_query(
         tmp.path(),
         &request,
-        &EnsurePolicy::soft(false, false),
         crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
     )
     .unwrap_err();
@@ -275,12 +262,9 @@ fn empty_scope_has_no_typed_rows() {
 #[test]
 fn workspace_scope_uses_projection_selectors() {
     let tmp = python_repo();
-    let preview = preview_target_plan_with(
-        tmp.path(),
-        &workspace_req(),
-        &EnsurePolicy::preview(false, false),
-    )
-    .unwrap();
+    let preview =
+        preview_target_plan_with(tmp.path(), &workspace_req(), &EnsurePolicy::preview(false))
+            .unwrap();
     assert!(preview.scope.selectors.is_empty());
     assert_eq!(preview.scope.regions.len(), 1);
 }
@@ -310,12 +294,9 @@ fn successful_report_exits_zero_without_timeouts() {
             .success()
     );
     seed_population_cache(tmp.path());
-    let report = materialize_target_report(
-        tmp.path(),
-        &workspace_req(),
-        &EnsurePolicy::soft(false, false),
-    )
-    .unwrap();
+    let report =
+        materialize_target_report(tmp.path(), &workspace_req(), &EnsurePolicy::soft(false))
+            .unwrap();
     assert_eq!(report.exit_code, 0);
     assert_eq!(
         super::report::TargetReport::exit_for(Some(super::report::EffectiveStatus::Timeout)),
@@ -541,20 +522,9 @@ fn orphan_config_marks_graph_repair_on_preview() {
         "[test]\norphan_detection = true\n",
     )
     .unwrap();
-    let on = preview_target_plan_with(
-        tmp.path(),
-        &workspace_req(),
-        &EnsurePolicy::preview(false, false),
-    )
-    .unwrap();
+    let on = preview_target_plan_with(tmp.path(), &workspace_req(), &EnsurePolicy::preview(false))
+        .unwrap();
     assert!(on.plan.graph_repair);
-    let bypass = preview_target_plan_with(
-        tmp.path(),
-        &workspace_req(),
-        &EnsurePolicy::preview(false, true),
-    )
-    .unwrap();
-    assert!(!bypass.plan.graph_repair);
 }
 
 #[test]
@@ -565,14 +535,11 @@ fn warm_graph_cache_clears_preview_repair_and_pins_generation() {
         "[test]\norphan_detection = true\n",
     )
     .unwrap();
-    let cold = preview_target_plan_with(
-        tmp.path(),
-        &workspace_req(),
-        &EnsurePolicy::preview(false, false),
-    )
-    .unwrap();
+    let cold =
+        preview_target_plan_with(tmp.path(), &workspace_req(), &EnsurePolicy::preview(false))
+            .unwrap();
     assert!(cold.plan.graph_repair);
-    super::report::repair_graph_evidence(tmp.path(), &cold.scope, false).unwrap();
+    super::report::repair_graph_evidence(tmp.path(), &cold.scope).unwrap();
     let report = super::report::TargetReport::assembled_in(
         tmp.path(),
         &workspace_req(),
@@ -584,20 +551,16 @@ fn warm_graph_cache_clears_preview_repair_and_pins_generation() {
             index_schema: super::slice::TARGET_SLICE_SCHEMA.into(),
         },
         0,
-        false,
     );
     assert!(report.graph_generation.is_some(), "{report:?}");
-    let warm = preview_target_plan_with(
-        tmp.path(),
-        &workspace_req(),
-        &EnsurePolicy::preview(false, false),
-    )
-    .unwrap();
+    let warm =
+        preview_target_plan_with(tmp.path(), &workspace_req(), &EnsurePolicy::preview(false))
+            .unwrap();
     assert!(!warm.plan.graph_repair);
 }
 
 fn live_policy() -> EnsurePolicy {
-    EnsurePolicy::soft(false, false)
+    EnsurePolicy::soft(false)
 }
 
 #[test]
@@ -614,8 +577,7 @@ fn snapshot_repairs_graph_before_report_pin() {
     assert!(report.graph_generation.is_some(), "{report:?}");
     assert!(!super::report::graph_repair_needed(
         tmp.path(),
-        &report.scope,
-        false
+        &report.scope
     ));
     super::counters::reset();
     let again = materialize_target_report(tmp.path(), &workspace_req(), &live_policy()).unwrap();
@@ -641,8 +603,7 @@ fn dry_run_preview_does_not_repair_graph() {
     assert_eq!(super::counters::current().graph, 0);
     assert!(super::report::graph_repair_needed(
         tmp.path(),
-        &preview.scope,
-        false
+        &preview.scope
     ));
 }
 
@@ -687,27 +648,25 @@ fn ready_load_misses_when_covered_map_churns_graph_generation() {
         crate::test_runner::target_request::load_ready_for_request(
             tmp.path(),
             &req,
-            false,
             crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
         )
         .is_some()
     );
     assert!(
-        !super::report::graph_repair_needed(tmp.path(), &built.scope, false),
+        !super::report::graph_repair_needed(tmp.path(), &built.scope),
         "published report must leave graph evidence warm under covered map A"
     );
 
     covered.insert("other.py".into(), vec![1, 2]);
     crate::test_runner::lang_python::store_test_record_covering(tmp.path(), "a", &covered);
     assert!(
-        super::report::graph_repair_needed(tmp.path(), &built.scope, false),
+        super::report::graph_repair_needed(tmp.path(), &built.scope),
         "covered-map churn must miss the graph-evidence ITE key"
     );
     assert!(
         crate::test_runner::target_request::load_ready_for_request(
             tmp.path(),
             &req,
-            false,
             crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
         )
         .is_none(),
@@ -754,7 +713,6 @@ fn ready_load_misses_when_pinned_graph_evidence_blob_is_gone() {
         crate::test_runner::target_request::load_ready_for_request(
             tmp.path(),
             &req,
-            false,
             crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
         )
         .is_some()
@@ -767,14 +725,13 @@ fn ready_load_misses_when_pinned_graph_evidence_blob_is_gone() {
         "probe: graph evidence blob must be gone for {key}"
     );
     assert!(
-        super::report::graph_repair_needed(tmp.path(), &built.scope, false),
+        super::report::graph_repair_needed(tmp.path(), &built.scope),
         "missing evidence blob must make graph_repair_needed true under the same covered key"
     );
     assert!(
         crate::test_runner::target_request::load_ready_for_request(
             tmp.path(),
             &req,
-            false,
             crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
         )
         .is_none(),
@@ -830,7 +787,6 @@ fn ready_misses_when_gitignored_rust_include_target_changes() {
         crate::test_runner::target_request::load_ready_for_request(
             tmp.path(),
             &req,
-            false,
             crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
         )
         .is_some(),
@@ -848,7 +804,6 @@ fn ready_misses_when_gitignored_rust_include_target_changes() {
         crate::test_runner::target_request::load_ready_for_request(
             tmp.path(),
             &req,
-            false,
             crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
         )
         .is_none(),
@@ -908,7 +863,6 @@ fn ready_misses_when_gitignored_rust_path_attr_target_changes() {
         crate::test_runner::target_request::load_ready_for_request(
             tmp.path(),
             &req,
-            false,
             crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
         )
         .is_some(),
@@ -930,7 +884,6 @@ fn ready_misses_when_gitignored_rust_path_attr_target_changes() {
         crate::test_runner::target_request::load_ready_for_request(
             tmp.path(),
             &req,
-            false,
             crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
         )
         .is_none(),
@@ -994,7 +947,6 @@ fn ready_misses_when_gitignored_rust_conventional_mod_target_changes() {
         crate::test_runner::target_request::load_ready_for_request(
             tmp.path(),
             &req,
-            false,
             crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
         )
         .is_some(),
@@ -1016,7 +968,6 @@ fn ready_misses_when_gitignored_rust_conventional_mod_target_changes() {
         crate::test_runner::target_request::load_ready_for_request(
             tmp.path(),
             &req,
-            false,
             crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
         )
         .is_none(),

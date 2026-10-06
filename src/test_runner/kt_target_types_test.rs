@@ -1,8 +1,6 @@
 use crate::bin_cli::args::{TestInvocation, parse_test_invocation};
-use crate::bin_cli::{TestCommandArgs, finish_with_coverage};
 use crate::test_runner::test_mode_fixtures::{
-    checkout_branch, git_in, init_git, with_cloned_warm_committed_repo, with_cwd,
-    with_locked_warm_python_repo,
+    checkout_branch, git_in, init_git, with_cwd, with_locked_warm_python_repo,
 };
 use crate::test_runner::{RunTestCmdArgs, TargetPlanKind, plan_target_selectors};
 use std::fs;
@@ -128,37 +126,6 @@ fn no_false_lang(code: i32) {
     );
 }
 
-fn after_tests_pass_coverage(root: &Path, invocation: TestInvocation) -> i32 {
-    let _cwd = crate::cwd_test_lock::lock();
-    with_cwd(root, || {
-        let test_cfg = kiss::TestSectionConfig::default();
-        let gate = kiss::GateConfig {
-            test_coverage_threshold: 0,
-            max_unit_test_seconds: Vec::new(),
-            ..Default::default()
-        };
-        finish_with_coverage(
-            &TestCommandArgs {
-                invocation,
-                main_branch: None,
-                base_branch: None,
-                dry_run: false,
-                retry_bad: false,
-                metrics: false,
-                coverage_all: false,
-                jobs: 1,
-                ignore: &[],
-                extra: &[],
-                lang_filter: None,
-                test_cfg: &test_cfg,
-                gate_config: &gate,
-                language_tables: kiss::LanguageTablesPresent::both(),
-            },
-            0,
-        )
-    })
-}
-
 fn plan_err(root: &Path, targets: &[String]) -> String {
     let _cwd = crate::cwd_test_lock::lock();
     with_cwd(root, || {
@@ -252,13 +219,6 @@ fn type_commit() {
 #[test]
 fn type_base() {
     no_false_lang(dry_mode(workspace_repo().path(), TestInvocation::Base));
-    with_cloned_warm_committed_repo(|repo, _lib| {
-        assert_eq!(
-            after_tests_pass_coverage(repo, TestInvocation::Base),
-            1,
-            "base coverage fails closed without a resolvable fork point"
-        );
-    });
 }
 
 #[test]

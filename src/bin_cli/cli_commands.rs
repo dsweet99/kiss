@@ -99,7 +99,7 @@ pub enum Commands {
     },
     #[command(
         alias = "t",
-        about = "Run covering tests and enforce coverage and time gates"
+        about = "Run tests and enforce time, test-count, and orphan gates"
     )]
     Test {
         #[arg(

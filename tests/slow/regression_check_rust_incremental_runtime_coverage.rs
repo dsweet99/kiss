@@ -84,7 +84,7 @@ fn write_incremental_rust_repo(repo: &TempDir, value: &str) {
     fs::create_dir_all(covered.join("tests")).unwrap();
     fs::write(
         repo.path().join(".kissconfig"),
-        "[global]\nduplication_enabled = false\n[test]\ntest_coverage_threshold = 100\n[python]\n[rust]\n",
+        "[global]\nduplication_enabled = false\n[test]\n[python]\n[rust]\n",
     )
     .unwrap();
     fs::write(

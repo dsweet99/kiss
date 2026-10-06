@@ -18,16 +18,12 @@ static prefer_tmpfs_tmpdir_init: extern "C" fn() = {
 mod bug_indirect_dependencies_check;
 #[path = "slow/bug_nested_non_member_coverage_universe.rs"]
 mod bug_nested_non_member_coverage_universe;
-#[path = "slow/bug_test_coverage_aggregate_gate_masking.rs"]
-mod bug_test_coverage_aggregate_gate_masking;
 #[path = "slow/bug_test_coverage_violation_message.rs"]
 mod bug_test_coverage_violation_message;
 #[path = "slow/cache_integration.rs"]
 mod cache_integration;
 #[path = "slow/clamp_then_check.rs"]
 mod clamp_then_check;
-#[path = "slow/cli_check_hint.rs"]
-mod cli_check_hint;
 #[path = "slow/cli_integration.rs"]
 mod cli_integration;
 #[path = "slow/cli_integration_2.rs"]

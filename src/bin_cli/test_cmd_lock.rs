@@ -15,7 +15,9 @@ pub(super) struct OneshotLockGuard {
 impl OneshotLockGuard {
     fn try_lock(path: &Path) -> io::Result<Option<Self>> {
         let Some(parent) = path.parent() else {
-            return Err(io::Error::other("kiss test lock path has no parent directory"));
+            return Err(io::Error::other(
+                "kiss test lock path has no parent directory",
+            ));
         };
         std::fs::create_dir_all(parent)?;
         let file = OpenOptions::new()

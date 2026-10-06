@@ -55,17 +55,12 @@ pub(crate) fn official_summary_text(report: &TargetReport) -> String {
         report.rows.len(),
         report.exit_code
     ));
-    out.push_str(&official_coverage_text(report));
+    out.push_str(&official_gate_text(report));
     out
 }
 
-pub(crate) fn official_coverage_text(report: &TargetReport) -> String {
+pub(crate) fn official_gate_text(report: &TargetReport) -> String {
     let mut out = String::new();
-    let cov_gates: Vec<_> = report
-        .gates
-        .iter()
-        .filter(|gate| gate.kind == "test_coverage")
-        .collect();
     let time_gates: Vec<_> = report
         .gates
         .iter()
@@ -81,26 +76,9 @@ pub(crate) fn official_coverage_text(report: &TargetReport) -> String {
         .iter()
         .filter(|gate| gate.kind == "orphan")
         .collect();
-    if cov_gates.is_empty()
-        && time_gates.is_empty()
-        && count_gates.is_empty()
-        && orphan_gates.is_empty()
-    {
+    if time_gates.is_empty() && count_gates.is_empty() && orphan_gates.is_empty() {
         out.push_str("NO VIOLATIONS\n");
         return out;
-    }
-    for gate in cov_gates {
-        out.push_str("VIOLATION:test_coverage:");
-        if gate.detail.starts_with("codebase coverage") {
-            out.push(' ');
-            out.push_str(&gate.detail);
-            out.push('\n');
-            continue;
-        }
-        out.push_str(&gate.detail);
-        out.push_str(":1:");
-        out.push_str(&gate.detail);
-        out.push_str(": uncovered focused region\n");
     }
     if !time_gates.is_empty() {
         out.push_str(&format!(
@@ -151,7 +129,7 @@ fn render_execution_plan(plan: &ExecutionPlan) {
 mod official_text_tests {
     use super::*;
     use crate::test_runner::target_request::report::{
-        ReportCoverage, ReportEvidenceStamp, ReportGate, ReportSnapshot, SelectorRow,
+        ReportEvidenceStamp, ReportGate, ReportSnapshot, SelectorRow,
     };
     use crate::test_runner::target_request::scope::ReportScope;
     use crate::test_runner::target_request::slice::TargetSliceStamp;
@@ -178,9 +156,7 @@ mod official_text_tests {
             },
             exit_code: 0,
             evidence: ReportEvidenceStamp { digest: "e".into() },
-            coverage: ReportCoverage::default(),
             gates,
-            coverage_all: false,
             graph_generation: None,
             snapshot: ReportSnapshot::default(),
             labels: Default::default(),
@@ -188,7 +164,7 @@ mod official_text_tests {
     }
 
     #[test]
-    fn official_text_prints_no_violations_when_coverage_gates_empty() {
+    fn official_text_prints_no_violations_when_gates_empty() {
         let text = official_report_text(&report(Vec::new()));
         assert!(text.contains("NO VIOLATIONS"), "{text}");
         assert!(!text.contains("VIOLATION:"), "{text}");
@@ -229,25 +205,13 @@ mod official_text_tests {
     }
 
     #[test]
-    fn official_text_prints_coverage_gates() {
+    fn official_text_ignores_test_coverage_gate_kind() {
         let text = official_report_text(&report(vec![ReportGate {
             kind: "test_coverage".into(),
             detail: "foo.py".into(),
         }]));
-        assert!(text.contains("VIOLATION:test_coverage:foo.py:"), "{text}");
-        assert!(!text.contains("NO VIOLATIONS"), "{text}");
-    }
-
-    #[test]
-    fn official_text_prints_codebase_coverage_gate() {
-        let text = official_report_text(&report(vec![ReportGate {
-            kind: "test_coverage".into(),
-            detail: "codebase coverage 50% below 90% threshold".into(),
-        }]));
-        assert!(
-            text.contains("VIOLATION:test_coverage: codebase coverage 50% below 90% threshold"),
-            "{text}"
-        );
+        assert!(!text.contains("VIOLATION:test_coverage"), "{text}");
+        assert!(text.contains("NO VIOLATIONS"), "{text}");
     }
 
     #[test]

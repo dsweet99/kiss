@@ -175,10 +175,7 @@ fn stats_top_args_preserves_cli_inputs() {
     assert_eq!(args.n, 7);
     assert_eq!(args.py_config.lines_per_file, py.lines_per_file);
     assert_eq!(args.rs_config.lines_per_file, rs.lines_per_file);
-    assert_eq!(
-        args.gate_config.test_coverage_threshold,
-        gate.test_coverage_threshold
-    );
+    assert_eq!(args.gate_config.max_num_tests, gate.max_num_tests);
 }
 
 #[test]

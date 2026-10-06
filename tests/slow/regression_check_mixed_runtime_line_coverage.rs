@@ -51,7 +51,6 @@ fn write_mixed_runtime_repo(repo: &TempDir) {
          duplication_enabled = false\n\
 \n\
 [test]\n\
-         test_coverage_threshold = 100\n\
          [python]\n\
          [rust]\n",
     )

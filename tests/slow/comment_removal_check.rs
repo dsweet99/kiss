@@ -16,7 +16,6 @@ fn write_gate_config(root: &std::path::Path, enabled: bool) {
              comment_removal_enabled = {enabled}\n\
              \n\
              [test]\n\
-             test_coverage_threshold = 0\n\
              [python]\n\
              [rust]\n"
         ),

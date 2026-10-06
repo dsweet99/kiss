@@ -6,43 +6,11 @@ use crate::test_runner::rust_coverage_index::{
     resolved_rust_batch_request_parts, rust_coverage_cache_root,
 };
 
-use super::selector_matches_ignore_prefix;
-
 type DurationPair = (String, Duration);
 type DurationPairsMemo = Option<(PathBuf, Vec<DurationPair>)>;
 
 thread_local! {
     static RUST_DURATION_PAIRS_MEMO: RefCell<DurationPairsMemo> = const { RefCell::new(None) };
-}
-
-pub(crate) fn clear_rust_duration_pairs_memo() {
-    RUST_DURATION_PAIRS_MEMO.with(|memo| {
-        *memo.borrow_mut() = None;
-    });
-}
-
-#[cfg(test)]
-pub(crate) fn set_pairs_for_tests(repo_root: &Path, pairs: Vec<DurationPair>) {
-    RUST_DURATION_PAIRS_MEMO.with(|memo| {
-        *memo.borrow_mut() = Some((repo_root.to_path_buf(), pairs));
-    });
-}
-
-pub(crate) fn load_rust_population_max_duration(
-    repo_root: &Path,
-    ignore: &[String],
-) -> Option<Duration> {
-    let pairs = load_rust_duration_pairs(repo_root)?;
-    let mut max = Duration::ZERO;
-    let mut any = false;
-    for (selector, duration) in pairs {
-        if selector_matches_ignore_prefix(&selector, ignore) {
-            continue;
-        }
-        any = true;
-        max = max.max(duration);
-    }
-    any.then_some(max)
 }
 
 pub(super) fn load_rust_duration_pairs(repo_root: &Path) -> Option<Vec<DurationPair>> {
@@ -141,62 +109,6 @@ fn load_rust_duration_pairs_from_witness(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn rust_durations_memo_and_ignore_filtering() {
-        let tmp = tempfile::tempdir().unwrap();
-        let path = tmp.path();
-
-        clear_rust_duration_pairs_memo();
-        assert!(load_rust_duration_pairs(path).is_none());
-
-        RUST_DURATION_PAIRS_MEMO.with(|memo| {
-            *memo.borrow_mut() = Some((
-                path.to_path_buf(),
-                vec![
-                    (
-                        "tests/ignored/t.rs::test_x".to_string(),
-                        Duration::from_secs(10),
-                    ),
-                    (
-                        "tests/kept/t.rs::test_y".to_string(),
-                        Duration::from_secs(2),
-                    ),
-                ],
-            ));
-        });
-
-        let pairs = load_rust_duration_pairs(path).unwrap();
-        assert_eq!(pairs.len(), 2);
-
-        let max = load_rust_population_max_duration(path, &["tests/ignored".to_string()]);
-        assert_eq!(max, Some(Duration::from_secs(2)));
-
-        let none = load_rust_population_max_duration(path, &["tests/".to_string()]);
-        assert_eq!(none, None);
-
-        clear_rust_duration_pairs_memo();
-        RUST_DURATION_PAIRS_MEMO.with(|memo| {
-            assert!(memo.borrow().is_none());
-        });
-    }
-
-    #[test]
-    fn rust_logical_mod_tests_are_not_ignored_as_tests_dir() {
-        let tmp = tempfile::tempdir().unwrap();
-        let path = tmp.path();
-        clear_rust_duration_pairs_memo();
-        set_pairs_for_tests(
-            path,
-            vec![("tests::unit_ok".to_string(), Duration::from_secs(2))],
-        );
-        assert_eq!(
-            load_rust_population_max_duration(path, &["tests".to_string()]),
-            Some(Duration::from_secs(2)),
-            "rust logical tests::unit_ok is not the tests/ directory"
-        );
-        clear_rust_duration_pairs_memo();
-    }
 
     #[test]
     fn load_rust_duration_pairs_from_witness_absent_returns_none() {

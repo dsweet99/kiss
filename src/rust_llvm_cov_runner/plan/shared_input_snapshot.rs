@@ -57,7 +57,7 @@ pub(crate) fn rust_input_snapshot(
 
 pub(crate) fn format_skipped_non_member_coverage_warning(crate_roots: &BTreeSet<String>) -> String {
     let list = crate_roots.iter().cloned().collect::<Vec<_>>().join(", ");
-    format!("kiss: skipping coverage scoring for nested non-member Cargo crate(s): {list}")
+    format!("kiss: skipping runtime tracing for nested non-member Cargo crate(s): {list}")
 }
 
 fn warn_skipped_non_member_coverage_crates(root: &Path, crate_roots: &BTreeSet<String>) {

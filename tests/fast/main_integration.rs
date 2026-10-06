@@ -1,7 +1,5 @@
 use kiss::cli_output::{
-    CoverageFileStat, CoverageGateFailureCtx, count_py_unreferenced, count_rs_unreferenced,
-    print_coverage_gate_failure, print_duplicates, print_final_status, print_no_files_message,
-    print_violations,
+    print_duplicates, print_final_status, print_no_files_message, print_violations,
 };
 use kiss::config_gen::{
     MergeLanguageUpdate, collect_py_stats, collect_rs_stats, merge_config_toml, write_mimic_config,
@@ -63,28 +61,12 @@ fn test_print_functions_no_panic() {
     print_final_status(false);
     print_final_status(true);
     print_duplicates("Python", &[]);
-    assert_eq!(count_py_unreferenced(&[]), 0);
-    assert_eq!(count_rs_unreferenced(&[]), 0);
 }
 
 #[test]
 fn test_print_helpers_no_panic() {
     let tmp = TempDir::new().unwrap();
     print_no_files_message(None, tmp.path());
-    let mut file_stats = std::collections::HashMap::new();
-    file_stats.insert(
-        std::path::PathBuf::from("sample.py"),
-        CoverageFileStat {
-            percent: 40,
-            covered_lines: 2,
-            total_lines: 5,
-        },
-    );
-    print_coverage_gate_failure(&CoverageGateFailureCtx {
-        threshold: 50,
-        unreferenced: &[],
-        file_stats: &file_stats,
-    });
 }
 
 #[test]

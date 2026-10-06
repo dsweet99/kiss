@@ -4,28 +4,13 @@ use super::resolve::resolve_only;
 use super::resolved::{ResolvedTarget, SourceRegion};
 use super::types::{TargetFocus, TargetRequest};
 
-#[cfg(test)]
-pub(crate) fn coverage_exit_from_ready_request(
-    request: &TargetRequest,
-    coverage_all: bool,
-    extras: crate::test_runner::language_keyed::LanguageKeyed<&[String]>,
-) -> Option<i32> {
-    let cwd = std::env::current_dir().ok()?;
-    let repo = crate::test_git::git_repo_root(&cwd).ok()?;
-    let report = super::bind::load_ready_for_request(&repo, request, coverage_all, extras)?;
-    for line in super::render::official_coverage_text(&report).lines() {
-        crate::test_runner::emit_test_progress(line);
-    }
-    Some(report.exit_code)
-}
-
-pub(crate) fn coverage_paths_for_request(request: &TargetRequest) -> Result<Vec<String>, String> {
+pub(crate) fn request_source_paths(request: &TargetRequest) -> Result<Vec<String>, String> {
     let cwd = std::env::current_dir().map_err(|err| err.to_string())?;
     let repo = crate::test_git::git_repo_root(&cwd)?;
-    focused_coverage_paths(&repo, request)
+    focused_source_paths(&repo, request)
 }
 
-pub(crate) fn focused_coverage_paths(
+pub(crate) fn focused_source_paths(
     repo_root: &Path,
     request: &TargetRequest,
 ) -> Result<Vec<String>, String> {
@@ -45,7 +30,7 @@ fn region_paths(repo_root: &Path, resolved: &ResolvedTarget) -> Vec<String> {
         .map(|region| match region {
             SourceRegion::WorkspaceAll => ".".into(),
             SourceRegion::FileAll { path } | SourceRegion::FileLines { path, .. } => {
-                coverage_file_path(repo_root, path)
+                request_file_path(repo_root, path)
             }
         })
         .collect();
@@ -54,7 +39,7 @@ fn region_paths(repo_root: &Path, resolved: &ResolvedTarget) -> Vec<String> {
     paths
 }
 
-fn coverage_file_path(repo_root: &Path, raw: &str) -> String {
+fn request_file_path(repo_root: &Path, raw: &str) -> String {
     let path_part = raw.split_once("::").map_or(raw, |(path, _)| path);
     if path_part.is_empty() || path_part == "." || path_part == "./" {
         return ".".into();
@@ -66,7 +51,7 @@ fn coverage_file_path(repo_root: &Path, raw: &str) -> String {
 }
 
 #[cfg(test)]
-mod coverage_path_tests {
+mod request_path_tests {
     use super::*;
     use crate::test_runner::target_request::{operands_request, workspace_request};
     use crate::test_runner::test_mode_fixtures::{git_in, init_git};
@@ -77,7 +62,7 @@ mod coverage_path_tests {
     }
 
     #[test]
-    fn coverage_workspace_req_is_workspace_request() {
+    fn workspace_req_is_workspace_request() {
         assert_eq!(workspace_req(), workspace_request(None, &[]));
     }
 
@@ -86,7 +71,7 @@ mod coverage_path_tests {
         let tmp = tempfile::TempDir::new().unwrap();
         init_git(&tmp);
         assert_eq!(
-            focused_coverage_paths(tmp.path(), &workspace_req()).unwrap(),
+            focused_source_paths(tmp.path(), &workspace_req()).unwrap(),
             vec![".".to_string()]
         );
     }
@@ -111,85 +96,24 @@ mod coverage_path_tests {
                 .success()
         );
         let request = operands_request(&["src_foo.py".into()], None, &[]);
-        let paths = focused_coverage_paths(tmp.path(), &request).unwrap();
+        let paths = focused_source_paths(tmp.path(), &request).unwrap();
         assert_eq!(paths, vec!["src_foo.py".to_string()]);
     }
 
     #[test]
     fn nodeid_operand_uses_file_path() {
         assert_eq!(
-            coverage_file_path(Path::new("/repo"), "test_lib.py::test_f"),
+            request_file_path(Path::new("/repo"), "test_lib.py::test_f"),
             "test_lib.py"
         );
         assert_eq!(
-            coverage_file_path(Path::new("/repo"), "/repo/src_foo.py"),
+            request_file_path(Path::new("/repo"), "/repo/src_foo.py"),
             "src_foo.py"
         );
     }
 
     #[test]
-    fn ready_coverage_exit_is_none_without_store() {
-        let _cwd = crate::cwd_test_lock::lock();
-        let tmp = tempfile::TempDir::new().unwrap();
-        init_git(&tmp);
-        let restore = std::env::current_dir().unwrap();
-        std::env::set_current_dir(tmp.path()).unwrap();
-        let exit = coverage_exit_from_ready_request(
-            &workspace_req(),
-            false,
-            crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
-        );
-        std::env::set_current_dir(restore).unwrap();
-        assert_eq!(exit, None);
-    }
-
-    #[test]
-    fn coverage_exit_rejects_empty_extras_report_when_query_has_python_extras() {
-        use crate::test_runner::target_request::{EnsurePolicy, materialize_target_report};
-
-        let _cwd = crate::cwd_test_lock::lock();
-        let tmp = tempfile::TempDir::new().unwrap();
-        init_git(&tmp);
-        fs::write(tmp.path().join(".gitignore"), "/target\n/.kiss\n").unwrap();
-        fs::write(tmp.path().join("app.py"), "x = 1\n").unwrap();
-        assert!(
-            git_in(tmp.path())
-                .args(["add", "-A"])
-                .status()
-                .unwrap()
-                .success()
-        );
-        assert!(
-            git_in(tmp.path())
-                .args(["commit", "-m", "seed"])
-                .status()
-                .unwrap()
-                .success()
-        );
-
-        let parent = workspace_req();
-        let built =
-            materialize_target_report(tmp.path(), &parent, &EnsurePolicy::soft(false, false))
-                .unwrap();
-        assert!(built.snapshot.extras.both_empty());
-
-        let py = vec!["-k".to_string(), "foo".to_string()];
-        let query_extras = crate::test_runner::language_keyed::LanguageKeyed {
-            python: py.as_slice(),
-            rust: &[][..],
-        };
-        let restore = std::env::current_dir().unwrap();
-        std::env::set_current_dir(tmp.path()).unwrap();
-        let exit = coverage_exit_from_ready_request(&parent, false, query_extras);
-        std::env::set_current_dir(restore).unwrap();
-        assert_eq!(
-            exit, None,
-            "coverage-exit must not reuse an empty-extras ready report when the query carries python extras"
-        );
-    }
-
-    #[test]
-    fn coverage_paths_for_request_uses_file_operand() {
+    fn request_source_paths_uses_file_operand() {
         let _cwd = crate::cwd_test_lock::lock();
         let tmp = tempfile::TempDir::new().unwrap();
         init_git(&tmp);
@@ -211,7 +135,7 @@ mod coverage_path_tests {
         let request = operands_request(&["src_foo.py".into()], None, &[]);
         let restore = std::env::current_dir().unwrap();
         std::env::set_current_dir(tmp.path()).unwrap();
-        let paths = coverage_paths_for_request(&request);
+        let paths = request_source_paths(&request);
         std::env::set_current_dir(restore).unwrap();
         assert_eq!(paths.unwrap(), vec!["src_foo.py".to_string()]);
     }

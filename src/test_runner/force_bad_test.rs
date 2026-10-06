@@ -40,7 +40,6 @@ fn apply_force_bad_noop_when_flag_off_and_merges_when_on() {
         force_rerun: false,
         force_bad: false,
         metrics: false,
-        coverage_all: false,
         jobs: 1,
         extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
         config_main_branch: None,

@@ -267,7 +267,8 @@ fn top_level_help_describes_commands_and_global_flags() {
     assert!(Cli::command().find_subcommand("help").is_none());
     assert!(help.contains("Write a dependency graph"));
     assert!(!help.contains("Output markdown path"));
-    assert!(help.contains("Run covering tests and enforce coverage and time gates"));
+    assert!(help.contains("Run tests and enforce time, test-count, and orphan gates"));
+    assert!(!help.contains("enforce coverage"));
     assert!(!help.contains("Coverage-only evaluation (prefer kiss test for the full path)"));
     assert!(Cli::command().find_subcommand("__coverage").is_none());
     assert!(!help.contains("Coverage is enforced by kiss test, not a standalone command"));

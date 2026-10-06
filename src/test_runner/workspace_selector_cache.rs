@@ -25,8 +25,7 @@ mod fresh;
 mod inventory;
 pub(crate) use fresh::begin_inventory_session;
 pub(crate) use inventory::{
-    rust_full_source_fingerprint, rust_selector_inputs_fingerprint_for_cache,
-    support_gitignore, workspace_source_inventory_fingerprint_for_cache,
+    rust_full_source_fingerprint, rust_selector_inputs_fingerprint_for_cache, support_gitignore,
 };
 #[path = "workspace_selector_cache_lookup.rs"]
 mod lookup;

@@ -105,7 +105,7 @@ pub use duplication::{
     extract_rust_chunks_for_duplication_with_roles,
 };
 pub use gate_config::{
-    GateConfig, MatchedUnitTestSecondsRule, TestCoverageScope, catch_all_limit, exceeds_limit,
+    GateConfig, MatchedUnitTestSecondsRule, catch_all_limit, exceeds_limit,
     format_nested_toml_table, limit_for_selector, matched_rule_for_selector,
     time_gate_uses_path_prefixes,
 };

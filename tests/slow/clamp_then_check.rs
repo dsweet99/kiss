@@ -185,7 +185,7 @@ fn clamp_then_check_is_green() {
             && !config.contains("orphan_module_enabled")
             && config.contains("comment_removal_enabled = false")
             && config.contains(r#"docs_allowed = ["./"]"#)
-            && config.contains("test_coverage_threshold = 0")
+            && !config.contains("test_coverage")
             && config.contains("\"*\" = 99999"),
         "auto-created gate defaults:\n{config}"
     );

@@ -4,69 +4,12 @@ use std::path::{Path, PathBuf};
 use kiss::{
     OrphanCoverage, OrphanUnitInput, build_python_context_graph, build_rust_context_graph,
     collect_orphan_entry_callables, collect_orphan_entry_paths, orphan_unit_findings,
-    orphan_unit_violations,
 };
 
 use crate::analyze::line_coverage::{
     CoverageSourceFacts, RuntimeCoverageSnapshot, repo_relative_key,
 };
 use crate::analyze_parse::parse_classified;
-
-pub(crate) fn evaluate_orphan_unit_gate_with_viols(
-    repo_root: &Path,
-    py_files: &[PathBuf],
-    rs_files: &[PathBuf],
-    snapshot: &RuntimeCoverageSnapshot,
-    gate: &kiss::GateConfig,
-    bypass: bool,
-) -> (bool, Vec<kiss::Violation>) {
-    if bypass || !gate.orphan_detection {
-        return (false, Vec::new());
-    }
-    let Ok(viols) = collect_orphan_unit_violations(
-        repo_root,
-        py_files,
-        rs_files,
-        snapshot,
-        &gate.orphan_allowed,
-    ) else {
-        eprintln!("error: kiss test: failed to parse sources for orphan units");
-        return (true, Vec::new());
-    };
-    crate::test_runner::final_summary::note_violation_kind("orphan", viols.len());
-    for v in &viols {
-        kiss::rust_llvm_cov_runner::emit_progress(&kiss::cli_output::format_violation(v));
-    }
-    (!viols.is_empty(), viols)
-}
-
-pub(crate) fn evaluate_orphan_unit_gate(
-    repo_root: &Path,
-    py_files: &[PathBuf],
-    rs_files: &[PathBuf],
-    snapshot: &RuntimeCoverageSnapshot,
-    gate: &kiss::GateConfig,
-    bypass: bool,
-) -> bool {
-    evaluate_orphan_unit_gate_with_viols(repo_root, py_files, rs_files, snapshot, gate, bypass).0
-}
-
-pub(crate) fn collect_orphan_unit_violations(
-    repo_root: &Path,
-    py_files: &[PathBuf],
-    rs_files: &[PathBuf],
-    snapshot: &RuntimeCoverageSnapshot,
-    orphan_allowed: &[String],
-) -> Result<Vec<kiss::Violation>, ()> {
-    with_orphan_input(
-        repo_root,
-        py_files,
-        rs_files,
-        snapshot,
-        orphan_allowed,
-        orphan_unit_violations,
-    )
-}
 
 pub(crate) fn collect_orphan_unit_findings(
     repo_root: &Path,
@@ -152,7 +95,7 @@ fn snapshot_to_orphan_coverage(
 
 #[cfg(test)]
 mod orphan_unit_gate_test {
-    use super::{evaluate_orphan_unit_gate, snapshot_to_orphan_coverage};
+    use super::{collect_orphan_unit_findings, snapshot_to_orphan_coverage};
     use crate::analyze::line_coverage::{CoverageSourceFacts, RuntimeCoverageSnapshot};
     use std::collections::{BTreeMap, BTreeSet};
     use std::path::PathBuf;
@@ -164,11 +107,14 @@ mod orphan_unit_gate_test {
         }
     }
 
-    fn enabled_gate() -> kiss::GateConfig {
-        kiss::GateConfig {
-            orphan_detection: true,
-            ..kiss::GateConfig::default()
-        }
+    fn has_orphans(
+        repo_root: &std::path::Path,
+        py: &[PathBuf],
+        rs: &[PathBuf],
+        snapshot: &RuntimeCoverageSnapshot,
+    ) -> bool {
+        collect_orphan_unit_findings(repo_root, py, rs, snapshot, &[])
+            .map_or(true, |found| !found.is_empty())
     }
 
     #[test]
@@ -186,40 +132,15 @@ mod orphan_unit_gate_test {
     }
 
     #[test]
-    fn bypass_or_disabled_is_not_failure() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let empty = snap(BTreeMap::new());
-        let disabled = kiss::GateConfig::default();
-        assert!(!evaluate_orphan_unit_gate(
-            tmp.path(),
-            &[],
-            &[],
-            &empty,
-            &disabled,
-            false
-        ));
-        assert!(!evaluate_orphan_unit_gate(
-            tmp.path(),
-            &[],
-            &[],
-            &empty,
-            &enabled_gate(),
-            true
-        ));
-    }
-
-    #[test]
     fn unused_python_helper_fails_when_enabled() {
         let tmp = tempfile::TempDir::new().unwrap();
         let utils = tmp.path().join("utils.py");
         std::fs::write(&utils, "def helper():\n    return 1\n").unwrap();
-        let failed = evaluate_orphan_unit_gate(
+        let failed = has_orphans(
             tmp.path(),
             &[utils],
             &[],
             &snap(BTreeMap::from([("utils.py".into(), BTreeSet::from([1]))])),
-            &enabled_gate(),
-            false,
         );
         assert!(failed);
     }
@@ -229,7 +150,7 @@ mod orphan_unit_gate_test {
         let tmp = tempfile::TempDir::new().unwrap();
         let utils = tmp.path().join("utils.py");
         std::fs::write(&utils, "x = 1\ndef helper():\n    return 1\n").unwrap();
-        let failed = evaluate_orphan_unit_gate(
+        let failed = has_orphans(
             tmp.path(),
             &[utils],
             &[],
@@ -237,8 +158,6 @@ mod orphan_unit_gate_test {
                 "utils.py".into(),
                 BTreeSet::from([1, 2, 3]),
             )])),
-            &enabled_gate(),
-            false,
         );
         assert!(!failed);
     }
@@ -248,27 +167,18 @@ mod orphan_unit_gate_test {
         let tmp = tempfile::TempDir::new().unwrap();
         let lib = tmp.path().join("lib.rs");
         std::fs::write(&lib, "pub fn unused() { let _x = 1; }\n").unwrap();
-        let failed = evaluate_orphan_unit_gate(
-            tmp.path(),
-            &[],
-            &[lib],
-            &snap(BTreeMap::new()),
-            &enabled_gate(),
-            false,
-        );
+        let failed = has_orphans(tmp.path(), &[], &[lib], &snap(BTreeMap::new()));
         assert!(failed);
     }
 
     #[test]
     fn parse_failure_fails_closed() {
         let missing = PathBuf::from("/no/such/orphan_unit_gate_missing.py");
-        assert!(evaluate_orphan_unit_gate(
+        assert!(has_orphans(
             PathBuf::from("/tmp").as_path(),
             &[missing],
             &[],
-            &snap(BTreeMap::new()),
-            &enabled_gate(),
-            false,
+            &snap(BTreeMap::new())
         ));
     }
 }

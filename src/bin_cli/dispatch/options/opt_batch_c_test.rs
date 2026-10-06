@@ -26,14 +26,12 @@ fn witness_opt_batch_c() {
         dry_run: true,
         retry_bad: true,
         metrics: true,
-        coverage_all: true,
         jobs: Some(4),
         ignore: vec![".venv".into()],
         extra: vec!["-q".into()],
         test_cfg: &test_cfg,
         cfg: &cfg,
     };
-    assert!(test.coverage_all);
     assert_eq!(test.jobs, Some(4));
     assert!(matches!(test.invocation, TestInvocation::All));
 }

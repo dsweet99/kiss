@@ -58,8 +58,6 @@ mod main_integration;
 mod py_metrics_tests;
 #[path = "fast/python_counts_violations.rs"]
 mod python_counts_violations;
-#[path = "fast/regression_check_all_ignores_test_file_sentinel.rs"]
-mod regression_check_all_ignores_test_file_sentinel;
 #[path = "fast/regression_check_perf.rs"]
 mod regression_check_perf;
 #[path = "fast/rust_counts_violations.rs"]

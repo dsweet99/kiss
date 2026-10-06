@@ -18,7 +18,11 @@ pub(crate) fn write_python_population_manifest_for_args(
     selectors: &[String],
     test_args: &[String],
 ) -> Result<(), String> {
-    let identity = current_python_population_manifest_identity(repo_root, test_args)?;
+    let identity = current_python_population_manifest_identity_with_env_keys(
+        repo_root,
+        test_args,
+        PYTHON_COVERAGE_ENV_KEYS,
+    )?;
     write_python_population_manifest_with_identity(repo_root, selectors, &identity)
 }
 
@@ -159,7 +163,6 @@ fn stored_python_universe_names(
 
 pub(crate) struct StoredPythonPopulation {
     pub(crate) selectors: Vec<String>,
-    pub(crate) identity: String,
 }
 
 pub(crate) fn stored_python_universe_population(
@@ -178,10 +181,7 @@ pub(crate) fn stored_python_universe_population(
         && manifest.input_fingerprint == input_fingerprint
         && manifest.entries_fingerprint == entries_fingerprint
     {
-        Some(StoredPythonPopulation {
-            selectors,
-            identity: stable_population_identity(&manifest),
-        })
+        Some(StoredPythonPopulation { selectors })
     } else {
         None
     }
@@ -206,38 +206,6 @@ fn valid_stored_selectors(selectors: &[String]) -> Option<()> {
         .then_some(())
 }
 
-fn stable_population_identity(manifest: &PythonPopulationManifest) -> String {
-    let mut h =
-        super::storage::python_fnv1a64(0xcbf2_9ce4_8422_2325, b"kiss-python-runtime-population-v1");
-    for value in [
-        manifest.schema_version.as_str(),
-        manifest.cache_schema_version.as_str(),
-        manifest.source_root.as_str(),
-        manifest.selector_discovery_version.as_str(),
-        manifest.python_version.as_str(),
-        manifest.pytest_version.as_str(),
-        manifest.input_fingerprint.as_str(),
-    ] {
-        h = super::storage::python_fnv1a64(h, value.as_bytes());
-        h = super::storage::python_fnv1a64(h, &[0]);
-    }
-    for arg in &manifest.pytest_args {
-        h = super::storage::python_fnv1a64(h, arg.as_bytes());
-        h = super::storage::python_fnv1a64(h, &[0]);
-    }
-    for (key, value) in &manifest.env {
-        h = super::storage::python_fnv1a64(h, key.as_bytes());
-        h = super::storage::python_fnv1a64(h, b"=");
-        h = super::storage::python_fnv1a64(h, value.as_bytes());
-        h = super::storage::python_fnv1a64(h, &[0]);
-    }
-    for selector in &manifest.selectors {
-        h = super::storage::python_fnv1a64(h, selector.as_bytes());
-        h = super::storage::python_fnv1a64(h, &[0]);
-    }
-    format!("{h:016x}")
-}
-
 fn current_python_entries_fingerprint(repo_root: &Path) -> Option<String> {
     python_entries_fingerprint(repo_root).ok()
 }
@@ -256,17 +224,6 @@ impl PythonPopulationManifestIdentity {
     pub(crate) fn has_python_tool_versions(&self) -> bool {
         !self.python_version.trim().is_empty() && !self.pytest_version.trim().is_empty()
     }
-}
-
-pub(crate) fn current_python_population_manifest_identity(
-    repo_root: &Path,
-    test_args: &[String],
-) -> Result<PythonPopulationManifestIdentity, String> {
-    current_python_population_manifest_identity_with_env_keys(
-        repo_root,
-        test_args,
-        PYTHON_COVERAGE_ENV_KEYS,
-    )
 }
 
 fn current_python_population_manifest_identity_with_env_keys(

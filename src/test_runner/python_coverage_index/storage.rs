@@ -141,17 +141,6 @@ pub(crate) fn is_python_source_input_path(path: &Path) -> bool {
     kiss::rslip::is_rslip_cache_input(path)
 }
 
-pub(crate) fn python_selector_definition_digest(repo_root: &Path, selector: &str) -> String {
-    let file = selector
-        .split_once("::")
-        .map(|(file, _)| file)
-        .unwrap_or(selector);
-    let bytes = fs::read(repo_root.join(file)).unwrap_or_default();
-    let mut h = 0xcbf2_9ce4_8422_2325;
-    h = python_fnv1a64(h, bytes.as_slice());
-    format!("{h:016x}")
-}
-
 pub(crate) fn python_repo_relative_coverage_file(repo_root: &Path, file: &str) -> Option<String> {
     let rel = python_repo_relative_path(repo_root, Path::new(file))?;
     is_python_indexable_coverage_rel(&rel).then_some(rel)

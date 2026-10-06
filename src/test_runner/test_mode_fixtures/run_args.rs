@@ -35,7 +35,6 @@ pub(crate) fn dry_run_cmd_args<'a>(
         force_rerun: false,
         force_bad: false,
         metrics: false,
-        coverage_all: false,
         jobs,
         extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
         config_main_branch: None,

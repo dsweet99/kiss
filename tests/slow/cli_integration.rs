@@ -43,7 +43,7 @@ fn cli_init_writes_default_config_in_current_directory() {
             && !config.contains("orphan_module_enabled")
             && config.contains("comment_removal_enabled = false")
             && config.contains(r#"docs_allowed = ["./"]"#)
-            && config.contains("test_coverage_threshold = 0")
+            && !config.contains("test_coverage")
             && config.contains("\"*\" = 99999")
             && !config.contains("[rust]"),
         "config:\n{config}"

@@ -24,7 +24,6 @@ fn run_args(
         force_rerun: false,
         force_bad: false,
         metrics: false,
-        coverage_all: false,
         jobs: 1,
         extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
         config_main_branch: None,

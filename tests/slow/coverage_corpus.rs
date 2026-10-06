@@ -18,7 +18,6 @@ fn cli_corpus_exercises_analysis_gate_paths() {
          duplication_enabled = false\n\
          \n\
 [test]\n\
-         test_coverage_threshold = 0\n\
          \n\
          [python]\n\
          statements_per_function = 1000\n\
@@ -194,7 +193,6 @@ fn write_mixed_repo(repo: &std::path::Path) {
          duplication_enabled = false\n\
 \n\
 [test]\n\
-         test_coverage_threshold = 0\n\
          [python]\n\
          [rust]\n",
     )

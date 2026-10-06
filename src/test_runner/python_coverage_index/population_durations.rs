@@ -45,77 +45,6 @@ pub(crate) fn load_current_python_population_durations(
     Some(pairs)
 }
 
-pub(crate) fn load_current_python_population_max_duration(
-    repo_root: &Path,
-    pytest_args: &[String],
-) -> Option<Duration> {
-    let identity =
-        super::manifest::current_python_population_manifest_identity(repo_root, pytest_args)
-            .ok()?;
-    let cache_root = python_coverage_cache_root(repo_root).ok()?;
-    let pop_path = cache_root.join("population.json");
-    let pop_bytes = fs::read(&pop_path).ok()?;
-    let pop_id: PopulationIdentityOnly = serde_json::from_slice(&pop_bytes).ok()?;
-    if pop_id.schema_version != POPULATION_SCHEMA_VERSION
-        || pop_id.cache_schema_version != identity.cache_schema_version
-        || pop_id.python_version != identity.python_version
-        || pop_id.pytest_version != identity.pytest_version
-        || pop_id.pytest_args != identity.pytest_args
-        || pop_id.env != identity.env
-    {
-        return None;
-    }
-    let dur_path = population_durations_path(&cache_root);
-    let bytes = match fs::read(&dur_path) {
-        Ok(bytes) => bytes,
-        Err(_) => {
-            let _ = load_current_python_population_durations(repo_root, pytest_args)?;
-            fs::read(&dur_path).ok()?
-        }
-    };
-    let file: PopulationDurationsMaxOnly = serde_json::from_slice(&bytes).ok()?;
-    if file.schema_version != POPULATION_DURATIONS_SCHEMA
-        || file.cache_schema_version != pop_id.cache_schema_version
-        || file.input_fingerprint != pop_id.input_fingerprint
-        || file.entries_fingerprint != pop_id.entries_fingerprint
-    {
-        let _ = load_current_python_population_durations(repo_root, pytest_args)?;
-        let bytes = fs::read(&dur_path).ok()?;
-        let file: PopulationDurationsMaxOnly = serde_json::from_slice(&bytes).ok()?;
-        return Some(Duration::from_nanos(file.max_duration_ns));
-    }
-    Some(Duration::from_nanos(file.max_duration_ns))
-}
-
-pub(crate) fn load_current_python_population_path_maxes(
-    repo_root: &Path,
-    pytest_args: &[String],
-) -> Option<Vec<PathMaxDuration>> {
-    let pairs = load_current_python_population_durations(repo_root, pytest_args)?;
-    Some(path_maxes_from_selector_durations(&pairs))
-}
-
-#[derive(Deserialize)]
-struct PopulationDurationsMaxOnly {
-    schema_version: String,
-    cache_schema_version: String,
-    input_fingerprint: String,
-    entries_fingerprint: String,
-    max_duration_ns: u64,
-}
-
-#[derive(Deserialize)]
-struct PopulationIdentityOnly {
-    schema_version: String,
-    cache_schema_version: String,
-    python_version: String,
-    pytest_version: String,
-    pytest_args: Vec<String>,
-    env: std::collections::BTreeMap<String, String>,
-    input_fingerprint: String,
-    entries_fingerprint: String,
-}
-
 #[allow(dead_code)]
 pub(crate) fn try_publish_python_population_durations(
     repo_root: &Path,
@@ -276,47 +205,6 @@ fn load_durations_from_scanned_probes(
             .map(|selector| (selector.clone(), found[selector]))
             .collect(),
     )
-}
-
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
-pub(crate) struct PathMaxDuration {
-    pub(crate) path: String,
-    pub(crate) max_duration_ns: u64,
-    pub(crate) example_selector: String,
-}
-
-pub(crate) fn path_maxes_from_selector_durations(
-    pairs: &[(String, std::time::Duration)],
-) -> Vec<PathMaxDuration> {
-    use std::collections::BTreeMap;
-    let mut by_path: BTreeMap<String, (u64, String)> = BTreeMap::new();
-    for (selector, duration) in pairs {
-        let ns = u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX);
-        let path = selector
-            .split_once("::")
-            .map_or(selector.as_str(), |(p, _)| p)
-            .to_string();
-        match by_path.get_mut(&path) {
-            Some((max_ns, example)) if ns > *max_ns => {
-                *max_ns = ns;
-                *example = selector.clone();
-            }
-            Some(_) => {}
-            None => {
-                by_path.insert(path, (ns, selector.clone()));
-            }
-        }
-    }
-    by_path
-        .into_iter()
-        .map(
-            |(path, (max_duration_ns, example_selector))| PathMaxDuration {
-                path,
-                max_duration_ns,
-                example_selector,
-            },
-        )
-        .collect()
 }
 
 #[cfg(test)]

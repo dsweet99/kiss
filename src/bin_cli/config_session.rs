@@ -197,8 +197,8 @@ mod tests {
 {created}"#,
         );
         assert!(
-            created.contains("test_coverage_threshold = 0"),
-            "created .kissconfig must set test_coverage_threshold = 0:\n{created}"
+            !created.contains("test_coverage"),
+            "created .kissconfig must not set coverage keys:\n{created}"
         );
         assert!(
             created.contains("\"*\" = 99999"),
@@ -248,7 +248,6 @@ docs_allowed = [\"./\" ]
 
 [test]
 orphan_detection = false
-test_coverage_threshold = 0
 ignore = [\"vendor\"]
 ",
         )
@@ -325,16 +324,16 @@ ignore = [\"vendor\"]
         let tmp = tempfile::TempDir::new().unwrap();
         std::fs::write(
             tmp.path().join(".kissconfig"),
-            "[test]\ntest_coverage_threshold = 11\n",
+            "[test]\nmax_num_tests = 11\n",
         )
         .unwrap();
         let custom = tmp.path().join("custom.toml");
-        std::fs::write(&custom, "[test]\ntest_coverage_threshold = 22\n").unwrap();
+        std::fs::write(&custom, "[test]\nmax_num_tests = 22\n").unwrap();
         let orig_dir = std::env::current_dir().unwrap();
         std::env::set_current_dir(tmp.path()).unwrap();
         let gate = load_gate_config(Some(&custom));
         std::env::set_current_dir(orig_dir).unwrap();
-        assert_eq!(gate.test_coverage_threshold, 22);
+        assert_eq!(gate.max_num_tests, 22);
     }
 
     #[test]
@@ -361,7 +360,7 @@ ignore = [\"vendor\"]
         let _cwd_guard = crate::cwd_test_lock::lock();
         let tmp = tempfile::TempDir::new().unwrap();
         std::fs::create_dir_all(tmp.path().join(".git")).unwrap();
-        let root_config = "[test]\ntest_coverage_threshold = 3\n[python]\n[rust]\n";
+        let root_config = "[test]\nmax_num_tests = 3\n[python]\n[rust]\n";
         std::fs::write(tmp.path().join(".kissconfig"), root_config).unwrap();
         let nested = tmp.path().join("pkg");
         std::fs::create_dir_all(&nested).unwrap();

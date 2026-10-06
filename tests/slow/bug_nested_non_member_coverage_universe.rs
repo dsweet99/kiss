@@ -44,7 +44,6 @@ fn write_nested_workspace_repo(root: &std::path::Path) {
          duplication_enabled = false\n\
 \n\
 [test]\n\
-         test_coverage_threshold = 0\n\
          [python]\n\
          [rust]\n",
     )

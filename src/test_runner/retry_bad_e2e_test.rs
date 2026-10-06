@@ -28,7 +28,6 @@ fn write_fixture(root: &Path, flag: &Path) {
         "[global]\n\
          duplication_enabled = false\n\
          [test]\n\
-         test_coverage_threshold = 0\n\
          orphan_detection = false\n\
          num_jobs = 1\n\
          [python]\n\
@@ -49,7 +48,6 @@ def test_flip():\n    assert lib.VALUE == 1\n    assert not os.path.exists({:?})
 
 fn test_args(force_bad: bool) -> RunTestCmdArgs<'static> {
     let gate = kiss::GateConfig {
-        test_coverage_threshold: 0,
         orphan_detection: false,
         max_unit_test_seconds: Vec::new(),
         ..Default::default()
@@ -74,7 +72,6 @@ fn test_args(force_bad: bool) -> RunTestCmdArgs<'static> {
         force_rerun: false,
         force_bad,
         metrics: false,
-        coverage_all: false,
         jobs: 1,
         extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
         config_main_branch: None,

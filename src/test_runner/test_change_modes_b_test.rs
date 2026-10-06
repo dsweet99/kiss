@@ -199,7 +199,6 @@ fn assert_run_test_dry_run(mode: TestChangeMode, main: Option<&str>, base: Optio
     let lib = clone_warm_committed_repo(tmp.path());
     edit_rust_covered_source(&lib, 2);
     let gate = kiss::GateConfig {
-        test_coverage_threshold: 0,
         orphan_detection: false,
         ..Default::default()
     };
@@ -229,7 +228,6 @@ fn assert_run_test_dry_run(mode: TestChangeMode, main: Option<&str>, base: Optio
             force_rerun: false,
             force_bad: false,
             metrics: false,
-            coverage_all: false,
             jobs: 1,
             extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
             config_main_branch: None,
@@ -306,7 +304,6 @@ fn row_k_run_test_base_without_other_refs_fails() {
             force_rerun: false,
             force_bad: false,
             metrics: false,
-            coverage_all: false,
             jobs: 1,
             extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
             config_main_branch: None,

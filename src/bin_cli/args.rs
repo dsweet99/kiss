@@ -10,7 +10,7 @@ const AFTER_HELP: &str = "\
 Examples:
   kiss check .                    Run static analysis; write .kissconfig if missing
   kiss check . src/module/        Check one module against the full codebase
-  kiss test                       Run tests and enforce runtime coverage
+  kiss test                       Run tests and enforce test gates
   kiss check --lang rust src/     Analyze only Rust files in src/
   kiss viz graph.md               Write a Mermaid dependency graph
 ";
@@ -143,7 +143,7 @@ fn parse_path_or_directory_targets(
 ) -> Result<TestInvocation, String> {
     if matches!(first, "cov" | "validate-selection") {
         return Err(format!(
-            "unknown test target '{first}'. Use {TEST_OPERAND_HINT}. Coverage is enforced by `kiss test`."
+            "unknown test target '{first}'. Use {TEST_OPERAND_HINT}."
         ));
     }
     if let Some(operand) = operands

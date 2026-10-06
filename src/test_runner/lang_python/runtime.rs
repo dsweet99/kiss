@@ -63,11 +63,7 @@ impl crate::test_runner::lang_iface::KernelRules for PythonKernelRules {
         super::stored::generation_ids(repo_root)
     }
 
-    fn stored_witness(
-        &self,
-        repo_root: &Path,
-        extras: &[String],
-    ) -> Option<ExecutionWitness> {
+    fn stored_witness(&self, repo_root: &Path, extras: &[String]) -> Option<ExecutionWitness> {
         if !kiss::rslip::python_records_dir(repo_root).is_dir() {
             return None;
         }

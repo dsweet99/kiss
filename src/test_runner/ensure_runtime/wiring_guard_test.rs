@@ -1,22 +1,4 @@
 #[test]
-fn coverage_refresh_is_an_ordinary_plan_call() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("src/test_runner/check_runtime_refresh.rs");
-    let src = std::fs::read_to_string(&path).expect("read refresh");
-    assert!(src.contains("ensure_languages_runtime"));
-    assert!(src.contains("ensure_request_for_all"));
-    for retired in [
-        "try_repair_rust_check_aggregate",
-        "check_runtime_coverage_locks",
-        "try_lock_exclusive",
-        "load_rust_runtime_coverage",
-        "load_python_runtime_coverage",
-    ] {
-        assert!(!src.contains(retired), "refresh must not use {retired}");
-    }
-}
-
-#[test]
 fn language_modules_route_python_and_rust_through_ensure() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/test_runner");
     let python = std::fs::read_to_string(root.join("lang_python/executor.rs"))

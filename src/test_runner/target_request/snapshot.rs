@@ -46,49 +46,40 @@ pub(crate) struct EnsurePolicy {
     require_complete: bool,
     inject_mismatch: bool,
     retry_bad: bool,
-    coverage_all: bool,
     assemble_only: bool,
 }
 
 impl EnsurePolicy {
     /// Dry-run plan preview (`bind` / `preview_target_plan_with`).
-    pub(crate) fn preview(retry_bad: bool, coverage_all: bool) -> Self {
+    pub(crate) fn preview(retry_bad: bool) -> Self {
         Self {
             dry_run: true,
             require_complete: false,
             inject_mismatch: false,
             retry_bad,
-            coverage_all,
             assemble_only: false,
         }
     }
 
     /// Full ensure that requires complete membership evidence.
-    pub(crate) fn complete(retry_bad: bool, coverage_all: bool) -> Self {
+    pub(crate) fn complete(retry_bad: bool) -> Self {
         Self {
             dry_run: false,
             require_complete: true,
             inject_mismatch: false,
             retry_bad,
-            coverage_all,
             assemble_only: false,
         }
     }
 
-    /// Idle / report query: complete membership, no retry-bad, no assembly repair.
-    pub(crate) fn query(coverage_all: bool) -> Self {
-        Self::complete(false, coverage_all)
-    }
-
     /// Soft materialize: may omit complete-membership errors (tests / tolerant paths).
     #[cfg(test)]
-    pub(crate) fn soft(retry_bad: bool, coverage_all: bool) -> Self {
+    pub(crate) fn soft(retry_bad: bool) -> Self {
         Self {
             dry_run: false,
             require_complete: false,
             inject_mismatch: false,
             retry_bad,
-            coverage_all,
             assemble_only: false,
         }
     }
@@ -101,7 +92,6 @@ impl EnsurePolicy {
             require_complete: false,
             inject_mismatch: true,
             retry_bad: false,
-            coverage_all: false,
             assemble_only: false,
         }
     }
@@ -120,10 +110,6 @@ impl EnsurePolicy {
 
     pub(crate) fn retry_bad(&self) -> bool {
         self.retry_bad
-    }
-
-    pub(crate) fn coverage_all(&self) -> bool {
-        self.coverage_all
     }
 
     pub(crate) fn assemble_only(&self) -> bool {
@@ -187,7 +173,7 @@ fn try_snapshot(
         ReportScope::from_membership(projection.coverage_regions(), selectors, stamp.complete);
     apply_runner_extra(repo_root, &mut scope, args)?;
     let available = super::rows::available_rows(repo_root, &scope, runner_extras(args));
-    let graph_repair = super::report::graph_repair_needed(repo_root, &scope, policy.coverage_all());
+    let graph_repair = super::report::graph_repair_needed(repo_root, &scope);
     let force = args.is_some_and(|item| item.force_rerun);
     let time_gate_active = time_gate_active(repo_root, args);
     let plan = super::rows::plan_from_available_rows_with(
@@ -212,17 +198,12 @@ fn try_snapshot(
         let extras = args
             .map(|item| item.extras)
             .unwrap_or(crate::test_runner::language_keyed::LanguageKeyed::EMPTY);
-        if let Some(ready) = super::bind::load_ready_for_request(
-            repo_root,
-            request,
-            policy.coverage_all(),
-            extras,
-        ) {
+        if let Some(ready) = super::bind::load_ready_for_request(repo_root, request, extras) {
             return Ok(SnapshotOutcome::Report(Box::new(ready)));
         }
     }
     if graph_repair {
-        super::report::repair_graph_evidence(repo_root, &scope, policy.coverage_all())
+        super::report::repair_graph_evidence(repo_root, &scope)
             .map_err(EnsureError::IncompleteEvidence)?;
     }
     if !policy.assemble_only()
@@ -258,7 +239,6 @@ fn try_snapshot(
     assemble_report(
         repo_root,
         request,
-        policy,
         scope,
         stamp,
         RunFacts {
@@ -324,7 +304,7 @@ fn assemble_after_repair(
             crate::test_runner::runners::NO_COVERING_TESTS_MSG.into(),
         ));
     }
-    assemble_report(repo_root, request, policy, scope, stamp, facts, Some(args))
+    assemble_report(repo_root, request, scope, stamp, facts, Some(args))
 }
 
 fn refresh_python_witnesses(
@@ -406,30 +386,17 @@ fn apply_runner_extra(
 fn assemble_report(
     repo_root: &Path,
     request: &TargetRequest,
-    policy: &EnsurePolicy,
     scope: ReportScope,
     stamp: super::slice::TargetSliceStamp,
     facts: RunFacts,
     args: Option<&crate::test_runner::RunTestCmdArgs<'_>>,
 ) -> Result<SnapshotOutcome, EnsureError> {
-    let rows = super::rows::rows_from_witnesses(
-        repo_root,
-        &scope,
-        runner_extras(args),
-    )
-    .map_err(EnsureError::IncompleteEvidence)?;
+    let rows = super::rows::rows_from_witnesses(repo_root, &scope, runner_extras(args))
+        .map_err(EnsureError::IncompleteEvidence)?;
     super::rows::duration_evidence_holds(&rows, facts.time_gate_active)
         .map_err(EnsureError::IncompleteEvidence)?;
     let exit_code = assembled_exit(&rows, facts.runner_exit);
-    let mut report = TargetReport::assembled_in(
-        repo_root,
-        request,
-        scope,
-        rows,
-        stamp,
-        exit_code,
-        policy.coverage_all(),
-    );
+    let mut report = TargetReport::assembled_in(repo_root, request, scope, rows, stamp, exit_code);
     if let Some(args) = args {
         report.snapshot.extras = args.extras.owned_vecs();
     }

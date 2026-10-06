@@ -15,12 +15,8 @@ fn lang_iface_has_no_python_or_rust_impl_files() {
 }
 
 #[test]
-fn language_packages_own_generation_and_llvm_cov_homes() {
+fn language_packages_own_llvm_cov_and_adapter_homes() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/test_runner");
-    assert!(
-        root.join("lang_python/generation/mod.rs").is_file(),
-        "Python generation must live under lang_python/"
-    );
     assert!(
         !root
             .join("python_coverage_index/generation/mod.rs")

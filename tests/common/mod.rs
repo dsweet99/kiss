@@ -143,7 +143,6 @@ pub fn scrub_parent_coverage_env(cmd: &mut Command) {
         "CARGO_TARGET_DIR",
         "CARGO_LLVM_COV_TARGET_DIR",
         "CARGO_LLVM_COV_BUILD_DIR",
-        "KISS_COVERAGE_RUNTIME_REFRESH_ACTIVE",
         "KISS_RUST_COVERAGE_PROFILE_POOL",
     ];
     for key in KEYS {
@@ -188,7 +187,7 @@ pub fn persistent_rust_failure_repo() -> PathBuf {
         fs::create_dir_all(root.join("src")).unwrap();
         fs::write(
             root.join(".kissconfig"),
-            "[global]\nduplication_enabled = false\n[test]\ntest_coverage_threshold = 0\norphan_detection = false\n[python]\n[rust]\n",
+            "[global]\nduplication_enabled = false\n[test]\norphan_detection = false\n[python]\n[rust]\n",
         )
         .unwrap();
         fs::write(
@@ -258,7 +257,7 @@ pub fn persistent_python_failure_repo() -> PathBuf {
         fs::create_dir_all(&root).unwrap();
         fs::write(
             root.join(".kissconfig"),
-            "[global]\nduplication_enabled = false\n[test]\ntest_coverage_threshold = 0\norphan_detection = false\n[python]\n[rust]\n",
+            "[global]\nduplication_enabled = false\n[test]\norphan_detection = false\n[python]\n[rust]\n",
         )
         .unwrap();
         fs::write(root.join("lib.py"), "def f():\n    return 0\n").unwrap();
@@ -388,7 +387,6 @@ pub fn persistent_python_coverage_gap_repo() -> PathBuf {
              duplication_enabled = false\n\
              \n\
 [test]\n\
-             test_coverage_threshold = 0\n\
              orphan_detection = false\n\
              num_jobs = 1\n\
              \n\
@@ -442,7 +440,6 @@ pub fn with_python_coverage_gap_repo<T>(f: impl FnOnce(&Path) -> T) -> T {
          duplication_enabled = false\n\
          \n\
 [test]\n\
-         test_coverage_threshold = 0\n\
          orphan_detection = false\n\
          num_jobs = 1\n\
          \n\
@@ -537,7 +534,6 @@ fn persistent_seeded_python_repo_unlocked() -> PathBuf {
              duplication_enabled = false\n\
              \n\
 [test]\n\
-             test_coverage_threshold = 0\n\
              orphan_detection = false\n\
              num_jobs = 1\n\
              \n\

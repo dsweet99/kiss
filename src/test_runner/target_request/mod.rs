@@ -2,7 +2,6 @@ mod adapt;
 mod bind;
 mod canon;
 mod counters;
-mod coverage;
 mod digest;
 mod ensure;
 mod graph_store;
@@ -11,6 +10,7 @@ mod manifest;
 mod projection;
 mod render;
 mod report;
+mod request_paths;
 mod resolve;
 mod resolved;
 mod rows;
@@ -32,21 +32,19 @@ pub(crate) use adapt::{
 pub(crate) use bind::load_ready_for_request;
 pub(crate) use bind::{BindDecision, bind_and_prepare};
 pub(crate) use counters::add_index;
-#[cfg(test)]
-pub(crate) use coverage::coverage_exit_from_ready_request;
-pub(crate) use coverage::coverage_paths_for_request;
 pub(crate) use projection::build_slice_projection;
 pub(crate) use render::official_report_text;
 pub(crate) use report::{EffectiveStatus, TargetReport};
+pub(crate) use request_paths::request_source_paths;
 
 #[cfg(test)]
 pub(crate) use ensure::materialize_target_report;
-#[cfg(test)]
-pub(crate) use snapshot::EnsurePolicy;
 pub(crate) use ensure::{EnsureOutcome, ensure_target_report};
 pub(crate) use resolve::resolve_only;
 pub(crate) use rows::{available_rows, plan_from_available_rows};
 pub(crate) use scope::ReportScope;
+#[cfg(test)]
+pub(crate) use snapshot::EnsurePolicy;
 pub(crate) use types::{GitFocus, TargetFocus, TargetRequest};
 
 #[cfg(test)]

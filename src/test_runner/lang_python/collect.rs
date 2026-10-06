@@ -309,7 +309,6 @@ pub(crate) fn format_collect_error_for_test(
 
 pub(crate) fn clear_python_collect_memo() {
     COLLECT_MEMO.lock().unwrap().clear();
-    crate::test_runner::lang_python::generation::clear_python_execution_identity_memo();
 }
 
 #[cfg(test)]

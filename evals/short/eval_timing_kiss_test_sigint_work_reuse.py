@@ -26,7 +26,6 @@ def _write_python_fast_slow_repo(repo: Path) -> None:
         "[global]\n"
         "duplication_enabled = false\n"
         "[test]\n"
-        "test_coverage_threshold = 0\n"
         "orphan_detection = false\n"
         "num_jobs = 1\n"
         "[test.max_unit_test_seconds]\n"

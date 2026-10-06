@@ -5,16 +5,12 @@ use crate::test_runner::lang_iface::{
     ExecutionWitness, GenerationIds, StoredCoverage, WitnessStatus,
 };
 use crate::test_runner::python_coverage_index::{
-    load_current_python_coverage_index, python_coverage_snapshot_generation_id,
-    select_python_source_selectors_from_index,
+    load_current_python_coverage_index, select_python_source_selectors_from_index,
 };
 
 /// The Python witness for a run with pytest arguments `extras`: the test records made
 /// under the current runner identity, less those whose covered dependencies changed.
-pub(super) fn stored_witness(
-    repo_root: &Path,
-    extras: &[String],
-) -> Option<ExecutionWitness> {
+pub(super) fn stored_witness(repo_root: &Path, extras: &[String]) -> Option<ExecutionWitness> {
     let template = record_request(repo_root, extras)?;
     let identity = kiss::rslip::record_identity_for_request(&template).ok()?;
     let records =
@@ -152,11 +148,8 @@ pub(super) fn stored_coverage(repo_root: &Path) -> StoredCoverage {
     stored
 }
 
-pub(super) fn generation_ids(repo_root: &Path) -> GenerationIds {
-    GenerationIds {
-        witness: None,
-        coverage: python_coverage_snapshot_generation_id(repo_root),
-    }
+pub(super) fn generation_ids(_repo_root: &Path) -> GenerationIds {
+    GenerationIds { witness: None }
 }
 
 /// Store a passing record for `selector` under the current runner identity that covers

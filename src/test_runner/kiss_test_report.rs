@@ -284,7 +284,6 @@ pub(crate) fn clone_run_args<'a>(args: &RunTestCmdArgs<'a>) -> RunTestCmdArgs<'a
         force_rerun: args.force_rerun,
         force_bad: args.force_bad,
         metrics: args.metrics,
-        coverage_all: args.coverage_all,
         jobs: args.jobs,
         extras: args.extras,
         config_main_branch: args.config_main_branch,

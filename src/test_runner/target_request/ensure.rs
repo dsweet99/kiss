@@ -65,33 +65,21 @@ pub(crate) fn materialize_target_report(
 pub(crate) fn ensure_target_report_query(
     repo_root: &Path,
     request: &TargetRequest,
-    policy: &EnsurePolicy,
     extras: crate::test_runner::language_keyed::LanguageKeyed<&[String]>,
 ) -> Result<Ensured, EnsureError> {
     let _inventory_session =
         crate::test_runner::workspace_selector_cache::begin_inventory_session(repo_root);
-    if let Some(ready) = super::bind::load_ready_for_request(
-        repo_root,
-        request,
-        policy.coverage_all(),
-        extras,
-    ) {
+    if let Some(ready) = super::bind::load_ready_for_request(repo_root, request, extras) {
         return Ok(Ensured::Report(Box::new(ready)));
     }
-    if let Some(projected) = super::bind::project_language_ready_from_parent_workspace(
-        repo_root,
-        request,
-        policy.coverage_all(),
-        extras,
-    ) {
+    if let Some(projected) =
+        super::bind::project_language_ready_from_parent_workspace(repo_root, request, extras)
+    {
         return Ok(Ensured::Report(Box::new(projected)));
     }
-    if let Some(projected) = super::bind::project_git_ready_from_parent_workspace(
-        repo_root,
-        request,
-        policy.coverage_all(),
-        extras,
-    ) {
+    if let Some(projected) =
+        super::bind::project_git_ready_from_parent_workspace(repo_root, request, extras)
+    {
         return Ok(Ensured::Report(Box::new(projected)));
     }
     Err(EnsureError::IncompleteEvidence(
@@ -109,7 +97,7 @@ pub(crate) fn ensure_target_report_with(
         let extras = args
             .map(|item| item.extras)
             .unwrap_or(crate::test_runner::language_keyed::LanguageKeyed::EMPTY);
-        if let Ok(ensured) = ensure_target_report_query(repo_root, request, policy, extras) {
+        if let Ok(ensured) = ensure_target_report_query(repo_root, request, extras) {
             return Ok(ensured);
         }
         if args.is_none() && policy.require_complete() {
@@ -131,7 +119,7 @@ pub(crate) fn preview_target_plan_with(
     request: &TargetRequest,
     policy: &EnsurePolicy,
 ) -> Result<TargetPlanPreview, EnsureError> {
-    let policy = EnsurePolicy::preview(policy.retry_bad(), policy.coverage_all());
+    let policy = EnsurePolicy::preview(policy.retry_bad());
     match run_snapshot_kernel(repo_root, request, &policy)? {
         SnapshotOutcome::Preview(preview) => Ok(preview),
         SnapshotOutcome::Report(_) => {
@@ -149,12 +137,7 @@ fn ready_report(
         return None;
     }
     let repo = repo_root?;
-    match ensure_target_report_query(
-        repo,
-        &super::request_from_run_args(args),
-        &EnsurePolicy::query(args.coverage_all),
-        args.extras,
-    ) {
+    match ensure_target_report_query(repo, &super::request_from_run_args(args), args.extras) {
         Ok(Ensured::Report(report)) => Some(*report),
         Err(_) => None,
     }
@@ -168,7 +151,6 @@ fn ready_after_run(
         super::bind::load_ready_after_run(
             repo_root?,
             &super::request_from_run_args(args),
-            args.coverage_all,
             args.extras,
         )
     })
@@ -203,7 +185,6 @@ where
     if !matches!(ran, Executed::Code(_)) {
         published = ready_report(repo_root, args, false);
     }
-    crate::test_runner::lang_python::generation::clear_python_execution_identity_memo();
     if published.is_some() {
         defer.discard();
     } else if let Executed::Code(code) = &ran

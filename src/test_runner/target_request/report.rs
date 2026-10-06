@@ -63,23 +63,6 @@ pub(crate) struct ReportSnapshot {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct ReportFileCoverage {
-    pub path: String,
-    pub covered: u64,
-    pub coverable: u64,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct ReportCoverage {
-    pub covered: u64,
-    pub coverable: u64,
-    #[serde(default)]
-    pub uncovered: Vec<String>,
-    #[serde(default)]
-    pub files: Vec<ReportFileCoverage>,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct ReportGate {
     pub kind: String,
     pub detail: String,
@@ -93,11 +76,7 @@ pub(crate) struct TargetReport {
     pub exit_code: i32,
     pub evidence: ReportEvidenceStamp,
     #[serde(default)]
-    pub coverage: ReportCoverage,
-    #[serde(default)]
     pub gates: Vec<ReportGate>,
-    #[serde(default)]
-    pub coverage_all: bool,
     #[serde(default)]
     pub graph_generation: Option<String>,
     #[serde(default)]
@@ -122,28 +101,13 @@ impl TargetReport {
         rows: Vec<SelectorRow>,
         stamp: TargetSliceStamp,
         exit_code: i32,
-        coverage_all: bool,
     ) -> Self {
-        let (lines, coverable) = coverage_maps_from_stores(repo_root, &scope);
-        let coverage = coverage_from_maps(&scope, lines.clone(), coverable);
         let cfg = kiss::GateConfig::load_for_repo(repo_root);
-        let mut gates = if coverage_all {
-            gates_from_coverage_all(&coverage)
-        } else {
-            gates_from_coverage(&coverage, &cfg)
-        };
-        gates.extend(gates_from_timing(&rows, &cfg));
-        if !coverage_all {
-            gates.extend(gates_from_population(repo_root, &cfg, request));
-            gates.extend(gates_from_orphan(
-                repo_root,
-                &cfg,
-                &scope,
-                &workspace_covered_from_stores(repo_root),
-            ));
-        }
         let covered = workspace_covered_from_stores(repo_root);
-        let graph_generation = graph_generation_id(repo_root, &scope, &cfg, coverage_all, &covered);
+        let mut gates = gates_from_timing(&rows, &cfg);
+        gates.extend(gates_from_population(repo_root, &cfg, request));
+        gates.extend(gates_from_orphan(repo_root, &cfg, &scope, &covered));
+        let graph_generation = graph_generation_id(repo_root, &scope, &cfg, &covered);
         let configuration = configuration_generation(repo_root);
         let graph_mutable = graph_generation.as_ref().map(|_| {
             super::graph_store::evidence_mutable_digest(
@@ -153,13 +117,11 @@ impl TargetReport {
             )
         });
         let population = population_inventory_id(repo_root, request);
-        let mut built =
-            Self::assembled_with(scope, rows, stamp, exit_code, coverage, gates, coverage_all);
+        let mut built = Self::assembled_with(scope, rows, stamp, exit_code, gates);
         built.evidence = evidence_stamp_parts(
             &built.rows,
             &built.stamp,
             built.exit_code,
-            &built.coverage,
             &built.gates,
             graph_generation.as_deref(),
             population.as_deref(),
@@ -172,7 +134,6 @@ impl TargetReport {
             &built.evidence,
             graph_generation,
             &cfg,
-            coverage_all,
         );
         built.snapshot.graph_mutable = graph_mutable;
         let selectors: Vec<String> = built.rows.iter().map(|row| row.selector.clone()).collect();
@@ -191,21 +152,17 @@ impl TargetReport {
         rows: Vec<SelectorRow>,
         stamp: TargetSliceStamp,
         exit_code: i32,
-        coverage: ReportCoverage,
         gates: Vec<ReportGate>,
-        coverage_all: bool,
     ) -> Self {
         let exit_code = Self::apply_gate_exit(exit_code, &gates);
-        let evidence = evidence_stamp(&rows, &stamp, exit_code, &coverage, &gates, None);
+        let evidence = evidence_stamp(&rows, &stamp, exit_code, &gates, None);
         Self {
             scope,
             rows,
             stamp,
             exit_code,
             evidence,
-            coverage,
             gates,
-            coverage_all,
             graph_generation: None,
             snapshot: ReportSnapshot::default(),
             labels: BTreeMap::new(),
@@ -228,7 +185,7 @@ impl TargetReport {
         if gates.iter().any(|gate| {
             matches!(
                 gate.kind.as_str(),
-                "test_coverage" | "max_unit_test_seconds" | "max_num_tests" | "orphan"
+                "max_unit_test_seconds" | "max_num_tests" | "orphan"
             )
         }) {
             Self::combine_exit(exit_code, 1)
@@ -244,34 +201,6 @@ impl TargetReport {
         let caller_exit = if caller_exit == 124 { 1 } else { caller_exit };
         if row_exit != 0 { row_exit } else { caller_exit }
     }
-}
-
-#[cfg(test)]
-fn coverage_from_stores(repo_root: &Path, scope: &ReportScope) -> ReportCoverage {
-    let (lines, coverable_lines) = coverage_maps_from_stores(repo_root, scope);
-    coverage_from_maps(scope, lines, coverable_lines)
-}
-
-fn coverage_maps_from_stores(
-    repo_root: &Path,
-    scope: &ReportScope,
-) -> (
-    BTreeMap<String, BTreeSet<u32>>,
-    BTreeMap<String, BTreeSet<u32>>,
-) {
-    let mut lines: BTreeMap<String, BTreeSet<u32>> = BTreeMap::new();
-    let mut coverable_lines: BTreeMap<String, BTreeSet<u32>> = BTreeMap::new();
-    for rules in crate::test_runner::lang_registry::all_rules() {
-        let stored = rules.stored_coverage(repo_root);
-        for (file, covered) in stored.covered {
-            extend_focused(scope, &file, covered, &mut lines);
-        }
-        for (file, coverable) in stored.coverable {
-            extend_focused(scope, &file, coverable, &mut coverable_lines);
-        }
-    }
-    extend_current_source_coverable(repo_root, scope, &mut coverable_lines);
-    (lines, coverable_lines)
 }
 
 fn workspace_covered_from_stores(repo_root: &Path) -> BTreeMap<String, BTreeSet<u32>> {
@@ -338,12 +267,12 @@ fn production_files_for_scope(
         py.extend(
             gathered_py
                 .into_iter()
-                .filter(|path| production_coverage_abs(path)),
+                .filter(|path| production_source_abs(path)),
         );
         rs.extend(
             gathered_rs
                 .into_iter()
-                .filter(|path| production_coverage_abs(path)),
+                .filter(|path| production_source_abs(path)),
         );
     }
     for region in &scope.regions {
@@ -351,7 +280,7 @@ fn production_files_for_scope(
             SourceRegion::FileAll { path } | SourceRegion::FileLines { path, .. } => path,
             SourceRegion::WorkspaceAll => continue,
         };
-        if !production_coverage_path(rel) {
+        if !production_source_path(rel) {
             continue;
         }
         let abs = repo_root.join(rel);
@@ -371,182 +300,12 @@ fn production_files_for_scope(
     (py, rs)
 }
 
-fn extend_current_source_coverable(
-    repo_root: &Path,
-    scope: &ReportScope,
-    dest: &mut BTreeMap<String, BTreeSet<u32>>,
-) {
-    let (py, rs) = production_files_for_scope(repo_root, scope);
-    if py.is_empty() && rs.is_empty() {
-        return;
-    }
-    let Ok(facts) = crate::analyze::line_coverage::CoverageSourceFacts::from_files(&py, &rs) else {
-        return;
-    };
-    for (abs, lines) in facts.coverable_map() {
-        let rel = abs
-            .strip_prefix(repo_root)
-            .map(|path| path.to_string_lossy().into_owned())
-            .unwrap_or_else(|_| abs.to_string_lossy().into_owned());
-        extend_focused(
-            scope,
-            &rel,
-            lines.iter().filter_map(|line| u32::try_from(*line).ok()),
-            dest,
-        );
-    }
+fn production_source_path(path: &str) -> bool {
+    !path.contains("::") && production_source_abs(Path::new(path))
 }
 
-fn coverage_from_maps(
-    scope: &ReportScope,
-    lines: BTreeMap<String, BTreeSet<u32>>,
-    coverable_lines: BTreeMap<String, BTreeSet<u32>>,
-) -> ReportCoverage {
-    let covered = lines.values().map(|set| set.len() as u64).sum();
-    let indexed: u64 = coverable_lines.values().map(|set| set.len() as u64).sum();
-    let mut uncovered: Vec<String> = Vec::new();
-    for region in &scope.regions {
-        match region {
-            SourceRegion::WorkspaceAll => {
-                for (path, coverable) in &coverable_lines {
-                    if production_coverage_path(path)
-                        && region_has_uncovered(lines.get(path), coverable)
-                    {
-                        uncovered.push(path.clone());
-                    }
-                }
-            }
-            SourceRegion::FileAll { path } => {
-                if !production_coverage_path(path) {
-                    continue;
-                }
-                let coverable = coverable_lines.get(path).cloned().unwrap_or_default();
-                let covered = lines.get(path);
-                if coverable.is_empty() {
-                    if covered.is_none_or(BTreeSet::is_empty) {
-                        uncovered.push(path.clone());
-                    }
-                } else if region_has_uncovered(covered, &coverable) {
-                    uncovered.push(path.clone());
-                }
-            }
-            SourceRegion::FileLines { path, lines: focus } => {
-                if production_coverage_path(path) && region_has_uncovered(lines.get(path), focus) {
-                    uncovered.push(path.clone());
-                }
-            }
-        }
-    }
-    uncovered.sort();
-    uncovered.dedup();
-    ReportCoverage {
-        covered,
-        coverable: indexed.max(covered),
-        uncovered,
-        files: file_coverages(scope, &lines, &coverable_lines),
-    }
-}
-
-fn file_coverages(
-    scope: &ReportScope,
-    lines: &BTreeMap<String, BTreeSet<u32>>,
-    coverable_lines: &BTreeMap<String, BTreeSet<u32>>,
-) -> Vec<ReportFileCoverage> {
-    let mut files: BTreeMap<String, (u64, u64)> = BTreeMap::new();
-    for region in &scope.regions {
-        match region {
-            SourceRegion::WorkspaceAll => {
-                let mut paths: BTreeSet<&String> = BTreeSet::new();
-                paths.extend(coverable_lines.keys());
-                paths.extend(lines.keys());
-                for path in paths {
-                    if production_coverage_path(path) {
-                        files.insert(
-                            path.clone(),
-                            file_counts(lines.get(path), coverable_lines.get(path)),
-                        );
-                    }
-                }
-            }
-            SourceRegion::FileAll { path } => {
-                if production_coverage_path(path) {
-                    files.insert(
-                        path.clone(),
-                        file_counts(lines.get(path), coverable_lines.get(path)),
-                    );
-                }
-            }
-            SourceRegion::FileLines { path, lines: focus } => {
-                if !production_coverage_path(path) {
-                    continue;
-                }
-                let covered = lines.get(path).cloned().unwrap_or_default();
-                let covered_n = focus.iter().filter(|line| covered.contains(line)).count() as u64;
-                let coverable_n = coverable_lines.get(path).map_or(focus.len() as u64, |set| {
-                    let focused = focus.intersection(set).count() as u64;
-                    if focused == 0 {
-                        focus.len() as u64
-                    } else {
-                        focused
-                    }
-                });
-                files.insert(path.clone(), (covered_n, coverable_n.max(covered_n)));
-            }
-        }
-    }
-    files
-        .into_iter()
-        .map(|(path, (covered, coverable))| ReportFileCoverage {
-            path,
-            covered,
-            coverable,
-        })
-        .collect()
-}
-
-fn file_counts(covered: Option<&BTreeSet<u32>>, coverable: Option<&BTreeSet<u32>>) -> (u64, u64) {
-    let empty = BTreeSet::new();
-    let covered = covered.unwrap_or(&empty);
-    let coverable = coverable.unwrap_or(&empty);
-    if coverable.is_empty() {
-        let n = covered.len() as u64;
-        return (n, n);
-    }
-    let hit = covered.intersection(coverable).count() as u64;
-    let den = coverable.len() as u64;
-    (hit, den.max(hit))
-}
-
-fn region_has_uncovered(covered: Option<&BTreeSet<u32>>, focus: &BTreeSet<u32>) -> bool {
-    let covered = covered.cloned().unwrap_or_default();
-    focus.iter().any(|line| !covered.contains(line))
-}
-
-fn production_coverage_path(path: &str) -> bool {
-    !path.contains("::") && production_coverage_abs(Path::new(path))
-}
-
-fn production_coverage_abs(path: &Path) -> bool {
+fn production_source_abs(path: &Path) -> bool {
     !crate::test_runner::lang_registry::all_rules().any(|rules| rules.is_test_source(path))
-}
-
-fn extend_focused(
-    scope: &ReportScope,
-    file: &str,
-    values: impl IntoIterator<Item = u32>,
-    dest: &mut BTreeMap<String, BTreeSet<u32>>,
-) {
-    if !scope_includes_file(scope, file) {
-        return;
-    }
-    let incoming: BTreeSet<u32> = values.into_iter().collect();
-    let focused = match focused_line_set(scope, file) {
-        None => incoming,
-        Some(focus) => incoming.intersection(&focus).copied().collect(),
-    };
-    if !focused.is_empty() {
-        dest.entry(file.to_string()).or_default().extend(focused);
-    }
 }
 
 fn focused_line_set(scope: &ReportScope, file: &str) -> Option<BTreeSet<u32>> {
@@ -568,72 +327,6 @@ fn focused_line_set(scope: &ReportScope, file: &str) -> Option<BTreeSet<u32>> {
         }
     }
     found.then_some(lines)
-}
-
-fn gates_from_coverage_all(coverage: &ReportCoverage) -> Vec<ReportGate> {
-    coverage
-        .uncovered
-        .iter()
-        .map(|path| ReportGate {
-            kind: "test_coverage".into(),
-            detail: path.clone(),
-        })
-        .collect()
-}
-
-fn gates_from_coverage(coverage: &ReportCoverage, gate: &kiss::GateConfig) -> Vec<ReportGate> {
-    if gate.test_coverage_threshold == 0 {
-        return Vec::new();
-    }
-    match gate.test_coverage_scope {
-        kiss::TestCoverageScope::Codebase => {
-            if coverage.coverable == 0 && !coverage.uncovered.is_empty() {
-                return vec![ReportGate {
-                    kind: "test_coverage".into(),
-                    detail: format!(
-                        "codebase coverage 0% below {}% threshold",
-                        gate.test_coverage_threshold
-                    ),
-                }];
-            }
-            let percent = coverage_percent(coverage.covered, coverage.coverable);
-            if percent >= gate.test_coverage_threshold {
-                Vec::new()
-            } else {
-                vec![ReportGate {
-                    kind: "test_coverage".into(),
-                    detail: format!(
-                        "codebase coverage {percent}% below {}% threshold",
-                        gate.test_coverage_threshold
-                    ),
-                }]
-            }
-        }
-        kiss::TestCoverageScope::ByFile => {
-            if coverage.files.is_empty() {
-                return coverage
-                    .uncovered
-                    .iter()
-                    .map(|path| ReportGate {
-                        kind: "test_coverage".into(),
-                        detail: path.clone(),
-                    })
-                    .collect();
-            }
-            coverage
-                .files
-                .iter()
-                .filter(|file| {
-                    file_coverage_percent(file.covered, file.coverable)
-                        < gate.test_coverage_threshold
-                })
-                .map(|file| ReportGate {
-                    kind: "test_coverage".into(),
-                    detail: file.path.clone(),
-                })
-                .collect()
-        }
-    }
 }
 
 fn population_selector_count(
@@ -735,22 +428,6 @@ fn gates_from_timing(rows: &[SelectorRow], gate: &kiss::GateConfig) -> Vec<Repor
         .collect()
 }
 
-fn coverage_percent(covered: u64, coverable: u64) -> usize {
-    if coverable == 0 {
-        return 100;
-    }
-    let covered = usize::try_from(covered).unwrap_or(usize::MAX);
-    let coverable = usize::try_from(coverable).unwrap_or(usize::MAX);
-    crate::analyze::line_coverage::coverage_percentage(covered, coverable)
-}
-
-fn file_coverage_percent(covered: u64, coverable: u64) -> usize {
-    if coverable == 0 {
-        return 0;
-    }
-    coverage_percent(covered, coverable)
-}
-
 fn scope_includes_orphan(scope: &ReportScope, item: &super::graph_store::GraphOrphanItem) -> bool {
     if !scope_includes_file(scope, &item.file) {
         return false;
@@ -787,12 +464,8 @@ fn scope_includes_file(scope: &ReportScope, file: &str) -> bool {
     })
 }
 
-pub(crate) fn repair_graph_evidence(
-    repo_root: &Path,
-    scope: &ReportScope,
-    coverage_all: bool,
-) -> Result<(), String> {
-    if !graph_repair_needed(repo_root, scope, coverage_all) {
+pub(crate) fn repair_graph_evidence(repo_root: &Path, scope: &ReportScope) -> Result<(), String> {
+    if !graph_repair_needed(repo_root, scope) {
         return Ok(());
     }
     let cfg = kiss::GateConfig::load_for_repo(repo_root);
@@ -838,28 +511,18 @@ fn write_graph_items(
     Ok(items)
 }
 
-pub(crate) fn graph_repair_needed(
-    repo_root: &Path,
-    scope: &ReportScope,
-    coverage_all: bool,
-) -> bool {
+pub(crate) fn graph_repair_needed(repo_root: &Path, scope: &ReportScope) -> bool {
     graph_generation_id(
         repo_root,
         scope,
         &kiss::GateConfig::load_for_repo(repo_root),
-        coverage_all,
         &workspace_covered_from_stores(repo_root),
     )
     .is_some_and(|key| super::graph_store::load_items(repo_root, &key).is_none())
 }
 
-fn graph_generation_active(
-    repo_root: &Path,
-    scope: &ReportScope,
-    gate: &kiss::GateConfig,
-    coverage_all: bool,
-) -> bool {
-    if coverage_all || !gate.orphan_detection || !scope_has_orphan_candidates(repo_root, scope) {
+fn graph_generation_active(repo_root: &Path, scope: &ReportScope, gate: &kiss::GateConfig) -> bool {
+    if !gate.orphan_detection || !scope_has_orphan_candidates(repo_root, scope) {
         return false;
     }
     let (py, rs) = workspace_source_files(repo_root);
@@ -873,7 +536,6 @@ fn snapshot_token(
     evidence: &ReportEvidenceStamp,
     graph_generation: Option<String>,
     gate: &kiss::GateConfig,
-    coverage_all: bool,
 ) -> ReportSnapshot {
     ReportSnapshot {
         slice: stamp.clone(),
@@ -881,7 +543,7 @@ fn snapshot_token(
         graph_generation,
         graph_mutable: None,
         worktree: super::stamp::capture_worktree_token(repo_root, request.language()),
-        gate_policy: gate_policy_id(gate, coverage_all),
+        gate_policy: gate_policy_id(gate),
         runner: runner_identity(repo_root),
         generations: language_generation_ids(repo_root),
         resolved: resolved_dependency_digest(repo_root, request),
@@ -929,15 +591,12 @@ pub(crate) fn configuration_generation(repo_root: &Path) -> String {
     digest_bytes(&bytes)
 }
 
-fn gate_policy_id(gate: &kiss::GateConfig, coverage_all: bool) -> String {
+fn gate_policy_id(gate: &kiss::GateConfig) -> String {
     let payload = serde_json::json!({
-        "test_coverage_threshold": gate.test_coverage_threshold,
-        "test_coverage_scope": format!("{:?}", gate.test_coverage_scope),
         "max_unit_test_seconds": gate.max_unit_test_seconds,
         "max_num_tests": gate.max_num_tests,
         "orphan_detection": gate.orphan_detection,
         "orphan_allowed": gate.orphan_allowed,
-        "coverage_all": coverage_all,
     });
     digest_bytes(&serde_json::to_vec(&payload).expect("gate policy"))
 }
@@ -946,10 +605,9 @@ fn graph_generation_id(
     repo_root: &Path,
     scope: &ReportScope,
     gate: &kiss::GateConfig,
-    coverage_all: bool,
     covered: &BTreeMap<String, BTreeSet<u32>>,
 ) -> Option<String> {
-    if !graph_generation_active(repo_root, scope, gate, coverage_all) {
+    if !graph_generation_active(repo_root, scope, gate) {
         return None;
     }
     let (key, _, _) = graph_evidence_parts(repo_root, gate, covered);
@@ -960,26 +618,16 @@ fn evidence_stamp(
     rows: &[SelectorRow],
     stamp: &TargetSliceStamp,
     exit_code: i32,
-    coverage: &ReportCoverage,
     gates: &[ReportGate],
     graph_generation: Option<&str>,
 ) -> ReportEvidenceStamp {
-    evidence_stamp_parts(
-        rows,
-        stamp,
-        exit_code,
-        coverage,
-        gates,
-        graph_generation,
-        None,
-    )
+    evidence_stamp_parts(rows, stamp, exit_code, gates, graph_generation, None)
 }
 
 fn evidence_stamp_parts(
     rows: &[SelectorRow],
     stamp: &TargetSliceStamp,
     exit_code: i32,
-    coverage: &ReportCoverage,
     gates: &[ReportGate],
     graph_generation: Option<&str>,
     population: Option<&str>,
@@ -989,7 +637,6 @@ fn evidence_stamp_parts(
         "digest": stamp.digest,
         "complete": stamp.complete,
         "exit": exit_code,
-        "coverage": coverage,
         "gates": gates,
         "graph_generation": graph_generation,
         "population": population,
@@ -1030,235 +677,6 @@ fn worst_status(left: EffectiveStatus, right: EffectiveStatus) -> EffectiveStatu
 }
 
 #[cfg(test)]
-mod coverage_focus_tests {
-    use super::*;
-    use crate::test_runner::target_request::scope::ReportScope;
-
-    fn file_lines(path: &str, lines: &[u32]) -> SourceRegion {
-        SourceRegion::FileLines {
-            path: path.into(),
-            lines: lines.iter().copied().collect(),
-        }
-    }
-
-    #[test]
-    fn file_lines_ignore_off_focus_uncovered() {
-        let scope = ReportScope::from_membership(vec![file_lines("a.py", &[1, 2])], vec![], true);
-        let mut covered: BTreeMap<String, BTreeSet<u32>> = BTreeMap::new();
-        covered.insert("a.py".into(), [1, 2].into_iter().collect());
-        let mut coverable: BTreeMap<String, BTreeSet<u32>> = BTreeMap::new();
-        coverable.insert("a.py".into(), [1, 2, 3].into_iter().collect());
-        let focused_coverable = {
-            let mut dest = BTreeMap::new();
-            extend_focused(&scope, "a.py", coverable["a.py"].iter().copied(), &mut dest);
-            dest
-        };
-        let focused_covered = {
-            let mut dest = BTreeMap::new();
-            extend_focused(&scope, "a.py", covered["a.py"].iter().copied(), &mut dest);
-            dest
-        };
-        let cov = coverage_from_maps(&scope, focused_covered, focused_coverable);
-        assert_eq!(cov.coverable, 2);
-        assert_eq!(cov.covered, 2);
-        assert!(cov.uncovered.is_empty(), "{:?}", cov.uncovered);
-    }
-
-    #[test]
-    fn file_lines_uncovered_when_focus_misses() {
-        let scope = ReportScope::from_membership(vec![file_lines("a.py", &[1, 2])], vec![], true);
-        let mut dest = BTreeMap::new();
-        extend_focused(&scope, "a.py", [1], &mut dest);
-        let cov = coverage_from_maps(&scope, dest, BTreeMap::new());
-        assert_eq!(cov.uncovered, vec!["a.py".to_string()]);
-    }
-
-    #[test]
-    fn file_all_uncovered_when_coverable_misses() {
-        let scope = ReportScope::from_membership(
-            vec![SourceRegion::FileAll {
-                path: "a.py".into(),
-            }],
-            vec![],
-            true,
-        );
-        let mut covered = BTreeMap::new();
-        covered.insert("a.py".into(), [1, 2].into_iter().collect());
-        let mut coverable = BTreeMap::new();
-        coverable.insert("a.py".into(), [1, 2, 3].into_iter().collect());
-        let cov = coverage_from_maps(&scope, covered, coverable);
-        assert_eq!(cov.uncovered, vec!["a.py".to_string()]);
-    }
-
-    #[test]
-    fn file_all_coverable_from_current_source() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        std::fs::write(tmp.path().join("app.py"), "def foo():\n    return 1\n").unwrap();
-        let scope = ReportScope::from_membership(
-            vec![SourceRegion::FileAll {
-                path: "app.py".into(),
-            }],
-            vec![],
-            true,
-        );
-        let cov = coverage_from_stores(tmp.path(), &scope);
-        assert!(
-            cov.coverable > 0,
-            "current-source parse must yield coverable lines; {cov:?}"
-        );
-    }
-
-    #[test]
-    fn workspace_all_coverable_from_current_source() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        std::fs::write(tmp.path().join("app.py"), "def foo():\n    return 1\n").unwrap();
-        let scope = ReportScope::from_membership(vec![SourceRegion::WorkspaceAll], vec![], true);
-        let cov = coverage_from_stores(tmp.path(), &scope);
-        assert!(
-            cov.coverable > 0,
-            "workspace current-source parse must yield coverable lines; {cov:?}"
-        );
-        assert_eq!(cov.uncovered, vec!["app.py".to_string()]);
-    }
-
-    #[test]
-    fn test_only_file_all_has_empty_coverage_obligation() {
-        let scope = ReportScope::from_membership(
-            vec![SourceRegion::FileAll {
-                path: "test_lib.py::test_fast".into(),
-            }],
-            vec!["test_lib.py::test_fast".into()],
-            true,
-        );
-        let cov = coverage_from_maps(&scope, BTreeMap::new(), BTreeMap::new());
-        assert!(
-            cov.uncovered.is_empty(),
-            "test-only target has no production coverage obligation: {:?}",
-            cov.uncovered
-        );
-    }
-
-    #[test]
-    fn workspace_all_skips_test_module_uncovered() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        std::fs::write(tmp.path().join("app.py"), "def foo():\n    return 1\n").unwrap();
-        std::fs::write(
-            tmp.path().join("test_lib.py"),
-            "def test_fast():\n    assert True\n",
-        )
-        .unwrap();
-        let scope = ReportScope::from_membership(vec![SourceRegion::WorkspaceAll], vec![], true);
-        let cov = coverage_from_stores(tmp.path(), &scope);
-        assert_eq!(cov.uncovered, vec!["app.py".to_string()]);
-        assert!(
-            !cov.uncovered.iter().any(|path| path.contains("test_")),
-            "{:?}",
-            cov.uncovered
-        );
-    }
-
-    fn sample_uncovered() -> ReportCoverage {
-        ReportCoverage {
-            covered: 95,
-            coverable: 100,
-            uncovered: vec!["bad.py".into()],
-            files: Vec::new(),
-        }
-    }
-
-    fn sample_file(covered: u64, coverable: u64) -> ReportCoverage {
-        ReportCoverage {
-            covered,
-            coverable,
-            uncovered: vec!["bad.py".into()],
-            files: vec![ReportFileCoverage {
-                path: "bad.py".into(),
-                covered,
-                coverable,
-            }],
-        }
-    }
-
-    #[test]
-    fn codebase_scope_empty_gates_when_aggregate_clears() {
-        let gate = kiss::GateConfig {
-            test_coverage_threshold: 90,
-            test_coverage_scope: kiss::TestCoverageScope::Codebase,
-            ..Default::default()
-        };
-        assert!(
-            gates_from_coverage(&sample_uncovered(), &gate).is_empty(),
-            "codebase aggregate 95% must not emit per-file gates"
-        );
-    }
-
-    #[test]
-    fn by_file_scope_keeps_uncovered_file() {
-        let gate = kiss::GateConfig {
-            test_coverage_threshold: 90,
-            test_coverage_scope: kiss::TestCoverageScope::ByFile,
-            ..Default::default()
-        };
-        let gates = gates_from_coverage(&sample_uncovered(), &gate);
-        assert_eq!(gates.len(), 1);
-        assert_eq!(gates[0].detail, "bad.py");
-    }
-
-    #[test]
-    fn by_file_scope_empty_gates_when_file_meets_threshold() {
-        let gate = kiss::GateConfig {
-            test_coverage_threshold: 90,
-            test_coverage_scope: kiss::TestCoverageScope::ByFile,
-            ..Default::default()
-        };
-        assert!(
-            gates_from_coverage(&sample_file(95, 100), &gate).is_empty(),
-            "ByFile 95% must not emit a gate at a 90% threshold"
-        );
-    }
-
-    #[test]
-    fn by_file_scope_keeps_file_below_threshold() {
-        let gate = kiss::GateConfig {
-            test_coverage_threshold: 90,
-            test_coverage_scope: kiss::TestCoverageScope::ByFile,
-            ..Default::default()
-        };
-        let gates = gates_from_coverage(&sample_file(50, 100), &gate);
-        assert_eq!(gates.len(), 1);
-        assert_eq!(gates[0].detail, "bad.py");
-    }
-
-    #[test]
-    fn threshold_zero_emits_no_coverage_gates() {
-        let gate = kiss::GateConfig {
-            test_coverage_threshold: 0,
-            test_coverage_scope: kiss::TestCoverageScope::ByFile,
-            ..Default::default()
-        };
-        assert!(gates_from_coverage(&sample_uncovered(), &gate).is_empty());
-    }
-
-    #[test]
-    fn coverage_all_emits_uncovered_despite_threshold() {
-        let gate = kiss::GateConfig {
-            test_coverage_threshold: 90,
-            test_coverage_scope: kiss::TestCoverageScope::Codebase,
-            ..Default::default()
-        };
-        let cov = sample_uncovered();
-        assert!(
-            gates_from_coverage(&cov, &gate).is_empty(),
-            "threshold 90% must accept 95%"
-        );
-        let gates = gates_from_coverage_all(&cov);
-        assert_eq!(gates.len(), 1);
-        assert_eq!(gates[0].kind, "test_coverage");
-        assert_eq!(gates[0].detail, "bad.py");
-    }
-}
-
-#[cfg(test)]
 mod exit_gate_tests {
     use super::*;
     use crate::test_runner::target_request::scope::ReportScope;
@@ -1294,11 +712,20 @@ mod exit_gate_tests {
         }
     }
 
-    fn coverage_gate() -> ReportGate {
+    fn orphan_gate() -> ReportGate {
         ReportGate {
+            kind: "orphan".into(),
+            detail: "a.py:helper".into(),
+        }
+    }
+
+    #[test]
+    fn apply_gate_exit_ignores_unknown_gate_kind() {
+        let gate = ReportGate {
             kind: "test_coverage".into(),
             detail: "a.py".into(),
-        }
+        };
+        assert_eq!(TargetReport::apply_gate_exit(0, &[gate]), 0);
     }
 
     #[test]
@@ -1307,34 +734,30 @@ mod exit_gate_tests {
     }
 
     #[test]
-    fn apply_gate_exit_fails_pass_when_coverage_gate_present() {
-        assert_eq!(TargetReport::apply_gate_exit(0, &[coverage_gate()]), 1);
+    fn apply_gate_exit_fails_pass_when_orphan_gate_present() {
+        assert_eq!(TargetReport::apply_gate_exit(0, &[orphan_gate()]), 1);
     }
 
     #[test]
-    fn coverage_gate_fails_pass_exit() {
+    fn orphan_gate_fails_pass_exit() {
         let report = TargetReport::assembled_with(
             ReportScope::from_membership(Vec::new(), vec!["tests/a.py::test_a".into()], true),
             vec![pass_row()],
             stamp(),
             0,
-            ReportCoverage::default(),
-            vec![coverage_gate()],
-            false,
+            vec![orphan_gate()],
         );
         assert_eq!(report.exit_code, 1);
     }
 
     #[test]
-    fn coverage_gate_does_not_override_timeout() {
+    fn orphan_gate_does_not_override_timeout() {
         let report = TargetReport::assembled_with(
             ReportScope::from_membership(Vec::new(), vec!["tests/b.py::test_b".into()], true),
             vec![timeout_row()],
             stamp(),
             124,
-            ReportCoverage::default(),
-            vec![coverage_gate()],
-            false,
+            vec![orphan_gate()],
         );
         assert_eq!(report.exit_code, 1);
     }
@@ -1389,12 +812,10 @@ mod exit_gate_tests {
             vec![pass_row()],
             stamp(),
             0,
-            ReportCoverage::default(),
             vec![ReportGate {
                 kind: "max_unit_test_seconds".into(),
                 detail: "tests/a.py::test_a".into(),
             }],
-            false,
         );
         assert_eq!(report.exit_code, 1);
     }
@@ -1574,7 +995,7 @@ mod exit_gate_tests {
     }
 
     #[test]
-    fn coverage_all_skips_orphan_and_population() {
+    fn assembled_report_keeps_orphan_and_population_gates() {
         let tmp = tempfile::TempDir::new().unwrap();
         std::fs::write(tmp.path().join("utils.py"), "def helper():\n    return 1\n").unwrap();
         seed_count_repo(&tmp);
@@ -1593,12 +1014,14 @@ mod exit_gate_tests {
                 &["src/lib.rs::t".into()],
             )
         );
+        std::fs::write(
+            tmp.path().join(".kissconfig"),
+            "[test]\norphan_detection = true\nmax_num_tests = 1\n",
+        )
+        .unwrap();
         let scope = ReportScope::from_membership(vec![SourceRegion::WorkspaceAll], vec![], true);
-        let gate = kiss::GateConfig {
-            orphan_detection: true,
-            max_num_tests: 1,
-            ..Default::default()
-        };
+        let gate = kiss::GateConfig::load_for_repo(tmp.path());
+        assert!(gate.orphan_detection && gate.max_num_tests == 1);
         seed_orphan_graph(tmp.path(), &scope, &gate, &BTreeMap::new());
         assert!(!gates_from_orphan(tmp.path(), &gate, &scope, &BTreeMap::new()).is_empty());
         assert!(!gates_from_population(tmp.path(), &gate, &workspace_request()).is_empty());
@@ -1609,21 +1032,27 @@ mod exit_gate_tests {
             Vec::new(),
             stamp(),
             0,
-            true,
         );
         assert!(
-            !report
-                .gates
-                .iter()
-                .any(|item| item.kind == "orphan" || item.kind == "max_num_tests"),
+            report.gates.iter().any(|item| item.kind == "orphan"),
             "{:?}",
             report.gates
         );
-        assert!(report.coverage_all);
+        assert!(
+            report.gates.iter().any(|item| item.kind == "max_num_tests"),
+            "{:?}",
+            report.gates
+        );
+        assert!(
+            !report.gates.iter().any(|item| item.kind == "test_coverage"),
+            "{:?}",
+            report.gates
+        );
+        assert_eq!(report.exit_code, 1);
     }
 
     #[test]
-    fn coverage_all_keeps_time_gate() {
+    fn assembled_report_emits_time_gate() {
         let tmp = tempfile::TempDir::new().unwrap();
         std::fs::write(
             tmp.path().join(".kissconfig"),
@@ -1639,7 +1068,6 @@ mod exit_gate_tests {
             vec![timed_row("tests/a.py::test_a", 2_000_000_000)],
             stamp(),
             0,
-            true,
         );
         assert!(
             report
@@ -1859,12 +1287,12 @@ mod exit_gate_tests {
         crate::test_runner::lang_python::store_test_record_covering(tmp.path(), "a", &covered);
         let scope = focused_utils_scope();
         assert!(
-            graph_repair_needed(tmp.path(), &scope, false),
+            graph_repair_needed(tmp.path(), &scope),
             "first focused cycle must need repair when evidence is absent"
         );
-        repair_graph_evidence(tmp.path(), &scope, false).unwrap();
+        repair_graph_evidence(tmp.path(), &scope).unwrap();
         assert!(
-            !graph_repair_needed(tmp.path(), &scope, false),
+            !graph_repair_needed(tmp.path(), &scope),
             "after workspace-keyed repair, focused need-check must hit the same ITE key"
         );
     }

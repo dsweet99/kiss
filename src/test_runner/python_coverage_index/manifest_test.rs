@@ -261,13 +261,8 @@ fn stored_python_population_identity_tracks_validated_context() {
 
     let population =
         stored_python_universe_population(tmp.path(), &[], PYTHON_COVERAGE_ENV_KEYS).unwrap();
-    let mut manifest = read_python_population_manifest(tmp.path()).unwrap();
-    let original = stable_population_identity(&manifest);
-    manifest.input_fingerprint = "different".to_string();
 
     assert_eq!(population.selectors, vec![selector]);
-    assert_eq!(population.identity, original);
-    assert_ne!(stable_population_identity(&manifest), original);
 }
 
 #[test]

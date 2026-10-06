@@ -90,13 +90,8 @@ pub(super) fn merge_lang_sections(
     }
 }
 
-const TEST_GATE_MERGE_KEYS: &[&str] = &[
-    "test_coverage_threshold",
-    "test_coverage_scope",
-    "orphan_detection",
-    "max_unit_test_seconds",
-    "max_num_tests",
-];
+const TEST_GATE_MERGE_KEYS: &[&str] =
+    &["orphan_detection", "max_unit_test_seconds", "max_num_tests"];
 
 pub(super) fn merge_test(merged: &mut toml::Table, ex: &toml::Table, nw: &toml::Table) {
     let mut table = toml::Table::new();

@@ -184,7 +184,6 @@ fn dispatch_test_command(
                 dry_run: false,
                 retry_bad,
                 metrics: false,
-                coverage_all: false,
                 jobs,
                 ignore: Vec::new(),
                 extra: Vec::new(),

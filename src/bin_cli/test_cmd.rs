@@ -1,15 +1,10 @@
 use kiss::TestSectionConfig;
 
 use crate::bin_cli::args::TestInvocation;
+use crate::test_runner::target_request::TargetRequest;
 use crate::test_runner::{
     RunTestCmdArgs, RunTestOnceOutcome, kiss_report_from_ensure_outcome, run_test_once,
 };
-
-#[path = "test_cmd_coverage.rs"]
-mod coverage;
-#[cfg(test)]
-pub(crate) use coverage::finish_with_coverage;
-use coverage::request_from_test_args;
 
 pub struct TestCommandArgs<'a> {
     pub invocation: TestInvocation,
@@ -18,7 +13,6 @@ pub struct TestCommandArgs<'a> {
     pub dry_run: bool,
     pub retry_bad: bool,
     pub metrics: bool,
-    pub coverage_all: bool,
     pub jobs: usize,
     pub ignore: &'a [String],
     pub extra: &'a [String],
@@ -32,17 +26,27 @@ pub fn run_test_command(args: TestCommandArgs<'_>) -> i32 {
     run_test_command_with_runner(args, run_test_once)
 }
 
+fn request_from_test_args(args: &TestCommandArgs<'_>) -> TargetRequest {
+    crate::test_runner::target_request::request_from_invocation(
+        &args.invocation,
+        args.main_branch,
+        args.base_branch,
+        args.test_cfg.main_branch.as_deref(),
+        args.lang_filter,
+        args.ignore,
+    )
+}
+
 fn reject_test_universe_languages(args: &TestCommandArgs<'_>) -> Result<(), i32> {
     if args.language_tables.python && args.language_tables.rust {
         return Ok(());
     }
     let request = request_from_test_args(args);
-    let paths = crate::test_runner::target_request::coverage_paths_for_request(&request).map_err(
-        |err| {
+    let paths =
+        crate::test_runner::target_request::request_source_paths(&request).map_err(|err| {
             eprintln!("error: kiss test: {err}");
             1
-        },
-    )?;
+        })?;
     let (py_files, rs_files) = kiss::gather_files_by_lang(&paths, args.lang_filter, args.ignore);
     crate::bin_cli::util::reject_unconfigured_languages(&py_files, &rs_files, args.language_tables)
 }
@@ -78,7 +82,6 @@ fn run_test_command_with_runner(
         force_rerun: false,
         force_bad: args.retry_bad,
         metrics: args.metrics,
-        coverage_all: args.coverage_all,
         jobs: args.jobs,
         extras: crate::test_runner::language_keyed::LanguageKeyed {
             rust: args.extra,
@@ -183,7 +186,6 @@ mod tests {
                 dry_run: false,
                 retry_bad: false,
                 metrics: false,
-                coverage_all: false,
                 jobs: 1,
                 ignore: &[],
                 extra: &[],
@@ -212,7 +214,6 @@ mod tests {
             dry_run: false,
             retry_bad: false,
             metrics: false,
-            coverage_all: false,
             jobs: 1,
             ignore: &[],
             extra: &[],
@@ -267,7 +268,6 @@ mod tests {
             dry_run: true,
             retry_bad: false,
             metrics: false,
-            coverage_all: false,
             jobs: 1,
             ignore: &[],
             extra: &[],
@@ -304,7 +304,6 @@ mod tests {
                 dry_run: false,
                 retry_bad: false,
                 metrics: false,
-                coverage_all: false,
                 jobs: 1,
                 ignore: &[],
                 extra: &[],
@@ -322,7 +321,10 @@ mod tests {
         let _cwd = crate::cwd_test_lock::lock();
         let tmp = tempfile::tempdir().unwrap();
         crate::test_runner::test_mode_fixtures::init_git(&tmp);
-        let taken = crate::test_runner::test_mode_fixtures::with_cwd(tmp.path(), test_cmd_lock::take_oneshot_lock);
+        let taken = crate::test_runner::test_mode_fixtures::with_cwd(
+            tmp.path(),
+            test_cmd_lock::take_oneshot_lock,
+        );
         assert!(taken.is_ok(), "an idle repo must grant the kiss test lock");
     }
 
@@ -337,7 +339,6 @@ mod tests {
             dry_run: true,
             retry_bad: false,
             metrics: false,
-            coverage_all: false,
             jobs: 1,
             ignore: &[],
             extra: &[],
@@ -359,7 +360,6 @@ mod tests {
             force_rerun: false,
             force_bad: false,
             metrics: false,
-            coverage_all: false,
             jobs: 1,
             extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
             config_main_branch: None,
@@ -388,7 +388,6 @@ mod tests {
             dry_run: false,
             retry_bad: false,
             metrics: false,
-            coverage_all: false,
             jobs: 1,
             ignore: &[],
             extra: &[],
@@ -414,7 +413,6 @@ mod tests {
             dry_run: false,
             retry_bad: false,
             metrics: false,
-            coverage_all: false,
             jobs: 1,
             ignore: &[],
             extra: &[],
@@ -450,7 +448,6 @@ mod tests {
             dry_run: true,
             retry_bad: false,
             metrics: false,
-            coverage_all: false,
             jobs: 1,
             ignore: &[],
             extra: &[],
@@ -472,7 +469,6 @@ mod tests {
             force_rerun: false,
             force_bad: false,
             metrics: false,
-            coverage_all: false,
             jobs: 1,
             extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
             config_main_branch: None,
@@ -495,7 +491,6 @@ mod tests {
             dry_run: false,
             retry_bad: false,
             metrics: false,
-            coverage_all: false,
             jobs: 1,
             ignore: &[],
             extra: &[],
@@ -521,7 +516,6 @@ mod tests {
             dry_run: false,
             retry_bad: false,
             metrics: false,
-            coverage_all: false,
             jobs: 1,
             ignore: &[],
             extra: &[],
@@ -543,7 +537,6 @@ mod tests {
             force_rerun: false,
             force_bad: false,
             metrics: false,
-            coverage_all: false,
             jobs: 1,
             extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
             config_main_branch: None,

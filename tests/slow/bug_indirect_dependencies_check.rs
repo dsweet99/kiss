@@ -21,7 +21,6 @@ fn bug_check_reports_indirect_dependencies_for_fan_in_zero_entry() {
          duplication_enabled = false\n\
          \n\
 [test]\n\
-         test_coverage_threshold = 0\n\
          \n\
          [python]\n\
          indirect_dependencies = 0\n",

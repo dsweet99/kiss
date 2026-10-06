@@ -109,35 +109,6 @@ fn test_defaults_appenders() {
 }
 
 #[test]
-fn test_infer_gate_keeps_default_coverage_threshold() {
-    let tmp = TempDir::new().unwrap();
-    std::fs::write(
-        tmp.path().join("app.py"),
-        "def covered():\n    return 1\n\ndef uncovered():\n    return 2\n",
-    )
-    .unwrap();
-    std::fs::write(
-        tmp.path().join("test_app.py"),
-        "from app import covered\n\ndef test_covered():\n    assert covered() == 1\n",
-    )
-    .unwrap();
-    std::fs::write(
-        tmp.path().join("fake_extra.py"),
-        "def ignored_uncovered():\n    return 3\n",
-    )
-    .unwrap();
-
-    let paths = vec![tmp.path().to_string_lossy().to_string()];
-    let ignore = vec!["fake_".to_string()];
-    let gate = infer_gate_config_for_paths(&paths, None, &ignore).unwrap();
-    assert_eq!(
-        gate.test_coverage_threshold,
-        GateConfig::default().test_coverage_threshold,
-        "mimic/clamp must not infer coverage from static references"
-    );
-}
-
-#[test]
 fn test_infer_gate_does_not_enable_orphan_detection() {
     let tmp = TempDir::new().unwrap();
     let orphan_py = tmp.path().join("orphan.py");
@@ -196,7 +167,7 @@ fn test_infer_gate_config_comment_removal_enabled() {
 fn test_write_mimic_config_smoke() {
     let tmp = tempfile::tempdir().unwrap();
     let out = tmp.path().join("mimic_out.toml");
-    let toml = "[test]\ntest_coverage_threshold = 90\n";
+    let toml = "[test]\nmax_num_tests = 90\n";
     write_mimic_config(&out, toml, 0, 0).unwrap();
     assert!(out.exists());
 }

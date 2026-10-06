@@ -11,10 +11,9 @@ pub(crate) enum BindDecision {
 pub(crate) fn load_ready_for_request(
     repo: &std::path::Path,
     request: &super::types::TargetRequest,
-    coverage_all: bool,
     extras: crate::test_runner::language_keyed::LanguageKeyed<&[String]>,
 ) -> Option<TargetReport> {
-    load_ready(repo, request, coverage_all, extras, false)
+    load_ready(repo, request, extras, false)
 }
 
 /// Like [`load_ready_for_request`], but a complete scope with no members is ready:
@@ -22,22 +21,14 @@ pub(crate) fn load_ready_for_request(
 pub(crate) fn load_ready_after_run(
     repo: &std::path::Path,
     request: &super::types::TargetRequest,
-    coverage_all: bool,
     extras: crate::test_runner::language_keyed::LanguageKeyed<&[String]>,
 ) -> Option<TargetReport> {
-    load_ready(
-        repo,
-        request,
-        coverage_all,
-        extras,
-        true,
-    )
+    load_ready(repo, request, extras, true)
 }
 
 fn load_ready(
     repo: &std::path::Path,
     request: &super::types::TargetRequest,
-    coverage_all: bool,
     extras: crate::test_runner::language_keyed::LanguageKeyed<&[String]>,
     empty_is_ready: bool,
 ) -> Option<TargetReport> {
@@ -58,7 +49,7 @@ fn load_ready(
     if scope.selectors.is_empty() && !empty_is_ready {
         return None;
     }
-    derive_ready_report(repo, request, scope, stamp, coverage_all, extras)
+    derive_ready_report(repo, request, scope, stamp, extras)
 }
 
 /// The report for `scope`, computed from the per-test records, when every member
@@ -68,7 +59,6 @@ fn derive_ready_report(
     request: &super::types::TargetRequest,
     scope: super::scope::ReportScope,
     stamp: super::slice::TargetSliceStamp,
-    coverage_all: bool,
     extras: crate::test_runner::language_keyed::LanguageKeyed<&[String]>,
 ) -> Option<TargetReport> {
     let rows = super::rows::rows_from_witnesses(repo, &scope, extras).ok()?;
@@ -85,7 +75,7 @@ fn derive_ready_report(
     let time_gate_active = !kiss::GateConfig::load_for_repo(repo)
         .max_unit_test_seconds
         .is_empty();
-    let graph_repair = super::report::graph_repair_needed(repo, &scope, coverage_all);
+    let graph_repair = super::report::graph_repair_needed(repo, &scope);
     let plan = super::rows::plan_from_available_rows_with(
         &scope,
         &rows,
@@ -99,8 +89,7 @@ fn derive_ready_report(
     }
     super::rows::duration_evidence_holds(&rows, time_gate_active).ok()?;
     let exit_code = TargetReport::exit_from_rows(&rows);
-    let mut report =
-        TargetReport::assembled_in(repo, request, scope, rows, stamp, exit_code, coverage_all);
+    let mut report = TargetReport::assembled_in(repo, request, scope, rows, stamp, exit_code);
     report.snapshot.extras = extras.owned_vecs();
     Some(report).filter(ready_report)
 }
@@ -112,7 +101,6 @@ fn derive_ready_report(
 pub(crate) fn project_language_ready_from_parent_workspace(
     repo: &std::path::Path,
     request: &super::types::TargetRequest,
-    coverage_all: bool,
     extras: crate::test_runner::language_keyed::LanguageKeyed<&[String]>,
 ) -> Option<TargetReport> {
     let lang = request.language()?;
@@ -121,7 +109,7 @@ pub(crate) fn project_language_ready_from_parent_workspace(
     }
     let mut parent_req = request.clone();
     parent_req.set_language(None);
-    let parent = load_ready_for_request(repo, &parent_req, coverage_all, extras)?;
+    let parent = load_ready_for_request(repo, &parent_req, extras)?;
     let label = lang.label();
     let rows: Vec<_> = parent
         .rows
@@ -143,8 +131,7 @@ pub(crate) fn project_language_ready_from_parent_workspace(
         stamp.complete,
     );
     let exit_code = TargetReport::exit_from_rows(&rows);
-    let mut built =
-        TargetReport::assembled_in(repo, request, scope, rows, stamp, exit_code, coverage_all);
+    let mut built = TargetReport::assembled_in(repo, request, scope, rows, stamp, exit_code);
     built.snapshot.extras = parent.snapshot.extras.clone();
     built.snapshot.worktree = super::stamp::capture_worktree_token(repo, Some(lang));
     Some(built)
@@ -155,7 +142,6 @@ pub(crate) fn project_language_ready_from_parent_workspace(
 pub(crate) fn project_git_ready_from_parent_workspace(
     repo: &std::path::Path,
     request: &super::types::TargetRequest,
-    coverage_all: bool,
     extras: crate::test_runner::language_keyed::LanguageKeyed<&[String]>,
 ) -> Option<TargetReport> {
     let super::types::TargetFocus::Git(_) = &request.focus else {
@@ -164,7 +150,7 @@ pub(crate) fn project_git_ready_from_parent_workspace(
     let mut parent_req = request.clone();
     parent_req.focus = super::types::TargetFocus::Workspace;
     parent_req.set_language(None);
-    let parent = load_ready_for_request(repo, &parent_req, coverage_all, extras)?;
+    let parent = load_ready_for_request(repo, &parent_req, extras)?;
     let resolved = super::resolve::resolve_only(repo, request).ok()?;
     let selectors = git_answer_selectors(repo, request, &resolved);
     let rows = git_rows_for_selectors(repo, &parent, &selectors);
@@ -174,8 +160,7 @@ pub(crate) fn project_git_ready_from_parent_workspace(
     let scope =
         super::scope::ReportScope::from_membership(projection.coverage_regions(), selectors, true);
     let exit_code = TargetReport::exit_from_rows(&rows);
-    let mut built =
-        TargetReport::assembled_in(repo, request, scope, rows, stamp, exit_code, coverage_all);
+    let mut built = TargetReport::assembled_in(repo, request, scope, rows, stamp, exit_code);
     built.snapshot.extras = parent.snapshot.extras.clone();
     built.snapshot.worktree = super::stamp::capture_worktree_token(repo, request.language());
     Some(built)
@@ -383,11 +368,7 @@ pub(crate) fn bind_and_prepare(
             crate::test_runner::lang_registry::rules_for(language)
                 .validate_extra_args(args.extras.get(language))?;
         }
-        match preview_target_plan_with(
-            &repo,
-            &request,
-            &EnsurePolicy::preview(args.force_bad, args.coverage_all),
-        ) {
+        match preview_target_plan_with(&repo, &request, &EnsurePolicy::preview(args.force_bad)) {
             Ok(preview) => {
                 super::render::render_plan_preview(&preview);
                 super::render::render_preview_members(&preview);
@@ -403,7 +384,7 @@ pub(crate) fn bind_and_prepare(
     match ensure_target_report_with(
         &repo,
         &request,
-        &EnsurePolicy::complete(args.force_bad, args.coverage_all),
+        &EnsurePolicy::complete(args.force_bad),
         Some(args),
     ) {
         Ok(Ensured::Report(report)) => {

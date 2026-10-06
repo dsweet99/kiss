@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use kiss::check_universe_cache::CachedLineCoverageRecord;
 use kiss::code_roles::{SourceRoleIndex, skip_syn};
 use kiss::{ParsedFile, ParsedRustFile};
 use syn::spanned::Spanned;
@@ -14,18 +13,8 @@ pub(crate) struct RuntimeCoverageSnapshot {
     pub(crate) covered_lines: BTreeMap<String, BTreeSet<u32>>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct LineCoverageRecord {
-    pub(crate) file: PathBuf,
-    pub(crate) total_lines: usize,
-    pub(crate) covered_lines: usize,
-    pub(crate) percent: usize,
-    pub(crate) first_uncovered_line: Option<usize>,
-}
-
 #[derive(Clone, Debug)]
 pub(crate) struct CoverageSourceFacts {
-    pub(crate) roles: SourceRoleIndex,
     coverable_lines: BTreeMap<PathBuf, BTreeSet<usize>>,
 }
 
@@ -61,40 +50,12 @@ impl CoverageSourceFacts {
                 Some((path.clone(), lines))
             })
             .collect();
-        Self {
-            roles,
-            coverable_lines,
-        }
+        Self { coverable_lines }
     }
 
     pub(crate) fn coverable_map(&self) -> &BTreeMap<PathBuf, BTreeSet<usize>> {
         &self.coverable_lines
     }
-
-    pub(crate) fn production_denoms(&self) -> Vec<CoverableDenom> {
-        self.coverable_lines
-            .iter()
-            .map(|(path, denom)| {
-                let candidates: Vec<usize> = denom.iter().copied().collect();
-                let mut lines = self.roles.production_lines(path, &candidates);
-                lines.sort_unstable();
-                lines.dedup();
-                CoverableDenom {
-                    file: path.clone(),
-                    lines,
-                    mixed: self.roles.file_composition(path)
-                        == kiss::code_roles::FileComposition::Mixed,
-                }
-            })
-            .collect()
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct CoverableDenom {
-    pub file: PathBuf,
-    pub lines: Vec<usize>,
-    pub mixed: bool,
 }
 
 fn parsed_by_path<T>(items: &[T], path_of: impl Fn(&T) -> &Path) -> HashMap<PathBuf, &T> {
@@ -123,164 +84,9 @@ fn coverable_lines_for_path(
     coverage_denominator_lines(path, roles)
 }
 
-#[cfg(test)]
-pub(crate) fn compute_line_coverage_records(
-    repo_root: &Path,
-    facts: &CoverageSourceFacts,
-    snapshot: &RuntimeCoverageSnapshot,
-) -> Vec<LineCoverageRecord> {
-    records_from_denoms(repo_root, &facts.production_denoms(), snapshot)
-}
-
-pub(crate) fn records_from_denoms(
-    repo_root: &Path,
-    denoms: &[CoverableDenom],
-    snapshot: &RuntimeCoverageSnapshot,
-) -> Vec<LineCoverageRecord> {
-    let mut records: Vec<_> = denoms
-        .iter()
-        .map(|denom| record_from_prefiltered(repo_root, denom, snapshot))
-        .collect();
-    records.sort_by(|a, b| a.file.cmp(&b.file));
-    records
-}
-
 #[path = "line_coverage_cfg.rs"]
 mod line_coverage_cfg;
 use line_coverage_cfg::coverage_off_attrs;
-
-#[cfg(test)]
-pub(crate) fn compute_file_line_coverage(
-    repo_root: &Path,
-    file: &Path,
-    snapshot: &RuntimeCoverageSnapshot,
-) -> LineCoverageRecord {
-    compute_file_line_coverage_with_roles(
-        repo_root,
-        file,
-        snapshot,
-        &kiss::code_roles::SourceRoleIndex::empty(),
-    )
-}
-
-#[cfg(test)]
-fn compute_file_line_coverage_with_roles(
-    repo_root: &Path,
-    file: &Path,
-    snapshot: &RuntimeCoverageSnapshot,
-    roles: &SourceRoleIndex,
-) -> LineCoverageRecord {
-    let Some(denominator_lines) = coverage_denominator_lines(file, roles) else {
-        return LineCoverageRecord {
-            file: file.to_path_buf(),
-            total_lines: 0,
-            covered_lines: 0,
-            percent: 0,
-            first_uncovered_line: None,
-        };
-    };
-    record_from_denominator(repo_root, file, &denominator_lines, snapshot, roles)
-}
-
-#[cfg(test)]
-fn record_from_denominator(
-    repo_root: &Path,
-    file: &Path,
-    denominator_lines: &BTreeSet<usize>,
-    snapshot: &RuntimeCoverageSnapshot,
-    roles: &SourceRoleIndex,
-) -> LineCoverageRecord {
-    let candidates: Vec<usize> = denominator_lines.iter().copied().collect();
-    let mut lines = roles.production_lines(file, &candidates);
-    lines.sort_unstable();
-    lines.dedup();
-    record_from_prefiltered(
-        repo_root,
-        &CoverableDenom {
-            file: file.to_path_buf(),
-            lines,
-            mixed: roles.file_composition(file) == kiss::code_roles::FileComposition::Mixed,
-        },
-        snapshot,
-    )
-}
-
-fn record_from_prefiltered(
-    repo_root: &Path,
-    denom: &CoverableDenom,
-    snapshot: &RuntimeCoverageSnapshot,
-) -> LineCoverageRecord {
-    let denominator_lines: BTreeSet<usize> = denom.lines.iter().copied().collect();
-    let total_lines = denominator_lines.len();
-    if total_lines == 0 && denom.mixed {
-        return LineCoverageRecord {
-            file: denom.file.clone(),
-            total_lines: 0,
-            covered_lines: 0,
-            percent: 100,
-            first_uncovered_line: None,
-        };
-    }
-    let rel = repo_relative_key(repo_root, &denom.file);
-    let covered = rel
-        .as_ref()
-        .and_then(|key| snapshot.covered_lines.get(key))
-        .map_or(0, |lines| {
-            lines
-                .iter()
-                .filter(|line| denominator_lines.contains(&(**line as usize)))
-                .collect::<BTreeSet<_>>()
-                .len()
-        });
-    let first_uncovered_line = denominator_lines
-        .iter()
-        .find(|line| {
-            rel.as_ref()
-                .and_then(|key| snapshot.covered_lines.get(key))
-                .is_none_or(|lines| !lines.contains(&(**line as u32)))
-        })
-        .copied();
-    let percent = if total_lines == 0 {
-        100
-    } else {
-        coverage_percentage(covered, total_lines)
-    };
-    LineCoverageRecord {
-        file: denom.file.clone(),
-        total_lines,
-        covered_lines: covered,
-        percent,
-        first_uncovered_line,
-    }
-}
-
-pub(crate) fn cached_line_records(records: &[LineCoverageRecord]) -> Vec<CachedLineCoverageRecord> {
-    records
-        .iter()
-        .map(|record| CachedLineCoverageRecord {
-            file: record.file.to_string_lossy().to_string(),
-            total_lines: record.total_lines,
-            covered_lines: record.covered_lines,
-            percent: record.percent,
-            first_uncovered_line: record.first_uncovered_line,
-        })
-        .collect()
-}
-
-pub(crate) fn line_records_from_cache(
-    records: &[CachedLineCoverageRecord],
-) -> Vec<LineCoverageRecord> {
-    records
-        .iter()
-        .map(|record| LineCoverageRecord {
-            file: PathBuf::from(&record.file),
-            total_lines: record.total_lines,
-            covered_lines: record.covered_lines,
-            percent: record.percent,
-            first_uncovered_line: record.first_uncovered_line,
-        })
-        .collect()
-}
 
 fn coverage_denominator_lines(file: &Path, roles: &SourceRoleIndex) -> Option<BTreeSet<usize>> {
     let contents = fs::read_to_string(file).ok()?;
@@ -451,31 +257,9 @@ pub(crate) fn repo_relative_key(repo_root: &Path, file: &Path) -> Option<String>
         .map(|path| path.to_string_lossy().replace('\\', "/"))
 }
 
-pub(crate) fn coverage_percentage(covered: usize, total: usize) -> usize {
-    #[allow(
-        clippy::cast_precision_loss,
-        clippy::cast_possible_truncation,
-        clippy::cast_sign_loss
-    )]
-    {
-        ((covered as f64 / total as f64) * 100.0).round() as usize
-    }
-}
-
 #[cfg(test)]
 fn coverage_denominator_lines_for_test(file: &Path) -> Option<BTreeSet<usize>> {
     coverage_denominator_lines(file, &SourceRoleIndex::empty())
-}
-
-#[cfg(test)]
-fn compute_line_coverage_records_for_test(
-    repo_root: &Path,
-    py_files: &[PathBuf],
-    rs_files: &[PathBuf],
-    snapshot: &RuntimeCoverageSnapshot,
-) -> Result<Vec<LineCoverageRecord>, kiss::code_roles::RoleBuildError> {
-    let facts = CoverageSourceFacts::from_files(py_files, rs_files)?;
-    Ok(compute_line_coverage_records(repo_root, &facts, snapshot))
 }
 
 #[cfg(test)]

@@ -1,7 +1,7 @@
 use crate::config::{
-    ConfigError, apply_lenient_string_list, check_unknown_keys, get_usize, parse_string_list_key,
+    ConfigError, apply_lenient_string_list, check_unknown_keys, parse_string_list_key,
 };
-use crate::gate_config::{GateConfig, TestCoverageScope, parse_max_unit_test_seconds};
+use crate::gate_config::{GateConfig, parse_max_unit_test_seconds};
 use crate::test_section_config::TestSectionConfig;
 
 const TEST_SECTION_KEYS: &[&str] = &[
@@ -9,12 +9,12 @@ const TEST_SECTION_KEYS: &[&str] = &[
     "num_jobs",
     "num_jobs_pytest",
     "num_jobs_llvm_cov",
-    // Accepted and ignored so existing `.kissconfig` files that set it still load.
+    // Accepted and ignored so existing `.kissconfig` files that set them still load.
     "watch_settle_seconds",
-    "pytest_plugins",
-    "ignore",
     "test_coverage_threshold",
     "test_coverage_scope",
+    "pytest_plugins",
+    "ignore",
     "orphan_detection",
     "max_unit_test_seconds",
     "max_num_tests",
@@ -56,16 +56,6 @@ pub(crate) fn merge_test_table_strict(
 }
 
 fn merge_test_gates_lenient(config: &mut GateConfig, test: &toml::Table) {
-    if let Some(t) = get_usize(test, "test_coverage_threshold") {
-        if t > 100 {
-            eprintln!("Error: test_coverage_threshold must be 0-100, got {t}");
-            return;
-        }
-        config.test_coverage_threshold = t;
-    }
-    if let Err(msg) = merge_scope_lenient(test, &mut config.test_coverage_scope) {
-        eprintln!("Error: {msg}");
-    }
     merge_orphan_detection_lenient(config, test);
     if let Some(value) = test.get("max_unit_test_seconds") {
         match parse_max_unit_test_seconds(value) {
@@ -81,18 +71,6 @@ fn merge_test_gates_lenient(config: &mut GateConfig, test: &toml::Table) {
 }
 
 fn merge_test_gates_strict(config: &mut GateConfig, test: &toml::Table) -> Result<(), ConfigError> {
-    if let Some(t) = get_usize(test, "test_coverage_threshold") {
-        if t > 100 {
-            return Err(ConfigError::InvalidValue {
-                key: "test_coverage_threshold".into(),
-                message: format!("must be 0-100, got {t}"),
-            });
-        }
-        config.test_coverage_threshold = t;
-    }
-    if let Some(scope) = try_get_scope(test)? {
-        config.test_coverage_scope = scope;
-    }
     if let Some(enabled) = try_get_orphan_detection(test)? {
         config.orphan_detection = enabled;
     }
@@ -143,46 +121,6 @@ fn try_get_max_num_tests(table: &toml::Table) -> Result<Option<usize>, ConfigErr
         .map_err(|_| ConfigError::InvalidValue {
             key: "max_num_tests".into(),
             message: format!("expected nonnegative integer, got {n}"),
-        })
-}
-
-fn merge_scope_lenient(table: &toml::Table, current: &mut TestCoverageScope) -> Result<(), String> {
-    let Some(value) = table.get("test_coverage_scope") else {
-        return Ok(());
-    };
-    let Some(raw) = value.as_str() else {
-        return Err(format!(
-            "test_coverage_scope must be \"by_file\" or \"codebase\", got {}",
-            value.type_str()
-        ));
-    };
-    match TestCoverageScope::parse(raw) {
-        Ok(scope) => {
-            *current = scope;
-            Ok(())
-        }
-        Err(message) => Err(format!("test_coverage_scope {message}")),
-    }
-}
-
-fn try_get_scope(table: &toml::Table) -> Result<Option<TestCoverageScope>, ConfigError> {
-    let Some(value) = table.get("test_coverage_scope") else {
-        return Ok(None);
-    };
-    let Some(raw) = value.as_str() else {
-        return Err(ConfigError::InvalidValue {
-            key: "test_coverage_scope".into(),
-            message: format!(
-                "must be \"by_file\" or \"codebase\", got {}",
-                value.type_str()
-            ),
-        });
-    };
-    TestCoverageScope::parse(raw)
-        .map(Some)
-        .map_err(|message| ConfigError::InvalidValue {
-            key: "test_coverage_scope".into(),
-            message,
         })
 }
 

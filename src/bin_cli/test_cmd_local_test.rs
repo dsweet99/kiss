@@ -27,7 +27,6 @@ fn python_oneshot_args<'a>(
         dry_run: false,
         retry_bad: false,
         metrics: false,
-        coverage_all: false,
         jobs: 1,
         ignore: &[],
         extra: &[],
@@ -52,24 +51,6 @@ fn dry_run_invokes_local_runner() {
     });
     assert_eq!(code, 0);
     assert_eq!(calls.load(Ordering::SeqCst), 1);
-}
-
-#[test]
-fn finish_with_coverage_returns_test_exit_when_threshold_zero() {
-    let _repo = isolated_inited_python_repo();
-    let test_cfg = TestSectionConfig::default();
-    let gate = kiss::GateConfig {
-        test_coverage_threshold: 0,
-        max_unit_test_seconds: Vec::new(),
-        ..kiss::GateConfig::default()
-    };
-    let args = python_oneshot_args(&test_cfg, &gate);
-    let code = finish_with_coverage(&args, 3);
-    assert_eq!(code, 3);
-}
-
-fn isolated_python_repo() -> IsolatedPythonRepo {
-    isolated_python_repo_with_git(false)
 }
 
 fn isolated_inited_python_repo() -> IsolatedPythonRepo {
@@ -119,10 +100,7 @@ fn rustc_style_missing_path_is_rejected_before_running() {
             calls.fetch_add(1, Ordering::SeqCst);
             0
         });
-        assert_eq!(
-            code, 2,
-            "{raw}: missing path must fail"
-        );
+        assert_eq!(code, 2, "{raw}: missing path must fail");
         assert_eq!(calls.load(Ordering::SeqCst), 0, "{raw}");
     }
 }
@@ -141,10 +119,7 @@ fn lang_mismatch_is_rejected_before_running() {
         calls.fetch_add(1, Ordering::SeqCst);
         0
     });
-    assert_eq!(
-        code, 2,
-        "lang mismatch must fail"
-    );
+    assert_eq!(code, 2, "lang mismatch must fail");
     assert_eq!(calls.load(Ordering::SeqCst), 0);
 }
 
@@ -163,25 +138,8 @@ fn ignore_prefix_is_rejected_before_running() {
         calls.fetch_add(1, Ordering::SeqCst);
         0
     });
-    assert_eq!(
-        code, 2,
-        "ignore prefix must fail"
-    );
+    assert_eq!(code, 2, "ignore prefix must fail");
     assert_eq!(calls.load(Ordering::SeqCst), 0);
-}
-
-#[test]
-fn finish_with_coverage_returns_cov_exit_when_snapshot_missing() {
-    let _repo = isolated_python_repo();
-    let test_cfg = TestSectionConfig::default();
-    let gate = kiss::GateConfig {
-        test_coverage_threshold: 75,
-        max_unit_test_seconds: Vec::new(),
-        ..kiss::GateConfig::default()
-    };
-    let args = python_oneshot_args(&test_cfg, &gate);
-    let code = finish_with_coverage(&args, 0);
-    assert_eq!(code, 1);
 }
 
 #[test]
@@ -196,12 +154,11 @@ fn dry_run_rejects_unconfigured_languages() {
 }
 
 #[test]
-fn oneshot_runs_local_runner_then_coverage() {
+fn oneshot_runs_local_runner_then_report() {
     let _repo = isolated_inited_python_repo();
     std::fs::write("test_app.py", "def test_ok():\n    assert True\n").unwrap();
     let test_cfg = TestSectionConfig::default();
     let gate = kiss::GateConfig {
-        test_coverage_threshold: 0,
         max_unit_test_seconds: Vec::new(),
         max_num_tests: 999999,
         ..kiss::GateConfig::default()
@@ -214,11 +171,9 @@ fn oneshot_runs_local_runner_then_coverage() {
         0
     });
     assert_eq!(calls.load(Ordering::SeqCst), 1, "local runner must run");
-    // Coverage may still fail closed without a population snapshot; the goal is
-    // exercising the local+coverage path (not a green cov score).
     assert!(
         code == 0 || code == 1,
-        "local path must finish with a coverage decision, got {code}"
+        "local path must finish with a report decision, got {code}"
     );
 }
 
@@ -228,7 +183,6 @@ fn oneshot_existing_target_accepts_resolve() {
     std::fs::write("test_thing.py", "def test_ok():\n    assert True\n").unwrap();
     let test_cfg = TestSectionConfig::default();
     let gate = kiss::GateConfig {
-        test_coverage_threshold: 0,
         max_unit_test_seconds: Vec::new(),
         max_num_tests: 999999,
         ..kiss::GateConfig::default()

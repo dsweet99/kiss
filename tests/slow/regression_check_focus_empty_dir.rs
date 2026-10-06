@@ -1,5 +1,4 @@
 use crate::common::seed_python_runtime_coverage;
-use crate::support::git::{commit_all, init_git_repo};
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
@@ -83,68 +82,5 @@ fn cli_check_focus_dir_with_no_source_does_not_leak_universe() {
         !focused_stdout.contains("big.py"),
         "focus=non_src/ (no source files) must not leak src/big.py violations. \
          stdout:\n{focused_stdout}\nstderr:\n{focused_stderr}"
-    );
-}
-
-#[test]
-fn cli_check_requires_runtime_coverage_for_universe_languages_before_focus() {
-    let tmp = TempDir::new().unwrap();
-    let root = tmp.path();
-    init_git_repo(root);
-    fs::create_dir_all(root.join("src")).unwrap();
-    fs::write(root.join("app.py"), "def covered():\n    return 1\n").unwrap();
-    fs::write(
-        root.join("Cargo.toml"),
-        "[package]\nname = \"mixed_focus\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
-    )
-    .unwrap();
-    fs::write(
-        root.join("Cargo.lock"),
-        "version = 4\n\n[[package]]\nname = \"mixed_focus\"\nversion = \"0.1.0\"\n",
-    )
-    .unwrap();
-    fs::write(
-        root.join("src").join("lib.rs"),
-        "pub fn uncovered() -> i32 { 1 }\n",
-    )
-    .unwrap();
-    seed_python_runtime_coverage(
-        root,
-        &[("test_app.py::test_app", vec![("app.py", vec![1, 2])])],
-    );
-    fs::write(
-        root.join(".kissconfig"),
-        "[global]\n\
-         duplication_enabled = false\n\
-         [test]\n\
-         orphan_detection = false\n\
-         num_jobs = 1\n\
-         [python]\n\
-         [rust]\n",
-    )
-    .unwrap();
-    commit_all(root, "init");
-
-    let focused = kiss_binary()
-        .current_dir(root)
-        .args(["test", "--jobs", "1", "."])
-        .env("PYTHONDONTWRITEBYTECODE", "1")
-        .output()
-        .unwrap();
-    let stdout = String::from_utf8_lossy(&focused.stdout);
-    let stderr = String::from_utf8_lossy(&focused.stderr);
-
-    assert_eq!(
-        focused.status.code(),
-        Some(1),
-        "missing Rust runtime coverage should fail even when focus is Python-only. \
-         stdout:\n{stdout}\nstderr:\n{stderr}"
-    );
-    assert!(
-        (stdout.contains("VIOLATION:test_coverage")
-            || stderr.contains("Rust runtime line coverage"))
-            && !stderr.contains("kiss test commit"),
-        "error should identify missing coverage without the old manual refresh instruction. \
-         stdout:\n{stdout}\nstderr:\n{stderr}"
     );
 }

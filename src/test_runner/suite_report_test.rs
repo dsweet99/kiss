@@ -25,7 +25,6 @@ fn live_all_args() -> RunTestCmdArgs<'static> {
         force_rerun: false,
         force_bad: false,
         metrics: false,
-        coverage_all: false,
         jobs: 1,
         extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
         config_main_branch: None,
@@ -88,7 +87,6 @@ fn seed_repo(tmp: &tempfile::TempDir) {
         "[global]\n\
          duplication_enabled = false\n\
          [test]\n\
-         test_coverage_threshold = 0\n\
          orphan_detection = false\n",
     )
     .unwrap();
@@ -109,12 +107,11 @@ fn publish_rust_ready(repo: &std::path::Path) {
         )],
     );
     let request = workspace_request(Some(kiss::Language::Rust), &[]);
-    materialize_target_report(repo, &request, &EnsurePolicy::soft(false, false)).unwrap();
+    materialize_target_report(repo, &request, &EnsurePolicy::soft(false)).unwrap();
     assert!(
         crate::test_runner::target_request::load_ready_for_request(
             repo,
             &request,
-            false,
             crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
         )
         .is_some(),
@@ -153,7 +150,6 @@ fn all_hit_replays_compact_recap_without_running() {
                         Some(kiss::Language::Rust),
                         &[],
                     ),
-                    false,
                     crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
                 )
                 .is_some()
@@ -681,56 +677,6 @@ fn warm_replay_lists_cached_fail_and_timeout_names_without_pass_names() {
                     failed: 2,
                     failed_selectors: vec!["tests/b.py::test_b".into()],
                     timed_out_selectors: vec!["src/lib.rs::t_slow".into()],
-                    ..crate::test_runner::final_summary::FinalTestSummary::default()
-                },
-                std::time::Duration::from_millis(10),
-            );
-            RunTestOnceOutcome::Code(1)
-        });
-        assert_eq!(runs.load(Ordering::SeqCst), 2);
-        assert_eq!(second.exit_code, 1);
-    });
-}
-
-#[test]
-fn unscoped_violations_persist_across_replay() {
-    let _cwd = crate::cwd_test_lock::lock();
-    let tmp = tempfile::tempdir().unwrap();
-    seed_repo(&tmp);
-    with_cwd(tmp.path(), || {
-        let runs = AtomicUsize::new(0);
-        let first = run_transcript_report(live_all_args(), |_a| {
-            runs.fetch_add(1, Ordering::SeqCst);
-            crate::test_runner::final_summary::note_violation_kind("test_coverage", 1);
-            crate::test_runner::emit_test_progress(
-                "VIOLATION:test_coverage:foo.py:1:foo: 0% covered (0/4). Need 3 more lines to reach 75%.",
-            );
-            crate::test_runner::final_summary::print_final_test_summary(
-                &crate::test_runner::final_summary::FinalTestSummary {
-                    passed: 3,
-                    failed: 0,
-                    ..crate::test_runner::final_summary::FinalTestSummary::default()
-                },
-                std::time::Duration::from_millis(10),
-            );
-            RunTestOnceOutcome::Code(1)
-        });
-        assert_eq!(runs.load(Ordering::SeqCst), 1);
-        assert_eq!(first.exit_code, 1);
-        let first_out = first.output.clone().unwrap_or_default();
-        assert!(
-            first_out.contains("VIOLATION:test_coverage:"),
-            "cold run must show violations; out={first_out}"
-        );
-        let second = run_transcript_report(live_all_args(), |_a| {
-            runs.fetch_add(1, Ordering::SeqCst);
-            crate::test_runner::emit_test_progress(
-                "VIOLATION:test_coverage:foo.py:1:foo: 0% covered (0/4). Need 3 more lines to reach 75%.",
-            );
-            crate::test_runner::final_summary::print_final_test_summary(
-                &crate::test_runner::final_summary::FinalTestSummary {
-                    passed: 3,
-                    failed: 0,
                     ..crate::test_runner::final_summary::FinalTestSummary::default()
                 },
                 std::time::Duration::from_millis(10),

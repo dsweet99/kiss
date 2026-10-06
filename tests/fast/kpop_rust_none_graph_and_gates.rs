@@ -34,12 +34,7 @@ fn kpop_rust_none_dependency_depth() {
 }
 
 #[test]
-fn kpop_rust_none_test_coverage_threshold() {
-    let gate = kiss::GateConfig {
-        test_coverage_threshold: 90,
-        ..Default::default()
-    };
-    assert_eq!(gate.test_coverage_threshold, 90);
+fn kpop_rust_none_static_test_refs_not_exported() {
     assert!(
         !std::fs::read_to_string("src/lib.rs")
             .unwrap()

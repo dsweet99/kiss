@@ -83,7 +83,6 @@ fn call_handler_dispatchers(
         dry_run: true,
         retry_bad: false,
         metrics: false,
-        coverage_all: false,
         jobs: None,
         ignore: vec![],
         extra: vec![],

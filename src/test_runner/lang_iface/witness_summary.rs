@@ -63,9 +63,6 @@ fn planned_witness_records(
 }
 
 fn emit_cached_witness_lines(records: &[(String, TestStatus, Duration)]) {
-    if !crate::test_runner::check_runtime_refresh::test_runner_stdout_enabled() {
-        return;
-    }
     if records.len() <= 64 {
         for (report, status, duration) in records {
             if *status == TestStatus::Passed {

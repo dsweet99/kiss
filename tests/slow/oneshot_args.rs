@@ -73,7 +73,14 @@ fn oneshot_rejects_ignore_option() {
     let tmp = seeded_python_repo();
     let (ok, stdout, stderr) = oneshot_args(
         tmp.path(),
-        &["test", "--lang", "python", "--ignore", "test_", "test_lib.py"],
+        &[
+            "test",
+            "--lang",
+            "python",
+            "--ignore",
+            "test_",
+            "test_lib.py",
+        ],
     );
     assert!(
         !ok,

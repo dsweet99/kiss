@@ -2,8 +2,6 @@
 #[path = "capture_stdout.rs"]
 pub(crate) mod capture_stdout;
 
-pub(crate) mod check_line_coverage;
-pub(crate) mod check_runtime_refresh;
 mod coverage_decision;
 pub(crate) mod coverage_index;
 pub(crate) mod duration;
@@ -33,6 +31,7 @@ pub(crate) use targets::expand_target_operands;
 mod kiss_test_report;
 pub(crate) mod tests_remaining;
 pub(crate) mod unit_test_timing;
+pub(crate) mod universe_root;
 #[cfg(test)]
 pub(crate) use kiss_test_report::KissTestReport;
 pub(crate) use kiss_test_report::{
@@ -91,7 +90,6 @@ pub struct RunTestCmdArgs<'a> {
     pub force_rerun: bool,
     pub force_bad: bool,
     pub metrics: bool,
-    pub coverage_all: bool,
     pub jobs: usize,
     pub extras: language_keyed::LanguageKeyed<&'a [String]>,
     pub config_main_branch: Option<&'a str>,
@@ -162,9 +160,6 @@ pub(crate) fn lock_test_state(
 }
 
 pub(crate) fn emit_test_progress(message: &str) {
-    if !crate::test_runner::check_runtime_refresh::test_runner_stdout_enabled() {
-        return;
-    }
     emit_test_status(message);
 }
 

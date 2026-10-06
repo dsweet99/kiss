@@ -17,11 +17,7 @@ fn regression_stats_cold_and_warm_are_identical() {
         "def test_f():\n    assert f(1) == 1\n",
     )
     .unwrap();
-    fs::write(
-        repo.path().join(".kissconfig"),
-        "[test]\ntest_coverage_threshold = 0\n",
-    )
-    .unwrap();
+    fs::write(repo.path().join(".kissconfig"), "[test]\n").unwrap();
 
     let config = crate::common::write_builtin_language_config(repo.path());
     let cold = kiss_binary()

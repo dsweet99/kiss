@@ -17,9 +17,9 @@ pub use types::{
 };
 pub use validation::is_similar;
 
-pub(crate) use validation::{
-    apply_lenient_string_list, check_unknown_keys, get_usize, parse_string_list_key,
-};
+#[cfg(test)]
+pub(crate) use validation::get_usize;
+pub(crate) use validation::{apply_lenient_string_list, check_unknown_keys, parse_string_list_key};
 
 #[cfg(test)]
 mod tests;

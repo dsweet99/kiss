@@ -154,7 +154,11 @@ fn test_section_config_accepts_and_ignores_watch_settle_seconds() {
     let cwd = tempfile::TempDir::new().unwrap();
     let _cwd_guard = CwdGuard::enter(cwd.path());
     let tmp = tempfile::NamedTempFile::new().unwrap();
-    std::fs::write(tmp.path(), "[test]\nwatch_settle_seconds = 0\nnum_jobs = 3\n").unwrap();
+    std::fs::write(
+        tmp.path(),
+        "[test]\nwatch_settle_seconds = 0\nnum_jobs = 3\n",
+    )
+    .unwrap();
     let config = TestSectionConfig::try_load_from(tmp.path()).unwrap();
     assert_eq!(config.num_jobs, 3);
 }

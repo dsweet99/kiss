@@ -29,40 +29,11 @@ fn test_language_and_config() {
         kiss::defaults::python::STATEMENTS_PER_FUNCTION
     );
     let path = tmp.path().join("kiss.toml");
-    std::fs::write(&path, "[test]\ntest_coverage_threshold = 80\n").unwrap();
-    assert_eq!(load_gate_config(Some(&path)).test_coverage_threshold, 80);
+    std::fs::write(&path, "[test]\nmax_num_tests = 80\n").unwrap();
+    assert_eq!(load_gate_config(Some(&path)).max_num_tests, 80);
     assert_eq!(
-        load_gate_config(Some(&builtin)).test_coverage_threshold,
-        kiss::defaults::gate::TEST_COVERAGE_THRESHOLD
-    );
-}
-
-#[test]
-fn test_clamp_keeps_default_coverage_threshold() {
-    let tmp = tempfile::TempDir::new().unwrap();
-    std::fs::write(
-        tmp.path().join("app.py"),
-        "def covered():\n    return 1\n\ndef uncovered():\n    return 2\n",
-    )
-    .unwrap();
-    std::fs::write(
-        tmp.path().join("test_app.py"),
-        "from app import covered\n\ndef test_covered():\n    assert covered() == 1\n",
-    )
-    .unwrap();
-    std::fs::write(
-        tmp.path().join("fake_extra.py"),
-        "def ignored_uncovered():\n    return 3\n",
-    )
-    .unwrap();
-
-    let ignore = crate::bin_cli::util::merge_check_ignore_prefixes(&[]);
-    let path = tmp.path().to_string_lossy().to_string();
-    let gate = kiss::config_gen::infer_gate_config_for_paths(&[path], None, &ignore).unwrap();
-    assert_eq!(
-        gate.test_coverage_threshold,
-        kiss::defaults::gate::TEST_COVERAGE_THRESHOLD,
-        "clamp must not infer coverage from static references after the kiss cov split"
+        load_gate_config(Some(&builtin)).max_num_tests,
+        kiss::defaults::gate::MAX_NUM_TESTS
     );
 }
 

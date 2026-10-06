@@ -34,33 +34,6 @@ fn shared_report_skips_coverage_on_test_failure() {
 }
 
 #[test]
-fn shared_report_puts_recap_after_coverage_violations() {
-    let mut args = dry_args();
-    args.dry_run = false;
-    let report = run_kiss_test_report(args, |_a| {
-        crate::test_runner::final_summary::note_violation_kind("test_coverage", 2);
-        crate::test_runner::emit_test_progress(
-            "VIOLATION:test_coverage:foo.py:1:foo: 0% covered (0/4). Need 3 more lines to reach 75%.",
-        );
-        crate::test_runner::final_summary::print_final_test_summary(
-            &crate::test_runner::final_summary::FinalTestSummary {
-                passed: 1,
-                failed: 0,
-                ..crate::test_runner::final_summary::FinalTestSummary::default()
-            },
-            std::time::Duration::from_millis(10),
-        );
-        RunTestOnceOutcome::Code(1)
-    });
-    assert!(
-        report.output.is_none(),
-        "assemblable miss must not use transcript as official output: {:?}",
-        report.output
-    );
-    assert_eq!(report.exit_code, 1);
-}
-
-#[test]
 fn shared_report_carries_structured_totals() {
     let mut args = dry_args();
     args.dry_run = false;
@@ -141,13 +114,11 @@ fn ready_target_report_after_tests_skips_run_cov() {
         |_a| {
             record_rust_pass(tmp.path());
             let request = workspace_request(Some(kiss::Language::Rust), &[]);
-            materialize_target_report(tmp.path(), &request, &EnsurePolicy::soft(false, false))
-                .unwrap();
+            materialize_target_report(tmp.path(), &request, &EnsurePolicy::soft(false)).unwrap();
             assert!(
                 crate::test_runner::target_request::load_ready_for_request(
                     tmp.path(),
                     &request,
-                    false,
                     crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
                 )
                 .is_some(),
@@ -162,7 +133,7 @@ fn ready_target_report_after_tests_skips_run_cov() {
 }
 
 #[test]
-fn ready_target_report_with_coverage_gates_skips_run_cov() {
+fn ready_target_report_has_no_coverage_gate_for_uncovered_source() {
     use crate::bin_cli::args::TestInvocation;
     use crate::test_runner::target_request::{
         EnsurePolicy, materialize_target_report, workspace_request,
@@ -207,12 +178,11 @@ fn ready_target_report_with_coverage_gates_skips_run_cov() {
         args,
         |_a| {
             let request = workspace_request(Some(kiss::Language::Rust), &[]);
-            let built =
-                materialize_target_report(tmp.path(), &request, &EnsurePolicy::soft(false, false))
-                    .unwrap();
+            let built = materialize_target_report(tmp.path(), &request, &EnsurePolicy::soft(false))
+                .unwrap();
             assert!(
-                built.gates.iter().any(|gate| gate.kind == "test_coverage"),
-                "uncovered app.py must emit a coverage gate: {:?}",
+                !built.gates.iter().any(|gate| gate.kind == "test_coverage"),
+                "uncovered app.py must not emit a coverage gate: {:?}",
                 built.gates
             );
             RunTestOnceOutcome::Code(0)
@@ -220,7 +190,7 @@ fn ready_target_report_with_coverage_gates_skips_run_cov() {
         true,
         Some(tmp.path()),
     );
-    assert_eq!(report.exit_code, 1);
+    assert_eq!(report.exit_code, 0);
 }
 
 #[test]

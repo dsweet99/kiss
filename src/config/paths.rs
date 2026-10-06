@@ -113,16 +113,16 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         std::fs::write(
             tmp.path().join(".kissconfig"),
-            "[test]\ntest_coverage_threshold = 41\n",
+            "[test]\nmax_num_tests = 41\n",
         )
         .unwrap();
         std::fs::create_dir_all(tmp.path().join("nested")).unwrap();
         std::fs::write(
             tmp.path().join("nested").join(".kissconfig"),
-            "[test]\ntest_coverage_threshold = 7\n",
+            "[test]\nmax_num_tests = 7\n",
         )
         .unwrap();
         let gate = crate::gate_config::GateConfig::load_for_repo(tmp.path());
-        assert_eq!(gate.test_coverage_threshold, 41);
+        assert_eq!(gate.max_num_tests, 41);
     }
 }

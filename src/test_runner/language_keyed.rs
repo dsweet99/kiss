@@ -121,7 +121,6 @@ mod tests {
             force_rerun: false,
             force_bad: false,
             metrics: false,
-            coverage_all: false,
             jobs: 1,
             extras,
             config_main_branch: None,

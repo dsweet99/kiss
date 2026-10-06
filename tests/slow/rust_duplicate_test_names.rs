@@ -27,7 +27,7 @@ fn marked_test(s: &Scenario, label: &str, name: &str, body: &str) -> String {
 
 fn demo_crate(s: &Scenario, lib: &str) {
     s.write(".gitignore", ".kiss/\ntarget/\n");
-    crate::support::scenario::write_kissconfig_with_threshold(s.root(), 0);
+    crate::support::scenario::write_kissconfig(s.root());
     s.write(
         "Cargo.toml",
         "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",

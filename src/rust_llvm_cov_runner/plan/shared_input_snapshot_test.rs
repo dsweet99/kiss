@@ -150,7 +150,7 @@ fn rust_input_snapshot_excludes_nested_non_member_crate_sources() {
     skipped.insert("nested".to_string());
     let warning = format_skipped_non_member_coverage_warning(&skipped);
     assert!(
-        warning.contains("skipping coverage scoring for nested non-member")
+        warning.contains("skipping runtime tracing for nested non-member")
             && warning.contains("nested"),
         "warning={warning}"
     );
