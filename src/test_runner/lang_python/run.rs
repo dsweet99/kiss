@@ -21,15 +21,19 @@ pub(crate) struct PytestSelectorsArgs<'a> {
     pub(crate) gate: &'a kiss::GateConfig,
 }
 
-fn pytest_worker_cap() -> Option<usize> {
-    kiss::TestSectionConfig::load().num_jobs_pytest_explicit
-}
-
 fn clamp_pytest_jobs(requested: usize) -> usize {
-    match pytest_worker_cap() {
-        Some(cap) => requested.clamp(1, cap.max(1)),
-        None => requested,
+    let cfg = kiss::TestSectionConfig::load();
+    let mut requested = requested.max(1);
+    let Some(cap) = cfg.num_jobs_pytest_explicit else {
+        return requested;
+    };
+    let cap = cap.max(1);
+    // Omitted `-j` arrives as `num_jobs`. An explicit pytest count is the
+    // worker budget then. A different `-j` is left alone, then capped.
+    if requested == cfg.num_jobs.max(1) && cap > requested {
+        requested = cap;
     }
+    requested.clamp(1, cap)
 }
 
 pub(crate) fn run_pytest_selectors(
@@ -82,8 +86,11 @@ pub(super) fn run_pytest_selectors_with_runner(
     runner.run_many_bounded_with_on_complete(reqs, jobs, &mut |index, result| {
         let selector = &runnable[index];
         let finished = finished_test(selector, result, args.gate);
-        print_finished_test(&finished, args.gate);
+        // Publish the record before the PASS/FAIL line. Callers treat that line as
+        // proof the result is durable; `kiss_test_sigint_caches_passed_tests_as_it_goes`
+        // sends SIGINT as soon as it sees the line.
         let stored = writer.store(selector, finished.status, finished.duration, args.gate);
+        print_finished_test(&finished, args.gate);
         let cache_record = if stored.is_ok() {
             SelectorCacheRecord::MissStored
         } else {

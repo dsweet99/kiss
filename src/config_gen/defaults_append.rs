@@ -28,6 +28,11 @@ pub fn append_python_defaults(out: &mut String) {
         "returns_per_function = {}",
         python::RETURNS_PER_FUNCTION
     );
+    let _ = writeln!(
+        out,
+        "return_values_per_function = {}",
+        python::RETURN_VALUES_PER_FUNCTION
+    );
     let _ = writeln!(out, "statements_per_file = {}", python::STATEMENTS_PER_FILE);
     let _ = writeln!(out, "lines_per_file = {}", python::LINES_PER_FILE);
     let _ = writeln!(out, "functions_per_file = {}", python::FUNCTIONS_PER_FILE);
@@ -118,4 +123,26 @@ pub fn append_rust_defaults(out: &mut String) {
     );
     let _ = writeln!(out, "calls_per_function = {}", rust::CALLS_PER_FUNCTION);
     let _ = writeln!(out, "cycle_size = {}\n", graph::CYCLE_SIZE);
+}
+
+pub fn with_default_language_sections(text: &str) -> String {
+    let Ok(table) = text.parse::<toml::Table>() else {
+        return text.to_string();
+    };
+    let mut extra = String::new();
+    if !table.contains_key("python") {
+        append_python_defaults(&mut extra);
+    }
+    if !table.contains_key("rust") {
+        append_rust_defaults(&mut extra);
+    }
+    if extra.is_empty() {
+        return text.to_string();
+    }
+    let mut out = text.to_string();
+    if !out.is_empty() && !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push_str(&extra);
+    out
 }

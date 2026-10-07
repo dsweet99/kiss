@@ -232,11 +232,14 @@ fn collect_from_workspace_paths(
     paths: &[PathBuf],
     pytest_args: &[String],
 ) -> Result<Vec<String>, String> {
+    // An empty candidate list means discovery already applied `ignore`.
+    // Collecting the repo root would walk those ignored trees anyway, then
+    // drop the node ids. On ruff that full walk exceeds the long-eval budget
+    // and still yields no selectors.
     if paths.is_empty() {
-        collect_python_nodeids(repo_root, None, pytest_args)
-    } else {
-        collect_python_nodeids(repo_root, Some(paths), pytest_args)
+        return Ok(Vec::new());
     }
+    collect_python_nodeids(repo_root, Some(paths), pytest_args)
 }
 
 fn filter_ignored_python_selectors(

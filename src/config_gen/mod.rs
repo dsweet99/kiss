@@ -1,22 +1,24 @@
 mod collect;
 mod config_keys;
-#[cfg(test)]
 mod defaults_append;
 mod generate;
 mod infer_gate;
 mod merge;
+mod raise;
 
 pub use collect::{
     collect_all_stats, collect_all_stats_with_ignore, collect_lang_from_paths, collect_py_stats,
     collect_py_stats_with_ignore, collect_rs_stats, collect_rs_stats_with_ignore,
 };
 pub use config_keys::{python_config_key, rust_config_key};
+pub use defaults_append::with_default_language_sections;
 pub use generate::{
     GenerateConfigParams, auto_created_gate_config, generate_config_toml_by_language,
     generate_gate_stub_toml,
 };
 pub use infer_gate::infer_gate_config_for_paths;
 pub use merge::{MergeLanguageUpdate, merge_config_toml};
+pub use raise::raise_measured_thresholds;
 
 use std::path::Path;
 

@@ -409,6 +409,23 @@ fn ignore_collection_keeps_duplicate_basenames_under_tests() {
 }
 
 #[test]
+fn ignore_with_no_candidates_skips_a_broken_ignored_tree() {
+    reset_python_collect_memo_for_tests();
+    let tmp = TempDir::new().unwrap();
+    let ignored = tmp.path().join("resources");
+    fs::create_dir_all(&ignored).unwrap();
+    fs::write(
+        ignored.join("test_broken.py"),
+        "import definitely_missing_module\n\ndef test_broken():\n    pass\n",
+    )
+    .unwrap();
+    fs::write(tmp.path().join("app.py"), "x = 1\n").unwrap();
+    let ignore = ["resources".to_string()];
+    let selectors = enumerate_workspace_python_selectors(tmp.path(), &ignore, &[]).unwrap();
+    assert!(selectors.is_empty());
+}
+
+#[test]
 fn ignore_collection_paths_pass_tests_dir_not_each_file() {
     let tmp = TempDir::new().unwrap();
     let tests = tmp.path().join("tests");

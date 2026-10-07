@@ -1,6 +1,6 @@
 use crate::bin_cli::args::{Cli, Commands};
 use crate::bin_cli::config_session::{
-    ensure_default_config_exists, ensure_default_config_from, load_configs, load_gate_config,
+    ensure_check_config_from, ensure_default_config_exists, load_configs, load_gate_config,
     load_test_section_config,
 };
 use crate::bin_cli::dispatch::dispatch;
@@ -43,7 +43,7 @@ fn prepare_default_config(cli: &Cli) {
     }
     match &cli.command {
         Commands::Check { paths, ignore, .. } => {
-            ensure_default_config_from(paths, ignore);
+            ensure_check_config_from(paths, ignore);
         }
         _ => ensure_default_config_exists(),
     }
@@ -130,6 +130,44 @@ mod run_touch {
             "check should write .kissconfig when it is missing"
         );
         std::env::set_current_dir(&orig_dir).unwrap();
+    }
+
+    #[test]
+    fn check_raises_rust_include_rollup_so_the_check_passes() {
+        let _cwd_guard = crate::cwd_test_lock::lock();
+        let tmp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(tmp.path().join("src")).unwrap();
+        fs::write(
+            tmp.path().join("src/lib.rs"),
+            "struct Parent;\ninclude!(\"frag.rs\");\n",
+        )
+        .unwrap();
+        fs::write(tmp.path().join("src/frag.rs"), "struct Frag;\n").unwrap();
+        let orig_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+        let code = run_with_cli(Cli {
+            config: None,
+            lang: None,
+            command: Commands::Check {
+                paths: vec![".".to_string()],
+                ignore: Vec::new(),
+                timing: false,
+            },
+        });
+        let created = fs::read_to_string(".kissconfig").unwrap();
+        std::env::set_current_dir(&orig_dir).unwrap();
+        assert_eq!(
+            code, 0,
+            "include rollup must pass after the raise:\n{created}"
+        );
+        assert!(
+            created.contains("concrete_types_per_file = 2"),
+            "rollup of two structs must raise the threshold:\n{created}"
+        );
+        assert!(
+            created.contains("duplication_enabled = true"),
+            "non-threshold settings must stay at kissconfig-default:\n{created}"
+        );
     }
 
     #[test]

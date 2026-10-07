@@ -8,6 +8,7 @@ mod facts;
 mod fingerprint;
 mod index;
 mod python;
+mod python_dynamic;
 mod python_path;
 mod rust;
 mod rust_cargo;

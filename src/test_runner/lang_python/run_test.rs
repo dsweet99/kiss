@@ -78,6 +78,8 @@ fn parallel_jobs_are_capped_only_by_num_jobs_pytest() {
     for (config, requested, expected) in [
         ("[test]\nnum_jobs_pytest = 5\n", 32, 5),
         ("[test]\nnum_jobs_pytest = 16\n", 8, 8),
+        ("[test]\nnum_jobs = 4\nnum_jobs_pytest = 16\n", 4, 16),
+        ("[test]\nnum_jobs = 4\nnum_jobs_pytest = 16\n", 2, 2),
         ("[test]\nnum_jobs = 32\n", 32, 32),
     ] {
         fs::write(&cfg, config).unwrap();

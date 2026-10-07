@@ -107,6 +107,32 @@ fn named_import_graph_witnesses_helper() {
 }
 
 #[test]
+fn eval_fstring_import_does_not_orphan_pytest_tests() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let ops = tmp.path().join("evaluate.py");
+    let utils = tmp.path().join("utils.py");
+    let test = tmp.path().join("tests").join("test_u.py");
+    write(
+        &ops,
+        "import importlib\n\
+         def run(group, eval_name):\n    \
+         importlib.import_module(f\"evals.{group}.eval_{eval_name}\")\n",
+    );
+    write(&utils, "def helper():\n    return 1\n");
+    write(
+        &test,
+        "from utils import helper\n\ndef test_h():\n    assert helper() == 1\n",
+    );
+    let names = py_names(&[ops, utils, test], tmp.path());
+    assert!(
+        !names
+            .iter()
+            .any(|name| name == "helper" || name == "test_h"),
+        "prefixed eval import must not orphan the pytest test or its import: {names:?}"
+    );
+}
+
+#[test]
 fn test_only_file_is_not_candidate() {
     let tmp = tempfile::TempDir::new().unwrap();
     let test = tmp.path().join("tests").join("test_only.py");

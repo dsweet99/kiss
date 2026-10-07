@@ -76,7 +76,7 @@ pub(super) fn merge_global(merged: &mut toml::Table, ex: &toml::Table, nw: &toml
 
 pub(super) fn merge_lang_sections(
     merged: &mut toml::Table,
-    _ex: &toml::Table,
+    ex: &toml::Table,
     nw: &toml::Table,
     lang: MergeLanguageUpdate,
 ) {
@@ -84,10 +84,28 @@ pub(super) fn merge_lang_sections(
         ("python", lang.update_python()),
         ("rust", lang.update_rust()),
     ] {
-        if upd && let Some(v) = nw.get(k).cloned() {
-            merged.insert(k.to_string(), v);
-        }
+        let chosen = if upd {
+            nw.get(k).cloned().or_else(|| ex.get(k).cloned())
+        } else {
+            ex.get(k).cloned().or_else(|| nw.get(k).cloned())
+        };
+        let value = chosen.unwrap_or_else(|| default_language_table(k));
+        merged.insert(k.to_string(), value);
     }
+}
+
+fn default_language_table(name: &str) -> toml::Value {
+    let mut text = String::new();
+    match name {
+        "python" => super::defaults_append::append_python_defaults(&mut text),
+        "rust" => super::defaults_append::append_rust_defaults(&mut text),
+        _ => return toml::Value::Table(toml::Table::new()),
+    }
+    text.parse::<toml::Table>()
+        .expect("default language section is valid toml")
+        .get(name)
+        .cloned()
+        .expect("default language section has its table")
 }
 
 const TEST_GATE_MERGE_KEYS: &[&str] =

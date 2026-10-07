@@ -1,14 +1,40 @@
 use crate::bin_cli::mimic::run_mimic;
 use crate::bin_cli::util::merge_check_ignore_prefixes;
-use kiss::config_gen::generate_gate_stub_toml;
+use kiss::config_gen::{
+    collect_lang_from_paths, generate_gate_stub_toml, raise_measured_thresholds,
+};
 use kiss::{
     Config, ConfigLanguage, GateConfig, LanguageTablesPresent, gather_files_by_lang,
     kissconfig_path_from_cwd,
 };
 use std::path::{Path, PathBuf};
 
+const KISSCONFIG_DEFAULT: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/kissconfig-default"));
+
 pub fn ensure_default_config_exists() {
     ensure_default_config_from(&[".".to_string()], &[]);
+}
+
+pub fn ensure_check_config_from(paths: &[String], ignore: &[String]) {
+    let local_config = kiss::kissconfig_path_from_cwd();
+    if local_config.exists() {
+        ensure_default_config_from(paths, ignore);
+        return;
+    }
+    write_config_text(&local_config, KISSCONFIG_DEFAULT);
+    let roots = config_roots(paths);
+    let collect_ignore = ignore_for_collect(&local_config, ignore);
+    let Ok((py, rs)) = collect_lang_from_paths(&roots, None, &collect_ignore) else {
+        return;
+    };
+    let Ok(text) = std::fs::read_to_string(&local_config) else {
+        return;
+    };
+    let raised = raise_measured_thresholds(&text, &py, &rs);
+    if raised != text {
+        write_config_text(&local_config, &raised);
+    }
 }
 
 pub fn ensure_default_config_from(paths: &[String], ignore: &[String]) {
@@ -38,8 +64,11 @@ fn config_roots(paths: &[String]) -> Vec<String> {
 }
 
 fn write_gate_stub(path: &Path, cli_ignore: &[String]) {
-    let stub = generate_gate_stub_toml(cli_ignore);
-    if let Err(err) = std::fs::write(path, stub) {
+    write_config_text(path, &generate_gate_stub_toml(cli_ignore));
+}
+
+fn write_config_text(path: &Path, text: &str) {
+    if let Err(err) = std::fs::write(path, text) {
         eprintln!("Error writing to {}: {err}", path.display());
         std::process::exit(1);
     }
@@ -229,6 +258,63 @@ mod tests {
         );
 
         std::env::set_current_dir(orig_dir).unwrap();
+    }
+
+    #[test]
+    fn check_missing_config_writes_default_then_raises_exceeded_threshold() {
+        let _cwd_guard = crate::cwd_test_lock::lock();
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(
+            tmp.path().join("wide.py"),
+            "def f(a, b, c, d, e, f):\n    return a\n",
+        )
+        .unwrap();
+        let orig_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+        ensure_check_config_from(&[".".to_string()], &[]);
+        let created = std::fs::read_to_string(".kissconfig").unwrap();
+        std::env::set_current_dir(orig_dir).unwrap();
+        assert!(
+            created.contains("duplication_enabled = true"),
+            "must start from kissconfig-default:\n{created}"
+        );
+        assert!(
+            created.contains("docs_allowed = []"),
+            "docs_allowed must stay empty:\n{created}"
+        );
+        assert!(
+            created.contains("num_jobs_pytest = 4"),
+            "pytest jobs must stay at the default:\n{created}"
+        );
+        assert!(
+            created.contains("\"*\" = 3"),
+            "unit-test catch-all must stay at 3:\n{created}"
+        );
+        assert!(
+            created.contains("positional_args = 6"),
+            "exceeded positional_args must be raised:\n{created}"
+        );
+        assert!(
+            created.contains("arguments = 4"),
+            "rust arguments must stay when no rust file exceeds them:\n{created}"
+        );
+        assert!(
+            created.contains("[rust]"),
+            "default rust section must be kept:\n{created}"
+        );
+    }
+
+    #[test]
+    fn check_missing_config_keeps_default_bytes_when_code_fits() {
+        let _cwd_guard = crate::cwd_test_lock::lock();
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("tiny.py"), "def foo():\n    return 1\n").unwrap();
+        let orig_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+        ensure_check_config_from(&[".".to_string()], &[]);
+        let created = std::fs::read_to_string(".kissconfig").unwrap();
+        std::env::set_current_dir(orig_dir).unwrap();
+        assert_eq!(created, KISSCONFIG_DEFAULT);
     }
 
     #[test]

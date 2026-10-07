@@ -186,14 +186,35 @@ fn test_merge_config_toml_smoke() {
 }
 
 #[test]
-fn merge_omits_unanalyzed_language_table() {
+fn merge_keeps_unanalyzed_language_table() {
     let tmp = tempfile::tempdir().unwrap();
     let path = tmp.path().join("cfg.toml");
     std::fs::write(
         &path,
-        "[python]\nstatements_per_function = 1\n[rust]\narguments = 8\n",
+        "[python]\nstatements_per_function = 1\n[rust]\narguments = 9\n",
     )
     .unwrap();
+    let merged = merge_config_toml(
+        &path,
+        "[python]\nstatements_per_function = 2\n[rust]\narguments = 8\n",
+        MergeLanguageUpdate::PythonOnly,
+    );
+    assert!(merged.contains("[python]"), "{merged}");
+    assert!(
+        merged.contains("statements_per_function = 2"),
+        "analyzed python thresholds must be updated:\n{merged}"
+    );
+    assert!(
+        merged.contains("[rust]") && merged.contains("arguments = 9"),
+        "unanalyzed rust table must be kept:\n{merged}"
+    );
+}
+
+#[test]
+fn merge_inserts_default_language_table_when_absent() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("cfg.toml");
+    std::fs::write(&path, "[python]\nstatements_per_function = 1\n").unwrap();
     let merged = merge_config_toml(
         &path,
         "[python]\nstatements_per_function = 2\n",
@@ -201,8 +222,8 @@ fn merge_omits_unanalyzed_language_table() {
     );
     assert!(merged.contains("[python]"), "{merged}");
     assert!(
-        !merged.contains("[rust]"),
-        "unanalyzed rust table must be omitted:\n{merged}"
+        merged.contains("[rust]") && merged.contains("arguments = 8"),
+        "missing rust table must be filled with defaults:\n{merged}"
     );
 }
 

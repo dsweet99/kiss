@@ -33,6 +33,24 @@ fn table_usize(toml: &str, section: &str, key: &str) -> Option<i64> {
     table.get(section)?.as_table()?.get(key)?.as_integer()
 }
 
+fn assert_covers_measured(written: i64, observed: i64, default_value: i64) {
+    assert!(
+        written >= observed,
+        "threshold {written} must cover measured {observed}"
+    );
+    if observed > default_value {
+        assert_eq!(
+            written, observed,
+            "an exceeded default of {default_value} must rise to the measured value"
+        );
+    } else {
+        assert_eq!(
+            written, default_value,
+            "a measurement within the default must leave the default unchanged"
+        );
+    }
+}
+
 fn python_graph_maxima(root: &Path) -> kiss::GraphKeyMaxima {
     let ignore = vec!["fake_".to_string(), "fixtures".to_string()];
     let path = root.to_string_lossy().into_owned();
@@ -96,10 +114,6 @@ fn rust_too_many_args() -> &'static str {
     "pub fn too_many(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32, g: i32, h: i32, i: i32) -> i32 { a }\n"
 }
 
-fn python_too_many_args() -> &'static str {
-    "def too_many(a, b, c, d):\n    return a\n"
-}
-
 #[test]
 fn clamp_below_check_fails_on_head() {
     let tmp = TempDir::new().unwrap();
@@ -116,10 +130,7 @@ fn clamp_below_check_fails_on_head() {
     let written = table_usize(&config, "python", "indirect_dependencies")
         .expect("python indirect_dependencies");
     let observed = python_graph_maxima(root).indirect_dependencies as i64;
-    assert_eq!(
-        written, observed,
-        "check must write its own graph max; config:\n{config}"
-    );
+    assert_covers_measured(written, observed, 4);
     let stdout = stdout_of(&check);
     assert!(
         check.status.success(),
@@ -143,23 +154,24 @@ fn clamp_then_check_is_green() {
     let config = fs::read_to_string(root.join(".kissconfig")).unwrap();
     assert!(config.contains("[python]"), "config:\n{config}");
     assert!(
-        !config.contains("[rust]"),
-        "python-only check must omit rust:\n{config}"
+        config.contains("[rust]"),
+        "default config keeps [rust]:\n{config}"
     );
     assert!(
-        config.contains("duplication_enabled = false")
+        config.contains("duplication_enabled = true")
             && config.contains("orphan_detection = false")
             && !config.contains("orphan_module_enabled")
             && config.contains("comment_removal_enabled = false")
-            && config.contains(r#"docs_allowed = ["./"]"#)
-            && config.contains("\"*\" = 99999"),
-        "auto-created gate defaults:\n{config}"
+            && config.contains("docs_allowed = []")
+            && config.contains("\"*\" = 3"),
+        "written gate defaults:\n{config}"
     );
     let written = table_usize(&config, "python", "indirect_dependencies")
         .expect("python indirect_dependencies");
-    assert_eq!(
+    assert_covers_measured(
         written,
-        python_graph_maxima(root).indirect_dependencies as i64
+        python_graph_maxima(root).indirect_dependencies as i64,
+        4,
     );
 
     let check = run_kiss(root, &["check", "."]);
@@ -176,7 +188,7 @@ fn clamp_then_check_is_green() {
 }
 
 #[test]
-fn python_only_clamp_omits_rust() {
+fn default_file_keeps_rust_and_does_not_reraise() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
     write_small_python_package(root);
@@ -184,32 +196,32 @@ fn python_only_clamp_omits_rust() {
     let first = run_kiss(root, &["check", "."]);
     assert!(first.status.success(), "{}", combined(&first));
     let config = fs::read_to_string(root.join(".kissconfig")).unwrap();
-    assert!(config.contains("[python]"));
-    assert!(!config.contains("[rust]"), "config:\n{config}");
+    assert!(config.contains("[python]"), "config:\n{config}");
+    assert!(
+        config.contains("[rust]"),
+        "default config includes [rust] even for a python-only repo:\n{config}"
+    );
+    assert_eq!(table_usize(&config, "rust", "arguments"), Some(4));
 
     fs::create_dir_all(root.join("src")).unwrap();
     fs::write(root.join("src/lib.rs"), rust_too_many_args()).unwrap();
 
-    // Second check must auto-fill [rust]; avoid a third kiss subprocess.
     let check = run_kiss(root, &["check", "."]);
     let text = combined(&check);
     assert!(
-        check.status.success(),
-        "check must auto-fill missing [rust] from maxima: {text}"
+        !check.status.success(),
+        "an existing config must not be raised for a later file: {text}"
     );
-    let filled = fs::read_to_string(root.join(".kissconfig")).unwrap();
-    assert!(
-        filled.contains("[rust]"),
-        "missing [rust] must be written:\n{filled}"
-    );
-    assert!(
-        filled.contains("[python]"),
-        "existing [python] must be kept:\n{filled}"
+    let kept = fs::read_to_string(root.join(".kissconfig")).unwrap();
+    assert_eq!(
+        table_usize(&kept, "rust", "arguments"),
+        Some(4),
+        "arguments must stay at the written default:\n{kept}"
     );
 }
 
 #[test]
-fn rust_only_clamp_omits_python() {
+fn default_file_keeps_python_section_and_later_python_is_not_reraise() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
     fs::write(
@@ -222,38 +234,39 @@ fn rust_only_clamp_omits_python() {
     assert!(first.status.success(), "{}", combined(&first));
     let config = fs::read_to_string(root.join(".kissconfig")).unwrap();
     assert!(config.contains("[rust]"), "config:\n{config}");
-    assert!(!config.contains("[python]"), "config:\n{config}");
-
-    fs::write(root.join("too_many.py"), python_too_many_args()).unwrap();
-
-    let check = run_kiss(root, &["check", "."]);
-    let text = combined(&check);
-    assert!(
-        check.status.success(),
-        "check must auto-fill missing [python] from maxima: {text}"
-    );
-    let filled = fs::read_to_string(root.join(".kissconfig")).unwrap();
-    assert!(
-        filled.contains("[python]"),
-        "missing [python] must be written:\n{filled}"
-    );
-    assert!(
-        filled.contains("[rust]"),
-        "existing [rust] must be kept:\n{filled}"
-    );
+    assert!(config.contains("[python]"), "config:\n{config}");
 
     let stats = run_kiss(root, &["stats", "."]);
     assert!(
         stats.status.success(),
-        "stats after auto-fill: {}",
+        "stats after default config: {}",
         combined(&stats)
     );
 
     let viz = run_kiss(root, &["viz", "graph.mmd", "."]);
     assert!(
         viz.status.success(),
-        "viz after auto-fill: {}",
+        "viz after default config: {}",
         combined(&viz)
+    );
+
+    fs::write(
+        root.join("too_many.py"),
+        "def too_many(a, b, c, d, e, f):\n    return a\n",
+    )
+    .unwrap();
+
+    let check = run_kiss(root, &["check", "."]);
+    let text = combined(&check);
+    assert!(
+        !check.status.success(),
+        "an existing config must not raise thresholds for code added later: {text}"
+    );
+    let kept = fs::read_to_string(root.join(".kissconfig")).unwrap();
+    assert_eq!(
+        table_usize(&kept, "python", "positional_args"),
+        Some(5),
+        "positional_args must stay at the written default:\n{kept}"
     );
 }
 
@@ -361,12 +374,12 @@ fn check_ignore_is_applied_when_auto_creating_config() {
     let config = fs::read_to_string(root.join(".kissconfig")).unwrap();
     assert_eq!(
         table_usize(&config, "python", "positional_args"),
-        Some(1),
-        "auto-create must honor --ignore:\n{config}"
+        Some(5),
+        "ignored vendor code must not raise positional_args:\n{config}"
     );
     assert!(
-        config.contains("ignore = [\"vendor\"]"),
-        "CLI --ignore must be seeded into stub [test].ignore:\n{config}"
+        config.contains("ignore = []"),
+        "the default ignore list must be kept:\n{config}"
     );
 }
 
@@ -391,13 +404,10 @@ fn stub_gate_config_survives_parse_failure_then_fills_after_ignore() {
     );
     let stub = fs::read_to_string(root.join(".kissconfig")).unwrap();
     assert!(
-        stub.contains("[global]") && stub.contains("[test]"),
-        "stub:\n{stub}"
+        stub.contains("[global]") && stub.contains("[test]") && stub.contains("[python]"),
+        "default config must be written before a later collect failure:\n{stub}"
     );
-    assert!(
-        !stub.contains("[python]"),
-        "failed first pass must not write [python]:\n{stub}"
-    );
+    assert!(stub.contains("duplication_enabled = true"), "stub:\n{stub}");
 
     let mut patched = stub.replace("ignore = []", "ignore = [\"bad\"]");
     if !patched.contains("ignore = [\"bad\"]") {
@@ -448,7 +458,7 @@ fn reclamp_omits_language_with_zero_files() {
     let python_only = fs::read_to_string(root.join(".kissconfig")).unwrap();
     assert!(python_only.contains("[python]"), "{python_only}");
     assert!(
-        !python_only.contains("[rust]"),
-        "regenerated config must omit rust when no rust files remain:\n{python_only}"
+        python_only.contains("[rust]"),
+        "the default file keeps [rust] when the repo has no rust files:\n{python_only}"
     );
 }

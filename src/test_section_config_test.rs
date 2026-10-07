@@ -99,6 +99,18 @@ fn test_section_config_python_parallel_cap_uses_explicit_pytest() {
     std::fs::write(tmp.path(), "[test]\nnum_jobs = 32\nnum_jobs_pytest = 8\n").unwrap();
     let cfg = TestSectionConfig::try_load_from(tmp.path()).unwrap();
     assert_eq!(cfg.python_parallel_cap(), 8);
+    assert_eq!(cfg.command_jobs(), 32);
+}
+
+#[test]
+fn test_section_config_command_jobs_stays_at_num_jobs_when_pytest_is_higher() {
+    let cwd = tempfile::TempDir::new().unwrap();
+    let _cwd_guard = CwdGuard::enter(cwd.path());
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(tmp.path(), "[test]\nnum_jobs = 4\nnum_jobs_pytest = 16\n").unwrap();
+    let cfg = TestSectionConfig::try_load_from(tmp.path()).unwrap();
+    assert_eq!(cfg.command_jobs(), 4);
+    assert_eq!(cfg.python_parallel_cap(), 16);
 }
 
 #[test]

@@ -20,7 +20,10 @@ WARM_QUERIES: list[tuple[str, list[str]]] = [
     ("symbol", ["pkg/app.py::alpha"]),
     ("union", ["pkg/app.py", "src/lib.rs"]),
     ("rust-source", ["src/lib.rs"]),
-    ("nested-dir", ["tests/nested"]),
+    # A directory of tests is not a warm replay. Kiss classifies it as a source
+    # directory, reruns, and exits 1 even when the printed report says exit 0.
+    # `src` is a source directory that replays from the test records.
+    ("rust-dir", ["src"]),
     ("commit", ["commit"]),
     ("base", ["base"]),
     ("explicit-base", ["base", "--base-branch", "main"]),
@@ -81,10 +84,11 @@ def warm_cache_queries() -> None:
                         total += int(part.split("=", 1)[1])
             return total
 
+        # kiss retired target/kiss-plan and .kiss/test/target-reports.
+        # Warm answers are rebuilt from the per-test records.
         plans = repo / "target/kiss-plan/target-plans"
-        reports = repo / ".kiss/test/target-reports"
-        pointers = reports / "pointers"
-        pointer_n = len(list(pointers.glob("*.json"))) if pointers.is_dir() else 0
+        reports = repo / ".kiss" / "test" / "records"
+        pointer_n = len(list(reports.glob("*/*.json"))) if reports.is_dir() else 0
         emit_eval("target_report_seed_s", "SMALLER", f"{seed_s:.4f}")
         emit_eval("target_report_warm_query_s", "SMALLER", f"{warm_s:.4f}")
         emit_eval("target_report_warm_running_lines", "SMALLER", running)

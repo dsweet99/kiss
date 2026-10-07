@@ -7,7 +7,7 @@ use super::parse_positive_usize;
 pub enum Commands {
     #[command(
         about = "Run static complexity, graph, duplicate, comment, and doc checks",
-        after_help = "If .kissconfig is missing, writes one from current-codebase maxima."
+        after_help = "If .kissconfig is missing, writes the default config, then raises Python and Rust thresholds so those checks pass."
     )]
     Check {
         #[arg(

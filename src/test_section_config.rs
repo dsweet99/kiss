@@ -63,6 +63,16 @@ impl TestSectionConfig {
             .max(1)
     }
 
+    /// Job budget for `kiss test` when `-j` is omitted.
+    ///
+    /// This is `num_jobs` for every language. Python raises it to an explicit
+    /// `num_jobs_pytest` in the pytest runner. Rust nextest uses
+    /// `num_jobs_nextest` when that key is set, otherwise this budget.
+    #[must_use]
+    pub fn command_jobs(&self) -> usize {
+        self.num_jobs.max(1)
+    }
+
     #[must_use]
     pub fn merged_ignore(&self, cli_ignore: &[String]) -> Vec<String> {
         let mut ignore = self.ignore.clone();

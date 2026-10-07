@@ -280,7 +280,9 @@ fn check_and_cov_help_describe_options() {
     assert!(check.contains("Codebase root, optionally followed by focus paths"));
     assert!(check.contains("Path prefix to exclude"));
     assert!(check.contains("Print analysis stage timings"));
-    assert!(check.contains("If .kissconfig is missing, writes one from current-codebase maxima."));
+    assert!(check.contains(
+        "If .kissconfig is missing, writes the default config, then raises Python and Rust thresholds so those checks pass."
+    ));
     assert!(check.contains("Usage:"));
     assert!(Cli::command().find_subcommand("cov").is_none());
     let mut command = Cli::command();
