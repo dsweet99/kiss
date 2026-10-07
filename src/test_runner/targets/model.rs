@@ -106,8 +106,6 @@ pub(crate) fn load_source_model(path: &Path, language: Language) -> Result<Sourc
     }
 }
 
-/// 1-based first and last lines of a tree-sitter node; the last line is the line of
-/// the node's final byte, so a node ending just after a newline ends on that line.
 pub(crate) fn node_lines(node: tree_sitter::Node<'_>) -> (u32, u32) {
     let to_line = |row: usize| u32::try_from(row).unwrap_or(u32::MAX - 1).saturating_add(1);
     let start_line = to_line(node.start_position().row);

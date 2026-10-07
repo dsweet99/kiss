@@ -1,7 +1,52 @@
-use crate::test_runner::lang_iface::{EnsureRequest, ExecutionWitness, KernelRules};
+use crate::test_runner::lang_iface::{EnsureRequest, ExecutionWitness, KernelHooks, KernelRules};
 use crate::test_runner::runners::SelectorExecutionSummary;
 
 pub(crate) struct RustKernelRules;
+
+impl KernelHooks for RustKernelRules {
+    fn report_labels(
+        &self,
+        repo_root: &std::path::Path,
+        selectors: &[String],
+    ) -> std::collections::BTreeMap<String, String> {
+        crate::test_runner::selector_ids::qualified_rust_report_ids(repo_root, selectors)
+    }
+
+    fn validate_explicit_targets(
+        &self,
+        repo_root: &std::path::Path,
+        files: &[std::path::PathBuf],
+        direct: &std::collections::BTreeSet<String>,
+    ) -> Result<(), String> {
+        super::workspace::reject_non_member_rust_targets(repo_root, files, direct)
+    }
+
+    fn extras_block_cold_population(&self, extras: &[String]) -> bool {
+        !extras.is_empty()
+    }
+
+    fn stage_prefix(&self) -> Option<&'static str> {
+        Some("rust")
+    }
+
+    fn time_gate_selector_error_is_fatal(&self) -> bool {
+        false
+    }
+
+    fn validate_extra_args(&self, extras: &[String]) -> Result<(), String> {
+        super::nextest::validate_rust_extra_args(extras)
+    }
+
+    fn cached_witness_summary(
+        &self,
+        request: &EnsureRequest,
+        planned: &[String],
+        witness: &ExecutionWitness,
+    ) -> SelectorExecutionSummary {
+        let planned = super::witness_identity::rust_witness_overlap(planned, witness);
+        super::runtime::rust_summary_from_witness_statuses(request, &planned, witness)
+    }
+}
 
 impl KernelRules for RustKernelRules {
     fn identity_stage(&self) -> &'static str {
@@ -25,14 +70,6 @@ impl KernelRules for RustKernelRules {
         _extras: &[String],
     ) -> Option<ExecutionWitness> {
         super::stored::stored_witness(repo_root)
-    }
-
-    fn report_labels(
-        &self,
-        repo_root: &std::path::Path,
-        selectors: &[String],
-    ) -> std::collections::BTreeMap<String, String> {
-        crate::test_runner::selector_ids::qualified_rust_report_ids(repo_root, selectors)
     }
 
     fn list_workspace_selectors(
@@ -66,60 +103,12 @@ impl KernelRules for RustKernelRules {
         crate::test_runner::lang_iface::records::records_all_mode_plan(repo_root, "rust", selectors)
     }
 
-    fn validate_explicit_targets(
-        &self,
-        repo_root: &std::path::Path,
-        files: &[std::path::PathBuf],
-        direct: &std::collections::BTreeSet<String>,
-    ) -> Result<(), String> {
-        super::workspace::reject_non_member_rust_targets(repo_root, files, direct)
-    }
-
-    fn extras_block_cold_population(&self, extras: &[String]) -> bool {
-        !extras.is_empty()
-    }
-
-    fn stage_prefix(&self) -> Option<&'static str> {
-        Some("rust")
-    }
-
-    fn live_misses(
-        &self,
-        request: &EnsureRequest,
-        planned: &[String],
-        _identity: &str,
-        witness: Option<&ExecutionWitness>,
-    ) -> Vec<String> {
-        if request.force {
-            return planned.to_vec();
-        }
-        crate::test_runner::lang_iface::records::record_misses(planned, witness)
-    }
-
-    fn time_gate_selector_error_is_fatal(&self) -> bool {
-        false
-    }
-
     fn recap_stored_selectors(&self) -> bool {
         true
     }
 
     fn cancel_active_work(&self) {
         super::nextest::cancel_active_run();
-    }
-
-    fn validate_extra_args(&self, extras: &[String]) -> Result<(), String> {
-        super::nextest::validate_rust_extra_args(extras)
-    }
-
-    fn cached_witness_summary(
-        &self,
-        request: &EnsureRequest,
-        planned: &[String],
-        witness: &ExecutionWitness,
-    ) -> SelectorExecutionSummary {
-        let planned = super::witness_identity::rust_witness_overlap(planned, witness);
-        super::runtime::rust_summary_from_witness_statuses(request, &planned, witness)
     }
 
     fn selectors_for_time_gate(

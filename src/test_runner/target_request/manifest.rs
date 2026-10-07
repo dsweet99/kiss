@@ -90,8 +90,6 @@ pub(crate) fn has_python_test_files(repo_root: &Path, request: &TargetRequest) -
     })
 }
 
-/// The Python tests last collected for the current Python files, pytest arguments, and
-/// plugins.
 fn python_inventory_selectors(repo_root: &Path, request: &TargetRequest) -> Option<Vec<String>> {
     crate::test_runner::workspace_selector_cache::load_cached_python_workspace_selectors(
         repo_root,
@@ -100,7 +98,6 @@ fn python_inventory_selectors(repo_root: &Path, request: &TargetRequest) -> Opti
     )
 }
 
-/// The Rust tests whose records still hold.
 fn rust_inventory_selectors(repo_root: &Path) -> Option<Vec<String>> {
     crate::test_runner::lang_rust::try_load_rust_execution_witness(repo_root)
         .ok()

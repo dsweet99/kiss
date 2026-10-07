@@ -143,10 +143,6 @@ fn main_fallback_names(name: &str) -> Vec<String> {
 }
 
 pub(crate) fn capture_worktree_token(repo: &Path, lang: Option<kiss::Language>) -> String {
-    // Semantic B (kt_bug.md #15): when `--lang` partitions the request, omit the
-    // other language's tracked/untracked source paths and source fingerprints so
-    // other-language edits do not miss the cache. Non-source support paths stay
-    // bilingual.
     let tracked = capture_tracked_for_worktree(repo, lang)
         .map(|stamp| stamp.digest)
         .unwrap_or_default();
@@ -166,9 +162,6 @@ pub(crate) fn capture_worktree_token(repo: &Path, lang: Option<kiss::Language>) 
     } else {
         String::new()
     };
-    // evidence_key expands Rust include! / #[path] targets (including gitignored files)
-    // that the rust_full / git-untracked stamps omit; fold those bytes in so worktree
-    // match remains a sound premise for skipping source re-digest on ready freshness.
     let rust_includes = if include_rust {
         crate::test_runner::lang_rust::rust_expanded_include_extras_fingerprint(repo, digest_bytes)
     } else {
@@ -183,8 +176,6 @@ pub(crate) fn capture_worktree_token(repo: &Path, lang: Option<kiss::Language>) 
     ])
 }
 
-/// Whether a repo-relative path feeds the lang-partitioned worktree token.
-/// Other-language *sources* are omitted; support / config / non-source stay in.
 fn path_feeds_lang_worktree(path: &str, lang: Option<kiss::Language>) -> bool {
     kiss::Language::from_path(Path::new(path)).is_none_or(|source| source.allowed_by(lang))
 }
@@ -272,13 +263,10 @@ fn capture_tracked_for_worktree(
 }
 
 fn capture_tracked(repo: &Path) -> Result<TrackedTreeStamp, String> {
-    // GitDepStamp stays bilingual (shared VCS identity for focus stamps).
     capture_tracked_for_worktree(repo, None)
 }
 
 fn untracked_digest(repo: &Path) -> Result<String, String> {
-    // Same cache-path filter as worktree_untracked_digest: kiss runtime files under
-    // `.kiss/` / `target/` must not flap the commit stamp while a run is in flight.
     worktree_untracked_digest(repo, None)
 }
 

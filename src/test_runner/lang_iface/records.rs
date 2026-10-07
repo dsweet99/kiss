@@ -1,6 +1,3 @@
-//! Per-test records shared by every language: what a finished test is stored under
-//! and which dependency values decide whether its record still holds.
-
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::Duration;
@@ -19,15 +16,12 @@ pub(crate) fn digest(bytes: &[u8]) -> String {
     )
 }
 
-/// The `[test.cache]` policy of the repository's `.kissconfig`.
 pub(crate) fn cache_policy(repo_root: &Path) -> kiss::test_cache_policy::TestCachePolicy {
     kiss::TestSectionConfig::try_load_path_only(&kiss::kissconfig_path_for_repo(repo_root))
         .map(|config| config.cache_policy)
         .unwrap_or_default()
 }
 
-/// One digest of the files `[test.cache] inputs` declares for `test_id`; `None` when it
-/// declares none.
 pub(crate) fn declared_inputs_digest(
     repo_root: &Path,
     policy: &kiss::test_cache_policy::TestCachePolicy,
@@ -59,8 +53,6 @@ fn input_deps(inputs: &str, declared: Option<String>) -> BTreeMap<String, String
     deps
 }
 
-/// The dependencies a record keeps. A timed-out test also depends on its time limit,
-/// so raising the limit runs it again.
 fn record_deps(inputs: &str, outcome: &Outcome<'_>) -> BTreeMap<String, String> {
     let mut deps = input_deps(inputs, outcome.declared_inputs.clone());
     if outcome.status == TestStatus::TimedOut {
@@ -69,8 +61,6 @@ fn record_deps(inputs: &str, outcome: &Outcome<'_>) -> BTreeMap<String, String> 
     deps
 }
 
-/// The current values of the dependencies `row` recorded. A record that ran longer
-/// than today's time limit gains a limit it never recorded, so it runs again.
 pub(crate) fn current_deps(
     inputs: &str,
     declared: Option<String>,
@@ -88,7 +78,6 @@ pub(crate) fn current_deps(
     deps
 }
 
-/// One finished test, ready to be stored.
 pub(crate) struct Outcome<'a> {
     pub(crate) test_id: &'a str,
     pub(crate) status: TestStatus,
@@ -97,7 +86,6 @@ pub(crate) struct Outcome<'a> {
     pub(crate) declared_inputs: Option<String>,
 }
 
-/// Where a language's records live and what they are stored under.
 #[derive(Clone, Copy)]
 pub(crate) struct RecordScope<'a> {
     pub(crate) repo_root: &'a Path,
@@ -127,7 +115,6 @@ pub(crate) fn store(
         .map_err(|err| format!("error: kiss: store {} test record: {err}", scope.language))
 }
 
-/// The stored records of `scope.language` made under `scope.identity`.
 pub(crate) fn records_under(scope: RecordScope<'_>) -> Vec<TestRecord> {
     load_records(&records_dir(scope.repo_root, scope.language))
         .into_iter()
@@ -135,8 +122,6 @@ pub(crate) fn records_under(scope: RecordScope<'_>) -> Vec<TestRecord> {
         .collect()
 }
 
-/// Plans every discovered test of `language`. With no records yet, the run is a full
-/// population; otherwise the runtime runs only the tests whose records do not hold.
 pub(crate) fn records_all_mode_plan(
     repo_root: &Path,
     language: &str,
@@ -151,7 +136,6 @@ pub(crate) fn records_all_mode_plan(
     }
 }
 
-/// The planned tests with no holding record, given the witness built from those records.
 pub(crate) fn record_misses(
     planned: &[String],
     witness: Option<&super::ExecutionWitness>,

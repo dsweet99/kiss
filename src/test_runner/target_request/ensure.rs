@@ -25,30 +25,34 @@ pub(crate) enum EnsureOutcome {
         engine_aborted: bool,
         typed: bool,
     },
-    /// The worktree changed while the tests ran, so the cache cannot prove a
-    /// report for it. The run's own result stands; the edit gets its own run.
     Moved {
         exit_code: i32,
     },
 }
 
+pub(crate) struct EnsureChoice {
+    pub reuse_ready: bool,
+    pub close_zero: bool,
+}
+
 pub(crate) fn ensure_target_report<F>(
     repo_root: Option<&Path>,
     args: &crate::test_runner::RunTestCmdArgs<'_>,
-    reuse: bool,
-    close_zero: bool,
+    choice: EnsureChoice,
     execute: F,
 ) -> EnsureOutcome
 where
     F: FnMut(crate::test_runner::RunTestCmdArgs<'_>) -> crate::test_runner::RunTestOnceOutcome,
 {
-    if reuse && let Some(report) = ready_report(repo_root, args, true) {
+    if choice.reuse_ready
+        && let Some(report) = ready_report(repo_root, args, true)
+    {
         return EnsureOutcome::Ready {
             report: Box::new(report),
             replay: true,
         };
     }
-    execute_then_publish(repo_root, args, close_zero, execute)
+    execute_then_publish(repo_root, args, choice.close_zero, execute)
 }
 
 #[cfg(test)]
@@ -224,7 +228,15 @@ fn finish_executed(
         Executed::Interrupted => EnsureOutcome::Interrupted {
             ready: ready_report(repo_root, args, true).map(Box::new),
         },
-        Executed::Engine(msg) => published_or_miss(published, 1, Some(msg), true, typed),
+        Executed::Engine(msg) => published_or_miss(
+            published,
+            1,
+            Some(msg),
+            MissShape {
+                engine_aborted: true,
+                typed,
+            },
+        ),
         Executed::Code(code) => {
             if code == 0 && assemble && published.is_none() && (close_zero || !args.dry_run) {
                 return EnsureOutcome::Miss {
@@ -234,17 +246,29 @@ fn finish_executed(
                     typed: true,
                 };
             }
-            published_or_miss(published, code, None, false, typed)
+            published_or_miss(
+                published,
+                code,
+                None,
+                MissShape {
+                    engine_aborted: false,
+                    typed,
+                },
+            )
         }
     }
+}
+
+struct MissShape {
+    engine_aborted: bool,
+    typed: bool,
 }
 
 fn published_or_miss(
     published: Option<TargetReport>,
     exit_code: i32,
     error: Option<String>,
-    engine_aborted: bool,
-    typed: bool,
+    shape: MissShape,
 ) -> EnsureOutcome {
     match published {
         Some(report) => EnsureOutcome::Ready {
@@ -254,8 +278,8 @@ fn published_or_miss(
         None => EnsureOutcome::Miss {
             exit_code,
             error,
-            engine_aborted,
-            typed,
+            engine_aborted: shape.engine_aborted,
+            typed: shape.typed,
         },
     }
 }

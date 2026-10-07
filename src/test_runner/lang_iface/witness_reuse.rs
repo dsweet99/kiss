@@ -1,5 +1,6 @@
 use super::witness::{ExecutionWitness, WitnessStatus};
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(super) fn reusable_without_rerun(witness: &ExecutionWitness, i: usize) -> bool {
     matches!(witness.statuses.get(i), Some(WitnessStatus::Passed))
 }

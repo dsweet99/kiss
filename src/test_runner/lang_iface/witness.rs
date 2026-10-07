@@ -71,12 +71,14 @@ pub(crate) struct ExecutionWitness {
     pub(crate) raw_statuses: Vec<WitnessStatus>,
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum AcceptDecision {
     Accept,
     Miss(&'static str),
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn accept_witness(
     mode: AcceptMode,
     planned_selectors: &[String],
@@ -98,6 +100,7 @@ pub(crate) fn accept_witness(
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn miss_selectors_for_repair(
     mode: AcceptMode,
     planned_selectors: &[String],
@@ -147,7 +150,6 @@ fn repair_planned(planned: &[String], witness: &ExecutionWitness) -> Vec<String>
                     .get(i)
                     .copied()
                     .unwrap_or(witness.statuses[i]);
-                // A recorded FAIL or TIMEOUT stays cached. An edit does not rerun it.
                 if matches!(raw, WitnessStatus::Failed | WitnessStatus::TimedOut)
                     || matches!(
                         witness.statuses[i],

@@ -15,9 +15,6 @@ pub(crate) fn rust_backer(input: RustBackerInput<'_>) -> Box<dyn LanguagePlanner
     Box::new(RustModule::new(input))
 }
 
-/// Plans Rust tests. Kiss keeps no record of which tests reach which Rust source, so a
-/// changed Rust source plans every Rust test; tests whose records still hold are then
-/// skipped by the runtime.
 pub(crate) struct RustModule {
     repo_root: PathBuf,
     rust_source_paths: Vec<PathBuf>,

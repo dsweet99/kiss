@@ -14,6 +14,12 @@ pub(crate) struct PythonRuntime {
 
 pub(crate) struct PythonKernelRules;
 
+impl crate::test_runner::lang_iface::KernelHooks for PythonKernelRules {
+    fn is_test_source(&self, path: &Path) -> bool {
+        kiss::is_python_test_module_path(path)
+    }
+}
+
 impl crate::test_runner::lang_iface::KernelRules for PythonKernelRules {
     fn identity_stage(&self) -> &'static str {
         "python_source_fingerprint"
@@ -29,19 +35,6 @@ impl crate::test_runner::lang_iface::KernelRules for PythonKernelRules {
         crate::test_runner::lang_iface::records::records_all_mode_plan(
             repo_root, "python", selectors,
         )
-    }
-
-    fn live_misses(
-        &self,
-        request: &EnsureRequest,
-        planned: &[String],
-        _identity: &str,
-        witness: Option<&ExecutionWitness>,
-    ) -> Vec<String> {
-        if request.force {
-            return planned.to_vec();
-        }
-        crate::test_runner::lang_iface::records::record_misses(planned, witness)
     }
 
     fn recap_stored_selectors(&self) -> bool {
@@ -65,10 +58,6 @@ impl crate::test_runner::lang_iface::KernelRules for PythonKernelRules {
 
     fn stored_witness_matches_extras(&self, _repo_root: &Path, _extras: &[String]) -> bool {
         true
-    }
-
-    fn is_test_source(&self, path: &Path) -> bool {
-        kiss::is_python_test_module_path(path)
     }
 
     fn list_workspace_selectors(

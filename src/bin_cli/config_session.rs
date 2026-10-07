@@ -19,7 +19,6 @@ pub fn ensure_default_config_exists() {
 pub fn ensure_check_config_from(paths: &[String], ignore: &[String]) {
     let local_config = kiss::kissconfig_path_from_cwd();
     if local_config.exists() {
-        ensure_default_config_from(paths, ignore);
         return;
     }
     write_config_text(&local_config, KISSCONFIG_DEFAULT);
@@ -302,6 +301,31 @@ mod tests {
             created.contains("[rust]"),
             "default rust section must be kept:\n{created}"
         );
+    }
+
+    #[test]
+    fn check_does_not_alter_existing_kissconfig() {
+        let _cwd_guard = crate::cwd_test_lock::lock();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let original = "\
+[global]
+duplication_enabled = false
+
+[test]
+ignore = [\"vendor\"]
+";
+        std::fs::write(tmp.path().join(".kissconfig"), original).unwrap();
+        std::fs::write(
+            tmp.path().join("wide.py"),
+            "def f(a, b, c, d, e, f):\n    return a\n",
+        )
+        .unwrap();
+        let orig_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+        ensure_check_config_from(&[".".to_string()], &[]);
+        let kept = std::fs::read_to_string(".kissconfig").unwrap();
+        std::env::set_current_dir(orig_dir).unwrap();
+        assert_eq!(kept, original);
     }
 
     #[test]

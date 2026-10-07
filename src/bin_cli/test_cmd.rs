@@ -150,8 +150,10 @@ fn run_local_tests(
     kiss_report_from_ensure_outcome(crate::test_runner::target_request::ensure_target_report(
         repo.as_deref(),
         &run_args,
-        true,
-        false,
+        crate::test_runner::target_request::EnsureChoice {
+            reuse_ready: true,
+            close_zero: false,
+        },
         |a| run_local.take().expect("kiss test runner")(a),
     ))
     .exit_code

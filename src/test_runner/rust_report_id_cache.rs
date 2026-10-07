@@ -112,7 +112,6 @@ fn store_cached(
             .map(|d| d.as_nanos())
             .unwrap_or(0)
     ));
-    // No fsync: an unreadable cache is a miss and is rebuilt.
     let mut file = File::create(&tmp)?;
     serde_json::to_writer(&mut file, &cache).map_err(io::Error::other)?;
     file.write_all(b"\n")?;

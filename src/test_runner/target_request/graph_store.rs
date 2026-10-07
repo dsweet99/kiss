@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 use super::digest::digest_bytes;
 
 const SCHEMA: &str = "graph-evidence-v4";
-/// Cap retained evidence keys.
 const ENTRY_LIMIT: usize = 64;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -29,7 +28,6 @@ struct StoredGraph {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 struct StoreMeta {
-    /// Oldest-first publish order; newest key is last.
     keys: Vec<String>,
 }
 
@@ -61,8 +59,6 @@ pub(crate) fn evidence_key(
     digest_bytes(&serde_json::to_vec(&payload).expect("graph evidence key"))
 }
 
-/// Config (+ orphan_allowed) half of `evidence_key`, without source bytes.
-/// After a worktree match, sources are already validated; ready freshness uses this.
 pub(crate) fn evidence_mutable_digest(orphan_allowed: &[String], config: &str) -> String {
     let payload = serde_json::json!({
         "schema": SCHEMA,
@@ -93,7 +89,6 @@ pub(crate) fn store_items(
 ) -> Result<(), String> {
     let dir = store_dir(repo_root);
     fs::create_dir_all(&dir).map_err(|err| format!("graph evidence store: {err}"))?;
-    // Serialize concurrent kiss test publishers (VISION: multi-process, no corruption).
     let _lock = lock_store(&dir)?;
     let stored = StoredGraph {
         schema: SCHEMA.into(),
@@ -104,8 +99,6 @@ pub(crate) fn store_items(
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|err| format!("graph evidence store: {err}"))?;
     }
-    // Full-key tmp name: colliding 16-hex prefixes must not share one tmp path under
-    // concurrent kiss test assembly writers.
     let tmp = publish_tmp_path(&dir, key);
     let bytes = serde_json::to_vec(&stored).map_err(|err| format!("graph evidence json: {err}"))?;
     {
@@ -114,7 +107,6 @@ pub(crate) fn store_items(
             .map_err(|err| format!("graph evidence write: {err}"))?;
     }
     fs::rename(tmp, path).map_err(|err| format!("graph evidence publish: {err}"))?;
-    // Track published keys and prune oldest above ENTRY_LIMIT (kt_bug.md retention).
     let mut meta = read_meta(&dir);
     meta.keys.retain(|item| item != key);
     meta.keys.push(key.to_string());

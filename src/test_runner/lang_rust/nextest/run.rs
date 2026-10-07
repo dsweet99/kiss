@@ -16,7 +16,6 @@ use crate::test_runner::runners::{SelectorExecutionRecord, SelectorExecutionSumm
 
 static ACTIVE_NEXTEST: Mutex<Option<u32>> = Mutex::new(None);
 
-/// Asks the running `cargo nextest` to stop; it ends its tests and exits.
 pub(crate) fn cancel_active_run() {
     let pid = ACTIVE_NEXTEST.lock().ok().and_then(|slot| *slot);
     if let Some(pid) = pid.and_then(|pid| libc::pid_t::try_from(pid).ok()) {
@@ -85,7 +84,6 @@ fn tool_config_dir(repo_root: &Path) -> PathBuf {
     crate::test_runner::test_state_dir(repo_root).join("nextest")
 }
 
-/// Writes the tool config for this run, first removing any left by an interrupted run.
 fn write_tool_config(repo_root: &Path, toml: &str) -> Result<PathBuf, String> {
     let dir = tool_config_dir(repo_root);
     let _ = std::fs::remove_dir_all(&dir);
@@ -150,9 +148,6 @@ fn spawn(req: &RunRequest<'_>, tool_config: &Path) -> Result<Child, String> {
         .map_err(|err| format!("error: kiss test: failed to run cargo nextest: {err}"))
 }
 
-/// Follows nextest's stderr: the build phase is held back and shown only if the build
-/// fails; during the run each finished test is stored and printed, and test output is
-/// passed through.
 struct Stream {
     started: Instant,
     running: bool,

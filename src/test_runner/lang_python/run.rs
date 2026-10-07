@@ -1,5 +1,3 @@
-//! Runs Python tests with pytest, one node id per request, and stores each result.
-
 use std::collections::BTreeSet;
 use std::path::Path;
 use std::time::Duration;
@@ -28,8 +26,6 @@ fn clamp_pytest_jobs(requested: usize) -> usize {
         return requested;
     };
     let cap = cap.max(1);
-    // Omitted `-j` arrives as `num_jobs`. An explicit pytest count is the
-    // worker budget then. A different `-j` is left alone, then capped.
     if requested == cfg.num_jobs.max(1) && cap > requested {
         requested = cap;
     }
@@ -64,6 +60,17 @@ pub(super) fn run_pytest_selectors_with_runner(
     })?;
     let identity = super::records::record_identity(&repo_root, args.extra)?;
     let writer = RecordWriter::new(&repo_root, identity)?;
+    dispatch_pytest_run(args, runner, on_result, &repo_root, jobs, writer)
+}
+
+fn dispatch_pytest_run(
+    args: &PytestSelectorsArgs<'_>,
+    runner: &PytestRunner,
+    on_result: &mut dyn FnMut(SelectorExecutionRecord),
+    repo_root: &std::path::Path,
+    jobs: usize,
+    writer: RecordWriter,
+) -> Result<(), String> {
     let mut runnable = Vec::new();
     for selector in args.selectors {
         if timeout_for_selector_with_gate(args.gate, selector).is_zero() {
@@ -75,10 +82,10 @@ pub(super) fn run_pytest_selectors_with_runner(
     if runnable.is_empty() {
         return Ok(());
     }
-    purge_stale_bytecode(&repo_root, &runnable, args.force_rerun);
+    purge_stale_bytecode(repo_root, &runnable, args.force_rerun);
     let reqs: Vec<PytestRunRequest> = runnable
         .iter()
-        .map(|selector| pytest_request(&repo_root, selector, args))
+        .map(|selector| pytest_request(repo_root, selector, args))
         .collect();
     let mut remaining = runnable.len();
     set_python_remaining(remaining);
@@ -86,9 +93,6 @@ pub(super) fn run_pytest_selectors_with_runner(
     runner.run_many_bounded_with_on_complete(reqs, jobs, &mut |index, result| {
         let selector = &runnable[index];
         let finished = finished_test(selector, result, args.gate);
-        // Publish the record before the PASS/FAIL line. Callers treat that line as
-        // proof the result is durable; `kiss_test_sigint_caches_passed_tests_as_it_goes`
-        // sends SIGINT as soon as it sees the line.
         let stored = writer.store(selector, finished.status, finished.duration, args.gate);
         print_finished_test(&finished, args.gate);
         let cache_record = if stored.is_ok() {
@@ -155,7 +159,6 @@ fn pytest_request(
     )
 }
 
-/// The result of one pytest node id, before the time gate is applied.
 pub(super) struct FinishedTest {
     pub(super) nodeid: String,
     pub(super) status: TestStatus,

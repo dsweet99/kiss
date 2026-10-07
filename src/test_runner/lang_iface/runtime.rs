@@ -83,16 +83,10 @@ pub(crate) struct Listing {
 }
 
 pub(crate) trait LanguageRuntime: SupportedLanguage {
-    /// The test ids to consider, the toolchain identity they run under, and the
-    /// identity their records are stored under.
     fn list(&self, request: &EnsureRequest) -> Result<Listing, String>;
 
-    /// The current digests of the dependencies `row` recorded; `None` when the test no
-    /// longer exists or a dependency can no longer be read.
     fn deps(&self, request: &EnsureRequest, row: &TestRecord) -> Option<BTreeMap<String, String>>;
 
-    /// Runs `ids`, persisting each test's record and passing it to `on_result`
-    /// once that test finishes. The returned batch carries only batch-level counters.
     fn run(
         &self,
         request: &EnsureRequest,

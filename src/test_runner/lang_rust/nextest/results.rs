@@ -19,7 +19,6 @@ fn severity(status: TestStatus) -> u8 {
     }
 }
 
-/// Everything a run needs to know about its selectors before nextest starts.
 pub(super) struct Plan {
     pub(super) identity: String,
     pub(super) inputs: String,
@@ -37,8 +36,6 @@ impl Plan {
     }
 }
 
-/// Collects nextest results per selector. A bare selector can name a test in several
-/// binaries; it takes the worst status and the longest duration among them.
 pub(super) struct Results<'a> {
     repo_root: &'a Path,
     gate: &'a kiss::GateConfig,
@@ -63,15 +60,12 @@ impl<'a> Results<'a> {
         }
     }
 
-    /// Takes the Rust inputs digest again once the build is done: cargo may have
-    /// written `Cargo.lock` while building.
     pub(super) fn refresh_inputs(&mut self) -> Result<(), String> {
         crate::test_runner::workspace_selector_cache::forget_inventory(self.repo_root);
         self.plan.inputs = super::records::rust_inputs_digest(self.repo_root)?;
         Ok(())
     }
 
-    /// Stores and prints the result of one finished test.
     pub(super) fn finished(&mut self, test: &FinishedTest) -> Result<(), String> {
         let selectors: Vec<String> = self
             .plan
@@ -86,7 +80,6 @@ impl<'a> Results<'a> {
         Ok(())
     }
 
-    /// Records an ignored test as passed, so it does not run again until its inputs change.
     pub(super) fn skipped(&mut self, binary_id: &str, test_name: &str) -> Result<(), String> {
         self.finished(&FinishedTest {
             status: TestStatus::Passed,
@@ -154,7 +147,6 @@ impl<'a> Results<'a> {
         )
     }
 
-    /// Requested selectors nextest reported nothing for.
     pub(super) fn missing<'s>(&self, selectors: &'s [String]) -> Vec<&'s str> {
         selectors
             .iter()
@@ -163,8 +155,6 @@ impl<'a> Results<'a> {
             .collect()
     }
 
-    /// Hands each result to `on_result` under its report id; the summary keeps the raw
-    /// statuses and durations under the selectors themselves.
     pub(super) fn finish(
         self,
         on_result: &mut dyn FnMut(SelectorExecutionRecord),

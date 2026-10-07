@@ -62,7 +62,7 @@ fn path_has_source_ext(path_part: &str) -> bool {
         .is_some_and(|ext| ext.eq_ignore_ascii_case("py") || ext.eq_ignore_ascii_case("rs"))
 }
 
-fn colon_to_nodeid(raw: &str) -> String {
+pub(crate) fn colon_to_nodeid(raw: &str) -> String {
     if raw.contains("::") {
         return raw.to_string();
     }

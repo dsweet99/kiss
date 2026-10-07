@@ -352,5 +352,9 @@ fn language_tables_present_from_toml_and_missing_language() {
         LanguageTablesPresent::none().missing_language(&[], &rs),
         Some("rust")
     );
-    assert!(missing_language_table_message("rust").contains("kiss check"));
+    let message = missing_language_table_message("rust");
+    assert!(
+        message.contains("leaves an existing .kissconfig unchanged"),
+        "{message}"
+    );
 }

@@ -42,23 +42,25 @@ pub(crate) fn available_rows(
         .collect()
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct AvailableRowPlan {
+    pub retry_bad: bool,
+    pub graph_repair: bool,
+    pub force: bool,
+    pub time_gate_active: bool,
+}
+
 pub(crate) fn plan_from_available_rows(
     scope: &ReportScope,
     rows: &[SelectorRow],
-    retry_bad: bool,
-    graph_repair: bool,
+    plan: AvailableRowPlan,
 ) -> ExecutionPlan {
-    plan_from_available_rows_with(scope, rows, retry_bad, graph_repair, false, false)
-}
-
-pub(crate) fn plan_from_available_rows_with(
-    scope: &ReportScope,
-    rows: &[SelectorRow],
-    retry_bad: bool,
-    graph_repair: bool,
-    force: bool,
-    time_gate_active: bool,
-) -> ExecutionPlan {
+    let AvailableRowPlan {
+        retry_bad,
+        graph_repair,
+        force,
+        time_gate_active,
+    } = plan;
     let have: BTreeSet<&str> = rows.iter().map(|row| row.selector.as_str()).collect();
     let mut repair_selectors: Vec<String> = scope
         .selectors

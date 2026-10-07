@@ -63,11 +63,6 @@ impl TestSectionConfig {
             .max(1)
     }
 
-    /// Job budget for `kiss test` when `-j` is omitted.
-    ///
-    /// This is `num_jobs` for every language. Python raises it to an explicit
-    /// `num_jobs_pytest` in the pytest runner. Rust nextest uses
-    /// `num_jobs_nextest` when that key is set, otherwise this budget.
     #[must_use]
     pub fn command_jobs(&self) -> usize {
         self.num_jobs.max(1)
@@ -84,7 +79,7 @@ impl TestSectionConfig {
         let mut c = Self::default();
         let path = crate::config::active_kissconfig_path();
         if let Ok(s) = std::fs::read_to_string(&path) {
-            c.merge_from_toml(&s, path.parent());
+            merge_from_toml(&mut c, &s, path.parent());
         }
         if let Some(root) = path.parent() {
             crate::test_cache_policy::merge_language_adapters(root, &mut c.cache_policy);
@@ -107,7 +102,7 @@ impl TestSectionConfig {
     pub fn load_from(path: &Path) -> Self {
         let mut c = Self::load();
         if let Ok(s) = std::fs::read_to_string(path) {
-            c.merge_from_toml(&s, path.parent());
+            merge_from_toml(&mut c, &s, path.parent());
         }
         c
     }
@@ -135,16 +130,6 @@ impl TestSectionConfig {
         Ok(c)
     }
 
-    fn merge_from_toml(&mut self, toml_str: &str, repo_root: Option<&Path>) {
-        let Some(value) = parse_table_memoized(toml_str) else {
-            return;
-        };
-        let Some(t) = value.get("test").and_then(|v| v.as_table()) else {
-            return;
-        };
-        crate::test_toml::merge_test_table_lenient(t, None, Some(self), repo_root);
-    }
-
     fn try_merge_from_toml(
         &mut self,
         toml_str: &str,
@@ -160,6 +145,16 @@ impl TestSectionConfig {
         };
         crate::test_toml::merge_test_table_strict(t, None, Some(self), repo_root)
     }
+}
+
+fn merge_from_toml(config: &mut TestSectionConfig, toml_str: &str, repo_root: Option<&Path>) {
+    let Some(value) = parse_table_memoized(toml_str) else {
+        return;
+    };
+    let Some(t) = value.get("test").and_then(|v| v.as_table()) else {
+        return;
+    };
+    crate::test_toml::merge_test_table_lenient(t, None, Some(config), repo_root);
 }
 
 fn parse_table_memoized(toml_str: &str) -> Option<toml::Table> {

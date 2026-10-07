@@ -1,14 +1,12 @@
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-/// A test `cargo nextest list` found, named by its binary and its test path.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ListedTest {
     pub(crate) binary_id: String,
     pub(crate) name: String,
 }
 
-/// Builds the workspace's test binaries and lists every test they contain.
 pub(crate) fn list_tests(repo_root: &Path) -> Result<Vec<ListedTest>, String> {
     let output = Command::new("cargo")
         .args([

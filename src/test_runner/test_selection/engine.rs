@@ -46,7 +46,6 @@ impl SelectionEngine {
     }
 }
 
-/// The changed tests and the prior failures that still exist.
 fn plan_selective(
     planner: &dyn LanguagePlanner,
     changed_tests: Vec<TestSelector>,
@@ -60,7 +59,6 @@ fn plan_selective(
     Ok(selected)
 }
 
-/// Every test of the language, plus the changed tests and the prior failures that still exist.
 fn plan_population(
     planner: &dyn LanguagePlanner,
     changed_tests: Vec<TestSelector>,

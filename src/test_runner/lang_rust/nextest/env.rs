@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 
-/// Variables that change what cargo builds, so they belong to the record identity.
 pub(crate) const RUST_IDENTITY_ENV_KEYS: &[&str] = &[
     "RUSTFLAGS",
     "RUSTDOCFLAGS",
@@ -33,7 +32,6 @@ const RUST_CHILD_ENV_KEYS: &[&str] = &[
     "PKG_CONFIG_PATH",
 ];
 
-/// The part of the environment recorded in the identity of every Rust test record.
 pub(crate) fn identity_env() -> BTreeMap<String, String> {
     let mut env = kiss::env_map_from_allowlist(RUST_IDENTITY_ENV_KEYS);
     env.extend(kiss::cargo_target_linker_env());
@@ -45,8 +43,6 @@ pub(crate) fn identity_env() -> BTreeMap<String, String> {
     env
 }
 
-/// The whole environment `cargo nextest` runs with; nothing else is inherited, so a
-/// record's identity accounts for every variable that can change a build.
 pub(crate) fn child_env() -> BTreeMap<String, String> {
     let mut env = kiss::env_map_from_allowlist(RUST_CHILD_ENV_KEYS);
     env.extend(identity_env());

@@ -142,9 +142,6 @@ fn selectors_in_rust_file(path: &Path) -> Result<(PathBuf, Vec<String>), String>
     Ok((path.to_path_buf(), selectors))
 }
 
-/// Tests that macros generate, found by listing the built test binaries; each is
-/// attributed to the source file of its Cargo target, or for a crate root to the
-/// module file whose path prefixes the test.
 fn dynamic_rust_selectors(
     repo_root: &Path,
     ignore: &[String],

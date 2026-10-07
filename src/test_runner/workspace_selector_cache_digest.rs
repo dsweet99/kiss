@@ -93,7 +93,6 @@ fn remember_disk_record(
     }
 }
 
-/// Stat identity of a file whose content hash is already known in this process.
 #[derive(Clone, Copy, Eq, PartialEq)]
 struct StatSig {
     len: u64,
@@ -103,8 +102,6 @@ struct StatSig {
     dev: u64,
 }
 
-/// A file modified this close to the moment it was hashed may change again without
-/// a visible timestamp change, so its hash is not reused by stat alone.
 const RACY_STAT_WINDOW_NS: i128 = 2_000_000_000;
 
 fn stat_sig(meta: &fs::Metadata) -> StatSig {

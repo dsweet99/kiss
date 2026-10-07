@@ -14,8 +14,6 @@ macro_rules! define_language_policy_traits {
             fn discover_universe(&self) -> Result<Vec<TestSelector>, String>;
             fn changed_tests(&self, diff: &ChangedDiff) -> Vec<TestSelector>;
             fn prior_failures(&self) -> Vec<TestSelector>;
-            /// Whether a source of this language changed, which runs every test of
-            /// the language.
             fn sources_changed(&self) -> bool;
             fn selection_basis(&self) -> SelectionBasis {
                 if self.sources_changed() {

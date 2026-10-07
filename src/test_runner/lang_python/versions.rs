@@ -6,7 +6,6 @@ use crate::test_runner::runners::command_stdout;
 
 pub(crate) const DEFAULT_PYTEST_TIMEOUT: Duration = Duration::from_secs(180);
 
-/// The environment every pytest run gets; it is part of the record identity.
 pub(crate) fn pytest_env(repo_root: &Path) -> BTreeMap<String, String> {
     kiss::python_test_env_map(repo_root)
 }

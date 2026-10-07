@@ -2,8 +2,6 @@ use std::time::Duration;
 
 use kiss::rpytest_runner::TestStatus;
 
-/// One finished test, parsed from a nextest status line such as
-/// `FAIL [   0.007s] (2/6) my-pkg::bin/tool tests::case`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct FinishedTest {
     pub(crate) status: TestStatus,
@@ -12,8 +10,6 @@ pub(crate) struct FinishedTest {
     pub(crate) test_name: String,
 }
 
-/// The status a final nextest label reports; `None` for labels that do not end a test
-/// (`SLOW`, `TERMINATING`, `SKIP`, ...).
 fn final_status(label: &str) -> Option<TestStatus> {
     match label {
         "PASS" | "LEAK" => Some(TestStatus::Passed),
@@ -40,8 +36,6 @@ pub(crate) fn parse_finished_test(line: &str) -> Option<FinishedTest> {
     })
 }
 
-/// The `(binary_id, test_name)` of a `SKIP` line, which nextest prints for ignored tests
-/// and for tests outside the run's filter.
 pub(crate) fn parse_skipped_test(line: &str) -> Option<(String, String)> {
     let rest = line
         .trim()
@@ -78,7 +72,6 @@ fn skip_counter(rest: &str) -> &str {
     rest
 }
 
-/// Parses nextest's bracketed duration: `0.007s`, `>  1.000s`, `1m 2.500s`, or `1h 2m 3s`.
 fn parse_duration(text: &str) -> Option<Duration> {
     let text = text.trim().trim_start_matches('>').trim();
     let mut total = 0.0_f64;
@@ -98,7 +91,6 @@ fn parse_duration(text: &str) -> Option<Duration> {
     (parts > 0 && total.is_finite() && total >= 0.0).then(|| Duration::from_secs_f64(total))
 }
 
-/// Whether `line` is nextest's own framing, which kiss replaces with its own output.
 pub(crate) fn is_nextest_framing(line: &str) -> bool {
     let trimmed = line.trim();
     if trimmed.is_empty() || trimmed.chars().all(|ch| ch == '─') {
@@ -112,7 +104,6 @@ pub(crate) fn is_nextest_framing(line: &str) -> bool {
         || final_status(label).is_some()
 }
 
-/// Whether `line` shows nextest has finished building and begun running tests.
 pub(crate) fn starts_test_run(line: &str) -> bool {
     let trimmed = line.trim_start();
     trimmed.starts_with("Starting ") || trimmed.starts_with("Nextest run ID")

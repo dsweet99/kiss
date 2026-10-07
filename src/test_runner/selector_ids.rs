@@ -118,8 +118,6 @@ pub(crate) fn report_string_for_logical_string(
     report_id_for_logical(map, &LogicalSelectorId::new(logical)).into_string()
 }
 
-/// Report ids for the qualified Rust selectors (`<binary>$<test path>`) among `planned`;
-/// other selectors have no entry and keep their logical form.
 pub(crate) fn qualified_rust_report_ids(
     repo_root: &std::path::Path,
     planned: &[String],

@@ -160,7 +160,13 @@ where
     F: FnMut(RunTestCmdArgs<'_>) -> RunTestOnceOutcome,
 {
     kiss_report_from_ensure_outcome(crate::test_runner::target_request::ensure_target_report(
-        repo_root, &args, reuse, false, run_tests,
+        repo_root,
+        &args,
+        crate::test_runner::target_request::EnsureChoice {
+            reuse_ready: reuse,
+            close_zero: false,
+        },
+        run_tests,
     ))
 }
 
@@ -197,14 +203,11 @@ fn typed_without_transcript(
     report
 }
 
-/// Only a transcript with a FAIL or TIMEOUT replaces the miss error. A PASS the
-/// client did not run has no line.
 fn cached_result_text(lines: &[String]) -> Option<String> {
     let (out, has_bad) = result_text(lines);
     has_bad.then_some(out)
 }
 
-/// FAIL and TIMEOUT rows plus the summary; PASS rows are left out.
 fn result_text(lines: &[String]) -> (String, bool) {
     let mut out = String::new();
     let mut seen = std::collections::BTreeSet::new();

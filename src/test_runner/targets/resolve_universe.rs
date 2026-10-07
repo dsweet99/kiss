@@ -1,7 +1,9 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use kiss::Language;
 
+use super::super::model::SourceModel;
 use super::TargetSelectionQuery;
 use super::resolve_insert::insert_direct;
 use crate::test_runner::workspace_selector_cache::{
@@ -93,4 +95,48 @@ fn insert_universe_if_unresolved(
         _ => {}
     }
     Ok(())
+}
+
+pub(super) fn qualify_rust_model(
+    repo_root: &Path,
+    model: &mut SourceModel,
+    universe: &mut Option<BTreeSet<String>>,
+) {
+    if model.language != Language::Rust || model.direct_tests.is_empty() {
+        return;
+    }
+    let universe = universe.get_or_insert_with(|| {
+        crate::test_runner::runners::current_rust_selector_universe(repo_root)
+    });
+    let parsed: Vec<String> = model
+        .direct_tests
+        .iter()
+        .map(|test| test.selector.clone())
+        .collect();
+    let mapped = crate::test_runner::runners::universe_rust_selectors_for_file(
+        repo_root,
+        &model.path,
+        parsed.clone(),
+        universe,
+    );
+    let renames: BTreeMap<String, String> = parsed
+        .into_iter()
+        .zip(mapped)
+        .filter(|(from, to)| from != to)
+        .collect();
+    if renames.is_empty() {
+        return;
+    }
+    for test in &mut model.direct_tests {
+        if let Some(to) = renames.get(&test.selector) {
+            test.selector = to.clone();
+        }
+    }
+    for def in &mut model.definitions {
+        if let Some(selector) = def.test_selector.as_mut()
+            && let Some(to) = renames.get(selector)
+        {
+            *selector = to.clone();
+        }
+    }
 }

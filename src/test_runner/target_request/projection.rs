@@ -129,7 +129,6 @@ fn vcs_projection(
     }
 }
 
-/// Changed test files plus, for each language with a changed source, its whole population.
 fn vcs_selectors(
     repo_root: &Path,
     request: &TargetRequest,
@@ -218,8 +217,6 @@ fn selectors_for_regions(
     population_selectors_for_paths(repo_root, &region_paths(regions), request)
 }
 
-/// The cached workspace tests of every language with a non-test source among `paths`:
-/// a changed source reruns every test of its language.
 pub(crate) fn population_selectors_for_paths(
     repo_root: &Path,
     paths: &[String],

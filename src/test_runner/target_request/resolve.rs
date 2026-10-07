@@ -44,8 +44,6 @@ fn resolve_git(
             diff_target.as_ref().ok_or("missing git diff target")?,
         )?,
     };
-    // `base` and `main` include the committed range and the uncommitted work,
-    // including a new untracked test file.
     if matches!(mode, TestChangeMode::Base | TestChangeMode::Main) {
         for path in crate::test_git::changed_paths_commit(repo_root)? {
             if !rel_changed.iter().any(|item| item == &path) {

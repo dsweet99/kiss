@@ -274,8 +274,6 @@ fn lang_ok(path: &Path, lang_filter: Option<TestLangFilter>) -> bool {
     }
 }
 
-/// Whether a change to `path` can change how Rust tests build or run: Rust sources and
-/// `include!`d `.inc` files, manifests, lockfiles, cargo config, and toolchain files.
 pub(crate) fn is_rust_planning_path(path: &Path) -> bool {
     if kiss::Language::is_rust_path(path)
         || path

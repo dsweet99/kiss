@@ -18,9 +18,6 @@ pub(crate) fn render_preview_members(preview: &TargetPlanPreview) {
 pub(crate) fn official_report_text(report: &TargetReport) -> String {
     let mut out = String::new();
     for row in &report.rows {
-        // A cached PASS that did not run has no line. FAIL and TIMEOUT stay,
-        // including when they were read from the cache. Tests that ran print
-        // their own lines before this report.
         if row.effective == EffectiveStatus::Pass {
             continue;
         }

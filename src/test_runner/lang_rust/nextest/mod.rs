@@ -1,6 +1,3 @@
-//! Runs Rust tests with `cargo nextest` and records each test's status and duration
-//! from nextest's status lines.
-
 use std::path::Path;
 
 mod config;
@@ -66,7 +63,6 @@ pub(crate) fn store_records(
     }
 }
 
-/// Accepts the libtest arguments kiss forwards to Rust tests.
 pub(crate) fn validate_rust_extra_args(extras: &[String]) -> Result<(), String> {
     let mut args = extras.iter();
     while let Some(arg) = args.next() {
@@ -88,7 +84,6 @@ pub(crate) fn validate_rust_extra_args(extras: &[String]) -> Result<(), String> 
     Ok(())
 }
 
-/// The command `kiss test --dry-run` shows for `selectors`.
 pub(crate) fn dry_run_lines(
     selectors: &[String],
     extras: &[String],
@@ -120,7 +115,6 @@ pub(crate) fn dry_run_lines(
     Ok(lines)
 }
 
-/// Runs `selectors`, storing each test's record as soon as nextest reports it.
 pub(crate) fn run_nextest_selectors(
     req: &RunRequest<'_>,
     on_result: &mut dyn FnMut(SelectorExecutionRecord),

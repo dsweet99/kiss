@@ -2,8 +2,6 @@ use std::path::Path;
 
 use crate::test_runner::lang_iface::{ExecutionWitness, GenerationIds, WitnessStatus};
 
-/// The Python witness for a run with pytest arguments `extras`: the test records made
-/// under the current runner identity whose inputs are unchanged.
 pub(crate) fn stored_witness(repo_root: &Path, extras: &[String]) -> Option<ExecutionWitness> {
     let identity = super::records::record_identity(repo_root, extras).ok()?;
     let deps =
@@ -35,7 +33,6 @@ pub(crate) fn stored_witness(repo_root: &Path, extras: &[String]) -> Option<Exec
     })
 }
 
-/// The witness identity for Python records stored under `record_identity`.
 pub(super) fn python_witness_identity(record_identity: &str) -> String {
     format!("py:{record_identity}")
 }

@@ -10,7 +10,6 @@ pub(crate) struct PreparedRustInputs {
     pub(crate) changed_tests: ChangedTestSelectors,
 }
 
-/// Splits changed paths by language and finds the tests the changed test files define.
 pub(crate) fn prepare_rust_inputs(
     repo_root: &Path,
     source_paths: &[PathBuf],

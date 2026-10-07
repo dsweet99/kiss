@@ -127,7 +127,6 @@ fn timed_compute_misses(
     );
     union_non_cacheable_misses(planned, &mut misses);
     union_incomparable_timing_misses(request, module, planned, witness, &mut misses);
-    // `--retry-bad` runs FAIL and TIMEOUT tests.
     if !request.force_selectors.is_empty() {
         misses.retain(|sel| request.force_selectors.iter().any(|forced| forced == sel));
     }

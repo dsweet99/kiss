@@ -167,8 +167,6 @@ fn write_cache_at(path: &Path, cache: &LanguageSelectorCache) -> io::Result<()> 
             .map(|d| d.as_nanos())
             .unwrap_or(0)
     ));
-    // No fsync: readers treat an unparsable file as a cache miss, so a write lost to a
-    // crash only costs a recollection.
     let mut file = File::create(&tmp)?;
     file.write_all(&body)?;
     drop(file);

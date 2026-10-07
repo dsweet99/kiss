@@ -37,9 +37,6 @@ impl std::fmt::Display for EnsureError {
     }
 }
 
-/// Snapshot / ensure behavior as named modes — not a free bool bag.
-/// Invalid combinations such as `dry_run` with `require_complete` are not constructible
-/// through the production constructors.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct EnsurePolicy {
     dry_run: bool,
@@ -50,7 +47,6 @@ pub(crate) struct EnsurePolicy {
 }
 
 impl EnsurePolicy {
-    /// Dry-run plan preview (`bind` / `preview_target_plan_with`).
     pub(crate) fn preview(retry_bad: bool) -> Self {
         Self {
             dry_run: true,
@@ -61,7 +57,6 @@ impl EnsurePolicy {
         }
     }
 
-    /// Full ensure that requires complete membership evidence.
     pub(crate) fn complete(retry_bad: bool) -> Self {
         Self {
             dry_run: false,
@@ -72,7 +67,6 @@ impl EnsurePolicy {
         }
     }
 
-    /// Soft materialize: may omit complete-membership errors (tests / tolerant paths).
     #[cfg(test)]
     pub(crate) fn soft(retry_bad: bool) -> Self {
         Self {
@@ -84,7 +78,6 @@ impl EnsurePolicy {
         }
     }
 
-    /// Test-only fault injection for concurrent-mutation retry paths.
     #[cfg(test)]
     pub(crate) fn inject_mismatch_for_test() -> Self {
         Self {
@@ -175,79 +168,29 @@ fn try_snapshot(
     let available = super::rows::available_rows(repo_root, &scope, runner_extras(args));
     let graph_repair = super::report::graph_repair_needed(repo_root, &scope);
     let force = args.is_some_and(|item| item.force_rerun);
-    let time_gate_active = time_gate_active(repo_root, args);
-    let plan = super::rows::plan_from_available_rows_with(
-        &scope,
-        &available,
-        policy.retry_bad(),
+    let row_plan = super::rows::AvailableRowPlan {
+        retry_bad: policy.retry_bad(),
         graph_repair,
         force,
-        time_gate_active,
-    );
-    if policy.dry_run() {
-        let _ = plan.known_execution_union();
-        let deferred = !scope.complete || (policy.retry_bad() && !plan.repair_selectors.is_empty());
-        return Ok(SnapshotOutcome::Preview(TargetPlanPreview {
-            deferred,
-            membership_complete: scope.complete,
-            scope,
-            plan,
-        }));
-    }
-    if !policy.retry_bad() && !force {
-        let extras = args
-            .map(|item| item.extras)
-            .unwrap_or(crate::test_runner::language_keyed::LanguageKeyed::EMPTY);
-        if let Some(ready) = super::bind::load_ready_for_request(repo_root, request, extras) {
-            return Ok(SnapshotOutcome::Report(Box::new(ready)));
-        }
-    }
-    if graph_repair {
-        super::report::repair_graph_evidence(repo_root, &scope)
-            .map_err(EnsureError::IncompleteEvidence)?;
-    }
-    if !policy.assemble_only()
-        && let Some(args) = args
-        && (!plan.known_execution_union().is_empty() || plan.population_repair)
-    {
-        let facts = RunFacts {
-            time_gate_active,
-            runner_exit: execute_repair(args)?,
-        };
-        return assemble_after_repair(repo_root, request, policy, facts, args);
-    }
-    if args.is_some_and(|item| !item.extras.rust.is_empty())
-        && scope.selectors.is_empty()
-        && policy.require_complete()
-    {
-        return Err(EnsureError::IncompleteEvidence(
-            crate::test_runner::runners::NO_SELECTED_TESTS_MSG.into(),
-        ));
-    }
-    if policy.require_complete() && !stamp.complete {
-        return Err(EnsureError::IncompleteEvidence(
-            "target membership is not proven complete".into(),
-        ));
-    }
-    // No-repair assemble (e.g. post-SIGINT restart with cached records only) still needs
-    // workspace selector evidence for max_num_tests. assemble_after_repair refreshes;
-    // this path must too or gates_from_population fails closed as incomplete.
-    if let Some(args) = args {
-        refresh_python_witnesses(repo_root, &scope, args)
-            .map_err(EnsureError::IncompleteEvidence)?;
-    }
-    assemble_report(
+        time_gate_active: time_gate_active(repo_root, args),
+    };
+    let plan = super::rows::plan_from_available_rows(&scope, &available, row_plan);
+    snapshot_finish::finish_planned_snapshot(
         repo_root,
         request,
-        scope,
-        stamp,
-        RunFacts {
-            time_gate_active,
-            runner_exit: 0,
-        },
+        policy,
         args,
+        snapshot_finish::PlannedSnapshot {
+            stamp,
+            scope,
+            plan,
+            row_plan,
+        },
     )
 }
+
+#[path = "snapshot_finish.rs"]
+mod snapshot_finish;
 
 #[derive(Clone, Copy)]
 struct RunFacts {

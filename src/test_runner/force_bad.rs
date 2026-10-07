@@ -59,8 +59,17 @@ fn typed_retry_by_lang(
     let rows = super::target_request::available_rows(&planned.repo_root, &scope, a.extras);
     let mut python = Vec::new();
     let mut rust = Vec::new();
-    for selector in
-        super::target_request::plan_from_available_rows(&scope, &rows, true, false).retry_bad
+    for selector in super::target_request::plan_from_available_rows(
+        &scope,
+        &rows,
+        super::target_request::AvailableRowPlan {
+            retry_bad: true,
+            graph_repair: false,
+            force: false,
+            time_gate_active: false,
+        },
+    )
+    .retry_bad
     {
         match rows
             .iter()

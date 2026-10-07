@@ -5,13 +5,10 @@ use crate::test_runner::lang_iface::{ExecutionWitness, WitnessStatus};
 
 const NO_RECORDS: &str = "error: kiss: no rust test records";
 
-/// The witness identity for Rust records stored under `record_identity`.
 pub(crate) fn rust_witness_identity(record_identity: &str) -> String {
     format!("rs:{record_identity}")
 }
 
-/// The Rust witness: the test records made under the current identity whose
-/// dependencies still match, limited to tests that still exist.
 pub(crate) fn try_load_rust_execution_witness(
     repo_root: &Path,
 ) -> Result<ExecutionWitness, String> {

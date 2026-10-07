@@ -16,8 +16,6 @@ pub(crate) fn load_ready_for_request(
     load_ready(repo, request, extras, false)
 }
 
-/// Like [`load_ready_for_request`], but a complete scope with no members is ready:
-/// the run that just finished already settled that nothing is in scope.
 pub(crate) fn load_ready_after_run(
     repo: &std::path::Path,
     request: &super::types::TargetRequest,
@@ -52,8 +50,6 @@ fn load_ready(
     derive_ready_report(repo, request, scope, stamp, extras)
 }
 
-/// The report for `scope`, computed from the per-test records, when every member
-/// has a current record and nothing needs to run.
 fn derive_ready_report(
     repo: &std::path::Path,
     request: &super::types::TargetRequest,
@@ -76,13 +72,15 @@ fn derive_ready_report(
         .max_unit_test_seconds
         .is_empty();
     let graph_repair = super::report::graph_repair_needed(repo, &scope);
-    let plan = super::rows::plan_from_available_rows_with(
+    let plan = super::rows::plan_from_available_rows(
         &scope,
         &rows,
-        false,
-        graph_repair,
-        false,
-        time_gate_active,
+        super::rows::AvailableRowPlan {
+            retry_bad: false,
+            graph_repair,
+            force: false,
+            time_gate_active,
+        },
     );
     if !plan.known_execution_union().is_empty() || plan.population_repair || plan.graph_repair {
         return None;
@@ -94,10 +92,6 @@ fn derive_ready_report(
     Some(report).filter(ready_report)
 }
 
-/// Idle/query path for `kiss test --lang`: answer from a ready unscoped workspace
-/// report by projecting that language's rows, without starting a new test cycle.
-///
-/// `load_ready_for_request` stays identity-strict (no parent slice on load alone).
 pub(crate) fn project_language_ready_from_parent_workspace(
     repo: &std::path::Path,
     request: &super::types::TargetRequest,
@@ -137,8 +131,6 @@ pub(crate) fn project_language_ready_from_parent_workspace(
     Some(built)
 }
 
-/// Answer `commit` / `base` / `main` from the cached workspace results.
-/// A deleted test file adds no rows. A gitignored path is out of scope.
 pub(crate) fn project_git_ready_from_parent_workspace(
     repo: &std::path::Path,
     request: &super::types::TargetRequest,

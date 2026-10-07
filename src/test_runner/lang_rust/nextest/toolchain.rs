@@ -11,8 +11,6 @@ mod host_cache;
 #[path = "toolchain_live.rs"]
 mod live;
 
-/// Versions of the tools that build and run Rust tests, each tagged with its binary's
-/// size, mtime, and inode.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct RustToolchain {
     pub(crate) cargo: String,
@@ -259,8 +257,6 @@ fn detect_rust_toolchain(
     Ok(live)
 }
 
-/// The current toolchain, from the in-process memo, the repo cache, the host cache, or
-/// by running the tools, in that order.
 pub(crate) fn current_rust_toolchain(repo_root: &Path) -> Result<RustToolchain, String> {
     let key = build_tool_identity_cache_key(repo_root);
     let mut guard = TOOLS_CACHE.lock().expect("tool identity cache lock");

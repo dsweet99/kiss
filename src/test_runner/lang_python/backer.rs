@@ -16,9 +16,6 @@ pub(crate) fn python_backer(input: PythonBackerInput<'_>) -> Box<dyn LanguagePla
     Box::new(PythonModule::new(input))
 }
 
-/// Plans Python tests. Kiss keeps no record of which tests reach which Python source, so
-/// a changed Python source plans every Python test; tests whose records still hold are
-/// then skipped by the runtime.
 pub(crate) struct PythonModule {
     repo_root: PathBuf,
     py_source_paths: Vec<PathBuf>,

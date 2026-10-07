@@ -1,3 +1,4 @@
+mod kernel_hooks;
 mod kernel_rules;
 pub(crate) mod records;
 mod runtime;
@@ -7,7 +8,7 @@ mod witness;
 mod witness_reuse;
 mod witness_summary;
 
-pub(crate) use kernel_rules::{AllModePlan, KernelRules, emit_kernel_stage};
+pub(crate) use kernel_rules::{AllModePlan, KernelHooks, KernelRules, emit_kernel_stage};
 #[allow(unused_imports)]
 pub(crate) use runtime::{
     EnsureRequest, EnsureRuntimeResult, LanguageEnsureResult, LanguageRuntime, Listing,

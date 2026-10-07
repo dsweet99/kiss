@@ -1,7 +1,5 @@
 use std::path::Path;
 
-/// Content fingerprint of Rust paths reached only via `include!` / `#[path]` expansion
-/// (not walk/git discovery).
 pub(crate) fn rust_expanded_include_extras_fingerprint(
     repo: &Path,
     digest_bytes: fn(&[&[u8]]) -> String,

@@ -6,8 +6,23 @@ use super::ensure::{
     EnsureOutcome, ensure_target_report, ensure_target_report_query, materialize_target_report,
     preview_target_plan_with,
 };
+use super::rows::AvailableRowPlan;
 use super::snapshot::{EnsureError, EnsurePolicy, MAX_SNAPSHOT_ATTEMPTS};
 use super::types::{OperandExpr, TargetFocus, TargetRequest};
+
+fn row_plan(
+    retry_bad: bool,
+    graph_repair: bool,
+    force: bool,
+    time_gate_active: bool,
+) -> AvailableRowPlan {
+    AvailableRowPlan {
+        retry_bad,
+        graph_repair,
+        force,
+        time_gate_active,
+    }
+}
 
 #[test]
 fn ensure_policy_named_modes_exclude_invalid_dry_run_require_complete() {
@@ -213,10 +228,18 @@ fn ensure_target_report_runs_execute_on_miss() {
         crate::test_runner::test_mode_fixtures::dry_run_cmd_args(TestInvocation::All, &[], 1, None);
     args.dry_run = false;
     let ran = AtomicBool::new(false);
-    let outcome = ensure_target_report(Some(tmp.path()), &args, true, false, |_a| {
-        ran.store(true, Ordering::SeqCst);
-        RunTestOnceOutcome::Code(1)
-    });
+    let outcome = ensure_target_report(
+        Some(tmp.path()),
+        &args,
+        super::EnsureChoice {
+            reuse_ready: true,
+            close_zero: false,
+        },
+        |_a| {
+            ran.store(true, Ordering::SeqCst);
+            RunTestOnceOutcome::Code(1)
+        },
+    );
     assert!(ran.load(Ordering::SeqCst));
     match outcome {
         EnsureOutcome::Miss {
@@ -396,9 +419,11 @@ fn retry_bad_intersects_fail_and_timeout_with_membership() {
             super::report::EffectiveStatus::Fail,
         ),
     ];
-    let plain = super::rows::plan_from_available_rows(&scope, &rows, false, false);
+    let plain =
+        super::rows::plan_from_available_rows(&scope, &rows, row_plan(false, false, false, false));
     assert!(plain.retry_bad.is_empty());
-    let retry = super::rows::plan_from_available_rows(&scope, &rows, true, false);
+    let retry =
+        super::rows::plan_from_available_rows(&scope, &rows, row_plan(true, false, false, false));
     assert_eq!(
         retry.retry_bad,
         vec![
@@ -420,7 +445,8 @@ fn retry_bad_defers_when_a_member_row_is_missing() {
         "tests/a.py::test_a",
         super::report::EffectiveStatus::Fail,
     )];
-    let plan = super::rows::plan_from_available_rows(&scope, &rows, true, false);
+    let plan =
+        super::rows::plan_from_available_rows(&scope, &rows, row_plan(true, false, false, false));
     assert_eq!(plan.retry_bad, vec!["tests/a.py::test_a".to_string()]);
     assert_eq!(
         plan.repair_selectors,
@@ -447,7 +473,8 @@ fn duration_incomplete_pass_and_fail_enter_repair() {
             super::report::EffectiveStatus::Timeout,
         ),
     ];
-    let plan = super::rows::plan_from_available_rows_with(&scope, &rows, false, false, false, true);
+    let plan =
+        super::rows::plan_from_available_rows(&scope, &rows, row_plan(false, false, false, true));
     assert_eq!(
         plan.repair_selectors,
         vec![
@@ -455,7 +482,8 @@ fn duration_incomplete_pass_and_fail_enter_repair() {
             "tests/b.py::test_b".to_string()
         ]
     );
-    let retry = super::rows::plan_from_available_rows_with(&scope, &rows, true, false, false, true);
+    let retry =
+        super::rows::plan_from_available_rows(&scope, &rows, row_plan(true, false, false, true));
     assert_eq!(
         retry.retry_bad,
         vec![
@@ -477,7 +505,8 @@ fn force_marks_every_scope_member() {
         vec!["tests/a.py::test_a".into(), "tests/b.py::test_b".into()],
         true,
     );
-    let plan = super::rows::plan_from_available_rows_with(&scope, &[], false, false, true, false);
+    let plan =
+        super::rows::plan_from_available_rows(&scope, &[], row_plan(false, false, true, false));
     assert_eq!(
         plan.forced,
         vec![
@@ -501,8 +530,10 @@ fn missing_duration_after_repair_fails_closed() {
 #[test]
 fn plan_records_graph_repair_flag() {
     let scope = super::scope::ReportScope::from_membership(Vec::new(), Vec::new(), true);
-    let on = super::rows::plan_from_available_rows(&scope, &[], false, true);
-    let off = super::rows::plan_from_available_rows(&scope, &[], false, false);
+    let on =
+        super::rows::plan_from_available_rows(&scope, &[], row_plan(false, true, false, false));
+    let off =
+        super::rows::plan_from_available_rows(&scope, &[], row_plan(false, false, false, false));
     assert!(on.graph_repair);
     assert!(!off.graph_repair);
 }

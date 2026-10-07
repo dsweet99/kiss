@@ -1,6 +1,3 @@
-//! Python test records: what each pytest result is stored under and the inputs it
-//! depends on. Any change to a Python input reruns every Python test.
-
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -13,8 +10,6 @@ use crate::test_runner::lang_iface::records::{
 
 const IDENTITY_SCHEMA: &str = "kiss-python-pytest-record-v1";
 
-/// What every Python record is stored under: the interpreter and pytest versions, the
-/// pytest arguments, and the environment. A record made under another identity never holds.
 pub(crate) fn record_identity(repo_root: &Path, extras: &[String]) -> Result<String, String> {
     let (python, pytest) = super::versions::detect_python_versions(repo_root)?;
     let payload = serde_json::json!({
@@ -30,7 +25,6 @@ pub(crate) fn record_identity(repo_root: &Path, extras: &[String]) -> Result<Str
     ))
 }
 
-/// One digest of every Python input in the repository: `.py` files and pytest config.
 pub(crate) fn python_inputs_digest(repo_root: &Path) -> io::Result<String> {
     let root = repo_root
         .canonicalize()
@@ -89,7 +83,6 @@ pub(crate) fn is_python_input(path: &Path) -> bool {
     )
 }
 
-/// The time limit, in milliseconds, recorded for `selector`; `None` when the time gate is off.
 pub(crate) fn timeout_millis(gate: &kiss::GateConfig, selector: &str) -> Option<u64> {
     if gate.unit_test_time_gate_disabled() {
         return None;
@@ -97,7 +90,6 @@ pub(crate) fn timeout_millis(gate: &kiss::GateConfig, selector: &str) -> Option<
     u64::try_from(super::versions::timeout_for_selector_with_gate(gate, selector).as_millis()).ok()
 }
 
-/// Computes the current value of each dependency a Python record keeps.
 pub(crate) struct CurrentDeps {
     repo_root: PathBuf,
     gate: kiss::GateConfig,
@@ -124,7 +116,6 @@ impl CurrentDeps {
     }
 }
 
-/// Stores Python test results under one identity and one inputs digest.
 pub(crate) struct RecordWriter {
     repo_root: PathBuf,
     identity: String,

@@ -10,8 +10,6 @@ use super::records::{
     rust_inputs_digest,
 };
 
-/// The time limit, in milliseconds, nextest enforces on the test reported as
-/// `report_id`; `None` when the time gate is off.
 pub(crate) fn timeout_millis(gate: &kiss::GateConfig, report_id: &str) -> Option<u64> {
     if gate.unit_test_time_gate_disabled() {
         return None;
@@ -20,7 +18,6 @@ pub(crate) fn timeout_millis(gate: &kiss::GateConfig, report_id: &str) -> Option
     (secs.is_finite() && secs > 0.0).then(|| (secs * 1000.0).round().max(1.0) as u64)
 }
 
-/// Computes the current value of each dependency a Rust record keeps.
 pub(crate) struct CurrentDeps {
     repo_root: PathBuf,
     gate: kiss::GateConfig,
@@ -56,8 +53,6 @@ impl CurrentDeps {
     }
 }
 
-/// The record identity for a run with test arguments `extras`, and the stored records
-/// made under it whose dependencies are unchanged.
 pub(crate) fn holding_records(
     repo_root: &Path,
     extras: &[String],
@@ -85,8 +80,6 @@ pub(crate) fn holding_records(
     Ok((identity, holding))
 }
 
-/// Tests whose stored record under the current identity is FAIL or TIMEOUT, whether
-/// or not that record still holds.
 pub(crate) fn bad_record_ids(repo_root: &Path, extras: &[String]) -> Vec<String> {
     let Ok(identity) = record_identity(repo_root, extras) else {
         return Vec::new();

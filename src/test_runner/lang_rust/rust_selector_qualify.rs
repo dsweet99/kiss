@@ -6,8 +6,6 @@ use kiss::rust_include::canonical_path;
 
 type ModulesByFile = HashMap<PathBuf, Vec<RustTestBinaryModule>>;
 
-/// The crate-relative test path of a Rust selector: the part after `$` for a selector
-/// qualified as `<nextest binary id>$<test path>` (binary id may be empty), else the selector.
 pub(crate) fn rust_selector_test_path(selector: &str) -> &str {
     selector
         .split_once('$')
@@ -38,8 +36,6 @@ fn qualify_with(modules: &ModulesByFile, path: &Path, selector: &str) -> Option<
     qualified_selector(modules.get(&canonical_path(path))?, selector)
 }
 
-/// Replaces every selector defined in more than one file with its qualified form, so
-/// same-named tests in different files stay distinct tests.
 pub(super) fn qualify_colliding_entries(
     repo_root: &Path,
     entries: Vec<(PathBuf, String)>,
@@ -74,7 +70,6 @@ pub(super) fn qualify_colliding_entries(
         .collect()
 }
 
-/// Maps selectors parsed from one file to the selectors the workspace universe uses for them.
 pub(crate) fn universe_rust_selectors_for_file(
     repo_root: &Path,
     path: &Path,

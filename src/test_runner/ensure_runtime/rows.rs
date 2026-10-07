@@ -11,8 +11,6 @@ pub(crate) struct StoredRows {
     pub(crate) holding: BTreeSet<String>,
 }
 
-/// The rows made under the listing's record identity whose dependencies can still be
-/// read, and the ids among them whose recorded dependency digests are unchanged.
 pub(crate) fn stored_rows(
     request: &EnsureRequest,
     module: &dyn LanguageRuntime,

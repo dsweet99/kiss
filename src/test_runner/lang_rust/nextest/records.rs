@@ -9,8 +9,6 @@ use crate::test_runner::lang_iface::records::{RecordScope, digest};
 
 const IDENTITY_SCHEMA: &str = "kiss-rust-nextest-record-v1";
 
-/// The test arguments that change which tests run or what they do; `--nocapture` only
-/// changes where their output goes.
 fn identity_args(extras: &[String]) -> Vec<&str> {
     extras
         .iter()
@@ -19,8 +17,6 @@ fn identity_args(extras: &[String]) -> Vec<&str> {
         .collect()
 }
 
-/// What every Rust record is stored under: the toolchain, the test arguments, and the
-/// build environment. A record made under another identity never holds.
 pub(crate) fn record_identity(repo_root: &Path, extras: &[String]) -> Result<String, String> {
     let toolchain = super::toolchain::current_rust_toolchain(repo_root)?;
     let payload = serde_json::json!({
@@ -35,8 +31,6 @@ pub(crate) fn record_identity(repo_root: &Path, extras: &[String]) -> Result<Str
     ))
 }
 
-/// One digest of every Rust input in the repository: sources, `include!`/`#[path]`
-/// files, manifests, lockfiles, cargo config, and toolchain files.
 pub(crate) fn rust_inputs_digest(repo_root: &Path) -> Result<String, String> {
     let sources =
         crate::test_runner::workspace_selector_cache::rust_full_source_fingerprint(repo_root, &[])
@@ -65,7 +59,6 @@ pub(crate) fn store(
     crate::test_runner::lang_iface::records::store(scope(repo_root, identity), inputs, outcome)
 }
 
-/// The stored Rust records made under `identity`.
 pub(crate) fn records_under(repo_root: &Path, identity: &str) -> Vec<TestRecord> {
     crate::test_runner::lang_iface::records::records_under(scope(repo_root, identity))
 }

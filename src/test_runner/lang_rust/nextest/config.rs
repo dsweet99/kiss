@@ -3,18 +3,13 @@ use std::path::Path;
 
 use super::status_line::FinishedTest;
 
-/// What nextest calls the requested Rust tests.
 #[derive(Default)]
 pub(super) struct TestNames {
-    /// Binary ids by selector prefix (`package::target`); a lib and a bin may share one.
     binary_ids: HashMap<String, Vec<String>>,
-    /// `(binary id, full test name)` for each selector whose binaries are known.
     exact: HashMap<String, Vec<(String, String)>>,
 }
 
 impl TestNames {
-    /// A qualified selector `package::target$path` names its test by full path; a bare
-    /// selector names it relative to the source file its report id points at.
     pub(super) fn resolve(
         repo_root: &Path,
         selectors: &[String],
@@ -69,9 +64,6 @@ fn file_names(
         .collect()
 }
 
-/// How kiss names one Rust test to nextest: exact `(binary id, full name)` pairs when
-/// known, else the test path nextest's full name ends with, limited to `binary_ids` when
-/// the selector is qualified.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct TestTarget {
     exact: Vec<(String, String)>,
@@ -179,8 +171,6 @@ fn slow_timeout(millis: u64) -> String {
     )
 }
 
-/// The `kiss` nextest profile that runs exactly `selectors`, ending each test that
-/// outlives its time limit; selectors without a limit run unbounded.
 pub(super) fn tool_config_toml(
     selectors: &[String],
     names: &TestNames,
@@ -215,7 +205,6 @@ pub(super) fn tool_config_toml(
     out
 }
 
-/// Finds the requested selectors a nextest result belongs to.
 pub(super) struct SelectorIndex {
     exact: HashMap<(String, String), Vec<String>>,
     by_test_path: HashMap<String, Vec<(String, Vec<String>)>>,
@@ -244,8 +233,6 @@ impl SelectorIndex {
         }
     }
 
-    /// The selectors naming `finished` exactly, else those with the longest test path
-    /// its name ends with.
     pub(super) fn selectors_for(&self, finished: &FinishedTest) -> Vec<&str> {
         let key = (finished.binary_id.clone(), finished.test_name.clone());
         if let Some(found) = self.exact.get(&key) {
@@ -270,8 +257,6 @@ impl SelectorIndex {
     }
 }
 
-/// `--test-threads` for nextest: `num_jobs_nextest` when set, else the repo's own
-/// `profile.default` `test-threads`, else `jobs`.
 pub(super) fn test_threads(repo_root: &Path, extras: &[String], jobs: usize) -> usize {
     if extras
         .iter()

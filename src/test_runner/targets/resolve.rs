@@ -63,21 +63,18 @@ pub(crate) fn resolve_target_operands(
         if !seen_raw.insert(raw.clone()) {
             continue;
         }
-        let parsed = parse_test_target(raw)?;
-        let abs = canonicalize_target_path(repo_root, &parsed)?;
-        reject_ignored_target(repo_root, &abs, ignore, &parsed.raw)?;
-        reject_lang_mismatch(lang_filter, parsed.language, &parsed.raw)?;
-
-        if let Some(nodeid) = explicit_python_test_selector(repo_root, &parsed, &abs) {
-            insert_direct(&mut query, Language::Python, nodeid);
-            continue;
-        }
-        if !models.contains_key(&abs) {
-            let mut model = load_source_model(&abs, parsed.language)?;
-            qualify_rust_model(repo_root, &mut model, &mut rust_universe);
-            models.insert(abs.clone(), model);
-        }
-        pending.push((parsed, abs));
+        ingest_operand(
+            repo_root,
+            raw,
+            lang_filter,
+            ignore,
+            &mut IngestState {
+                query: &mut query,
+                models: &mut models,
+                rust_universe: &mut rust_universe,
+                pending: &mut pending,
+            },
+        )?;
     }
     hydrate_python_models(
         repo_root,
@@ -105,48 +102,35 @@ pub(crate) fn resolve_target_operands(
     Ok(query)
 }
 
-fn qualify_rust_model(
+struct IngestState<'a> {
+    query: &'a mut TargetSelectionQuery,
+    models: &'a mut BTreeMap<PathBuf, SourceModel>,
+    rust_universe: &'a mut Option<BTreeSet<String>>,
+    pending: &'a mut Vec<(ParsedTestTarget, PathBuf)>,
+}
+
+fn ingest_operand(
     repo_root: &Path,
-    model: &mut SourceModel,
-    universe: &mut Option<BTreeSet<String>>,
-) {
-    if model.language != Language::Rust || model.direct_tests.is_empty() {
-        return;
+    raw: &str,
+    lang_filter: Option<Language>,
+    ignore: &[String],
+    state: &mut IngestState<'_>,
+) -> Result<(), String> {
+    let parsed = parse_test_target(raw)?;
+    let abs = canonicalize_target_path(repo_root, &parsed)?;
+    reject_ignored_target(repo_root, &abs, ignore, &parsed.raw)?;
+    reject_lang_mismatch(lang_filter, parsed.language, &parsed.raw)?;
+    if let Some(nodeid) = explicit_python_test_selector(repo_root, &parsed, &abs) {
+        insert_direct(state.query, Language::Python, nodeid);
+        return Ok(());
     }
-    let universe = universe.get_or_insert_with(|| {
-        crate::test_runner::runners::current_rust_selector_universe(repo_root)
-    });
-    let parsed: Vec<String> = model
-        .direct_tests
-        .iter()
-        .map(|test| test.selector.clone())
-        .collect();
-    let mapped = crate::test_runner::runners::universe_rust_selectors_for_file(
-        repo_root,
-        &model.path,
-        parsed.clone(),
-        universe,
-    );
-    let renames: BTreeMap<String, String> = parsed
-        .into_iter()
-        .zip(mapped)
-        .filter(|(from, to)| from != to)
-        .collect();
-    if renames.is_empty() {
-        return;
+    if !state.models.contains_key(&abs) {
+        let mut model = load_source_model(&abs, parsed.language)?;
+        qualify_rust_model(repo_root, &mut model, state.rust_universe);
+        state.models.insert(abs.clone(), model);
     }
-    for test in &mut model.direct_tests {
-        if let Some(to) = renames.get(&test.selector) {
-            test.selector = to.clone();
-        }
-    }
-    for def in &mut model.definitions {
-        if let Some(selector) = def.test_selector.as_mut()
-            && let Some(to) = renames.get(selector)
-        {
-            *selector = to.clone();
-        }
-    }
+    state.pending.push((parsed, abs));
+    Ok(())
 }
 
 fn explicit_python_test_selector(
@@ -427,4 +411,4 @@ mod resolve_insert;
 #[path = "resolve_universe.rs"]
 mod resolve_universe;
 use resolve_insert::{insert_direct, insert_file, insert_lines, language_label, repo_relative};
-use resolve_universe::flush_unresolved_universes;
+use resolve_universe::{flush_unresolved_universes, qualify_rust_model};
