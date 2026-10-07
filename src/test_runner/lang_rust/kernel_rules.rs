@@ -8,14 +8,6 @@ impl KernelRules for RustKernelRules {
         "rust_identity"
     }
 
-    /// Rust tests run without coverage, so no Rust lines are ever recorded as covered.
-    fn stored_coverage(
-        &self,
-        _repo_root: &std::path::Path,
-    ) -> crate::test_runner::lang_iface::StoredCoverage {
-        crate::test_runner::lang_iface::StoredCoverage::default()
-    }
-
     fn runner_identity_part(&self, repo_root: &std::path::Path) -> Option<serde_json::Value> {
         super::stored::runner_identity_part(repo_root)
     }
@@ -33,19 +25,6 @@ impl KernelRules for RustKernelRules {
         _extras: &[String],
     ) -> Option<ExecutionWitness> {
         super::stored::stored_witness(repo_root)
-    }
-
-    fn historical_covering_selectors(
-        &self,
-        _repo_root: &std::path::Path,
-        _keys: &[String],
-        _abs: &[std::path::PathBuf],
-    ) -> std::collections::BTreeSet<String> {
-        std::collections::BTreeSet::new()
-    }
-
-    fn indexes_path(&self, _repo_root: &std::path::Path, _keys: &[String]) -> bool {
-        false
     }
 
     fn report_labels(
@@ -84,7 +63,7 @@ impl KernelRules for RustKernelRules {
         selectors: Vec<String>,
         _gate: &kiss::GateConfig,
     ) -> crate::test_runner::lang_iface::AllModePlan {
-        super::all_mode_plan::rust_all_mode_plan(repo_root, selectors)
+        crate::test_runner::lang_iface::records::records_all_mode_plan(repo_root, "rust", selectors)
     }
 
     fn validate_explicit_targets(
@@ -114,7 +93,7 @@ impl KernelRules for RustKernelRules {
         if request.force {
             return planned.to_vec();
         }
-        super::records_witness::record_misses(planned, witness)
+        crate::test_runner::lang_iface::records::record_misses(planned, witness)
     }
 
     fn time_gate_selector_error_is_fatal(&self) -> bool {

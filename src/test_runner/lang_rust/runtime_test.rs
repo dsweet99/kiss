@@ -1,10 +1,10 @@
 use super::RustRuntime;
-use crate::test_runner::coverage_decision::SupportedLanguage;
 use crate::test_runner::lang_iface::KernelRules;
 use crate::test_runner::lang_iface::{
     AcceptMode, EnsureRequest, ExecutionWitness, LanguageRuntime, WitnessStatus,
 };
 use crate::test_runner::lang_rust::RustKernelRules;
+use crate::test_runner::test_selection::SupportedLanguage;
 use std::collections::BTreeMap;
 
 #[test]
@@ -40,7 +40,6 @@ fn accepted_summary_emits_cached_passes() {
         selectors: vec!["a".into()],
         statuses: vec![WitnessStatus::Passed],
         durations_ns: vec![Some(1)],
-        covered_lines: BTreeMap::new(),
         complete: true,
         generation_id: "g".into(),
         raw_statuses: Vec::new(),
@@ -140,7 +139,6 @@ fn store_rust_record(
         status,
         exit_code: Some(0),
         duration: std::time::Duration::from_millis(1),
-        covered: BTreeMap::new(),
     };
     kiss::test_records::store_record(&kiss::test_records::records_dir(root, "rust"), &record)
         .unwrap();
@@ -329,16 +327,5 @@ fn records_with_stale_inputs_do_not_hold() {
     assert!(
         witness.is_err() || witness.unwrap().selectors.is_empty(),
         "an edited Rust source must invalidate every Rust record"
-    );
-}
-
-#[test]
-fn stored_coverage_is_empty_for_rust() {
-    let tmp = demo_crate();
-    assert!(
-        RustKernelRules
-            .stored_coverage(tmp.path())
-            .covered
-            .is_empty()
     );
 }

@@ -10,8 +10,7 @@ mod decision;
 #[cfg(test)]
 pub(crate) use decision::combined_selectors;
 pub(crate) use decision::{
-    ChangedTestSelectors, changed_lines_for_sources, changed_test_selectors_by_language,
-    split_source_paths,
+    ChangedTestSelectors, changed_test_selectors_by_language, split_source_paths,
 };
 pub(crate) use decision::{CombinedSelectorInput, SelectorPlan, combined_selectors_with_direct};
 
@@ -33,10 +32,6 @@ pub(crate) fn current_rust_selector_universe(repo_root: &Path) -> BTreeSet<Strin
 #[cfg(test)]
 pub(crate) use crate::test_runner::lang_python::backer as python_backer;
 pub(crate) use crate::test_runner::lang_python::collect;
-use crate::test_runner::python_coverage_index::{
-    PYTHON_COVERAGE_ENV_KEYS, repo_relative_path as python_repo_relative_path,
-    stored_python_universe_selectors,
-};
 pub(crate) use collect::clear_python_collect_memo;
 use collect::collect_python_nodeids;
 pub(crate) fn collect_python_nodeids_for_targets(
@@ -53,17 +48,13 @@ use crate::test_runner::lang_rust::workspace::{
     cargo_workspace_member_manifest_dirs, is_workspace_rust_selector_file,
 };
 
-pub(crate) use crate::test_runner::lang_python::rslip::{
-    detect_rslip_versions, rslip_request_from_parts,
-};
-
 #[path = "runners/execution_summary.rs"]
 mod execution_summary;
 pub(crate) use execution_summary::{
     SelectorCacheRecord, SelectorExecutionRecord, SelectorExecutionSummary,
 };
 
-pub const NO_COVERING_TESTS_MSG: &str = "NO COVERING TESTS";
+pub const NO_SELECTED_TESTS_MSG: &str = "NO SELECTED TESTS";
 
 #[cfg(test)]
 pub(crate) fn py_selector(test_path: &Path, test_id: &str) -> String {
@@ -165,13 +156,8 @@ pub fn enumerate_tests_in_changed_files(
         }
     };
     if !py.is_empty() {
-        if let Some(nodeids) = python_nodeids_from_stored_universe(repo_root, &py) {
-            out.python_nodeids.extend(nodeids);
-        } else {
-            for nodeid in collect_python_nodeids(repo_root, Some(&py), &[])? {
-                out.python_nodeids.insert(nodeid);
-            }
-        }
+        out.python_nodeids
+            .extend(collect_python_nodeids(repo_root, Some(&py), &[])?);
     }
     if !rs.is_empty() {
         let universe = current_rust_selector_universe(repo_root);
@@ -186,26 +172,6 @@ pub fn enumerate_tests_in_changed_files(
         }
     }
     Ok(out)
-}
-
-fn python_nodeids_from_stored_universe(
-    repo_root: &Path,
-    py_files: &[PathBuf],
-) -> Option<BTreeSet<String>> {
-    let selectors =
-        stored_python_universe_selectors(repo_root, &[], &[], PYTHON_COVERAGE_ENV_KEYS)?;
-    let mut rels = BTreeSet::new();
-    for path in py_files {
-        rels.insert(python_repo_relative_path(repo_root, path)?);
-    }
-    let mut out = BTreeSet::new();
-    for selector in selectors {
-        let file = selector.split("::").next().unwrap_or(selector.as_str());
-        if rels.contains(file) {
-            out.insert(selector);
-        }
-    }
-    Some(out)
 }
 
 pub(crate) fn require_kiss_test_report_id(

@@ -9,8 +9,9 @@ use kiss::Language;
 use super::RunTestCmdArgs;
 use super::language_keyed::LanguageKeyed;
 use super::plan::{
-    AllWorkspaceCache, PlanSelectorsRequest, TargetPlanKind, VcsWorkspace, cover_all_language,
+    AllWorkspaceCache, PlanSelectorsRequest, TargetPlanKind, VcsWorkspace,
     plan_selectors_from_workspace, plan_target_selectors_with_priors, plan_vcs_workspace_at,
+    select_all_language,
 };
 use super::planned_selectors::{
     PlannedSelectors, SelectorRunOptions, should_force_cold_initialization,
@@ -224,18 +225,18 @@ fn language_paths_may_work(ws: &VcsWorkspace, language: Language) -> bool {
         })
 }
 
-pub(super) fn cover_language(
+pub(super) fn select_language(
     a: &RunTestCmdArgs<'_>,
     prefix: &SharedPrefix,
     language: Language,
 ) -> Result<PlannedSelectors, String> {
-    if pipeline_jobs::covering_should_fail(a, language) {
-        return Err("error: kiss test: covering failed".to_string());
+    if pipeline_jobs::selecting_should_fail(a, language) {
+        return Err("error: kiss test: selecting failed".to_string());
     }
     let extras = a.extras;
     match &prefix.kind {
         SharedKind::Change(ws) => plan_selectors_from_workspace(ws, extras, Some(language)),
-        SharedKind::All { cache } => cover_all_language(
+        SharedKind::All { cache } => select_all_language(
             &prefix.repo_root,
             &prefix.ignore,
             extras,
@@ -244,7 +245,7 @@ pub(super) fn cover_language(
             cache.as_ref(),
         ),
         SharedKind::Targets(targets) => {
-            let thread_targets = cover_thread_targets(targets, language, a.lang_filter())?;
+            let thread_targets = select_thread_targets(targets, language, a.lang_filter())?;
             if thread_targets.is_empty() {
                 return Ok(super::empty_planned(
                     prefix.repo_root.clone(),
@@ -276,17 +277,7 @@ fn change_request<'a>(a: &'a RunTestCmdArgs<'a>) -> PlanSelectorsRequest<'a> {
     }
 }
 
-pub(crate) fn split_jobs(jobs: usize, both: bool) -> (usize, usize) {
-    let full = jobs.max(1);
-    if both {
-        let half = (full / 2).max(1);
-        (half, half)
-    } else {
-        (full, full)
-    }
-}
-
-fn cover_thread_targets(
+fn select_thread_targets(
     targets: &[String],
     language: Language,
     user_lang: Option<Language>,

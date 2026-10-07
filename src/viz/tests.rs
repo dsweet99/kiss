@@ -251,7 +251,7 @@ fn test_build_rs_graph_empty() {
 }
 
 #[test]
-fn test_touch_coarsened_helpers_for_static_coverage() {
+fn test_touch_coarsened_helpers_for_static_touch() {
     let cg = CoarsenedGraph {
         labels: vec!["x".into()],
         edges: BTreeSet::new(),

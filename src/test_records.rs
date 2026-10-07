@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -20,7 +20,6 @@ pub struct TestRecord {
     pub status: TestStatus,
     pub exit_code: Option<i32>,
     pub duration: Duration,
-    pub covered: BTreeMap<String, BTreeSet<u32>>,
 }
 
 impl TestRecord {

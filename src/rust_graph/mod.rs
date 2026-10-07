@@ -316,7 +316,7 @@ pub(crate) fn collect_use_paths(tree: &syn::UseTree, imports: &mut Vec<String>) 
 }
 
 #[cfg(test)]
-mod coverage_witness {
+mod touch_witness {
     use super::*;
 
     impl RustImports {

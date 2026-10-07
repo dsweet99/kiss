@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::test_runner::coverage_decision::TestSelector;
+use crate::test_runner::test_selection::TestSelector;
 
 pub(crate) fn prior_failures_for_language(
     repo_root: &Path,

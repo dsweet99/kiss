@@ -54,7 +54,7 @@ pub fn run_stats(args: RunStatsArgs<'_>) -> i32 {
 }
 
 #[cfg(test)]
-mod coverage_witness {
+mod touch_witness {
     use super::*;
 
     impl RunStatsArgs<'_> {

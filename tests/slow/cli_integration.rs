@@ -1,4 +1,3 @@
-use crate::common::seed_python_runtime_coverage;
 use kiss::cli_output::VIOLATIONS_FIX_HINT;
 use std::fs;
 use std::process::Command;
@@ -43,7 +42,6 @@ fn cli_init_writes_default_config_in_current_directory() {
             && !config.contains("orphan_module_enabled")
             && config.contains("comment_removal_enabled = false")
             && config.contains(r#"docs_allowed = ["./"]"#)
-            && !config.contains("test_coverage")
             && config.contains("\"*\" = 99999")
             && !config.contains("[rust]"),
         "config:\n{config}"
@@ -106,7 +104,6 @@ pub fn create_god_class_file(dir: &std::path::Path) {
 fn cli_analyze_runs_on_python() {
     let tmp = TempDir::new().unwrap();
     fs::write(tmp.path().join("simple.py"), "def foo(): pass").unwrap();
-    seed_python_runtime_coverage(tmp.path(), &[("tests/test_simple.py::test_simple", vec![])]);
     let output = kiss_binary().arg("check").arg(tmp.path()).output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
@@ -119,7 +116,6 @@ fn cli_analyze_runs_on_python() {
 fn cli_analyze_reports_violations_on_god_class() {
     let tmp = TempDir::new().unwrap();
     create_god_class_file(tmp.path());
-    seed_python_runtime_coverage(tmp.path(), &[("tests/test_god.py::test_god", vec![])]);
     let output = kiss_binary()
         .arg("check")
         .arg(tmp.path())

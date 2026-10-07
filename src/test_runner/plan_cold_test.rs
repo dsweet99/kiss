@@ -78,7 +78,6 @@ fn cold_all_enumerates_and_stores_fingerprint() {
     assert_both_languages(&both);
     assert!(both.population_required.python);
     assert!(both.population_required.rust);
-    assert!(both.skip_index_rebuild_after_selective.python);
     assert!(both.workspace_files_fingerprint.is_some());
 
     let py_hit = plan_all(Some(Language::Python));
@@ -127,10 +126,7 @@ fn stage_names_use_kiss_test_stage_format() {
         "python_generation_publish",
         "python_source_fingerprint",
         "rust_identity",
-        "covering_select",
-        "cov_score_warm",
-        "cov_score",
-        "rslip_prepare",
+        "planning_select",
         "selective_index_repair",
         "plan_python",
         "plan_rust",
@@ -205,34 +201,26 @@ fn cold_dot_target_uses_plan_all_and_rust_extras_validate() {
 }
 
 #[test]
-fn all_mode_does_not_substitute_commit_covering() {
-    let plan = include_str!("plan.rs");
-    let vcs = include_str!("plan_vcs.rs");
-    assert!(
-        !plan.contains("commit_covering_plan"),
-        "All planning must keep the workspace universe, not a commit-covering subset"
-    );
-    assert!(
-        !vcs.contains("commit_covering_plan") && !vcs.contains("commit_python_covering_plan"),
-        "python_all_plan must not replace the universe with commit covering"
-    );
-}
-
-#[test]
-fn python_all_plan_keeps_provided_universe_and_requires_population_without_index() {
+fn python_all_plan_keeps_provided_universe_and_requires_population_without_records() {
     let tmp = TempDir::new().unwrap();
     init_git_repo(tmp.path());
-    let provided = vec![
+    let provided: Vec<String> = vec![
         "tests/test_a.py::test_a".into(),
         "tests/test_b.py::test_b".into(),
     ];
-    let python_all_plan = crate::test_runner::lang_python::all_mode_plan::python_all_plan;
-    let (sel, required) = python_all_plan(tmp.path(), &[], provided.clone());
-    assert_eq!(sel, provided);
-    assert!(required);
-    let (empty, empty_required) = python_all_plan(tmp.path(), &[], Vec::new());
-    assert!(empty.is_empty());
-    assert!(!empty_required);
+    let plan = |selectors: Vec<String>| {
+        crate::test_runner::lang_iface::records::records_all_mode_plan(
+            tmp.path(),
+            "python",
+            selectors,
+        )
+    };
+    let full = plan(provided.clone());
+    assert_eq!(full.planned, provided);
+    assert!(full.population_required);
+    let empty = plan(Vec::new());
+    assert!(empty.planned.is_empty());
+    assert!(!empty.population_required);
 }
 
 #[test]
@@ -281,7 +269,7 @@ fn dirty_all_keeps_both_rust_tests_after_one_file_change() {
     );
     assert!(
         planned.sel.rust.iter().any(|s| s.contains("b_ok")),
-        "All must keep b_ok, not only the commit-covering test: {:?}",
+        "All must keep b_ok, not only the commit-selecting test: {:?}",
         planned.sel.rust
     );
 }
@@ -319,11 +307,8 @@ fn all_mode_rust_edit_keeps_universe_and_reruns_every_test() {
     let selector_list: Vec<String> = selectors.iter().map(|s| s.to_string()).collect();
     let witness = crate::test_runner::lang_rust::try_load_rust_execution_witness(tmp.path()).ok();
     assert!(
-        crate::test_runner::lang_rust::records_witness::record_misses(
-            &selector_list,
-            witness.as_ref()
-        )
-        .is_empty(),
+        crate::test_runner::lang_iface::records::record_misses(&selector_list, witness.as_ref())
+            .is_empty(),
         "fresh records must hold before the edit"
     );
     assert!(
@@ -369,10 +354,8 @@ fn all_mode_rust_edit_keeps_universe_and_reruns_every_test() {
         "ordinary lib.rs edit must not require a full Rust population"
     );
     let witness = crate::test_runner::lang_rust::try_load_rust_execution_witness(tmp.path()).ok();
-    let misses = crate::test_runner::lang_rust::records_witness::record_misses(
-        &planned.sel.rust,
-        witness.as_ref(),
-    );
+    let misses =
+        crate::test_runner::lang_iface::records::record_misses(&planned.sel.rust, witness.as_ref());
     assert_eq!(
         misses.len(),
         planned.sel.rust.len(),

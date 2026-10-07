@@ -1,4 +1,5 @@
 mod kernel_rules;
+pub(crate) mod records;
 mod runtime;
 mod stored;
 mod timing;
@@ -12,7 +13,7 @@ pub(crate) use runtime::{
     EnsureRequest, EnsureRuntimeResult, LanguageEnsureResult, LanguageRuntime, Listing,
     OutcomeBatch,
 };
-pub(crate) use stored::{GenerationIds, StoredCoverage};
+pub(crate) use stored::GenerationIds;
 pub(crate) use timing::timing_context_is_comparable;
 pub(crate) use witness::{
     AcceptDecision, AcceptMode, ExecutionWitness, WitnessStatus, accept_witness,

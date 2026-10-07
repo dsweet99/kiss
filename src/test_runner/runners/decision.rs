@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use super::enumerate_tests_in_changed_files;
@@ -7,8 +7,8 @@ mod decision_prior;
 use crate::test_runner::lang_rust::plan_inputs as decision_rust_paths;
 #[path = "importer_select.rs"]
 mod importer_select;
-use crate::test_runner::coverage_decision::{
-    ChangedSource, CoverageDecisionEngine, LanguagePlanner, SelectionBasis, TestSelector,
+use crate::test_runner::test_selection::{
+    ChangedSource, LanguagePlanner, SelectionBasis, SelectionEngine, TestSelector,
 };
 
 use crate::test_runner::language_keyed::LanguageKeyed;
@@ -21,7 +21,7 @@ pub(crate) struct SelectorPlan {
     pub(crate) vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed<usize>,
     pub(crate) prior_failure_selectors:
         crate::test_runner::language_keyed::LanguageKeyed<Vec<String>>,
-    pub(crate) coverage_decision_engine_used: bool,
+    pub(crate) selection_engine_used: bool,
     pub(crate) selection_basis: crate::test_runner::language_keyed::LanguageKeyed<SelectionBasis>,
 }
 
@@ -30,7 +30,6 @@ pub(crate) struct CombinedSelectorInput<'a> {
     pub(crate) repo_root: &'a Path,
     pub(crate) source_paths: &'a [PathBuf],
     pub(crate) test_paths: &'a [PathBuf],
-    pub(crate) changed_lines: &'a BTreeMap<PathBuf, BTreeSet<u32>>,
     pub(crate) test_args: crate::test_runner::language_keyed::LanguageKeyed<&'a [String]>,
     pub(crate) lang_filter: Option<kiss::Language>,
     pub(crate) ignore: &'a [String],
@@ -43,7 +42,6 @@ pub(crate) fn combined_selectors(
     repo_root: &Path,
     source_paths: &[PathBuf],
     test_paths: &[PathBuf],
-    changed_lines: &BTreeMap<PathBuf, BTreeSet<u32>>,
     rust_test_args: &[String],
     lang_filter: Option<kiss::Language>,
     ignore: &[String],
@@ -52,7 +50,6 @@ pub(crate) fn combined_selectors(
         repo_root,
         source_paths,
         test_paths,
-        changed_lines,
         test_args: crate::test_runner::language_keyed::LanguageKeyed {
             python: rust_test_args,
             rust: rust_test_args,
@@ -67,9 +64,9 @@ pub(crate) fn combined_selectors(
 pub(crate) fn combined_selectors_with_direct(
     input: CombinedSelectorInput<'_>,
 ) -> Result<SelectorPlan, String> {
-    let covering_started = std::time::Instant::now();
+    let selecting_started = std::time::Instant::now();
     let plan = combined_selectors_with_direct_inner(input)?;
-    crate::test_runner::emit_stage_time("covering_select", covering_started.elapsed());
+    crate::test_runner::emit_stage_time("selection", selecting_started.elapsed());
     Ok(plan)
 }
 
@@ -88,7 +85,6 @@ fn combined_selectors_with_direct_inner(
         input.repo_root,
         input.source_paths,
         input.test_paths,
-        input.changed_lines,
         input.ignore,
     )?;
     extend_tagged(&mut prepared.changed_tests, input.extra_direct.owned_vecs());
@@ -98,7 +94,6 @@ fn combined_selectors_with_direct_inner(
     let engine_backers = engine_backers(EngineBackerInputs {
         repo_root: input.repo_root,
         py_source_paths: &prepared.py_source_paths,
-        python_changed_lines: &prepared.python_changed_lines,
         rust_source_paths: &prepared.rust_source_paths,
         test_args: input.test_args,
         lang_filter: input.lang_filter,
@@ -122,7 +117,7 @@ fn assemble_selector_plan(
     });
     let mut selection_basis = engine_backers.selection_basis;
     let rust_vcs_source_paths = prepared.rust_source_paths.len();
-    let engine_plan = CoverageDecisionEngine::new(engine_backers.backers).plan(changed_sources)?;
+    let engine_plan = SelectionEngine::new(engine_backers.backers).plan(changed_sources)?;
     let mut selected = keyed_selectors(&engine_plan.selected);
     let mut population = keyed_selectors(&engine_plan.population);
     let population_required =
@@ -147,7 +142,7 @@ fn assemble_selector_plan(
             rust: rust_vcs_source_paths,
         },
         prior_failure_selectors,
-        coverage_decision_engine_used: true,
+        selection_engine_used: true,
         selection_basis,
     })
 }
@@ -155,7 +150,6 @@ fn assemble_selector_plan(
 struct EngineBackerInputs<'a> {
     repo_root: &'a Path,
     py_source_paths: &'a [PathBuf],
-    python_changed_lines: &'a BTreeMap<PathBuf, BTreeSet<u32>>,
     rust_source_paths: &'a [PathBuf],
     test_args: crate::test_runner::language_keyed::LanguageKeyed<&'a [String]>,
     lang_filter: Option<kiss::Language>,
@@ -186,11 +180,6 @@ fn engine_backers(input: EngineBackerInputs<'_>) -> Result<EngineBackers, String
         python: input.py_source_paths,
         rust: input.rust_source_paths,
     };
-    let empty_lines = BTreeMap::new();
-    let changed_lines = LanguageKeyed {
-        python: input.python_changed_lines,
-        rust: &empty_lines,
-    };
     let mut backers = Vec::new();
     for language in crate::test_runner::lang_registry::languages() {
         let has_work = !source_paths.get(language).is_empty()
@@ -204,7 +193,6 @@ fn engine_backers(input: EngineBackerInputs<'_>) -> Result<EngineBackers, String
             crate::test_runner::lang_registry::PlannerBackerInput {
                 repo_root: input.repo_root,
                 source_paths: source_paths.get(language),
-                changed_lines: changed_lines.get(language),
                 test_args: input.test_args.get(language),
                 ignore: input.ignore,
                 changed_tests: input.changed_tests.get(language),
@@ -342,20 +330,9 @@ pub(crate) fn split_source_paths(source_paths: &[PathBuf]) -> (Vec<PathBuf>, Vec
         .partition(|path| !super::is_rust_planning_source_path(path))
 }
 
-pub(crate) fn changed_lines_for_sources(
-    changed_lines: &BTreeMap<PathBuf, BTreeSet<u32>>,
-    source_paths: &[PathBuf],
-) -> BTreeMap<PathBuf, BTreeSet<u32>> {
-    changed_lines
-        .iter()
-        .filter(|(path, _lines)| source_paths.contains(path))
-        .map(|(path, lines)| (path.clone(), lines.clone()))
-        .collect()
-}
-
 #[cfg(test)]
-#[path = "covering_select_rss_test.rs"]
-mod covering_select_rss_test;
+#[path = "selection_rss_test.rs"]
+mod selection_rss_test;
 #[cfg(test)]
 #[path = "decision_test.rs"]
 mod tests;

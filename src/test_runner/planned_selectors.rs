@@ -12,9 +12,9 @@ pub(crate) struct PlannedSelectors {
     pub source_paths: crate::test_runner::language_keyed::LanguageKeyed<Vec<PathBuf>>,
     pub vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed<usize>,
     pub prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed<Vec<String>>,
-    pub coverage_decision_engine_used: bool,
+    pub selection_engine_used: bool,
     pub selection_basis: crate::test_runner::language_keyed::LanguageKeyed<
-        crate::test_runner::coverage_decision::SelectionBasis,
+        crate::test_runner::test_selection::SelectionBasis,
     >,
     pub ignore: Vec<String>,
     pub workspace_files_fingerprint: Option<String>,
@@ -30,9 +30,9 @@ pub(crate) fn empty_planned(repo_root: PathBuf, ignore: Vec<String>) -> PlannedS
         source_paths: LanguageKeyed::default(),
         vcs_source_paths: LanguageKeyed::default(),
         prior_failure_selectors: LanguageKeyed::default(),
-        coverage_decision_engine_used: false,
+        selection_engine_used: false,
         selection_basis: LanguageKeyed::from_fn(|_| {
-            crate::test_runner::coverage_decision::SelectionBasis::Current
+            crate::test_runner::test_selection::SelectionBasis::Current
         }),
         ignore,
         workspace_files_fingerprint: None,

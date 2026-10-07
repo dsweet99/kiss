@@ -4,13 +4,12 @@ use kiss::Language;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::test_runner::coverage_decision::LanguagePlanner;
-use crate::test_runner::coverage_decision::{
-    ChangedDiff, CoverageFreshness, LanguageTestModule, PopulationPlan, RunContext,
-    SelectionDecision, TestSelector,
-};
 use crate::test_runner::runners::SelectorExecutionSummary;
 use crate::test_runner::runners::{python_backer, rust_backer};
+use crate::test_runner::test_selection::LanguagePlanner;
+use crate::test_runner::test_selection::{
+    ChangedDiff, LanguageTestModule, RunContext, TestSelector,
+};
 
 fn planned() -> PlannedSelectors {
     use std::sync::OnceLock;
@@ -74,26 +73,12 @@ impl LanguagePlanner for FakeLanguageModule {
         Vec::new()
     }
 
-    fn freshness(&self, _universe: &[TestSelector]) -> Result<CoverageFreshness, String> {
-        Ok(CoverageFreshness::Fresh)
-    }
-
-    fn population_plan(&self, universe: &[TestSelector]) -> PopulationPlan {
-        PopulationPlan {
-            selectors: universe.to_vec(),
-        }
-    }
-
-    fn select(&self) -> Result<SelectionDecision, String> {
-        Ok(SelectionDecision::default())
-    }
-
-    fn manifest_env_allowlist(&self) -> &'static [&'static str] {
-        &[]
+    fn sources_changed(&self) -> bool {
+        false
     }
 }
 
-impl crate::test_runner::coverage_decision::LanguageExecutor for FakeLanguageModule {
+impl crate::test_runner::test_selection::LanguageExecutor for FakeLanguageModule {
     fn language(&self) -> Language {
         self.language
     }

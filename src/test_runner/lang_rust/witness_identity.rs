@@ -40,7 +40,6 @@ mod tests {
                 WitnessStatus::Unresolved,
             ],
             durations_ns: vec![Some(1), Some(2), None],
-            covered_lines: Default::default(),
             complete: false,
             generation_id: "g".into(),
             raw_statuses: vec![

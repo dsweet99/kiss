@@ -4,6 +4,7 @@ mod model_python;
 mod model_rust;
 mod parse;
 mod python_nodeid_cache;
+pub(crate) use python_nodeid_cache::repo_relative;
 mod resolve;
 mod resolve_hydrate;
 

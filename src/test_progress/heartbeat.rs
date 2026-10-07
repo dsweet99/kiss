@@ -118,7 +118,6 @@ fn work_status_from_message(message: &str) -> Option<&str> {
         ("kiss test: Planning", "Planning"),
         ("kiss test: Waiting", "Waiting"),
         ("kiss test: Starting", "Starting"),
-        ("kiss test: rslip", "rslip"),
     ];
     KINDS
         .iter()
@@ -237,8 +236,6 @@ mod tests {
         assert_eq!(super::current_work_status(), "rust_identity");
         super::note_work_status("kiss test: Planning ...");
         assert_eq!(super::current_work_status(), "Planning");
-        super::note_work_status("kiss test: rslip prepared hits=0 misses=1");
-        assert_eq!(super::current_work_status(), "rslip");
         super::note_work_status("kiss test: waiting for kiss test");
         assert_eq!(super::current_work_status(), "waiting for kiss test");
     }

@@ -33,7 +33,7 @@ fn emit_atomic_intervals(ranges: &[RoleRange], bounds: &[SourcePosition]) -> Vec
         if span.is_empty() {
             continue;
         }
-        let Some(contexts) = covering_contexts(ranges, span) else {
+        let Some(contexts) = selecting_contexts(ranges, span) else {
             continue;
         };
         push_merged(&mut out, RoleRange { span, contexts });
@@ -41,18 +41,18 @@ fn emit_atomic_intervals(ranges: &[RoleRange], bounds: &[SourcePosition]) -> Vec
     out
 }
 
-fn covering_contexts(ranges: &[RoleRange], span: SourceSpan) -> Option<CodeContextSet> {
-    let mut covering: Vec<&RoleRange> = ranges
+fn selecting_contexts(ranges: &[RoleRange], span: SourceSpan) -> Option<CodeContextSet> {
+    let mut selecting: Vec<&RoleRange> = ranges
         .iter()
         .filter(|r| r.span.start <= span.start && span.end <= r.span.end)
         .collect();
-    if covering.is_empty() {
+    if selecting.is_empty() {
         return None;
     }
-    covering.sort_by_key(|r| span_area(r.span));
-    let min_area = span_area(covering[0].span);
+    selecting.sort_by_key(|r| span_area(r.span));
+    let min_area = span_area(selecting[0].span);
     let mut contexts = CodeContextSet::none();
-    for range in covering {
+    for range in selecting {
         if span_area(range.span) == min_area {
             contexts = contexts.union(range.contexts);
         }

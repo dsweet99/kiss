@@ -237,10 +237,10 @@ fn cold_initialization_population_marks_missing_state_for_both_languages() {
             python: Vec::new(),
             rust: Vec::new(),
         },
-        coverage_decision_engine_used: true,
+        selection_engine_used: true,
         selection_basis: crate::test_runner::language_keyed::LanguageKeyed {
-            python: crate::test_runner::coverage_decision::SelectionBasis::Current,
-            rust: crate::test_runner::coverage_decision::SelectionBasis::Current,
+            python: crate::test_runner::test_selection::SelectionBasis::Current,
+            rust: crate::test_runner::test_selection::SelectionBasis::Current,
         },
         ignore: Vec::new(),
         workspace_files_fingerprint: None,
@@ -431,9 +431,9 @@ fn plan_repo_root_target_matches_all_via_dot() {
     );
 
     assert!(!via_all.population_required.python);
-    assert!(!via_all.coverage_decision_engine_used);
-    assert!(!via_root.coverage_decision_engine_used);
-    assert!(!via_dot.coverage_decision_engine_used);
+    assert!(!via_all.selection_engine_used);
+    assert!(!via_root.selection_engine_used);
+    assert!(!via_dot.selection_engine_used);
 }
 
 #[test]
@@ -500,9 +500,9 @@ fn plan_subdirectory_is_not_workspace_enumerator() {
     let all = all.unwrap();
     assert!(!planned.sel.rust.is_empty());
     assert!(!planned.source_paths.rust.is_empty());
-    assert!(planned.coverage_decision_engine_used);
+    assert!(planned.selection_engine_used);
     assert!(all.source_paths.rust.is_empty());
-    assert!(!all.coverage_decision_engine_used);
+    assert!(!all.selection_engine_used);
 }
 
 #[test]

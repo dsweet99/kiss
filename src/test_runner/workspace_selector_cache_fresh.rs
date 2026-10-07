@@ -86,7 +86,6 @@ fn should_skip_dir(name: &str) -> bool {
             | b"venv"
             | b"__pycache__"
             | b".pytest_cache"
-            | b".rslip_cache"
             | b"node_modules"
     )
 }

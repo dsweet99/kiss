@@ -61,30 +61,40 @@ fn parse_python_batch(files: &[PathBuf]) -> Result<Vec<ParsedFile>, RoleBuildErr
     if files.is_empty() {
         return Ok(Vec::new());
     }
-    crate::parsing::parse_files(files)
-        .map_err(|err| RoleBuildError::PythonParse {
+    let results =
+        crate::parsing::parse_files(files).map_err(|err| RoleBuildError::PythonParse {
             path: files[0].clone(),
             message: err.to_string(),
-        })?
-        .into_iter()
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|err| RoleBuildError::PythonParse {
-            path: files[0].clone(),
-            message: err.to_string(),
-        })
+        })?;
+    collect_named_parses(files, results, |path, message| {
+        RoleBuildError::PythonParse { path, message }
+    })
 }
 
 fn parse_rust_batch(files: &[PathBuf]) -> Result<Vec<ParsedRustFile>, RoleBuildError> {
     if files.is_empty() {
         return Ok(Vec::new());
     }
-    crate::rust_parsing::parse_rust_files(files)
-        .into_iter()
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|err| RoleBuildError::RustParse {
-            path: files[0].clone(),
-            message: err.to_string(),
-        })
+    collect_named_parses(
+        files,
+        crate::rust_parsing::parse_rust_files(files),
+        |path, message| RoleBuildError::RustParse { path, message },
+    )
+}
+
+fn collect_named_parses<T, E: std::fmt::Display>(
+    files: &[PathBuf],
+    results: impl IntoIterator<Item = Result<T, E>>,
+    make: impl Fn(PathBuf, String) -> RoleBuildError,
+) -> Result<Vec<T>, RoleBuildError> {
+    let mut parsed = Vec::new();
+    for (path, result) in files.iter().zip(results) {
+        match result {
+            Ok(item) => parsed.push(item),
+            Err(err) => return Err(make(path.clone(), err.to_string())),
+        }
+    }
+    Ok(parsed)
 }
 
 #[cfg(test)]
@@ -116,5 +126,35 @@ mod roles_trait_test {
             .classify_roles(std::slice::from_ref(&&parsed_rs), std::slice::from_ref(&rs))
             .unwrap();
         assert!(rs_index.file_count() >= 1);
+    }
+
+    #[test]
+    fn parse_then_classify_names_the_broken_python_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let valid = tmp.path().join("aaa.py");
+        let broken = tmp.path().join("zzz.py");
+        std::fs::write(&valid, "def ok():\n    return 1\n").unwrap();
+        std::fs::write(&broken, "def bad(\n").unwrap();
+        let Err(err) = parse_then_classify(&[valid, broken], &[]) else {
+            panic!("expected a python parse error");
+        };
+        let message = err.to_string();
+        assert!(message.contains("zzz.py"), "{message}");
+        assert!(!message.contains("aaa.py"), "{message}");
+    }
+
+    #[test]
+    fn parse_then_classify_names_the_broken_rust_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let valid = tmp.path().join("aaa.rs");
+        let broken = tmp.path().join("zzz.rs");
+        std::fs::write(&valid, "pub fn ok() {}\n").unwrap();
+        std::fs::write(&broken, "fn bad(\n").unwrap();
+        let Err(err) = parse_then_classify(&[], &[valid, broken]) else {
+            panic!("expected a rust parse error");
+        };
+        let message = err.to_string();
+        assert!(message.contains("zzz.rs"), "{message}");
+        assert!(!message.contains("aaa.rs"), "{message}");
     }
 }

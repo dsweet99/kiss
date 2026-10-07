@@ -19,7 +19,7 @@ fn workspace_src_files() -> Vec<PathBuf> {
 }
 
 #[test]
-fn static_reference_coverage_apis_are_removed_from_src() {
+fn static_test_ref_apis_are_removed_from_src() {
     let forbidden = [
         "analyze_test_refs",
         "analyze_test_refs_no_map",
@@ -27,9 +27,6 @@ fn static_reference_coverage_apis_are_removed_from_src() {
         "analyze_rust_test_refs",
         "TestRefAnalysis",
         "RustTestRefAnalysis",
-        "CoverageSource::StaticReferences",
-        "inv_test_coverage",
-        "CoverageMode::RuntimeLine",
     ];
     let mut hits = Vec::new();
     for path in workspace_src_files() {
@@ -42,7 +39,7 @@ fn static_reference_coverage_apis_are_removed_from_src() {
     }
     assert!(
         hits.is_empty(),
-        "static-reference coverage symbols must not remain in src/\n{}",
+        "static test-ref symbols must not remain in src/\n{}",
         hits.join("\n")
     );
 }
@@ -59,11 +56,7 @@ fn kiss_check_stays_static_only_without_test_ref_analysis() {
 
 #[test]
 fn product_consumers_do_not_call_path_naming_test_predicates() {
-    let forbidden = [
-        "is_rust_test_file(",
-        "is_coverage_gate_file(",
-        "is_test_file(",
-    ];
+    let forbidden = ["is_rust_test_file(", "is_test_file("];
     let mut hits = Vec::new();
     for path in workspace_src_files() {
         let text = fs::read_to_string(&path).unwrap();

@@ -18,21 +18,21 @@ fn test_language_and_config() {
     assert_eq!(parse_language("python"), Ok(Language::Python));
     assert_eq!(parse_language("rust"), Ok(Language::Rust));
     assert!(parse_language("invalid").is_err());
-    let (py, rs) = load_configs(None);
+    let (py, rs) = load_configs(None).unwrap();
     assert!(py.statements_per_function > 0 && rs.statements_per_function > 0);
     let tmp = tempfile::TempDir::new().unwrap();
     let builtin = tmp.path().join("builtin.toml");
     std::fs::write(&builtin, "[python]\n[rust]\n").unwrap();
-    let (py_def, _) = load_configs(Some(&builtin));
+    let (py_def, _) = load_configs(Some(&builtin)).unwrap();
     assert_eq!(
         py_def.statements_per_function,
         kiss::defaults::python::STATEMENTS_PER_FUNCTION
     );
     let path = tmp.path().join("kiss.toml");
     std::fs::write(&path, "[test]\nmax_num_tests = 80\n").unwrap();
-    assert_eq!(load_gate_config(Some(&path)).max_num_tests, 80);
+    assert_eq!(load_gate_config(Some(&path)).unwrap().max_num_tests, 80);
     assert_eq!(
-        load_gate_config(Some(&builtin)).max_num_tests,
+        load_gate_config(Some(&builtin)).unwrap().max_num_tests,
         kiss::defaults::gate::MAX_NUM_TESTS
     );
 }

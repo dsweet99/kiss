@@ -19,8 +19,6 @@ pub(crate) struct VcsWorkspace {
     pub ignore_norm: Vec<String>,
     pub source_changed: Vec<std::path::PathBuf>,
     pub test_changed: Vec<std::path::PathBuf>,
-    pub changed_lines:
-        std::collections::BTreeMap<std::path::PathBuf, std::collections::BTreeSet<u32>>,
 }
 
 pub(crate) fn plan_vcs_workspace(req: &PlanSelectorsRequest<'_>) -> Result<VcsWorkspace, String> {
@@ -48,12 +46,6 @@ pub(crate) fn plan_vcs_workspace_at(
             crate::test_git::changed_paths_since(&repo_root, diff_target.as_ref().unwrap())?
         }
     };
-    let rel_changed_lines = match req.mode {
-        TestChangeMode::Commit => crate::test_git::changed_lines_commit(&repo_root)?,
-        TestChangeMode::Base | TestChangeMode::Main => {
-            crate::test_git::changed_lines_since(&repo_root, diff_target.as_ref().unwrap())?
-        }
-    };
     let lang_filter = req.lang_filter.map(crate::test_git::TestLangFilter::from);
     if let Some(language) = req.lang_filter {
         crate::test_runner::lang_registry::rules_for(language)
@@ -62,12 +54,6 @@ pub(crate) fn plan_vcs_workspace_at(
     let abs_paths = crate::test_git::resolve_changed_source_paths(
         &repo_root,
         &rel_changed,
-        &ignore_norm,
-        lang_filter,
-    );
-    let changed_lines = crate::test_git::resolve_changed_line_paths(
-        &repo_root,
-        &rel_changed_lines,
         &ignore_norm,
         lang_filter,
     );
@@ -85,7 +71,6 @@ pub(crate) fn plan_vcs_workspace_at(
         ignore_norm,
         source_changed,
         test_changed,
-        changed_lines,
     })
 }
 
@@ -98,7 +83,6 @@ pub(crate) fn plan_selectors_from_workspace(
         repo_root: &ws.repo_root,
         source_paths: &ws.source_changed,
         test_paths: &ws.test_changed,
-        changed_lines: &ws.changed_lines,
         test_args: extras,
         lang_filter,
         ignore: &ws.ignore_norm,

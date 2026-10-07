@@ -5,7 +5,7 @@ use crate::bin_cli::stats::{RunStatsArgs, run_stats};
 use crate::bin_cli::test_cmd::run_test_command;
 
 #[test]
-fn test_touch_for_static_test_coverage() {
+fn test_touch_for_static_tests() {
     fn touch<T>(_t: T) {}
     let _ = (touch(run_mimic), touch(run_stats));
     let _ = (

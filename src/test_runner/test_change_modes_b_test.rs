@@ -4,8 +4,8 @@ use tempfile::TempDir;
 
 use crate::test_git::TestChangeMode;
 use crate::test_runner::test_mode_fixtures::{
-    RS_COVERING_SELECTOR, assert_base_delta_plan, checkout_branch, clone_warm_committed_repo,
-    edit_rust_covered_source, ensure_main_branch, git_in, git_stdout, init_git, with_cwd,
+    RS_SELECTOR, assert_base_delta_plan, checkout_branch, clone_warm_committed_repo,
+    edit_rust_source, ensure_main_branch, git_in, git_stdout, init_git, with_cwd,
     with_locked_base_historical_repo, with_locked_warm_committed_repo,
 };
 use crate::test_runner::{PlannedSelectors, RunTestCmdArgs, plan_selectors, run_test};
@@ -152,7 +152,7 @@ fn row_i_base_and_main_same_tree_yield_identical_selectors() {
     let _cwd_guard = crate::cwd_test_lock::lock();
     with_locked_warm_committed_repo(|repo, lib| {
         let baseline = git_stdout(repo, &["rev-parse", "HEAD"]);
-        edit_rust_covered_source(&lib, 2);
+        edit_rust_source(&lib, 2);
         let base_planned = with_cwd(repo, || {
             plan(
                 TestChangeMode::Base,
@@ -187,17 +187,14 @@ fn row_i_base_and_main_same_tree_yield_identical_selectors() {
             base_planned.population_required.python, main_planned.population_required.python,
             "base≡main same-tree: python_population_required must match"
         );
-        assert_eq!(
-            base_planned.sel.rust,
-            vec![RS_COVERING_SELECTOR.to_string()]
-        );
+        assert_eq!(base_planned.sel.rust, vec![RS_SELECTOR.to_string()]);
     });
 }
 
 fn assert_run_test_dry_run(mode: TestChangeMode, main: Option<&str>, base: Option<&str>) {
     let tmp = TempDir::new().unwrap();
     let lib = clone_warm_committed_repo(tmp.path());
-    edit_rust_covered_source(&lib, 2);
+    edit_rust_source(&lib, 2);
     let gate = kiss::GateConfig {
         orphan_detection: false,
         ..Default::default()

@@ -172,9 +172,17 @@ fn print_summary_from_pipeline(
     println!("Analyzed from: {}", paths.join(", "));
     println!("{}", config_provenance(config));
     println!();
+    let py_count = production_file_count(
+        pipeline.result.py_parsed.iter().map(|parsed| &parsed.path),
+        &pipeline.result.roles,
+    );
+    let rs_count = production_file_count(
+        pipeline.result.rs_parsed.iter().map(|parsed| &parsed.path),
+        &pipeline.result.roles,
+    );
     println!(
         "Analyzed: {} files, {} code_units, {} statements, {} graph_nodes, {} graph_edges",
-        pipeline.result.py_parsed.len() + pipeline.result.rs_parsed.len(),
+        py_count + rs_count,
         pipeline.result.code_unit_count,
         pipeline.result.statement_count,
         graph_nodes,
@@ -195,17 +203,17 @@ fn print_summary_from_pipeline(
         )
     );
 
-    if !pipeline.result.py_parsed.is_empty() {
+    if py_count > 0 {
         println!(
             "=== Python ({} files) ===\n{}\n",
-            pipeline.result.py_parsed.len(),
+            py_count,
             format_stats_table(&compute_summaries(&pipeline.py_stats))
         );
     }
-    if !pipeline.result.rs_parsed.is_empty() {
+    if rs_count > 0 {
         println!(
             "=== Rust ({} files) ===\n{}",
-            pipeline.result.rs_parsed.len(),
+            rs_count,
             format_stats_table(&compute_summaries(&pipeline.rs_stats))
         );
     }
@@ -328,6 +336,16 @@ fn unit_test_runtime_section_for_rules(
     )
 }
 
+fn production_file_count(
+    paths: impl IntoIterator<Item = impl AsRef<Path>>,
+    roles: &kiss::code_roles::SourceRoleIndex,
+) -> usize {
+    paths
+        .into_iter()
+        .filter(|path| !kiss::code_roles::is_test_only_file(roles, path.as_ref()))
+        .count()
+}
+
 fn format_violation_counts(duplicate: usize, comment: usize, doc: usize) -> String {
     format!("Violations: {duplicate} duplicate, {comment} comment, {doc} doc")
 }
@@ -344,7 +362,7 @@ where
 mod summary_tests;
 
 #[cfg(test)]
-mod coverage_witness {
+mod touch_witness {
     use super::*;
     use kiss::{Config, GateConfig};
 

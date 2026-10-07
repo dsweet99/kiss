@@ -12,13 +12,12 @@ import tempfile
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Iterator
 
 ROOT = Path(__file__).resolve().parents[1]
 KISS = ROOT / "target" / "debug" / "kiss"
 PY_SOURCE = Path("ops/evaluate.py")
-PY_TEST = Path("tests/test_coverage_metrics_kiss.py")
 RS_SOURCE = Path("src/cli_output/mod.rs")
 LANGUAGES = ("python", "rust")
 
@@ -625,7 +624,7 @@ def language_ignores(root: Path, language: str) -> list[str]:
         ignored = [
             path.name
             for path in root.rglob("*.py")
-            if harness_oracle_test_file(path.relative_to(root)) and path.relative_to(root) != PY_TEST
+            if harness_oracle_test_file(path.relative_to(root))
         ]
     else:
         # kiss --ignore matches filename prefixes. Never emit the RS_SOURCE basename
@@ -743,8 +742,7 @@ def commit_fixture_baseline(repo: Path) -> None:
 
 
 def write_witness_config(repo: Path) -> None:
-    # Threshold 0: witness repos intentionally leave `gamma` untested so cache /
-    # selection behavior can be observed without a coverage-gate failure.
+    # Witness repos intentionally leave `gamma` untested.
     # Do not set the legacy [global] orphan_module_enabled key; unknown global
     # keys prevent the [test] section from applying.
     (repo / ".kissconfig").write_text(
@@ -780,7 +778,7 @@ def write_python_witness_repo(repo: Path) -> None:
         "\n"
         "\n"
         "def mark(name):\n"
-        "    root = Path(os.environ['KISS_COVERAGE_WITNESS_DIR'])\n"
+        "    root = Path(os.environ['KISS_WITNESS_DIR'])\n"
         "    root.mkdir(parents=True, exist_ok=True)\n"
         "    (root / name).write_text('ran')\n"
         "\n"
@@ -804,7 +802,7 @@ def write_rust_witness_repo(repo: Path) -> None:
     write_witness_config(repo)
     (repo / "Cargo.toml").write_text(
         "[package]\n"
-        "name = \"kiss_coverage_witness\"\n"
+        "name = \"kiss_witness\"\n"
         "version = \"0.1.0\"\n"
         "edition = \"2024\"\n",
     )
@@ -824,13 +822,13 @@ def write_rust_witness_repo(repo: Path) -> None:
     (repo / "tests/alpha.rs").write_text(
         "#[test]\n"
         "fn test_alpha() {\n"
-        "    assert_eq!(kiss_coverage_witness::alpha(), \"alpha\");\n"
+        "    assert_eq!(kiss_witness::alpha(), \"alpha\");\n"
         "}\n"
     )
     (repo / "tests/beta.rs").write_text(
         "#[test]\n"
         "fn test_beta() {\n"
-        "    assert_eq!(kiss_coverage_witness::beta(), \"beta\");\n"
+        "    assert_eq!(kiss_witness::beta(), \"beta\");\n"
         "}\n"
     )
     subprocess.run(
@@ -856,124 +854,8 @@ def clear_markers(marker_dir: Path) -> None:
             path.unlink()
 
 
-def relevant_artifact_bytes(paths: list[Path]) -> dict[str, bytes]:
-    result: dict[str, bytes] = {}
-    for path in paths:
-        assert path.is_file(), f"missing artifact: {path}"
-        result[path.name] = path.read_bytes()
-    return result
-
-
 def python_records_dir(repo_root: Path) -> Path:
     return repo_root / ".kiss" / "test" / "records" / "python"
-
-
-def python_record_payloads(repo_root: Path) -> list[dict]:
-    records = sorted(python_records_dir(repo_root).glob("*.json"))
-    assert records, f"missing Python test records in {python_records_dir(repo_root)}"
-    payloads = []
-    for path in records:
-        record = load_json(path)
-        payloads.append({"selector": record["test_id"], "coverage": {"files": record["covered"]}})
-    return payloads
-
-
-def entry_lines(entry: dict, source: str) -> set[int]:
-    files = entry.get("coverage", {}).get("files", {})
-    matched: set[int] = set()
-    suffix = f"/{source}"
-    for path, lines in files.items():
-        if path == source or str(path).endswith(suffix):
-            matched.update(int(line) for line in lines)
-    return matched
-
-
-def assert_index_source_selectors(
-    index: dict,
-    source: str,
-    expected_parts: tuple[str, str],
-) -> None:
-    assert source in index["files"], f"{source} missing from index"
-    selectors = index["files"][source]
-    for part in expected_parts:
-        assert any(part in selector for selector in selectors), selectors
-
-
-def assert_disjoint_entry_lines(
-    entries: list[dict],
-    source: str,
-    first_line: int,
-    second_line: int,
-    uncovered_line: int,
-) -> None:
-    first_entries = [entry for entry in entries if first_line in entry_lines(entry, source)]
-    second_entries = [entry for entry in entries if second_line in entry_lines(entry, source)]
-    uncovered_entries = [
-        entry for entry in entries if uncovered_line in entry_lines(entry, source)
-    ]
-    assert len(first_entries) == 1, [entry_lines(entry, source) for entry in entries]
-    assert len(second_entries) == 1, [entry_lines(entry, source) for entry in entries]
-    assert first_entries[0] is not second_entries[0], "covered lines must be disjoint"
-    assert not uncovered_entries, [entry_lines(entry, source) for entry in entries]
-
-
-def assert_population_selectors(manifest: dict, expected_parts: tuple[str, str]) -> None:
-    selectors = manifest["selectors"]
-    for part in expected_parts:
-        assert any(part in selector for selector in selectors), selectors
-
-
-def pinned_python_generation_dir(cache: Path) -> Path:
-    """Resolve `generations/<id>` from the v2 population pointer."""
-    pointer = load_json(cache / "population.json")
-    generation_id = pointer.get("generation_id")
-    assert isinstance(generation_id, str) and generation_id, pointer
-    gen_dir = cache / "generations" / generation_id
-    assert gen_dir.is_dir(), f"missing pinned Python generation dir: {gen_dir}"
-    return gen_dir
-
-
-def load_python_generation_line_index(cache: Path) -> dict:
-    """Build an index-like `{files: {source: [selectors...]}}` from line_index.json."""
-    line_index = load_json(pinned_python_generation_dir(cache) / "line_index.json")
-    files: dict[str, list[str]] = {}
-    if line_index.get("schema_version") == "rslip-python-line-index-v2":
-        names = line_index.get("selectors") or []
-        for source, lines in (line_index.get("files") or {}).items():
-            selectors: set[str] = set()
-            for ids in lines.values():
-                for selector_id in ids:
-                    selectors.add(str(names[int(selector_id)]))
-            files[source] = sorted(selectors)
-        return {"files": files}
-    for source, lines in line_index.items():
-        selectors: set[str] = set()
-        for ids in lines.values():
-            selectors.update(str(selector) for selector in ids)
-        files[source] = sorted(selectors)
-    return {"files": files}
-
-
-def load_python_generation_population(cache: Path) -> dict:
-    """Selectors live on the generation manifest plan under rslip population v2."""
-    manifest = load_json(pinned_python_generation_dir(cache) / "manifest.json")
-    selectors = manifest.get("plan", {}).get("selectors")
-    assert isinstance(selectors, list), manifest
-    return {"selectors": selectors}
-
-
-def assert_commit_runs_exactly(
-    outcome: Outcome,
-    expected_part: str,
-    excluded_part: str,
-) -> None:
-    results = [
-        line
-        for line in outcome.stdout.splitlines()
-        if line.startswith(("PASS", "FAIL", "TIMEOUT"))
-    ]
-    assert any(expected_part in line for line in results), outcome.stdout
-    assert not any(excluded_part in line for line in results), outcome.stdout
 
 
 def run_witness_check(
@@ -1007,7 +889,7 @@ def run_witness_commit(language: str, repo: Path, marker_dir: Path) -> Outcome:
 def witness_env(repo: Path, marker_dir: Path) -> dict[str, str]:
     env = os.environ.copy()
     env["PYTHONPATH"] = str(repo)
-    env["KISS_COVERAGE_WITNESS_DIR"] = str(marker_dir)
+    env["KISS_WITNESS_DIR"] = str(marker_dir)
     env.pop("RUSTFLAGS", None)
     return env
 
@@ -1054,36 +936,6 @@ def cache_tree_bytes(cache: Path, paths: list[Path]) -> dict[str, bytes]:
     return result
 
 
-def assert_python_coverage_witness(repo: Path, marker_dir: Path) -> None:
-    run_witness_test("python", repo, marker_dir)
-    assert marker_names(marker_dir) == {"python-alpha", "python-beta"}
-    cache = python_rslip_cache_root(repo)
-    entry_payloads = python_record_payloads(repo)
-    assert_disjoint_entry_lines(entry_payloads, "app.py", 2, 5, 8)
-    index = load_python_generation_line_index(cache)
-    manifest = load_python_generation_population(cache)
-    assert_index_source_selectors(index, "app.py", ("test_alpha", "test_beta"))
-    assert_population_selectors(manifest, ("test_alpha", "test_beta"))
-    gen_dir = pinned_python_generation_dir(cache)
-    artifact_paths = sorted(python_records_dir(repo).glob("*.json")) + [
-        cache / "population.json",
-        gen_dir / "line_index.json",
-        gen_dir / "manifest.json",
-        gen_dir / "coverage.json",
-        gen_dir / "selector_coverage.json",
-    ]
-    post_test_bytes = cache_tree_bytes(cache, artifact_paths)
-    clear_markers(marker_dir)
-    warm = run_witness_check("python", repo, marker_dir)
-    assert "refreshing Python runtime coverage" not in warm.stderr, warm.stderr
-    assert marker_names(marker_dir) == set()
-    assert cache_tree_bytes(cache, artifact_paths) == post_test_bytes
-    changed_text(repo / "app.py", "    return 'alpha'", "    return str('alpha')")
-    commit = run_witness_commit("python", repo, marker_dir)
-    assert_commit_runs_exactly(commit, "test_alpha", "test_beta")
-    assert marker_names(marker_dir) == {"python-alpha"}
-
-
 def rust_records_dir(repo_root: Path) -> Path:
     return repo_root / ".kiss" / "test" / "records" / "rust"
 
@@ -1106,210 +958,38 @@ def assert_rust_record_witness(repo: Path, marker_dir: Path) -> None:
     test_ids = {record["test_id"] for record in records}
     assert any("test_alpha" in test_id for test_id in test_ids), test_ids
     assert any("test_beta" in test_id for test_id in test_ids), test_ids
-    assert all(not record["covered"] for record in records), "Rust records carry no coverage"
     post_test_bytes = cache_tree_bytes(rust_records_dir(repo), record_paths)
     warm = run_witness_check("rust", repo, marker_dir, jobs=4)
     assert executed_tests(warm) == [], warm.stdout
     assert cache_tree_bytes(rust_records_dir(repo), record_paths) == post_test_bytes
     changed_text(repo / "src/lib.rs", "    \"alpha\"", "    { \"alpha\" }")
     commit = run_witness_commit("rust", repo, marker_dir)
-    # Rust tests record no coverage, so any Rust edit reruns every Rust test.
+    # Any Rust source edit reruns every Rust test.
     for name in ("test_alpha", "test_beta"):
         assert any(name in line for line in executed_tests(commit)), commit.stdout
 
 
-def wait_for_barrier_ready(barrier_dir: Path, artifact: str, phase: str) -> dict:
-    deadline = time.monotonic() + 180
-    while time.monotonic() < deadline:
-        for path in sorted(barrier_dir.glob("*.ready.json")):
-            try:
-                record = json.loads(path.read_text())
-            except (OSError, json.JSONDecodeError):
-                continue
-            if record.get("artifact") == artifact and record.get("phase") == phase:
-                return record
-        time.sleep(0.02)
-    raise AssertionError(f"timed out waiting for {artifact}:{phase} ready record")
+def assert_python_record_witness(repo: Path, marker_dir: Path) -> None:
+    run_witness_test("python", repo, marker_dir)
+    assert marker_names(marker_dir) == {"python-alpha", "python-beta"}
+    record_paths = sorted(python_records_dir(repo).glob("*.json"))
+    test_ids = {load_json(path)["test_id"] for path in record_paths}
+    assert any("test_alpha" in test_id for test_id in test_ids), test_ids
+    assert any("test_beta" in test_id for test_id in test_ids), test_ids
+    post_test_bytes = cache_tree_bytes(python_records_dir(repo), record_paths)
+    clear_markers(marker_dir)
+    warm = run_witness_check("python", repo, marker_dir)
+    assert executed_tests(warm) == [], warm.stdout
+    assert marker_names(marker_dir) == set()
+    assert cache_tree_bytes(python_records_dir(repo), record_paths) == post_test_bytes
+    changed_text(repo / "app.py", "    return 'alpha'", "    return str('alpha')")
+    commit = run_witness_commit("python", repo, marker_dir)
+    # Any Python source edit reruns every Python test.
+    assert marker_names(marker_dir) == {"python-alpha", "python-beta"}, commit.stdout
 
 
-def force_publication_target(repo: Path, language: str, artifact: str) -> None:
-    # Warm cov_records_cache short-circuits kiss test before language caches
-    # republish; clear it so publication barriers and recovery paths run.
-    (repo / ".kiss" / "test" / "cov_records_cache.json").unlink(missing_ok=True)
-    if language == "python":
-        cache = python_rslip_cache_root(repo)
-        if artifact == "test_record":
-            # Per-test records alone are not enough: a warm generation/population
-            # still yields PASS (cached) and never republishes test_record,
-            # so the crash-recovery barrier waiter hangs forever.
-            shutil.rmtree(python_records_dir(repo), ignore_errors=True)
-            shutil.rmtree(cache / "generations", ignore_errors=True)
-            shutil.rmtree(cache / "testmon", ignore_errors=True)
-            (cache / "population.json").unlink(missing_ok=True)
-        elif artifact == "python_population_pointer":
-            # Generation publish rewrites the v2 population pointer atomically.
-            (cache / "population.json").unlink(missing_ok=True)
-            shutil.rmtree(cache / "generations", ignore_errors=True)
-        else:
-            raise AssertionError(f"unknown Python publication artifact: {artifact}")
-    else:
-        raise AssertionError(f"no publication artifacts for {language}")
-
-
-def publication_writer_command(
-    language: str,
-    repo: Path,
-    artifact: str,
-    jobs: int | None = None,
-) -> list[str]:
-    if language == "python":
-        # Warm coverage scoring does not republish rslip entries or generation pointers.
-        # Forced `kiss test` re-executes and hits the publication barriers.
-        command = [
-            str(KISS),
-            "--lang",
-            "python",
-            "test",
-            ".",
-        ]
-        if jobs is not None:
-            command.extend(["-j", str(jobs)])
-        return command
-    return witness_check_command(language, repo, jobs=jobs)
-
-
-def assert_cache_json_integrity(repo: Path, language: str) -> None:
-    assert language == "python", f"no publication cache for {language}"
-    assert_json_integrity(python_rslip_cache_root(repo))
-
-
-def run_publication_crash_scenario(
-    root: Path,
-    language: str,
-    artifact: str,
-    phase: str,
-) -> None:
-    slug = f"s{len(list(root.iterdir()))}"
-    repo = root / f"{slug}r"
-    markers = root / f"{slug}m"
-    if language == "python":
-        write_python_witness_repo(repo)
-    else:
-        write_rust_witness_repo(repo)
-    baseline = run_witness_check(language, repo, markers)
-    assert_check_gate_allowed(baseline)
-    clear_markers(markers)
-    force_publication_target(repo, language, artifact)
-
-    barrier_dir = root / f"{slug}b"
-    barrier_dir.mkdir()
-    writer_env = witness_env(repo, markers)
-    writer_env["KISS_QA_PUBLICATION_BARRIER_DIR"] = str(barrier_dir)
-    writer_env["KISS_QA_PUBLICATION_BARRIER_TARGET"] = f"{artifact}:{phase}"
-    writer_command = publication_writer_command(language, repo, artifact)
-    writer = subprocess.Popen(
-        writer_command,
-        cwd=repo,
-        env=writer_env,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        start_new_session=True,
-    )
-    ready = wait_for_barrier_ready(barrier_dir, artifact, phase)
-    reader = subprocess.Popen(
-        witness_check_command(language, repo),
-        cwd=repo,
-        env=witness_env(repo, markers),
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    os.killpg(os.getpgid(writer.pid), signal.SIGKILL)
-    writer_stdout, writer_stderr = writer.communicate(timeout=30)
-    reader_stdout, reader_stderr = reader.communicate(timeout=300)
-    writer_outcome = Outcome(
-        f"{artifact}-{phase}-writer",
-        writer.returncode,
-        writer_stdout,
-        writer_stderr,
-        0.0,
-    )
-    reader_outcome = Outcome(
-        f"{artifact}-{phase}-reader",
-        reader.returncode,
-        reader_stdout,
-        reader_stderr,
-        0.0,
-    )
-    print(
-        f"{artifact}:{phase}: writer_rc={writer_outcome.returncode} "
-        f"reader_rc={reader_outcome.returncode}"
-    )
-    assert_check_gate_allowed(reader_outcome)
-    staged = Path(ready["temporary_path"])
-    if phase == "after_sync_before_rename":
-        assert staged.exists(), f"expected staged temporary after pre-rename kill: {staged}"
-        staged.unlink()
-    assert_cache_json_integrity(repo, language)
-
-    clear_markers(markers)
-    recovery = run_concurrent(
-        f"{artifact}-{phase}-recovery",
-        [(witness_check_command(language, repo), repo) for _ in range(3)],
-        witness_env(repo, markers),
-        allow_failures=True,
-    )
-    for outcome in recovery:
-        assert_check_gate_allowed(outcome)
-    assert_cache_json_integrity(repo, language)
-    clear_markers(markers)
-    final_warm = run_witness_check(language, repo, markers)
-    assert_check_gate_allowed(final_warm)
-    assert "refreshing Python runtime coverage" not in final_warm.stderr, final_warm.stderr
-    assert marker_names(markers) == set()
-
-
-def python_rslip_cache_root(repo_root: Path) -> Path:
-    machine_id = Path("/etc/machine-id").read_text().strip()
-    assert machine_id, "Linux machine id must not be empty"
-    host_component = machine_id.encode("ascii").hex()
-    return repo_root / ".kiss" / "test" / "rslip_cache" / "hosts" / host_component
-
-
-def assert_repo_relative_index(index: dict, expected_source: str) -> None:
-    source_root = Path(index["source_root"])
-    assert source_root.is_absolute(), source_root
-    files = index["files"]
-    assert expected_source in files, (
-        f"changed source {expected_source!r} absent from index keys: "
-        f"{sorted(files)[:20]}"
-    )
-    assert files, "coverage index unexpectedly empty"
-    for file in files:
-        pure = PurePosixPath(file)
-        assert not pure.is_absolute(), file
-        assert ".." not in pure.parts, file
-        assert not file.startswith(".kiss/"), file
-        assert not file.startswith("<"), file
-        assert "rslip_runtime.py" not in file, file
-
-
-def assert_json_integrity(cache_root: Path) -> int:
-    json_paths = sorted(cache_root.rglob("*.json"))
-    assert json_paths, f"no JSON artifacts under {cache_root}"
-    for path in json_paths:
-        try:
-            json.loads(path.read_text())
-        except Exception as error:
-            raise AssertionError(f"invalid JSON artifact {path}: {error}") from error
-    temporary = sorted(cache_root.rglob("*.tmp"))
-    assert not temporary, f"temporary files survived: {temporary}"
-    return len(json_paths)
-
-
-def coverage_cache_witness() -> None:
-    """Prove exact Python coverage and Rust record payloads, and warm non-execution."""
+def record_cache_witness() -> None:
+    """Prove Python and Rust record payloads, warm non-execution, and edit reruns."""
     assert KISS.is_file(), f"local binary missing: {KISS}"
     with tempfile.TemporaryDirectory(prefix="kq-", dir="/tmp") as tmp:
         root = Path(tmp)
@@ -1319,43 +999,8 @@ def coverage_cache_witness() -> None:
         rs_markers = root / "rm"
         write_python_witness_repo(py_repo)
         write_rust_witness_repo(rs_repo)
-        assert_python_coverage_witness(py_repo, py_markers)
+        assert_python_record_witness(py_repo, py_markers)
         assert_rust_record_witness(rs_repo, rs_markers)
-
-
-def coverage_publication_crash_recovery() -> None:
-    """Crash coverage publication at debug barriers and verify recovery."""
-    assert KISS.is_file(), f"local binary missing: {KISS}"
-    scenarios = [
-        ("python", "test_record"),
-    ]
-    phases = ["after_rename"]
-    with tempfile.TemporaryDirectory(prefix="kq-crash-", dir="/tmp") as tmp:
-        root = Path(tmp)
-        for language, artifact in scenarios:
-            for phase in phases:
-                run_publication_crash_scenario(root, language, artifact, phase)
-
-
-def _avg(values: list[float]) -> float:
-    return sum(values) / len(values) if values else 0.0
-
-
-def coverage_stress() -> None:
-    """Stress population, selection, force, env invalidation, and recall."""
-    assert KISS.is_file(), f"local binary missing: {KISS}"
-    with tempfile.TemporaryDirectory(prefix="kq-stress-", dir="/tmp") as tmp:
-        root = Path(tmp)
-        repo = root / "p"
-        markers = root / "m"
-        write_python_witness_repo(repo)
-        cold = run_witness_test("python", repo, markers)
-        assert cold.returncode == 0
-        clear_markers(markers)
-        warm = run_witness_check("python", repo, markers)
-        assert "refreshing Python runtime coverage" not in warm.stderr
-        commit = run_witness_commit("python", repo, markers)
-        assert commit.returncode == 0
 
 
 def timing_rust_throughput(
@@ -1381,7 +1026,7 @@ def timing_rust_throughput(
 
 
 def path_isolation() -> None:
-    """Test nested-CWD plans and persisted coverage-path isolation."""
+    """Test nested-CWD plans and persisted path isolation."""
     assert KISS.is_file(), f"local binary missing: {KISS}"
     with tempfile.TemporaryDirectory(prefix="kq-path-", dir="/tmp") as tmp:
         repo = Path(tmp) / "p"
@@ -1418,14 +1063,11 @@ def concurrent_cache_recovery() -> None:
         cmd = [str(KISS), "--lang", "python", "test", ".", "-j", "2"]
         first = run("ccr-prime", cmd, repo, env)
         assert first.returncode == 0
-        cache = python_rslip_cache_root(repo)
-        population = cache / "population.json"
-        if population.is_file():
-            population.write_text("{ broken")
+        records = sorted(python_records_dir(repo).glob("*.json"))
+        assert records, f"missing Python test records in {python_records_dir(repo)}"
+        records[0].write_text("{ broken")
         recovered = run("ccr-recover", cmd, repo, env, expected=None)
         assert recovered.returncode == 0 or "VIOLATION" in recovered.stdout
-        if population.is_file():
-            json.loads(population.read_text())
 
 
 def rust_batch_e2e() -> None:

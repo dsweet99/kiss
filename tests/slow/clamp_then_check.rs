@@ -1,4 +1,3 @@
-use crate::common::seed_python_runtime_coverage;
 use kiss::{Language, graph_key_maxima};
 use std::fs;
 use std::path::Path;
@@ -45,36 +44,6 @@ fn python_graph_maxima(root: &Path) -> kiss::GraphKeyMaxima {
     graph_key_maxima(&kiss::build_dependency_graph(&refs))
 }
 
-fn seed_all_python(root: &Path, selector: &str) {
-    let mut owned: Vec<(String, Vec<u32>)> = Vec::new();
-    collect_py_coverage_files(root, root, &mut owned);
-    let files: Vec<(&str, Vec<u32>)> = owned
-        .iter()
-        .map(|(path, lines)| (path.as_str(), lines.clone()))
-        .collect();
-    seed_python_runtime_coverage(root, &[(selector, files)]);
-}
-
-fn collect_py_coverage_files(root: &Path, dir: &Path, out: &mut Vec<(String, Vec<u32>)>) {
-    for entry in fs::read_dir(dir).unwrap() {
-        let path = entry.unwrap().path();
-        if path.is_dir() {
-            collect_py_coverage_files(root, &path, out);
-            continue;
-        }
-        if path.extension().and_then(|e| e.to_str()) != Some("py") {
-            continue;
-        }
-        let rel = path
-            .strip_prefix(root)
-            .unwrap()
-            .to_string_lossy()
-            .into_owned();
-        let n = fs::read_to_string(&path).unwrap().lines().count() as u32;
-        out.push((rel, (1..=n.max(1)).collect()));
-    }
-}
-
 fn write_small_python_package(root: &Path) {
     fs::create_dir_all(root.join("pkg")).unwrap();
     fs::create_dir_all(root.join("tests")).unwrap();
@@ -85,7 +54,6 @@ fn write_small_python_package(root: &Path) {
         "from pkg import VALUE\n\ndef test_pkg():\n    assert VALUE == 1\n",
     )
     .unwrap();
-    seed_all_python(root, "tests/test_pkg.py::test_pkg");
 }
 
 fn write_issue41_python_tree(root: &Path) {
@@ -122,7 +90,6 @@ fn write_fake_python_tree(root: &Path) {
         "from app import tiny\n\ndef test_app():\n    assert tiny(1) == 1\n",
     )
     .unwrap();
-    seed_all_python(root, "tests/test_app.py::test_app");
 }
 
 fn rust_too_many_args() -> &'static str {
@@ -185,7 +152,6 @@ fn clamp_then_check_is_green() {
             && !config.contains("orphan_module_enabled")
             && config.contains("comment_removal_enabled = false")
             && config.contains(r#"docs_allowed = ["./"]"#)
-            && !config.contains("test_coverage")
             && config.contains("\"*\" = 99999"),
         "auto-created gate defaults:\n{config}"
     );

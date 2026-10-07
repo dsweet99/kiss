@@ -14,12 +14,12 @@ static prefer_tmpfs_tmpdir_init: extern "C" fn() = {
     init
 };
 
+#[path = "slow/analysis_corpus.rs"]
+mod analysis_corpus;
 #[path = "slow/bug_indirect_dependencies_check.rs"]
 mod bug_indirect_dependencies_check;
-#[path = "slow/bug_nested_non_member_coverage_universe.rs"]
-mod bug_nested_non_member_coverage_universe;
-#[path = "slow/bug_test_coverage_violation_message.rs"]
-mod bug_test_coverage_violation_message;
+#[path = "slow/bug_nested_non_member_universe.rs"]
+mod bug_nested_non_member_universe;
 #[path = "slow/cache_integration.rs"]
 mod cache_integration;
 #[path = "slow/clamp_then_check.rs"]
@@ -34,8 +34,6 @@ mod cli_kiss_test_smoke;
 mod cli_kiss_test_wait;
 #[path = "slow/comment_removal_check.rs"]
 mod comment_removal_check;
-#[path = "slow/coverage_corpus.rs"]
-mod coverage_corpus;
 #[path = "slow/docs_allowed_check.rs"]
 mod docs_allowed_check;
 #[path = "slow/oneshot_args.rs"]
@@ -52,22 +50,18 @@ mod oneshot_retry_bad;
 mod oneshot_two_runs;
 #[path = "slow/regression_check_cache_uncached_default.rs"]
 mod regression_check_cache_uncached_default;
-#[path = "slow/regression_check_default_warm_gate.rs"]
-mod regression_check_default_warm_gate;
 #[path = "slow/regression_check_default_writes_cache.rs"]
 mod regression_check_default_writes_cache;
 #[path = "slow/regression_check_focus_empty_dir.rs"]
 mod regression_check_focus_empty_dir;
 #[path = "slow/regression_check_ignore_filename.rs"]
 mod regression_check_ignore_filename;
-#[path = "slow/regression_check_mixed_runtime_line_coverage.rs"]
-mod regression_check_mixed_runtime_line_coverage;
 #[path = "slow/regression_check_stats_share_relative.rs"]
 mod regression_check_stats_share_relative;
-#[path = "slow/regression_check_synthetic_python_coverage_paths.rs"]
-mod regression_check_synthetic_python_coverage_paths;
 #[path = "slow/regression_init_py_imports_sync.rs"]
 mod regression_init_py_imports_sync;
+#[path = "slow/regression_python_test_refresh_cache.rs"]
+mod regression_python_test_refresh_cache;
 #[path = "slow/regression_stats_all_metric_registry.rs"]
 mod regression_stats_all_metric_registry;
 #[path = "slow/regression_stats_check_same_ignore.rs"]
@@ -76,8 +70,8 @@ mod regression_stats_check_same_ignore;
 mod regression_stats_cold_eq_warm;
 #[path = "slow/regression_stats_grouped_unit_test_runtime.rs"]
 mod regression_stats_grouped_unit_test_runtime;
-#[path = "slow/regression_stats_summary_headers_and_coverage.rs"]
-mod regression_stats_summary_headers_and_coverage;
+#[path = "slow/regression_stats_summary_headers.rs"]
+mod regression_stats_summary_headers;
 #[path = "slow/regression_stats_summary_uses_cache.rs"]
 mod regression_stats_summary_uses_cache;
 #[path = "slow/regression_test_sigint_caching.rs"]

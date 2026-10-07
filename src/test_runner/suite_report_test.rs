@@ -45,7 +45,7 @@ fn rust_all_args() -> RunTestCmdArgs<'static> {
 }
 
 fn emit_bilingual_run() -> RunTestOnceOutcome {
-    crate::test_runner::emit_test_progress("kiss test: rslip prepared hits=2 misses=0");
+    crate::test_runner::emit_test_progress("kiss test: stage python_source_fingerprint 0ms");
     crate::test_runner::emit_test_progress("kiss test: tests_remaining=2");
     {
         let _guard = kiss::watch_report::ProgressLanguageGuard::enter(kiss::Language::Python);
@@ -67,7 +67,7 @@ fn emit_bilingual_run() -> RunTestOnceOutcome {
 }
 
 fn emit_sample_run() -> RunTestOnceOutcome {
-    crate::test_runner::emit_test_progress("kiss test: rslip prepared hits=2 misses=0");
+    crate::test_runner::emit_test_progress("kiss test: stage python_source_fingerprint 0ms");
     crate::test_runner::emit_test_progress("kiss test: tests_remaining=2");
     crate::test_runner::final_summary::print_final_test_summary(
         &crate::test_runner::final_summary::FinalTestSummary {
@@ -170,7 +170,10 @@ fn all_hit_replays_compact_recap_without_running() {
             replayed.contains("1 passed") && replayed.contains("report members=1"),
             "{replayed}"
         );
-        assert!(!replayed.contains("rslip prepared"), "{replayed}");
+        assert!(
+            !replayed.contains("python_source_fingerprint"),
+            "{replayed}"
+        );
         assert!(!replayed.contains("tests_remaining"), "{replayed}");
     });
 }
@@ -413,8 +416,8 @@ fn unscoped_then_python_then_unscoped_skips_engine() {
     });
 }
 
-fn emit_python_only_covering_miss() -> RunTestOnceOutcome {
-    crate::test_runner::emit_test_progress("kiss test: rslip prepared hits=2 misses=0");
+fn emit_python_only_selecting_miss() -> RunTestOnceOutcome {
+    crate::test_runner::emit_test_progress("kiss test: stage python_source_fingerprint 0ms");
     {
         let _guard = kiss::watch_report::ProgressLanguageGuard::enter(kiss::Language::Python);
         crate::test_runner::emit_test_progress("PASS (cached): 2 selectors");
@@ -430,8 +433,8 @@ fn emit_python_only_covering_miss() -> RunTestOnceOutcome {
     RunTestOnceOutcome::Code(0)
 }
 
-fn emit_covering_abort() -> RunTestOnceOutcome {
-    crate::test_runner::emit_test_progress("kiss test: rslip prepared hits=2 misses=0");
+fn emit_selecting_abort() -> RunTestOnceOutcome {
+    crate::test_runner::emit_test_progress("kiss test: stage python_source_fingerprint 0ms");
     {
         let _guard = kiss::watch_report::ProgressLanguageGuard::enter(kiss::Language::Python);
         crate::test_runner::emit_test_progress("PASS (cached): 2 selectors");
@@ -452,7 +455,7 @@ fn emit_covering_abort() -> RunTestOnceOutcome {
 }
 
 #[test]
-fn unscoped_covering_miss_without_rust_counts_does_not_wipe_bilingual() {
+fn unscoped_selecting_miss_without_rust_counts_does_not_wipe_bilingual() {
     let _cwd = crate::cwd_test_lock::lock();
     let tmp = tempfile::tempdir().unwrap();
     seed_repo(&tmp);
@@ -472,12 +475,12 @@ fn unscoped_covering_miss_without_rust_counts_does_not_wipe_bilingual() {
         assert_eq!(first.exit_code, 1);
         std::fs::write(
             tmp.path().join("src/lib.rs"),
-            "pub fn add(a: i32, b: i32) -> i32 { a + b }\n// covering-miss\n",
+            "pub fn add(a: i32, b: i32) -> i32 { a + b }\n// selecting-miss\n",
         )
         .unwrap();
         let _ = run_kiss_test_report(live_all_args(), |_a| {
             runs.fetch_add(1, Ordering::SeqCst);
-            emit_python_only_covering_miss()
+            emit_python_only_selecting_miss()
         });
         let retry = run_kiss_test_report(live_all_args(), |_a| {
             runs.fetch_add(1, Ordering::SeqCst);
@@ -489,7 +492,7 @@ fn unscoped_covering_miss_without_rust_counts_does_not_wipe_bilingual() {
 }
 
 #[test]
-fn rust_covering_abort_does_not_persist_partial_recap() {
+fn rust_selecting_abort_does_not_persist_partial_recap() {
     let _cwd = crate::cwd_test_lock::lock();
     let tmp = tempfile::tempdir().unwrap();
     seed_repo(&tmp);
@@ -509,12 +512,12 @@ fn rust_covering_abort_does_not_persist_partial_recap() {
         assert_eq!(first.exit_code, 1);
         std::fs::write(
             tmp.path().join("src/lib.rs"),
-            "pub fn add(a: i32, b: i32) -> i32 { a + b }\n// covering-abort\n",
+            "pub fn add(a: i32, b: i32) -> i32 { a + b }\n// selecting-abort\n",
         )
         .unwrap();
         let abort = run_kiss_test_report(live_all_args(), |_a| {
             runs.fetch_add(1, Ordering::SeqCst);
-            emit_covering_abort()
+            emit_selecting_abort()
         });
         assert_eq!(abort.exit_code, 1);
         let retry = run_kiss_test_report(live_all_args(), |_a| {
@@ -524,7 +527,7 @@ fn rust_covering_abort_does_not_persist_partial_recap() {
         assert_eq!(
             runs.load(Ordering::SeqCst),
             3,
-            "covering abort must not persist a recap for the edited rust digest"
+            "selecting abort must not persist a recap for the edited rust digest"
         );
         assert_eq!(retry.exit_code, 1);
         assert!(

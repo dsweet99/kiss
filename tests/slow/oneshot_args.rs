@@ -21,7 +21,7 @@ fn seeded_python_repo() -> tempfile::TempDir {
 
 fn oneshot_args(dir: &Path, args: &[&str]) -> (bool, String, String) {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
-    crate::common::scrub_parent_coverage_env(&mut cmd);
+    crate::common::scrub_parent_build_env(&mut cmd);
     crate::common::preserve_toolchain_homes(&mut cmd);
     cmd.env("PYTHONDONTWRITEBYTECODE", "1");
     let output = cmd.args(args).current_dir(dir).output().expect("oneshot");
@@ -140,7 +140,7 @@ fn overlapping_oneshots_both_succeed() {
     let tmp = seeded_python_repo();
     let spawn = || {
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
-        crate::common::scrub_parent_coverage_env(&mut cmd);
+        crate::common::scrub_parent_build_env(&mut cmd);
         crate::common::preserve_toolchain_homes(&mut cmd);
         cmd.env("PYTHONDONTWRITEBYTECODE", "1");
         cmd.args(["test", "--lang", "python", "test_lib.py"])

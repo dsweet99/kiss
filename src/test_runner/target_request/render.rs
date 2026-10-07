@@ -205,12 +205,12 @@ mod official_text_tests {
     }
 
     #[test]
-    fn official_text_ignores_test_coverage_gate_kind() {
+    fn official_text_ignores_unknown_gate_kind() {
         let text = official_report_text(&report(vec![ReportGate {
-            kind: "test_coverage".into(),
+            kind: "unknown".into(),
             detail: "foo.py".into(),
         }]));
-        assert!(!text.contains("VIOLATION:test_coverage"), "{text}");
+        assert!(!text.contains("VIOLATION:unknown"), "{text}");
         assert!(text.contains("NO VIOLATIONS"), "{text}");
     }
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import signal
 import subprocess
 import tempfile
@@ -96,12 +97,14 @@ def _interrupt_after_first_pass(repo: Path, env: dict[str, str], timeout: float)
         return interrupted_after
 
 
-def _rslip_prepared_hits(stdout: str) -> int:
-    prefix = "kiss test: rslip prepared hits="
-    for line in stdout.splitlines():
-        if line.startswith(prefix):
-            return int(line.removeprefix(prefix).split()[0])
-    return 0
+def _reused_tests(stdout: str) -> int:
+    """Passed tests minus executed ones; a cached PASS prints no result line."""
+    match = re.search(r"(\d+) passed", stdout)
+    passed = int(match.group(1)) if match else 0
+    executed = sum(
+        1 for line in stdout.splitlines() if line.startswith(("PASS", "FAIL", "TIMEOUT"))
+    )
+    return passed - executed
 
 
 def timing_kiss_test_sigint_work_reuse() -> None:
@@ -128,7 +131,7 @@ def timing_kiss_test_sigint_work_reuse() -> None:
             expected=0,
             timeout=50,
         )
-        reused = _rslip_prepared_hits(restart.stdout)
+        reused = _reused_tests(restart.stdout)
         assert reused >= 1, (
             "restart must reuse at least one PASS from before SIGINT\n"
             f"stdout:\n{restart.stdout}\nstderr:\n{restart.stderr}"

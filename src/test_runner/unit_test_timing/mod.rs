@@ -42,11 +42,8 @@ pub(super) fn selector_matches_ignore_prefix(selector: &str, ignore: &[String]) 
 }
 
 fn load_python_timings(repo_root: &Path, pytest_args: &[String]) -> Option<Vec<UnitTestTiming>> {
-    let pairs =
-        crate::test_runner::python_coverage_index::load_current_python_population_durations(
-            repo_root,
-            pytest_args,
-        )?;
+    let witness = crate::test_runner::lang_python::stored_witness(repo_root, pytest_args)?;
+    let pairs = rust_durations::duration_pairs(&witness)?;
     Some(
         pairs
             .into_iter()

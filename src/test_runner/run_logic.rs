@@ -1,7 +1,7 @@
 use super::{PlannedSelectors, SelectorRunOptions, runners};
-use crate::test_runner::coverage_decision::{LanguageExecutor, LanguageTestModule, RunContext};
 use crate::test_runner::final_summary::{FinalTestSummary, print_final_test_summary};
 use crate::test_runner::language_keyed::LanguageKeyed;
+use crate::test_runner::test_selection::{LanguageExecutor, LanguageTestModule, RunContext};
 use std::time::{Duration, Instant};
 
 #[path = "run_logic/cache_decision_metrics.rs"]
@@ -71,7 +71,7 @@ fn finish_no_work(
     options: &SelectorRunOptions<'_>,
     total_started: Instant,
 ) -> i32 {
-    crate::test_runner::emit_test_progress(runners::NO_COVERING_TESTS_MSG);
+    crate::test_runner::emit_test_progress(runners::NO_SELECTED_TESTS_MSG);
     if options.metrics {
         let mut metrics = LocalRubricMetrics::new(
             planned,
@@ -238,7 +238,7 @@ fn take_language_plan(to: &mut PlannedSelectors, from: &mut PlannedSelectors, l:
         .workspace_files_fingerprint
         .take()
         .or(to.workspace_files_fingerprint.take());
-    to.coverage_decision_engine_used |= from.coverage_decision_engine_used;
+    to.selection_engine_used |= from.selection_engine_used;
 }
 
 pub(crate) fn print_joined_dry_run(
@@ -352,7 +352,7 @@ mod joined_run_test {
         rs.sel.rust = vec!["crate::b".into()];
         rs.vcs_source_paths.rust = 3;
         rs.workspace_files_fingerprint = Some("rs".into());
-        rs.coverage_decision_engine_used = true;
+        rs.selection_engine_used = true;
         let merged = super::merge_language_planned(
             root,
             Vec::new(),
@@ -367,7 +367,7 @@ mod joined_run_test {
         assert!(!merged.population_required.rust);
         assert_eq!(merged.vcs_source_paths.rust, 3);
         assert_eq!(merged.workspace_files_fingerprint.as_deref(), Some("rs"));
-        assert!(merged.coverage_decision_engine_used);
+        assert!(merged.selection_engine_used);
     }
 
     #[test]

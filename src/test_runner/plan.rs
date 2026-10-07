@@ -121,7 +121,7 @@ pub(crate) fn load_all_workspace_cache(
     Some(AllWorkspaceCache { sel, fp })
 }
 
-pub(crate) fn cover_all_language(
+pub(crate) fn select_all_language(
     repo_root: &std::path::Path,
     ignore: &[String],
     extras: LanguageKeyed<&[String]>,
@@ -264,9 +264,9 @@ fn planned_current(
         source_paths: LanguageKeyed::default(),
         vcs_source_paths: LanguageKeyed::default(),
         prior_failure_selectors: LanguageKeyed::default(),
-        coverage_decision_engine_used: false,
+        selection_engine_used: false,
         selection_basis: LanguageKeyed::from_fn(|_| {
-            crate::test_runner::coverage_decision::SelectionBasis::Current
+            crate::test_runner::test_selection::SelectionBasis::Current
         }),
         ignore: ignore.to_vec(),
         workspace_files_fingerprint,
@@ -288,7 +288,7 @@ pub(super) fn planned_from_selector_plan(
         source_paths: selector_plan.source_paths,
         vcs_source_paths: selector_plan.vcs_source_paths,
         prior_failure_selectors: selector_plan.prior_failure_selectors,
-        coverage_decision_engine_used: selector_plan.coverage_decision_engine_used,
+        selection_engine_used: selector_plan.selection_engine_used,
         selection_basis: selector_plan.selection_basis,
         ignore,
         workspace_files_fingerprint: None,

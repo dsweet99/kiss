@@ -30,8 +30,8 @@ pub(super) struct LocalRubricMetrics {
     pub(super) rust_population_required: bool,
     pub(super) rust_population_selectors: usize,
     pub(super) rust_final_selectors: usize,
-    pub(super) selection_basis: crate::test_runner::coverage_decision::SelectionBasis,
-    pub(super) coverage_decision_engine_used: bool,
+    pub(super) selection_basis: crate::test_runner::test_selection::SelectionBasis,
+    pub(super) selection_engine_used: bool,
     pub(super) python: PhaseMetrics,
     pub(super) python_index_rebuild_duration: Duration,
     pub(super) rust_population: PhaseMetrics,
@@ -52,7 +52,7 @@ impl LocalRubricMetrics {
         rust_population_required: bool,
         rust_population_selectors: usize,
         rust_final_selectors: usize,
-        selection_basis: crate::test_runner::coverage_decision::SelectionBasis,
+        selection_basis: crate::test_runner::test_selection::SelectionBasis,
     ) -> Self {
         Self {
             plan_duration: options.plan_duration,
@@ -67,7 +67,7 @@ impl LocalRubricMetrics {
             rust_population_selectors,
             rust_final_selectors,
             selection_basis,
-            coverage_decision_engine_used: planned.coverage_decision_engine_used,
+            selection_engine_used: planned.selection_engine_used,
             python: PhaseMetrics::default(),
             python_index_rebuild_duration: Duration::ZERO,
             rust_population: PhaseMetrics::default(),
@@ -145,16 +145,13 @@ fn print_selection_metrics(metrics: &LocalRubricMetrics) {
         "selection_basis={}",
         selection_basis_label(metrics.selection_basis)
     );
-    println!(
-        "coverage_decision_engine_used={}",
-        metrics.coverage_decision_engine_used
-    );
+    println!("selection_engine_used={}", metrics.selection_engine_used);
 }
 
 fn selection_basis_label(
-    basis: crate::test_runner::coverage_decision::SelectionBasis,
+    basis: crate::test_runner::test_selection::SelectionBasis,
 ) -> &'static str {
-    use crate::test_runner::coverage_decision::SelectionBasis;
+    use crate::test_runner::test_selection::SelectionBasis;
     match basis {
         SelectionBasis::Current => "current",
         SelectionBasis::Population => "population",
@@ -164,7 +161,7 @@ fn selection_basis_label(
 #[cfg(test)]
 mod basis_label_tests {
     use super::selection_basis_label;
-    use crate::test_runner::coverage_decision::SelectionBasis;
+    use crate::test_runner::test_selection::SelectionBasis;
 
     #[test]
     fn selection_basis_metrics_label_all_planning_modes() {

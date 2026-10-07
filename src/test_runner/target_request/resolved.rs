@@ -11,12 +11,6 @@ pub(crate) enum SourceRegion {
     FileLines { path: String, lines: BTreeSet<u32> },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct ReverseRecord {
-    pub path: String,
-    pub selectors: Vec<String>,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum OperandClass {
     Directory,

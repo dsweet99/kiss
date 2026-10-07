@@ -1,4 +1,3 @@
-use crate::common::seed_python_runtime_coverage;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -25,22 +24,44 @@ fn write_fixture(repo: &Path) {
     }
     fs::write(repo.join("app.py"), "VALUE = 1\n").unwrap();
     fs::write(repo.join(".kissconfig"), CONFIG).unwrap();
-    seed_python_runtime_coverage(
-        repo,
-        &[
-            (
-                "tests/slow/dbs/test_q.py::test_q",
-                vec![("app.py", vec![1])],
-            ),
-            (
-                "tests/slow/test_other.py::test_other",
-                vec![("app.py", vec![1])],
-            ),
-            ("tests/fast/test_a.py::test_a", vec![("app.py", vec![1])]),
-            ("tests/web/test_b.py::test_b", vec![("app.py", vec![1])]),
-            ("src_app_test.py::test_src", vec![("app.py", vec![1])]),
-        ],
+    for (file, name) in [
+        ("tests/slow/dbs/test_q.py", "test_q"),
+        ("tests/slow/test_other.py", "test_other"),
+        ("tests/fast/test_a.py", "test_a"),
+        ("tests/web/test_b.py", "test_b"),
+        ("src_app_test.py", "test_src"),
+    ] {
+        fs::write(
+            repo.join(file),
+            format!("from app import VALUE\n\ndef {name}():\n    assert VALUE == 1\n"),
+        )
+        .unwrap();
+    }
+}
+
+fn warm_python_records(repo: &Path, home: &Path) {
+    fs::write(
+        repo.join(".kissconfig"),
+        CONFIG.replace("\"*\" = 0", "\"*\" = 60"),
+    )
+    .unwrap();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
+    crate::common::scrub_parent_build_env(&mut cmd);
+    crate::common::preserve_toolchain_homes(&mut cmd);
+    let output = cmd
+        .args(["test", "--lang", "python", "."])
+        .current_dir(repo)
+        .env("HOME", home)
+        .env("PYTHONDONTWRITEBYTECODE", "1")
+        .output()
+        .expect("kiss test should run");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("5 passed"),
+        "warm-up should run all five tests\nstdout:\n{stdout}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
     );
+    fs::write(repo.join(".kissconfig"), CONFIG).unwrap();
 }
 
 fn run_stats(repo: &Path, home: &Path) -> String {
@@ -116,7 +137,10 @@ fn assert_grouped_rows(rows: &[&str]) {
 fn cli_stats_groups_unit_test_runtime_by_configured_test_sets() {
     let home = TempDir::new().unwrap();
     let repo = TempDir::new().unwrap();
+    crate::support::git::init_git_repo(repo.path());
     write_fixture(repo.path());
+    crate::support::git::commit_all(repo.path(), "init");
+    warm_python_records(repo.path(), home.path());
     let stdout = run_stats(repo.path(), home.path());
     assert_grouped_rows(&runtime_rows(&stdout));
 }

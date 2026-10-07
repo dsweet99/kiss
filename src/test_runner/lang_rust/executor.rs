@@ -1,6 +1,6 @@
-use crate::test_runner::coverage_decision::{LanguageExecutor, RunContext};
 use crate::test_runner::lang_rust::backer::RustModule;
 use crate::test_runner::runners::SelectorExecutionSummary;
+use crate::test_runner::test_selection::{LanguageExecutor, RunContext};
 
 impl LanguageExecutor for RustModule {
     fn language(&self) -> kiss::Language {

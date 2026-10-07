@@ -249,4 +249,4 @@ pub fn validate_test_branch_options(
 
 #[cfg(test)]
 #[path = "args_test.rs"]
-mod coverage_witness;
+mod touch_witness;

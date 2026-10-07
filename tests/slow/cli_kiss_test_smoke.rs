@@ -96,18 +96,23 @@ fn kiss_test_dot_prints_final_pass_recap() {
     let tmp = tempfile::TempDir::new().unwrap();
     init_git_repo(tmp.path());
     write_python_fixture(tmp.path());
-    crate::common::seed_python_runtime_coverage(
-        tmp.path(),
-        &[("test_lib.py::test_f", vec![("lib.py", vec![1, 2])])],
-    );
     commit_all(tmp.path(), "init");
     let bin = env!("CARGO_BIN_EXE_kiss");
-    let out = std::process::Command::new(bin)
-        .current_dir(tmp.path())
-        .args(["test", "--lang", "python", "."])
-        .env("NO_COLOR", "1")
-        .output()
-        .expect("kiss test");
+    let run = || {
+        std::process::Command::new(bin)
+            .current_dir(tmp.path())
+            .args(["test", "--lang", "python", "."])
+            .env("NO_COLOR", "1")
+            .output()
+            .expect("kiss test")
+    };
+    let cold = run();
+    assert!(
+        cold.status.success(),
+        "cold kiss test should pass, stdout={}",
+        String::from_utf8_lossy(&cold.stdout)
+    );
+    let out = run();
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
@@ -124,7 +129,7 @@ fn kiss_test_dot_prints_final_pass_recap() {
             && recap.contains(" passed · ")
             && recap.contains(" failed · ")
             && recap.contains(" timed out"),
-        "seeded run must include official pass recap, recap={recap}, stdout={stdout}"
+        "warm run must include official pass recap, recap={recap}, stdout={stdout}"
     );
     assert!(
         recap.contains("1 passed") && !stdout.contains("PASS"),

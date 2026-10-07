@@ -1,4 +1,4 @@
-use crate::common::{list_full_check_cache_files, seed_python_runtime_coverage};
+use crate::common::list_full_check_cache_files;
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
@@ -14,15 +14,8 @@ fn regression_check_default_writes_cache_and_replays() {
     let src = repo.path().join("default.py");
     let test = repo.path().join("test_default.py");
 
-    fs::write(&src, "def covered_function(x):\n    return x * 2\n").unwrap();
-    fs::write(&test, "from default import covered_function\n\ndef test_covered_function():\n    assert covered_function(2) == 4\n").unwrap();
-    seed_python_runtime_coverage(
-        repo.path(),
-        &[(
-            "test_default.py::test_covered_function",
-            vec![("default.py", vec![1, 2])],
-        )],
-    );
+    fs::write(&src, "def tested_function(x):\n    return x * 2\n").unwrap();
+    fs::write(&test, "from default import tested_function\n\ndef test_tested_function():\n    assert tested_function(2) == 4\n").unwrap();
     let config = crate::common::write_builtin_language_config(home.path());
     let cold = kiss_binary()
         .arg("--config")

@@ -57,7 +57,7 @@ pub(crate) fn write_config_error(
 impl std::error::Error for ConfigError {}
 
 #[cfg(test)]
-mod coverage_witness {
+mod touch_witness {
     use super::*;
 
     impl ConfigError {

@@ -1,10 +1,7 @@
 use kiss::Language;
 
-use crate::test_runner::pipeline::split_jobs;
-
 pub(super) struct JobShare {
     total: usize,
-    both: bool,
 }
 
 pub(super) struct ExecuteTurn {
@@ -12,16 +9,10 @@ pub(super) struct ExecuteTurn {
 }
 
 impl JobShare {
-    pub(super) fn new(total: usize, both: bool) -> Self {
+    pub(super) fn new(total: usize) -> Self {
         Self {
             total: total.max(1),
-            both,
         }
-    }
-
-    pub(super) fn covering(&self, language: Language) -> usize {
-        let (python, rust) = split_jobs(self.total, self.both);
-        *crate::test_runner::language_keyed::LanguageKeyed { python, rust }.get(language)
     }
 
     pub(super) fn acquire_execute(&self, language: Language) -> ExecuteTurn {

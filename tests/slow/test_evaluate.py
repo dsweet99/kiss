@@ -11,7 +11,7 @@ from ops.evaluate import evaluation_names, main, run_evaluation
 def test_evaluation_names_include_qa_commands() -> None:
     assert python.__name__ == "python"
     names = evaluation_names()
-    assert "short/coverage_cache_witness" in names
+    assert "short/record_cache_witness" in names
     assert "short/timing_rust_throughput" in names
     assert "short/timing_kiss_check" in names
     assert "short/timing_kiss_test" in names
@@ -70,13 +70,13 @@ def test_run_evaluation_invokes_wrapper(monkeypatch) -> None:
 
     class Fake:
         @staticmethod
-        def eval_coverage_cache_witness() -> None:
+        def eval_record_cache_witness() -> None:
             called.append("ran")
 
     monkeypatch.setattr("importlib.import_module", lambda name: Fake())
-    run_evaluation("short/coverage_cache_witness")
+    run_evaluation("short/record_cache_witness")
     assert called == ["ran"]
-    run_evaluation("coverage_cache_witness")
+    run_evaluation("record_cache_witness")
     assert called == ["ran", "ran"]
 
 

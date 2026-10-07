@@ -2,21 +2,18 @@
 #[path = "capture_stdout.rs"]
 pub(crate) mod capture_stdout;
 
-mod coverage_decision;
 pub(crate) mod duration;
 pub(crate) mod ensure_runtime;
 pub(crate) mod execution_witness;
 pub(crate) mod force_bad;
+mod test_selection;
 pub(crate) use force_bad::apply_force_bad;
 pub(crate) mod final_summary;
 pub(crate) mod lang_iface;
 pub(crate) mod lang_python;
 pub(crate) mod lang_rust;
 pub(crate) mod language_keyed;
-mod line_selection;
 mod planned_selectors;
-mod python_cache_path;
-pub(crate) mod python_coverage_index;
 mod run_logic;
 mod runners;
 mod rust_batch_interrupt;
@@ -189,7 +186,6 @@ pub(crate) fn run_live_overlapped_test(
     crate::test_runner::runners::clear_python_collect_memo();
     crate::test_runner::tests_remaining::reset_tests_remaining();
     let _progress_watchdog = kiss::test_progress::ProgressWatchdog::start();
-    emit_test_progress("kiss test: Planning ...");
     pipeline::run_overlapped_test(a, process_started)
 }
 
@@ -297,10 +293,6 @@ mod pipeline_barrier_test;
 #[cfg(test)]
 #[path = "mod_run_api_test.rs"]
 mod mod_run_api_test;
-
-#[cfg(test)]
-#[path = "python_coverage_index_witness_test.rs"]
-mod python_coverage_index_witness_test;
 
 #[cfg(test)]
 #[path = "runners_test.rs"]

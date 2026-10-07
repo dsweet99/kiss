@@ -38,8 +38,7 @@ def _ruff_kiss_cmd(*args: str) -> list[str]:
 def _clear_runtime_test_cache(repo: Path) -> None:
     """Clear Python/runtime caches only; Rust records stay so ruff's Rust tests stay cached."""
     kiss_dir = repo / ".kiss"
-    shutil.rmtree(kiss_dir / "test" / "rslip_cache", ignore_errors=True)
-    (kiss_dir / "test" / "cov_records_cache.json").unlink(missing_ok=True)
+    shutil.rmtree(kiss_dir / "test" / "records" / "python", ignore_errors=True)
 
 
 def _ensure_code_cache(repo: Path, env: dict[str, str]) -> None:

@@ -7,7 +7,6 @@ mod finalize_types;
 mod focus;
 mod graph_api;
 mod lang_sides;
-pub(crate) mod line_coverage;
 mod options;
 mod orphan_unit_gate;
 mod parallel;

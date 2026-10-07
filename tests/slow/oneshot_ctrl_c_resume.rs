@@ -27,21 +27,17 @@ fn interrupted_plain_run_is_resumed_by_the_next_run() {
     assert_eq!(reply.code, Some(1), "{reply:?}");
     assert_eq!(reply.summary(), SUMMARY, "full suite; {reply:?}");
     assert!(
-        reply.stdout.contains("FAIL test_b.py::test_fail"),
+        reply.stdout.contains("FAIL: test_b.py::test_fail"),
         "{reply:?}"
     );
     assert!(
         reply.stdout.contains("PASS: test_a.py::test_slow"),
         "{reply:?}"
     );
-    let runs = s.take_runs();
-    assert!(
-        runs.iter().any(|run| run == "test_slow"),
-        "the unrecorded test runs again: {runs:?}"
-    );
-    assert!(
-        !runs.iter().any(|run| run == "test_fail"),
-        "a recorded FAIL is not rerun merely because it failed: {runs:?}"
+    assert_eq!(
+        s.take_runs(),
+        ["test_fail", "test_slow"],
+        "tests without a record for the edited tree run; the PASS recorded before Ctrl-C does not"
     );
 
     let reply = kiss(s.root(), &["test"]);

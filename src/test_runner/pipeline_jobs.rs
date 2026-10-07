@@ -4,7 +4,7 @@ use std::time::Instant;
 use kiss::Language;
 
 use super::SharedPrefix;
-use super::cover_language;
+use super::select_language;
 #[path = "pipeline_job_share.rs"]
 mod job_share;
 use crate::test_runner::RunTestCmdArgs;
@@ -21,23 +21,23 @@ pub(crate) type PipelineHook = Arc<dyn Fn() + Send + Sync>;
 #[derive(Default)]
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct PipelineDoubles {
-    pub covering: LanguageKeyed<Option<PipelineHook>>,
+    pub selecting: LanguageKeyed<Option<PipelineHook>>,
     pub execute: LanguageKeyed<Option<PipelineHook>>,
     pub stub_execute: bool,
-    pub fail_covering: Option<Language>,
-    pub block_covering: Option<Language>,
-    pub release: CoveringRelease,
+    pub fail_selecting: Option<Language>,
+    pub block_selecting: Option<Language>,
+    pub release: SelectingRelease,
 }
 
 #[derive(Default)]
-pub(crate) struct CoveringRelease {
+pub(crate) struct SelectingRelease {
     released: Mutex<bool>,
     signal: Condvar,
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
 impl PipelineDoubles {
-    pub(crate) fn release_blocked_covering(&self) {
+    pub(crate) fn release_blocked_selecting(&self) {
         *self
             .release
             .released
@@ -47,7 +47,7 @@ impl PipelineDoubles {
     }
 
     fn wait_if_blocked(&self, language: Language) {
-        if self.block_covering != Some(language) {
+        if self.block_selecting != Some(language) {
             return;
         }
         let mut released = self
@@ -81,12 +81,7 @@ pub(super) fn spawn_language_jobs(
     slots: &LanguageSlots,
 ) -> Result<(), String> {
     let spawn = prefix.may_work;
-    let share = JobShare::new(
-        a.jobs,
-        crate::test_runner::lang_registry::languages()
-            .iter()
-            .all(|&language| *spawn.get(language)),
-    );
+    let share = JobShare::new(a.jobs);
     for language in crate::test_runner::lang_registry::languages() {
         if *spawn.get(language) {
             crate::test_runner::tests_remaining::expect_language_remaining(language);
@@ -193,7 +188,7 @@ fn language_job(job: LanguageJob<'_>) -> Result<(), String> {
         first_error,
     } = job;
     let _progress_lang = kiss::watch_report::ProgressLanguageGuard::enter(language);
-    let planned = match run_covering(a, prefix, language, share.covering(language)) {
+    let planned = match run_selecting(a, prefix, language) {
         Ok(planned) => planned,
         Err(err) => return fail_language_job(language, first_error, err),
     };
@@ -256,26 +251,19 @@ fn has_recorded_error(slot: &Mutex<Option<String>>) -> bool {
         .is_some()
 }
 
-fn run_covering(
+fn run_selecting(
     a: &RunTestCmdArgs<'_>,
     prefix: &SharedPrefix,
     language: Language,
-    jobs: usize,
 ) -> Result<PlannedSelectors, String> {
-    let covering_name = format!("covering_{}", language.label());
-    crate::test_runner::emit_test_progress(&format!("kiss test: Running {covering_name}"));
-    invoke_covering_hook(a, language);
-    let _covering_guard = crate::test_runner::lang_registry::rules_for(language).begin_covering(
-        &prefix.repo_root,
-        a.extras.get(language),
-        jobs,
-        a.dry_run,
-    );
-    let covering_started = Instant::now();
-    let mut planned = cover_language(a, prefix, language)?;
+    let selecting_name = format!("select_{}", language.label());
+    crate::test_runner::emit_test_progress(&format!("kiss test: Running {selecting_name}"));
+    invoke_selecting_hook(a, language);
+    let selecting_started = Instant::now();
+    let mut planned = select_language(a, prefix, language)?;
     crate::test_runner::emit_test_progress(&format!(
-        "kiss test: Ran {covering_name} {}ms",
-        covering_started.elapsed().as_millis()
+        "kiss test: Ran {selecting_name} {}ms",
+        selecting_started.elapsed().as_millis()
     ));
     if prefix.cold_init {
         apply_cold_initialization_population(a, &mut planned);
@@ -323,9 +311,9 @@ fn doubles<'a>(a: &'a RunTestCmdArgs<'_>) -> Option<&'a PipelineDoubles> {
     a.doubles.as_deref()
 }
 
-fn invoke_covering_hook(a: &RunTestCmdArgs<'_>, language: Language) {
+fn invoke_selecting_hook(a: &RunTestCmdArgs<'_>, language: Language) {
     if let Some(doubles) = doubles(a) {
-        if let Some(hook) = doubles.covering.get(language) {
+        if let Some(hook) = doubles.selecting.get(language) {
             hook();
         }
         doubles.wait_if_blocked(language);
@@ -342,6 +330,6 @@ fn stub_language_execute(a: &RunTestCmdArgs<'_>) -> bool {
     doubles(a).is_some_and(|doubles| doubles.stub_execute)
 }
 
-pub(super) fn covering_should_fail(a: &RunTestCmdArgs<'_>, language: Language) -> bool {
-    doubles(a).is_some_and(|doubles| doubles.fail_covering == Some(language))
+pub(super) fn selecting_should_fail(a: &RunTestCmdArgs<'_>, language: Language) -> bool {
+    doubles(a).is_some_and(|doubles| doubles.fail_selecting == Some(language))
 }

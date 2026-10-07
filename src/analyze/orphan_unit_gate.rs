@@ -1,28 +1,22 @@
-use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use kiss::{
-    OrphanCoverage, OrphanUnitInput, build_python_context_graph, build_rust_context_graph,
+    OrphanUnitInput, build_python_context_graph, build_rust_context_graph,
     collect_orphan_entry_callables, collect_orphan_entry_paths, orphan_unit_findings,
 };
 
-use crate::analyze::line_coverage::{
-    CoverageSourceFacts, RuntimeCoverageSnapshot, repo_relative_key,
-};
 use crate::analyze_parse::parse_classified;
 
 pub(crate) fn collect_orphan_unit_findings(
     repo_root: &Path,
     py_files: &[PathBuf],
     rs_files: &[PathBuf],
-    snapshot: &RuntimeCoverageSnapshot,
     orphan_allowed: &[String],
 ) -> Result<Vec<kiss::OrphanUnitFinding>, ()> {
     with_orphan_input(
         repo_root,
         py_files,
         rs_files,
-        snapshot,
         orphan_allowed,
         orphan_unit_findings,
     )
@@ -32,16 +26,12 @@ fn with_orphan_input<T>(
     repo_root: &Path,
     py_files: &[PathBuf],
     rs_files: &[PathBuf],
-    snapshot: &RuntimeCoverageSnapshot,
     orphan_allowed: &[String],
     finish: impl FnOnce(&OrphanUnitInput<'_>) -> T,
 ) -> Result<T, ()> {
     let Ok((py_parsed, rs_parsed, roles)) = parse_classified(py_files, rs_files) else {
         return Err(());
     };
-    let facts =
-        CoverageSourceFacts::from_index(roles.clone(), &py_parsed, &rs_parsed, py_files, rs_files);
-    let coverage = snapshot_to_orphan_coverage(repo_root, &facts, snapshot);
     let py_refs: Vec<&kiss::ParsedFile> = py_parsed.iter().collect();
     let rs_refs: Vec<&kiss::ParsedRustFile> = rs_parsed.iter().collect();
     let py_ctx = if py_parsed.is_empty() {
@@ -70,65 +60,16 @@ fn with_orphan_input<T>(
         orphan_allowed,
         repo_root,
         roles: &roles,
-        coverage: Some(&coverage),
     }))
-}
-
-fn snapshot_to_orphan_coverage(
-    repo_root: &Path,
-    facts: &CoverageSourceFacts,
-    snapshot: &RuntimeCoverageSnapshot,
-) -> OrphanCoverage {
-    let mut hit = std::collections::BTreeMap::new();
-    for path in facts.coverable_map().keys() {
-        let lines = repo_relative_key(repo_root, path)
-            .and_then(|key| snapshot.covered_lines.get(&key))
-            .map(|set| set.iter().map(|n| *n as usize).collect::<BTreeSet<_>>())
-            .unwrap_or_default();
-        hit.insert(path.clone(), lines);
-    }
-    OrphanCoverage {
-        coverable: facts.coverable_map().clone(),
-        hit,
-    }
 }
 
 #[cfg(test)]
 mod orphan_unit_gate_test {
-    use super::{collect_orphan_unit_findings, snapshot_to_orphan_coverage};
-    use crate::analyze::line_coverage::{CoverageSourceFacts, RuntimeCoverageSnapshot};
-    use std::collections::{BTreeMap, BTreeSet};
+    use super::collect_orphan_unit_findings;
     use std::path::PathBuf;
 
-    fn snap(lines: BTreeMap<String, BTreeSet<u32>>) -> RuntimeCoverageSnapshot {
-        RuntimeCoverageSnapshot {
-            identity: "id".into(),
-            covered_lines: lines,
-        }
-    }
-
-    fn has_orphans(
-        repo_root: &std::path::Path,
-        py: &[PathBuf],
-        rs: &[PathBuf],
-        snapshot: &RuntimeCoverageSnapshot,
-    ) -> bool {
-        collect_orphan_unit_findings(repo_root, py, rs, snapshot, &[])
-            .map_or(true, |found| !found.is_empty())
-    }
-
-    #[test]
-    fn snapshot_maps_relative_hits() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let file = tmp.path().join("a.py");
-        std::fs::write(&file, "x = 1\n").unwrap();
-        let facts = CoverageSourceFacts::from_files(std::slice::from_ref(&file), &[]).unwrap();
-        let cov = snapshot_to_orphan_coverage(
-            tmp.path(),
-            &facts,
-            &snap(BTreeMap::from([("a.py".into(), BTreeSet::from([1]))])),
-        );
-        assert!(cov.hit.get(&file).is_some_and(|h| h.contains(&1)));
+    fn has_orphans(repo_root: &std::path::Path, py: &[PathBuf], rs: &[PathBuf]) -> bool {
+        collect_orphan_unit_findings(repo_root, py, rs, &[]).map_or(true, |found| !found.is_empty())
     }
 
     #[test]
@@ -136,30 +77,21 @@ mod orphan_unit_gate_test {
         let tmp = tempfile::TempDir::new().unwrap();
         let utils = tmp.path().join("utils.py");
         std::fs::write(&utils, "def helper():\n    return 1\n").unwrap();
-        let failed = has_orphans(
-            tmp.path(),
-            &[utils],
-            &[],
-            &snap(BTreeMap::from([("utils.py".into(), BTreeSet::from([1]))])),
-        );
-        assert!(failed);
+        assert!(has_orphans(tmp.path(), &[utils], &[]));
     }
 
     #[test]
-    fn body_hit_clears_python_helper() {
+    fn test_reference_clears_python_helper() {
         let tmp = tempfile::TempDir::new().unwrap();
         let utils = tmp.path().join("utils.py");
-        std::fs::write(&utils, "x = 1\ndef helper():\n    return 1\n").unwrap();
-        let failed = has_orphans(
-            tmp.path(),
-            &[utils],
-            &[],
-            &snap(BTreeMap::from([(
-                "utils.py".into(),
-                BTreeSet::from([1, 2, 3]),
-            )])),
-        );
-        assert!(!failed);
+        std::fs::write(&utils, "def helper():\n    return 1\n").unwrap();
+        let test = tmp.path().join("test_utils.py");
+        std::fs::write(
+            &test,
+            "from utils import helper\n\ndef test_helper():\n    assert helper() == 1\n",
+        )
+        .unwrap();
+        assert!(!has_orphans(tmp.path(), &[utils, test], &[]));
     }
 
     #[test]
@@ -167,8 +99,7 @@ mod orphan_unit_gate_test {
         let tmp = tempfile::TempDir::new().unwrap();
         let lib = tmp.path().join("lib.rs");
         std::fs::write(&lib, "pub fn unused() { let _x = 1; }\n").unwrap();
-        let failed = has_orphans(tmp.path(), &[], &[lib], &snap(BTreeMap::new()));
-        assert!(failed);
+        assert!(has_orphans(tmp.path(), &[], &[lib]));
     }
 
     #[test]
@@ -177,8 +108,7 @@ mod orphan_unit_gate_test {
         assert!(has_orphans(
             PathBuf::from("/tmp").as_path(),
             &[missing],
-            &[],
-            &snap(BTreeMap::new())
+            &[]
         ));
     }
 }

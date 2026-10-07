@@ -1,7 +1,7 @@
 use super::*;
 use crate::test_runner::PlannedSelectors;
-use crate::test_runner::coverage_decision::LanguagePlanner;
 use crate::test_runner::runners::SelectorExecutionSummary;
+use crate::test_runner::test_selection::LanguagePlanner;
 use std::path::PathBuf;
 
 fn planned() -> PlannedSelectors {
@@ -21,7 +21,7 @@ fn python_module_run_population_uses_temp_repo_kernel() {
     planned.repo_root = tmp.path().to_path_buf();
     planned.sel.python.clear();
     let options = super::dry_run_selector_options();
-    let ctx = crate::test_runner::coverage_decision::RunContext {
+    let ctx = crate::test_runner::test_selection::RunContext {
         planned: &planned,
         options: &options,
     };
@@ -35,7 +35,7 @@ fn PythonModule_policy_reads_python_population_decision() {
     let mut planned = planned();
     planned.population_required.python = true;
     let options = super::dry_run_selector_options();
-    let ctx = crate::test_runner::coverage_decision::RunContext {
+    let ctx = crate::test_runner::test_selection::RunContext {
         planned: &planned,
         options: &options,
     };
@@ -56,7 +56,7 @@ fn RustModule_policy_reads_rust_population_decision() {
     let mut planned = planned();
     planned.population_required.rust = true;
     let options = super::dry_run_selector_options();
-    let ctx = crate::test_runner::coverage_decision::RunContext {
+    let ctx = crate::test_runner::test_selection::RunContext {
         planned: &planned,
         options: &options,
     };
@@ -77,7 +77,7 @@ fn language_executor_methods_handle_empty_runs_and_rebuild_indexes() {
     let mut planned = planned();
     planned.repo_root = tmp.path().to_path_buf();
     let options = super::dry_run_selector_options();
-    let ctx = crate::test_runner::coverage_decision::RunContext {
+    let ctx = crate::test_runner::test_selection::RunContext {
         planned: &planned,
         options: &options,
     };
@@ -123,7 +123,7 @@ fn python_rebuild_index_skips_when_pure_test_operand_plan() {
     planned.repo_root = tmp.path().to_path_buf();
     planned.skip_index_rebuild_after_selective.python = true;
     let options = super::dry_run_selector_options();
-    let ctx = crate::test_runner::coverage_decision::RunContext {
+    let ctx = crate::test_runner::test_selection::RunContext {
         planned: &planned,
         options: &options,
     };
@@ -131,7 +131,7 @@ fn python_rebuild_index_skips_when_pure_test_operand_plan() {
     <PythonModule as LanguageExecutor>::rebuild_index(&python, &ctx).unwrap();
     assert!(
         !tmp.path().join(".kiss").exists(),
-        "pure test-operand selective plans must not publish a Python coverage index"
+        "pure test-operand selective plans must not write Python index state"
     );
 }
 
@@ -176,7 +176,7 @@ fn dry_run_lines_report_population_and_selector_commands() {
         4,
     )
     .unwrap();
-    assert_eq!(python_lines[0], "PYTHON COVERAGE POPULATION");
+    assert_eq!(python_lines[0], "PYTHON POPULATION");
     assert_eq!(
         python_lines[1],
         "python '-m' pytest tests/test_app.py::test_ok '-q'"
@@ -210,7 +210,7 @@ fn language_executor_non_empty_runs_validate_jobs_before_spawning() {
     planned.repo_root = tmp.path().to_path_buf();
     let mut options = super::dry_run_selector_options();
     options.jobs = 0;
-    let ctx = crate::test_runner::coverage_decision::RunContext {
+    let ctx = crate::test_runner::test_selection::RunContext {
         planned: &planned,
         options: &options,
     };

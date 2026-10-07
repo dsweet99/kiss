@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 fn spawn_oneshot(repo: &Path) -> Child {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
-    crate::common::scrub_parent_coverage_env(&mut cmd);
+    crate::common::scrub_parent_build_env(&mut cmd);
     crate::common::preserve_toolchain_homes(&mut cmd);
     cmd.env("PYTHONDONTWRITEBYTECODE", "1")
         .env("NO_COLOR", "1")

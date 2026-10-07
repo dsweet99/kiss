@@ -53,7 +53,7 @@ impl PlannedSelectors {
                 python: Vec::new(),
                 rust: Vec::new(),
             },
-            coverage_decision_engine_used: true,
+            selection_engine_used: true,
             selection_basis: Default::default(),
             ignore: vec![],
             workspace_files_fingerprint: None,
@@ -202,7 +202,7 @@ mod plan_tests {
         )
         .unwrap();
         assert_eq!(code, 0);
-        assert!(planned.coverage_decision_engine_used);
+        assert!(planned.selection_engine_used);
     }
 
     #[test]
@@ -230,7 +230,7 @@ mod plan_tests {
                 python: Vec::new(),
                 rust: Vec::new(),
             },
-            coverage_decision_engine_used: true,
+            selection_engine_used: true,
             selection_basis: Default::default(),
             ignore: Vec::new(),
             workspace_files_fingerprint: None,

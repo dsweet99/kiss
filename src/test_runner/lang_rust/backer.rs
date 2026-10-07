@@ -1,10 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use crate::test_runner::coverage_decision::{
-    ChangedDiff, CoverageFreshness, LanguagePlanner, PopulationPlan, SelectionBasis,
-    SelectionDecision, TestSelector, full_population_plan,
-};
 use crate::test_runner::runners::enumerate_workspace_rust_selectors;
+use crate::test_runner::test_selection::{ChangedDiff, LanguagePlanner, TestSelector};
 
 pub(crate) struct RustBackerInput<'a> {
     pub(crate) repo_root: &'a Path,
@@ -83,39 +80,12 @@ impl LanguagePlanner for RustModule {
         self.prior_failures.clone()
     }
 
-    fn freshness(&self, _universe: &[TestSelector]) -> Result<CoverageFreshness, String> {
-        Ok(if self.rust_source_paths.is_empty() {
-            CoverageFreshness::Fresh
-        } else {
-            CoverageFreshness::Stale
-        })
-    }
-
-    fn population_plan(&self, universe: &[TestSelector]) -> PopulationPlan {
-        full_population_plan(universe)
-    }
-
-    fn select(&self) -> Result<SelectionDecision, String> {
-        Ok(SelectionDecision {
-            selectors: Vec::new(),
-            complete: true,
-        })
-    }
-
-    fn manifest_env_allowlist(&self) -> &'static [&'static str] {
-        super::nextest::RUST_IDENTITY_ENV_KEYS
-    }
-
-    fn selection_basis(&self) -> SelectionBasis {
-        if self.rust_source_paths.is_empty() {
-            SelectionBasis::Current
-        } else {
-            SelectionBasis::Population
-        }
+    fn sources_changed(&self) -> bool {
+        !self.rust_source_paths.is_empty()
     }
 }
 
-impl crate::test_runner::coverage_decision::SupportedLanguage for RustModule {
+impl crate::test_runner::test_selection::SupportedLanguage for RustModule {
     fn language(&self) -> kiss::Language {
         kiss::Language::Rust
     }
@@ -124,6 +94,7 @@ impl crate::test_runner::coverage_decision::SupportedLanguage for RustModule {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_runner::test_selection::SelectionBasis;
 
     fn module(root: &Path, sources: &[PathBuf]) -> RustModule {
         RustModule::new(RustBackerInput {
@@ -139,7 +110,7 @@ mod tests {
     fn changed_rust_source_plans_the_whole_population() {
         let tmp = tempfile::tempdir().unwrap();
         let changed = module(tmp.path(), &[tmp.path().join("src/lib.rs")]);
-        assert_eq!(changed.freshness(&[]).unwrap(), CoverageFreshness::Stale);
+        assert!(changed.sources_changed());
         assert_eq!(changed.selection_basis(), SelectionBasis::Population);
     }
 
@@ -147,10 +118,8 @@ mod tests {
     fn without_changed_sources_only_changed_tests_are_planned() {
         let tmp = tempfile::tempdir().unwrap();
         let unchanged = module(tmp.path(), &[]);
-        assert_eq!(unchanged.freshness(&[]).unwrap(), CoverageFreshness::Fresh);
+        assert!(!unchanged.sources_changed());
         assert_eq!(unchanged.selection_basis(), SelectionBasis::Current);
-        let decision = unchanged.select().unwrap();
-        assert!(decision.complete && decision.selectors.is_empty());
         assert_eq!(
             unchanged.changed_tests(&ChangedDiff::new(Vec::new())).len(),
             1

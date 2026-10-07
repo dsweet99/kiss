@@ -3,8 +3,7 @@ use std::path::Path;
 use kiss::Language;
 use serde::Serialize;
 
-use super::history::reverse_records;
-use super::resolved::{OperandClass, ResolvedTarget, ReverseRecord, SourceRegion};
+use super::resolved::{OperandClass, ResolvedTarget, SourceRegion};
 use super::slice::{TargetSliceStamp, stamp_from_projection};
 use super::stamp::GitDepStamp;
 use super::types::{TargetFocus, TargetRequest};
@@ -21,11 +20,10 @@ pub(crate) enum SliceProjection {
     },
     SourceRegions {
         regions: Vec<SourceRegion>,
-        reverse: Vec<ReverseRecord>,
+        selectors: Vec<String>,
     },
     Vcs {
         git: GitDepStamp,
-        historical_reverse: Vec<ReverseRecord>,
         regions: Vec<SourceRegion>,
         selectors: Vec<String>,
     },
@@ -42,8 +40,8 @@ pub(crate) fn build_slice_projection(
     let complete = projection_complete(repo_root, request, resolved);
     let projection = match &request.focus {
         TargetFocus::Workspace => workspace_projection(repo_root, request),
-        TargetFocus::Git(_) => vcs_projection(repo_root, resolved),
-        TargetFocus::Operands(_) => operand_projection(repo_root, resolved),
+        TargetFocus::Git(_) => vcs_projection(repo_root, request, resolved),
+        TargetFocus::Operands(_) => operand_projection(repo_root, request, resolved),
     };
     (projection, complete)
 }
@@ -116,24 +114,52 @@ fn rust_workspace_selectors(repo_root: &Path, ignore: &[String]) -> Vec<String> 
     found
 }
 
-fn vcs_projection(repo_root: &Path, resolved: &ResolvedTarget) -> SliceProjection {
-    let Some(git) = resolved.git_stamp.clone() else {
-        return SliceProjection::Vcs {
-            git: empty_git_placeholder(),
-            historical_reverse: reverse_records(repo_root, &resolved.historical_paths),
-            regions: resolved.regions.clone(),
-            selectors: resolved.direct_selectors.clone(),
-        };
-    };
+fn vcs_projection(
+    repo_root: &Path,
+    request: &TargetRequest,
+    resolved: &ResolvedTarget,
+) -> SliceProjection {
     SliceProjection::Vcs {
-        git,
-        historical_reverse: reverse_records(repo_root, &resolved.historical_paths),
+        git: resolved
+            .git_stamp
+            .clone()
+            .unwrap_or_else(empty_git_placeholder),
         regions: resolved.regions.clone(),
-        selectors: resolved.direct_selectors.clone(),
+        selectors: vcs_selectors(repo_root, request, resolved),
     }
 }
 
-fn operand_projection(repo_root: &Path, resolved: &ResolvedTarget) -> SliceProjection {
+/// Changed test files plus, for each language with a changed source, its whole population.
+fn vcs_selectors(
+    repo_root: &Path,
+    request: &TargetRequest,
+    resolved: &ResolvedTarget,
+) -> Vec<String> {
+    let paths = region_paths(&resolved.regions);
+    let mut selectors = resolved.direct_selectors.clone();
+    selectors.extend(population_selectors_for_paths(repo_root, &paths, request));
+    if paths.iter().any(|path| path.ends_with(".py")) {
+        selectors.extend(
+            python_workspace_selectors(repo_root, request)
+                .into_iter()
+                .filter(|selector| {
+                    let file = selector
+                        .split_once("::")
+                        .map_or(selector.as_str(), |(file, _)| file);
+                    paths.iter().any(|path| path == file)
+                }),
+        );
+    }
+    selectors.sort();
+    selectors.dedup();
+    selectors
+}
+
+fn operand_projection(
+    repo_root: &Path,
+    request: &TargetRequest,
+    resolved: &ResolvedTarget,
+) -> SliceProjection {
     let test_only = resolved.operand_classes.iter().all(|class| {
         matches!(
             class,
@@ -155,7 +181,7 @@ fn operand_projection(repo_root: &Path, resolved: &ResolvedTarget) -> SliceProje
     if source_only {
         return SliceProjection::SourceRegions {
             regions: resolved.regions.clone(),
-            reverse: reverse_for_regions(repo_root, &resolved.regions),
+            selectors: selectors_for_regions(repo_root, request, &resolved.regions),
         };
     }
     SliceProjection::Mixed {
@@ -166,14 +192,14 @@ fn operand_projection(repo_root: &Path, resolved: &ResolvedTarget) -> SliceProje
             },
             SliceProjection::SourceRegions {
                 regions: resolved.regions.clone(),
-                reverse: reverse_for_regions(repo_root, &resolved.regions),
+                selectors: selectors_for_regions(repo_root, request, &resolved.regions),
             },
         ],
     }
 }
 
-fn reverse_for_regions(repo_root: &Path, regions: &[SourceRegion]) -> Vec<ReverseRecord> {
-    let paths: Vec<String> = regions
+fn region_paths(regions: &[SourceRegion]) -> Vec<String> {
+    regions
         .iter()
         .filter_map(|region| match region {
             SourceRegion::FileAll { path } | SourceRegion::FileLines { path, .. } => {
@@ -181,8 +207,51 @@ fn reverse_for_regions(repo_root: &Path, regions: &[SourceRegion]) -> Vec<Revers
             }
             SourceRegion::WorkspaceAll => None,
         })
-        .collect();
-    reverse_records(repo_root, &paths)
+        .collect()
+}
+
+fn selectors_for_regions(
+    repo_root: &Path,
+    request: &TargetRequest,
+    regions: &[SourceRegion],
+) -> Vec<String> {
+    population_selectors_for_paths(repo_root, &region_paths(regions), request)
+}
+
+/// The cached workspace tests of every language with a non-test source among `paths`:
+/// a changed source reruns every test of its language.
+pub(crate) fn population_selectors_for_paths(
+    repo_root: &Path,
+    paths: &[String],
+    request: &TargetRequest,
+) -> Vec<String> {
+    let mut selectors = Vec::new();
+    for language in Language::ALL {
+        let has_source = paths.iter().any(|path| {
+            let path = Path::new(path);
+            path.extension()
+                .and_then(|ext| ext.to_str())
+                .and_then(crate::test_runner::lang_registry::language_for_extension)
+                == Some(language)
+                && !crate::test_runner::lang_registry::rules_for(language).is_test_source(path)
+        });
+        if !has_source {
+            continue;
+        }
+        match language {
+            Language::Python => selectors.extend(python_workspace_selectors(repo_root, request)),
+            Language::Rust => selectors.extend(
+                crate::test_runner::workspace_selector_cache::load_cached_rust_workspace_selectors(
+                    repo_root,
+                    &request.ignore,
+                )
+                .unwrap_or_default(),
+            ),
+        }
+    }
+    selectors.sort();
+    selectors.dedup();
+    selectors
 }
 
 fn current_sources(repo_root: &Path, ignore: &[String], lang: Option<Language>) -> Vec<String> {
@@ -212,24 +281,8 @@ impl SliceProjection {
             Self::Workspace { selectors, .. } | Self::TestDescriptors { selectors, .. } => {
                 selectors.clone()
             }
-            Self::SourceRegions { reverse, .. } => reverse
-                .iter()
-                .flat_map(|record| record.selectors.iter().cloned())
-                .collect(),
-            Self::Vcs {
-                selectors,
-                historical_reverse,
-                ..
-            } => {
-                let mut union = selectors.clone();
-                union.extend(
-                    historical_reverse
-                        .iter()
-                        .flat_map(|record| record.selectors.iter().cloned()),
-                );
-                union.sort();
-                union.dedup();
-                union
+            Self::SourceRegions { selectors, .. } | Self::Vcs { selectors, .. } => {
+                selectors.clone()
             }
             Self::Mixed { parts } => {
                 let mut union = Vec::new();
@@ -243,7 +296,7 @@ impl SliceProjection {
         }
     }
 
-    pub(crate) fn coverage_regions(&self) -> Vec<SourceRegion> {
+    pub(crate) fn report_regions(&self) -> Vec<SourceRegion> {
         match self {
             Self::Workspace { .. } => vec![SourceRegion::WorkspaceAll],
             Self::TestDescriptors { .. } => Vec::new(),
@@ -251,7 +304,7 @@ impl SliceProjection {
             Self::Mixed { parts } => {
                 let mut regions = Vec::new();
                 for part in parts {
-                    for region in part.coverage_regions() {
+                    for region in part.report_regions() {
                         if !regions.contains(&region) {
                             regions.push(region);
                         }
@@ -273,7 +326,7 @@ fn projection_complete(
     }
     match &request.focus {
         TargetFocus::Workspace => workspace_complete(repo_root, request),
-        TargetFocus::Git(_) => git_projection_complete(repo_root, resolved),
+        TargetFocus::Git(_) => true,
         TargetFocus::Operands(_) => operand_projection_complete(repo_root, resolved),
     }
 }
@@ -288,16 +341,7 @@ fn operand_projection_complete(repo_root: &Path, resolved: &ResolvedTarget) -> b
     if test_only && !resolved.operand_classes.is_empty() {
         return !resolved.direct_selectors.is_empty();
     }
-    let paths: Vec<String> = resolved
-        .regions
-        .iter()
-        .filter_map(|region| match region {
-            SourceRegion::FileAll { path } | SourceRegion::FileLines { path, .. } => {
-                Some(path.clone())
-            }
-            SourceRegion::WorkspaceAll => None,
-        })
-        .collect();
+    let paths = region_paths(&resolved.regions);
     if resolved
         .regions
         .iter()
@@ -308,19 +352,7 @@ fn operand_projection_complete(repo_root: &Path, resolved: &ResolvedTarget) -> b
     if paths.is_empty() && resolved.direct_selectors.is_empty() {
         return false;
     }
-    let existing = paths
-        .iter()
-        .filter(|path| repo_root.join(path).is_file())
-        .count();
-    if existing == paths.len() && !paths.is_empty() {
-        return true;
-    }
-    reverse_for_regions(repo_root, &resolved.regions).len() == paths.len()
-}
-
-fn git_projection_complete(repo_root: &Path, resolved: &ResolvedTarget) -> bool {
-    let records = reverse_records(repo_root, &resolved.historical_paths);
-    records.len() == resolved.historical_paths.len()
+    !paths.is_empty() && paths.iter().all(|path| repo_root.join(path).is_file())
 }
 
 fn workspace_complete(repo_root: &Path, request: &TargetRequest) -> bool {
@@ -362,7 +394,7 @@ pub(crate) fn slice_for(
 }
 
 #[cfg(test)]
-mod coverage_region_tests {
+mod report_region_tests {
     use super::*;
 
     #[test]
@@ -389,27 +421,27 @@ mod coverage_region_tests {
     }
 
     #[test]
-    fn workspace_projection_covers_workspace_all() {
+    fn workspace_projection_reports_workspace_all() {
         let projection = SliceProjection::Workspace {
             selectors: vec!["tests/a.py::test_a".into()],
             sources: vec!["app.py".into()],
         };
         assert_eq!(
-            projection.coverage_regions(),
+            projection.report_regions(),
             vec![SourceRegion::WorkspaceAll]
         );
     }
 
     #[test]
-    fn test_descriptors_have_empty_coverage_obligation() {
+    fn test_descriptors_have_no_report_regions() {
         let projection = SliceProjection::TestDescriptors {
             descriptors: vec!["test_lib.py::test_fast".into()],
             selectors: vec!["test_lib.py::test_fast".into()],
         };
         assert!(
-            projection.coverage_regions().is_empty(),
+            projection.report_regions().is_empty(),
             "{:?}",
-            projection.coverage_regions()
+            projection.report_regions()
         );
     }
 
@@ -425,12 +457,12 @@ mod coverage_region_tests {
                     regions: vec![SourceRegion::FileAll {
                         path: "pkg/app.py".into(),
                     }],
-                    reverse: Vec::new(),
+                    selectors: Vec::new(),
                 },
             ],
         };
         assert_eq!(
-            projection.coverage_regions(),
+            projection.report_regions(),
             vec![SourceRegion::FileAll {
                 path: "pkg/app.py".into(),
             }]

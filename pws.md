@@ -3,7 +3,7 @@
 No open PWS in this file (taxonomy: `~/problems_worth_solving.md`).
 Prior finds in this IML (host-parallelism budgeting; dual lang/ignore scope
 carriers / `WatchPathFilter`; watcher↔client peer protocol; `EnsurePolicy`
-bool bag; language-keyed extras *surface*; watch coverage_all seed∥nudge;
+bool bag; language-keyed extras *surface*; watch seed∥nudge;
 report reuse identity keys only rust extras) — fixed earlier.
 
 ---

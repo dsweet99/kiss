@@ -1,5 +1,5 @@
-use std::collections::{BTreeSet, HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::collections::HashMap;
+use std::path::PathBuf;
 
 use crate::graph::orphan_unit::UnitRef;
 use crate::graph::{
@@ -10,22 +10,19 @@ use crate::parsing::ParsedFile;
 use crate::rust_graph::collect_file_use_binds;
 use crate::rust_parsing::ParsedRustFile;
 use crate::rust_units::extract_rust_code_units;
-use crate::units::{CodeUnitKind, extract_code_units};
-use syn::visit::Visit;
+use crate::units::extract_code_units;
 
 pub(super) fn collect_units(py: &[ParsedFile], rs: &[ParsedRustFile]) -> Vec<UnitRef> {
     let mut out = Vec::new();
     for parsed in py {
         let units = extract_code_units(parsed);
         for unit in &units {
-            let parent_type = enclosing_class(&units, unit);
             out.push(UnitRef {
                 file: parsed.path.clone(),
                 name: unit.name.clone(),
                 kind: unit.kind,
                 start_line: unit.start_line,
                 end_line: unit.end_line,
-                parent_type,
                 is_rust: false,
                 trait_impl: false,
             });
@@ -39,31 +36,12 @@ pub(super) fn collect_units(py: &[ParsedFile], rs: &[ParsedRustFile]) -> Vec<Uni
                 kind: unit.kind,
                 start_line: unit.start_line,
                 end_line: unit.end_line,
-                parent_type: unit.parent_type,
                 is_rust: true,
                 trait_impl: unit.trait_impl,
             });
         }
     }
     out
-}
-
-fn enclosing_class(
-    units: &[crate::units::CodeUnit],
-    child: &crate::units::CodeUnit,
-) -> Option<String> {
-    if child.kind != CodeUnitKind::Method {
-        return None;
-    }
-    units
-        .iter()
-        .filter(|unit| {
-            unit.kind == CodeUnitKind::Class
-                && unit.start_line <= child.start_line
-                && child.end_line <= unit.end_line
-        })
-        .min_by_key(|unit| unit.end_line.saturating_sub(unit.start_line))
-        .map(|unit| unit.name.clone())
 }
 
 pub(super) struct NamedBind {
@@ -197,51 +175,6 @@ fn split_nested(spec: &str) -> Option<(String, String)> {
         .map(|(prefix, last)| (prefix.to_string(), last.to_string()))
 }
 
-pub(super) fn rust_coverage_off(rs: &[ParsedRustFile]) -> HashSet<(PathBuf, String, usize)> {
-    let mut out = HashSet::new();
-    for parsed in rs {
-        let mut visitor = CovOffVisitor {
-            path: parsed.path.clone(),
-            out: &mut out,
-        };
-        visitor.visit_file(&parsed.ast);
-    }
-    out
-}
-
-struct CovOffVisitor<'a> {
-    path: PathBuf,
-    out: &'a mut HashSet<(PathBuf, String, usize)>,
-}
-
-impl CovOffVisitor<'_> {
-    fn record(&mut self, name: String, line: usize, attrs: &[syn::Attribute]) {
-        if crate::coverage_off_attrs(attrs) {
-            self.out.insert((self.path.clone(), name, line));
-        }
-    }
-}
-
-impl<'ast> Visit<'ast> for CovOffVisitor<'_> {
-    fn visit_item_fn(&mut self, node: &'ast syn::ItemFn) {
-        self.record(
-            node.sig.ident.to_string(),
-            node.sig.ident.span().start().line,
-            &node.attrs,
-        );
-        syn::visit::visit_item_fn(self, node);
-    }
-
-    fn visit_impl_item_fn(&mut self, node: &'ast syn::ImplItemFn) {
-        self.record(
-            node.sig.ident.to_string(),
-            node.sig.ident.span().start().line,
-            &node.attrs,
-        );
-        syn::visit::visit_impl_item_fn(self, node);
-    }
-}
-
 pub(super) fn units_by_file(units: &[UnitRef]) -> HashMap<PathBuf, Vec<usize>> {
     let mut map: HashMap<PathBuf, Vec<usize>> = HashMap::new();
     for (i, unit) in units.iter().enumerate() {
@@ -256,20 +189,4 @@ pub(super) fn units_by_file(units: &[UnitRef]) -> HashMap<PathBuf, Vec<usize>> {
         .collect();
     map.extend(aliases);
     map
-}
-
-pub(super) fn file_key<'a>(
-    map: &'a std::collections::BTreeMap<PathBuf, BTreeSet<usize>>,
-    path: &Path,
-) -> Option<&'a BTreeSet<usize>> {
-    if let Some(set) = map.get(path) {
-        return Some(set);
-    }
-    let canon = crate::rust_include::canonical_path(path);
-    if let Some(set) = map.get(&canon) {
-        return Some(set);
-    }
-    map.iter()
-        .find(|(p, _)| crate::rust_include::canonical_path(p) == canon)
-        .map(|(_, set)| set)
 }

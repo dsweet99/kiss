@@ -394,7 +394,7 @@ mod pipeline_tests {
     use super::*;
 
     #[test]
-    fn full_pipeline_input_is_coverage_free() {
+    fn full_pipeline_types_build() {
         let _ = std::mem::size_of::<FullPipelineInput<'_>>();
         let _ = std::mem::size_of::<FullPipelineResult>();
         let _ = empty_full_pipeline_result_for_tests();

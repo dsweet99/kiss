@@ -122,7 +122,7 @@ fn dry_mode(root: &Path, invocation: TestInvocation) -> i32 {
 fn no_false_lang(code: i32) {
     assert_eq!(
         code, 0,
-        "overlapped covering must not reject a valid TARGET with a false --lang filter"
+        "overlapped selecting must not reject a valid TARGET with a false --lang filter"
     );
 }
 

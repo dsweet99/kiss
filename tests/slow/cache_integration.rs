@@ -1,4 +1,4 @@
-use crate::common::{generate_lockfile, list_full_check_cache_files, seed_python_runtime_coverage};
+use crate::common::{generate_lockfile, list_full_check_cache_files};
 use crate::support::git::{commit_all, init_git_repo};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -9,7 +9,7 @@ use tempfile::TempDir;
 
 fn kiss_binary() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
-    crate::common::scrub_parent_coverage_env(&mut cmd);
+    crate::common::scrub_parent_build_env(&mut cmd);
     cmd
 }
 
@@ -40,7 +40,6 @@ fn check_cache_hit_replays_on_second_run() {
 
     let src = repo.path().join("simple.py");
     fs::write(&src, "def foo():\n    return 1\n").unwrap();
-    seed_python_runtime_coverage(repo.path(), &[("test_simple.py::test_simple", vec![])]);
 
     let out1 = run_python_check(repo.path(), home.path());
     let stdout1 = String::from_utf8_lossy(&out1.stdout).to_string();
@@ -70,52 +69,12 @@ fn check_cache_hit_replays_on_second_run() {
 }
 
 #[test]
-fn check_cache_is_not_invalidated_when_runtime_coverage_changes() {
-    let repo = TempDir::new().unwrap();
-    let home = TempDir::new().unwrap();
-
-    let src = repo.path().join("simple.py");
-    fs::write(&src, "def foo():\n    return 1\n").unwrap();
-    seed_python_runtime_coverage(repo.path(), &[("test_simple.py::test_simple", vec![])]);
-
-    let out1 = run_python_check(repo.path(), home.path());
-    let stdout1 = String::from_utf8_lossy(&out1.stdout).to_string();
-    assert!(
-        stdout1.contains("Analyzed:"),
-        "sanity: first run should report static analysis summary. stdout:\n{stdout1}"
-    );
-    assert!(!list_full_check_cache_files(repo.path()).is_empty());
-
-    seed_python_runtime_coverage(
-        repo.path(),
-        &[(
-            "test_simple.py::test_simple",
-            vec![("simple.py", vec![1, 2])],
-        )],
-    );
-
-    let out2 = run_python_check(repo.path(), home.path());
-    let stdout2 = String::from_utf8_lossy(&out2.stdout).to_string();
-    assert!(
-        out2.status.success(),
-        "static check should still pass after runtime coverage changes. stdout:\n{stdout2}\nstderr:\n{}",
-        String::from_utf8_lossy(&out2.stderr)
-    );
-    assert_eq!(
-        crate::common::without_cli_wall_timing(&stdout2),
-        crate::common::without_cli_wall_timing(&stdout1),
-        "unchanged source with changed runtime coverage should preserve the static check cache"
-    );
-}
-
-#[test]
 fn check_cache_invalidates_when_sources_unreadable() {
     let repo = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
 
     let src = repo.path().join("simple.py");
     fs::write(&src, "def foo():\n    return 1\n").unwrap();
-    seed_python_runtime_coverage(repo.path(), &[("test_simple.py::test_simple", vec![])]);
 
     let out1 = run_python_check(repo.path(), home.path());
     let stdout1 = String::from_utf8_lossy(&out1.stdout).to_string();
@@ -139,7 +98,6 @@ fn check_cache_invalidates_on_mtime_or_size_change() {
 
     let src = repo.path().join("simple.py");
     fs::write(&src, "def foo():\n    return 1\n").unwrap();
-    seed_python_runtime_coverage(repo.path(), &[("test_simple.py::test_simple", vec![])]);
 
     let out1 = run_python_check(repo.path(), home.path());
     let stdout1 = String::from_utf8_lossy(&out1.stdout).to_string();
@@ -169,7 +127,6 @@ fn check_cache_invalidates_on_same_size_content_change() {
     let content2 = "def a():\n    pass\ndef b():\n    pass\n";
     assert_eq!(content1.len(), content2.len());
     fs::write(&src, content1).unwrap();
-    seed_python_runtime_coverage(repo.path(), &[("test_simple.py::test_simple", vec![])]);
 
     let out1 = run_python_check(repo.path(), home.path());
     let stdout1 = String::from_utf8_lossy(&out1.stdout).to_string();
@@ -234,18 +191,14 @@ fn write_mixed_workspace(repo: &Path) {
     )
     .unwrap();
     generate_lockfile(repo);
-    seed_python_runtime_coverage(
-        repo,
-        &[("test_app.py::test_py_value", vec![("app.py", vec![1, 2])])],
-    );
     commit_all(repo, "init");
 }
 
 #[test]
 fn mixed_workspace_cached_check_and_stats_match_uncached() {
-    // check+stats only: bundling coverage×2 with these under suite load exceeded the
-    // tests/cases 60s SLA (~62s). Rust/Python coverage cache identity lives in the
-    // dedicated `*_cached_coverage_matches_uncached` tests below.
+    // check+stats only: bundling repeated test runs with these under suite load exceeded
+    // the tests/cases 60s SLA (~62s). Cached-run identity lives in the dedicated
+    // `*_cached_*_matches_uncached` tests below.
     let repo = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     write_mixed_workspace(repo.path());
@@ -312,24 +265,27 @@ fn replay_cmd(home: &Path, repo: &Path, args: &[&str]) -> (Output, Output) {
     (first, second)
 }
 
-fn assert_coverage_identity(home: &Path, repo: &Path, args: &[&str]) {
-    let (cov1, cov2) = replay_cmd(home, repo, args);
-    let cov1_lines = product_gate_lines(&cov1);
+fn assert_cached_run_identity(home: &Path, repo: &Path, args: &[&str]) {
+    let (first, second) = replay_cmd(home, repo, args);
+    let first_lines = product_gate_lines(&first);
     assert!(
-        cov1.status.success() && cov1_lines.iter().any(|line| line.contains("NO VIOLATIONS")),
-        "coverage must succeed. stdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&cov1.stdout),
-        String::from_utf8_lossy(&cov1.stderr)
+        first.status.success()
+            && first_lines
+                .iter()
+                .any(|line| line.contains("NO VIOLATIONS")),
+        "run must succeed. stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&first.stdout),
+        String::from_utf8_lossy(&first.stderr)
     );
     assert_eq!(
-        cov1_lines,
-        product_gate_lines(&cov2),
-        "cached kiss test coverage must match the uncached production dataset"
+        first_lines,
+        product_gate_lines(&second),
+        "cached run must match the uncached production dataset"
     );
 }
 
 #[test]
-fn python_only_cached_coverage_matches_uncached() {
+fn python_only_cached_test_matches_uncached() {
     let repo = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     init_git_repo(repo.path());
@@ -339,21 +295,14 @@ fn python_only_cached_coverage_matches_uncached() {
         "from simple import foo\n\ndef test_simple():\n    assert foo() == 1\n",
     )
     .unwrap();
-    seed_python_runtime_coverage(
-        repo.path(),
-        &[(
-            "test_simple.py::test_simple",
-            vec![("simple.py", vec![1, 2])],
-        )],
-    );
     commit_all(repo.path(), "init");
-    assert_coverage_identity(home.path(), repo.path(), &["test", "--lang", "python"]);
+    assert_cached_run_identity(home.path(), repo.path(), &["test", "--lang", "python"]);
 }
 
 #[test]
 fn rust_inline_and_external_tests_cached_check_and_stats_match_uncached() {
-    // check+stats only: check+stats+coverage×2 exceeded the 60s cases SLA under suite
-    // load (~63s). Coverage cache identity is `rust_only_cached_coverage_matches_uncached`.
+    // check+stats only: check+stats+repeated runs exceeded the 60s cases SLA under suite
+    // load (~63s). Cached-run identity is `rust_only_cached_check_matches_uncached`.
     let repo = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     write_rust_inline_external_crate(repo.path());
@@ -384,9 +333,9 @@ fn rust_inline_and_external_tests_cached_check_and_stats_match_uncached() {
 }
 
 #[test]
-fn rust_only_cached_coverage_matches_uncached() {
+fn rust_only_cached_check_matches_uncached() {
     let repo = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     write_rust_inline_external_crate(repo.path());
-    assert_coverage_identity(home.path(), repo.path(), &["check", "--lang", "rust"]);
+    assert_cached_run_identity(home.path(), repo.path(), &["check", "--lang", "rust"]);
 }

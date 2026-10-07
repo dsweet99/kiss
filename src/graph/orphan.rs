@@ -10,7 +10,7 @@ use crate::violation::Violation;
 use super::context::ContextDependencyGraph;
 use super::dependency_graph::{DependencyGraph, all_module_metrics, is_orphan};
 use super::graph_analyze::{
-    is_init_module, is_path_covered_by_another, orphan_violation, path_dedup_set,
+    is_init_module, is_path_shared_with_another, orphan_violation, path_dedup_set,
 };
 
 pub fn orphan_violations(
@@ -38,7 +38,7 @@ pub fn orphan_violations(
         if !is_orphan(metrics.fan_in, metrics.fan_out, module_name) {
             continue;
         }
-        if is_path_covered_by_another(prod, module_name, &seen_paths) {
+        if is_path_shared_with_another(prod, module_name, &seen_paths) {
             continue;
         }
         if !ctx.test_importers_of(module_name).is_empty() {

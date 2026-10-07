@@ -330,7 +330,7 @@ fn posix_path(path: &Path) -> String {
 }
 
 #[cfg(test)]
-mod coverage_witness {
+mod touch_witness {
     use super::*;
     use std::collections::BTreeMap;
     use std::fs;

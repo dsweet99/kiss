@@ -11,8 +11,8 @@ use crate::violation::{Violation, ViolationBuilder};
 pub use crate::rust_fn_metrics::{RustFileMetrics, RustFunctionMetrics, RustTypeMetrics};
 
 #[cfg(test)]
-#[path = "inline_coverage_tests.rs"]
-mod inline_coverage_tests;
+#[path = "inline_tests.rs"]
+mod inline_tests;
 
 #[cfg(test)]
 mod tests;

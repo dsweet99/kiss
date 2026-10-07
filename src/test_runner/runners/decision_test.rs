@@ -15,11 +15,11 @@ fn selector_plan_default_has_no_work_or_engine_claim() {
     assert!(plan.source_paths.rust.is_empty());
     assert!(plan.prior_failure_selectors.python.is_empty());
     assert!(plan.prior_failure_selectors.rust.is_empty());
-    assert!(!plan.coverage_decision_engine_used);
+    assert!(!plan.selection_engine_used);
 }
 
 #[test]
-fn decision_helper_splitters_preserve_language_and_line_filters() {
+fn decision_helper_splitters_preserve_language() {
     let py = PathBuf::from("app.py");
     let rs = PathBuf::from("src/lib.rs");
     let (py_sources, rust_sources) = split_source_paths(&[py.clone(), rs.clone()]);
@@ -37,15 +37,6 @@ fn decision_helper_splitters_preserve_language_and_line_filters() {
         changed
             .iter()
             .any(|source| source.language == kiss::Language::Rust)
-    );
-
-    let lines = BTreeMap::from([
-        (py.clone(), BTreeSet::from([1, 2])),
-        (rs.clone(), BTreeSet::from([3])),
-    ]);
-    assert_eq!(
-        changed_lines_for_sources(&lines, std::slice::from_ref(&rs)),
-        BTreeMap::from([(rs.clone(), BTreeSet::from([3]))])
     );
 
     let selectors = vec![
@@ -76,11 +67,10 @@ fn seed_record(root: &std::path::Path, language: kiss::Language, id: &str, statu
             language: language.label().to_string(),
             test_id: id.to_string(),
             identity: "identity".to_string(),
-            deps: BTreeMap::new(),
+            deps: std::collections::BTreeMap::new(),
             status,
             exit_code: None,
             duration: std::time::Duration::ZERO,
-            covered: BTreeMap::new(),
         },
     )
     .unwrap();
@@ -181,23 +171,17 @@ fn combined_selectors_routes_changed_python_and_rust_tests() {
     )
     .unwrap();
     // Seeded universe avoids pytest collect in helper/universe expansion.
-    crate::test_runner::python_coverage_index::write_python_population_manifest_for_args(
-        tmp.path(),
-        &["tests/test_app.py::test_py_changed".to_string()],
-        &[],
-    )
-    .unwrap();
+    assert!(
+        crate::test_runner::workspace_selector_cache::store_python_workspace_selectors(
+            tmp.path(),
+            &[],
+            &["tests/test_app.py::test_py_changed".to_string()],
+            &[],
+        )
+    );
 
-    let plan = combined_selectors(
-        tmp.path(),
-        &[],
-        &[py_test.clone(), rs_test],
-        &BTreeMap::new(),
-        &[],
-        None,
-        &[],
-    )
-    .unwrap();
+    let plan =
+        combined_selectors(tmp.path(), &[], &[py_test.clone(), rs_test], &[], None, &[]).unwrap();
 
     assert!(
         plan.selectors
@@ -211,7 +195,7 @@ fn combined_selectors_routes_changed_python_and_rust_tests() {
             .iter()
             .any(|selector| selector.contains("rust_changed"))
     );
-    assert!(plan.coverage_decision_engine_used);
+    assert!(plan.selection_engine_used);
     assert_eq!(plan.vcs_source_paths.rust, 0);
 }
 
@@ -228,18 +212,19 @@ fn changed_python_helper_without_selector_selects_language_universe() {
     .unwrap();
     let helper = tests.join("helpers.py");
     std::fs::write(&helper, "def helper():\n    return 1\n").unwrap();
-    crate::test_runner::python_coverage_index::write_python_population_manifest_for_args(
-        tmp.path(),
-        &["tests/test_app.py::test_app".to_string()],
-        &[],
-    )
-    .unwrap();
+    assert!(
+        crate::test_runner::workspace_selector_cache::store_python_workspace_selectors(
+            tmp.path(),
+            &[],
+            &["tests/test_app.py::test_app".to_string()],
+            &[],
+        )
+    );
 
     let plan = combined_selectors(
         tmp.path(),
         &[],
         std::slice::from_ref(&helper),
-        &BTreeMap::new(),
         &[],
         Some(kiss::Language::Python),
         &[],
@@ -261,11 +246,9 @@ fn changed_python_helper_without_selector_selects_language_universe() {
 fn EngineBackers_empty_when_no_language_has_work() {
     let tmp = tempfile::TempDir::new().unwrap();
     let changed_tests = ChangedTestSelectors::default();
-    let python_changed_lines = BTreeMap::new();
     let input = EngineBackerInputs {
         repo_root: tmp.path(),
         py_source_paths: &[],
-        python_changed_lines: &python_changed_lines,
         rust_source_paths: &[],
         test_args: crate::test_runner::language_keyed::LanguageKeyed {
             python: &[],
@@ -283,7 +266,7 @@ fn EngineBackers_empty_when_no_language_has_work() {
 }
 
 #[test]
-fn engine_backers_expose_manifest_env_policy() {
+fn engine_backers_plan_population_for_changed_sources() {
     let tmp = tempfile::TempDir::new().unwrap();
     let app = tmp.path().join("app.py");
     let lib = tmp.path().join("src").join("lib.rs");
@@ -291,11 +274,9 @@ fn engine_backers_expose_manifest_env_policy() {
     std::fs::write(&app, "VALUE = 1\n").unwrap();
     std::fs::write(&lib, "pub fn value() -> i32 { 1 }\n").unwrap();
     let changed_tests = ChangedTestSelectors::default();
-    let python_changed_lines = BTreeMap::new();
     let input = EngineBackerInputs {
         repo_root: tmp.path(),
         py_source_paths: std::slice::from_ref(&app),
-        python_changed_lines: &python_changed_lines,
         rust_source_paths: std::slice::from_ref(&lib),
         test_args: crate::test_runner::language_keyed::LanguageKeyed {
             python: &[],
@@ -309,16 +290,11 @@ fn engine_backers_expose_manifest_env_policy() {
 
     let engine_backers = engine_backers(input).unwrap();
     assert!(engine_backers.prior_failures.is_empty());
-    let backers = engine_backers.backers;
-    let python = backers
-        .iter()
-        .find(|backer| backer.language() == kiss::Language::Python)
-        .unwrap();
-    let rust = backers
-        .iter()
-        .find(|backer| backer.language() == kiss::Language::Rust)
-        .unwrap();
-
-    assert_eq!(python.manifest_env_allowlist(), ["PYTHONPATH"]);
-    assert!(rust.manifest_env_allowlist().contains(&"RUSTFLAGS"));
+    assert_eq!(engine_backers.backers.len(), 2);
+    assert!(
+        engine_backers
+            .backers
+            .iter()
+            .all(|backer| backer.sources_changed())
+    );
 }

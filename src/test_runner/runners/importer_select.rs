@@ -75,7 +75,6 @@ pub(super) fn append_importer_tests(
             .map_err(|err| err.to_string())?;
         super::extend_tagged(changed, super::changed_file_ids(&more));
     }
-    super::extend_tagged(changed, covering_selectors(repo_root, test_paths));
     Ok(())
 }
 
@@ -133,18 +132,4 @@ fn importer_paths_of(ctx: &ContextDependencyGraph, test_paths: &[PathBuf]) -> Ve
         }
     }
     extra.into_iter().collect()
-}
-
-/// Python tests whose recorded coverage reached the changed test files. Rust runs keep
-/// no coverage; a changed Rust helper outside any test plans every Rust test instead.
-fn covering_selectors(repo_root: &Path, test_paths: &[PathBuf]) -> LanguageKeyed<Vec<String>> {
-    let mut ids = LanguageKeyed::<Vec<String>>::default();
-    if let Some(sels) =
-        crate::test_runner::python_coverage_index::select_python_source_selectors_from_index(
-            repo_root, test_paths,
-        )
-    {
-        ids.python.extend(sels);
-    }
-    ids
 }

@@ -10,7 +10,6 @@ fn sample(test_id: &str) -> TestRecord {
         status: TestStatus::Passed,
         exit_code: Some(0),
         duration: Duration::from_millis(3),
-        covered: BTreeMap::from([("app.py".to_string(), BTreeSet::from([1, 2]))]),
     }
 }
 

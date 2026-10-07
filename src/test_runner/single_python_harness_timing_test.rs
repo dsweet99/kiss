@@ -110,9 +110,9 @@ fn explicit_single_python_test_harness_stays_under_50ms() {
     let summary_gap = gap_between(&force_lines, "kiss test: tests_remaining=0", "✓");
     let prepared_at = force_lines
         .iter()
-        .find(|(_, line)| line.contains("rslip prepared"))
+        .find(|(_, line)| line.contains("kiss test: tests_remaining="))
         .map(|(t, _)| *t)
-        .expect("prepared line");
+        .expect("tests_remaining line");
     let pass_at = force_lines
         .iter()
         .find(|(_, line)| line.contains("PASS:"))

@@ -134,7 +134,6 @@ mod tests {
             kind,
             start_line: start,
             end_line: end,
-            parent_type: None,
             is_rust: file.ends_with(".rs"),
             trait_impl: false,
         }

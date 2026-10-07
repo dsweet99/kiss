@@ -13,8 +13,20 @@ pub fn run_cli_entrypoint() -> i32 {
 pub(crate) fn run_with_cli(cli: Cli) -> i32 {
     let _config_override = kiss::ConfigPathOverrideGuard::enter(cli.config.as_deref());
     prepare_default_config(&cli);
-    let (py_config, rs_config) = load_configs(cli.config.as_ref());
-    let gate_config = load_gate_config(cli.config.as_ref());
+    let (py_config, rs_config) = match load_configs(cli.config.as_ref()) {
+        Ok(configs) => configs,
+        Err(err) => {
+            eprintln!("Error: {err}");
+            return 2;
+        }
+    };
+    let gate_config = match load_gate_config(cli.config.as_ref()) {
+        Ok(config) => config,
+        Err(err) => {
+            eprintln!("Error: {err}");
+            return 2;
+        }
+    };
     let test_section = match load_test_section_config(cli.config.as_ref()) {
         Ok(config) => config,
         Err(err) => {
@@ -57,7 +69,7 @@ where
 }
 
 #[cfg(test)]
-mod run_coverage {
+mod run_touch {
     use super::{parse_cli_from, run_cli_entrypoint, run_with_cli};
     use crate::bin_cli::args::{Cli, Commands};
     use std::fs;
@@ -126,6 +138,28 @@ mod run_coverage {
         let tmp = tempfile::tempdir().unwrap();
         fs::write(tmp.path().join(".kissconfig"), "[test]\nnum_jobs = 0\n").unwrap();
         fs::write(tmp.path().join("sample.py"), "def f():\n    return 1\n").unwrap();
+        let original = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+
+        let code = run_with_cli(Cli {
+            config: None,
+            lang: None,
+            command: Commands::Rules,
+        });
+
+        std::env::set_current_dir(original).unwrap();
+        assert_eq!(code, 2);
+    }
+
+    #[test]
+    fn run_with_cli_rejects_unknown_config_section() {
+        let _cwd_guard = crate::cwd_test_lock::lock();
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(
+            tmp.path().join(".kissconfig"),
+            "bogus = 1\n\n[python]\nstatements_per_function = 1\n",
+        )
+        .unwrap();
         let original = std::env::current_dir().unwrap();
         std::env::set_current_dir(tmp.path()).unwrap();
 

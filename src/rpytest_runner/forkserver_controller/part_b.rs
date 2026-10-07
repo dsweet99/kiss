@@ -5,8 +5,7 @@ class _TestDurationPlugin(object):
         self.seen = False
 
     def pytest_runtest_logreport(self, report):
-        # Call phase only: setup under rslip coverage includes import tracing
-        # and must not dominate max_unit_test_seconds / PASS timing.
+        # Call phase only: setup must not dominate max_unit_test_seconds / PASS timing.
         if report.when == "call":
             self.seconds = float(report.duration)
             self.seen = True

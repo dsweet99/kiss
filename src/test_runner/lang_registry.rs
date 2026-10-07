@@ -13,7 +13,7 @@ pub(crate) fn execution_module(
     language: Language,
     planned: &crate::test_runner::PlannedSelectors,
     options: &crate::test_runner::SelectorRunOptions<'_>,
-) -> Box<dyn crate::test_runner::coverage_decision::LanguageTestModule> {
+) -> Box<dyn crate::test_runner::test_selection::LanguageTestModule> {
     match language {
         Language::Python => Box::new(
             crate::test_runner::lang_python::backer::PythonModule::for_execution_with_args(
@@ -34,27 +34,26 @@ pub(crate) fn execution_module(
 pub(crate) struct PlannerBackerInput<'a> {
     pub(crate) repo_root: &'a std::path::Path,
     pub(crate) source_paths: &'a [std::path::PathBuf],
-    pub(crate) changed_lines:
-        &'a std::collections::BTreeMap<std::path::PathBuf, std::collections::BTreeSet<u32>>,
     pub(crate) test_args: &'a [String],
     pub(crate) ignore: &'a [String],
-    pub(crate) changed_tests: &'a [crate::test_runner::coverage_decision::TestSelector],
-    pub(crate) prior_failures: &'a [crate::test_runner::coverage_decision::TestSelector],
+    pub(crate) changed_tests: &'a [crate::test_runner::test_selection::TestSelector],
+    pub(crate) prior_failures: &'a [crate::test_runner::test_selection::TestSelector],
 }
 
 pub(crate) fn planner_backer(
     language: Language,
     input: PlannerBackerInput<'_>,
-) -> Box<dyn crate::test_runner::coverage_decision::LanguagePlanner> {
+) -> Box<dyn crate::test_runner::test_selection::LanguagePlanner> {
     match language {
-        Language::Python => crate::test_runner::lang_python::backer::python_population_backer(
-            input.repo_root,
-            input.source_paths,
-            input.changed_lines,
-            input.test_args,
-            input.ignore,
-            input.changed_tests,
-            input.prior_failures,
+        Language::Python => crate::test_runner::lang_python::backer::python_backer(
+            crate::test_runner::lang_python::backer::PythonBackerInput {
+                repo_root: input.repo_root,
+                py_source_paths: input.source_paths,
+                test_args: input.test_args,
+                ignore: input.ignore,
+                changed_tests: input.changed_tests,
+                prior_failures: input.prior_failures,
+            },
         ),
         Language::Rust => crate::test_runner::lang_rust::backer::rust_backer(
             crate::test_runner::lang_rust::backer::RustBackerInput {

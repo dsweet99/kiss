@@ -1,4 +1,3 @@
-use crate::common::seed_python_runtime_coverage;
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
@@ -39,13 +38,6 @@ fn check_flags_python_docstring_outside_docs_allowed() {
         "\"\"\"not allowed\"\"\"\n\ndef foo():\n    return 1\n",
     )
     .unwrap();
-    seed_python_runtime_coverage(
-        root,
-        &[
-            ("tests/test_app.py::test_app", vec![]),
-            ("tests/test_ok.py::test_ok", vec![]),
-        ],
-    );
     write_docs_config(root, "[\"docs\"]");
     let out = kiss_binary()
         .current_dir(root)
@@ -75,7 +67,6 @@ fn check_ignores_docs_when_docs_allowed_is_empty() {
         "\"\"\"module doc\"\"\"\n\ndef foo():\n    return 1\n",
     )
     .unwrap();
-    seed_python_runtime_coverage(root, &[("tests/test_app.py::test_app", vec![])]);
     write_docs_config(root, "[]");
     let out = kiss_binary()
         .current_dir(root)
@@ -163,7 +154,6 @@ fn check_does_not_treat_host_tmp_or_nested_src_as_allowed() {
         "/// nested src\nfn foo() {}\n",
     )
     .unwrap();
-    seed_python_runtime_coverage(root, &[("tests/test_app.py::test_app", vec![])]);
     write_docs_config(root, "[\"tmp\", \"src\"]");
     let py = kiss_binary()
         .current_dir(root)

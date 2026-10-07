@@ -42,7 +42,7 @@ fn load_ready(
     let mut selectors = projection.selectors();
     selectors.extend(resolved.direct_selectors);
     let scope = super::scope::ReportScope::from_membership(
-        projection.coverage_regions(),
+        projection.report_regions(),
         selectors,
         stamp.complete,
     );
@@ -126,7 +126,7 @@ pub(crate) fn project_language_ready_from_parent_workspace(
     }
     let selectors: Vec<String> = rows.iter().map(|row| row.selector.clone()).collect();
     let scope = super::scope::ReportScope::from_membership(
-        projection.coverage_regions(),
+        projection.report_regions(),
         selectors,
         stamp.complete,
     );
@@ -153,12 +153,12 @@ pub(crate) fn project_git_ready_from_parent_workspace(
     let parent = load_ready_for_request(repo, &parent_req, extras)?;
     let resolved = super::resolve::resolve_only(repo, request).ok()?;
     let selectors = git_answer_selectors(repo, request, &resolved);
-    let rows = git_rows_for_selectors(repo, &parent, &selectors);
+    let rows = git_rows_for_selectors(&parent, &selectors);
     let (projection, _) = super::projection::build_slice_projection(repo, request, &resolved);
     let mut stamp = super::slice::stamp_from_projection(&projection, true);
     stamp.complete = true;
     let scope =
-        super::scope::ReportScope::from_membership(projection.coverage_regions(), selectors, true);
+        super::scope::ReportScope::from_membership(projection.report_regions(), selectors, true);
     let exit_code = TargetReport::exit_from_rows(&rows);
     let mut built = TargetReport::assembled_in(repo, request, scope, rows, stamp, exit_code);
     built.snapshot.extras = parent.snapshot.extras.clone();
@@ -195,7 +195,11 @@ fn git_answer_selectors(
     }
     universe.sort();
     universe.dedup();
-    let outcomes = python_cached_outcomes(repo, &universe);
+    let changed_paths: Vec<String> = changed.iter().cloned().collect();
+    let population: std::collections::BTreeSet<String> =
+        super::projection::population_selectors_for_paths(repo, &changed_paths, request)
+            .into_iter()
+            .collect();
     let mut selected = Vec::new();
     for selector in universe {
         let file = selector
@@ -204,11 +208,7 @@ fn git_answer_selectors(
         if deleted.contains(file) || path_ignored(&gitignore, file, &request.ignore) {
             continue;
         }
-        let defined_in_change = changed.contains(file);
-        let covers_change = outcomes
-            .get(&selector)
-            .is_some_and(|outcome| outcome_covers(repo, outcome, &changed));
-        if defined_in_change || covers_change {
+        if changed.contains(file) || population.contains(&selector) {
             selected.push(selector);
         }
     }
@@ -239,112 +239,14 @@ fn path_ignored(gitignore: &ignore::gitignore::Gitignore, rel: &str, prefixes: &
     gitignore.matched(rel, false).is_ignore() || kiss::path_ignored_by_prefixes(rel, prefixes)
 }
 
-fn python_cached_outcomes(
-    repo: &std::path::Path,
-    selectors: &[String],
-) -> std::collections::BTreeMap<String, kiss::rslip::RslipOutcome> {
-    let python: Vec<&String> = selectors
-        .iter()
-        .filter(|selector| selector.contains(".py"))
-        .collect();
-    if python.is_empty() {
-        return std::collections::BTreeMap::new();
-    }
-    let Ok((python_version, pytest_version)) =
-        crate::test_runner::lang_python::rslip_request::detect_rslip_versions(repo)
-    else {
-        return std::collections::BTreeMap::new();
-    };
-    let gate = kiss::GateConfig::load_for_repo(repo);
-    let reqs: Vec<_> = python
-        .iter()
-        .filter_map(|selector| {
-            crate::test_runner::lang_python::rslip_request::rslip_request_from_parts(
-                repo,
-                selector,
-                &[],
-                &python_version,
-                &pytest_version,
-                false,
-                &gate,
-            )
-            .ok()
-        })
-        .collect();
-    let loaded = kiss::rslip::load_cached_outcomes_many_trusting_population(&reqs);
-    let mut out = std::collections::BTreeMap::new();
-    for (selector, outcome) in python.into_iter().zip(loaded) {
-        if let Ok(Some(outcome)) = outcome {
-            out.insert(selector.clone(), outcome);
-        }
-    }
-    out
-}
-
-fn outcome_covers(
-    repo: &std::path::Path,
-    outcome: &kiss::rslip::RslipOutcome,
-    changed: &std::collections::BTreeSet<String>,
-) -> bool {
-    outcome
-        .coverage
-        .files
-        .keys()
-        .any(|recorded| recorded_rel(repo, recorded).is_some_and(|rel| changed.contains(&rel)))
-}
-
-fn recorded_rel(repo: &std::path::Path, recorded: &str) -> Option<String> {
-    let path = std::path::Path::new(recorded);
-    let rel = path.strip_prefix(repo).ok().or_else(|| {
-        let canon = repo.canonicalize().ok()?;
-        path.strip_prefix(canon).ok()
-    });
-    rel.map(|rel| rel.to_string_lossy().replace('\\', "/"))
-        .or_else(|| {
-            let spelled = recorded.trim_start_matches("./").replace('\\', "/");
-            (!spelled.starts_with('/')).then_some(spelled)
-        })
-}
-
 fn git_rows_for_selectors(
-    repo: &std::path::Path,
     parent: &TargetReport,
     selectors: &[String],
 ) -> Vec<super::report::SelectorRow> {
-    let outcomes = python_cached_outcomes(repo, selectors);
     selectors
         .iter()
-        .filter_map(|selector| {
-            if let Some(row) = parent.rows.iter().find(|row| row.selector == *selector) {
-                return Some(row.clone());
-            }
-            let outcome = outcomes.get(selector)?;
-            let effective = match outcome.status {
-                kiss::rpytest_runner::TestStatus::Passed => super::report::EffectiveStatus::Pass,
-                kiss::rpytest_runner::TestStatus::Failed => super::report::EffectiveStatus::Fail,
-                kiss::rpytest_runner::TestStatus::TimedOut => {
-                    super::report::EffectiveStatus::Timeout
-                }
-            };
-            let language = if selector.contains(".py") {
-                "python"
-            } else {
-                "rust"
-            };
-            Some(super::report::SelectorRow {
-                language: language.to_string(),
-                selector: selector.clone(),
-                raw: match outcome.status {
-                    kiss::rpytest_runner::TestStatus::Passed => "passed",
-                    kiss::rpytest_runner::TestStatus::Failed => "failed",
-                    kiss::rpytest_runner::TestStatus::TimedOut => "timed_out",
-                }
-                .to_string(),
-                effective,
-                duration_ns: Some(u64::try_from(outcome.duration.as_nanos()).unwrap_or(u64::MAX)),
-                provenance: "cache".into(),
-            })
-        })
+        .filter_map(|selector| parent.rows.iter().find(|row| row.selector == *selector))
+        .cloned()
         .collect()
 }
 

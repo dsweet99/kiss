@@ -38,7 +38,7 @@ pub(crate) struct ReportSnapshot {
     pub evidence: ReportEvidenceStamp,
     #[serde(default)]
     pub graph_generation: Option<String>,
-    /// Covered + orphan_allowed + config digest pinned with `graph_generation`.
+    /// orphan_allowed + config digest pinned with `graph_generation`.
     /// Ready freshness after worktree match compares this instead of re-digesting sources.
     #[serde(default)]
     pub graph_mutable: Option<String>,
@@ -103,18 +103,13 @@ impl TargetReport {
         exit_code: i32,
     ) -> Self {
         let cfg = kiss::GateConfig::load_for_repo(repo_root);
-        let covered = workspace_covered_from_stores(repo_root);
         let mut gates = gates_from_timing(&rows, &cfg);
         gates.extend(gates_from_population(repo_root, &cfg, request));
-        gates.extend(gates_from_orphan(repo_root, &cfg, &scope, &covered));
-        let graph_generation = graph_generation_id(repo_root, &scope, &cfg, &covered);
+        gates.extend(gates_from_orphan(repo_root, &cfg, &scope));
+        let graph_generation = graph_generation_id(repo_root, &scope, &cfg);
         let configuration = configuration_generation(repo_root);
         let graph_mutable = graph_generation.as_ref().map(|_| {
-            super::graph_store::evidence_mutable_digest(
-                &cfg.orphan_allowed,
-                &covered,
-                &configuration,
-            )
+            super::graph_store::evidence_mutable_digest(&cfg.orphan_allowed, &configuration)
         });
         let population = population_inventory_id(repo_root, request);
         let mut built = Self::assembled_with(scope, rows, stamp, exit_code, gates);
@@ -203,17 +198,6 @@ impl TargetReport {
     }
 }
 
-fn workspace_covered_from_stores(repo_root: &Path) -> BTreeMap<String, BTreeSet<u32>> {
-    let mut lines: BTreeMap<String, BTreeSet<u32>> = BTreeMap::new();
-    for rules in crate::test_runner::lang_registry::all_rules() {
-        let stored = rules.stored_coverage(repo_root);
-        for (file, covered) in stored.covered {
-            lines.entry(file).or_default().extend(covered);
-        }
-    }
-    lines
-}
-
 fn workspace_source_files(repo_root: &Path) -> (Vec<PathBuf>, Vec<PathBuf>) {
     let root = repo_root.to_string_lossy().into_owned();
     let (mut py, mut rs) = kiss::gather_files_by_lang(std::slice::from_ref(&root), None, &[]);
@@ -236,7 +220,6 @@ fn scope_has_orphan_candidates(repo_root: &Path, scope: &ReportScope) -> bool {
 fn graph_evidence_parts(
     repo_root: &Path,
     gate: &kiss::GateConfig,
-    covered: &BTreeMap<String, BTreeSet<u32>>,
 ) -> (String, Vec<PathBuf>, Vec<PathBuf>) {
     let (py, rs) = workspace_source_files(repo_root);
     let key = super::graph_store::evidence_key(
@@ -244,7 +227,6 @@ fn graph_evidence_parts(
         &py,
         &rs,
         &gate.orphan_allowed,
-        covered,
         &configuration_generation(repo_root),
     );
     (key, py, rs)
@@ -386,12 +368,11 @@ fn gates_from_orphan(
     repo_root: &Path,
     gate: &kiss::GateConfig,
     scope: &ReportScope,
-    covered: &BTreeMap<String, BTreeSet<u32>>,
 ) -> Vec<ReportGate> {
     if !gate.orphan_detection || !scope_has_orphan_candidates(repo_root, scope) {
         return Vec::new();
     }
-    let (key, py, rs) = graph_evidence_parts(repo_root, gate, covered);
+    let (key, py, rs) = graph_evidence_parts(repo_root, gate);
     if py.is_empty() && rs.is_empty() {
         return Vec::new();
     }
@@ -469,9 +450,8 @@ pub(crate) fn repair_graph_evidence(repo_root: &Path, scope: &ReportScope) -> Re
         return Ok(());
     }
     let cfg = kiss::GateConfig::load_for_repo(repo_root);
-    let covered = workspace_covered_from_stores(repo_root);
-    let (key, py, rs) = graph_evidence_parts(repo_root, &cfg, &covered);
-    write_graph_items(repo_root, &key, &py, &rs, &cfg.orphan_allowed, &covered).map(|_| ())
+    let (key, py, rs) = graph_evidence_parts(repo_root, &cfg);
+    write_graph_items(repo_root, &key, &py, &rs, &cfg.orphan_allowed).map(|_| ())
 }
 
 fn write_graph_items(
@@ -480,17 +460,11 @@ fn write_graph_items(
     py: &[PathBuf],
     rs: &[PathBuf],
     orphan_allowed: &[String],
-    covered: &BTreeMap<String, BTreeSet<u32>>,
 ) -> Result<Vec<super::graph_store::GraphOrphanItem>, String> {
     super::counters::add_graph();
     crate::test_runner::emit_test_progress("kiss test: graph repair");
-    let snapshot = crate::analyze::line_coverage::RuntimeCoverageSnapshot {
-        identity: "target-report".into(),
-        covered_lines: covered.clone(),
-    };
-    let findings =
-        crate::analyze::collect_orphan_unit_findings(repo_root, py, rs, &snapshot, orphan_allowed)
-            .map_err(|_| "graph evidence incomplete".to_string())?;
+    let findings = crate::analyze::collect_orphan_unit_findings(repo_root, py, rs, orphan_allowed)
+        .map_err(|_| "graph evidence incomplete".to_string())?;
     let items: Vec<super::graph_store::GraphOrphanItem> = findings
         .into_iter()
         .map(|item| {
@@ -516,7 +490,6 @@ pub(crate) fn graph_repair_needed(repo_root: &Path, scope: &ReportScope) -> bool
         repo_root,
         scope,
         &kiss::GateConfig::load_for_repo(repo_root),
-        &workspace_covered_from_stores(repo_root),
     )
     .is_some_and(|key| super::graph_store::load_items(repo_root, &key).is_none())
 }
@@ -605,12 +578,11 @@ fn graph_generation_id(
     repo_root: &Path,
     scope: &ReportScope,
     gate: &kiss::GateConfig,
-    covered: &BTreeMap<String, BTreeSet<u32>>,
 ) -> Option<String> {
     if !graph_generation_active(repo_root, scope, gate) {
         return None;
     }
-    let (key, _, _) = graph_evidence_parts(repo_root, gate, covered);
+    let (key, _, _) = graph_evidence_parts(repo_root, gate);
     Some(key)
 }
 
@@ -722,7 +694,7 @@ mod exit_gate_tests {
     #[test]
     fn apply_gate_exit_ignores_unknown_gate_kind() {
         let gate = ReportGate {
-            kind: "test_coverage".into(),
+            kind: "unknown".into(),
             detail: "a.py".into(),
         };
         assert_eq!(TargetReport::apply_gate_exit(0, &[gate]), 0);
@@ -933,17 +905,22 @@ mod exit_gate_tests {
             orphan_detection: false,
             ..Default::default()
         };
-        assert!(gates_from_orphan(tmp.path(), &gate, &scope, &BTreeMap::new()).is_empty());
+        assert!(gates_from_orphan(tmp.path(), &gate, &scope).is_empty());
     }
 
-    fn seed_orphan_graph(
-        repo: &std::path::Path,
-        _scope: &ReportScope,
-        gate: &kiss::GateConfig,
-        covered: &BTreeMap<String, BTreeSet<u32>>,
-    ) {
-        let (key, py, rs) = graph_evidence_parts(repo, gate, covered);
-        write_graph_items(repo, &key, &py, &rs, &gate.orphan_allowed, covered).unwrap();
+    fn seed_orphan_graph(repo: &std::path::Path, _scope: &ReportScope, gate: &kiss::GateConfig) {
+        let (key, py, rs) = graph_evidence_parts(repo, gate);
+        write_graph_items(repo, &key, &py, &rs, &gate.orphan_allowed).unwrap();
+    }
+
+    fn write_used_test(repo: &Path, name: &str) {
+        let tests = repo.join("tests");
+        std::fs::create_dir_all(&tests).unwrap();
+        std::fs::write(
+            tests.join("test_utils.py"),
+            format!("from utils import {name}\n\ndef test_{name}():\n    assert {name}()\n"),
+        )
+        .unwrap();
     }
 
     #[test]
@@ -955,8 +932,8 @@ mod exit_gate_tests {
             orphan_detection: true,
             ..Default::default()
         };
-        seed_orphan_graph(tmp.path(), &scope, &gate, &BTreeMap::new());
-        let gates = gates_from_orphan(tmp.path(), &gate, &scope, &BTreeMap::new());
+        seed_orphan_graph(tmp.path(), &scope, &gate);
+        let gates = gates_from_orphan(tmp.path(), &gate, &scope);
         assert!(gates.iter().any(|item| item.kind == "orphan"), "{gates:?}");
     }
 
@@ -969,29 +946,24 @@ mod exit_gate_tests {
             orphan_detection: true,
             ..Default::default()
         };
-        let gates = gates_from_orphan(tmp.path(), &gate, &scope, &BTreeMap::new());
+        let gates = gates_from_orphan(tmp.path(), &gate, &scope);
         assert_eq!(gates.len(), 1);
         assert_eq!(gates[0].kind, "orphan");
         assert_eq!(gates[0].detail, "graph evidence incomplete");
     }
 
     #[test]
-    fn covered_python_helper_emits_no_orphan_gate() {
+    fn test_referenced_python_helper_emits_no_orphan_gate() {
         let tmp = tempfile::TempDir::new().unwrap();
-        std::fs::write(
-            tmp.path().join("utils.py"),
-            "x = 1\ndef helper():\n    return 1\n",
-        )
-        .unwrap();
+        std::fs::write(tmp.path().join("utils.py"), "def helper():\n    return 1\n").unwrap();
+        write_used_test(tmp.path(), "helper");
         let scope = ReportScope::from_membership(vec![SourceRegion::WorkspaceAll], vec![], true);
         let gate = kiss::GateConfig {
             orphan_detection: true,
             ..Default::default()
         };
-        let mut covered = BTreeMap::new();
-        covered.insert("utils.py".into(), BTreeSet::from([1, 2, 3]));
-        seed_orphan_graph(tmp.path(), &scope, &gate, &covered);
-        assert!(gates_from_orphan(tmp.path(), &gate, &scope, &covered).is_empty());
+        seed_orphan_graph(tmp.path(), &scope, &gate);
+        assert!(gates_from_orphan(tmp.path(), &gate, &scope).is_empty());
     }
 
     #[test]
@@ -1022,8 +994,8 @@ mod exit_gate_tests {
         let scope = ReportScope::from_membership(vec![SourceRegion::WorkspaceAll], vec![], true);
         let gate = kiss::GateConfig::load_for_repo(tmp.path());
         assert!(gate.orphan_detection && gate.max_num_tests == 1);
-        seed_orphan_graph(tmp.path(), &scope, &gate, &BTreeMap::new());
-        assert!(!gates_from_orphan(tmp.path(), &gate, &scope, &BTreeMap::new()).is_empty());
+        seed_orphan_graph(tmp.path(), &scope, &gate);
+        assert!(!gates_from_orphan(tmp.path(), &gate, &scope).is_empty());
         assert!(!gates_from_population(tmp.path(), &gate, &workspace_request()).is_empty());
         let report = TargetReport::assembled_in(
             tmp.path(),
@@ -1040,11 +1012,6 @@ mod exit_gate_tests {
         );
         assert!(
             report.gates.iter().any(|item| item.kind == "max_num_tests"),
-            "{:?}",
-            report.gates
-        );
-        assert!(
-            !report.gates.iter().any(|item| item.kind == "test_coverage"),
             "{:?}",
             report.gates
         );
@@ -1088,7 +1055,7 @@ mod exit_gate_tests {
             orphan_detection: true,
             ..Default::default()
         };
-        let (key, _, _) = graph_evidence_parts(tmp.path(), &gate, &BTreeMap::new());
+        let (key, _, _) = graph_evidence_parts(tmp.path(), &gate);
         super::super::graph_store::store_items(
             tmp.path(),
             &key,
@@ -1100,7 +1067,7 @@ mod exit_gate_tests {
             }],
         )
         .unwrap();
-        let gates = gates_from_orphan(tmp.path(), &gate, &scope, &BTreeMap::new());
+        let gates = gates_from_orphan(tmp.path(), &gate, &scope);
         assert!(
             gates.iter().any(|item| item.detail.contains("planted")),
             "{gates:?}"
@@ -1120,7 +1087,7 @@ mod exit_gate_tests {
             orphan_detection: true,
             ..Default::default()
         };
-        let (key, _, _) = graph_evidence_parts(tmp.path(), &gate, &BTreeMap::new());
+        let (key, _, _) = graph_evidence_parts(tmp.path(), &gate);
         super::super::graph_store::store_items(
             tmp.path(),
             &key,
@@ -1137,10 +1104,10 @@ mod exit_gate_tests {
             "x = 1\ndef helper():\n    return 1\n",
         )
         .unwrap();
-        let miss = gates_from_orphan(tmp.path(), &gate, &scope, &BTreeMap::new());
+        let miss = gates_from_orphan(tmp.path(), &gate, &scope);
         assert_eq!(miss[0].detail, "graph evidence incomplete", "{miss:?}");
-        seed_orphan_graph(tmp.path(), &scope, &gate, &BTreeMap::new());
-        let gates = gates_from_orphan(tmp.path(), &gate, &scope, &BTreeMap::new());
+        seed_orphan_graph(tmp.path(), &scope, &gate);
+        let gates = gates_from_orphan(tmp.path(), &gate, &scope);
         assert!(
             !gates.iter().any(|item| item.detail.contains("planted")),
             "{gates:?}"
@@ -1167,8 +1134,8 @@ mod exit_gate_tests {
             orphan_detection: true,
             ..Default::default()
         };
-        seed_orphan_graph(tmp.path(), &scope, &gate, &BTreeMap::new());
-        let alone = gates_from_orphan(tmp.path(), &gate, &scope, &BTreeMap::new());
+        seed_orphan_graph(tmp.path(), &scope, &gate);
+        let alone = gates_from_orphan(tmp.path(), &gate, &scope);
         assert!(
             alone
                 .iter()
@@ -1180,10 +1147,10 @@ mod exit_gate_tests {
             "from utils import helper\nif __name__ == \"__main__\":\n    helper()\n",
         )
         .unwrap();
-        let miss = gates_from_orphan(tmp.path(), &gate, &scope, &BTreeMap::new());
+        let miss = gates_from_orphan(tmp.path(), &gate, &scope);
         assert_eq!(miss[0].detail, "graph evidence incomplete", "{miss:?}");
-        seed_orphan_graph(tmp.path(), &scope, &gate, &BTreeMap::new());
-        let referenced = gates_from_orphan(tmp.path(), &gate, &scope, &BTreeMap::new());
+        seed_orphan_graph(tmp.path(), &scope, &gate);
+        let referenced = gates_from_orphan(tmp.path(), &gate, &scope);
         assert!(
             !referenced
                 .iter()
@@ -1202,8 +1169,8 @@ mod exit_gate_tests {
             orphan_detection: true,
             ..Default::default()
         };
-        seed_orphan_graph(tmp.path(), &scope, &gate, &BTreeMap::new());
-        let gates = gates_from_orphan(tmp.path(), &gate, &scope, &BTreeMap::new());
+        seed_orphan_graph(tmp.path(), &scope, &gate);
+        let gates = gates_from_orphan(tmp.path(), &gate, &scope);
         assert!(
             gates
                 .iter()
@@ -1229,8 +1196,8 @@ mod exit_gate_tests {
             orphan_detection: true,
             ..Default::default()
         };
-        seed_orphan_graph(tmp.path(), &scope, &gate, &BTreeMap::new());
-        let before = gates_from_orphan(tmp.path(), &gate, &scope, &BTreeMap::new());
+        seed_orphan_graph(tmp.path(), &scope, &gate);
+        let before = gates_from_orphan(tmp.path(), &gate, &scope);
         assert!(
             before
                 .iter()
@@ -1238,40 +1205,17 @@ mod exit_gate_tests {
             "{before:?}"
         );
         std::fs::write(tmp.path().join("other.py"), "def unused():\n    return 3\n").unwrap();
-        let after = gates_from_orphan(tmp.path(), &gate, &scope, &BTreeMap::new());
+        let after = gates_from_orphan(tmp.path(), &gate, &scope);
         assert_eq!(
             after[0].detail, "graph evidence incomplete",
             "out-of-scope production edit must invalidate focused graph evidence: {after:?}"
         );
     }
 
-    /// Documents that unequal covered maps change the graph-evidence ITE key
-    /// (the property behind the pre-fix scoped vs workspace need-check mismatch).
+    /// Behavioral lock for kt_bug.md: after repair stores under the workspace key,
+    /// a focused FileAll need-check must not miss when out-of-scope sources are present.
     #[test]
-    fn graph_evidence_key_diverges_when_covered_includes_out_of_scope_file() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        std::fs::write(tmp.path().join("utils.py"), "def helper():\n    return 1\n").unwrap();
-        std::fs::write(tmp.path().join("other.py"), "def unused():\n    return 2\n").unwrap();
-        let gate = kiss::GateConfig {
-            orphan_detection: true,
-            ..Default::default()
-        };
-        let mut scoped = BTreeMap::new();
-        scoped.insert("utils.py".into(), BTreeSet::from([1, 2]));
-        let mut workspace = scoped.clone();
-        workspace.insert("other.py".into(), BTreeSet::from([1, 2]));
-        let (key_scoped, _, _) = graph_evidence_parts(tmp.path(), &gate, &scoped);
-        let (key_workspace, _, _) = graph_evidence_parts(tmp.path(), &gate, &workspace);
-        assert_ne!(
-            key_scoped, key_workspace,
-            "out-of-scope covered lines must change the graph-evidence ITE key"
-        );
-    }
-
-    /// Behavioral lock for kt_bug.md: after repair stores under the workspace covered key,
-    /// a focused FileAll need-check must not miss when out-of-scope coverage is present.
-    #[test]
-    fn focused_graph_repair_stays_warm_with_out_of_scope_coverage() {
+    fn focused_graph_repair_stays_warm_with_out_of_scope_sources() {
         let tmp = tempfile::TempDir::new().unwrap();
         std::fs::write(tmp.path().join("utils.py"), "def helper():\n    return 1\n").unwrap();
         std::fs::write(tmp.path().join("other.py"), "def unused():\n    return 2\n").unwrap();
@@ -1280,11 +1224,6 @@ mod exit_gate_tests {
             "[test]\norphan_detection = true\n",
         )
         .unwrap();
-        let covered: BTreeMap<String, Vec<u32>> = BTreeMap::from([
-            ("utils.py".into(), vec![1, 2]),
-            ("other.py".into(), vec![1, 2]),
-        ]);
-        crate::test_runner::lang_python::store_test_record_covering(tmp.path(), "a", &covered);
         let scope = focused_utils_scope();
         assert!(
             graph_repair_needed(tmp.path(), &scope),
@@ -1305,8 +1244,7 @@ mod exit_gate_tests {
             "def used():\n    return 1\n\ndef unused():\n    return 2\n",
         )
         .unwrap();
-        let mut covered = BTreeMap::new();
-        covered.insert("utils.py".into(), BTreeSet::from([1, 2]));
+        write_used_test(tmp.path(), "used");
         let gate = kiss::GateConfig {
             orphan_detection: true,
             ..Default::default()
@@ -1327,15 +1265,15 @@ mod exit_gate_tests {
             vec![],
             true,
         );
-        seed_orphan_graph(tmp.path(), &used, &gate, &covered);
-        let used_gates = gates_from_orphan(tmp.path(), &gate, &used, &covered);
+        seed_orphan_graph(tmp.path(), &used, &gate);
+        let used_gates = gates_from_orphan(tmp.path(), &gate, &used);
         assert!(
             !used_gates
                 .iter()
                 .any(|item| item.kind == "orphan" && item.detail.contains("unused")),
             "{used_gates:?}"
         );
-        let unused_gates = gates_from_orphan(tmp.path(), &gate, &unused, &covered);
+        let unused_gates = gates_from_orphan(tmp.path(), &gate, &unused);
         assert!(
             unused_gates
                 .iter()

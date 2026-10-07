@@ -340,9 +340,9 @@ fn analyze_graph_false_emits_no_orphan() {
 }
 
 #[test]
-fn orphan_scanners_do_not_mention_runtime_coverage() {
+fn orphan_scanners_do_not_mention_runtime_artifacts() {
     let src = include_str!("orphan.rs");
-    for needle in [".kiss", "profraw", "coverage"] {
+    for needle in [".kiss", "profraw"] {
         assert!(!src.contains(needle), "orphan.rs must not mention {needle}");
     }
 }

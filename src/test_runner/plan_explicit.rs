@@ -1,6 +1,3 @@
-use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
-
 use kiss::Language;
 
 use super::super::lang_registry::rules_for;
@@ -18,19 +15,12 @@ pub(super) fn plan_explicit_target_selectors(
     include_prior_failures: bool,
 ) -> Result<PlannedSelectors, String> {
     let query = resolve_target_operands(repo_root, targets, lang_filter, ignore, extras.python)
-        .map_err(|e| format!("error: kiss test: {e}"))?;
+        .map_err(prefix_kiss_test_error)?;
     let mut source_paths = Vec::new();
-    let mut changed_lines: BTreeMap<PathBuf, BTreeSet<u32>> = BTreeMap::new();
     for language in crate::test_runner::lang_registry::languages() {
         let files = query.source_files(language);
         rules_for(language).validate_explicit_targets(repo_root, &files, query.direct(language))?;
         source_paths.extend(files);
-        for (path, lines) in query.lines(language) {
-            changed_lines
-                .entry(path.clone())
-                .or_default()
-                .extend(lines.iter().copied());
-        }
     }
     source_paths.sort();
     source_paths.dedup();
@@ -50,7 +40,6 @@ pub(super) fn plan_explicit_target_selectors(
         repo_root,
         source_paths: &source_paths,
         test_paths: &[],
-        changed_lines: &changed_lines,
         test_args: extras,
         lang_filter,
         ignore,
@@ -63,4 +52,24 @@ pub(super) fn plan_explicit_target_selectors(
         selector_plan,
         ignore.to_vec(),
     ))
+}
+
+fn prefix_kiss_test_error(err: String) -> String {
+    if err.starts_with("error: kiss test:") {
+        err
+    } else {
+        format!("error: kiss test: {err}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::prefix_kiss_test_error;
+
+    #[test]
+    fn prefix_kiss_test_error_does_not_stack() {
+        let once = prefix_kiss_test_error("pytest collection failed".into());
+        assert_eq!(once, "error: kiss test: pytest collection failed");
+        assert_eq!(prefix_kiss_test_error(once.clone()), once);
+    }
 }

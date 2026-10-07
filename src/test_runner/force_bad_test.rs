@@ -104,7 +104,7 @@ fn prior_belongs_to_target_includes_path_matched_failure_absent_from_plan() {
 }
 
 #[test]
-fn prior_belongs_to_target_keeps_planned_covering_test_for_source_file() {
+fn prior_belongs_to_target_keeps_planned_selecting_test_for_source_file() {
     let targets = focus(TestInvocation::Targets(vec!["src/lib.rs".into()]));
     assert!(prior_belongs_to_target(
         &targets,

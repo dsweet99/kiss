@@ -41,7 +41,7 @@ fn config_flag_parses_before_and_after_subcommand() {
 }
 
 #[test]
-fn cov_subcommand_parses_as_coverage() {
+fn cov_subcommand_is_rejected() {
     assert!(Cli::try_parse_from(["kiss", "cov"]).is_err());
     assert!(Cli::command().find_subcommand("cov").is_none());
     let help = Cli::command().render_long_help().to_string();
@@ -52,8 +52,6 @@ fn cov_subcommand_parses_as_coverage() {
             .any(|w| w.eq_ignore_ascii_case("cov")),
         "top-level help must not mention the token cov\n{help}"
     );
-    assert!(Cli::try_parse_from(["kiss", "__coverage"]).is_err());
-    assert!(Cli::command().find_subcommand("__coverage").is_none());
 }
 
 #[test]
@@ -91,11 +89,6 @@ fn help_subcommand_is_removed() {
 }
 
 #[test]
-fn test_rejects_coverage_all_flag() {
-    assert!(Cli::try_parse_from(["kiss", "test", ".", "--coverage-all"]).is_err());
-}
-
-#[test]
 fn test_accepts_jobs_override() {
     let cli = Cli::parse_from(["kiss", "test", ".", "-j", "7"]);
     assert!(matches!(cli.command, Commands::Test { jobs: Some(7), .. }));
@@ -113,7 +106,7 @@ fn test_rejects_zero_jobs_override() {
 }
 
 #[test]
-fn check_rejects_removed_coverage_flags() {
+fn check_rejects_removed_all_and_jobs_flags() {
     assert!(Cli::try_parse_from(["kiss", "check", "--all"]).is_err());
     assert!(Cli::try_parse_from(["kiss", "check", "-j", "2"]).is_err());
 }
@@ -258,10 +251,6 @@ fn top_level_help_describes_commands_and_global_flags() {
     assert!(help.contains("Write a dependency graph"));
     assert!(!help.contains("Output markdown path"));
     assert!(help.contains("Run tests and enforce time, test-count, and orphan gates"));
-    assert!(!help.contains("enforce coverage"));
-    assert!(!help.contains("Coverage-only evaluation (prefer kiss test for the full path)"));
-    assert!(Cli::command().find_subcommand("__coverage").is_none());
-    assert!(!help.contains("Coverage is enforced by kiss test, not a standalone command"));
     assert!(
         !help.lines().any(|line| {
             let name = line.split_whitespace().next();

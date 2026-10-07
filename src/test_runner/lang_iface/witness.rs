@@ -66,7 +66,6 @@ pub(crate) struct ExecutionWitness {
     pub(crate) selectors: Vec<String>,
     pub(crate) statuses: Vec<WitnessStatus>,
     pub(crate) durations_ns: Vec<Option<u64>>,
-    pub(crate) covered_lines: BTreeMap<String, Vec<u32>>,
     pub(crate) complete: bool,
     pub(crate) generation_id: String,
     pub(crate) raw_statuses: Vec<WitnessStatus>,

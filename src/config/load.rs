@@ -24,6 +24,17 @@ impl Config {
         Self::load_config_chain(base, Some(lang))
     }
 
+    pub fn try_load_for_language(lang: ConfigLanguage) -> Result<Self, ConfigError> {
+        let path = super::kissconfig_path_from_cwd();
+        if !path.exists() {
+            return Ok(match lang {
+                ConfigLanguage::Python => Self::python_defaults(),
+                ConfigLanguage::Rust => Self::rust_defaults(),
+            });
+        }
+        Self::try_load_from(&path, lang)
+    }
+
     pub fn load_from(path: &Path) -> Self {
         let mut config = Self::default();
         if let Ok(content) = std::fs::read_to_string(path) {

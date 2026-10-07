@@ -1,5 +1,5 @@
 use super::projection::SliceProjection;
-use super::resolved::{ResolvedTarget, ReverseRecord, SourceRegion};
+use super::resolved::{ResolvedTarget, SourceRegion};
 use super::slice::{TargetSliceStamp, stamp_from_projection};
 
 #[test]
@@ -42,21 +42,6 @@ fn membership_change_invalidates_slice() {
     );
 }
 
-#[test]
-fn historical_path_is_membership_not_coverage() {
-    let mut deleted = ResolvedTarget::workspace();
-    deleted.regions.clear();
-    deleted.historical_paths.push("pkg/gone.py".into());
-    let empty = ResolvedTarget {
-        regions: Vec::new(),
-        ..ResolvedTarget::workspace()
-    };
-    assert_ne!(
-        target_slice_stamp(&deleted, true),
-        target_slice_stamp(&empty, true)
-    );
-}
-
 fn target_slice_stamp(resolved: &ResolvedTarget, complete: bool) -> TargetSliceStamp {
     stamp_from_projection(&projection_from_resolved(resolved), complete)
 }
@@ -76,27 +61,12 @@ fn projection_from_resolved(resolved: &ResolvedTarget) -> SliceProjection {
     if let Some(git) = &resolved.git_stamp {
         return SliceProjection::Vcs {
             git: git.clone(),
-            historical_reverse: resolved
-                .historical_paths
-                .iter()
-                .map(|path| ReverseRecord {
-                    path: path.clone(),
-                    selectors: Vec::new(),
-                })
-                .collect(),
             regions: resolved.regions.clone(),
             selectors: resolved.direct_selectors.clone(),
         };
     }
     SliceProjection::SourceRegions {
         regions: resolved.regions.clone(),
-        reverse: resolved
-            .historical_paths
-            .iter()
-            .map(|path| ReverseRecord {
-                path: path.clone(),
-                selectors: Vec::new(),
-            })
-            .collect(),
+        selectors: resolved.direct_selectors.clone(),
     }
 }

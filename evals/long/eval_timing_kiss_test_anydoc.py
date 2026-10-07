@@ -25,9 +25,8 @@ def _clear_runtime_test_cache(repo: Path) -> None:
     budget.
     """
     kiss_dir = repo / ".kiss"
-    shutil.rmtree(kiss_dir / "test" / "rslip_cache", ignore_errors=True)
+    shutil.rmtree(kiss_dir / "test" / "records" / "python", ignore_errors=True)
     shutil.rmtree(kiss_dir / "test" / "records" / "rust", ignore_errors=True)
-    (kiss_dir / "test" / "cov_records_cache.json").unlink(missing_ok=True)
 
 
 def _ensure_code_cache(repo: Path, env: dict[str, str]) -> None:

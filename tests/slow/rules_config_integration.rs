@@ -269,4 +269,12 @@ fn cli_rules_nonexistent_file_warns() {
         stderr.contains("Warning") || stderr.contains("Could not read"),
         "Should warn about missing file. stderr: {stderr}"
     );
+    let warnings = stderr
+        .lines()
+        .filter(|line| line.contains("Could not read config file"))
+        .count();
+    assert_eq!(
+        warnings, 1,
+        "missing --config should warn once. stderr: {stderr}"
+    );
 }

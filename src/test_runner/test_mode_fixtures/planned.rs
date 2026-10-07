@@ -23,7 +23,7 @@ pub(crate) fn empty_planned_selectors(repo_root: PathBuf) -> PlannedSelectors {
             python: Vec::new(),
             rust: Vec::new(),
         },
-        coverage_decision_engine_used: true,
+        selection_engine_used: true,
         selection_basis: Default::default(),
         ignore: Vec::new(),
         workspace_files_fingerprint: None,

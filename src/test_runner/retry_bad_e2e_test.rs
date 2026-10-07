@@ -114,7 +114,7 @@ fn retry_bad_keeps_prior_pass_cached_and_reruns_fail() {
     let (code, out) = run_in(tmp.path(), true);
     assert_eq!(code, 0, "retry-bad must exit 0; out={out}");
     assert!(
-        out.contains("misses=1") && !out.contains("PASS: test_lib.py::test_ok"),
+        out.contains("tests_remaining=1") && !out.contains("PASS: test_lib.py::test_ok"),
         "prior PASS must stay cached; out={out}"
     );
     assert!(

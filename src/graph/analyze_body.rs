@@ -22,7 +22,7 @@ pub(crate) fn path_dedup_set(graph: &DependencyGraph) -> HashMap<PathBuf, Vec<St
     map
 }
 
-pub(crate) fn is_path_covered_by_another(
+pub(crate) fn is_path_shared_with_another(
     graph: &DependencyGraph,
     module_name: &str,
     path_groups: &HashMap<PathBuf, Vec<String>>,

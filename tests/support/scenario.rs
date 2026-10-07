@@ -58,7 +58,7 @@ impl std::fmt::Debug for Reply {
 
 fn kiss_command(dir: &Path, args: &[&str]) -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
-    crate::common::scrub_parent_coverage_env(&mut cmd);
+    crate::common::scrub_parent_build_env(&mut cmd);
     crate::common::preserve_toolchain_homes(&mut cmd);
     cmd.args(args)
         .current_dir(dir)

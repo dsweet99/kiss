@@ -5,11 +5,10 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 
 use super::collect::reset_python_collect_memo_for_tests;
-use crate::test_runner::coverage_decision::{LanguageExecutor, LanguagePlanner};
-use crate::test_runner::python_coverage_index::write_python_population_manifest_for_args;
 use crate::test_runner::runners::{
     enumerate_workspace_python_selectors, python_backer::PythonModule,
 };
+use crate::test_runner::test_selection::{LanguageExecutor, LanguagePlanner};
 
 #[test]
 fn kiss_discovery_matches_isolated_pytest_collection() {
@@ -97,7 +96,7 @@ fn dry_run_lines_omit_ignored_fixture_selectors() {
 }
 
 #[test]
-fn discovery_with_pytest_args_does_not_reuse_historical_population() {
+fn discovery_with_pytest_args_collects_current_tests() {
     let _lock = crate::cwd_test_lock::lock();
     reset_python_collect_memo_for_tests();
     let tmp = TempDir::new().unwrap();
@@ -108,15 +107,7 @@ fn discovery_with_pytest_args_does_not_reuse_historical_population() {
         "def test_extra():\n    assert True\n",
     )
     .unwrap();
-    let selector = "tests/test_stored.py::test_value".to_string();
     let pytest_args = vec!["-p".to_string(), "pytest_asyncio.plugin".to_string()];
-    write_python_population_manifest_for_args(
-        tmp.path(),
-        std::slice::from_ref(&selector),
-        &pytest_args,
-    )
-    .unwrap();
-    std::fs::write(tmp.path().join("stale.py"), "x = 2\n").unwrap();
 
     let enumerated = enumerate_workspace_python_selectors(tmp.path(), &[], &pytest_args).unwrap();
     let expected = vec!["tests/test_extra.py::test_extra".to_string()];

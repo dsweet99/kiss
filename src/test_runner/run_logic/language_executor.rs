@@ -1,9 +1,9 @@
 use std::time::Instant;
 
-use crate::test_runner::coverage_decision::{
+use crate::test_runner::runners::SelectorExecutionSummary;
+use crate::test_runner::test_selection::{
     LanguageExecutor, LanguagePlanner, LanguageTestModule, RunContext,
 };
-use crate::test_runner::runners::SelectorExecutionSummary;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(super) enum ExecutionPhase {

@@ -56,7 +56,6 @@ pub(crate) fn load(repo_root: &Path) -> Option<ExecutionWitness> {
         durations_ns: seeded.durations_ns,
         raw_statuses: statuses.clone(),
         statuses,
-        covered_lines: Default::default(),
         complete: seeded.complete,
         generation_id: String::new(),
     })

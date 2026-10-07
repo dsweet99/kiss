@@ -89,8 +89,8 @@ pub(crate) struct WireArtifact {
 impl WireArtifact {
     pub(crate) fn witness() -> Self {
         Self {
-            name: "coverage".to_string(),
-            path: "coverage.json".to_string(),
+            name: "report".to_string(),
+            path: "report.json".to_string(),
         }
     }
 }

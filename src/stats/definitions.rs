@@ -120,7 +120,7 @@ pub fn get_metric_def(metric_id: &str) -> Option<&'static MetricDef> {
 }
 
 #[cfg(test)]
-mod coverage_witness {
+mod touch_witness {
     use super::*;
 
     impl MetricScope {

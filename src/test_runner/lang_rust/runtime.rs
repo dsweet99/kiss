@@ -105,7 +105,7 @@ pub(super) fn run_rust_selectors(
     })
 }
 
-impl crate::test_runner::coverage_decision::SupportedLanguage for RustRuntime {
+impl crate::test_runner::test_selection::SupportedLanguage for RustRuntime {
     fn language(&self) -> Language {
         Language::Rust
     }

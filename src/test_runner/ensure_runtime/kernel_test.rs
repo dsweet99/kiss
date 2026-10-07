@@ -29,7 +29,7 @@ struct FakeRuntime {
     state: Rc<RefCell<FakeState>>,
 }
 
-impl crate::test_runner::coverage_decision::SupportedLanguage for FakeRuntime {
+impl crate::test_runner::test_selection::SupportedLanguage for FakeRuntime {
     fn language(&self) -> Language {
         self.language
     }
@@ -135,7 +135,6 @@ impl FakeRuntime {
             selectors: batch.selectors.clone(),
             durations_ns: vec![Some(1_000_000); statuses.len()],
             statuses,
-            covered_lines: BTreeMap::new(),
             complete,
             generation_id: "gen".into(),
             raw_statuses: Vec::new(),
@@ -191,89 +190,66 @@ fn miss_runs_and_publishes_even_when_exit_nonzero() {
     assert!(!w.complete);
 }
 
-#[test]
-fn python_accepted_witness_still_hands_planned_selectors_to_runner() {
-    let state = Rc::new(RefCell::new(FakeState {
-        witness: Some(ExecutionWitness {
-            language: "python".into(),
-            identity_digest: "id".into(),
-            selectors: vec!["a".into()],
-            statuses: vec![WitnessStatus::Passed],
-            durations_ns: vec![Some(1)],
-            covered_lines: BTreeMap::new(),
-            complete: true,
-            generation_id: "g".into(),
-            raw_statuses: Vec::new(),
-        }),
-        ..Default::default()
-    }));
-    let runtime = FakeRuntime {
-        language: Language::Python,
-        state: Rc::clone(&state),
+fn witness(language: Language, statuses: &[WitnessStatus], complete: bool) -> ExecutionWitness {
+    let label = match language {
+        Language::Python => "python",
+        Language::Rust => "rust",
     };
-    let result = ensure_runtime_cache(&request(vec!["a".into()]), &[&runtime]).expect("ensure");
-    assert_eq!(result.exit_code, 0);
-    assert_eq!(state.borrow().run_calls, vec![vec!["a".to_string()]]);
+    ExecutionWitness {
+        language: label.into(),
+        identity_digest: "id".into(),
+        selectors: (0..statuses.len()).map(|i| format!("t{i}")).collect(),
+        statuses: statuses.to_vec(),
+        durations_ns: vec![Some(1); statuses.len()],
+        complete,
+        generation_id: "g".into(),
+        raw_statuses: Vec::new(),
+    }
+}
+
+/// The selectors handed to the runner for a stored witness, in each language.
+fn run_calls_per_language(
+    statuses: &[WitnessStatus],
+    complete: bool,
+) -> (Vec<Vec<String>>, Vec<Vec<String>>) {
+    let planned: Vec<String> = (0..statuses.len()).map(|i| format!("t{i}")).collect();
+    let run = |language: Language, req: EnsureRequest| {
+        let state = Rc::new(RefCell::new(FakeState {
+            witness: Some(witness(language, statuses, complete)),
+            ..Default::default()
+        }));
+        let runtime = FakeRuntime {
+            language,
+            state: Rc::clone(&state),
+        };
+        let _ = ensure_runtime_cache(&req, &[&runtime]).expect("ensure");
+        state.borrow().run_calls.clone()
+    };
+    (
+        run(Language::Python, request(planned.clone())),
+        run(Language::Rust, rust_request(planned)),
+    )
 }
 
 #[test]
-fn python_partial_failure_witness_does_not_filter_runner_input() {
-    let state = Rc::new(RefCell::new(FakeState {
-        witness: Some(ExecutionWitness {
-            language: "python".into(),
-            identity_digest: "id".into(),
-            selectors: vec!["a".into(), "b".into()],
-            statuses: vec![WitnessStatus::Passed, WitnessStatus::Failed],
-            durations_ns: vec![Some(1), Some(1)],
-            covered_lines: BTreeMap::new(),
-            complete: false,
-            generation_id: "g".into(),
-            raw_statuses: Vec::new(),
-        }),
-        run_exit_code: 0,
-        ..Default::default()
-    }));
-    let runtime = FakeRuntime {
-        language: Language::Python,
-        state: Rc::clone(&state),
-    };
-    let _ =
-        ensure_runtime_cache(&request(vec!["a".into(), "b".into()]), &[&runtime]).expect("ensure");
-    assert_eq!(
-        state.borrow().run_calls,
-        vec![vec!["a".to_string(), "b".to_string()]]
-    );
+fn python_and_rust_accept_stored_outcomes_alike() {
+    for (statuses, complete) in [
+        (vec![WitnessStatus::Passed], true),
+        (vec![WitnessStatus::Passed, WitnessStatus::Failed], false),
+        (
+            vec![WitnessStatus::Passed, WitnessStatus::Unresolved],
+            false,
+        ),
+    ] {
+        let (python, rust) = run_calls_per_language(&statuses, complete);
+        assert_eq!(python, rust, "{statuses:?}");
+    }
 }
 
 #[test]
-fn python_unresolved_witness_hands_all_planned_to_runner_and_publishes() {
-    let state = Rc::new(RefCell::new(FakeState {
-        witness: Some(ExecutionWitness {
-            language: "python".into(),
-            identity_digest: "id".into(),
-            selectors: vec!["a".into(), "b".into()],
-            statuses: vec![WitnessStatus::Passed, WitnessStatus::Unresolved],
-            durations_ns: vec![Some(1), Some(5)],
-            covered_lines: BTreeMap::new(),
-            complete: false,
-            generation_id: "g".into(),
-            raw_statuses: Vec::new(),
-        }),
-        run_exit_code: 1,
-        ..Default::default()
-    }));
-    let runtime = FakeRuntime {
-        language: Language::Python,
-        state: Rc::clone(&state),
-    };
-    let result =
-        ensure_runtime_cache(&request(vec!["a".into(), "b".into()]), &[&runtime]).expect("ensure");
-    assert_ne!(result.exit_code, 0);
-    assert_eq!(
-        state.borrow().run_calls,
-        vec![vec!["a".to_string(), "b".to_string()]]
-    );
-    assert_eq!(state.borrow().publish_calls, 1);
+fn python_cached_pass_does_not_rerun() {
+    let (python, _) = run_calls_per_language(&[WitnessStatus::Passed], true);
+    assert!(python.is_empty(), "{python:?}");
 }
 
 #[test]
@@ -302,7 +278,6 @@ fn rust_accept_under_fake_runs_zero_exports_and_delta_publish() {
             selectors: vec!["a".into(), "b".into()],
             statuses: vec![WitnessStatus::Passed, WitnessStatus::Passed],
             durations_ns: vec![Some(1), Some(2)],
-            covered_lines: BTreeMap::from([("f.rs".into(), vec![1])]),
             complete: true,
             generation_id: "g".into(),
             raw_statuses: Vec::new(),
@@ -334,7 +309,7 @@ fn rust_accept_under_fake_runs_zero_exports_and_delta_publish() {
     assert_eq!(observed.nextest_invocations, 0);
 }
 
-fn rust_covering_miss_recaps_witness_complement(mode: AcceptMode) {
+fn rust_selecting_miss_recaps_witness_complement(mode: AcceptMode) {
     let state = Rc::new(RefCell::new(FakeState {
         witness: Some(ExecutionWitness {
             language: "rust".into(),
@@ -342,7 +317,6 @@ fn rust_covering_miss_recaps_witness_complement(mode: AcceptMode) {
             selectors: vec!["b".into()],
             statuses: vec![WitnessStatus::Passed],
             durations_ns: vec![Some(2)],
-            covered_lines: BTreeMap::new(),
             complete: true,
             generation_id: "g".into(),
             raw_statuses: Vec::new(),
@@ -362,7 +336,7 @@ fn rust_covering_miss_recaps_witness_complement(mode: AcceptMode) {
         let rust = result.by_language.rust.expect("rust result");
         assert_eq!(
             rust.summary.total, 2,
-            "covering miss of a must still recap witness b (mode {mode:?})"
+            "selecting miss of a must still recap witness b (mode {mode:?})"
         );
         assert_eq!(rust.summary.cache_hits, 1);
     });
@@ -374,13 +348,13 @@ fn rust_covering_miss_recaps_witness_complement(mode: AcceptMode) {
 }
 
 #[test]
-fn rust_covering_subset_miss_recaps_witness_complement() {
-    rust_covering_miss_recaps_witness_complement(AcceptMode::Subset);
+fn rust_selecting_subset_miss_recaps_witness_complement() {
+    rust_selecting_miss_recaps_witness_complement(AcceptMode::Subset);
 }
 
 #[test]
-fn rust_covering_all_mode_subset_recaps_witness_complement() {
-    rust_covering_miss_recaps_witness_complement(AcceptMode::All);
+fn rust_selecting_all_mode_subset_recaps_witness_complement() {
+    rust_selecting_miss_recaps_witness_complement(AcceptMode::All);
 }
 
 #[test]

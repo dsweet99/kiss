@@ -46,11 +46,11 @@ fn no_selector_dump(out: &str) -> bool {
 
 #[test]
 fn status_printers_use_emit_test_progress() {
-    let rslip = include_str!("lang_python/rslip.rs");
-    assert!(rslip.contains("emit_test_progress"));
-    assert!(!rslip.contains("writeln!(stdout"));
-    assert!(!rslip.contains("writeln!(out,"));
-    assert!(!rslip.contains("write_all(body"));
+    let python = include_str!("lang_python/run.rs");
+    assert!(python.contains("emit_test_progress"));
+    assert!(!python.contains("writeln!(stdout"));
+    assert!(!python.contains("writeln!(out,"));
+    assert!(!python.contains("write_all(body"));
     let witness = include_str!("lang_iface/witness_summary.rs");
     assert!(witness.contains("emit_test_progress(&format!(\"{label} {count} selectors"));
     assert!(!witness.contains("println!(\"{label} {count} selectors"));
@@ -60,7 +60,7 @@ fn status_printers_use_emit_test_progress() {
 
 #[cfg(unix)]
 #[test]
-fn covering_rust_running_appears_before_blocked_planner_returns() {
+fn selecting_rust_running_appears_before_blocked_planner_returns() {
     let _cwd = crate::cwd_test_lock::lock();
     let tmp = tempfile::tempdir().unwrap();
     crate::test_runner::test_mode_fixtures::init_git(&tmp);
@@ -68,13 +68,13 @@ fn covering_rust_running_appears_before_blocked_planner_returns() {
     let reached = Arc::new(AtomicBool::new(false));
     let flag = Arc::clone(&reached);
     let doubles = Arc::new(PipelineDoubles {
-        covering: LanguageKeyed {
+        selecting: LanguageKeyed {
             python: None,
             rust: Some(Arc::new(move || {
                 flag.store(true, Ordering::SeqCst);
             })),
         },
-        block_covering: Some(Language::Rust),
+        block_selecting: Some(Language::Rust),
         ..PipelineDoubles::default()
     });
     let job_doubles = Arc::clone(&doubles);
@@ -95,27 +95,27 @@ fn covering_rust_running_appears_before_blocked_planner_returns() {
         });
         wait_flag(&reached);
         let blocked = !finished.load(Ordering::SeqCst);
-        doubles.release_blocked_covering();
-        job.join().expect("blocked covering job");
+        doubles.release_blocked_selecting();
+        job.join().expect("blocked selecting job");
         assert!(blocked, "planner must still be parked after Running");
     });
     std::env::set_current_dir(old).unwrap();
     let running = out
-        .find("kiss test: Running covering_rust")
-        .expect("Running covering_rust");
+        .find("kiss test: Running select_rust")
+        .expect("Running select_rust");
     let ran = out
-        .find("kiss test: Ran covering_rust")
-        .expect("Ran covering");
+        .find("kiss test: Ran select_rust")
+        .expect("Ran selecting");
     assert!(running < ran, "Running must precede Ran: {out}");
     assert!(
-        out.contains("kiss test: Ran covering_rust") && out.contains("ms"),
-        "Ran covering_rust must include ms: {out}"
+        out.contains("kiss test: Ran select_rust") && out.contains("ms"),
+        "Ran select_rust must include ms: {out}"
     );
 }
 
 #[cfg(unix)]
 #[test]
-fn dry_run_omits_rust_selectors_until_python_covering_finishes() {
+fn dry_run_omits_rust_selectors_until_python_selecting_finishes() {
     let _cwd = crate::cwd_test_lock::lock();
     let tmp = tempfile::tempdir().unwrap();
     crate::test_runner::test_mode_fixtures::init_git(&tmp);
@@ -126,7 +126,7 @@ fn dry_run_omits_rust_selectors_until_python_covering_finishes() {
     let hold_py = Arc::clone(&hold);
     let rust_flag = Arc::clone(&rust_started);
     let doubles = Arc::new(PipelineDoubles {
-        covering: LanguageKeyed {
+        selecting: LanguageKeyed {
             python: Some(Arc::new(move || {
                 let (lock, cvar) = &*hold_py;
                 let mut waiting = lock
@@ -158,11 +158,11 @@ fn dry_run_omits_rust_selectors_until_python_covering_finishes() {
             );
         });
         wait_flag(&rust_started);
-        wait_log_contains(&log, "kiss test: Ran covering_rust");
+        wait_log_contains(&log, "kiss test: Ran select_rust");
         let held = std::fs::read_to_string(&log).unwrap_or_default();
         assert!(
             no_selector_dump(&held),
-            "dump must wait for python covering: {held}"
+            "dump must wait for python selecting: {held}"
         );
         {
             let (lock, cvar) = &*hold;

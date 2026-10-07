@@ -1,4 +1,3 @@
-use crate::common::seed_python_runtime_coverage;
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
@@ -18,7 +17,6 @@ fn cli_check_ignore_excludes_matching_directory() {
     fs::create_dir_all(root.join("subdir")).unwrap();
     write_trivial_py(&root.join("keep.py"));
     write_trivial_py(&root.join("subdir").join("drop.py"));
-    seed_python_runtime_coverage(root, &[("test_ignore.py::test_ignore", vec![])]);
 
     let baseline = kiss_binary().arg("check").arg(root).output().unwrap();
     let baseline_stdout = String::from_utf8_lossy(&baseline.stdout);
@@ -46,7 +44,6 @@ fn cli_check_ignore_excludes_matching_filename() {
     let root = tmp.path();
     write_trivial_py(&root.join("big.py"));
     write_trivial_py(&root.join("small.py"));
-    seed_python_runtime_coverage(root, &[("test_ignore.py::test_ignore", vec![])]);
 
     let baseline = kiss_binary().arg("check").arg(root).output().unwrap();
     let baseline_stdout = String::from_utf8_lossy(&baseline.stdout);

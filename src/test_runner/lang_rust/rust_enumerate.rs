@@ -45,9 +45,7 @@ pub(crate) fn rust_logical_to_kiss_test_ids(
     for (path, logical) in
         enumerate_workspace_rust_test_entries(repo_root, ignore, ParseErrorPolicy::Skip)?
     {
-        let Some(rel) =
-            crate::test_runner::python_coverage_index::repo_relative_path(repo_root, &path)
-        else {
+        let Some(rel) = crate::test_runner::targets::repo_relative(repo_root, &path) else {
             continue;
         };
         let test_path = rust_selector_test_path(&logical);

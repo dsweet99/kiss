@@ -26,7 +26,6 @@ fn write_prior_failures(root: &Path, count: usize) {
                 status: kiss::rpytest_runner::TestStatus::Failed,
                 exit_code: Some(1),
                 duration: std::time::Duration::ZERO,
-                covered: std::collections::BTreeMap::new(),
             },
         )
         .unwrap();
@@ -65,8 +64,7 @@ fn explicit_single_python_test_ignores_prior_failure_fanout() {
     assert!(planned.sel.rust.is_empty());
     assert!(!planned.population_required.python);
     assert!(planned.prior_failure_selectors.python.is_empty());
-    assert!(!planned.coverage_decision_engine_used);
-    assert!(planned.skip_index_rebuild_after_selective.python);
+    assert!(!planned.selection_engine_used);
 }
 
 #[test]
@@ -112,7 +110,7 @@ fn explicit_python_test_file_selects_only_that_file() {
     );
     assert!(planned.prior_failure_selectors.python.is_empty());
     assert!(!planned.population_required.python);
-    assert!(!planned.coverage_decision_engine_used);
+    assert!(!planned.selection_engine_used);
 }
 
 #[test]

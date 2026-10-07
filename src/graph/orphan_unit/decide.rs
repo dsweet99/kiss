@@ -1,9 +1,4 @@
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-
-use crate::graph::orphan_unit::extract::file_key;
-use crate::graph::orphan_unit::{OrphanCoverage, UnitRef};
-use crate::rust_include::canonical_path;
+use crate::graph::orphan_unit::UnitRef;
 use crate::units::CodeUnitKind;
 
 #[cfg(test)]
@@ -47,13 +42,11 @@ pub(super) fn flood_reached(
     units: &[UnitRef],
     edges: &[Vec<usize>],
     input: &crate::graph::orphan_unit::OrphanUnitInput<'_>,
-    coverage: &OrphanCoverage,
 ) -> Vec<bool> {
-    let cov = coverage_witnesses(units, coverage);
     let mut reached = vec![false; units.len()];
     let mut queue = Vec::new();
     for (i, unit) in units.iter().enumerate() {
-        if is_root(unit, input, cov[i]) {
+        if is_root(unit, input) {
             reached[i] = true;
             mark_containers(units, i, &mut reached, &mut queue);
             queue.push(i);
@@ -71,12 +64,8 @@ pub(super) fn flood_reached(
     reached
 }
 
-fn is_root(
-    unit: &UnitRef,
-    input: &crate::graph::orphan_unit::OrphanUnitInput<'_>,
-    coverage_root: bool,
-) -> bool {
-    if coverage_root || unit.trait_impl {
+fn is_root(unit: &UnitRef, input: &crate::graph::orphan_unit::OrphanUnitInput<'_>) -> bool {
+    if unit.trait_impl {
         return true;
     }
     if input.roles.role_at(&unit.file, unit.start_line) == crate::code_roles::CodeRole::TestOnly
@@ -113,145 +102,6 @@ fn mark_containers(units: &[UnitRef], idx: usize, reached: &mut [bool], queue: &
             queue.push(i);
         }
     }
-}
-
-pub(super) fn coverage_witnesses(units: &[UnitRef], coverage: &OrphanCoverage) -> Vec<bool> {
-    let by_file = crate::graph::orphan_unit::extract::units_by_file(units);
-    let direct = direct_callable_hits(units, &by_file, coverage);
-    let mut out = direct.clone();
-    for (i, unit) in units.iter().enumerate() {
-        if unit.kind == CodeUnitKind::Class {
-            out[i] = nested_callable_hit(units, &by_file, unit, &direct)
-                || exclusive_body_hit(units, &by_file, unit, coverage);
-        }
-    }
-    for (i, unit) in units.iter().enumerate() {
-        if unit.kind == CodeUnitKind::Module {
-            out[i] = module_coverage(units, &by_file, unit, coverage, &out);
-        }
-    }
-    out
-}
-
-fn file_unit_idxs<'a>(
-    by_file: &'a HashMap<PathBuf, Vec<usize>>,
-    file: &Path,
-) -> Option<&'a [usize]> {
-    by_file
-        .get(file)
-        .or_else(|| by_file.get(&canonical_path(file)))
-        .map(Vec::as_slice)
-}
-
-fn direct_callable_hits(
-    units: &[UnitRef],
-    by_file: &HashMap<PathBuf, Vec<usize>>,
-    coverage: &OrphanCoverage,
-) -> Vec<bool> {
-    let mut out = vec![false; units.len()];
-    for (file, coverable) in &coverage.coverable {
-        let hits = file_key(&coverage.hit, file).cloned().unwrap_or_default();
-        for line in coverable {
-            if !hits.contains(line) {
-                continue;
-            }
-            let Some(idx) = innermost(units, by_file, file, *line) else {
-                continue;
-            };
-            let unit = &units[idx];
-            if !is_callable(unit.kind) {
-                continue;
-            }
-            if !unit.is_rust && *line == unit.start_line {
-                continue;
-            }
-            out[idx] = true;
-        }
-    }
-    out
-}
-
-fn is_callable(kind: CodeUnitKind) -> bool {
-    matches!(
-        kind,
-        CodeUnitKind::Function | CodeUnitKind::Method | CodeUnitKind::TraitImplMethod
-    )
-}
-
-fn nested_callable_hit(
-    units: &[UnitRef],
-    by_file: &HashMap<PathBuf, Vec<usize>>,
-    class: &UnitRef,
-    direct: &[bool],
-) -> bool {
-    let Some(idxs) = file_unit_idxs(by_file, &class.file) else {
-        return false;
-    };
-    idxs.iter().any(|&i| {
-        direct[i]
-            && units[i].parent_type.as_deref() == Some(class.name.as_str())
-            && is_callable(units[i].kind)
-    })
-}
-
-fn module_coverage(
-    units: &[UnitRef],
-    by_file: &HashMap<PathBuf, Vec<usize>>,
-    module: &UnitRef,
-    coverage: &OrphanCoverage,
-    witnessed: &[bool],
-) -> bool {
-    if let Some(idxs) = file_unit_idxs(by_file, &module.file)
-        && idxs
-            .iter()
-            .any(|&i| witnessed[i] && units[i].kind != CodeUnitKind::Module)
-    {
-        return true;
-    }
-    exclusive_body_hit(units, by_file, module, coverage)
-}
-
-fn exclusive_body_hit(
-    units: &[UnitRef],
-    by_file: &HashMap<PathBuf, Vec<usize>>,
-    unit: &UnitRef,
-    coverage: &OrphanCoverage,
-) -> bool {
-    let Some(coverable) = file_key(&coverage.coverable, &unit.file) else {
-        return false;
-    };
-    let hits = file_key(&coverage.hit, &unit.file)
-        .cloned()
-        .unwrap_or_default();
-    coverable.iter().any(|line| {
-        if !hits.contains(line) {
-            return false;
-        }
-        let Some(idx) = innermost(units, by_file, &unit.file, *line) else {
-            return false;
-        };
-        units[idx].start_line == unit.start_line
-            && units[idx].end_line == unit.end_line
-            && units[idx].kind == unit.kind
-    })
-}
-
-fn innermost(
-    units: &[UnitRef],
-    by_file: &HashMap<PathBuf, Vec<usize>>,
-    file: &Path,
-    line: usize,
-) -> Option<usize> {
-    let idxs = file_unit_idxs(by_file, file)?;
-    idxs.iter()
-        .copied()
-        .filter(|&i| units[i].start_line <= line && line <= units[i].end_line)
-        .min_by_key(|&i| {
-            (
-                units[i].end_line.saturating_sub(units[i].start_line),
-                usize::MAX - units[i].start_line,
-            )
-        })
 }
 
 #[cfg(test)]

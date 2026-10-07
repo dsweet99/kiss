@@ -22,4 +22,4 @@ pub(crate) struct TestDispatchOptions<'a> {
 
 #[cfg(test)]
 #[path = "opt_batch_c_test.rs"]
-mod coverage_witness;
+mod touch_witness;

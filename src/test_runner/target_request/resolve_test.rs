@@ -77,16 +77,16 @@ fn workspace_uses_sentinel_region() {
 }
 
 #[test]
-fn test_only_projection_has_empty_coverage_regions() {
+fn test_only_projection_has_empty_report_regions() {
     let tmp = seed_python();
     let request = req(ops(&["tests/test_app.py::test_value"]));
     let resolved = resolve_only(tmp.path(), &request).unwrap();
     let (projection, _) =
         crate::test_runner::target_request::build_slice_projection(tmp.path(), &request, &resolved);
     assert!(
-        projection.coverage_regions().is_empty(),
+        projection.report_regions().is_empty(),
         "test-only projection must not carry production regions: {:?}",
-        projection.coverage_regions()
+        projection.report_regions()
     );
 }
 
@@ -156,10 +156,9 @@ fn outside_repo_and_lang_conflict_are_rejected() {
 }
 
 #[test]
-fn commit_deleted_path_selects_prior_covering_tests() {
+fn commit_deleted_path_is_historical_not_a_region() {
     let tmp = seed_python();
     let root = tmp.path();
-    crate::test_runner::test_mode_fixtures::publish_python_covering(root, &root.join("pkg/app.py"));
     fs::remove_file(root.join("pkg/app.py")).unwrap();
     let resolved = resolve_only(root, &req(TargetFocus::Git(GitFocus::Commit))).unwrap();
     assert!(
@@ -169,14 +168,6 @@ fn commit_deleted_path_selects_prior_covering_tests() {
             .any(|path| path.ends_with("pkg/app.py")),
         "{:?}",
         resolved.historical_paths
-    );
-    assert!(
-        resolved
-            .direct_selectors
-            .iter()
-            .any(|selector| selector.contains("test_value")),
-        "{:?}",
-        resolved.direct_selectors
     );
     assert!(!resolved.regions.iter().any(|region| match region {
         SourceRegion::FileAll { path } | SourceRegion::FileLines { path, .. } => {

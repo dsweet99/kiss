@@ -1,11 +1,10 @@
-use crate::common::seed_python_runtime_coverage;
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
 
 fn kiss_binary() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
-    crate::common::scrub_parent_coverage_env(&mut cmd);
+    crate::common::scrub_parent_build_env(&mut cmd);
     crate::common::preserve_toolchain_homes(&mut cmd);
     cmd
 }
@@ -26,7 +25,6 @@ fn cli_check_focus_dir_with_source_restricts_report() {
         "def g(x):\n    return x\n",
     )
     .unwrap();
-    seed_python_runtime_coverage(root, &[("test_focus.py::test_focus", vec![])]);
     let config = crate::common::write_builtin_language_config(root);
 
     let out = kiss_binary()
@@ -52,7 +50,6 @@ fn cli_check_focus_dir_with_no_source_does_not_leak_universe() {
     fs::create_dir_all(root.join("non_src")).unwrap();
     write_violating_py(&root.join("src").join("big.py"));
     fs::write(root.join("non_src").join("readme.txt"), "hello\n").unwrap();
-    seed_python_runtime_coverage(root, &[("test_focus.py::test_focus", vec![])]);
     let config = crate::common::write_builtin_language_config(root);
 
     let universe_only = kiss_binary()

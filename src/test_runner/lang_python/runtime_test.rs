@@ -1,14 +1,13 @@
 use super::PythonRuntime;
-use crate::test_runner::coverage_decision::SupportedLanguage;
 use crate::test_runner::lang_iface::KernelRules;
 use crate::test_runner::lang_iface::{
     AcceptMode, EnsureRequest, ExecutionWitness, LanguageRuntime, WitnessStatus,
 };
-use std::collections::BTreeMap;
+use crate::test_runner::test_selection::SupportedLanguage;
 
 #[test]
 fn python_runtime_language_and_no_generation_publish() {
-    let rt = PythonRuntime;
+    let rt = PythonRuntime::default();
     assert_eq!(rt.language(), kiss::Language::Python);
     let src = include_str!("runtime.rs");
     assert!(!src.contains("python_generation_publish"));
@@ -16,7 +15,7 @@ fn python_runtime_language_and_no_generation_publish() {
 
 #[test]
 fn python_accepted_summary_counts_hits() {
-    let rt = PythonRuntime;
+    let rt = PythonRuntime::default();
     let tmp = tempfile::tempdir().unwrap();
     let req = EnsureRequest {
         repo_root: tmp.path().to_path_buf(),
@@ -42,7 +41,6 @@ fn python_accepted_summary_counts_hits() {
         selectors: vec!["a".into()],
         statuses: vec![WitnessStatus::Passed],
         durations_ns: vec![Some(1)],
-        covered_lines: BTreeMap::new(),
         complete: true,
         generation_id: "g".into(),
         raw_statuses: Vec::new(),
@@ -60,7 +58,7 @@ fn python_accepted_summary_counts_hits() {
 
 #[test]
 fn python_runtime_empty_run_and_identity_paths() {
-    let rt = PythonRuntime;
+    let rt = PythonRuntime::default();
     let tmp = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(tmp.path().join(".git")).unwrap();
     let req = EnsureRequest {

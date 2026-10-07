@@ -39,13 +39,6 @@ impl TargetSelectionQuery {
         };
         files.iter().chain(lines.keys()).cloned().collect()
     }
-
-    pub(crate) fn lines(&self, language: Language) -> &BTreeMap<PathBuf, BTreeSet<u32>> {
-        match language {
-            Language::Python => &self.python_lines,
-            Language::Rust => &self.rust_lines,
-        }
-    }
 }
 
 pub(crate) fn resolve_target_operands(
@@ -270,7 +263,7 @@ fn apply_symbol_target(
         if roles.get(abs)?.role_for_span(abs, definition_span(def)) == CodeRole::TestOnly {
             return Ok(());
         }
-        let lines = model.coverage_lines_for_definition(def);
+        let lines = model.target_lines_for_definition(def);
         if !lines.is_empty() {
             insert_lines(query, model.language, abs, lines);
         }
@@ -406,7 +399,7 @@ fn reject_ignored_target(
     };
     if kiss::path_ignored_by_prefixes(&rel, ignore) {
         return Err(format!(
-            "target '{raw}' is covered by --ignore prefix and cannot be requested"
+            "target '{raw}' is matched by an --ignore prefix and cannot be requested"
         ));
     }
     Ok(())

@@ -2,19 +2,12 @@
 
 use fs2::FileExt;
 use kiss::parsing::{ParsedFile, create_parser, parse_file};
-use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Once;
 use tree_sitter::Node;
-
-mod python_seed_helpers;
-use python_seed_helpers::{
-    python_entries_fingerprint, python_rslip_cache_root_for_repo,
-    python_seeded_population_is_current, python_source_input_fingerprint,
-};
 
 pub fn is_cli_wall_timing_line(line: &str) -> bool {
     let Some(rest) = line.strip_prefix("kiss: ") else {
@@ -48,37 +41,6 @@ fn force_tmpfs_on_load() {
 static FORCE_TMPFS: Once = Once::new();
 fn ensure_tmpfs() {
     FORCE_TMPFS.call_once(force_tmpfs_on_load);
-}
-
-/// After seeding runtime coverage, apply a repo change and assert the population
-/// identity no longer matches (equivalent to `load_python_runtime_coverage` failing
-/// closed with a stale/missing population rather than reusing the seed).
-pub fn assert_seeded_python_runtime_coverage_stale_after(repo: &Path, apply_change: impl FnOnce()) {
-    assert!(
-        python_seeded_population_is_current(repo),
-        "seeded population must be current before the source edit"
-    );
-    let recorded_input = {
-        let cache_root = python_rslip_cache_root_for_repo(&repo.canonicalize().unwrap());
-        let manifest: serde_json::Value = serde_json::from_slice(
-            &fs::read(cache_root.join("population.json")).expect("seeded population manifest"),
-        )
-        .expect("population manifest json");
-        manifest["input_fingerprint"]
-            .as_str()
-            .expect("input_fingerprint")
-            .to_string()
-    };
-    apply_change();
-    let current_input = python_source_input_fingerprint(repo);
-    assert_ne!(
-        recorded_input, current_input,
-        "source edit must drift the workspace input fingerprint"
-    );
-    assert!(
-        !python_seeded_population_is_current(repo),
-        "stale seed must not be treated as a current/reusable population after source change"
-    );
 }
 
 pub fn cache_dir_under(repo: &Path) -> PathBuf {
@@ -131,7 +93,7 @@ pub fn generate_lockfile(repo: &Path) {
 }
 
 /// Strip parent build and profiling env so nested cargo work is not inflated under suite load.
-pub fn scrub_parent_coverage_env(cmd: &mut Command) {
+pub fn scrub_parent_build_env(cmd: &mut Command) {
     const KEYS: &[&str] = &[
         "LLVM_PROFILE_FILE",
         "LLVM_PROFILE_FILE_NAME",
@@ -163,8 +125,6 @@ pub fn preserve_toolchain_homes(cmd: &mut Command) {
         cmd.env("CARGO_HOME", PathBuf::from(home).join(".cargo"));
     }
 }
-
-pub type PythonRuntimeCoverageSeed<'a> = (&'a str, Vec<(&'a str, Vec<u32>)>);
 
 pub fn persistent_cargo_target(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join("kiss-test-targets").join(name);
@@ -340,120 +300,6 @@ fn retarget_cloned_kiss_cache(src: &Path, dst: &Path) {
     }
 }
 
-pub fn persistent_python_coverage_gap_repo() -> PathBuf {
-    use std::sync::OnceLock;
-    static REPO: OnceLock<PathBuf> = OnceLock::new();
-    REPO.get_or_init(|| {
-        let root = std::env::temp_dir().join("kiss-pcg");
-        let stamp = root.join(".kiss").join("fixture_inplace_ok");
-        if root.join(".git").join("HEAD").is_file()
-            && root.join(".kiss").is_dir()
-            && root.join("lib.py").is_file()
-            && stamp.is_file()
-            && fs::read_to_string(&stamp).ok().as_deref() == Some(root.to_string_lossy().as_ref())
-        {
-            return root;
-        }
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&root).expect("coverage-gap fixture root");
-        let init = kiss::scrubbed_git_command(&root)
-            .args(["init", "-q", "-b", "main"])
-            .output()
-            .expect("git init");
-        assert!(init.status.success(), "git init failed");
-        for kv in [("user.email", "t@t.t"), ("user.name", "t")] {
-            kiss::scrubbed_git_command(&root)
-                .args(["config", kv.0, kv.1])
-                .status()
-                .expect("git config");
-        }
-        fs::write(
-            root.join("lib.py"),
-            "def f():\n    return 0\ndef unused():\n    return 1\n",
-        )
-        .unwrap();
-        fs::write(
-            root.join("test_lib.py"),
-            "from lib import f\n\ndef test_f():\n    assert f() == 0\n",
-        )
-        .unwrap();
-        fs::write(
-            root.join(".kissconfig"),
-            "[global]\n\
-             duplication_enabled = false\n\
-             \n\
-[test]\n\
-             orphan_detection = false\n\
-             num_jobs = 1\n\
-             \n\
-             [test.max_unit_test_seconds]\n\
-             \"*\" = 60\n\
-             [python]\n\
-             [rust]\n",
-        )
-        .unwrap();
-        let mut warm = Command::new(env!("CARGO_BIN_EXE_kiss"));
-        scrub_parent_coverage_env(&mut warm);
-        preserve_toolchain_homes(&mut warm);
-        warm.env("PYTHONDONTWRITEBYTECODE", "1");
-        let status = warm
-            .args(["test", "--lang", "python", "."])
-            .current_dir(&root)
-            .status()
-            .expect("warm coverage-gap fixture");
-        assert!(status.success(), "coverage-gap fixture warm failed");
-        let add = kiss::scrubbed_git_command(&root)
-            .args(["add", "-A"])
-            .output()
-            .expect("git add");
-        assert!(add.status.success(), "git add failed");
-        let commit = kiss::scrubbed_git_command(&root)
-            .args(["commit", "-q", "-m", "init"])
-            .output()
-            .expect("git commit");
-        assert!(commit.status.success(), "git commit failed");
-        fs::create_dir_all(root.join(".kiss")).unwrap();
-        fs::write(&stamp, root.to_string_lossy().as_bytes()).unwrap();
-        root
-    })
-    .clone()
-}
-
-pub fn with_python_coverage_gap_repo<T>(f: impl FnOnce(&Path) -> T) -> T {
-    use std::sync::Mutex;
-    static LOCK: Mutex<()> = Mutex::new(());
-    let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let root = persistent_python_coverage_gap_repo();
-    // Restore a clean threshold=0 config + sources before each use.
-    fs::write(
-        root.join("lib.py"),
-        "def f():\n    return 0\ndef unused():\n    return 1\n",
-    )
-    .unwrap();
-    fs::write(
-        root.join(".kissconfig"),
-        "[global]\n\
-         duplication_enabled = false\n\
-         \n\
-[test]\n\
-         orphan_detection = false\n\
-         num_jobs = 1\n\
-         \n\
-         [test.max_unit_test_seconds]\n\
-         \"*\" = 60\n\
-         [python]\n\
-         [rust]\n",
-    )
-    .unwrap();
-    f(&root)
-}
-
-pub fn fresh_python_coverage_gap_repo() -> tempfile::TempDir {
-    let tmp = tempfile::TempDir::new().expect("coverage-gap tempdir");
-    copy_repo_tree(&persistent_python_coverage_gap_repo(), tmp.path());
-    tmp
-}
-
 fn write_seeded_python_sources(root: &Path) {
     fs::write(root.join("lib.py"), "def f():\n    return 0\n").unwrap();
     fs::write(
@@ -475,7 +321,7 @@ struct SeededPythonFixtureLock {
 
 fn seeded_python_fixture_lock() -> SeededPythonFixtureLock {
     ensure_tmpfs();
-    let path = std::env::temp_dir().join("kiss-seeded-python-fixture-v4.lock");
+    let path = std::env::temp_dir().join("kiss-seeded-python-fixture-v5.lock");
     let file = OpenOptions::new()
         .create(true)
         .read(true)
@@ -499,7 +345,7 @@ fn persistent_seeded_python_repo_unlocked() -> PathBuf {
     REPO.get_or_init(|| {
         // Ship a .gitignore so `.kiss/` / `target/` are never tracked; tracked
         // state dirt would flap commit stamps.
-        let root = std::env::temp_dir().join("kiss-seeded-python-fixture-v4");
+        let root = std::env::temp_dir().join("kiss-seeded-python-fixture-v5");
         if root.join(".git").join("HEAD").is_file() {
             // Reset sources under the flock so concurrent clones cannot tear a
             // mid-write lib.py / test_lib.py pair.
@@ -539,10 +385,16 @@ fn persistent_seeded_python_repo_unlocked() -> PathBuf {
              [rust]\n",
         )
         .unwrap();
-        seed_python_runtime_coverage(
-            &root,
-            &[("test_lib.py::test_f", vec![("lib.py", vec![1, 2])])],
-        );
+        let mut warm = Command::new(env!("CARGO_BIN_EXE_kiss"));
+        scrub_parent_build_env(&mut warm);
+        preserve_toolchain_homes(&mut warm);
+        warm.env("PYTHONDONTWRITEBYTECODE", "1");
+        let status = warm
+            .args(["test", "--lang", "python", "."])
+            .current_dir(&root)
+            .status()
+            .expect("warm seeded python fixture");
+        assert!(status.success(), "seeded python fixture warm failed");
         let add = kiss::scrubbed_git_command(&root)
             .args(["add", "-A"])
             .output()
@@ -587,155 +439,6 @@ pub fn locked_seeded_python_repo() -> LockedSeededPythonRepo {
     let tmp = fresh_seeded_python_repo();
     let path = tmp.path().to_path_buf();
     LockedSeededPythonRepo { _tmp: tmp, path }
-}
-
-pub fn seed_python_runtime_coverage(repo: &Path, entries: &[PythonRuntimeCoverageSeed<'_>]) {
-    ensure_tmpfs();
-    seed_python_runtime_coverage_with_status(repo, entries, "Passed", 0);
-}
-
-pub fn seed_python_failed_runtime_coverage(repo: &Path, entries: &[PythonRuntimeCoverageSeed<'_>]) {
-    seed_python_runtime_coverage_with_status(repo, entries, "Failed", 1);
-}
-
-fn seed_python_runtime_coverage_with_status(
-    repo: &Path,
-    entries: &[PythonRuntimeCoverageSeed<'_>],
-    status: &str,
-    exit_code: i32,
-) {
-    let repo = repo.canonicalize().unwrap();
-    let cache_root = python_rslip_cache_root_for_repo(&repo);
-    fs::create_dir_all(&cache_root).unwrap();
-    let python_version = python_command_output(
-        &repo,
-        &[
-            "-c",
-            "import sys; print('.'.join(map(str, sys.version_info[:3])))",
-        ],
-    );
-    let pytest_version =
-        python_command_output(&repo, &["-c", "import pytest; print(pytest.__version__)"]);
-    let env = relevant_python_env(&repo);
-    let env_json = env
-        .iter()
-        .map(|(key, value)| (key.clone(), serde_json::Value::String(value.clone())))
-        .collect::<serde_json::Map<_, _>>();
-    let mut selectors = Vec::new();
-    for (selector, coverage_files) in entries {
-        selectors.push((*selector).to_string());
-        write_seeded_rslip_entry(
-            &repo,
-            &cache_root,
-            selector,
-            coverage_files,
-            &python_version,
-            &pytest_version,
-            &env,
-            status,
-            exit_code,
-        );
-    }
-    selectors.sort();
-    selectors.dedup();
-    let manifest = serde_json::json!({
-        "schema_version": "rslip-python-population-v1",
-        "cache_schema_version": kiss::rslip::CACHE_SCHEMA_VERSION,
-        "source_root": repo.to_string_lossy().to_string(),
-        "selector_discovery_version": "python-selector-discovery-v2",
-        "python_version": python_version,
-        "pytest_version": pytest_version,
-        "pytest_args": [],
-        "env": env_json,
-        "input_fingerprint": python_source_input_fingerprint(&repo),
-        "entries_fingerprint": python_entries_fingerprint(&repo),
-        "selectors": selectors,
-    });
-    fs::write(
-        cache_root.join("population.json"),
-        format!("{}\n", serde_json::to_string_pretty(&manifest).unwrap()),
-    )
-    .unwrap();
-}
-
-#[allow(clippy::too_many_arguments)]
-fn write_seeded_rslip_entry(
-    repo: &Path,
-    cache_root: &Path,
-    selector: &str,
-    coverage_files: &[(&str, Vec<u32>)],
-    python_version: &str,
-    pytest_version: &str,
-    env: &BTreeMap<String, String>,
-    status: &str,
-    exit_code: i32,
-) {
-    let req = kiss::rslip::RslipRequest {
-        nodeid: selector.to_string(),
-        cwd: repo.to_path_buf(),
-        source_root: repo.to_path_buf(),
-        python: PathBuf::from("python"),
-        python_version: python_version.to_string(),
-        pytest_version: pytest_version.to_string(),
-        pytest_args: Vec::new(),
-        env: env.clone(),
-        cache_root: cache_root.to_path_buf(),
-        force_rerun: false,
-        timeout: None,
-    };
-    let identity = kiss::rslip::record_identity_for_request(&req).unwrap();
-    let files = coverage_files
-        .iter()
-        .map(|(file, lines)| {
-            (
-                coverage_seed_file(repo, file),
-                lines.iter().copied().collect::<BTreeSet<_>>(),
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
-    let coverage = kiss::rslip::LineCoverage {
-        files: files.clone(),
-    };
-    let deps = kiss::rslip::covered_file_digests_for(repo, selector, &coverage).unwrap_or_default();
-    let record = kiss::test_records::TestRecord {
-        schema: kiss::test_records::RECORD_SCHEMA.to_string(),
-        language: "python".to_string(),
-        test_id: selector.to_string(),
-        identity,
-        deps,
-        status: serde_json::from_value(serde_json::json!(status)).unwrap(),
-        exit_code: Some(exit_code),
-        duration: std::time::Duration::from_millis(1),
-        covered: files,
-    };
-    kiss::test_records::store_record(&kiss::rslip::python_records_dir(repo), &record).unwrap();
-}
-
-fn coverage_seed_file(repo: &Path, file: &str) -> String {
-    let path = Path::new(file);
-    if file.starts_with('<') || path.is_absolute() || file.starts_with(".kiss/") {
-        file.to_string()
-    } else {
-        repo.join(path).to_string_lossy().to_string()
-    }
-}
-
-fn python_command_output(repo: &Path, args: &[&str]) -> String {
-    let output = Command::new("python")
-        .args(args)
-        .current_dir(repo)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "python command failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8(output.stdout).unwrap().trim().to_string()
-}
-
-fn relevant_python_env(repo: &Path) -> BTreeMap<String, String> {
-    kiss::python_coverage_env_map(repo)
 }
 
 pub fn parse_python_source(code: &str) -> ParsedFile {

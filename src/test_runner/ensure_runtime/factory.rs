@@ -1,13 +1,13 @@
-use crate::test_runner::coverage_decision::SupportedLanguage;
 use crate::test_runner::ensure_runtime::ensure_runtime_cache;
 use crate::test_runner::lang_iface::{EnsureRequest, EnsureRuntimeResult, LanguageRuntime};
 use crate::test_runner::lang_python::PythonRuntime;
 use crate::test_runner::lang_rust::RustRuntime;
+use crate::test_runner::test_selection::SupportedLanguage;
 
 pub(crate) fn ensure_languages_runtime(
     request: &EnsureRequest,
 ) -> Result<EnsureRuntimeResult, String> {
-    let python = PythonRuntime;
+    let python = PythonRuntime::default();
     let rust = RustRuntime::default();
     let mut modules: Vec<&dyn LanguageRuntime> = Vec::new();
     if request.requires(SupportedLanguage::language(&python)) {

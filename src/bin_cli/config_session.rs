@@ -91,25 +91,32 @@ pub fn load_test_section_config(
     }
 }
 
-pub fn load_gate_config(config_path: Option<&PathBuf>) -> GateConfig {
-    if let Some(path) = config_path {
-        GateConfig::load_from(path)
-    } else {
-        GateConfig::load()
+pub fn load_gate_config(config_path: Option<&PathBuf>) -> Result<GateConfig, kiss::ConfigError> {
+    let path = match config_path {
+        Some(path) => path.clone(),
+        None => kissconfig_path_from_cwd(),
+    };
+    if !path.exists() {
+        return Ok(GateConfig::default());
     }
+    GateConfig::try_load_from(&path)
 }
 
-pub fn load_configs(config_path: Option<&PathBuf>) -> (Config, Config) {
+pub fn load_configs(config_path: Option<&PathBuf>) -> Result<(Config, Config), kiss::ConfigError> {
     let Some(path) = config_path else {
-        return (
-            Config::load_for_language(ConfigLanguage::Python),
-            Config::load_for_language(ConfigLanguage::Rust),
-        );
+        return Ok((
+            Config::try_load_for_language(ConfigLanguage::Python)?,
+            Config::try_load_for_language(ConfigLanguage::Rust)?,
+        ));
     };
-    (
-        Config::load_from_for_language(path, ConfigLanguage::Python),
-        Config::load_from_for_language(path, ConfigLanguage::Rust),
-    )
+    if !path.exists() {
+        eprintln!("Warning: Could not read config file: {}", path.display());
+        return Ok((Config::python_defaults(), Config::rust_defaults()));
+    }
+    Ok((
+        Config::try_load_from(path, ConfigLanguage::Python)?,
+        Config::try_load_from(path, ConfigLanguage::Rust)?,
+    ))
 }
 
 pub fn config_provenance(config: Option<&Path>) -> String {
@@ -195,10 +202,6 @@ mod tests {
             created.contains(r#"docs_allowed = ["./"]"#),
             r#"created .kissconfig must set docs_allowed = ["./"]:
 {created}"#,
-        );
-        assert!(
-            !created.contains("test_coverage"),
-            "created .kissconfig must not set coverage keys:\n{created}"
         );
         assert!(
             created.contains("\"*\" = 99999"),
@@ -313,9 +316,25 @@ ignore = [\"vendor\"]
         std::fs::write(&custom, "[python]\nstatements_per_function = 42\n").unwrap();
         let orig_dir = std::env::current_dir().unwrap();
         std::env::set_current_dir(tmp.path()).unwrap();
-        let (py, _) = load_configs(Some(&custom));
+        let (py, _) = load_configs(Some(&custom)).unwrap();
         std::env::set_current_dir(orig_dir).unwrap();
         assert_eq!(py.statements_per_function, 42);
+    }
+
+    #[test]
+    fn load_configs_rejects_an_unknown_section() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let custom = tmp.path().join("custom.toml");
+        std::fs::write(
+            &custom,
+            "bogus = 1\n\n[python]\nstatements_per_function = 1\n",
+        )
+        .unwrap();
+        let message = load_configs(Some(&custom)).unwrap_err().to_string();
+        assert!(
+            message.contains("Unknown config section") && message.contains("bogus"),
+            "{message}"
+        );
     }
 
     #[test]
@@ -331,9 +350,26 @@ ignore = [\"vendor\"]
         std::fs::write(&custom, "[test]\nmax_num_tests = 22\n").unwrap();
         let orig_dir = std::env::current_dir().unwrap();
         std::env::set_current_dir(tmp.path()).unwrap();
-        let gate = load_gate_config(Some(&custom));
+        let gate = load_gate_config(Some(&custom)).unwrap();
         std::env::set_current_dir(orig_dir).unwrap();
         assert_eq!(gate.max_num_tests, 22);
+    }
+
+    #[test]
+    fn load_gate_config_rejects_a_bad_time_limit_once() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let custom = tmp.path().join("custom.toml");
+        std::fs::write(
+            &custom,
+            "[test]\nmax_unit_test_seconds = [{path = \"*\", seconds = 2.0}]\n",
+        )
+        .unwrap();
+        let err = load_gate_config(Some(&custom)).unwrap_err();
+        let message = err.to_string();
+        assert!(
+            message.contains("max_unit_test_seconds") && message.contains("[pattern, seconds]"),
+            "{message}"
+        );
     }
 
     #[test]

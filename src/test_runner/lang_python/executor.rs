@@ -1,6 +1,6 @@
-use crate::test_runner::coverage_decision::{LanguageExecutor, RunContext};
 use crate::test_runner::lang_python::backer::PythonModule;
 use crate::test_runner::runners::{self, SelectorExecutionSummary};
+use crate::test_runner::test_selection::{LanguageExecutor, RunContext};
 
 impl LanguageExecutor for PythonModule {
     fn language(&self) -> kiss::Language {
@@ -58,7 +58,7 @@ impl LanguageExecutor for PythonModule {
     ) -> Result<Vec<String>, String> {
         let mut lines = Vec::new();
         if population {
-            lines.push("PYTHON COVERAGE POPULATION".to_string());
+            lines.push("PYTHON POPULATION".to_string());
         }
         if !selectors.is_empty() {
             let argv = runners::build_pytest_argv(selectors, extra);

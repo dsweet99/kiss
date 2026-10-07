@@ -27,7 +27,6 @@ pub(crate) fn should_skip_dir(name: &str) -> bool {
             | "venv"
             | "__pycache__"
             | ".pytest_cache"
-            | ".rslip_cache"
             | "node_modules"
     )
 }
@@ -83,7 +82,7 @@ pub(crate) fn rust_full_source_fingerprint(
     ignore: &[String],
 ) -> io::Result<String> {
     let rels = fresh::rust_source_rels(repo_root, ignore)?;
-    hash_rel_list_full(b"workspace-coverage-fp-v1-rs", repo_root, &rels)
+    hash_rel_list_full(b"workspace-fp-v1-rs", repo_root, &rels)
 }
 
 pub(super) fn workspace_lang_fingerprints_git(

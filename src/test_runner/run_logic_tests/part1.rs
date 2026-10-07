@@ -286,7 +286,7 @@ fn planned_selectors_carry_population_decisions_without_selector_vectors() {
             python: Vec::new(),
             rust: Vec::new(),
         },
-        coverage_decision_engine_used: true,
+        selection_engine_used: true,
         selection_basis: Default::default(),
         ignore: Vec::new(),
         workspace_files_fingerprint: None,

@@ -158,7 +158,7 @@ fn append_language_section(
 }
 
 #[cfg(test)]
-mod coverage_witness {
+mod touch_witness {
     use super::*;
     use crate::gate_config::GateConfig;
     use crate::stats::MetricStats;
@@ -210,10 +210,6 @@ mod coverage_witness {
         assert!(
             toml.contains("orphan_allowed = []"),
             "auto-created orphan_allowed:\n{toml}"
-        );
-        assert!(
-            !toml.contains("test_coverage"),
-            "auto-created config must not write coverage keys:\n{toml}"
         );
         assert!(
             toml.contains("[test.max_unit_test_seconds]\n\"*\" = 99999\n"),

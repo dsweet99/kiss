@@ -45,7 +45,7 @@ fn write_python_sigint_repo(dir: &Path) {
 
 fn kiss_cmd() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
-    crate::common::scrub_parent_coverage_env(&mut cmd);
+    crate::common::scrub_parent_build_env(&mut cmd);
     crate::common::preserve_toolchain_homes(&mut cmd);
     cmd.env("NO_COLOR", "1").env("PYTHONDONTWRITEBYTECODE", "1");
     cmd
@@ -136,17 +136,12 @@ fn kiss_test_sigint_caches_passed_tests_as_it_goes() {
         second_out.status.success(),
         "restart must exit 0; stdout={stdout2} stderr={stderr2}"
     );
-    // Cache reuse may surface as rslip prepare hits, or as an ITE/official report
-    // assemble with no runner. A cached PASS has no line of its own.
-    let rslip_hit = stdout2.contains("kiss test: rslip prepared hits=1 misses=0");
-    let report_reuse = stdout2.contains("kiss test: report members=1")
-        && !stdout2.contains("rslip prepared hits=0 misses=");
+    // A cached PASS has no line of its own.
     assert!(
-        (rslip_hit || report_reuse)
-            && stdout2.contains("1 passed")
+        stdout2.contains("1 passed")
             && !stdout2.contains("PASS: test_lib.py::test_fast")
             && !stdout2.contains("PASS test_lib.py::test_fast"),
-        "expected test_fast to be cached on second run (rslip hit or report reuse), \
+        "expected test_fast to be cached on second run, \
          stdout={stdout2}, stderr={stderr2}"
     );
 }

@@ -5,7 +5,6 @@ use crate::test_git::TestChangeMode;
 use kiss::Language;
 use kiss::code_roles::is_python_test_module_path;
 
-use super::history::historical_covering_selectors;
 use super::resolved::{OperandClass, ResolvedTarget, SourceRegion};
 use super::stamp::capture_git_dep_stamp;
 use super::types::{GitFocus, OperandExpr, TargetFocus, TargetRequest};
@@ -113,10 +112,9 @@ fn git_resolved(
         }
     }
     historical_paths.sort();
-    let direct_selectors = historical_covering_selectors(repo_root, &historical_paths);
     ResolvedTarget {
         regions,
-        direct_selectors,
+        direct_selectors: Vec::new(),
         historical_paths,
         git_stamp,
         operand_classes: Vec::new(),

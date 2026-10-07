@@ -5,7 +5,6 @@ mod counters;
 mod digest;
 mod ensure;
 mod graph_store;
-mod history;
 mod manifest;
 mod projection;
 mod render;

@@ -215,7 +215,7 @@ pub fn graph_counts(
 }
 
 #[cfg(test)]
-mod coverage_witness {
+mod touch_witness {
     use super::*;
 
     fn fnv1a64_witness() -> u64 {

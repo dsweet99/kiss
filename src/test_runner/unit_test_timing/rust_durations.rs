@@ -31,7 +31,7 @@ pub(super) fn load_rust_duration_pairs(repo_root: &Path) -> Option<Vec<DurationP
 }
 
 /// The recorded duration of every test, when every holding record passed.
-fn duration_pairs(witness: &ExecutionWitness) -> Option<Vec<DurationPair>> {
+pub(super) fn duration_pairs(witness: &ExecutionWitness) -> Option<Vec<DurationPair>> {
     if !witness.complete
         || witness.selectors.is_empty()
         || witness.durations_ns.len() != witness.selectors.len()

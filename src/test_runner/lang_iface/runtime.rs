@@ -8,9 +8,9 @@ use kiss::test_records::TestRecord;
 use super::witness::AcceptMode;
 #[cfg(test)]
 use super::witness::ExecutionWitness;
-use crate::test_runner::coverage_decision::SupportedLanguage;
 use crate::test_runner::language_keyed::LanguageKeyed;
 use crate::test_runner::runners::{SelectorExecutionRecord, SelectorExecutionSummary};
+use crate::test_runner::test_selection::SupportedLanguage;
 
 #[derive(Clone, Debug)]
 pub(crate) struct EnsureRequest {

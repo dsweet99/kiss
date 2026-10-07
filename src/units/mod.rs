@@ -144,7 +144,7 @@ pub(crate) fn get_child_by_field(node: Node, field: &str, source: &str) -> Optio
 mod tests;
 
 #[cfg(test)]
-mod coverage_witness {
+mod touch_witness {
     use super::*;
 
     impl CodeUnitKind {

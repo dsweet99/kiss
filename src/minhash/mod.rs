@@ -179,7 +179,7 @@ pub fn find_lsh_candidates(
 mod tests;
 
 #[cfg(test)]
-mod coverage_witness {
+mod touch_witness {
     use super::*;
 
     impl MinHashSignature {

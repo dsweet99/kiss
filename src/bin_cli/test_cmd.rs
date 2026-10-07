@@ -37,6 +37,19 @@ fn request_from_test_args(args: &TestCommandArgs<'_>) -> TargetRequest {
     )
 }
 
+fn kiss_test_error_line(err: impl std::fmt::Display) -> String {
+    let err = err.to_string();
+    if err.starts_with("error: kiss test:") {
+        err
+    } else {
+        format!("error: kiss test: {err}")
+    }
+}
+
+fn report_kiss_test_error(err: impl std::fmt::Display) {
+    eprintln!("{}", kiss_test_error_line(err));
+}
+
 fn reject_test_universe_languages(args: &TestCommandArgs<'_>) -> Result<(), i32> {
     if args.language_tables.python && args.language_tables.rust {
         return Ok(());
@@ -44,7 +57,7 @@ fn reject_test_universe_languages(args: &TestCommandArgs<'_>) -> Result<(), i32>
     let request = request_from_test_args(args);
     let paths =
         crate::test_runner::target_request::request_source_paths(&request).map_err(|err| {
-            eprintln!("error: kiss test: {err}");
+            report_kiss_test_error(&err);
             1
         })?;
     let (py_files, rs_files) = kiss::gather_files_by_lang(&paths, args.lang_filter, args.ignore);
@@ -150,16 +163,16 @@ fn reject_unresolved_targets(args: &TestCommandArgs<'_>) -> Result<(), i32> {
         return Ok(());
     };
     let cwd = std::env::current_dir().map_err(|e| {
-        eprintln!("error: kiss test: {e}");
+        report_kiss_test_error(e);
         1
     })?;
     let repo_root = crate::test_git::require_git_repo_root(&cwd).map_err(|e| {
-        eprintln!("error: kiss test: {e}");
+        report_kiss_test_error(e);
         1
     })?;
     crate::test_runner::expand_target_operands(&repo_root, &targets, args.ignore, args.lang_filter)
         .map_err(|e| {
-            eprintln!("error: kiss test: {e}");
+            report_kiss_test_error(e);
             2
         })?;
     Ok(())
@@ -168,6 +181,16 @@ fn reject_unresolved_targets(args: &TestCommandArgs<'_>) -> Result<(), i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn kiss_test_error_line_does_not_stack() {
+        assert_eq!(
+            kiss_test_error_line("pytest collection failed"),
+            "error: kiss test: pytest collection failed"
+        );
+        let once = "error: kiss test: pytest collection failed";
+        assert_eq!(kiss_test_error_line(once), once);
+    }
 
     #[test]
     fn reject_unresolved_targets_ok_for_non_path_invocations() {

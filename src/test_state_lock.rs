@@ -93,6 +93,8 @@ impl Drop for TestStateLock {
 
 const RETIRED_PATHS: &[&str] = &[
     "check_runtime_coverage_locks",
+    "rslip_cache",
+    "cov_records_cache.json",
     "test_last_status.json",
     "target-reports",
     "rust_llvm_cov_cache",
@@ -168,6 +170,7 @@ mod tests {
         fs::create_dir_all(cache.join("entries")).unwrap();
         fs::create_dir_all(state.join("target-reports").join("r")).unwrap();
         fs::create_dir_all(state.join("records").join("rust")).unwrap();
+        fs::create_dir_all(state.join("rslip_cache").join("hosts")).unwrap();
         fs::write(cache.join("current_generation.json"), b"{}").unwrap();
         fs::write(state.join("test_last_status.json"), b"{}").unwrap();
         fs::write(state.join("cargo_roots_v2_00.bin"), b"").unwrap();
@@ -185,6 +188,7 @@ mod tests {
         drop(lock_test_state_dir(state).unwrap());
         for gone in [
             "rust_llvm_cov_cache",
+            "rslip_cache",
             "target-reports",
             "test_last_status.json",
             "cargo_roots_v2_00.bin",
@@ -228,7 +232,7 @@ mod tests {
     fn owning_state_dir_is_the_nearest_kiss_test_ancestor() {
         let tmp = tempfile::tempdir().unwrap();
         let state = tmp.path().join(".kiss").join("test");
-        let cache = state.join("rslip_cache").join("hosts").join("h");
+        let cache = state.join("records").join("python").join("h");
         assert_eq!(
             owning_test_state_dir(&cache).unwrap(),
             state.canonicalize().unwrap()

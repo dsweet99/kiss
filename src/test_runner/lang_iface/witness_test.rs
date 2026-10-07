@@ -18,7 +18,6 @@ fn witness(
         selectors: selectors.iter().map(|s| (*s).to_string()).collect(),
         statuses: statuses.to_vec(),
         durations_ns: vec![Some(1_000_000); selectors.len()],
-        covered_lines: Default::default(),
         complete,
         generation_id: "gen-1".into(),
         raw_statuses: Vec::new(),
@@ -404,7 +403,7 @@ fn identity_covers_rejects_shared_input_when_full_digest_differs() {
     );
     assert!(
         !identity_covers("rs:input", "rs:input:gen:sel"),
-        "a shared digest prefix is not identity coverage"
+        "a shared digest prefix is not an identity match"
     );
     let w = witness(
         "rs:input:gen-a:sel-a",

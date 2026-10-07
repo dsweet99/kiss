@@ -237,7 +237,7 @@ fn resolve_python_test_file_path_is_direct_only() {
     );
     assert!(
         query.python_files.is_empty(),
-        "test-file path must not be a coverage source"
+        "test-file path must not be a target source"
     );
     assert!(query.python_lines.is_empty());
 }
@@ -268,7 +268,7 @@ fn resolve_rust_test_file_path_is_direct_only() {
     assert!(!query.direct_rust.is_empty());
     assert!(
         query.rust_files.is_empty(),
-        "rust test-file path must not be a coverage source"
+        "rust test-file path must not be a target source"
     );
 }
 
@@ -307,7 +307,7 @@ fn resolve_rust_test_helper_without_tests_flushes_workspace_universe() {
 }
 
 #[test]
-fn resolve_mixed_file_test_only_helper_is_not_coverage_target() {
+fn resolve_mixed_file_test_only_helper_is_not_production_target() {
     let tmp = tempdir().unwrap();
     init_git_repo(tmp.path());
     fs::write(
@@ -333,7 +333,7 @@ fn resolve_mixed_file_test_only_helper_is_not_coverage_target() {
     .unwrap();
     assert!(
         helper.rust_lines.is_empty() && helper.rust_files.is_empty(),
-        "test-only helper must not become a production coverage target, got {:?}",
+        "test-only helper must not become a production target, got {:?}",
         helper.rust_lines
     );
 
@@ -347,7 +347,7 @@ fn resolve_mixed_file_test_only_helper_is_not_coverage_target() {
     .unwrap();
     assert!(
         !prod.rust_lines.is_empty(),
-        "production symbol must remain a coverage target"
+        "production symbol must remain a target"
     );
 }
 

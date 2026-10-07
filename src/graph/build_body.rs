@@ -257,14 +257,14 @@ pub(crate) fn resolve_import(
 }
 
 #[cfg(test)]
-mod coverage_witness {
+mod touch_witness {
     use super::*;
     use crate::graph::DependencyGraph;
     use std::collections::HashMap;
     use std::path::Path;
 
     impl GraphBuildState<'_> {
-        fn witness_for_coverage<'a>(
+        fn witness_for_touch<'a>(
             graph: &'a mut DependencyGraph,
             bare: &'a mut HashMap<String, Vec<String>>,
         ) -> GraphBuildState<'a> {
@@ -276,7 +276,7 @@ mod coverage_witness {
     }
 
     impl ImportListPass<'_> {
-        fn witness_for_coverage<'a>(
+        fn witness_for_touch<'a>(
             graph: &'a mut DependencyGraph,
             bare: &'a HashMap<String, Vec<String>>,
         ) -> ImportListPass<'a> {
@@ -291,9 +291,9 @@ mod coverage_witness {
     fn witness_graph_build_body() {
         let mut graph = DependencyGraph::default();
         let mut bare = HashMap::new();
-        let mut state = GraphBuildState::witness_for_coverage(&mut graph, &mut bare);
+        let mut state = GraphBuildState::witness_for_touch(&mut graph, &mut bare);
         state.register_module(Path::new("a.py"), "a".into(), "a".into());
-        let mut pass = ImportListPass::witness_for_coverage(&mut graph, &bare);
+        let mut pass = ImportListPass::witness_for_touch(&mut graph, &bare);
         pass.add_edges("a", None, &[]);
         assert!(resolve_import("missing", None, &bare).is_empty());
     }

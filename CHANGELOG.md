@@ -7,6 +7,7 @@
 - The watcher (`kiss test-watch`). `kiss test` always runs in the foreground; concurrent `kiss test` runs in one repository still wait for each other.
 - The `[test] watch_settle_seconds` setting. Existing `.kissconfig` files that set it still load; the value is ignored.
 - Coverage support: the `test_coverage` gate, its `kiss rules` entry, coverage report fields, and the coverage metrics tooling. `[test] test_coverage_threshold` and `test_coverage_scope` still load; their values are ignored.
+- The Python runtime line-coverage cache. `kiss test` now selects Python tests the way it selects Rust tests: any change to a Python source reruns every Python test, and an unchanged tree reuses cached results (a cached failure reruns only with `--retry-bad`). Orphan detection is purely static.
 - `cargo-llvm-cov` is no longer needed for Rust. `kiss test` runs Rust tests with `cargo nextest run` and reads pass, fail, timeout, and timing from nextest's output. Rust tests record no coverage, so any change to a Rust input reruns every Rust test.
 
 ### Changed

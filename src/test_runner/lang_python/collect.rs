@@ -35,12 +35,12 @@ fn collection_input_stamp(repo_root: &Path) -> String {
     format!("{h:016x}")
 }
 
+fn collection_audit_dir(repo_root: &Path) -> std::path::PathBuf {
+    crate::test_runner::test_state_dir(repo_root).join("python")
+}
+
 fn mix_collection_audit(mut h: u64, repo_root: &Path) -> u64 {
-    let Ok(dir) =
-        crate::test_runner::python_coverage_index::storage::python_coverage_cache_root(repo_root)
-    else {
-        return h;
-    };
+    let dir = collection_audit_dir(repo_root);
     let path = dir.join("collection_audit.json");
     let Ok(bytes) = fs::read(&path) else {
         return h;
@@ -72,11 +72,7 @@ fn persist_collection_audit(repo_root: &Path, observed: &[String]) {
     }
     listed.sort();
     listed.dedup();
-    let Ok(dir) =
-        crate::test_runner::python_coverage_index::storage::python_coverage_cache_root(repo_root)
-    else {
-        return;
-    };
+    let dir = collection_audit_dir(repo_root);
     let _ = fs::create_dir_all(&dir);
     if let Ok(bytes) = serde_json::to_vec(&listed) {
         let _ = fs::write(dir.join("collection_audit.json"), bytes);
@@ -281,14 +277,10 @@ fn format_collect_error(err: kiss::rpytest_runner::PytestCollectError) -> String
             stderr,
             stdout,
         } => {
-            let detail = if !stderr.trim().is_empty() {
-                stderr.trim().to_string()
-            } else {
-                stdout.trim().to_string()
-            };
+            let detail = collection_failure_detail(&stderr, &stdout);
             format!(
-                "error: kiss test: pytest collection failed (exit={:?}): {detail}",
-                exit_code
+                "error: kiss test: pytest collection failed (exit={exit_code:?}): {}",
+                detail.trim()
             )
         }
         kiss::rpytest_runner::PytestCollectError::InvalidOutput(message) => {
@@ -298,6 +290,23 @@ fn format_collect_error(err: kiss::rpytest_runner::PytestCollectError) -> String
             format!("error: kiss test: invalid pytest nodeid '{nodeid}': {message}")
         }
     }
+}
+
+fn collection_failure_detail(stderr: &str, stdout: &str) -> String {
+    let stderr = without_collect_payload(stderr);
+    let stdout = without_collect_payload(stdout);
+    if !stderr.trim().is_empty() {
+        stderr
+    } else {
+        stdout
+    }
+}
+
+fn without_collect_payload(text: &str) -> String {
+    text.lines()
+        .filter(|line| !line.trim_start().starts_with("KISS_COLLECT_JSON:"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[cfg(test)]
@@ -398,7 +407,7 @@ mod shard_tests {
 }
 
 #[cfg(test)]
-mod coverage_witness {
+mod touch_witness {
     use super::*;
     use kiss::rpytest_runner::PytestCollectError;
 

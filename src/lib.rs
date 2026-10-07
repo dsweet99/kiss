@@ -18,7 +18,6 @@ static prefer_tmpfs_tmpdir_init: extern "C" fn() = {
 
 pub mod kiss_publication_barrier;
 pub mod rpytest_runner;
-pub mod rslip;
 pub mod subprocess_observer;
 pub mod test_progress;
 
@@ -61,7 +60,6 @@ pub fn test_state_dir(repo_root: &std::path::Path) -> std::path::PathBuf {
 }
 pub mod lang_analysis;
 pub mod rust_counts;
-pub mod rust_coverage_off;
 pub mod rust_fn_metrics;
 pub mod rust_graph;
 pub mod rust_include;
@@ -112,11 +110,11 @@ pub use gate_config::{
 };
 pub use graph::{
     ContextDependencyGraph, CycleInfo, DependencyGraph, EdgeOrigin, GraphKeyMaxima,
-    ModuleGraphMetrics, OrphanCoverage, OrphanUnitFinding, OrphanUnitInput, RoleDependencyGraphs,
-    analyze_graph, build_dependency_graph, build_python_context_graph,
-    collect_orphan_entry_callables, collect_orphan_entry_paths, compute_cyclomatic_complexity,
-    graph_key_maxima, module_name_for_path, orphan_unit_findings, orphan_unit_violations,
-    orphan_violations, path_for_module_name,
+    ModuleGraphMetrics, OrphanUnitFinding, OrphanUnitInput, RoleDependencyGraphs, analyze_graph,
+    build_dependency_graph, build_python_context_graph, collect_orphan_entry_callables,
+    collect_orphan_entry_paths, compute_cyclomatic_complexity, graph_key_maxima,
+    module_name_for_path, orphan_unit_findings, orphan_unit_violations, orphan_violations,
+    path_for_module_name,
 };
 pub use layout_cycles::{CycleBreakSuggestion, LayoutCycleAnalysis, analyze_cycles};
 pub use layout_layers::{LayerInfo, compute_layers};
@@ -128,7 +126,7 @@ pub use py_metrics::{
 };
 pub use shared_helpers::{
     cargo_target_linker_env, env_map_from_allowlist, host_cpu_count, json_entry_paths,
-    python_coverage_env_map, pythonpath_for_coverage_identity, scrubbed_git_command,
+    python_test_env_map, pythonpath_for_tests, scrubbed_git_command,
 };
 pub use stats::{
     METRICS, MetricDef, MetricScope, MetricStats, PercentileSummary, compute_summaries,
@@ -150,7 +148,6 @@ pub use rust_counts::{
     analyze_rust_file, analyze_rust_file_include_rollup,
     analyze_rust_file_include_rollup_with_roles, analyze_rust_file_with_roles,
 };
-pub use rust_coverage_off::coverage_off_attrs;
 pub use rust_fn_metrics::{
     RustFileMetrics, RustFunctionMetrics, RustTypeMetrics, compute_rust_file_metrics,
     compute_rust_file_metrics_with_roles, compute_rust_function_metrics, count_non_doc_attrs,

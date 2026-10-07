@@ -170,7 +170,7 @@ fn try_snapshot(
     let mut selectors = projection.selectors();
     selectors.extend(resolved.direct_selectors.clone());
     let mut scope =
-        ReportScope::from_membership(projection.coverage_regions(), selectors, stamp.complete);
+        ReportScope::from_membership(projection.report_regions(), selectors, stamp.complete);
     apply_runner_extra(repo_root, &mut scope, args)?;
     let available = super::rows::available_rows(repo_root, &scope, runner_extras(args));
     let graph_repair = super::report::graph_repair_needed(repo_root, &scope);
@@ -221,7 +221,7 @@ fn try_snapshot(
         && policy.require_complete()
     {
         return Err(EnsureError::IncompleteEvidence(
-            crate::test_runner::runners::NO_COVERING_TESTS_MSG.into(),
+            crate::test_runner::runners::NO_SELECTED_TESTS_MSG.into(),
         ));
     }
     if policy.require_complete() && !stamp.complete {
@@ -229,7 +229,7 @@ fn try_snapshot(
             "target membership is not proven complete".into(),
         ));
     }
-    // No-repair assemble (e.g. post-SIGINT restart with rslip hits only) still needs
+    // No-repair assemble (e.g. post-SIGINT restart with cached records only) still needs
     // workspace selector evidence for max_num_tests. assemble_after_repair refreshes;
     // this path must too or gates_from_population fails closed as incomplete.
     if let Some(args) = args {
@@ -280,7 +280,7 @@ fn assemble_after_repair(
     let mut prelim_selectors = prelim_projection.selectors();
     prelim_selectors.extend(prelim.direct_selectors);
     let prelim_scope = ReportScope::from_membership(
-        prelim_projection.coverage_regions(),
+        prelim_projection.report_regions(),
         prelim_selectors,
         prelim_complete,
     );
@@ -297,11 +297,11 @@ fn assemble_after_repair(
     let mut selectors = projection.selectors();
     selectors.extend(resolved.direct_selectors);
     let mut scope =
-        ReportScope::from_membership(projection.coverage_regions(), selectors, stamp.complete);
+        ReportScope::from_membership(projection.report_regions(), selectors, stamp.complete);
     apply_runner_extra(repo_root, &mut scope, Some(args))?;
     if !args.extras.rust.is_empty() && scope.selectors.is_empty() && policy.require_complete() {
         return Err(EnsureError::IncompleteEvidence(
-            crate::test_runner::runners::NO_COVERING_TESTS_MSG.into(),
+            crate::test_runner::runners::NO_SELECTED_TESTS_MSG.into(),
         ));
     }
     assemble_report(repo_root, request, scope, stamp, facts, Some(args))

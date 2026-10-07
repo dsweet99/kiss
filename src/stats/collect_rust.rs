@@ -116,11 +116,11 @@ fn collect_rust_impl(
 }
 
 #[cfg(test)]
-mod collect_rust_coverage {
+mod collect_rust_touch {
     use super::*;
 
     #[test]
-    fn touch_for_coverage() {
+    fn touch_helpers() {
         let code = "struct Foo;\nimpl Foo { fn bar(&self) { let x = 1; } }";
         let ast: syn::File = syn::parse_str(code).unwrap();
         let mut stats = MetricStats::default();

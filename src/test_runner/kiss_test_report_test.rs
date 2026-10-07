@@ -26,7 +26,7 @@ fn shared_report_is_the_captured_transcript_not_a_rebuild() {
 }
 
 #[test]
-fn shared_report_skips_coverage_on_test_failure() {
+fn shared_report_propagates_test_failure_exit_code() {
     let mut args = dry_args();
     args.dry_run = false;
     let report = run_kiss_test_report(args, |_a| RunTestOnceOutcome::Code(2));
@@ -69,7 +69,7 @@ fn shared_report_carries_structured_totals() {
 }
 
 #[test]
-fn ready_target_report_after_tests_skips_run_cov() {
+fn ready_target_report_after_tests_loads_as_ready() {
     use crate::bin_cli::args::TestInvocation;
     use crate::test_runner::target_request::{
         EnsurePolicy, materialize_target_report, workspace_request,
@@ -123,67 +123,6 @@ fn ready_target_report_after_tests_skips_run_cov() {
                 )
                 .is_some(),
                 "published report must load as ready"
-            );
-            RunTestOnceOutcome::Code(0)
-        },
-        true,
-        Some(tmp.path()),
-    );
-    assert_eq!(report.exit_code, 0);
-}
-
-#[test]
-fn ready_target_report_has_no_coverage_gate_for_uncovered_source() {
-    use crate::bin_cli::args::TestInvocation;
-    use crate::test_runner::target_request::{
-        EnsurePolicy, materialize_target_report, workspace_request,
-    };
-    use crate::test_runner::test_mode_fixtures::{git_in, init_git};
-    use crate::test_runner::workspace_selector_cache::store_rust_workspace_selectors;
-
-    let tmp = tempfile::tempdir().unwrap();
-    init_git(&tmp);
-    std::fs::write(tmp.path().join(".gitignore"), "/target\n/.kiss\n").unwrap();
-    std::fs::write(tmp.path().join("app.py"), "def foo():\n    return 1\n").unwrap();
-    std::fs::create_dir_all(tmp.path().join("tests")).unwrap();
-    std::fs::write(
-        tmp.path().join("tests/test_a.py"),
-        "def test_a():\n    assert True\n",
-    )
-    .unwrap();
-    assert!(
-        git_in(tmp.path())
-            .args(["add", "-A"])
-            .status()
-            .unwrap()
-            .success()
-    );
-    assert!(
-        git_in(tmp.path())
-            .args(["commit", "-m", "seed"])
-            .status()
-            .unwrap()
-            .success()
-    );
-    assert!(store_rust_workspace_selectors(tmp.path(), &[], &[]));
-
-    let mut args = crate::test_runner::test_mode_fixtures::dry_run_cmd_args(
-        TestInvocation::All,
-        &[],
-        1,
-        Some(kiss::Language::Rust),
-    );
-    args.dry_run = false;
-    let report = run_kiss_test_report_reuse(
-        args,
-        |_a| {
-            let request = workspace_request(Some(kiss::Language::Rust), &[]);
-            let built = materialize_target_report(tmp.path(), &request, &EnsurePolicy::soft(false))
-                .unwrap();
-            assert!(
-                !built.gates.iter().any(|gate| gate.kind == "test_coverage"),
-                "uncovered app.py must not emit a coverage gate: {:?}",
-                built.gates
             );
             RunTestOnceOutcome::Code(0)
         },

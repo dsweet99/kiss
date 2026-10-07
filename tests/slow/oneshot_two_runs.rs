@@ -41,14 +41,14 @@ fn second_oneshot_waits_for_lock_then_reruns_nothing() {
     assert_eq!(first.summary(), SUMMARY, "first: {first:?}");
     assert!(
         first.stdout.contains("PASS: test_a.py::test_slow")
-            && first.stdout.contains("FAIL test_b.py::test_fail"),
-        "first: lines for tests it ran and the cached FAIL; {first:?}"
+            && first.stdout.contains("FAIL: test_b.py::test_fail"),
+        "first: a Python edit reruns every Python test; {first:?}"
     );
     assert_repeats(&second, "kiss test: waiting for kiss test", "second");
     assert_cached_only(&second, "second");
     assert_eq!(
         s.take_runs(),
-        ["test_pass", "test_slow"],
+        ["test_fail", "test_pass", "test_slow"],
         "each needed test runs once, never against the same cache twice"
     );
 

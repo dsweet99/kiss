@@ -135,10 +135,10 @@ fn apply_force_all_population_only_for_all_invocation() {
                 python: Vec::new(),
                 rust: Vec::new(),
             },
-            coverage_decision_engine_used: false,
+            selection_engine_used: false,
             selection_basis: crate::test_runner::language_keyed::LanguageKeyed {
-                python: crate::test_runner::coverage_decision::SelectionBasis::Current,
-                rust: crate::test_runner::coverage_decision::SelectionBasis::Current,
+                python: crate::test_runner::test_selection::SelectionBasis::Current,
+                rust: crate::test_runner::test_selection::SelectionBasis::Current,
             },
             ignore: Vec::new(),
             workspace_files_fingerprint: None,

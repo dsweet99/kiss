@@ -35,7 +35,7 @@ fn retry_waits_for_plain_run(s: &Scenario) {
     let order = std::fs::read_to_string(s.marker()).unwrap();
     assert_eq!(
         order.lines().collect::<Vec<_>>(),
-        ["test_pass", "test_slow", "test_fail"],
+        ["test_pass", "test_slow", "test_fail", "test_fail"],
         "no overlap: the retry runs only after the plain run, and only the FAIL test"
     );
     s.take_runs();

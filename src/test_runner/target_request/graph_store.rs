@@ -1,4 +1,3 @@
-use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -7,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use super::digest::digest_bytes;
 
-const SCHEMA: &str = "graph-evidence-v3";
+const SCHEMA: &str = "graph-evidence-v4";
 /// Cap retained evidence keys.
 const ENTRY_LIMIT: usize = 64;
 
@@ -39,7 +38,6 @@ pub(crate) fn evidence_key(
     py: &[PathBuf],
     rs: &[PathBuf],
     orphan_allowed: &[String],
-    covered: &BTreeMap<String, BTreeSet<u32>>,
     config: &str,
 ) -> String {
     let mut files = Vec::new();
@@ -58,23 +56,17 @@ pub(crate) fn evidence_key(
         "schema": SCHEMA,
         "files": files,
         "orphan_allowed": orphan_allowed,
-        "covered": covered,
         "config": config,
     });
     digest_bytes(&serde_json::to_vec(&payload).expect("graph evidence key"))
 }
 
-/// Covered + config (+ orphan_allowed) half of `evidence_key`, without source bytes.
+/// Config (+ orphan_allowed) half of `evidence_key`, without source bytes.
 /// After a worktree match, sources are already validated; ready freshness uses this.
-pub(crate) fn evidence_mutable_digest(
-    orphan_allowed: &[String],
-    covered: &BTreeMap<String, BTreeSet<u32>>,
-    config: &str,
-) -> String {
+pub(crate) fn evidence_mutable_digest(orphan_allowed: &[String], config: &str) -> String {
     let payload = serde_json::json!({
         "schema": SCHEMA,
         "orphan_allowed": orphan_allowed,
-        "covered": covered,
         "config": config,
     });
     digest_bytes(&serde_json::to_vec(&payload).expect("graph evidence mutable"))
@@ -213,25 +205,11 @@ mod tests {
     }
 
     #[test]
-    fn evidence_mutable_digest_moves_with_covered_not_with_unrelated_schema_noise() {
-        let mut covered = BTreeMap::new();
-        covered.insert("a.py".into(), BTreeSet::from([1u32]));
-        let a = evidence_mutable_digest(&[], &covered, "cfg");
-        covered.insert("b.py".into(), BTreeSet::from([1u32]));
-        let b = evidence_mutable_digest(&[], &covered, "cfg");
-        assert_ne!(a, b);
-        assert_eq!(
-            a,
-            evidence_mutable_digest(
-                &[],
-                &{
-                    let mut again = BTreeMap::new();
-                    again.insert("a.py".into(), BTreeSet::from([1u32]));
-                    again
-                },
-                "cfg"
-            )
-        );
+    fn evidence_mutable_digest_moves_with_config_and_orphan_allowed() {
+        let base = evidence_mutable_digest(&[], "cfg");
+        assert_eq!(base, evidence_mutable_digest(&[], "cfg"));
+        assert_ne!(base, evidence_mutable_digest(&[], "cfg2"));
+        assert_ne!(base, evidence_mutable_digest(&["x".into()], "cfg"));
     }
 
     #[test]

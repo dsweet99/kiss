@@ -23,7 +23,7 @@ fn finish_paths_print_recap_with_plan_time_and_phase_order() {
     let no_work = capture_stdout(|| {
         assert_eq!(run_selectors(&planned, no_work_options).unwrap(), 0);
     });
-    assert!(no_work.contains("NO COVERING TESTS"));
+    assert!(no_work.contains("NO SELECTED TESTS"));
     assert!(
         no_work.contains("✓ 0 passed"),
         "no-work must print empty recap: {no_work}"

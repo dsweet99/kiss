@@ -111,7 +111,7 @@ fn reject_file_operand_filters(
         || kiss::path_ignored_by_prefixes(path_part, ignore)
     {
         return Err(format!(
-            "target '{raw}' is covered by --ignore prefix and cannot be requested"
+            "target '{raw}' is matched by an --ignore prefix and cannot be requested"
         ));
     }
     Ok(())

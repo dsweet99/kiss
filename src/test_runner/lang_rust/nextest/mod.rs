@@ -13,7 +13,6 @@ mod run;
 mod status_line;
 mod toolchain;
 
-pub(crate) use env::RUST_IDENTITY_ENV_KEYS;
 pub(crate) use holding::{CurrentDeps, bad_record_ids, holding_records};
 pub(crate) use list::list_tests;
 pub(crate) use records::record_identity;

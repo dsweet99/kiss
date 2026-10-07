@@ -14,8 +14,6 @@ pub(crate) struct AllModePlan {
 pub(crate) trait KernelRules: Sync {
     fn identity_stage(&self) -> &'static str;
 
-    fn stored_coverage(&self, repo_root: &std::path::Path) -> super::StoredCoverage;
-
     /// This language's part of the runner identity; `None` while no runner is recorded.
     fn runner_identity_part(&self, repo_root: &std::path::Path) -> Option<serde_json::Value>;
 
@@ -39,16 +37,6 @@ pub(crate) trait KernelRules: Sync {
         extras.is_empty()
     }
 
-    /// Selectors whose recorded coverage touched any of `keys` (repo-relative paths) or `abs`.
-    fn historical_covering_selectors(
-        &self,
-        repo_root: &std::path::Path,
-        keys: &[String],
-        abs: &[std::path::PathBuf],
-    ) -> std::collections::BTreeSet<String>;
-
-    fn indexes_path(&self, repo_root: &std::path::Path, keys: &[String]) -> bool;
-
     /// Display labels for report selectors whose ids are not human-readable.
     fn report_labels(
         &self,
@@ -59,7 +47,7 @@ pub(crate) trait KernelRules: Sync {
         std::collections::BTreeMap::new()
     }
 
-    /// Whether `path` is test code, which production coverage excludes.
+    /// Whether `path` is test code rather than production source.
     fn is_test_source(&self, path: &std::path::Path) -> bool {
         let _ = path;
         false
@@ -109,18 +97,6 @@ pub(crate) trait KernelRules: Sync {
 
     /// Stops this language's in-flight test processes after a peer language failed.
     fn cancel_active_work(&self) {}
-
-    /// Starts per-run covering state; the guard lives until covering ends.
-    fn begin_covering(
-        &self,
-        repo_root: &std::path::Path,
-        extras: &[String],
-        jobs: usize,
-        dry_run: bool,
-    ) -> Option<Box<dyn std::any::Any>> {
-        let _ = (repo_root, extras, jobs, dry_run);
-        None
-    }
 
     fn validate_extra_args(&self, extras: &[String]) -> Result<(), String> {
         let _ = extras;

@@ -138,7 +138,7 @@ pub fn cluster_duplicates_from_chunks(
 }
 
 #[cfg(test)]
-mod coverage_witness {
+mod touch_witness {
     use super::*;
     use std::path::PathBuf;
 

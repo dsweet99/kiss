@@ -18,12 +18,6 @@ fn lang_iface_has_no_python_or_rust_impl_files() {
 fn language_packages_own_runner_and_adapter_homes() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/test_runner");
     assert!(
-        !root
-            .join("python_coverage_index/generation/mod.rs")
-            .is_file(),
-        "generation must not remain under python_coverage_index/"
-    );
-    assert!(
         root.join("lang_rust/nextest/mod.rs").is_file(),
         "Rust nextest runner must live under lang_rust/nextest/"
     );

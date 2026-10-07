@@ -47,7 +47,7 @@ fn format_failures_preserve_order_and_full_selectors() {
         2,
         &[
             "tests/test_models.py::test_round_trip[parametrize-case-2]",
-            "src/rslip/cache_test.rs::missing_file_is_not_reusable",
+            "src/cache/cache_test.rs::missing_file_is_not_reusable",
         ],
         Duration::from_millis(200),
     );
@@ -60,7 +60,7 @@ fn format_failures_preserve_order_and_full_selectors() {
         "✗ 1 passed · 3 failed · 0 timed out · 12.84s total · 0.20s max pass\n\
 FAIL tests/test_api.py::TestGateway::test_rejects_expired_token\n\
 FAIL tests/test_models.py::test_round_trip[parametrize-case-2]\n\
-FAIL src/rslip/cache_test.rs::missing_file_is_not_reusable"
+FAIL src/cache/cache_test.rs::missing_file_is_not_reusable"
     );
 }
 
@@ -123,7 +123,7 @@ TIMEOUT slow::test"
 
 #[cfg(unix)]
 #[test]
-fn print_failed_summary_mentions_no_coverage() {
+fn print_failed_summary_prints_failed_recap() {
     let failed = FinalTestSummary {
         passed: 1,
         failed: 1,
@@ -134,5 +134,5 @@ fn print_failed_summary_mentions_no_coverage() {
         print_final_test_summary(&failed, Duration::from_secs(1));
     });
     assert!(out.contains("✗ 1 passed"), "recap:\n{out}");
-    assert!(!out.contains("coverage"), "no coverage text:\n{out}");
+    assert!(out.contains("boom"), "recap:\n{out}");
 }

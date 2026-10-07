@@ -1,21 +1,27 @@
-use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use crate::test_runner::coverage_decision::{
-    ChangedDiff, CoverageFreshness, LanguagePlanner, PopulationPlan, SelectionDecision,
-    TestSelector, full_population_plan,
-};
-use crate::test_runner::python_coverage_index::{
-    PYTHON_COVERAGE_ENV_KEYS, python_population_environment_mismatch,
-    python_population_manifest_is_current_for_args_with_env_keys,
-    select_python_source_selectors_from_index, select_python_source_selectors_hybrid,
-};
 use crate::test_runner::runners::enumerate_workspace_python_selectors;
+use crate::test_runner::test_selection::{ChangedDiff, LanguagePlanner, TestSelector};
 
+pub(crate) struct PythonBackerInput<'a> {
+    pub(crate) repo_root: &'a Path,
+    pub(crate) py_source_paths: &'a [PathBuf],
+    pub(crate) test_args: &'a [String],
+    pub(crate) ignore: &'a [String],
+    pub(crate) changed_tests: &'a [TestSelector],
+    pub(crate) prior_failures: &'a [TestSelector],
+}
+
+pub(crate) fn python_backer(input: PythonBackerInput<'_>) -> Box<dyn LanguagePlanner> {
+    Box::new(PythonModule::new(input))
+}
+
+/// Plans Python tests. Kiss keeps no record of which tests reach which Python source, so
+/// a changed Python source plans every Python test; tests whose records still hold are
+/// then skipped by the runtime.
 pub(crate) struct PythonModule {
     repo_root: PathBuf,
     py_source_paths: Vec<PathBuf>,
-    python_changed_lines: BTreeMap<PathBuf, BTreeSet<u32>>,
     test_args: Vec<String>,
     ignore: Vec<String>,
     changed_tests: Vec<TestSelector>,
@@ -23,23 +29,14 @@ pub(crate) struct PythonModule {
 }
 
 impl PythonModule {
-    pub(crate) fn new(
-        repo_root: &Path,
-        py_source_paths: &[PathBuf],
-        python_changed_lines: &BTreeMap<PathBuf, BTreeSet<u32>>,
-        test_args: &[String],
-        ignore: &[String],
-        changed_tests: &[TestSelector],
-        prior_failures: &[TestSelector],
-    ) -> Self {
+    pub(crate) fn new(input: PythonBackerInput<'_>) -> Self {
         PythonModule {
-            repo_root: repo_root.to_path_buf(),
-            py_source_paths: py_source_paths.to_vec(),
-            python_changed_lines: python_changed_lines.clone(),
-            test_args: test_args.to_vec(),
-            ignore: ignore.to_vec(),
-            changed_tests: changed_tests.to_vec(),
-            prior_failures: prior_failures.to_vec(),
+            repo_root: input.repo_root.to_path_buf(),
+            py_source_paths: input.py_source_paths.to_vec(),
+            test_args: input.test_args.to_vec(),
+            ignore: input.ignore.to_vec(),
+            changed_tests: input.changed_tests.to_vec(),
+            prior_failures: input.prior_failures.to_vec(),
         }
     }
 
@@ -53,15 +50,14 @@ impl PythonModule {
         ignore: &[String],
         test_args: &[String],
     ) -> Self {
-        PythonModule {
-            repo_root: repo_root.to_path_buf(),
-            py_source_paths: Vec::new(),
-            python_changed_lines: BTreeMap::new(),
-            test_args: test_args.to_vec(),
-            ignore: ignore.to_vec(),
-            changed_tests: Vec::new(),
-            prior_failures: Vec::new(),
-        }
+        Self::new(PythonBackerInput {
+            repo_root,
+            py_source_paths: &[],
+            test_args,
+            ignore,
+            changed_tests: &[],
+            prior_failures: &[],
+        })
     }
 }
 
@@ -87,129 +83,12 @@ impl LanguagePlanner for PythonModule {
         self.prior_failures.clone()
     }
 
-    fn freshness(&self, universe: &[TestSelector]) -> Result<CoverageFreshness, String> {
-        if self.py_source_paths.is_empty() {
-            return Ok(CoverageFreshness::Fresh);
-        }
-
-        if python_population_environment_mismatch(
-            &self.repo_root,
-            &self.test_args,
-            self.manifest_env_allowlist(),
-        )
-        .is_some()
-        {
-            return Ok(CoverageFreshness::Stale);
-        }
-        let universe_ids = universe
-            .iter()
-            .map(|selector| selector.id.clone())
-            .collect::<Vec<_>>();
-        let has_current_population = python_population_manifest_is_current_for_args_with_env_keys(
-            &self.repo_root,
-            &universe_ids,
-            &self.test_args,
-            self.manifest_env_allowlist(),
-        )
-            && crate::test_runner::python_coverage_index::load_current_python_coverage_index(
-                &self.repo_root,
-            )
-            .is_some();
-        let has_line_precise_entries = !self.python_changed_lines.is_empty()
-            && crate::test_runner::python_coverage_index::python_index_covers_source_paths(
-                &self.repo_root,
-                &self.py_source_paths,
-                &self.test_args,
-            )
-            && select_fresh_python_source_selectors(
-                &self.repo_root,
-                &self.py_source_paths,
-                &self.python_changed_lines,
-            )
-            .is_some();
-        if has_current_population {
-            Ok(CoverageFreshness::Fresh)
-        } else if has_line_precise_entries {
-            Ok(CoverageFreshness::ReusablePrior)
-        } else {
-            Ok(CoverageFreshness::Stale)
-        }
-    }
-
-    fn population_plan(&self, universe: &[TestSelector]) -> PopulationPlan {
-        full_population_plan(universe)
-    }
-
-    fn select(&self) -> Result<SelectionDecision, String> {
-        let Some(selector_ids) = select_fresh_python_source_selectors(
-            &self.repo_root,
-            &self.py_source_paths,
-            &self.python_changed_lines,
-        ) else {
-            return Ok(SelectionDecision {
-                selectors: Vec::new(),
-                complete: false,
-            });
-        };
-        Ok(SelectionDecision {
-            selectors: drop_ignored_python_selectors(selector_ids, &self.ignore),
-            complete: true,
-        })
-    }
-
-    fn manifest_env_allowlist(&self) -> &'static [&'static str] {
-        PYTHON_COVERAGE_ENV_KEYS
+    fn sources_changed(&self) -> bool {
+        !self.py_source_paths.is_empty()
     }
 }
 
-pub(crate) fn python_population_backer(
-    repo_root: &Path,
-    py_source_paths: &[PathBuf],
-    python_changed_lines: &BTreeMap<PathBuf, BTreeSet<u32>>,
-    test_args: &[String],
-    ignore: &[String],
-    changed_tests: &[TestSelector],
-    prior_failures: &[TestSelector],
-) -> Box<dyn LanguagePlanner> {
-    Box::new(PythonModule::new(
-        repo_root,
-        py_source_paths,
-        python_changed_lines,
-        test_args,
-        ignore,
-        changed_tests,
-        prior_failures,
-    ))
-}
-
-fn drop_ignored_python_selectors(
-    selector_ids: impl IntoIterator<Item = String>,
-    ignore: &[String],
-) -> Vec<TestSelector> {
-    selector_ids
-        .into_iter()
-        .filter(|id| !kiss::selector_ignored_by_prefixes(id, ignore))
-        .map(|id| TestSelector::new(kiss::Language::Python, id))
-        .collect()
-}
-
-pub(crate) fn select_fresh_python_source_selectors(
-    repo_root: &Path,
-    py_source_paths: &[PathBuf],
-    python_changed_lines: &BTreeMap<PathBuf, BTreeSet<u32>>,
-) -> Option<BTreeSet<String>> {
-    const LINE_PRECISE_FILE_LIMIT: usize = 1;
-    if !python_changed_lines.is_empty()
-        && python_changed_lines.len() <= LINE_PRECISE_FILE_LIMIT
-        && let Some(line_selectors) =
-            select_python_source_selectors_hybrid(repo_root, py_source_paths, python_changed_lines)
-    {
-        return Some(line_selectors);
-    }
-    select_python_source_selectors_from_index(repo_root, py_source_paths)
-}
-
-impl crate::test_runner::coverage_decision::SupportedLanguage for PythonModule {
+impl crate::test_runner::test_selection::SupportedLanguage for PythonModule {
     fn language(&self) -> kiss::Language {
         kiss::Language::Python
     }
@@ -218,11 +97,11 @@ impl crate::test_runner::coverage_decision::SupportedLanguage for PythonModule {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_runner::coverage_decision::LanguagePlanner;
     use crate::test_runner::lang_python::collect::{
         full_suite_subprocess_collects_for_tests, reset_full_suite_subprocess_collects_for_tests,
         reset_python_collect_memo_for_tests,
     };
+    use crate::test_runner::test_selection::SelectionBasis;
     use crate::test_runner::workspace_selector_cache::store_python_workspace_selectors;
     use std::fs;
 
@@ -260,41 +139,29 @@ mod tests {
     }
 
     #[test]
-    #[allow(non_snake_case)]
-    fn drop_ignored_python_selectors_skips_resources_paths() {
-        let kept = drop_ignored_python_selectors(
-            [
-                "scripts/gen.py::test_ok".to_string(),
-                "crates/ruff_linter/resources/test/fixtures/x.py::test_x".to_string(),
-            ],
-            &["resources".to_string()],
-        );
-        assert_eq!(kept.len(), 1);
-        assert_eq!(kept[0].id, "scripts/gen.py::test_ok");
-    }
-
-    #[test]
-    #[allow(non_snake_case)]
-    fn PythonModule_struct_literal_exposes_static_policy() {
+    fn changed_python_source_plans_the_whole_population() {
         let tmp = tempfile::tempdir().unwrap();
         let changed = TestSelector::new(kiss::Language::Python, "tests/test_app.py::test_changed");
         let prior = TestSelector::new(kiss::Language::Python, "tests/test_app.py::test_prior");
-        let module = PythonModule {
-            repo_root: tmp.path().to_path_buf(),
-            py_source_paths: Vec::new(),
-            python_changed_lines: BTreeMap::new(),
-            test_args: Vec::new(),
-            ignore: Vec::new(),
-            changed_tests: vec![changed.clone()],
-            prior_failures: vec![prior.clone()],
+        let sources = [tmp.path().join("app.py")];
+        let input = |py_source_paths| PythonBackerInput {
+            repo_root: tmp.path(),
+            py_source_paths,
+            test_args: &[],
+            ignore: &[],
+            changed_tests: std::slice::from_ref(&changed),
+            prior_failures: std::slice::from_ref(&prior),
         };
-
-        assert_eq!(module.language(), kiss::Language::Python);
+        let edited = PythonModule::new(input(&sources));
+        assert!(edited.sources_changed());
+        assert_eq!(edited.selection_basis(), SelectionBasis::Population);
+        let unchanged = PythonModule::new(input(&[]));
+        assert!(!unchanged.sources_changed());
+        assert_eq!(unchanged.selection_basis(), SelectionBasis::Current);
         assert_eq!(
-            module.changed_tests(&ChangedDiff::new(Vec::new())),
+            unchanged.changed_tests(&ChangedDiff::new(Vec::new())),
             vec![changed]
         );
-        assert_eq!(module.prior_failures(), vec![prior]);
-        assert_eq!(module.manifest_env_allowlist(), PYTHON_COVERAGE_ENV_KEYS);
+        assert_eq!(unchanged.prior_failures(), vec![prior]);
     }
 }

@@ -354,13 +354,6 @@ fn assembled_exit_keeps_runner_failure_when_rows_pass() {
     assert_eq!(assembled_exit(&fail, 0), 1);
 }
 
-#[test]
-fn reverse_records_omit_paths_absent_from_index() {
-    let tmp = python_repo();
-    let records = super::history::reverse_records(tmp.path(), &["pkg/app.py".into()]);
-    assert!(records.is_empty());
-}
-
 fn sample_row(
     selector: &str,
     effective: super::report::EffectiveStatus,
@@ -608,73 +601,6 @@ fn dry_run_preview_does_not_repair_graph() {
 }
 
 #[test]
-fn ready_load_misses_when_covered_map_churns_graph_generation() {
-    // kt_bug: ready-report identity ignores covered-map ITE key. A run can
-    // publish more coverage without changing stamp/request; load_ready must not
-    // serve a report whose pinned graph_generation is stale vs current covered.
-    let tmp = python_repo();
-    fs::write(tmp.path().join("utils.py"), "def helper():\n    return 1\n").unwrap();
-    fs::write(tmp.path().join("other.py"), "def unused():\n    return 2\n").unwrap();
-    fs::write(
-        tmp.path().join(".kissconfig"),
-        "[test]\norphan_detection = true\n",
-    )
-    .unwrap();
-    assert!(
-        git_in(tmp.path())
-            .args(["add", "-A"])
-            .status()
-            .unwrap()
-            .success()
-    );
-    assert!(
-        git_in(tmp.path())
-            .args(["commit", "-m", "sources"])
-            .status()
-            .unwrap()
-            .success()
-    );
-    seed_population_cache(tmp.path());
-
-    let mut covered: std::collections::BTreeMap<String, Vec<u32>> =
-        std::collections::BTreeMap::from([("utils.py".into(), vec![1, 2])]);
-    crate::test_runner::lang_python::store_test_record_covering(tmp.path(), "a", &covered);
-
-    seed_rust_member(tmp.path());
-    let req = workspace_req();
-    let built = materialize_target_report(tmp.path(), &req, &live_policy()).unwrap();
-    assert!(built.graph_generation.is_some(), "{built:?}");
-    assert!(
-        crate::test_runner::target_request::load_ready_for_request(
-            tmp.path(),
-            &req,
-            crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
-        )
-        .is_some()
-    );
-    assert!(
-        !super::report::graph_repair_needed(tmp.path(), &built.scope),
-        "published report must leave graph evidence warm under covered map A"
-    );
-
-    covered.insert("other.py".into(), vec![1, 2]);
-    crate::test_runner::lang_python::store_test_record_covering(tmp.path(), "a", &covered);
-    assert!(
-        super::report::graph_repair_needed(tmp.path(), &built.scope),
-        "covered-map churn must miss the graph-evidence ITE key"
-    );
-    assert!(
-        crate::test_runner::target_request::load_ready_for_request(
-            tmp.path(),
-            &req,
-            crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
-        )
-        .is_none(),
-        "ready-load must miss when pinned graph_generation is stale vs current covered map"
-    );
-}
-
-#[test]
 fn ready_load_misses_when_pinned_graph_evidence_blob_is_gone() {
     // kt_bug: a ready report also requires the graph evidence blob to load.
     let tmp = python_repo();
@@ -698,9 +624,6 @@ fn ready_load_misses_when_pinned_graph_evidence_blob_is_gone() {
             .success()
     );
     seed_population_cache(tmp.path());
-    let covered: std::collections::BTreeMap<String, Vec<u32>> =
-        std::collections::BTreeMap::from([("app.py".into(), vec![1])]);
-    crate::test_runner::lang_python::store_test_record_covering(tmp.path(), "a", &covered);
 
     seed_rust_member(tmp.path());
     let req = workspace_req();
@@ -726,7 +649,7 @@ fn ready_load_misses_when_pinned_graph_evidence_blob_is_gone() {
     );
     assert!(
         super::report::graph_repair_needed(tmp.path(), &built.scope),
-        "missing evidence blob must make graph_repair_needed true under the same covered key"
+        "missing evidence blob must make graph_repair_needed true under the same evidence key"
     );
     assert!(
         crate::test_runner::target_request::load_ready_for_request(
@@ -771,10 +694,6 @@ fn ready_misses_when_gitignored_rust_include_target_changes() {
             .success()
     );
     seed_population_cache(tmp.path());
-
-    let covered: std::collections::BTreeMap<String, Vec<u32>> =
-        std::collections::BTreeMap::from([("lib.rs".into(), vec![1, 2])]);
-    crate::test_runner::lang_python::store_test_record_covering(tmp.path(), "a", &covered);
 
     seed_rust_member(tmp.path());
     let req = workspace_req();
@@ -847,10 +766,6 @@ fn ready_misses_when_gitignored_rust_path_attr_target_changes() {
             .success()
     );
     seed_population_cache(tmp.path());
-
-    let covered: std::collections::BTreeMap<String, Vec<u32>> =
-        std::collections::BTreeMap::from([("lib.rs".into(), vec![1, 2, 3])]);
-    crate::test_runner::lang_python::store_test_record_covering(tmp.path(), "a", &covered);
 
     seed_rust_member(tmp.path());
     let req = workspace_req();
@@ -931,10 +846,6 @@ fn ready_misses_when_gitignored_rust_conventional_mod_target_changes() {
             .success()
     );
     seed_population_cache(tmp.path());
-
-    let covered: std::collections::BTreeMap<String, Vec<u32>> =
-        std::collections::BTreeMap::from([("lib.rs".into(), vec![1, 2])]);
-    crate::test_runner::lang_python::store_test_record_covering(tmp.path(), "a", &covered);
 
     seed_rust_member(tmp.path());
     let req = workspace_req();

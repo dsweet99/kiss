@@ -156,8 +156,7 @@ pub(crate) fn capture_worktree_token(repo: &Path, lang: Option<kiss::Language>) 
     });
     let (include_python, include_rust) = (allowed.python, allowed.rust);
     let python = if include_python {
-        crate::test_runner::python_coverage_index::storage::python_source_input_fingerprint(repo)
-            .unwrap_or_default()
+        crate::test_runner::lang_python::records::python_inputs_digest(repo).unwrap_or_default()
     } else {
         String::new()
     };

@@ -229,10 +229,6 @@ mod tests {
             "init default must emit orphan_allowed=[]:\n{toml}"
         );
         assert!(
-            !toml.contains("test_coverage"),
-            "init default must not emit coverage keys:\n{toml}"
-        );
-        assert!(
             toml.contains("max_num_tests = 999999"),
             "init default must emit max_num_tests under [test]:\n{toml}"
         );

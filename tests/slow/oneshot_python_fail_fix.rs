@@ -8,7 +8,7 @@ fn assert_summary(reply: &Reply, code: i32, summary: &str, phase: &str) {
 }
 
 #[test]
-fn python_fail_reruns_only_when_its_code_changes() {
+fn python_source_edit_reruns_population_and_cached_fail_waits_for_it() {
     if skip_under_kiss_test() {
         return;
     }
@@ -20,17 +20,21 @@ fn python_fail_reruns_only_when_its_code_changes() {
     let first = kiss(s.root(), &["test"]);
     assert_summary(&first, 1, broken_summary, "first run");
     assert_eq!(s.take_runs(), ["test_fail", "test_pass"]);
+
+    let unchanged = kiss(s.root(), &["test"]);
+    assert_summary(&unchanged, 1, broken_summary, "unchanged tree");
+    assert!(
+        s.take_runs().is_empty(),
+        "a cached FAIL is not rerun merely because it failed"
+    );
+
     s.write("lib_a.py", "def f():\n    return 0 + 0\n");
     let other = kiss(s.root(), &["test"]);
     assert_summary(&other, 1, broken_summary, "edit to code the FAIL never ran");
-    assert!(
-        other.stdout.contains("FAIL test_b.py::test_fail"),
-        "{other:?}"
-    );
     assert_eq!(
         s.take_runs(),
-        ["test_pass"],
-        "a cached FAIL is not rerun merely because it failed"
+        ["test_fail", "test_pass"],
+        "any Python source edit reruns every Python test"
     );
 
     s.write("lib_b.py", "def g():\n    return 2\n");
@@ -41,11 +45,7 @@ fn python_fail_reruns_only_when_its_code_changes() {
         "✓ 2 passed · 0 failed · 0 timed out",
         "after the fix",
     );
-    assert_eq!(
-        s.take_runs(),
-        ["test_fail"],
-        "an edit to code the cached FAIL ran makes it needed"
-    );
+    assert_eq!(s.take_runs(), ["test_fail", "test_pass"]);
     let again = kiss(s.root(), &["test"]);
     assert_summary(
         &again,

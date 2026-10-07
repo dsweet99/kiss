@@ -83,7 +83,7 @@ impl SourceModel {
         }
     }
 
-    pub(crate) fn coverage_lines_for_definition(&self, def: &NamedDefinition) -> BTreeSet<u32> {
+    pub(crate) fn target_lines_for_definition(&self, def: &NamedDefinition) -> BTreeSet<u32> {
         let mut lines: BTreeSet<u32> = (def.start_line..=def.end_line).collect();
         for test in &self.direct_tests {
             if test.start_line >= def.start_line && test.end_line <= def.end_line {

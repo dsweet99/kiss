@@ -5,7 +5,7 @@ Source: `ops/evaluate.py run-all`
 | Field | Value |
 | --- | --- |
 | When | 2026-09-17 14:26 (partial remeasure after kiss-test speed work) |
-| Eval count | 28 (summary mixes prior run-all with remeasured long/short timings) |
+| Eval count | 23 (summary mixes prior run-all with remeasured long/short timings) |
 | Notes | Sympy/anydoc/short timings remeasured this session; other shorts from 09:57 run-all |
 
 ## Summary
@@ -15,12 +15,7 @@ Source: `ops/evaluate.py run-all`
 | `long/timing_kiss_test` | 9.7169 | 28368 | kiss_test_cold_elapsed_s=SMALLER(3.1694); kiss_test_warm_elapsed_s=SMALLER(3.1878) |
 | `long/timing_kiss_test_anydoc` | 12.3926 | 57272 | kiss_test_cold_elapsed_s=SMALLER(6.5951); kiss_test_warm_elapsed_s=SMALLER(0.2839); cargo_nextest_elapsed_s=SMALLER(5.3760); kiss_test_to_nextest_ratio=SMALLER(1.2268) |
 | `long/timing_kiss_test_sympy` | 27.6826 | 175600 | kiss_test_cold_elapsed_s=SMALLER(24.7765); kiss_test_warm_elapsed_s=SMALLER(2.7412) |
-| `short/aggregate_coverage` | 5.6778 | 121548 | — |
 | `short/concurrent_cache_recovery` | 4.3448 | 30756 | — |
-| `short/coverage_cache_witness` | 7.8139 | 123228 | — |
-| `short/coverage_no_xdg_hydrate` | 7.9154 | 122464 | — |
-| `short/coverage_publication_crash_recovery` | 4.7557 | 30800 | — |
-| `short/coverage_stress` | 3.3354 | 30772 | — |
 | `short/path_isolation` | 0.0819 | 17676 | — |
 | `short/profraw_discard_sink` | 0.0001 | 17716 | — |
 | `short/reverse_index_concurrency_stress` | 4.7689 | 122644 | — |
@@ -74,47 +69,12 @@ Each metric uses the VISION.md `EVAL:` convention (`LARGER` / `SMALLER`).
 | `elapsed_s` | SMALLER | 27.6826 |
 | `peak_rss_kib` | SMALLER | 175600 |
 
-### `short/aggregate_coverage`
-
-| Metric | Direction | Value |
-| --- | --- | ---: |
-| `elapsed_s` | SMALLER | 5.6778 |
-| `peak_rss_kib` | SMALLER | 121548 |
-
 ### `short/concurrent_cache_recovery`
 
 | Metric | Direction | Value |
 | --- | --- | ---: |
 | `elapsed_s` | SMALLER | 4.3448 |
 | `peak_rss_kib` | SMALLER | 30756 |
-
-### `short/coverage_cache_witness`
-
-| Metric | Direction | Value |
-| --- | --- | ---: |
-| `elapsed_s` | SMALLER | 7.8139 |
-| `peak_rss_kib` | SMALLER | 123228 |
-
-### `short/coverage_no_xdg_hydrate`
-
-| Metric | Direction | Value |
-| --- | --- | ---: |
-| `elapsed_s` | SMALLER | 7.9154 |
-| `peak_rss_kib` | SMALLER | 122464 |
-
-### `short/coverage_publication_crash_recovery`
-
-| Metric | Direction | Value |
-| --- | --- | ---: |
-| `elapsed_s` | SMALLER | 4.7557 |
-| `peak_rss_kib` | SMALLER | 30800 |
-
-### `short/coverage_stress`
-
-| Metric | Direction | Value |
-| --- | --- | ---: |
-| `elapsed_s` | SMALLER | 3.3354 |
-| `peak_rss_kib` | SMALLER | 30772 |
 
 ### `short/path_isolation`
 

@@ -56,7 +56,7 @@ fn cache_shape_is_zero_without_a_kiss_directory() {
 
 fn empty_metrics() -> LocalRubricMetrics {
     LocalRubricMetrics {
-        coverage_decision_engine_used: true,
+        selection_engine_used: true,
         rust_concurrency_budget: 1,
         ..Default::default()
     }
@@ -64,7 +64,7 @@ fn empty_metrics() -> LocalRubricMetrics {
 
 #[test]
 fn local_rubric_metrics_carry_population_selection_basis() {
-    use crate::test_runner::coverage_decision::SelectionBasis;
+    use crate::test_runner::test_selection::SelectionBasis;
     use crate::test_runner::{PlannedSelectors, SelectorRunOptions};
 
     let planned = PlannedSelectors {
@@ -89,9 +89,9 @@ fn local_rubric_metrics_carry_population_selection_basis() {
             python: Vec::new(),
             rust: Vec::new(),
         },
-        coverage_decision_engine_used: true,
+        selection_engine_used: true,
         selection_basis: crate::test_runner::language_keyed::LanguageKeyed {
-            python: crate::test_runner::coverage_decision::SelectionBasis::Current,
+            python: crate::test_runner::test_selection::SelectionBasis::Current,
             rust: SelectionBasis::Population,
         },
         ignore: Vec::new(),

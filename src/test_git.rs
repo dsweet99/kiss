@@ -330,31 +330,6 @@ pub fn resolve_changed_source_paths(
     out
 }
 
-pub fn resolve_changed_line_paths(
-    repo_root: &Path,
-    rel_lines: &BTreeMap<String, BTreeSet<u32>>,
-    ignore: &[String],
-    lang_filter: Option<TestLangFilter>,
-) -> BTreeMap<PathBuf, BTreeSet<u32>> {
-    let mut out = BTreeMap::new();
-    for (rel, lines) in rel_lines {
-        if lines.is_empty() || rel_path_ignored(rel, ignore) {
-            continue;
-        }
-        let abs = repo_root.join(rel);
-        let Ok(meta) = abs.metadata() else {
-            continue;
-        };
-        if !meta.is_file() || !lang_ok(&abs, lang_filter) {
-            continue;
-        }
-        if let Ok(c) = abs.canonicalize() {
-            out.insert(c, lines.clone());
-        }
-    }
-    out
-}
-
 pub fn resolve_diff_target(
     repo: &Path,
     mode: TestChangeMode,

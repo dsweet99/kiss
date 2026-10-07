@@ -1,4 +1,3 @@
-use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
@@ -72,16 +71,8 @@ fn combined_selectors_reruns_every_rust_test_when_a_rust_source_changes() {
     )
     .unwrap();
 
-    let plan = combined_selectors(
-        tmp.path(),
-        std::slice::from_ref(&lib),
-        &[],
-        &BTreeMap::from([(lib.clone(), BTreeSet::from([2]))]),
-        &[],
-        None,
-        &[],
-    )
-    .unwrap();
+    let plan =
+        combined_selectors(tmp.path(), std::slice::from_ref(&lib), &[], &[], None, &[]).unwrap();
 
     assert_eq!(
         plan.selectors.rust,
@@ -100,7 +91,6 @@ fn combined_selectors_repopulates_when_rust_test_args_change() {
         tmp.path(),
         std::slice::from_ref(&lib),
         &[],
-        &BTreeMap::new(),
         &["--exact".to_string()],
         None,
         &[],
@@ -131,7 +121,6 @@ fn combined_selectors_carries_changed_rust_tests_into_population_plan() {
         tmp.path(),
         std::slice::from_ref(&lib),
         std::slice::from_ref(&changed_test),
-        &BTreeMap::new(),
         &[],
         None,
         &[changed_test
@@ -159,16 +148,8 @@ fn combined_selectors_marks_missing_rust_index_for_population() {
     let lib = src.join("lib.rs");
     fs::write(&lib, "pub fn value() -> u32 { 1 }\n").unwrap();
 
-    let plan = combined_selectors(
-        tmp.path(),
-        std::slice::from_ref(&lib),
-        &[],
-        &BTreeMap::new(),
-        &[],
-        None,
-        &[],
-    )
-    .unwrap();
+    let plan =
+        combined_selectors(tmp.path(), std::slice::from_ref(&lib), &[], &[], None, &[]).unwrap();
 
     assert!(plan.selectors.rust.is_empty());
     assert_eq!(plan.source_paths.rust, vec![lib]);
@@ -178,7 +159,7 @@ fn combined_selectors_marks_missing_rust_index_for_population() {
 #[test]
 fn combined_selectors_empty_without_sources() {
     let tmp = TempDir::new().unwrap();
-    let plan = combined_selectors(tmp.path(), &[], &[], &BTreeMap::new(), &[], None, &[]).unwrap();
+    let plan = combined_selectors(tmp.path(), &[], &[], &[], None, &[]).unwrap();
     assert!(plan.selectors.python.is_empty());
     assert!(plan.selectors.rust.is_empty());
     assert!(plan.source_paths.rust.is_empty());

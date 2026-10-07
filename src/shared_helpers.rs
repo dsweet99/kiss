@@ -26,7 +26,7 @@ pub fn cargo_target_linker_env() -> BTreeMap<String, String> {
         .collect()
 }
 
-pub fn pythonpath_for_coverage_identity(repo_root: &Path) -> String {
+pub fn pythonpath_for_tests(repo_root: &Path) -> String {
     let root = repo_root
         .canonicalize()
         .unwrap_or_else(|_| repo_root.to_path_buf());
@@ -46,11 +46,8 @@ fn pythonpath_contains_repo_root(pythonpath: &str, root: &Path) -> bool {
     })
 }
 
-pub fn python_coverage_env_map(repo_root: &Path) -> BTreeMap<String, String> {
-    BTreeMap::from([(
-        "PYTHONPATH".to_string(),
-        pythonpath_for_coverage_identity(repo_root),
-    )])
+pub fn python_test_env_map(repo_root: &Path) -> BTreeMap<String, String> {
+    BTreeMap::from([("PYTHONPATH".to_string(), pythonpath_for_tests(repo_root))])
 }
 
 pub fn json_entry_paths(cache_root: &Path) -> Vec<PathBuf> {

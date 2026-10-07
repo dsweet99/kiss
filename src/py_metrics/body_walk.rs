@@ -138,7 +138,7 @@ pub(crate) fn update_try_block_statements(
 }
 
 #[cfg(test)]
-mod coverage_witness {
+mod touch_witness {
     use super::*;
     use crate::test_utils::parse_python_source;
 

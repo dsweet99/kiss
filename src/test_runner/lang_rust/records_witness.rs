@@ -47,7 +47,6 @@ pub(crate) fn try_load_rust_execution_witness(
             .iter()
             .map(|record| u64::try_from(record.duration.as_nanos()).ok())
             .collect(),
-        covered_lines: Default::default(),
         complete: statuses
             .iter()
             .all(|status| *status == WitnessStatus::Passed),
@@ -77,16 +76,4 @@ fn records_digest(identity: &str, records: &[kiss::test_records::TestRecord]) ->
         "{:016x}",
         crate::analyze_cache::fnv1a64(0xcbf2_9ce4_8422_2325, text.as_bytes())
     )
-}
-
-/// The planned tests with no holding record, given the witness built from those records.
-pub(crate) fn record_misses(planned: &[String], witness: Option<&ExecutionWitness>) -> Vec<String> {
-    let held: BTreeSet<&str> = witness
-        .map(|witness| witness.selectors.iter().map(String::as_str).collect())
-        .unwrap_or_default();
-    planned
-        .iter()
-        .filter(|selector| !held.contains(selector.as_str()))
-        .cloned()
-        .collect()
 }

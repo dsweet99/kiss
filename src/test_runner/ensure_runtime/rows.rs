@@ -64,7 +64,6 @@ pub(crate) fn stored_rows(
             .iter()
             .map(|row| u64::try_from(row.duration.as_nanos()).ok())
             .collect(),
-        covered_lines: Default::default(),
         complete: statuses
             .iter()
             .all(|status| *status == WitnessStatus::Passed),

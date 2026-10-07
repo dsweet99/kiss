@@ -283,7 +283,7 @@ mod tests {
     }
 
     #[test]
-    fn test_touch_analyze_body_helpers_for_static_coverage() {
+    fn test_touch_analyze_body_helpers_for_static_touch() {
         let p = parse("def f():\n    x = 1\n    return a, b");
         let func = get_func_node(&p);
         let body = func.child_by_field_name("body").unwrap();
@@ -291,7 +291,7 @@ mod tests {
     }
 
     #[test]
-    fn test_touch_file_count_helpers_for_static_coverage() {
+    fn test_touch_file_count_helpers_for_static_touch() {
         let p = parse("from typing import Protocol\nimport os\n\nclass P(Protocol):\n    pass\n");
         let counts = collect_file_counts(p.tree.root_node(), &p.source);
         assert!(counts.import_names.contains("os"));

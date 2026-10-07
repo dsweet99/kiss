@@ -1,5 +1,4 @@
 use super::cli_integration::create_god_class_file;
-use crate::common::seed_python_runtime_coverage;
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
@@ -12,7 +11,6 @@ fn kiss_binary() -> Command {
 fn cli_with_lang_filter_python() {
     let tmp = TempDir::new().unwrap();
     create_god_class_file(tmp.path());
-    seed_python_runtime_coverage(tmp.path(), &[("tests/test_god.py::test_god", vec![])]);
     let output = kiss_binary()
         .arg("check")
         .arg(tmp.path())
@@ -43,6 +41,66 @@ fn cli_with_lang_filter_rust() {
         stdout.contains("No Rust files") || stdout.contains("No files"),
         "Should report no Rust files. stdout: {stdout}"
     );
+}
+
+#[test]
+fn cli_python_only_check_omits_the_rust_worker_notice() {
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("clean.py"), "def small():\n    return 1\n").unwrap();
+    let output = kiss_binary().arg("check").arg(tmp.path()).output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("No Rust files") && !stdout.contains("No Python files"),
+        "{stdout}"
+    );
+}
+
+#[test]
+fn cli_mixed_language_violations_print_the_rules_hint_once() {
+    let tmp = TempDir::new().unwrap();
+    let body = "    x = 1\n".repeat(8);
+    fs::write(
+        tmp.path().join("big.py"),
+        format!("def big():\n{body}    return x\n"),
+    )
+    .unwrap();
+    let rust_body = "    let x = 1;\n".repeat(8);
+    fs::write(
+        tmp.path().join("big.rs"),
+        format!("fn big() {{\n{rust_body}    let _ = x;\n}}\n"),
+    )
+    .unwrap();
+    fs::write(
+        tmp.path().join(".kissconfig"),
+        "\
+[global]
+min_similarity = 0.9
+duplication_enabled = false
+comment_removal_enabled = false
+docs_allowed = [\"./\"]
+
+[python]
+statements_per_function = 1
+
+[rust]
+statements_per_function = 1
+
+[test]
+orphan_detection = false
+max_num_tests = 999999
+",
+    )
+    .unwrap();
+    let output = kiss_binary()
+        .current_dir(tmp.path())
+        .arg("check")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!output.status.success(), "{stdout}");
+    assert_eq!(stdout.matches("Run 'kiss rules'").count(), 1, "{stdout}");
+    assert!(stdout.contains("big.py"), "{stdout}");
+    assert!(stdout.contains("big.rs"), "{stdout}");
 }
 
 #[test]

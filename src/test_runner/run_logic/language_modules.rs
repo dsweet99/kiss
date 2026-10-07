@@ -1,6 +1,6 @@
-use crate::test_runner::coverage_decision::LanguageExecutor;
 use crate::test_runner::runners::python_backer::PythonModule;
 use crate::test_runner::runners::rust_backer::RustModule;
+use crate::test_runner::test_selection::LanguageExecutor;
 
 fn dry_run_selector_options() -> crate::test_runner::SelectorRunOptions<'static> {
     crate::test_runner::SelectorRunOptions {

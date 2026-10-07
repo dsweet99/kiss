@@ -1,7 +1,6 @@
 use kiss::Language;
 use std::sync::Mutex;
 
-use crate::test_runner::pipeline::split_jobs;
 use crate::test_runner::status_labels::print_classified_status_line;
 
 static PIPELINE_STDOUT: Mutex<()> = Mutex::new(());
@@ -20,13 +19,6 @@ fn print_classified_status_line_uses_emit_test_progress() {
 }
 
 #[test]
-fn jobs_split_matches_process_cap_rule() {
-    assert_eq!(split_jobs(4, true), (2, 2));
-    assert_eq!(split_jobs(4, false), (4, 4));
-    assert_eq!(split_jobs(1, true), (1, 1));
-}
-
-#[test]
 fn spawn_language_jobs_honors_configured_jobs() {
     let jobs = include_str!("pipeline_jobs.rs");
     let share = include_str!("pipeline_job_share.rs");
@@ -41,10 +33,6 @@ fn spawn_language_jobs_honors_configured_jobs() {
         "execute must use its fixed share without waiting for the peer language"
     );
     assert!(
-        share.contains("split_jobs(self.total, self.both)"),
-        "covering jobs may split when both languages plan concurrently"
-    );
-    assert!(
         share.contains("jobs: self.total"),
         "execute must use the full configured job budget per language"
     );
@@ -56,13 +44,11 @@ fn spawn_language_jobs_honors_configured_jobs() {
         !src.contains("MAX_PARALLEL_TEST_JOBS"),
         "configured num_jobs must not be silently clamped"
     );
-    assert_eq!(split_jobs(48, false), (48, 48));
-    assert_eq!(split_jobs(48, true), (24, 24));
 }
 
 #[cfg(unix)]
 #[test]
-fn covering_and_workspace_lines_appear_for_all_dry_run() {
+fn selecting_and_workspace_lines_appear_for_all_dry_run() {
     let _cwd = crate::cwd_test_lock::lock();
     let tmp = tempfile::tempdir().unwrap();
     crate::test_runner::test_mode_fixtures::init_git(&tmp);
@@ -105,40 +91,37 @@ fn covering_and_workspace_lines_appear_for_all_dry_run() {
         "workspace end: {out}"
     );
     assert!(
-        out.contains("kiss test: Running covering_python"),
-        "covering start: {out}"
+        out.contains("kiss test: Running select_python"),
+        "selecting start: {out}"
     );
     assert!(
-        out.contains("kiss test: Ran covering_python"),
-        "covering end: {out}"
+        out.contains("kiss test: Ran select_python"),
+        "selecting end: {out}"
     );
     assert!(
-        !out.contains("covering_rust"),
+        !out.contains("select_rust"),
         "--lang python must not cover rust: {out}"
     );
 }
 
 #[cfg(unix)]
 #[test]
-fn lang_rust_omits_covering_python() {
+fn lang_rust_omits_selecting_python() {
     let src = include_str!("pipeline.rs");
     let jobs = include_str!("pipeline_jobs.rs");
-    assert!(jobs.contains("format!(\"covering_{}\", language.label())"));
+    assert!(jobs.contains("format!(\"select_{}\", language.label())"));
     assert_eq!(
-        format!("covering_{}", Language::Python.label()),
-        "covering_python"
+        format!("select_{}", Language::Python.label()),
+        "select_python"
     );
-    assert_eq!(
-        format!("covering_{}", Language::Rust.label()),
-        "covering_rust"
-    );
+    assert_eq!(format!("select_{}", Language::Rust.label()), "select_rust");
     assert!(src.contains("language.allowed_by(a.lang_filter())"));
     assert!(!Language::Python.allowed_by(Some(Language::Rust)));
     assert!(Language::Rust.allowed_by(Some(Language::Rust)));
 }
 
 #[test]
-fn dry_run_prints_selectors_after_covering_joins() {
+fn dry_run_prints_selectors_after_selecting_joins() {
     let src = include_str!("pipeline.rs");
     let spawn = src
         .find("pipeline_jobs::spawn_language_jobs")
@@ -148,7 +131,7 @@ fn dry_run_prints_selectors_after_covering_joins() {
         .expect("print_joined_dry_run call");
     assert!(
         dump > spawn,
-        "dry-run selector dump must wait until covering threads join"
+        "dry-run selector dump must wait until selecting threads join"
     );
 }
 
@@ -178,7 +161,7 @@ fn cold_init_is_decided_in_shared_prefix() {
 
 #[cfg(unix)]
 #[test]
-fn rust_covering_proceeds_while_python_covering_waits() {
+fn rust_selecting_proceeds_while_python_selecting_waits() {
     let _cwd = crate::cwd_test_lock::lock();
     use crate::test_runner::language_keyed::LanguageKeyed;
     use crate::test_runner::pipeline::PipelineDoubles;
@@ -195,7 +178,7 @@ fn rust_covering_proceeds_while_python_covering_waits() {
     let rust_started = Arc::new(AtomicBool::new(false));
     let hold_py = Arc::clone(&hold);
     let rust_flag = Arc::clone(&rust_started);
-    let covering: LanguageKeyed<Option<Arc<dyn Fn() + Send + Sync>>> = LanguageKeyed {
+    let selecting: LanguageKeyed<Option<Arc<dyn Fn() + Send + Sync>>> = LanguageKeyed {
         python: Some(Arc::new(move || {
             let (lock, cvar) = &*hold_py;
             let mut waiting = lock
@@ -223,7 +206,7 @@ fn rust_covering_proceeds_while_python_covering_waits() {
         let _ = crate::test_runner::pipeline::run_overlapped_test(
             &crate::test_runner::RunTestCmdArgs {
                 doubles: Some(Arc::new(PipelineDoubles {
-                    covering,
+                    selecting,
                     ..PipelineDoubles::default()
                 })),
                 invocation: crate::bin_cli::args::TestInvocation::All,
@@ -260,11 +243,11 @@ fn rust_covering_proceeds_while_python_covering_waits() {
     std::env::set_current_dir(old).unwrap();
     assert!(
         rust_ok,
-        "rust covering must start while python covering is held"
+        "rust selecting must start while python selecting is held"
     );
     assert!(
         still_running,
-        "run must still be waiting on python covering"
+        "run must still be waiting on python selecting"
     );
 }
 
@@ -318,7 +301,7 @@ fn run_args(
 
 #[cfg(unix)]
 #[test]
-fn rust_execute_proceeds_while_python_covering_waits() {
+fn rust_execute_proceeds_while_python_selecting_waits() {
     let _cwd = crate::cwd_test_lock::lock();
     use crate::test_runner::language_keyed::LanguageKeyed;
     use crate::test_runner::pipeline::PipelineDoubles;
@@ -335,7 +318,7 @@ fn rust_execute_proceeds_while_python_covering_waits() {
     let rust_executed = Arc::new(AtomicBool::new(false));
     let hold_py = Arc::clone(&hold);
     let rust_flag = Arc::clone(&rust_executed);
-    let covering: LanguageKeyed<Option<Arc<dyn Fn() + Send + Sync>>> = LanguageKeyed {
+    let selecting: LanguageKeyed<Option<Arc<dyn Fn() + Send + Sync>>> = LanguageKeyed {
         python: Some(Arc::new(move || {
             let (lock, cvar) = &*hold_py;
             let mut waiting = lock
@@ -356,7 +339,7 @@ fn rust_execute_proceeds_while_python_covering_waits() {
         })),
     };
     let doubles = PipelineDoubles {
-        covering,
+        selecting,
         execute,
         stub_execute: true,
         ..PipelineDoubles::default()
@@ -396,17 +379,17 @@ fn rust_execute_proceeds_while_python_covering_waits() {
     std::env::set_current_dir(old).unwrap();
     assert!(
         rust_ok,
-        "rust execute must start while python covering is held"
+        "rust execute must start while python selecting is held"
     );
     assert!(
         still_running,
-        "run must still be waiting on python covering"
+        "run must still be waiting on python selecting"
     );
 }
 
 #[cfg(unix)]
 #[test]
-fn peer_does_not_execute_after_rust_covering_failure() {
+fn peer_does_not_execute_after_rust_selecting_failure() {
     let _cwd = crate::cwd_test_lock::lock();
     use crate::test_runner::language_keyed::LanguageKeyed;
     use crate::test_runner::pipeline::PipelineDoubles;
@@ -420,12 +403,12 @@ fn peer_does_not_execute_after_rust_covering_failure() {
     std::fs::write(tmp.path().join("lib.rs"), "fn f() {}\n").unwrap();
 
     let hold = Arc::new((Mutex::new(true), Condvar::new()));
-    let rust_covering = Arc::new(AtomicBool::new(false));
+    let rust_selecting = Arc::new(AtomicBool::new(false));
     let python_executed = Arc::new(AtomicBool::new(false));
     let hold_py = Arc::clone(&hold);
-    let rust_flag = Arc::clone(&rust_covering);
+    let rust_flag = Arc::clone(&rust_selecting);
     let python_flag = Arc::clone(&python_executed);
-    let covering: LanguageKeyed<Option<Arc<dyn Fn() + Send + Sync>>> = LanguageKeyed {
+    let selecting: LanguageKeyed<Option<Arc<dyn Fn() + Send + Sync>>> = LanguageKeyed {
         python: Some(Arc::new(move || {
             let (lock, cvar) = &*hold_py;
             let mut waiting = lock
@@ -448,10 +431,10 @@ fn peer_does_not_execute_after_rust_covering_failure() {
         rust: None,
     };
     let doubles = PipelineDoubles {
-        covering,
+        selecting,
         execute,
         stub_execute: true,
-        fail_covering: Some(Language::Rust),
+        fail_selecting: Some(Language::Rust),
         ..PipelineDoubles::default()
     };
 
@@ -470,7 +453,7 @@ fn peer_does_not_execute_after_rust_covering_failure() {
         )
     });
     let started = Instant::now();
-    while !rust_covering.load(Ordering::SeqCst) && started.elapsed() < Duration::from_secs(15) {
+    while !rust_selecting.load(Ordering::SeqCst) && started.elapsed() < Duration::from_secs(15) {
         std::thread::sleep(Duration::from_millis(10));
     }
     std::thread::sleep(Duration::from_millis(50));
@@ -484,25 +467,25 @@ fn peer_does_not_execute_after_rust_covering_failure() {
     let result = job.join().expect("pipeline job");
     std::env::set_current_dir(old).unwrap();
     assert!(
-        rust_covering.load(Ordering::SeqCst),
-        "rust covering must start while python covering is held"
+        rust_selecting.load(Ordering::SeqCst),
+        "rust selecting must start while python selecting is held"
     );
-    assert!(result.is_err(), "rust covering failure must fail the run");
+    assert!(result.is_err(), "rust selecting failure must fail the run");
     assert!(
         !python_executed.load(Ordering::SeqCst),
-        "peer must not enter execute after a recorded covering failure"
+        "peer must not enter execute after a recorded selecting failure"
     );
 }
 
 #[cfg(unix)]
 #[test]
-fn workspace_span_completes_before_covering_error() {
+fn workspace_span_completes_before_selecting_error() {
     let _cwd = crate::cwd_test_lock::lock();
     let tmp = tempfile::tempdir().unwrap();
     crate::test_runner::test_mode_fixtures::init_git(&tmp);
     std::fs::write(tmp.path().join("lib.py"), "x = 1\n").unwrap();
     let doubles = crate::test_runner::pipeline::PipelineDoubles {
-        fail_covering: Some(Language::Python),
+        fail_selecting: Some(Language::Python),
         ..crate::test_runner::pipeline::PipelineDoubles::default()
     };
     let old = std::env::current_dir().unwrap();
@@ -528,28 +511,28 @@ fn workspace_span_completes_before_covering_error() {
         .find("kiss test: Running workspace")
         .expect("workspace start");
     let workspace_end = out.find("kiss test: Ran workspace").expect("workspace end");
-    let covering = out
-        .find("kiss test: Running covering_python")
-        .expect("covering start");
+    let selecting = out
+        .find("kiss test: Running select_python")
+        .expect("selecting start");
     assert!(
-        workspace_start < workspace_end && workspace_end < covering,
-        "covering error must follow completed workspace span: {out}"
+        workspace_start < workspace_end && workspace_end < selecting,
+        "selecting error must follow completed workspace span: {out}"
     );
 }
 
 #[test]
-fn force_all_runs_in_language_thread_after_covering() {
+fn force_all_runs_in_language_thread_after_selecting() {
     let src = include_str!("pipeline_jobs.rs");
     let cover = src
-        .find("let mut planned = cover_language")
-        .expect("cover_language");
-    let ran = src.find("Ran {covering_name}").expect("Ran covering");
+        .find("let mut planned = select_language")
+        .expect("select_language");
+    let ran = src.find("Ran {selecting_name}").expect("Ran selecting");
     let force = src
         .find("apply_force_all_population(a, &mut planned)")
         .expect("force_all");
     assert!(
         cover < ran && ran < force,
-        "force_all must run in the language thread after covering Ran"
+        "force_all must run in the language thread after selecting Ran"
     );
 }
 

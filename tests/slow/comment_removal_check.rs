@@ -1,4 +1,4 @@
-use crate::common::{parse_python_source, seed_python_runtime_coverage};
+use crate::common::parse_python_source;
 use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
@@ -32,7 +32,6 @@ fn check_flags_python_comment_not_docstring_when_enabled() {
         "\"\"\"module doc\"\"\"\n\ndef foo():\n    \"\"\"fn doc\"\"\"\n    # remove me\n    return 1\n",
     )
     .unwrap();
-    seed_python_runtime_coverage(root, &[("tests/test_app.py::test_app", vec![])]);
     write_gate_config(root, true);
     let out = kiss_binary()
         .current_dir(root)
@@ -62,7 +61,6 @@ fn check_accepts_python_shebang_when_comment_removal_enabled() {
         "#!/usr/bin/env python3\ndef foo():\n    return 1\n",
     )
     .unwrap();
-    seed_python_runtime_coverage(root, &[("tests/test_app.py::test_app", vec![])]);
     write_gate_config(root, true);
     let out = kiss_binary()
         .current_dir(root)
@@ -84,7 +82,6 @@ fn check_ignores_python_comments_when_disabled() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
     fs::write(root.join("app.py"), "# stay\ndef foo():\n    return 1\n").unwrap();
-    seed_python_runtime_coverage(root, &[("tests/test_app.py::test_app", vec![])]);
     write_gate_config(root, false);
     let out = kiss_binary()
         .current_dir(root)
