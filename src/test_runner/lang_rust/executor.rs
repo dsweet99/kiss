@@ -20,8 +20,8 @@ impl LanguageExecutor for RustModule {
         selectors: &[String],
         ctx: &RunContext<'_, '_>,
     ) -> Result<SelectorExecutionSummary, String> {
-        assert!(ctx.options.jobs > 0, "jobs must be greater than zero");
-        ensure_rust_via_kernel(
+        crate::test_runner::ensure_runtime::ensure_language_via_kernel(
+            kiss::Language::Rust,
             selectors,
             ctx,
             crate::test_runner::lang_iface::AcceptMode::All,
@@ -33,8 +33,8 @@ impl LanguageExecutor for RustModule {
         selectors: &[String],
         ctx: &RunContext<'_, '_>,
     ) -> Result<SelectorExecutionSummary, String> {
-        assert!(ctx.options.jobs > 0, "jobs must be greater than zero");
-        ensure_rust_via_kernel(
+        crate::test_runner::ensure_runtime::ensure_language_via_kernel(
+            kiss::Language::Rust,
             selectors,
             ctx,
             crate::test_runner::lang_iface::AcceptMode::Subset,
@@ -75,33 +75,4 @@ impl LanguageExecutor for RustModule {
             "rust_final"
         }
     }
-}
-
-fn ensure_rust_via_kernel(
-    selectors: &[String],
-    ctx: &RunContext<'_, '_>,
-    mode: crate::test_runner::lang_iface::AcceptMode,
-) -> Result<SelectorExecutionSummary, String> {
-    use crate::test_runner::ensure_runtime::{
-        ensure_languages_runtime, ensure_request_from_planned,
-    };
-
-    let force = ctx.options.force_rerun;
-    let mut planned = ctx.planned.clone();
-    planned.sel.rust = selectors.to_vec();
-    planned.sel.python.clear();
-    let request =
-        ensure_request_from_planned(crate::test_runner::ensure_runtime::EnsureFromPlanned {
-            planned: &planned,
-            mode,
-            lang_filter: Some(kiss::Language::Rust),
-            force,
-            force_selectors: ctx.planned.prior_failure_selectors.rust.clone(),
-            jobs: ctx.options.jobs,
-            extras: ctx.options.extras,
-            repo_root_override: None,
-            gate: ctx.options.gate.clone(),
-        });
-    let result = ensure_languages_runtime(&request)?;
-    Ok(result.rust().map(|r| r.summary.clone()).unwrap_or_default())
 }

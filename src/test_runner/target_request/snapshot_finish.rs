@@ -59,7 +59,7 @@ pub(super) fn finish_planned_snapshot(
         };
         return assemble_after_repair(repo_root, request, policy, facts, args);
     }
-    if args.is_some_and(|item| !item.extras.rust.is_empty())
+    if args.is_some_and(super::extras_select_tests)
         && scope.selectors.is_empty()
         && policy.require_complete()
     {

@@ -9,7 +9,7 @@ pub(crate) use rows::stored_rows;
 pub(crate) use factory::ensure_languages_runtime;
 pub(crate) use from_planned::EnsureFromPlanned;
 pub(crate) use kernel::ensure_runtime_cache;
-pub(crate) use planning::ensure_request_from_planned;
+pub(crate) use planning::ensure_language_via_kernel;
 
 #[cfg(test)]
 #[path = "kernel_test.rs"]

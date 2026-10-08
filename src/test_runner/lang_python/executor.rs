@@ -20,7 +20,8 @@ impl LanguageExecutor for PythonModule {
         selectors: &[String],
         ctx: &RunContext<'_, '_>,
     ) -> Result<SelectorExecutionSummary, String> {
-        ensure_python_via_kernel(
+        crate::test_runner::ensure_runtime::ensure_language_via_kernel(
+            kiss::Language::Python,
             selectors,
             ctx,
             crate::test_runner::lang_iface::AcceptMode::All,
@@ -32,7 +33,8 @@ impl LanguageExecutor for PythonModule {
         selectors: &[String],
         ctx: &RunContext<'_, '_>,
     ) -> Result<SelectorExecutionSummary, String> {
-        ensure_python_via_kernel(
+        crate::test_runner::ensure_runtime::ensure_language_via_kernel(
+            kiss::Language::Python,
             selectors,
             ctx,
             crate::test_runner::lang_iface::AcceptMode::Subset,
@@ -74,35 +76,4 @@ impl LanguageExecutor for PythonModule {
     fn population_from_plan(&self) -> bool {
         true
     }
-}
-
-fn ensure_python_via_kernel(
-    selectors: &[String],
-    ctx: &RunContext<'_, '_>,
-    mode: crate::test_runner::lang_iface::AcceptMode,
-) -> Result<SelectorExecutionSummary, String> {
-    use crate::test_runner::ensure_runtime::{
-        ensure_languages_runtime, ensure_request_from_planned,
-    };
-    assert!(ctx.options.jobs > 0, "jobs must be greater than zero");
-    let mut planned = ctx.planned.clone();
-    planned.sel.python = selectors.to_vec();
-    planned.sel.rust.clear();
-    let request =
-        ensure_request_from_planned(crate::test_runner::ensure_runtime::EnsureFromPlanned {
-            planned: &planned,
-            mode,
-            lang_filter: Some(kiss::Language::Python),
-            force: ctx.options.force_rerun,
-            force_selectors: ctx.planned.prior_failure_selectors.python.clone(),
-            jobs: ctx.options.jobs,
-            extras: ctx.options.extras,
-            repo_root_override: None,
-            gate: ctx.options.gate.clone(),
-        });
-    let result = ensure_languages_runtime(&request)?;
-    Ok(result
-        .python()
-        .map(|r| r.summary.clone())
-        .unwrap_or_default())
 }

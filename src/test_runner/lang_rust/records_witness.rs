@@ -11,6 +11,7 @@ pub(crate) fn rust_witness_identity(record_identity: &str) -> String {
 
 pub(crate) fn try_load_rust_execution_witness(
     repo_root: &Path,
+    extras: &[String],
 ) -> Result<ExecutionWitness, String> {
     #[cfg(test)]
     if let Some(witness) = super::test_records::load(repo_root) {
@@ -20,7 +21,7 @@ pub(crate) fn try_load_rust_execution_witness(
         return Err(NO_RECORDS.into());
     }
     let gate = kiss::GateConfig::load_for_repo(repo_root);
-    let (identity, mut records) = super::nextest::holding_records(repo_root, &[], &gate)?;
+    let (identity, mut records) = super::nextest::holding_records(repo_root, extras, &gate)?;
     if let Some(known) = known_selectors(repo_root) {
         records.retain(|record| known.contains(&record.test_id));
     }
@@ -33,7 +34,7 @@ pub(crate) fn try_load_rust_execution_witness(
         .map(|record| WitnessStatus::from_test_status(record.status))
         .collect();
     Ok(ExecutionWitness {
-        language: "rust".into(),
+        language: kiss::Language::Rust,
         identity_digest: rust_witness_identity(&identity),
         generation_id: records_digest(&identity, &records),
         selectors: records

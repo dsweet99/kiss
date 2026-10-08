@@ -40,10 +40,7 @@ pub(crate) fn kiss_report_from_target(report: &TargetReport) -> Option<KissTestR
                 WatchNamedOutcome::Timeout
             }
         };
-        let Some(language) = crate::test_runner::lang_registry::language_for_label(&row.language)
-        else {
-            continue;
-        };
+        let language = row.language;
         let i = language.index();
         match outcome {
             WatchNamedOutcome::Pass => lang_passed[i] += 1,

@@ -22,7 +22,7 @@ pub(crate) fn stored_witness(repo_root: &Path, extras: &[String]) -> Option<Exec
         durations_ns.push(u64::try_from(record.duration.as_nanos()).ok());
     }
     Some(ExecutionWitness {
-        language: "python".into(),
+        language: kiss::Language::Python,
         identity_digest: python_witness_identity(&identity),
         selectors,
         durations_ns,

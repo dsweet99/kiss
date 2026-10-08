@@ -67,9 +67,9 @@ impl KernelRules for RustKernelRules {
     fn stored_witness(
         &self,
         repo_root: &std::path::Path,
-        _extras: &[String],
+        extras: &[String],
     ) -> Option<ExecutionWitness> {
-        super::stored::stored_witness(repo_root)
+        super::stored::stored_witness(repo_root, extras)
     }
 
     fn list_workspace_selectors(

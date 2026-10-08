@@ -36,7 +36,7 @@ fn python_accepted_summary_counts_hits() {
         },
     };
     let witness = ExecutionWitness {
-        language: "python".into(),
+        language: kiss::Language::Python,
         identity_digest: "id".into(),
         selectors: vec!["a".into()],
         statuses: vec![WitnessStatus::Passed],

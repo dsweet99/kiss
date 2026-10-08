@@ -24,7 +24,7 @@ pub(crate) enum EffectiveStatus {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct SelectorRow {
-    pub language: String,
+    pub language: kiss::Language,
     pub selector: String,
     pub raw: String,
     pub effective: EffectiveStatus,
@@ -423,7 +423,7 @@ mod exit_gate_tests {
 
     fn pass_row() -> SelectorRow {
         SelectorRow {
-            language: "python".into(),
+            language: kiss::Language::Python,
             selector: "tests/a.py::test_a".into(),
             raw: "passed".into(),
             effective: EffectiveStatus::Pass,
@@ -434,7 +434,7 @@ mod exit_gate_tests {
 
     fn timeout_row() -> SelectorRow {
         SelectorRow {
-            language: "python".into(),
+            language: kiss::Language::Python,
             selector: "tests/b.py::test_b".into(),
             raw: "timed_out".into(),
             effective: EffectiveStatus::Timeout,
@@ -495,7 +495,7 @@ mod exit_gate_tests {
 
     fn timed_row(selector: &str, duration_ns: u64) -> SelectorRow {
         SelectorRow {
-            language: "python".into(),
+            language: kiss::Language::Python,
             selector: selector.into(),
             raw: "passed".into(),
             effective: EffectiveStatus::Pass,

@@ -242,7 +242,7 @@ fn assemble_after_repair(
     let mut scope =
         ReportScope::from_membership(projection.report_regions(), selectors, stamp.complete);
     apply_runner_extra(repo_root, &mut scope, Some(args))?;
-    if !args.extras.rust.is_empty() && scope.selectors.is_empty() && policy.require_complete() {
+    if extras_select_tests(args) && scope.selectors.is_empty() && policy.require_complete() {
         return Err(EnsureError::IncompleteEvidence(
             crate::test_runner::runners::NO_SELECTED_TESTS_MSG.into(),
         ));
@@ -258,7 +258,7 @@ fn refresh_python_witnesses(
     let python: Vec<String> = scope
         .selectors
         .iter()
-        .filter(|selector| selector.contains(".py"))
+        .filter(|selector| selector_is(selector, kiss::Language::Python))
         .cloned()
         .collect();
     let discovered = crate::test_runner::runners::enumerate_workspace_python_selectors(
@@ -311,19 +311,35 @@ fn apply_runner_extra(
     let Some(args) = args else {
         return Ok(());
     };
-    if args.extras.rust.is_empty() {
+    let python_extras = args.extras.get(kiss::Language::Python);
+    if python_extras.is_empty() {
         return Ok(());
     }
     let discovered = crate::test_runner::lang_python::collect::collect_python_nodeids(
         repo_root,
         None,
-        args.extras.python,
+        python_extras,
     )
     .unwrap_or_default();
     scope.selectors.retain(|selector| {
-        !selector.contains(".py") || discovered.iter().any(|item| item == selector)
+        !selector_is(selector, kiss::Language::Python)
+            || discovered.iter().any(|item| item == selector)
     });
     Ok(())
+}
+
+pub(super) fn extras_select_tests(args: &crate::test_runner::RunTestCmdArgs<'_>) -> bool {
+    kiss::Language::ALL
+        .into_iter()
+        .any(|language| !args.extras.get(language).is_empty())
+}
+
+fn selector_is(selector: &str, language: kiss::Language) -> bool {
+    let path = selector
+        .split_once("::")
+        .map(|(path, _)| path)
+        .unwrap_or(selector);
+    kiss::Language::from_path(Path::new(path)) == Some(language)
 }
 
 fn assemble_report(
@@ -367,4 +383,20 @@ fn runner_extras<'a>(
         crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
         |item| item.extras,
     )
+}
+
+#[cfg(test)]
+mod selector_language_tests {
+    use super::selector_is;
+
+    #[test]
+    fn selector_membership_uses_the_language_enum() {
+        assert!(selector_is("tests/a.py::test_a", kiss::Language::Python));
+        assert!(selector_is("src/lib.rs::case", kiss::Language::Rust));
+        assert!(!selector_is("notes.py.bak::test_a", kiss::Language::Python));
+        assert!(!selector_is(
+            "crate::mod::test_py_name",
+            kiss::Language::Python
+        ));
+    }
 }

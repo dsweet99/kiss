@@ -60,7 +60,7 @@ fn derive_ready_report(
     let rows = super::rows::rows_from_witnesses(repo, &scope, extras).ok()?;
     for language in crate::test_runner::lang_registry::languages() {
         let language_extras = *extras.get(language);
-        let recorded = rows.iter().any(|row| row.language == language.label());
+        let recorded = rows.iter().any(|row| row.language == language);
         if (recorded || !language_extras.is_empty())
             && !crate::test_runner::lang_registry::rules_for(language)
                 .stored_witness_matches_extras(repo, language_extras)
@@ -104,11 +104,10 @@ pub(crate) fn project_language_ready_from_parent_workspace(
     let mut parent_req = request.clone();
     parent_req.set_language(None);
     let parent = load_ready_for_request(repo, &parent_req, extras)?;
-    let label = lang.label();
     let rows: Vec<_> = parent
         .rows
         .iter()
-        .filter(|row| row.language == label)
+        .filter(|row| row.language == lang)
         .cloned()
         .collect();
     let resolved = super::resolve::resolve_only(repo, request).ok()?;

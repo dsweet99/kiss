@@ -13,7 +13,7 @@ fn witness(
     complete: bool,
 ) -> ExecutionWitness {
     ExecutionWitness {
-        language: "rust".into(),
+        language: kiss::Language::Rust,
         identity_digest: identity.into(),
         selectors: selectors.iter().map(|s| (*s).to_string()).collect(),
         statuses: statuses.to_vec(),

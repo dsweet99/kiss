@@ -11,7 +11,7 @@ use crate::bin_cli::util::validate_paths;
 use kiss::Language;
 use kiss::normalize_ignore_prefixes;
 use kiss::truncate;
-use kiss::{Config, ConfigLanguage, GateConfig};
+use kiss::{Config, GateConfig};
 
 #[test]
 fn test_language_and_config() {
@@ -76,8 +76,8 @@ fn test_gather_stats_normalize_validate() {
             .len(),
         1
     );
-    let py_cfg = Config::load_for_language(ConfigLanguage::Python);
-    let rs_cfg = Config::load_for_language(ConfigLanguage::Rust);
+    let py_cfg = Config::load_for_language(Language::Python);
+    let rs_cfg = Config::load_for_language(Language::Rust);
     let gate_cfg = GateConfig::load();
     run_stats_summary(&RunStatsArgs {
         paths: std::slice::from_ref(&p),

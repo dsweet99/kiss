@@ -50,7 +50,7 @@ pub(crate) fn load(repo_root: &Path) -> Option<ExecutionWitness> {
         .map(|raw| WitnessStatus::parse(raw))
         .collect();
     Some(ExecutionWitness {
-        language: "rust".into(),
+        language: kiss::Language::Rust,
         identity_digest: seeded.identity_digest,
         selectors: seeded.selectors,
         durations_ns: seeded.durations_ns,

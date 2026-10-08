@@ -27,8 +27,8 @@ pub(crate) trait KernelRules: KernelHooks {
         repo_root: &std::path::Path,
         extras: &[String],
     ) -> bool {
-        let _ = repo_root;
-        extras.is_empty()
+        let _ = (repo_root, extras);
+        true
     }
 
     fn list_workspace_selectors(

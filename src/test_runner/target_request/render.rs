@@ -139,7 +139,7 @@ mod official_text_tests {
                 true,
             ),
             rows: vec![SelectorRow {
-                language: "python".into(),
+                language: kiss::Language::Python,
                 selector: "tests/a.py::test_a".into(),
                 raw: "passed".into(),
                 effective: EffectiveStatus::Pass,
@@ -176,7 +176,7 @@ mod official_text_tests {
     fn official_text_lists_cached_fail_and_timeout_only() {
         let mut cached = report(Vec::new());
         cached.rows.push(SelectorRow {
-            language: "python".into(),
+            language: kiss::Language::Python,
             selector: "tests/a.py::test_bad".into(),
             raw: "failed".into(),
             effective: EffectiveStatus::Fail,
@@ -184,7 +184,7 @@ mod official_text_tests {
             provenance: "witness".into(),
         });
         cached.rows.push(SelectorRow {
-            language: "rust".into(),
+            language: kiss::Language::Rust,
             selector: "src/lib.rs::test_slow".into(),
             raw: "timeout".into(),
             effective: EffectiveStatus::Timeout,

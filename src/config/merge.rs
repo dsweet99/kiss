@@ -1,8 +1,9 @@
 use std::path::Path;
 
+use crate::Language;
 use crate::config::error::ConfigError;
 use crate::config::keys::{PYTHON_KEYS, RUST_KEYS, SHARED_KEYS, THRESHOLDS_KEYS};
-use crate::config::types::{Config, ConfigLanguage};
+use crate::config::types::Config;
 use crate::config::validation::{
     check_unknown_keys, check_unknown_sections, get_usize, validate_config_keys,
 };
@@ -115,51 +116,45 @@ pub(super) fn apply_thresholds_and_shared(config: &mut Config, table: &toml::Tab
     }
 }
 
-pub(super) fn apply_python_if_present(config: &mut Config, table: &toml::Table) {
-    if let Some(t) = table.get("python").and_then(|v| v.as_table()) {
-        apply_python(config, t);
-    }
-}
-
-pub(super) fn apply_rust_if_present(config: &mut Config, table: &toml::Table) {
-    if let Some(t) = table.get("rust").and_then(|v| v.as_table()) {
-        apply_rust(config, t);
-    }
-}
-
 pub(super) fn apply_language_sections(
     config: &mut Config,
     table: &toml::Table,
-    lang: Option<ConfigLanguage>,
+    lang: Option<Language>,
 ) {
-    match lang {
-        Some(ConfigLanguage::Python) => apply_python_if_present(config, table),
-        Some(ConfigLanguage::Rust) => apply_rust_if_present(config, table),
-        None => {
-            apply_python_if_present(config, table);
-            apply_rust_if_present(config, table);
+    for language in Language::ALL {
+        if language.allowed_by(lang) {
+            apply_language_if_present(language, config, table);
         }
     }
 }
 
-pub(super) fn apply_parsed_toml(
-    config: &mut Config,
-    table: &toml::Table,
-    lang: Option<ConfigLanguage>,
-) {
+fn apply_language_if_present(language: Language, config: &mut Config, table: &toml::Table) {
+    let Some(section) = table
+        .get(language.label())
+        .and_then(|value| value.as_table())
+    else {
+        return;
+    };
+    match language {
+        Language::Python => apply_python(config, section),
+        Language::Rust => apply_rust(config, section),
+    }
+}
+
+pub(super) fn apply_parsed_toml(config: &mut Config, table: &toml::Table, lang: Option<Language>) {
     apply_thresholds_and_shared(config, table);
     apply_language_sections(config, table, lang);
 }
 
 impl Config {
-    pub(crate) fn merge_from_toml(&mut self, content: &str, lang: Option<ConfigLanguage>) {
+    pub(crate) fn merge_from_toml(&mut self, content: &str, lang: Option<Language>) {
         self.merge_from_toml_with_path(content, lang, None);
     }
 
     pub(crate) fn try_merge_from_toml(
         &mut self,
         content: &str,
-        lang: Option<ConfigLanguage>,
+        lang: Option<Language>,
     ) -> Result<(), ConfigError> {
         let table = content
             .parse::<toml::Table>()
@@ -176,7 +171,7 @@ impl Config {
     pub(crate) fn merge_from_toml_with_path(
         &mut self,
         content: &str,
-        lang: Option<ConfigLanguage>,
+        lang: Option<Language>,
         path: Option<&Path>,
     ) {
         let table = match content.parse::<toml::Table>() {

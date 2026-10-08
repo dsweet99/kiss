@@ -22,7 +22,8 @@ pub(super) fn load_rust_duration_pairs(repo_root: &Path) -> Option<Vec<DurationP
         return Some(cached);
     }
     let witness =
-        crate::test_runner::execution_witness::try_load_rust_execution_witness(repo_root).ok()?;
+        crate::test_runner::execution_witness::try_load_rust_execution_witness(repo_root, &[])
+            .ok()?;
     let pairs = duration_pairs(&witness)?;
     RUST_DURATION_PAIRS_MEMO.with(|memo| {
         *memo.borrow_mut() = Some((repo_key, pairs.clone()));

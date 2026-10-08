@@ -51,7 +51,7 @@ fn report_kiss_test_error(err: impl std::fmt::Display) {
 }
 
 fn reject_test_universe_languages(args: &TestCommandArgs<'_>) -> Result<(), i32> {
-    if args.language_tables.python && args.language_tables.rust {
+    if args.language_tables.all_present() {
         return Ok(());
     }
     let request = request_from_test_args(args);
@@ -370,10 +370,7 @@ mod tests {
             lang_filter: None,
             test_cfg: &test_cfg,
             gate_config: &gate,
-            language_tables: kiss::LanguageTablesPresent {
-                python: true,
-                rust: true,
-            },
+            language_tables: kiss::LanguageTablesPresent::both(),
         };
         let mk_run_args = || RunTestCmdArgs {
             doubles: None,
@@ -419,10 +416,7 @@ mod tests {
             lang_filter: None,
             test_cfg: &test_cfg,
             gate_config: &gate,
-            language_tables: kiss::LanguageTablesPresent {
-                python: true,
-                rust: true,
-            },
+            language_tables: kiss::LanguageTablesPresent::both(),
         };
         assert!(reject_test_universe_languages(&args).is_ok());
     }
@@ -444,19 +438,13 @@ mod tests {
             lang_filter: Some(kiss::Language::Rust),
             test_cfg: &test_cfg,
             gate_config: &gate,
-            language_tables: kiss::LanguageTablesPresent {
-                python: false,
-                rust: true,
-            },
+            language_tables: kiss::LanguageTablesPresent::only(kiss::Language::Rust),
         };
         // Workspace `.` has Rust sources; missing python table must still scan and accept.
         assert!(reject_test_universe_languages(&rust_only).is_ok());
         let py_only = TestCommandArgs {
             lang_filter: Some(kiss::Language::Python),
-            language_tables: kiss::LanguageTablesPresent {
-                python: true,
-                rust: false,
-            },
+            language_tables: kiss::LanguageTablesPresent::only(kiss::Language::Python),
             ..rust_only
         };
         assert!(reject_test_universe_languages(&py_only).is_ok());
@@ -479,10 +467,7 @@ mod tests {
             lang_filter: None,
             test_cfg: &test_cfg,
             gate_config: &gate,
-            language_tables: kiss::LanguageTablesPresent {
-                python: true,
-                rust: true,
-            },
+            language_tables: kiss::LanguageTablesPresent::both(),
         };
         let run_args = RunTestCmdArgs {
             doubles: None,
@@ -522,10 +507,7 @@ mod tests {
             lang_filter: None,
             test_cfg: &test_cfg,
             gate_config: &gate,
-            language_tables: kiss::LanguageTablesPresent {
-                python: false,
-                rust: false,
-            },
+            language_tables: kiss::LanguageTablesPresent::none(),
         };
         assert_eq!(reject_test_universe_languages(&args), Err(1));
     }
@@ -547,10 +529,7 @@ mod tests {
             lang_filter: None,
             test_cfg: &test_cfg,
             gate_config: &gate,
-            language_tables: kiss::LanguageTablesPresent {
-                python: false,
-                rust: false,
-            },
+            language_tables: kiss::LanguageTablesPresent::none(),
         };
         let run_args = RunTestCmdArgs {
             doubles: None,

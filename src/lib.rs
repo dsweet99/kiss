@@ -81,10 +81,9 @@ pub use comments::{
     has_non_doc_comments_with_roles,
 };
 pub use config::{
-    Config, ConfigError, ConfigLanguage, ConfigPathOverrideGuard, LanguageTablesPresent,
-    active_kissconfig_path, find_repo_root, is_similar, kissconfig_path_for_repo,
-    kissconfig_path_from_cwd, missing_language_table_message, reject_unconfigured_languages,
-    set_config_path_override,
+    Config, ConfigError, ConfigPathOverrideGuard, LanguageTablesPresent, active_kissconfig_path,
+    find_repo_root, is_similar, kissconfig_path_for_repo, kissconfig_path_from_cwd,
+    missing_language_table_message, reject_unconfigured_languages, set_config_path_override,
 };
 pub use counts::analyze_file;
 pub use counts::analyze_file_with_statement_count;

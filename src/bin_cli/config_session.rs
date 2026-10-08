@@ -4,7 +4,7 @@ use kiss::config_gen::{
     collect_lang_from_paths, generate_gate_stub_toml, raise_measured_thresholds,
 };
 use kiss::{
-    Config, ConfigLanguage, GateConfig, LanguageTablesPresent, gather_files_by_lang,
+    Config, GateConfig, Language, LanguageTablesPresent, gather_files_by_lang,
     kissconfig_path_from_cwd,
 };
 use std::path::{Path, PathBuf};
@@ -94,7 +94,7 @@ fn ignore_for_collect(config_path: &Path, cli_ignore: &[String]) -> Vec<String> 
 
 fn needs_language_tables(config_path: &Path, roots: &[String], ignore: &[String]) -> bool {
     let tables = LanguageTablesPresent::from_path(config_path);
-    if tables.python && tables.rust {
+    if tables.all_present() {
         return false;
     }
     let (py_files, rs_files) = gather_files_by_lang(roots, None, ignore);
@@ -133,8 +133,8 @@ pub fn load_gate_config(config_path: Option<&PathBuf>) -> Result<GateConfig, kis
 pub fn load_configs(config_path: Option<&PathBuf>) -> Result<(Config, Config), kiss::ConfigError> {
     let Some(path) = config_path else {
         return Ok((
-            Config::try_load_for_language(ConfigLanguage::Python)?,
-            Config::try_load_for_language(ConfigLanguage::Rust)?,
+            Config::try_load_for_language(Language::Python)?,
+            Config::try_load_for_language(Language::Rust)?,
         ));
     };
     if !path.exists() {
@@ -142,8 +142,8 @@ pub fn load_configs(config_path: Option<&PathBuf>) -> Result<(Config, Config), k
         return Ok((Config::python_defaults(), Config::rust_defaults()));
     }
     Ok((
-        Config::try_load_from(path, ConfigLanguage::Python)?,
-        Config::try_load_from(path, ConfigLanguage::Rust)?,
+        Config::try_load_from(path, Language::Python)?,
+        Config::try_load_from(path, Language::Rust)?,
     ))
 }
 

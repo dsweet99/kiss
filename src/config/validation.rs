@@ -1,6 +1,6 @@
+use crate::Language;
 use crate::config::error::ConfigError;
 use crate::config::keys::{PYTHON_KEYS, RUST_KEYS, SHARED_KEYS, THRESHOLDS_KEYS};
-use crate::config::types::ConfigLanguage;
 
 pub(crate) fn check_unknown_keys(
     table: &toml::Table,
@@ -19,15 +19,15 @@ pub(crate) fn check_unknown_keys(
 }
 
 pub(crate) fn check_unknown_sections(table: &toml::Table) -> Result<(), ConfigError> {
-    const VALID: &[&str] = &["python", "rust", "shared", "thresholds", "global", "test"];
+    let valid = known_section_names();
     for key in table.keys() {
-        if VALID.contains(&key.as_str()) {
+        if is_known_section(key) {
             continue;
         }
         let hint = if key == "gate" {
             Some("global".to_string())
         } else {
-            VALID
+            valid
                 .iter()
                 .find(|v| similar(key, v))
                 .map(|s| (*s).to_string())
@@ -40,9 +40,20 @@ pub(crate) fn check_unknown_sections(table: &toml::Table) -> Result<(), ConfigEr
     Ok(())
 }
 
+fn known_section_names() -> Vec<&'static str> {
+    let mut names = vec!["shared", "thresholds", "global", "test"];
+    names.extend(Language::ALL.iter().map(|language| language.label()));
+    names
+}
+
+fn is_known_section(key: &str) -> bool {
+    matches!(key, "shared" | "thresholds" | "global" | "test")
+        || Language::from_label(key).is_some()
+}
+
 pub(crate) fn validate_config_keys(
     table: &toml::Table,
-    lang: Option<ConfigLanguage>,
+    lang: Option<Language>,
 ) -> Result<(), ConfigError> {
     if let Some(t) = table.get("thresholds").and_then(|v| v.as_table()) {
         validate_thresholds_keys(t)?;
@@ -50,15 +61,21 @@ pub(crate) fn validate_config_keys(
     if let Some(t) = table.get("shared").and_then(|v| v.as_table()) {
         validate_shared_keys(t)?;
     }
-    let check_py = lang.is_none() || matches!(lang, Some(ConfigLanguage::Python));
-    let check_rs = lang.is_none() || matches!(lang, Some(ConfigLanguage::Rust));
-    if check_py && let Some(t) = table.get("python").and_then(|v| v.as_table()) {
-        validate_python_keys(t)?;
-    }
-    if check_rs && let Some(t) = table.get("rust").and_then(|v| v.as_table()) {
-        validate_rust_keys(t)?;
+    for language in Language::ALL {
+        if language.allowed_by(lang)
+            && let Some(section) = table.get(language.label()).and_then(|v| v.as_table())
+        {
+            validate_language_keys(language, section)?;
+        }
     }
     Ok(())
+}
+
+fn validate_language_keys(language: Language, table: &toml::Table) -> Result<(), ConfigError> {
+    match language {
+        Language::Python => validate_python_keys(table),
+        Language::Rust => validate_rust_keys(table),
+    }
 }
 
 pub(crate) fn validate_thresholds_keys(table: &toml::Table) -> Result<(), ConfigError> {

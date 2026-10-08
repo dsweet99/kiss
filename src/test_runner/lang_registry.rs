@@ -116,10 +116,6 @@ pub(crate) fn language_for_extension(ext: &str) -> Option<Language> {
     Language::from_extension(ext)
 }
 
-pub(crate) fn language_for_label(label: &str) -> Option<Language> {
-    Language::from_label(label)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

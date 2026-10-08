@@ -1,4 +1,4 @@
-use super::ensure_request_from_planned;
+use super::planning::ensure_request_from_planned;
 use crate::test_runner::PlannedSelectors;
 use crate::test_runner::lang_iface::AcceptMode;
 use std::path::PathBuf;

@@ -31,7 +31,7 @@ mod tests {
     fn overlap_keeps_only_reportable_rows() {
         use crate::test_runner::lang_iface::WitnessStatus;
         let witness = ExecutionWitness {
-            language: "rust".into(),
+            language: kiss::Language::Rust,
             identity_digest: "rs:identity".into(),
             selectors: vec!["pass".into(), "fail".into(), "unresolved".into()],
             statuses: vec![

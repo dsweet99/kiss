@@ -5,10 +5,13 @@ fn language_modules_route_python_and_rust_through_ensure() {
         .expect("read python executor");
     let rust =
         std::fs::read_to_string(root.join("lang_rust/executor.rs")).expect("read rust executor");
-    assert!(python.contains("ensure_python_via_kernel"));
-    assert!(rust.contains("ensure_rust_via_kernel"));
-    assert!(python.contains("ensure_request_from_planned"));
-    assert!(rust.contains("ensure_request_from_planned"));
+    assert!(python.contains("ensure_language_via_kernel"));
+    assert!(rust.contains("ensure_language_via_kernel"));
+    assert!(python.contains("Language::Python"));
+    assert!(rust.contains("Language::Rust"));
+    let shared = std::fs::read_to_string(root.join("ensure_runtime/planning.rs"))
+        .expect("read shared ensure");
+    assert!(shared.contains("ensure_request_from_planned"));
     assert!(
         !python.contains("try_warm_python_cached_summary"),
         "direct try_warm_python bypass must be retired from the python executor"

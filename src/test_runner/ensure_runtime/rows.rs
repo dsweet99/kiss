@@ -24,10 +24,10 @@ pub(crate) fn stored_rows(
             holding,
         });
     }
-    let language = module.language().label();
+    let language = module.language();
     let mut holding = BTreeSet::new();
     let mut rows: Vec<TestRecord> = Vec::new();
-    for row in load_records(&records_dir(&request.repo_root, language)) {
+    for row in load_records(&records_dir(&request.repo_root, language.label())) {
         if row.identity != listing.record_identity {
             continue;
         }
@@ -54,7 +54,7 @@ pub(crate) fn stored_rows(
         .map(|row| WitnessStatus::from_test_status(row.status))
         .collect();
     let witness = ExecutionWitness {
-        language: language.into(),
+        language,
         identity_digest: listing.identity.clone(),
         generation_id: rows_digest(&listing.record_identity, &rows),
         selectors: rows.iter().map(|row| row.test_id.clone()).collect(),

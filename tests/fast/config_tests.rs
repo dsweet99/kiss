@@ -1,4 +1,4 @@
-use kiss::{Config, ConfigLanguage, GateConfig, default_config_toml};
+use kiss::{Config, GateConfig, Language, default_config_toml};
 
 #[test]
 fn default_config_has_reasonable_values() {
@@ -76,8 +76,8 @@ fn verify_rust_defaults(c: &Config) {
 #[test]
 fn default_config_toml_matches_requested_defaults() {
     let content = default_config_toml();
-    let py_config = Config::load_from_content(&content, ConfigLanguage::Python);
-    let rs_config = Config::load_from_content(&content, ConfigLanguage::Rust);
+    let py_config = Config::load_from_content(&content, Language::Python);
+    let rs_config = Config::load_from_content(&content, Language::Rust);
     let gate_config = GateConfig::try_load_from_content(&content).unwrap();
 
     verify_gate_defaults(&gate_config);
@@ -107,7 +107,7 @@ fn test_gate_config_load() {
 #[test]
 fn test_load_from_content() {
     let content = "[python]\nstatements_per_function = 99";
-    let c = Config::load_from_content(content, ConfigLanguage::Python);
+    let c = Config::load_from_content(content, Language::Python);
     assert_eq!(c.statements_per_function, 99);
 }
 

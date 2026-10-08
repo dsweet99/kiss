@@ -160,7 +160,7 @@ fn extend_witness(out: &mut BTreeMap<String, SelectorRow>, witness: Option<Execu
         out.insert(
             selector.clone(),
             SelectorRow {
-                language: witness.language.clone(),
+                language: witness.language,
                 selector: selector.clone(),
                 raw: raw.as_str().to_string(),
                 effective,

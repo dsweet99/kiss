@@ -66,12 +66,8 @@ pub(crate) struct EnsureRuntimeResult {
 }
 
 impl EnsureRuntimeResult {
-    pub(crate) fn python(&self) -> Option<&LanguageEnsureResult> {
-        self.by_language.python.as_ref()
-    }
-
-    pub(crate) fn rust(&self) -> Option<&LanguageEnsureResult> {
-        self.by_language.rust.as_ref()
+    pub(crate) fn get(&self, language: kiss::Language) -> Option<&LanguageEnsureResult> {
+        self.by_language.get(language).as_ref()
     }
 }
 

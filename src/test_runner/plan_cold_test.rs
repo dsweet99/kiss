@@ -305,7 +305,8 @@ fn all_mode_rust_edit_keeps_universe_and_reruns_every_test() {
         &selectors.map(|s| (s, kiss::rpytest_runner::TestStatus::Passed)),
     );
     let selector_list: Vec<String> = selectors.iter().map(|s| s.to_string()).collect();
-    let witness = crate::test_runner::lang_rust::try_load_rust_execution_witness(tmp.path()).ok();
+    let witness =
+        crate::test_runner::lang_rust::try_load_rust_execution_witness(tmp.path(), &[]).ok();
     assert!(
         crate::test_runner::lang_iface::records::record_misses(&selector_list, witness.as_ref())
             .is_empty(),
@@ -353,7 +354,8 @@ fn all_mode_rust_edit_keeps_universe_and_reruns_every_test() {
         !planned.population_required.rust,
         "ordinary lib.rs edit must not require a full Rust population"
     );
-    let witness = crate::test_runner::lang_rust::try_load_rust_execution_witness(tmp.path()).ok();
+    let witness =
+        crate::test_runner::lang_rust::try_load_rust_execution_witness(tmp.path(), &[]).ok();
     let misses =
         crate::test_runner::lang_iface::records::record_misses(&planned.sel.rust, witness.as_ref());
     assert_eq!(

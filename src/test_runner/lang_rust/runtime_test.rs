@@ -35,7 +35,7 @@ fn accepted_summary_emits_cached_passes() {
         },
     };
     let witness = ExecutionWitness {
-        language: "rust".into(),
+        language: kiss::Language::Rust,
         identity_digest: "id".into(),
         selectors: vec!["a".into()],
         statuses: vec![WitnessStatus::Passed],
@@ -132,7 +132,7 @@ fn store_rust_record(
 ) {
     let record = kiss::test_records::TestRecord {
         schema: kiss::test_records::RECORD_SCHEMA.to_string(),
-        language: "rust".into(),
+        language: "rust".to_string(),
         test_id: test_id.into(),
         identity: identity.into(),
         deps: BTreeMap::new(),
@@ -169,7 +169,7 @@ fn records_witness_drops_removed_tests_and_other_identities() {
         &[],
     )
     .unwrap();
-    let witness = super::try_load_rust_execution_witness(tmp.path()).unwrap();
+    let witness = super::try_load_rust_execution_witness(tmp.path(), &[]).unwrap();
     assert_eq!(witness.selectors, vec!["tests::case".to_string()]);
     assert_eq!(witness.statuses, vec![WitnessStatus::Passed]);
     assert!(witness.complete);
@@ -323,7 +323,7 @@ fn records_with_stale_inputs_do_not_hold() {
         "#[cfg(test)]\nmod tests {\n    #[test]\n    fn case() { assert!(true); }\n}\n",
     )
     .unwrap();
-    let witness = super::try_load_rust_execution_witness(tmp.path());
+    let witness = super::try_load_rust_execution_witness(tmp.path(), &[]);
     assert!(
         witness.is_err() || witness.unwrap().selectors.is_empty(),
         "an edited Rust source must invalidate every Rust record"

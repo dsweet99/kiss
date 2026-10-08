@@ -74,11 +74,11 @@ fn typed_retry_by_lang(
         match rows
             .iter()
             .find(|row| row.selector == selector)
-            .map(|row| row.language.as_str())
+            .map(|row| row.language)
         {
-            Some("python") => python.push(selector),
-            Some("rust") => rust.push(selector),
-            _ => {}
+            Some(Language::Python) => python.push(selector),
+            Some(Language::Rust) => rust.push(selector),
+            None => {}
         }
     }
     for selector in

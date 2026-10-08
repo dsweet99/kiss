@@ -3,7 +3,7 @@ use super::*;
 fn python_state(status: WitnessStatus, duration: Option<u64>) -> Rc<RefCell<FakeState>> {
     Rc::new(RefCell::new(FakeState {
         witness: Some(ExecutionWitness {
-            language: "python".into(),
+            language: kiss::Language::Python,
             identity_digest: "id".into(),
             selectors: vec!["a".into()],
             statuses: vec![status],
@@ -61,7 +61,7 @@ fn forced_run_with_unchanged_outcomes_still_publishes() {
 fn partial_run_summary_includes_accepted_cache_hits() {
     let state = Rc::new(RefCell::new(FakeState {
         witness: Some(ExecutionWitness {
-            language: "python".into(),
+            language: kiss::Language::Python,
             identity_digest: "id".into(),
             selectors: vec!["a".into(), "b".into()],
             statuses: vec![WitnessStatus::Passed, WitnessStatus::Passed],
@@ -89,7 +89,7 @@ fn partial_run_summary_includes_accepted_cache_hits() {
 fn rust_warm_accept_still_emits_rust_identity_without_run() {
     let state = Rc::new(RefCell::new(FakeState {
         witness: Some(ExecutionWitness {
-            language: "rust".into(),
+            language: kiss::Language::Rust,
             identity_digest: "id".into(),
             selectors: vec!["a".into()],
             statuses: vec![WitnessStatus::Passed],

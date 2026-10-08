@@ -334,7 +334,7 @@ fn successful_report_exits_zero_without_timeouts() {
 #[test]
 fn exit_from_rows_prefers_timeout_then_fail() {
     let fail = super::report::SelectorRow {
-        language: "python".into(),
+        language: kiss::Language::Python,
         selector: "tests/a.py::test_a".into(),
         raw: "failed".into(),
         effective: super::report::EffectiveStatus::Fail,
@@ -342,7 +342,7 @@ fn exit_from_rows_prefers_timeout_then_fail() {
         provenance: "witness".into(),
     };
     let timeout = super::report::SelectorRow {
-        language: "python".into(),
+        language: kiss::Language::Python,
         selector: "tests/b.py::test_b".into(),
         raw: "timed_out".into(),
         effective: super::report::EffectiveStatus::Timeout,
@@ -382,7 +382,7 @@ fn sample_row(
     effective: super::report::EffectiveStatus,
 ) -> super::report::SelectorRow {
     super::report::SelectorRow {
-        language: "python".into(),
+        language: kiss::Language::Python,
         selector: selector.into(),
         raw: match effective {
             super::report::EffectiveStatus::Pass => "passed",

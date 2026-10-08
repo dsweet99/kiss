@@ -56,10 +56,6 @@ impl crate::test_runner::lang_iface::KernelRules for PythonKernelRules {
         super::stored::stored_witness(repo_root, extras)
     }
 
-    fn stored_witness_matches_extras(&self, _repo_root: &Path, _extras: &[String]) -> bool {
-        true
-    }
-
     fn list_workspace_selectors(
         &self,
         repo_root: &Path,

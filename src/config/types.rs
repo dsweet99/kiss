@@ -1,15 +1,9 @@
+use crate::Language;
 use crate::defaults;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConfigLanguage {
-    Python,
-    Rust,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LanguageTablesPresent {
-    pub python: bool,
-    pub rust: bool,
+    present: [bool; Language::ALL.len()],
 }
 
 impl Default for LanguageTablesPresent {
@@ -22,17 +16,34 @@ impl LanguageTablesPresent {
     #[must_use]
     pub const fn both() -> Self {
         Self {
-            python: true,
-            rust: true,
+            present: [true; Language::ALL.len()],
         }
     }
 
     #[must_use]
     pub const fn none() -> Self {
         Self {
-            python: false,
-            rust: false,
+            present: [false; Language::ALL.len()],
         }
+    }
+
+    #[must_use]
+    pub const fn only(language: Language) -> Self {
+        let mut present = [false; Language::ALL.len()];
+        present[language.index()] = true;
+        Self { present }
+    }
+
+    #[must_use]
+    pub const fn contains(self, language: Language) -> bool {
+        self.present[language.index()]
+    }
+
+    #[must_use]
+    pub fn all_present(self) -> bool {
+        Language::ALL
+            .into_iter()
+            .all(|language| self.contains(language))
     }
 
     #[must_use]
@@ -40,10 +51,11 @@ impl LanguageTablesPresent {
         let Ok(table) = content.parse::<toml::Table>() else {
             return Self::none();
         };
-        Self {
-            python: table.contains_key("python"),
-            rust: table.contains_key("rust"),
+        let mut present = [false; Language::ALL.len()];
+        for language in Language::ALL {
+            present[language.index()] = table.contains_key(language.label());
         }
+        Self { present }
     }
 
     #[must_use]
@@ -67,18 +79,19 @@ impl LanguageTablesPresent {
         self,
         py_files: &[std::path::PathBuf],
         rs_files: &[std::path::PathBuf],
-    ) -> Option<&'static str> {
-        if !py_files.is_empty() && !self.python {
-            Some("python")
-        } else if !rs_files.is_empty() && !self.rust {
-            Some("rust")
-        } else {
-            None
-        }
+    ) -> Option<Language> {
+        let has_files = |language: Language| match language {
+            Language::Python => !py_files.is_empty(),
+            Language::Rust => !rs_files.is_empty(),
+        };
+        Language::ALL
+            .into_iter()
+            .find(|language| has_files(*language) && !self.contains(*language))
     }
 }
 
-pub fn missing_language_table_message(language: &str) -> String {
+pub fn missing_language_table_message(language: Language) -> String {
+    let language = language.label();
     format!(
         "Error: found {language} files but .kissconfig has no [{language}] table. kiss check leaves an existing .kissconfig unchanged."
     )
@@ -130,6 +143,13 @@ impl Default for Config {
 }
 
 impl Config {
+    pub const fn defaults_for(language: Language) -> Self {
+        match language {
+            Language::Python => Self::python_defaults(),
+            Language::Rust => Self::rust_defaults(),
+        }
+    }
+
     pub const fn python_defaults() -> Self {
         use defaults::python as py;
         Self {
@@ -193,17 +213,16 @@ impl Config {
 mod touch_witness {
     use super::*;
 
-    impl ConfigLanguage {
-        fn witness() -> Self {
-            Self::Python
-        }
-    }
-
     #[test]
     fn witness_config_language() {
-        assert_eq!(ConfigLanguage::witness(), ConfigLanguage::Python);
-        let _ = Config::python_defaults();
-        let _ = Config::rust_defaults();
+        assert_eq!(
+            Config::defaults_for(Language::Python).statements_per_function,
+            Config::python_defaults().statements_per_function
+        );
+        assert_eq!(
+            Config::defaults_for(Language::Rust).statements_per_function,
+            Config::rust_defaults().statements_per_function
+        );
     }
 
     #[test]

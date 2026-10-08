@@ -126,11 +126,7 @@ impl FakeRuntime {
             .clone()
             .unwrap_or_else(|| "id".into());
         self.state.borrow_mut().witness = Some(ExecutionWitness {
-            language: match self.language {
-                Language::Python => "python",
-                Language::Rust => "rust",
-            }
-            .into(),
+            language: self.language,
             identity_digest,
             selectors: batch.selectors.clone(),
             durations_ns: vec![Some(1_000_000); statuses.len()],
@@ -191,12 +187,8 @@ fn miss_runs_and_publishes_even_when_exit_nonzero() {
 }
 
 fn witness(language: Language, statuses: &[WitnessStatus], complete: bool) -> ExecutionWitness {
-    let label = match language {
-        Language::Python => "python",
-        Language::Rust => "rust",
-    };
     ExecutionWitness {
-        language: label.into(),
+        language,
         identity_digest: "id".into(),
         selectors: (0..statuses.len()).map(|i| format!("t{i}")).collect(),
         statuses: statuses.to_vec(),
@@ -273,7 +265,7 @@ fn empty_all_mode_publishes_empty_full_without_run() {
 fn rust_accept_under_fake_runs_zero_exports_and_delta_publish() {
     let state = Rc::new(RefCell::new(FakeState {
         witness: Some(ExecutionWitness {
-            language: "rust".into(),
+            language: kiss::Language::Rust,
             identity_digest: "id".into(),
             selectors: vec!["a".into(), "b".into()],
             statuses: vec![WitnessStatus::Passed, WitnessStatus::Passed],
@@ -312,7 +304,7 @@ fn rust_accept_under_fake_runs_zero_exports_and_delta_publish() {
 fn rust_selecting_miss_recaps_witness_complement(mode: AcceptMode) {
     let state = Rc::new(RefCell::new(FakeState {
         witness: Some(ExecutionWitness {
-            language: "rust".into(),
+            language: kiss::Language::Rust,
             identity_digest: "rs:old:g:s".into(),
             selectors: vec!["b".into()],
             statuses: vec![WitnessStatus::Passed],

@@ -99,7 +99,7 @@ fn python_inventory_selectors(repo_root: &Path, request: &TargetRequest) -> Opti
 }
 
 fn rust_inventory_selectors(repo_root: &Path) -> Option<Vec<String>> {
-    crate::test_runner::lang_rust::try_load_rust_execution_witness(repo_root)
+    crate::test_runner::lang_rust::try_load_rust_execution_witness(repo_root, &[])
         .ok()
         .map(|witness| witness.selectors)
 }

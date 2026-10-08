@@ -61,7 +61,7 @@ impl WitnessStatus {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ExecutionWitness {
-    pub(crate) language: String,
+    pub(crate) language: kiss::Language,
     pub(crate) identity_digest: String,
     pub(crate) selectors: Vec<String>,
     pub(crate) statuses: Vec<WitnessStatus>,
