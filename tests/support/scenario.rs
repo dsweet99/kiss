@@ -38,11 +38,13 @@ impl Reply {
     }
 
     pub fn summary(&self) -> &str {
-        self.stdout
+        let line = self
+            .stdout
             .lines()
             .rev()
             .find(|line| line.starts_with("✓ ") || line.starts_with("✗ "))
-            .unwrap_or("")
+            .unwrap_or("");
+        count_prefix(line)
     }
 }
 
@@ -54,6 +56,17 @@ impl std::fmt::Debug for Reply {
             self.code, self.stdout, self.stderr
         )
     }
+}
+
+fn count_prefix(line: &str) -> &str {
+    let mut separators = 0;
+    for (index, _) in line.match_indices(" · ") {
+        separators += 1;
+        if separators == 3 {
+            return &line[..index];
+        }
+    }
+    line
 }
 
 fn kiss_command(dir: &Path, args: &[&str]) -> Command {

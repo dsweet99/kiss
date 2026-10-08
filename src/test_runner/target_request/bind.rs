@@ -244,6 +244,7 @@ fn git_rows_for_selectors(
 pub(crate) fn bind_and_prepare(
     args: &crate::test_runner::RunTestCmdArgs<'_>,
 ) -> Result<BindDecision, String> {
+    let _run_clock = super::render::KissTestRunClock::ensure();
     super::counters::reset();
     let request = request_from_run_args(args);
     if !adapter_holds(args, &request) {
@@ -282,8 +283,8 @@ pub(crate) fn bind_and_prepare(
     ) {
         Ok(Ensured::Report(report)) => {
             let executed = super::counters::current().subprocess > 0;
-            render_bound_report(&report, executed);
             super::counters::emit();
+            render_bound_report(&report, executed);
             Ok(BindDecision::Finished(report.exit_code))
         }
         Err(EnsureError::Interrupted) => Ok(BindDecision::Interrupted),

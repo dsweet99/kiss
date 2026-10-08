@@ -1,5 +1,56 @@
+use std::cell::Cell;
+use std::time::{Duration, Instant};
+
 use super::report::{EffectiveStatus, TargetPlanPreview, TargetReport};
 use super::scope::ExecutionPlan;
+use crate::test_runner::duration::format_test_duration;
+
+thread_local! {
+    static RUN_STARTED: Cell<Option<Instant>> = const { Cell::new(None) };
+    static TOTAL_OVERRIDE: Cell<Option<Duration>> = const { Cell::new(None) };
+}
+
+pub(crate) struct KissTestRunClock {
+    clear_on_drop: bool,
+}
+
+impl KissTestRunClock {
+    pub(crate) fn start() -> Self {
+        RUN_STARTED.set(Some(Instant::now()));
+        Self {
+            clear_on_drop: true,
+        }
+    }
+
+    pub(crate) fn ensure() -> Self {
+        let missing = RUN_STARTED.with(|slot| slot.get().is_none());
+        if missing {
+            RUN_STARTED.set(Some(Instant::now()));
+        }
+        Self {
+            clear_on_drop: missing,
+        }
+    }
+}
+
+impl Drop for KissTestRunClock {
+    fn drop(&mut self) {
+        if self.clear_on_drop {
+            RUN_STARTED.set(None);
+        }
+    }
+}
+
+fn kiss_test_total() -> Duration {
+    if let Some(fixed) = TOTAL_OVERRIDE.get() {
+        return fixed;
+    }
+    RUN_STARTED.with(|slot| {
+        slot.get()
+            .map(|started| started.elapsed())
+            .unwrap_or(Duration::ZERO)
+    })
+}
 
 pub(crate) fn render_plan_preview(preview: &TargetPlanPreview) {
     crate::test_runner::emit_test_progress(&format!(
@@ -46,13 +97,19 @@ pub(crate) fn official_summary_text(report: &TargetReport) -> String {
     } else {
         "✗"
     };
-    let mut out = format!("{mark} {passed} passed · {failed} failed · {timed_out} timed out\n");
-    out.push_str(&format!(
+    let durations = individual_durations_ns(report);
+    let median = format_optional_duration(median_ns(&durations));
+    let max = format_optional_duration(durations.last().copied());
+    let total = format_test_duration(kiss_test_total());
+    let mut out = format!(
         "kiss test: report members={} exit={}\n",
         report.rows.len(),
         report.exit_code
-    ));
+    );
     out.push_str(&official_gate_text(report));
+    out.push_str(&format!(
+        "{mark} {passed} passed · {failed} failed · {timed_out} timed out · {median} median · {max} max · {total} total\n"
+    ));
     out
 }
 
@@ -104,6 +161,36 @@ pub(crate) fn render_official_report(report: &TargetReport) {
     }
 }
 
+fn individual_durations_ns(report: &TargetReport) -> Vec<u64> {
+    let mut values: Vec<u64> = report
+        .rows
+        .iter()
+        .filter_map(|row| row.duration_ns)
+        .collect();
+    values.sort_unstable();
+    values
+}
+
+fn median_ns(sorted: &[u64]) -> Option<u64> {
+    let count = sorted.len();
+    if count == 0 {
+        return None;
+    }
+    if count % 2 == 1 {
+        return Some(sorted[count / 2]);
+    }
+    let left = u128::from(sorted[count / 2 - 1]);
+    let right = u128::from(sorted[count / 2]);
+    u64::try_from((left + right) / 2).ok()
+}
+
+fn format_optional_duration(duration_ns: Option<u64>) -> String {
+    match duration_ns {
+        Some(duration_ns) => format_test_duration(Duration::from_nanos(duration_ns)),
+        None => "n/a".to_string(),
+    }
+}
+
 fn official_label(status: EffectiveStatus) -> &'static str {
     match status {
         EffectiveStatus::Pass => "PASS",
@@ -125,6 +212,8 @@ fn render_execution_plan(plan: &ExecutionPlan) {
 #[cfg(test)]
 mod official_text_tests {
     use super::*;
+    use std::time::Duration;
+
     use crate::test_runner::target_request::report::{
         ReportEvidenceStamp, ReportGate, ReportSnapshot, SelectorRow,
     };
@@ -170,6 +259,51 @@ mod official_text_tests {
             "cached PASS has no line: {text}"
         );
         assert!(text.contains("1 passed"), "{text}");
+        assert!(text.contains("n/a median · n/a max ·"), "{text}");
+    }
+
+    #[test]
+    fn official_summary_reports_median_max_and_total() {
+        let mut sample = report(Vec::new());
+        sample.rows = vec![
+            timed("tests/a.py::test_a", EffectiveStatus::Pass, 100_000_000),
+            timed("tests/a.py::test_b", EffectiveStatus::Fail, 300_000_000),
+            timed("tests/a.py::test_c", EffectiveStatus::Timeout, 500_000_000),
+            timed_missing("tests/a.py::test_d"),
+        ];
+        super::TOTAL_OVERRIDE.set(Some(Duration::from_millis(1250)));
+        let text = official_summary_text(&sample);
+        super::TOTAL_OVERRIDE.set(None);
+        assert_eq!(
+            text,
+            "kiss test: report members=4 exit=0\n\
+NO VIOLATIONS\n\
+✗ 2 passed · 1 failed · 1 timed out · 0.30s median · 0.50s max · 1.25s total\n"
+        );
+        assert_eq!(
+            text.lines().next_back().unwrap(),
+            "✗ 2 passed · 1 failed · 1 timed out · 0.30s median · 0.50s max · 1.25s total"
+        );
+        assert_eq!(super::median_ns(&[100, 300]), Some(200));
+        assert_eq!(super::median_ns(&[]), None);
+    }
+
+    fn timed(selector: &str, effective: EffectiveStatus, duration_ns: u64) -> SelectorRow {
+        SelectorRow {
+            language: kiss::Language::Python,
+            selector: selector.into(),
+            raw: "status".into(),
+            effective,
+            duration_ns: Some(duration_ns),
+            provenance: "witness".into(),
+        }
+    }
+
+    fn timed_missing(selector: &str) -> SelectorRow {
+        SelectorRow {
+            duration_ns: None,
+            ..timed(selector, EffectiveStatus::Pass, 0)
+        }
     }
 
     #[test]

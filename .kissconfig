@@ -6,6 +6,11 @@ comment_removal_enabled = true
 min_similarity = 0.9
 docs_allowed = [
   "ops/",
+  "tests/fake_rust/",
+]
+orphan_allowed = [
+"tests/fake_rust/",
+"tests/fake_python/",
 ]
 
 [test]

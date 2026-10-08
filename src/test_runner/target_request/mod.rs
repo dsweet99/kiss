@@ -34,6 +34,7 @@ pub(crate) use bind::{BindDecision, bind_and_prepare};
 pub(crate) use canon::colon_to_nodeid;
 pub(crate) use counters::add_index;
 pub(crate) use projection::build_slice_projection;
+pub(crate) use render::KissTestRunClock;
 pub(crate) use render::official_report_text;
 pub(crate) use report::{EffectiveStatus, TargetReport};
 pub(crate) use request_paths::request_source_paths;
