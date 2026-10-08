@@ -127,9 +127,7 @@ fn timed_compute_misses(
     );
     union_non_cacheable_misses(planned, &mut misses);
     union_incomparable_timing_misses(request, module, planned, witness, &mut misses);
-    if !request.force_selectors.is_empty() {
-        misses.retain(|sel| request.force_selectors.iter().any(|forced| forced == sel));
-    }
+    misses = planned.to_vec();
     emit_kernel_stage(rules(module), "miss_select", started);
     Ok(misses)
 }

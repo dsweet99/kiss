@@ -107,7 +107,7 @@ pub(in crate::bin_cli::dispatch) fn dispatch_test(o: TestDispatchOptions<'_>) ->
         main_branch: o.main_branch.as_deref(),
         base_branch: o.base_branch.as_deref(),
         dry_run: o.dry_run,
-        retry_bad: o.retry_bad,
+        retry_bad: false,
         metrics: o.metrics,
         jobs: o.jobs.unwrap_or_else(|| o.test_cfg.command_jobs()),
         ignore: &ignore,

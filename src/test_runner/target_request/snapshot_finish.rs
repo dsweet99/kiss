@@ -36,22 +36,16 @@ pub(super) fn finish_planned_snapshot(
             plan,
         }));
     }
-    if !policy.retry_bad() && !row_plan.force {
-        let extras = args
-            .map(|item| item.extras)
-            .unwrap_or(crate::test_runner::language_keyed::LanguageKeyed::EMPTY);
-        if let Some(ready) = super::super::bind::load_ready_for_request(repo_root, request, extras)
-        {
-            return Ok(SnapshotOutcome::Report(Box::new(ready)));
-        }
-    }
     if row_plan.graph_repair {
         super::super::report::repair_graph_evidence(repo_root, &scope)
             .map_err(EnsureError::IncompleteEvidence)?;
     }
+    let target_selected = !scope.selectors.is_empty();
     if !policy.assemble_only()
         && let Some(args) = args
-        && (!plan.known_execution_union().is_empty() || plan.population_repair)
+        && (target_selected
+            || !plan.known_execution_union().is_empty()
+            || plan.population_repair)
     {
         let facts = RunFacts {
             time_gate_active: row_plan.time_gate_active,

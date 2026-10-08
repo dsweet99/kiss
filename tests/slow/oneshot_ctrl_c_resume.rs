@@ -36,12 +36,16 @@ fn interrupted_plain_run_is_resumed_by_the_next_run() {
     );
     assert_eq!(
         s.take_runs(),
-        ["test_fail", "test_slow"],
-        "tests without a record for the edited tree run; the PASS recorded before Ctrl-C does not"
+        ["test_fail", "test_pass", "test_slow"],
+        "the next run executes every test selected by TARGET"
     );
 
     let reply = kiss(s.root(), &["test"]);
-    assert_eq!(reply.code, Some(1), "cache intact: {reply:?}");
-    assert_eq!(reply.summary(), SUMMARY, "cache intact: {reply:?}");
-    assert!(s.take_runs().is_empty(), "nothing is still needed");
+    assert_eq!(reply.code, Some(1), "{reply:?}");
+    assert_eq!(reply.summary(), SUMMARY, "{reply:?}");
+    assert_eq!(
+        s.take_runs(),
+        ["test_fail", "test_pass", "test_slow"],
+        "a later run still executes every selected test"
+    );
 }

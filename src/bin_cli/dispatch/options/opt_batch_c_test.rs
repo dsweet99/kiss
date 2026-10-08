@@ -24,7 +24,6 @@ fn witness_opt_batch_c() {
         main_branch: Some("main".into()),
         base_branch: Some("origin/main".into()),
         dry_run: true,
-        retry_bad: true,
         metrics: true,
         jobs: Some(4),
         ignore: vec![".venv".into()],

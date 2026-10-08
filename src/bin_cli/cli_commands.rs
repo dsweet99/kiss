@@ -111,8 +111,6 @@ pub enum Commands {
         main_branch: Option<String>,
         #[arg(long, value_name = "BRANCH", help = "Branch name for kiss test base")]
         base_branch: Option<String>,
-        #[arg(long, help = "Rerun FAIL and TIMEOUT tests in the TARGET subset")]
-        retry_bad: bool,
         #[arg(
             short = 'j',
             long,

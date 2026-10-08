@@ -136,6 +136,7 @@ pub(crate) fn records_all_mode_plan(
     }
 }
 
+#[cfg(test)]
 pub(crate) fn record_misses(
     planned: &[String],
     witness: Option<&super::ExecutionWitness>,

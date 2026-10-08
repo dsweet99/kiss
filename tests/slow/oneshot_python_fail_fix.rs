@@ -23,9 +23,10 @@ fn python_source_edit_reruns_population_and_cached_fail_waits_for_it() {
 
     let unchanged = kiss(s.root(), &["test"]);
     assert_summary(&unchanged, 1, broken_summary, "unchanged tree");
-    assert!(
-        s.take_runs().is_empty(),
-        "a cached FAIL is not rerun merely because it failed"
+    assert_eq!(
+        s.take_runs(),
+        ["test_fail", "test_pass"],
+        "an unchanged tree still runs every selected test"
     );
 
     s.write("lib_a.py", "def f():\n    return 0 + 0\n");
@@ -53,5 +54,9 @@ fn python_source_edit_reruns_population_and_cached_fail_waits_for_it() {
         "✓ 2 passed · 0 failed · 0 timed out",
         "run after the fix",
     );
-    assert!(s.take_runs().is_empty(), "nothing is still needed");
+    assert_eq!(
+        s.take_runs(),
+        ["test_fail", "test_pass"],
+        "a later run still executes every selected test"
+    );
 }

@@ -44,14 +44,7 @@ pub(crate) fn ensure_target_report<F>(
 where
     F: FnMut(crate::test_runner::RunTestCmdArgs<'_>) -> crate::test_runner::RunTestOnceOutcome,
 {
-    if choice.reuse_ready
-        && let Some(report) = ready_report(repo_root, args, true)
-    {
-        return EnsureOutcome::Ready {
-            report: Box::new(report),
-            replay: true,
-        };
-    }
+    let _ = choice.reuse_ready;
     execute_then_publish(repo_root, args, choice.close_zero, execute)
 }
 
@@ -97,14 +90,12 @@ pub(crate) fn ensure_target_report_with(
     policy: &EnsurePolicy,
     args: Option<&crate::test_runner::RunTestCmdArgs<'_>>,
 ) -> Result<Ensured, EnsureError> {
-    if !policy.dry_run() && !policy.retry_bad() && !args.is_some_and(|item| item.force_rerun) {
-        let extras = args
-            .map(|item| item.extras)
-            .unwrap_or(crate::test_runner::language_keyed::LanguageKeyed::EMPTY);
+    if args.is_none() && !policy.dry_run() && !policy.retry_bad() {
+        let extras = crate::test_runner::language_keyed::LanguageKeyed::EMPTY;
         if let Ok(ensured) = ensure_target_report_query(repo_root, request, extras) {
             return Ok(ensured);
         }
-        if args.is_none() && policy.require_complete() {
+        if policy.require_complete() {
             return Err(EnsureError::IncompleteEvidence(
                 "incomplete evidence".into(),
             ));

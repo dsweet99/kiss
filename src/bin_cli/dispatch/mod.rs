@@ -154,7 +154,6 @@ fn dispatch_test_command(
             operands,
             main_branch,
             base_branch,
-            retry_bad,
             jobs,
         } => {
             if let Some(operand) = operands.iter().find(|operand| operand.starts_with('-')) {
@@ -182,7 +181,6 @@ fn dispatch_test_command(
                 main_branch,
                 base_branch,
                 dry_run: false,
-                retry_bad,
                 metrics: false,
                 jobs,
                 ignore: Vec::new(),

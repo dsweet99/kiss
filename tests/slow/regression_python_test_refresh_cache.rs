@@ -50,13 +50,11 @@ fn cold_python_test_runs_population_and_warm_test_reuses_records() {
     let warm_stderr = String::from_utf8_lossy(&warm.stderr);
     assert!(
         warm.status.success(),
-        "warm kiss test should pass from cached records. stdout:\n{warm_stdout}\nstderr:\n{warm_stderr}"
+        "warm kiss test should pass. stdout:\n{warm_stdout}\nstderr:\n{warm_stderr}"
     );
     assert!(
-        warm_stdout.contains("1 passed")
-            && !warm_stdout.contains("PASS: test_lib.py::test_value")
-            && !warm_stdout.contains("PASS test_lib.py::test_value"),
-        "warm kiss test should reuse the cached Python result. stdout:\n{warm_stdout}"
+        warm_stdout.contains("1 passed") && warm_stdout.contains("PASS: test_lib.py::test_value"),
+        "warm kiss test should run the selected Python test. stdout:\n{warm_stdout}"
     );
 }
 

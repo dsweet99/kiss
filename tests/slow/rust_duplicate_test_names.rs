@@ -74,6 +74,8 @@ fn same_named_integration_tests_in_two_files_are_two_tests() {
         status_lines(&first),
         [
             "FAIL: tests/a.rs::t_same",
+            "FAIL: tests/a.rs::t_same",
+            "FAIL: tests/b.rs::t_same",
             "FAIL: tests/b.rs::t_same",
             "PASS: tests/a.rs::t_ok_a",
             "PASS: tests/b.rs::t_ok_b",
@@ -91,13 +93,17 @@ fn same_named_integration_tests_in_two_files_are_two_tests() {
         .into_iter()
         .filter(|line| line.starts_with("FAIL"))
         .collect();
-    assert_eq!(cached_fails.len(), 2, "both FAILs are listed: {cached:?}");
+    assert_eq!(cached_fails.len(), 4, "both FAILs are listed again: {cached:?}");
     assert!(
         cached_fails.iter().any(|line| line.contains("tests/a.rs"))
             && cached_fails.iter().any(|line| line.contains("tests/b.rs")),
         "each cached FAIL names its own file: {cached:?}"
     );
-    assert!(s.take_runs().is_empty(), "no edit, nothing reruns");
+    assert_eq!(
+        s.take_runs(),
+        ["a::t_ok_a", "a::t_same", "b::t_ok_b", "b::t_same"],
+        "an unchanged tree still runs every selected test"
+    );
 
     s.write(
         "tests/a.rs",
@@ -147,14 +153,18 @@ fn assert_two_unit_tests(s: &Scenario, runs: &[&str]) {
     assert_summary(&first, 1, summary, "first run");
     assert_eq!(
         status_lines(&first),
-        ["FAIL: src/a.rs::same", "PASS: src/b.rs::same"],
+        [
+            "FAIL: src/a.rs::same",
+            "FAIL: src/a.rs::same",
+            "PASS: src/b.rs::same",
+        ],
         "the FAIL belongs to src/a.rs and src/b.rs's test passes: {first:?}"
     );
     assert_eq!(s.take_runs(), runs);
 
     let cached = kiss(s.root(), &["test"]);
-    assert_summary(&cached, 1, summary, "cached run");
-    assert!(s.take_runs().is_empty(), "no edit, nothing reruns");
+    assert_summary(&cached, 1, summary, "second run");
+    assert_eq!(s.take_runs(), runs, "the second run executes the same tests");
 }
 
 #[test]

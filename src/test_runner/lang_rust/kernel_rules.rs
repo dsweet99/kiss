@@ -103,10 +103,6 @@ impl KernelRules for RustKernelRules {
         crate::test_runner::lang_iface::records::records_all_mode_plan(repo_root, "rust", selectors)
     }
 
-    fn recap_stored_selectors(&self) -> bool {
-        true
-    }
-
     fn cancel_active_work(&self) {
         super::nextest::cancel_active_run();
     }

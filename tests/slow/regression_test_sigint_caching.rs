@@ -136,12 +136,9 @@ fn kiss_test_sigint_caches_passed_tests_as_it_goes() {
         second_out.status.success(),
         "restart must exit 0; stdout={stdout2} stderr={stderr2}"
     );
-    // A cached PASS has no line of its own.
     assert!(
-        stdout2.contains("1 passed")
-            && !stdout2.contains("PASS: test_lib.py::test_fast")
-            && !stdout2.contains("PASS test_lib.py::test_fast"),
-        "expected test_fast to be cached on second run, \
+        stdout2.contains("1 passed") && stdout2.contains("PASS: test_lib.py::test_fast"),
+        "the selected test runs again after the interrupt, \
          stdout={stdout2}, stderr={stderr2}"
     );
 }

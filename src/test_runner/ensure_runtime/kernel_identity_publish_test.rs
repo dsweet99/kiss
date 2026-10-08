@@ -34,7 +34,11 @@ fn missing_durations_are_accepted_like_rust() {
         }
         let result = ensure_runtime_cache(&req, &[&runtime]).expect("ensure");
         assert_eq!(result.exit_code, 0);
-        assert!(state.borrow().run_calls.is_empty(), "{status:?}");
+        assert_eq!(
+            state.borrow().run_calls,
+            vec![vec!["a".to_string()]],
+            "{status:?}"
+        );
     }
 }
 
@@ -81,8 +85,8 @@ fn partial_run_summary_includes_accepted_cache_hits() {
     let result = ensure_runtime_cache(&req, &[&runtime]).expect("ensure");
     let summary = result.by_language.python.unwrap().summary;
     assert_eq!(summary.total, 2);
-    assert_eq!(summary.cache_hits, 1);
-    assert_eq!(summary.cache_misses, 1);
+    assert_eq!(summary.cache_hits, 0);
+    assert_eq!(summary.cache_misses, 2);
 }
 
 #[test]
@@ -112,8 +116,9 @@ fn rust_warm_accept_still_emits_rust_identity_without_run() {
         out.contains("kiss test: stage rust_identity"),
         "warm accept must still emit rust_identity:\n{out}"
     );
-    assert!(
-        state.borrow().run_calls.is_empty(),
-        "warm accept must not run"
+    assert_eq!(
+        state.borrow().run_calls,
+        vec![vec!["a".to_string()]],
+        "a stored pass still runs"
     );
 }

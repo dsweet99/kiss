@@ -81,6 +81,30 @@ pub(crate) fn official_report_text(report: &TargetReport) -> String {
     out
 }
 
+pub(crate) fn bad_status_lines(report: &TargetReport) -> Vec<String> {
+    let mut lines = Vec::new();
+    for row in &report.rows {
+        let status = match row.effective {
+            EffectiveStatus::Pass => continue,
+            EffectiveStatus::Fail => kiss::rpytest_runner::TestStatus::Failed,
+            EffectiveStatus::Timeout => kiss::rpytest_runner::TestStatus::TimedOut,
+        };
+        let selector = report
+            .labels
+            .get(&row.selector)
+            .unwrap_or(&row.selector)
+            .as_str();
+        let duration = match row.duration_ns {
+            Some(ns) => format_test_duration(Duration::from_nanos(ns)),
+            None => String::new(),
+        };
+        lines.push(crate::test_runner::status_labels::format_status_line(
+            status, selector, &duration, None,
+        ));
+    }
+    lines
+}
+
 pub(crate) fn official_summary_text(report: &TargetReport) -> String {
     let mut passed = 0usize;
     let mut failed = 0usize;
@@ -333,6 +357,35 @@ NO VIOLATIONS\n\
         assert!(text.contains("FAIL tests/a.py::test_bad"), "{text}");
         assert!(text.contains("TIMEOUT src/lib.rs::test_slow"), "{text}");
         assert!(text.contains("1 passed · 1 failed · 1 timed out"), "{text}");
+    }
+
+    #[test]
+    fn bad_status_lines_match_fail_and_timeout_status_lines() {
+        let mut report = report(Vec::new());
+        report.rows.push(SelectorRow {
+            language: kiss::Language::Python,
+            selector: "tests/a.py::test_bad".into(),
+            raw: "failed".into(),
+            effective: EffectiveStatus::Fail,
+            duration_ns: Some(10_000_000),
+            provenance: "run".into(),
+        });
+        report.rows.push(SelectorRow {
+            language: kiss::Language::Rust,
+            selector: "src/lib.rs::test_slow".into(),
+            raw: "timeout".into(),
+            effective: EffectiveStatus::Timeout,
+            duration_ns: Some(2_000_000_000),
+            provenance: "run".into(),
+        });
+        let lines = bad_status_lines(&report);
+        assert_eq!(
+            lines,
+            vec![
+                "FAIL: tests/a.py::test_bad (0.01s)".to_string(),
+                "TIMEOUT: src/lib.rs::test_slow (2.00s)".to_string(),
+            ]
+        );
     }
 
     #[test]

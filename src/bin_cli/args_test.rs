@@ -112,28 +112,15 @@ fn check_rejects_removed_all_and_jobs_flags() {
 }
 
 #[test]
-fn test_retry_bad_parses_and_removed_force_flags_are_rejected() {
-    let cli = Cli::parse_from(["kiss", "test", ".", "--retry-bad"]);
-    assert!(matches!(
-        cli.command,
-        Commands::Test {
-            retry_bad: true,
-            ..
-        }
-    ));
+fn test_removed_retry_and_force_flags_are_rejected() {
+    assert!(Cli::try_parse_from(["kiss", "test", ".", "--retry-bad"]).is_err());
     let targeted = Cli::parse_from([
         "kiss",
         "test",
-        "--retry-bad",
         "tests/fast/app_server/test_transact_grid.py::test_assign_method_follows_grid_queue_after_rebind",
     ]);
     match targeted.command {
-        Commands::Test {
-            operands,
-            retry_bad,
-            ..
-        } => {
-            assert!(retry_bad);
+        Commands::Test { operands, .. } => {
             assert_eq!(
                 parse_test_invocation(&operands).unwrap(),
                 TestInvocation::Targets(vec![
@@ -208,9 +195,9 @@ fn test_command_help_is_language_neutral_for_shared_options() {
         .render_long_help()
         .to_string();
 
-    assert!(help.contains("--retry-bad"));
+    assert!(!help.contains("--retry-bad"));
     assert!(!help.contains("--force"));
-    assert!(help.contains("Rerun FAIL and TIMEOUT tests in the TARGET subset"));
+    assert!(!help.contains("Rerun FAIL and TIMEOUT tests in the TARGET subset"));
     assert!(help.contains("Maximum number of test jobs to run concurrently"));
     assert!(help.contains("commit, base, main, ., or PATH / PATH::symbol / directory"));
     assert!(help.contains("[TARGET]"));

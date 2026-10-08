@@ -44,8 +44,6 @@ mod oneshot_ctrl_c_resume;
 mod oneshot_kissconfig_ignore;
 #[path = "slow/oneshot_python_fail_fix.rs"]
 mod oneshot_python_fail_fix;
-#[path = "slow/oneshot_retry_bad.rs"]
-mod oneshot_retry_bad;
 #[path = "slow/oneshot_two_runs.rs"]
 mod oneshot_two_runs;
 #[path = "slow/regression_check_cache_uncached_default.rs"]

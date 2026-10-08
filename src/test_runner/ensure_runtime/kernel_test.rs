@@ -239,9 +239,10 @@ fn python_and_rust_accept_stored_outcomes_alike() {
 }
 
 #[test]
-fn python_cached_pass_does_not_rerun() {
-    let (python, _) = run_calls_per_language(&[WitnessStatus::Passed], true);
-    assert!(python.is_empty(), "{python:?}");
+fn stored_pass_still_runs_the_planned_selector() {
+    let (python, rust) = run_calls_per_language(&[WitnessStatus::Passed], true);
+    assert_eq!(python, vec![vec!["t0".to_string()]]);
+    assert_eq!(rust, python);
 }
 
 #[test]
@@ -281,21 +282,23 @@ fn rust_accept_under_fake_runs_zero_exports_and_delta_publish() {
         state: Rc::clone(&state),
     };
     let req = rust_request(vec!["a".into(), "b".into()]);
-    let result = ensure_runtime_cache(&req, &[&runtime]).expect("accept");
+    let result = ensure_runtime_cache(&req, &[&runtime]).expect("run");
     assert_eq!(result.exit_code, 0);
-    assert!(
-        state.borrow().run_calls.is_empty(),
-        "Accept must not run selectors"
+    assert_eq!(
+        state.borrow().run_calls,
+        vec![vec!["a".to_string(), "b".to_string()]],
+        "a stored pass does not skip the planned selectors"
     );
-    assert_eq!(state.borrow().publish_calls, 0);
 
+    state.borrow_mut().run_calls.clear();
     state.borrow_mut().witness.as_mut().unwrap().statuses[1] = WitnessStatus::Failed;
     state.borrow_mut().witness.as_mut().unwrap().complete = false;
     state.borrow_mut().run_exit_code = 0;
-    let _ = ensure_runtime_cache(&req, &[&runtime]).expect("repair");
-    assert!(
-        state.borrow().run_calls.is_empty(),
-        "a cached FAIL with unchanged identity must not rerun"
+    let _ = ensure_runtime_cache(&req, &[&runtime]).expect("rerun");
+    assert_eq!(
+        state.borrow().run_calls,
+        vec![vec!["a".to_string(), "b".to_string()]],
+        "a stored FAIL does not skip the planned selectors"
     );
     let observed = kiss::subprocess_observer::subprocess_observer_snapshot();
     assert_eq!(observed.nextest_invocations, 0);
@@ -327,15 +330,15 @@ fn rust_selecting_miss_recaps_witness_complement(mode: AcceptMode) {
         let result = ensure_runtime_cache(&req, &[&runtime]).expect("ensure");
         let rust = result.by_language.rust.expect("rust result");
         assert_eq!(
-            rust.summary.total, 2,
-            "selecting miss of a must still recap witness b (mode {mode:?})"
+            rust.summary.total, 1,
+            "a stored pass outside the planned set is not part of this run (mode {mode:?})"
         );
-        assert_eq!(rust.summary.cache_hits, 1);
+        assert_eq!(rust.summary.cache_hits, 0);
     });
     assert_eq!(state.borrow().run_calls, vec![vec!["a".to_string()]]);
     assert!(
         !out.contains("PASS b"),
-        "a cached rust PASS that did not run has no line of its own:\n{out}"
+        "a stored pass that was not selected has no line:\n{out}"
     );
 }
 

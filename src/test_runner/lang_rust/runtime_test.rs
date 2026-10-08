@@ -304,7 +304,7 @@ fn live_misses_are_the_tests_whose_records_do_not_hold() {
     let planned = req.planned.rust.clone();
     assert_eq!(
         RustKernelRules.live_misses(&req, &planned, "", Some(&witness)),
-        vec!["extra".to_string()]
+        planned
     );
     req.force = true;
     assert_eq!(

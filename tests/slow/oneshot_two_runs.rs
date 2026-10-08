@@ -6,21 +6,21 @@ use crate::support::scenario::{
 
 const SUMMARY: &str = "✗ 2 passed · 1 failed · 0 timed out";
 
-fn assert_cached_only(reply: &Reply, phase: &str) {
+fn assert_selected_ran(reply: &Reply, phase: &str) {
     assert_eq!(reply.code, Some(1), "{phase}: {reply:?}");
     assert_eq!(reply.summary(), SUMMARY, "{phase}: {reply:?}");
     assert!(
-        reply.stdout.contains("FAIL test_b.py::test_fail"),
+        reply.stdout.contains("FAIL: test_b.py::test_fail"),
         "{phase}: {reply:?}"
     );
     assert!(
-        !reply.stdout.contains("PASS"),
-        "{phase}: nothing ran; {reply:?}"
+        reply.stdout.contains("PASS: test_a.py::test_slow"),
+        "{phase}: {reply:?}"
     );
 }
 
 #[test]
-fn second_oneshot_waits_for_lock_then_reruns_nothing() {
+fn second_oneshot_waits_for_lock_then_runs_the_selected_tests() {
     if skip_under_kiss_test() {
         return;
     }
@@ -45,14 +45,25 @@ fn second_oneshot_waits_for_lock_then_reruns_nothing() {
         "first: a Python edit reruns every Python test; {first:?}"
     );
     assert_repeats(&second, "kiss test: waiting for kiss test", "second");
-    assert_cached_only(&second, "second");
+    assert_selected_ran(&second, "second");
     assert_eq!(
         s.take_runs(),
-        ["test_fail", "test_pass", "test_slow"],
-        "each needed test runs once, never against the same cache twice"
+        [
+            "test_fail",
+            "test_fail",
+            "test_pass",
+            "test_pass",
+            "test_slow",
+            "test_slow",
+        ],
+        "each selected test runs in both invocations"
     );
 
     let third = kiss(s.root(), &["test"]);
-    assert_cached_only(&third, "third");
-    assert!(s.take_runs().is_empty(), "third runs nothing");
+    assert_selected_ran(&third, "third");
+    assert_eq!(
+        s.take_runs(),
+        ["test_fail", "test_pass", "test_slow"],
+        "a later run still executes every selected test"
+    );
 }

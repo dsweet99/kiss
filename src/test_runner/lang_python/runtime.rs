@@ -37,10 +37,6 @@ impl crate::test_runner::lang_iface::KernelRules for PythonKernelRules {
         )
     }
 
-    fn recap_stored_selectors(&self) -> bool {
-        true
-    }
-
     fn runner_identity_part(&self, _repo_root: &Path) -> Option<serde_json::Value> {
         None
     }

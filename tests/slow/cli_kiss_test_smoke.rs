@@ -132,8 +132,8 @@ fn kiss_test_dot_prints_final_pass_recap() {
         "warm run must include official pass recap, recap={recap}, stdout={stdout}"
     );
     assert!(
-        recap.contains("1 passed") && !stdout.contains("PASS"),
-        "a cached PASS has no line of its own: {stdout}"
+        recap.contains("1 passed") && stdout.contains("PASS: test_lib.py::test_f"),
+        "the selected test runs again and the recap counts it: {stdout}"
     );
 }
 

@@ -120,7 +120,7 @@ fn publish_rust_ready(repo: &std::path::Path) {
 }
 
 #[test]
-fn all_hit_replays_compact_recap_without_running() {
+fn all_hit_still_runs_the_selected_tests() {
     let _cwd = crate::cwd_test_lock::lock();
     let tmp = tempfile::tempdir().unwrap();
     seed_repo(&tmp);
@@ -158,23 +158,19 @@ fn all_hit_replays_compact_recap_without_running() {
             rust_all_args(),
             |_a| {
                 runs.fetch_add(1, Ordering::SeqCst);
-                panic!("source-stable oneshot must not re-enter the engine")
+                emit_sample_run()
             },
             true,
             Some(tmp.path()),
         );
-        assert_eq!(runs.load(Ordering::SeqCst), 1);
+        assert_eq!(runs.load(Ordering::SeqCst), 2);
         assert_eq!(second.exit_code, 0);
         let replayed = second.output.unwrap_or_default();
         assert!(
             replayed.contains("1 passed") && replayed.contains("report members=1"),
             "{replayed}"
         );
-        assert!(
-            !replayed.contains("python_source_fingerprint"),
-            "{replayed}"
-        );
-        assert!(!replayed.contains("tests_remaining"), "{replayed}");
+        assert!(!replayed.contains("PASS (cached)"), "{replayed}");
     });
 }
 

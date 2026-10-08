@@ -308,6 +308,9 @@ fn render_bound_report(report: &TargetReport, executed: bool) {
         for line in super::render::official_summary_text(report).lines() {
             crate::test_runner::emit_test_progress(line);
         }
+        for line in super::render::bad_status_lines(report) {
+            crate::test_runner::emit_test_progress(&line);
+        }
         return;
     }
     super::render::render_official_report(report);

@@ -40,15 +40,12 @@ pub(crate) trait KernelRules: KernelHooks {
 
     fn live_misses(
         &self,
-        request: &EnsureRequest,
+        _request: &EnsureRequest,
         planned: &[String],
         _identity: &str,
-        witness: Option<&ExecutionWitness>,
+        _witness: Option<&ExecutionWitness>,
     ) -> Vec<String> {
-        if request.force {
-            return planned.to_vec();
-        }
-        super::records::record_misses(planned, witness)
+        planned.to_vec()
     }
 
     fn recap_stored_selectors(&self) -> bool {
