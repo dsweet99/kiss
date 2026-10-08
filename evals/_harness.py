@@ -1150,7 +1150,7 @@ def shlex_quote(value: str) -> str:
 def emit_eval(name: str, kind: str, value: object | None = None) -> None:
     if kind not in {"LARGER", "SMALLER"}:
         raise ValueError(
-            f"VISION.md allows only LARGER/SMALLER eval metrics, got {kind!r}"
+            f"eval metrics must be LARGER/SMALLER, got {kind!r}"
         )
     print(f"EVAL: {name} = {kind}({value})")
 

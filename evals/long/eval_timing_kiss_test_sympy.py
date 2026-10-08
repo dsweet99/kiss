@@ -9,7 +9,7 @@ from pathlib import Path
 from evals._harness import KISS, ROOT, Outcome, emit_eval, report_eval, run
 
 SYMPY_REPO = (ROOT.parent / "repos" / "sympy").resolve()
-# VISION.md: each eval runs in under 60s.
+# Each eval is budgeted under 60s.
 EVAL_TIMEOUT_S = 55
 # Full sympy execution exceeds the eval budget; use a substantial core subset.
 SYMPY_TARGETS = (

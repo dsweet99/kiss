@@ -9,7 +9,7 @@ from pathlib import Path
 from evals._harness import KISS, ROOT, emit_eval, report_eval, run
 
 ANYDOC_REPO = (ROOT.parent / "repos" / "anydoc").resolve()
-# VISION.md: each eval runs in under 60s.
+# Each eval is budgeted under 60s.
 EVAL_TIMEOUT_S = 55
 # Full anydoc Rust from a cold cargo target exceeds the budget; a single
 # robustness test still exercises the mixed tree after kiss check analyzes both

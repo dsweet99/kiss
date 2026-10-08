@@ -29,7 +29,7 @@ Release of the `dsweet/iml_2` line (version bump since 0.4.10 on crates.io).
 
 ### Notes
 
-- `kiss test` still excludes doctests (see `VISION.md`); failing doctests can fail `cargo test` while `kiss test` passes.
+- `kiss test` still excludes doctests; failing doctests can fail `cargo test` while `kiss test` passes.
 - Requires a recent Rust toolchain (`edition = "2024"`).
 
 ## 0.4.10 — 2026-08-25

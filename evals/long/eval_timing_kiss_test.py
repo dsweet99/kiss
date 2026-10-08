@@ -12,7 +12,7 @@ RUFF_REPO = (ROOT.parent / "repos" / "ruff").resolve()
 EVAL_CONFIG = Path(__file__).with_name("ruff_timing.kissconfig")
 # Intentional syntax-error fixtures (ruff_benchmark/resources, ty completion truth).
 IGNORE_PREFIXES = ("resources", "ty_completion_eval", "ty_benchmark")
-# VISION.md: each eval runs in under 60s.
+# Each eval is budgeted under 60s.
 EVAL_TIMEOUT_S = 55
 
 
