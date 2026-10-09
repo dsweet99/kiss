@@ -1,3 +1,4 @@
+#![cfg_attr(not(test), allow(dead_code))]
 use serde::{Deserialize, Serialize};
 
 pub(crate) type LangFilter = kiss::Language;

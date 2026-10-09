@@ -57,7 +57,11 @@ fn oneshot_waits_for_peer_kiss_test_on_tmp_repo() {
     let tmp = crate::common::fresh_seeded_python_repo();
     let mut first = spawn_oneshot(tmp.path());
     let first_out = collect_stdout(&mut first);
-    wait_contains(&first_out, "kiss test: Planning", Duration::from_secs(15));
+    wait_contains(
+        &first_out,
+        "kiss test: Running workspace",
+        Duration::from_secs(15),
+    );
     let mut second = spawn_oneshot(tmp.path());
     let second_out = collect_stdout(&mut second);
     let waited = wait_contains(
@@ -66,8 +70,8 @@ fn oneshot_waits_for_peer_kiss_test_on_tmp_repo() {
         Duration::from_secs(15),
     );
     assert!(
-        !waited.contains("kiss test: Planning"),
-        "second oneshot must wait before planning; stdout={waited}"
+        !waited.contains("kiss test: Running workspace"),
+        "second oneshot must wait before the runner; stdout={waited}"
     );
     let first_status = first.wait().expect("first oneshot");
     let second_status = second.wait().expect("second oneshot");

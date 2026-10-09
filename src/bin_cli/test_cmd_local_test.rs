@@ -171,10 +171,7 @@ fn oneshot_runs_local_runner_then_report() {
         0
     });
     assert_eq!(calls.load(Ordering::SeqCst), 1, "local runner must run");
-    assert!(
-        code == 0 || code == 1,
-        "local path must finish with a report decision, got {code}"
-    );
+    assert_eq!(code, 0, "runner exit 0 is the command exit");
 }
 
 #[test]
@@ -196,5 +193,5 @@ fn oneshot_existing_target_accepts_resolve() {
         0
     });
     assert_eq!(calls.load(Ordering::SeqCst), 1);
-    assert!(code == 0 || code == 1, "got {code}");
+    assert_eq!(code, 0, "got {code}");
 }

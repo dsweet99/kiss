@@ -33,7 +33,19 @@ fn rust_runs_go_through_nextest_and_forward_force_selectors() {
     )
     .expect("read kernel");
     assert!(
-        kernel.contains("&request.force_selectors"),
-        "the kernel must run force_selectors for --retry-bad"
+        kernel.contains("run_planned"),
+        "the kernel must run the planned selectors"
+    );
+    assert!(
+        !kernel.contains("timed_compute_misses"),
+        "the kernel must not replace a miss set with the planned selectors"
+    );
+    let jobs = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/test_runner/pipeline_jobs.rs"),
+    )
+    .expect("read pipeline jobs");
+    assert!(
+        jobs.contains("apply_force_bad"),
+        "--force-bad must add prior failures before execution"
     );
 }

@@ -1,3 +1,5 @@
+#![cfg_attr(not(test), allow(dead_code))]
+
 #[cfg(test)]
 #[path = "capture_stdout.rs"]
 pub(crate) mod capture_stdout;
@@ -29,9 +31,7 @@ pub(crate) mod unit_test_timing;
 pub(crate) mod universe_root;
 #[cfg(test)]
 pub(crate) use kiss_test_report::KissTestReport;
-pub(crate) use kiss_test_report::{
-    clone_run_args, kiss_report_from_ensure_outcome, repo_can_assemble_reports,
-};
+pub(crate) use kiss_test_report::{clone_run_args, repo_can_assemble_reports};
 #[cfg(test)]
 pub(crate) use kiss_test_report::{run_kiss_test_report, run_kiss_test_report_reuse};
 #[cfg(test)]
@@ -169,13 +169,24 @@ pub(crate) fn emit_stage_time(stage: &str, duration: std::time::Duration) {
 }
 
 pub(crate) fn run_test_once(a: RunTestCmdArgs<'_>) -> RunTestOnceOutcome {
-    match target_request::bind_and_prepare(&a) {
+    match run_live_overlapped_test(&a, std::time::Instant::now()) {
+        Ok(code) => RunTestOnceOutcome::Code(code),
         Err(err) => {
-            eprintln!("{err}");
-            RunTestOnceOutcome::EngineError(err)
+            if consume_rust_batch_interrupted() {
+                return RunTestOnceOutcome::Interrupted;
+            }
+            let line = kiss_test_engine_line(err);
+            eprintln!("{line}");
+            RunTestOnceOutcome::EngineError(line)
         }
-        Ok(target_request::BindDecision::Finished(code)) => RunTestOnceOutcome::Code(code),
-        Ok(target_request::BindDecision::Interrupted) => RunTestOnceOutcome::Interrupted,
+    }
+}
+
+fn kiss_test_engine_line(err: String) -> String {
+    if err.starts_with("error: kiss test:") {
+        err
+    } else {
+        format!("error: kiss test: {err}")
     }
 }
 

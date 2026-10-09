@@ -2,9 +2,7 @@ use kiss::TestSectionConfig;
 
 use crate::bin_cli::args::TestInvocation;
 use crate::test_runner::target_request::TargetRequest;
-use crate::test_runner::{
-    RunTestCmdArgs, RunTestOnceOutcome, kiss_report_from_ensure_outcome, run_test_once,
-};
+use crate::test_runner::{RunTestCmdArgs, RunTestOnceOutcome, run_test_once};
 
 pub struct TestCommandArgs<'a> {
     pub invocation: TestInvocation,
@@ -119,7 +117,11 @@ fn run_dry_tests(
     if let Err(code) = reject_test_universe_languages(args) {
         return code;
     }
-    match run_local(run_args) {
+    runner_exit(run_local(run_args))
+}
+
+fn runner_exit(outcome: RunTestOnceOutcome) -> i32 {
+    match outcome {
         RunTestOnceOutcome::Code(code) => code,
         RunTestOnceOutcome::Interrupted => 130,
         RunTestOnceOutcome::EngineError(_) => 1,
@@ -144,20 +146,7 @@ fn run_local_tests(
     if let Err(code) = reject_test_universe_languages(args) {
         return code;
     }
-    let mut run_local = Some(run_local);
-    let repo = std::env::current_dir()
-        .ok()
-        .and_then(|cwd| crate::test_git::git_repo_root(&cwd).ok());
-    kiss_report_from_ensure_outcome(crate::test_runner::target_request::ensure_target_report(
-        repo.as_deref(),
-        &run_args,
-        crate::test_runner::target_request::EnsureChoice {
-            reuse_ready: true,
-            close_zero: false,
-        },
-        |a| run_local.take().expect("kiss test runner")(a),
-    ))
-    .exit_code
+    runner_exit(run_local(run_args))
 }
 
 fn reject_unresolved_targets(args: &TestCommandArgs<'_>) -> Result<(), i32> {

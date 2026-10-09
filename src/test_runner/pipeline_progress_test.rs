@@ -120,6 +120,67 @@ fn lang_rust_omits_selecting_python() {
     assert!(Language::Rust.allowed_by(Some(Language::Rust)));
 }
 
+#[cfg(unix)]
+#[test]
+fn empty_commit_dry_run_prints_no_selected_tests() {
+    let _cwd = crate::cwd_test_lock::lock();
+    let tmp = tempfile::tempdir().unwrap();
+    crate::test_runner::test_mode_fixtures::init_git(&tmp);
+    std::fs::write(tmp.path().join("README"), "x\n").unwrap();
+    for args in [vec!["add", "."], vec!["commit", "-m", "init"]] {
+        assert!(
+            crate::test_runner::test_mode_fixtures::git_in(tmp.path())
+                .args(args)
+                .status()
+                .unwrap()
+                .success()
+        );
+    }
+    let _stdout = PIPELINE_STDOUT
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let old = std::env::current_dir().unwrap();
+    std::env::set_current_dir(tmp.path()).unwrap();
+    let out = crate::test_runner::capture_stdout::capture_stdout(|| {
+        let code = crate::test_runner::pipeline::run_overlapped_test(
+            &crate::test_runner::RunTestCmdArgs {
+                doubles: None,
+                invocation: crate::bin_cli::args::TestInvocation::Commit,
+                target_request: crate::test_runner::target_request::request_from_focus(
+                    crate::test_runner::target_request::TargetFocus::Git(
+                        crate::test_runner::target_request::GitFocus::Commit,
+                    ),
+                    None,
+                    &[],
+                ),
+                main_branch_cli: None,
+                base_branch_cli: None,
+                dry_run: true,
+                force_rerun: false,
+                force_bad: false,
+                metrics: false,
+                jobs: 1,
+                extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
+                config_main_branch: None,
+                gate_config: kiss::GateConfig::default(),
+            },
+            std::time::Instant::now(),
+        )
+        .unwrap_or(1);
+        assert_eq!(code, 0);
+    });
+    std::env::set_current_dir(old).unwrap();
+    assert!(
+        out.contains("NO SELECTED TESTS"),
+        "empty selector list must match finish_no_work: {out}"
+    );
+    assert!(!out.contains("kiss test: Planning"), "{out}");
+    assert!(!out.contains("kiss test: plan complete="), "{out}");
+    assert!(!out.contains("kiss test: plan execute="), "{out}");
+    assert!(!out.contains("kiss test: graph repair"), "{out}");
+    assert!(!out.contains("kiss test: kernel parse="), "{out}");
+}
+
 #[test]
 fn dry_run_prints_selectors_after_selecting_joins() {
     let src = include_str!("pipeline.rs");

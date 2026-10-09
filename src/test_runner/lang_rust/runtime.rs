@@ -1,3 +1,4 @@
+#![cfg_attr(not(test), allow(dead_code))]
 use kiss::Language;
 
 use crate::test_runner::lang_iface::{

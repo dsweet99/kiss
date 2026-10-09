@@ -1,6 +1,6 @@
+#![cfg_attr(not(test), allow(dead_code))]
 pub(crate) use super::kernel_hooks::KernelHooks;
 use super::runtime::EnsureRequest;
-use super::timing::session_timing_context_digest;
 use super::witness::ExecutionWitness;
 use crate::test_runner::runners::SelectorExecutionSummary;
 
@@ -48,20 +48,6 @@ pub(crate) trait KernelRules: KernelHooks {
         planned.to_vec()
     }
 
-    fn recap_stored_selectors(&self) -> bool {
-        false
-    }
-
-    fn current_timing_digest(&self, request: &EnsureRequest) -> String {
-        let _ = request;
-        session_timing_context_digest(0)
-    }
-
-    fn stored_timing_digest(&self, request: &EnsureRequest) -> String {
-        let _ = request;
-        session_timing_context_digest(0)
-    }
-
     fn cancel_active_work(&self) {}
 
     fn all_mode_plan(
@@ -104,8 +90,3 @@ pub(crate) trait KernelRules: KernelHooks {
     }
 }
 
-pub(crate) fn emit_kernel_stage(rules: &dyn KernelRules, name: &str, started: std::time::Instant) {
-    if let Some(prefix) = rules.stage_prefix() {
-        crate::test_runner::emit_stage_time(&format!("{prefix}_{name}"), started.elapsed());
-    }
-}

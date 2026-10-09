@@ -1,3 +1,4 @@
+#![cfg_attr(not(test), allow(dead_code))]
 use std::collections::BTreeMap;
 #[cfg(test)]
 use std::collections::BTreeSet;

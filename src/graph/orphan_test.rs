@@ -282,6 +282,22 @@ fn rust_cargo_example_is_entry() {
 }
 
 #[test]
+fn orphan_allowed_dot_slash_prefix_exempts_plugin_path() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let plugin = tmp.path().join("src/plugins/hook.py");
+    write_fixture(&plugin, "def run():\n    return 1\n");
+    let (with_allow, _) = py_report(
+        std::slice::from_ref(&plugin),
+        &["./src/plugins".into()],
+        tmp.path(),
+    );
+    assert!(
+        !with_allow.iter().any(|v| v.metric == "orphan_module"),
+        "orphan_allowed=\"./src/plugins\" must exempt the plugin: {with_allow:#?}"
+    );
+}
+
+#[test]
 fn orphan_allowed_exempts_plugin_path() {
     let tmp = tempfile::TempDir::new().unwrap();
     let plugin = tmp.path().join("src/plugins/hook.py");

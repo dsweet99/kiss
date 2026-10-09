@@ -94,10 +94,22 @@ pub(super) fn skip_test_only_line(
 }
 
 pub(crate) fn normalize_allowed_dirs(dirs: &[String]) -> Vec<String> {
-    dirs.iter()
-        .map(|p| p.trim().trim_end_matches('/').to_string())
-        .filter(|p| !p.is_empty())
-        .collect()
+    dirs.iter().filter_map(|dir| normalize_allowed_dir(dir)).collect()
+}
+
+fn normalize_allowed_dir(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let parts: Vec<&str> = trimmed
+        .split(['/', '\\'])
+        .filter(|part| !part.is_empty() && *part != ".")
+        .collect();
+    if parts.is_empty() {
+        return Some(".".to_string());
+    }
+    Some(parts.join("/"))
 }
 
 pub(crate) fn path_in_allowed_dirs(path: &Path, repo_root: &Path, allowed: &[String]) -> bool {

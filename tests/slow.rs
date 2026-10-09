@@ -36,6 +36,8 @@ mod cli_kiss_test_wait;
 mod comment_removal_check;
 #[path = "slow/docs_allowed_check.rs"]
 mod docs_allowed_check;
+#[path = "slow/config_pytest_plugins.rs"]
+mod config_pytest_plugins;
 #[path = "slow/oneshot_args.rs"]
 mod oneshot_args;
 #[path = "slow/oneshot_ctrl_c_resume.rs"]

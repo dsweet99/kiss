@@ -53,11 +53,20 @@ pub(crate) fn run_overlapped_test(
     let jobs = pipeline_jobs::take_job_results(&slots)?;
     let planned = merge_and_cache_planned(a, &prefix, &slots)?;
     let options = run_options(a, a.jobs, process_started);
+    if a.dry_run && !joined_has_work(&planned) {
+        return finish_joined_run(&planned, &options, process_started, jobs);
+    }
     if a.dry_run {
         print_joined_dry_run(&planned, &options)?;
         return Ok(0);
     }
     finish_joined_run(&planned, &options, process_started, jobs)
+}
+
+fn joined_has_work(planned: &PlannedSelectors) -> bool {
+    Language::ALL
+        .into_iter()
+        .any(|language| super::run_logic::language_has_work(planned, language))
 }
 
 fn run_workspace_prefix(

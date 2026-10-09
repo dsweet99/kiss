@@ -222,7 +222,8 @@ fn product_gate_lines(out: &Output) -> Vec<String> {
     sorted_stdout_lines(out)
         .into_iter()
         .filter(|line| {
-            !line.starts_with("kiss test:")
+            !crate::common::is_cli_wall_timing_line(line)
+                && !line.starts_with("kiss test:")
                 && !line.starts_with("PASS:")
                 && !line.starts_with("PASS (cached):")
                 && !line.starts_with("PASS ")
@@ -296,7 +297,18 @@ fn python_only_cached_test_matches_uncached() {
     )
     .unwrap();
     commit_all(repo.path(), "init");
-    assert_cached_run_identity(home.path(), repo.path(), &["test", "--lang", "python"]);
+    let (first, second) = replay_cmd(home.path(), repo.path(), &["test", "--lang", "python"]);
+    let first_out = String::from_utf8_lossy(&first.stdout);
+    assert!(
+        first.status.success() && first_out.contains("1 passed"),
+        "run must succeed. stdout:\n{first_out}\nstderr:\n{}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    assert_eq!(
+        product_gate_lines(&first),
+        product_gate_lines(&second),
+        "a second kiss test must match the first run's product lines"
+    );
 }
 
 #[test]

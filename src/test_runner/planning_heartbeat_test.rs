@@ -1,5 +1,5 @@
 #[test]
-fn run_test_emits_planning_heartbeat_before_plan_work() {
+fn run_test_outside_git_does_not_print_planning() {
     let _cwd = crate::cwd_test_lock::lock();
     let tmp = tempfile::tempdir().unwrap();
     let old = std::env::current_dir().unwrap();
@@ -30,7 +30,9 @@ fn run_test_emits_planning_heartbeat_before_plan_work() {
     });
     std::env::set_current_dir(old).unwrap();
     assert!(
-        out.contains("kiss test: Planning ..."),
-        "expected early planning heartbeat before plan failure, got {out:?}"
+        !out.contains("kiss test: Planning"),
+        "kiss test must not plan before the runner, got {out:?}"
     );
+    assert!(!out.contains("kiss test: plan complete="), "{out:?}");
+    assert!(!out.contains("kiss test: kernel parse="), "{out:?}");
 }

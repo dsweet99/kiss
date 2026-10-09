@@ -16,7 +16,7 @@ duplication_enabled = false\n\
 \"tests/fast\" = 2\n\
 \"tests/\" = 10\n\
 \"rust\" = 10\n\
-\"*\" = 0\n";
+\"*\" = 60\n";
 
 fn write_fixture(repo: &Path) {
     for dir in ["tests/slow/dbs", "tests/slow", "tests/fast", "tests/web"] {
@@ -40,11 +40,7 @@ fn write_fixture(repo: &Path) {
 }
 
 fn warm_python_records(repo: &Path, home: &Path) {
-    fs::write(
-        repo.join(".kissconfig"),
-        CONFIG.replace("\"*\" = 0", "\"*\" = 60"),
-    )
-    .unwrap();
+    fs::write(repo.join(".kissconfig"), CONFIG).unwrap();
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
     crate::common::scrub_parent_build_env(&mut cmd);
     crate::common::preserve_toolchain_homes(&mut cmd);
@@ -61,7 +57,6 @@ fn warm_python_records(repo: &Path, home: &Path) {
         "warm-up should run all five tests\nstdout:\n{stdout}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    fs::write(repo.join(".kissconfig"), CONFIG).unwrap();
 }
 
 fn run_stats(repo: &Path, home: &Path) -> String {
@@ -111,7 +106,7 @@ fn assert_grouped_rows(rows: &[&str]) {
         ["tests/fast", "2", "1"],
         ["tests/", "10", "1"],
         ["rust", "10", "0"],
-        ["*", "0", "1"],
+        ["*", "60", "1"],
     ];
     for (row, expected_cells) in rows.iter().zip(expected) {
         let cells: Vec<&str> = row.split_whitespace().collect();

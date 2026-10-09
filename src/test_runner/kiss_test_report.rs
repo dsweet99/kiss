@@ -1,3 +1,4 @@
+#![cfg_attr(not(test), allow(dead_code))]
 use kiss::watch_report::{WatchNamed, WatchNamedOutcome, WatchSuiteTotals};
 
 use super::RunTestCmdArgs;

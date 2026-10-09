@@ -1,3 +1,4 @@
+#![cfg_attr(not(test), allow(dead_code))]
 use std::cell::Cell;
 use std::time::{Duration, Instant};
 

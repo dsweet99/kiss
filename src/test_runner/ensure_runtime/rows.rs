@@ -1,6 +1,5 @@
-use std::collections::BTreeSet;
-
-use kiss::test_records::{Selection, TestRecord, load_records, must_run, records_dir};
+#![cfg_attr(not(test), allow(dead_code))]
+use kiss::test_records::{TestRecord, load_records, records_dir};
 
 use crate::test_runner::lang_iface::{
     EnsureRequest, ExecutionWitness, LanguageRuntime, Listing, WitnessStatus,
@@ -8,7 +7,6 @@ use crate::test_runner::lang_iface::{
 
 pub(crate) struct StoredRows {
     pub(crate) witness: ExecutionWitness,
-    pub(crate) holding: BTreeSet<String>,
 }
 
 pub(crate) fn stored_rows(
@@ -18,30 +16,16 @@ pub(crate) fn stored_rows(
 ) -> Option<StoredRows> {
     #[cfg(test)]
     if let Some(seeded) = module.seeded_rows(request) {
-        let holding = seeded.selectors.iter().cloned().collect();
-        return Some(StoredRows {
-            witness: seeded,
-            holding,
-        });
+        return Some(StoredRows { witness: seeded });
     }
     let language = module.language();
-    let mut holding = BTreeSet::new();
     let mut rows: Vec<TestRecord> = Vec::new();
     for row in load_records(&records_dir(&request.repo_root, language.label())) {
         if row.identity != listing.record_identity {
             continue;
         }
-        let Some(current) = module.deps(request, &row) else {
+        if module.deps(request, &row).is_none() {
             continue;
-        };
-        let selection = Selection {
-            identity: &listing.record_identity,
-            current_deps: Some(&current),
-            retry_bad: false,
-            needs_duration: false,
-        };
-        if must_run(Some(row.view()), &selection).is_none() {
-            holding.insert(row.test_id.clone());
         }
         rows.push(row);
     }
@@ -68,7 +52,7 @@ pub(crate) fn stored_rows(
         raw_statuses: statuses.clone(),
         statuses,
     };
-    Some(StoredRows { witness, holding })
+    Some(StoredRows { witness })
 }
 
 fn rows_digest(identity: &str, rows: &[TestRecord]) -> String {

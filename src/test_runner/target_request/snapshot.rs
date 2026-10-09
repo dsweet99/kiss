@@ -1,3 +1,4 @@
+#![cfg_attr(not(test), allow(dead_code))]
 use std::path::Path;
 use std::time::Instant;
 
@@ -315,17 +316,23 @@ fn apply_runner_extra(
     if python_extras.is_empty() {
         return Ok(());
     }
-    let discovered = crate::test_runner::lang_python::collect::collect_python_nodeids(
+    let discovered = crate::test_runner::runners::enumerate_workspace_python_selectors(
         repo_root,
-        None,
+        args.ignore(),
         python_extras,
     )
-    .unwrap_or_default();
-    scope.selectors.retain(|selector| {
-        !selector_is(selector, kiss::Language::Python)
-            || discovered.iter().any(|item| item == selector)
-    });
+    .map_err(EnsureError::Planning)?;
+    replace_python_selectors(scope, discovered);
     Ok(())
+}
+
+fn replace_python_selectors(scope: &mut ReportScope, discovered: Vec<String>) {
+    scope
+        .selectors
+        .retain(|selector| !selector_is(selector, kiss::Language::Python));
+    scope.selectors.extend(discovered);
+    scope.selectors.sort();
+    scope.selectors.dedup();
 }
 
 pub(super) fn extras_select_tests(args: &crate::test_runner::RunTestCmdArgs<'_>) -> bool {

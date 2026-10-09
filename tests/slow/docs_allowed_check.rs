@@ -140,6 +140,41 @@ fn library_emits_docs_allowed_in_generated_config() {
 }
 
 #[test]
+fn check_allows_docs_under_dot_slash_prefix() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+    fs::create_dir(root.join("docs")).unwrap();
+    fs::write(
+        root.join("docs/ok.py"),
+        "\"\"\"allowed\"\"\"\n\ndef foo():\n    return 1\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("app.py"),
+        "\"\"\"not allowed\"\"\"\n\ndef foo():\n    return 1\n",
+    )
+    .unwrap();
+    write_docs_config(root, "[\"./docs\"]");
+    let out = kiss_binary()
+        .current_dir(root)
+        .arg("check")
+        .arg("--lang")
+        .arg("python")
+        .arg(".")
+        .output()
+        .expect("kiss check should run");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("VIOLATION:doc:") && stdout.contains("app.py"),
+        "app.py stays outside ./docs; stdout:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("ok.py"),
+        "docs_allowed=[\"./docs\"] must allow docs/ok.py; stdout:\n{stdout}"
+    );
+}
+
+#[test]
 fn check_does_not_treat_host_tmp_or_nested_src_as_allowed() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();

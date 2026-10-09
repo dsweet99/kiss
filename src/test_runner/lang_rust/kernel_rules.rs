@@ -25,14 +25,6 @@ impl KernelHooks for RustKernelRules {
         !extras.is_empty()
     }
 
-    fn stage_prefix(&self) -> Option<&'static str> {
-        Some("rust")
-    }
-
-    fn time_gate_selector_error_is_fatal(&self) -> bool {
-        false
-    }
-
     fn validate_extra_args(&self, extras: &[String]) -> Result<(), String> {
         super::nextest::validate_rust_extra_args(extras)
     }

@@ -1,3 +1,4 @@
+#![cfg_attr(not(test), allow(dead_code))]
 use std::time::Duration;
 
 use kiss::rpytest_runner::TestStatus;

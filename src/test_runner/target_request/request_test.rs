@@ -380,10 +380,14 @@ fn bind_prefers_pinned_request_over_stale_invocation() {
     args.target_request = workspace_request(None, &[]);
     let result = super::bind::bind_and_prepare(&args);
     std::env::set_current_dir(restore).unwrap();
-    assert!(
-        !matches!(result, Err(err) if err.contains("adapter mismatch")),
-        "pinned Workspace must bind"
-    );
+    match result {
+        Ok(super::bind::BindDecision::Finished(code)) => assert_eq!(code, 0),
+        Ok(super::bind::BindDecision::Interrupted) => panic!("pinned Workspace must bind"),
+        Err(err) => assert!(
+            !err.contains("adapter mismatch"),
+            "pinned Workspace must bind: {err}"
+        ),
+    }
 }
 
 #[test]

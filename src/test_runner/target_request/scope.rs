@@ -1,3 +1,4 @@
+#![cfg_attr(not(test), allow(dead_code))]
 use serde::{Deserialize, Serialize};
 
 use super::resolved::SourceRegion;

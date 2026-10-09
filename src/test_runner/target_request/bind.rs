@@ -1,3 +1,4 @@
+#![cfg_attr(not(test), allow(dead_code))]
 use super::ensure::{Ensured, ensure_target_report_with, preview_target_plan_with};
 use super::report::TargetReport;
 use super::snapshot::{EnsureError, EnsurePolicy};

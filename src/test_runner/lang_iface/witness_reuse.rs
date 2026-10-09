@@ -1,3 +1,5 @@
+#![cfg_attr(not(test), allow(dead_code))]
+
 use super::witness::{ExecutionWitness, WitnessStatus};
 
 #[cfg_attr(not(test), allow(dead_code))]

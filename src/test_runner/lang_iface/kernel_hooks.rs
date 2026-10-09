@@ -1,3 +1,4 @@
+#![cfg_attr(not(test), allow(dead_code))]
 use super::runtime::EnsureRequest;
 use super::witness::ExecutionWitness;
 use super::witness_summary::summary_from_witness_statuses;
@@ -16,14 +17,6 @@ pub(crate) trait KernelHooks: Sync {
     fn is_test_source(&self, path: &std::path::Path) -> bool {
         let _ = path;
         false
-    }
-
-    fn stage_prefix(&self) -> Option<&'static str> {
-        None
-    }
-
-    fn time_gate_selector_error_is_fatal(&self) -> bool {
-        true
     }
 
     fn validate_extra_args(&self, extras: &[String]) -> Result<(), String> {

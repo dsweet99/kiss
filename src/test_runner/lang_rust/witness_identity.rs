@@ -1,3 +1,4 @@
+#![cfg_attr(not(test), allow(dead_code))]
 use crate::test_runner::lang_iface::ExecutionWitness;
 
 fn rust_witness_row_reportable(witness: &ExecutionWitness, i: usize) -> bool {

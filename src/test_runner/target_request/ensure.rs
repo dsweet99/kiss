@@ -1,3 +1,4 @@
+#![cfg_attr(not(test), allow(dead_code))]
 use super::report::{TargetPlanPreview, TargetReport};
 use super::snapshot::{
     EnsureError, EnsurePolicy, SnapshotOutcome, run_snapshot_kernel, run_snapshot_kernel_with,
