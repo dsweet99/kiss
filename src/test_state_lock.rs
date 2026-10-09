@@ -245,6 +245,13 @@ mod tests {
     }
 
     #[test]
+    fn timeout_returns_the_lock_when_the_directory_is_free() {
+        let tmp = tempfile::tempdir().unwrap();
+        let guard = lock_test_state_dir_within(tmp.path(), Duration::from_secs(1)).unwrap();
+        assert!(guard.is_some());
+    }
+
+    #[test]
     fn a_file_in_place_of_the_state_dir_errors() {
         let tmp = tempfile::tempdir().unwrap();
         let file = tmp.path().join("not-a-directory");

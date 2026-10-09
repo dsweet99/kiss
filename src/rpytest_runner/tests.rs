@@ -93,6 +93,32 @@ fn pytest_runner_from_bounded_fn_powers_all_entrypoints() {
 }
 
 #[test]
+fn pytest_runner_from_streaming_bounded_fn_powers_all_entrypoints() {
+    let runner = PytestRunner::from_streaming_bounded_fn(|reqs, max_jobs, on_complete| {
+        assert!(max_jobs > 0);
+        for (index, req) in reqs.into_iter().enumerate() {
+            on_complete(
+                index,
+                Ok(PytestRunOutcome {
+                    nodeid: req.nodeid,
+                    status: TestStatus::Passed,
+                    exit_code: Some(0),
+                    stdout: Vec::new(),
+                    stderr: Vec::new(),
+                    duration: Duration::ZERO,
+                    artifacts: BTreeMap::new(),
+                }),
+            );
+        }
+    });
+    let req = PytestRunRequest::witness();
+
+    assert_eq!(runner.run_one(req.clone()).unwrap().nodeid, req.nodeid);
+    assert_eq!(runner.run_many(vec![req.clone()]).len(), 1);
+    assert_eq!(runner.run_many_bounded(vec![req], 1).len(), 1);
+}
+
+#[test]
 fn api_structs_expose_expected_fields() {
     let artifact = crate::rpytest_runner::RequestedArtifact::witness();
     assert_eq!(artifact.name, "report");

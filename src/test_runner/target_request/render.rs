@@ -125,6 +125,21 @@ pub(crate) fn official_summary_text(report: &TargetReport) -> String {
     let median = format_optional_duration(median_ns(&durations));
     let max = format_optional_duration(durations.last().copied());
     let total = format_test_duration(kiss_test_total());
+    let violations = report
+        .gates
+        .iter()
+        .filter(|gate| {
+            matches!(
+                gate.kind.as_str(),
+                "max_unit_test_seconds" | "max_num_tests" | "orphan"
+            )
+        })
+        .count();
+    let violation_word = if violations == 1 {
+        "violation"
+    } else {
+        "violations"
+    };
     let mut out = format!(
         "kiss test: report members={} exit={}\n",
         report.rows.len(),
@@ -132,7 +147,7 @@ pub(crate) fn official_summary_text(report: &TargetReport) -> String {
     );
     out.push_str(&official_gate_text(report));
     out.push_str(&format!(
-        "{mark} {passed} passed · {failed} failed · {timed_out} timed out · {median} median · {max} max · {total} total\n"
+        "{mark} {passed} passed · {failed} failed · {timed_out} timed out · {median} median · {max} max · {total} total · {violations} {violation_word}\n"
     ));
     out
 }
@@ -302,11 +317,11 @@ mod official_text_tests {
             text,
             "kiss test: report members=4 exit=0\n\
 NO VIOLATIONS\n\
-✗ 2 passed · 1 failed · 1 timed out · 0.30s median · 0.50s max · 1.25s total\n"
+✗ 2 passed · 1 failed · 1 timed out · 0.30s median · 0.50s max · 1.25s total · 0 violations\n"
         );
         assert_eq!(
             text.lines().next_back().unwrap(),
-            "✗ 2 passed · 1 failed · 1 timed out · 0.30s median · 0.50s max · 1.25s total"
+            "✗ 2 passed · 1 failed · 1 timed out · 0.30s median · 0.50s max · 1.25s total · 0 violations"
         );
         assert_eq!(super::median_ns(&[100, 300]), Some(200));
         assert_eq!(super::median_ns(&[]), None);
@@ -433,6 +448,7 @@ NO VIOLATIONS\n\
             detail: "utils.py:helper".into(),
         }]));
         assert!(text.contains("VIOLATION:orphan:utils.py:helper"), "{text}");
+        assert!(text.contains("1 violation"), "{text}");
         assert!(!text.contains("NO VIOLATIONS"), "{text}");
     }
 }
