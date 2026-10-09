@@ -3,9 +3,15 @@ use std::path::{Path, PathBuf};
 use kiss::Language;
 
 #[derive(Debug)]
+pub(crate) struct ExpandedFiles {
+    pub paths: Vec<String>,
+    pub skip_python_collect: Vec<PathBuf>,
+}
+
+#[derive(Debug)]
 pub(crate) enum ExpandedTargetPlan {
     All,
-    Files(Vec<String>),
+    Files(ExpandedFiles),
 }
 
 pub(crate) fn expand_target_operands(
@@ -18,6 +24,7 @@ pub(crate) fn expand_target_operands(
         .canonicalize()
         .map_err(|e| format!("cannot canonicalize repository root: {e}"))?;
     let mut file_operands = Vec::new();
+    let mut skip_python_collect = Vec::new();
     let mut saw_repo_root = false;
 
     for raw in targets {
@@ -46,7 +53,15 @@ pub(crate) fn expand_target_operands(
             saw_repo_root = true;
             continue;
         }
-        append_directory_sources(&mut file_operands, raw, &abs, ignore, lang_filter)?;
+        append_directory_sources(
+            &mut file_operands,
+            &mut skip_python_collect,
+            raw,
+            &abs,
+            ignore,
+            lang_filter,
+            repo_root,
+        )?;
     }
 
     if saw_repo_root {
@@ -56,9 +71,15 @@ pub(crate) fn expand_target_operands(
         return Ok(ExpandedTargetPlan::All);
     }
     if file_operands.is_empty() {
-        return Ok(ExpandedTargetPlan::Files(Vec::new()));
+        return Ok(ExpandedTargetPlan::Files(ExpandedFiles {
+            paths: Vec::new(),
+            skip_python_collect: Vec::new(),
+        }));
     }
-    Ok(ExpandedTargetPlan::Files(file_operands))
+    Ok(ExpandedTargetPlan::Files(ExpandedFiles {
+        paths: file_operands,
+        skip_python_collect,
+    }))
 }
 
 fn is_file_or_symbol_operand(raw: &str) -> bool {
@@ -134,17 +155,35 @@ fn resolve_candidate(repo_root: &Path, raw: &str) -> PathBuf {
 
 fn append_directory_sources(
     file_operands: &mut Vec<String>,
+    skip_python_collect: &mut Vec<PathBuf>,
     raw: &str,
     abs: &Path,
     ignore: &[String],
     lang_filter: Option<Language>,
+    repo_root: &Path,
 ) -> Result<(), String> {
     let path_arg = abs.to_string_lossy().into_owned();
-    let (py_files, rs_files) =
+    let (mut py_files, mut rs_files) =
         kiss::gather_files_by_lang(std::slice::from_ref(&path_arg), None, ignore);
+    append_symlink_sources(&mut py_files, &mut rs_files, abs, ignore);
     if py_files.is_empty() && rs_files.is_empty() {
         return Err(format!("directory '{raw}' expands to zero source files"));
     }
+    let collected =
+        crate::test_runner::lang_python::collect_paths::python_files_under(repo_root, abs, ignore);
+    py_files.retain(|path| {
+        if collected.iter().any(|item| item == path) {
+            return true;
+        }
+        let production = !kiss::is_python_test_module_path(path)
+            && !crate::test_runner::lang_python::collect_paths::python_filename_selected(
+                repo_root, path,
+            );
+        if production {
+            skip_python_collect.push(path.clone());
+        }
+        production
+    });
     let files: Vec<_> = match lang_filter {
         Some(Language::Python) => py_files,
         Some(Language::Rust) => rs_files,
@@ -154,4 +193,64 @@ fn append_directory_sources(
         file_operands.push(path.to_string_lossy().into_owned());
     }
     Ok(())
+}
+
+fn append_symlink_sources(
+    py_files: &mut Vec<PathBuf>,
+    rs_files: &mut Vec<PathBuf>,
+    root: &Path,
+    ignore: &[String],
+) {
+    let walker = ignore::WalkBuilder::new(root)
+        .hidden(true)
+        .git_ignore(true)
+        .git_global(true)
+        .git_exclude(true)
+        .add_custom_ignore_filename(".kissignore")
+        .follow_links(false)
+        .build();
+    for entry in walker {
+        let Ok(entry) = entry else {
+            continue;
+        };
+        let Some(file_type) = entry.file_type() else {
+            continue;
+        };
+        if !file_type.is_symlink() {
+            continue;
+        }
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        if symlink_path_skipped(path, ignore) {
+            continue;
+        }
+        let Some(language) = Language::from_path(path) else {
+            continue;
+        };
+        let path = path.to_path_buf();
+        match language {
+            Language::Python => py_files.push(path),
+            Language::Rust => rs_files.push(path),
+        }
+    }
+    py_files.sort();
+    py_files.dedup();
+    rs_files.sort();
+    rs_files.dedup();
+}
+
+fn symlink_path_skipped(path: &Path, ignore: &[String]) -> bool {
+    if kiss::path_ignored_by_prefixes(&path.to_string_lossy(), ignore) {
+        return true;
+    }
+    path.components().any(|component| {
+        component.as_os_str().to_str().is_some_and(|name| {
+            matches!(
+                name,
+                "__pycache__" | "node_modules" | ".venv" | "venv" | "env"
+            )
+        })
+    })
 }

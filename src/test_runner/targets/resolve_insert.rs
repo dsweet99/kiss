@@ -45,11 +45,7 @@ pub(super) fn insert_lines(
 }
 
 pub(super) fn repo_relative(repo_root: &Path, abs: &Path) -> Option<String> {
-    let root = repo_root.canonicalize().ok()?;
-    let abs = abs.canonicalize().ok()?;
-    abs.strip_prefix(root)
-        .ok()
-        .map(|rel| rel.to_string_lossy().replace('\\', "/"))
+    super::super::python_nodeid_cache::repo_relative(repo_root, abs)
 }
 
 pub(super) fn language_label(language: Language) -> &'static str {

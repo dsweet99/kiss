@@ -66,6 +66,30 @@ fn kiss_discovery_matches_isolated_pytest_collection() {
 }
 
 #[test]
+fn flat_repo_python_files_pattern_is_collected() {
+    reset_python_collect_memo_for_tests();
+    let tmp = TempDir::new().unwrap();
+    fs::write(
+        tmp.path().join("pytest.ini"),
+        "[pytest]\npython_files = check_*.py\n",
+    )
+    .unwrap();
+    fs::write(
+        tmp.path().join("check_bad.py"),
+        "def test_bad():\n    assert False\n",
+    )
+    .unwrap();
+    fs::write(
+        tmp.path().join("test_hidden.py"),
+        "def test_hidden():\n    assert False\n",
+    )
+    .unwrap();
+    let ignore = vec!["fixtures".to_string()];
+    let selectors = enumerate_workspace_python_selectors(tmp.path(), &ignore, &[]).unwrap();
+    assert_eq!(selectors, vec!["check_bad.py::test_bad".to_string()]);
+}
+
+#[test]
 fn dry_run_lines_omit_ignored_fixture_selectors() {
     reset_python_collect_memo_for_tests();
     let tmp = TempDir::new().unwrap();

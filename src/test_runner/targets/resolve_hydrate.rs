@@ -21,9 +21,7 @@ pub(super) fn python_nodeids_for_model(
         if !from_cache.is_empty() {
             return Ok(from_cache);
         }
-        let has_named_tests = is_python_test_module_path(&model.path)
-            && model.direct_tests.iter().any(|test| !test.name.is_empty());
-        if !has_named_tests {
+        if !model_has_named_tests(model) {
             return Ok(from_cache);
         }
     }
@@ -74,6 +72,10 @@ pub(super) fn hydrate_python_models(
     Ok(())
 }
 
+fn model_has_named_tests(model: &SourceModel) -> bool {
+    model.direct_tests.iter().any(|test| !test.name.is_empty())
+}
+
 fn nodeids_already_available(
     repo_root: &Path,
     model: &SourceModel,
@@ -85,9 +87,7 @@ fn nodeids_already_available(
         if !from_cache.is_empty() {
             return true;
         }
-        let has_named_tests = is_python_test_module_path(&model.path)
-            && model.direct_tests.iter().any(|test| !test.name.is_empty());
-        if !has_named_tests {
+        if !model_has_named_tests(model) {
             return true;
         }
     }

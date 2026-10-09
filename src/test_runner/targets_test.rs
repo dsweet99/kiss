@@ -165,6 +165,27 @@ fn python_attach_nodeids_for_function_and_class_tests() {
 }
 
 #[test]
+fn symlink_node_selector_keeps_the_link_name() {
+    let tmp = tempdir().unwrap();
+    fs::write(
+        tmp.path().join("impl.py"),
+        "def test_ok():\n    assert True\n",
+    )
+    .unwrap();
+    std::os::unix::fs::symlink("impl.py", tmp.path().join("test_ok.py")).unwrap();
+    let query = resolve_target_operands(
+        tmp.path(),
+        &["test_ok.py::test_ok".to_string()],
+        Some(Language::Python),
+        &[],
+        &[],
+    )
+    .unwrap();
+    let ids: Vec<_> = query.direct_python.iter().cloned().collect();
+    assert_eq!(ids, vec!["test_ok.py::test_ok".to_string()]);
+}
+
+#[test]
 fn python_build_model_rejects_syntax_errors() {
     let tmp = tempdir().unwrap();
     let path = tmp.path().join("bad.py");

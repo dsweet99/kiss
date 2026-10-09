@@ -41,12 +41,24 @@ impl TargetSelectionQuery {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn resolve_target_operands(
     repo_root: &Path,
     operands: &[String],
     lang_filter: Option<Language>,
     ignore: &[String],
     pytest_args: &[String],
+) -> Result<TargetSelectionQuery, String> {
+    resolve_target_operands_with(repo_root, operands, lang_filter, ignore, pytest_args, &[])
+}
+
+pub(crate) fn resolve_target_operands_with(
+    repo_root: &Path,
+    operands: &[String],
+    lang_filter: Option<Language>,
+    ignore: &[String],
+    pytest_args: &[String],
+    skip_python_collect: &[PathBuf],
 ) -> Result<TargetSelectionQuery, String> {
     let mut query = TargetSelectionQuery::default();
     let mut seen_raw = BTreeSet::new();
@@ -76,6 +88,7 @@ pub(crate) fn resolve_target_operands(
             },
         )?;
     }
+    suppress_directory_production_tests(&mut models, skip_python_collect);
     hydrate_python_models(
         repo_root,
         &mut models,
@@ -120,8 +133,12 @@ fn ingest_operand(
     let abs = canonicalize_target_path(repo_root, &parsed)?;
     reject_ignored_target(repo_root, &abs, ignore, &parsed.raw)?;
     reject_lang_mismatch(lang_filter, parsed.language, &parsed.raw)?;
-    if let Some(nodeid) = explicit_python_test_selector(repo_root, &parsed, &abs) {
-        insert_direct(state.query, Language::Python, nodeid);
+    if let Some(nodeid) = parsed.python_nodeid.as_deref() {
+        insert_direct(
+            state.query,
+            Language::Python,
+            relative_python_nodeid(repo_root, nodeid),
+        );
         return Ok(());
     }
     if !state.models.contains_key(&abs) {
@@ -131,28 +148,6 @@ fn ingest_operand(
     }
     state.pending.push((parsed, abs));
     Ok(())
-}
-
-fn explicit_python_test_selector(
-    repo_root: &Path,
-    parsed: &ParsedTestTarget,
-    abs: &Path,
-) -> Option<String> {
-    if parsed.language != Language::Python {
-        return None;
-    }
-    if let Some(nodeid) = &parsed.python_nodeid {
-        return Some(nodeid.clone());
-    }
-    if !is_python_test_module_path(abs) {
-        return None;
-    }
-    let rel = repo_relative(repo_root, abs)?;
-    match (&parsed.symbol, parsed.member.as_deref()) {
-        (Some(name), None) => Some(format!("{rel}::{name}")),
-        (Some(class), Some(method)) => Some(format!("{rel}::{class}::{method}")),
-        (None, _) => None,
-    }
 }
 
 struct RolesOnDemand {
@@ -183,17 +178,6 @@ fn apply_parsed_target(
     abs: &Path,
     roles: &mut RolesOnDemand,
 ) -> Result<(), String> {
-    if let Some(nodeid) = &parsed.python_nodeid {
-        if model.direct_tests.iter().any(|t| t.selector == *nodeid) {
-            insert_direct(query, Language::Python, nodeid.clone());
-            return Ok(());
-        }
-        return Err(format!(
-            "unknown pytest nodeid '{}' in {}",
-            parsed.raw,
-            abs.display()
-        ));
-    }
     match (&parsed.symbol, parsed.member.as_deref()) {
         (None, _) => apply_file_operand(query, model, abs, roles)?,
         (Some(name), member) => {
@@ -267,6 +251,24 @@ fn apply_symbol_target(
     Ok(())
 }
 
+fn relative_python_nodeid(repo_root: &Path, requested: &str) -> String {
+    let Some((requested_file, requested_tail)) = requested.split_once("::") else {
+        return requested.to_string();
+    };
+    let Some(requested_rel) = nodeid_file_rel(repo_root, requested_file) else {
+        return requested.to_string();
+    };
+    format!("{requested_rel}::{requested_tail}")
+}
+
+fn nodeid_file_rel(repo_root: &Path, file: &str) -> Option<String> {
+    let path = Path::new(file);
+    if path.is_absolute() {
+        return repo_relative(repo_root, path);
+    }
+    Some(file.replace('\\', "/"))
+}
+
 fn definition_span(def: &super::model::NamedDefinition) -> SourceSpan {
     SourceSpan::new(
         SourcePosition::new(def.start_line as usize, 0),
@@ -289,6 +291,33 @@ fn unit_test_selectors_for_def(
         .map(|test| test.selector.clone())
         .filter(|selector| !selector.is_empty())
         .collect()
+}
+
+fn suppress_directory_production_tests(
+    models: &mut BTreeMap<PathBuf, SourceModel>,
+    skip_python_collect: &[PathBuf],
+) {
+    if skip_python_collect.is_empty() {
+        return;
+    }
+    let skip: Vec<PathBuf> = skip_python_collect
+        .iter()
+        .map(|path| path.canonicalize().unwrap_or_else(|_| path.clone()))
+        .collect();
+    for (abs, model) in models.iter_mut() {
+        if model.language != Language::Python {
+            continue;
+        }
+        let canon = abs.canonicalize().unwrap_or_else(|_| abs.clone());
+        if !skip.iter().any(|path| path == abs || path == &canon) {
+            continue;
+        }
+        model.direct_tests.clear();
+        for def in &mut model.definitions {
+            def.is_unit_test = false;
+            def.test_selector = None;
+        }
+    }
 }
 
 fn load_python_target_cache(
@@ -337,41 +366,6 @@ fn attach_python_tests(
     Ok(())
 }
 
-fn canonicalize_target_path(
-    repo_root: &Path,
-    parsed: &ParsedTestTarget,
-) -> Result<PathBuf, String> {
-    let candidate = if parsed.path.is_absolute() {
-        parsed.path.clone()
-    } else {
-        repo_root.join(&parsed.path)
-    };
-    let abs = candidate.canonicalize().map_err(|_| {
-        format!(
-            "target '{}': file not found at {}",
-            parsed.raw,
-            candidate.display()
-        )
-    })?;
-    if !abs.is_file() {
-        return Err(format!(
-            "target '{}': {} is not a regular file",
-            parsed.raw,
-            abs.display()
-        ));
-    }
-    let root = repo_root
-        .canonicalize()
-        .unwrap_or_else(|_| repo_root.to_path_buf());
-    if !abs.starts_with(&root) {
-        return Err(format!(
-            "target '{}': path escapes repository root",
-            parsed.raw
-        ));
-    }
-    Ok(abs)
-}
-
 fn reject_ignored_target(
     repo_root: &Path,
     abs: &Path,
@@ -408,7 +402,10 @@ fn reject_lang_mismatch(
 
 #[path = "resolve_insert.rs"]
 mod resolve_insert;
+#[path = "resolve_path.rs"]
+mod resolve_path;
 #[path = "resolve_universe.rs"]
 mod resolve_universe;
 use resolve_insert::{insert_direct, insert_file, insert_lines, language_label, repo_relative};
+use resolve_path::canonicalize_target_path;
 use resolve_universe::{flush_unresolved_universes, qualify_rust_model};

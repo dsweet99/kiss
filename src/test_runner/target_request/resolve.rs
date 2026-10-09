@@ -135,9 +135,14 @@ fn resolve_operands(
     )?;
     match expanded {
         crate::test_runner::targets::ExpandedTargetPlan::All => Ok(ResolvedTarget::workspace()),
-        crate::test_runner::targets::ExpandedTargetPlan::Files(files) => {
-            classify_expanded(repo_root, request, operands, files, lang)
-        }
+        crate::test_runner::targets::ExpandedTargetPlan::Files(files) => classify_expanded(
+            repo_root,
+            request,
+            operands,
+            files.paths,
+            &files.skip_python_collect,
+            lang,
+        ),
     }
 }
 
@@ -146,14 +151,16 @@ fn classify_expanded(
     request: &TargetRequest,
     operands: &[OperandExpr],
     files: Vec<String>,
+    skip_python_collect: &[PathBuf],
     lang: Option<Language>,
 ) -> Result<ResolvedTarget, String> {
-    let query = crate::test_runner::targets::resolve_target_operands(
+    let query = crate::test_runner::targets::resolve_target_operands_with(
         repo_root,
         &files,
         lang,
         &request.ignore,
         &[],
+        skip_python_collect,
     )?;
     let mut regions = regions_from_query(&query);
     let mut direct_selectors: Vec<String> = query
@@ -162,7 +169,7 @@ fn classify_expanded(
         .chain(query.direct_rust)
         .collect();
     direct_selectors.sort();
-    if regions.is_empty() && !files.is_empty() {
+    if regions.is_empty() && direct_selectors.is_empty() && !files.is_empty() {
         regions = files
             .iter()
             .filter(|path| is_production_source(repo_root, path))
@@ -208,8 +215,7 @@ fn classify_operand(repo_root: &Path, raw: &str) -> Result<OperandClass, String>
     } else {
         repo_root.join(path_part)
     };
-    let abs = candidate
-        .canonicalize()
+    let abs = logical_operand_path(&candidate)
         .map_err(|_| format!("target '{raw}': path not found at {}", candidate.display()))?;
     if abs.is_dir() {
         return Ok(OperandClass::Directory);
@@ -218,6 +224,21 @@ fn classify_operand(repo_root: &Path, raw: &str) -> Result<OperandClass, String>
         return Err(format!("target '{raw}': path is not a file or directory"));
     }
     Ok(classify_file_operand(&abs, raw))
+}
+
+fn logical_operand_path(candidate: &Path) -> std::io::Result<PathBuf> {
+    let meta = candidate.symlink_metadata()?;
+    if meta.file_type().is_symlink() && candidate.is_file() {
+        let name = candidate.file_name().ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidInput, "symlink has no name")
+        })?;
+        let parent = candidate
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        return Ok(parent.canonicalize()?.join(name));
+    }
+    candidate.canonicalize()
 }
 
 fn classify_file_operand(abs: &Path, raw: &str) -> OperandClass {

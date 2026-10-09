@@ -474,6 +474,33 @@ fn python_selectors_for_rel_path_keeps_only_that_file() {
 }
 
 #[test]
+fn python_lang_filter_is_empty_without_a_cache_when_no_python_files_exist() {
+    let tmp = tempdir().unwrap();
+    let root = tmp.path();
+    fs::write(root.join("README.md"), "hi\n").unwrap();
+    let hit = super::load_cached_workspace_selectors_for_lang(
+        root,
+        &[],
+        &[],
+        Some(kiss::Language::Python),
+    )
+    .expect("a repo with no Python files has an empty Python universe");
+    assert!(hit.0.is_empty());
+    assert!(hit.1.is_empty());
+    fs::write(root.join("test_a.py"), "def test_a():\n    assert True\n").unwrap();
+    assert!(
+        super::load_cached_workspace_selectors_for_lang(
+            root,
+            &[],
+            &[],
+            Some(kiss::Language::Python),
+        )
+        .is_none(),
+        "Python files still require a stored selector cache"
+    );
+}
+
+#[test]
 fn python_selector_cache_hits_without_rust_cache() {
     let tmp = tempdir().unwrap();
     let root = tmp.path();

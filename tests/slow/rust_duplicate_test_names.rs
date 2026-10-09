@@ -93,7 +93,11 @@ fn same_named_integration_tests_in_two_files_are_two_tests() {
         .into_iter()
         .filter(|line| line.starts_with("FAIL"))
         .collect();
-    assert_eq!(cached_fails.len(), 4, "both FAILs are listed again: {cached:?}");
+    assert_eq!(
+        cached_fails.len(),
+        4,
+        "both FAILs are listed again: {cached:?}"
+    );
     assert!(
         cached_fails.iter().any(|line| line.contains("tests/a.rs"))
             && cached_fails.iter().any(|line| line.contains("tests/b.rs")),
@@ -164,7 +168,11 @@ fn assert_two_unit_tests(s: &Scenario, runs: &[&str]) {
 
     let cached = kiss(s.root(), &["test"]);
     assert_summary(&cached, 1, summary, "second run");
-    assert_eq!(s.take_runs(), runs, "the second run executes the same tests");
+    assert_eq!(
+        s.take_runs(),
+        runs,
+        "the second run executes the same tests"
+    );
 }
 
 #[test]

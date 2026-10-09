@@ -77,6 +77,43 @@ fn workspace_uses_sentinel_region() {
 }
 
 #[test]
+fn directory_of_only_tests_is_a_complete_slice() {
+    let tmp = seed_python();
+    let request = req(ops(&["tests"]));
+    let resolved = resolve_only(tmp.path(), &request).unwrap();
+    assert!(
+        resolved.operand_classes.contains(&OperandClass::Directory),
+        "{:?}",
+        resolved.operand_classes
+    );
+    assert!(
+        resolved.regions.is_empty(),
+        "test files in a directory are selectors, not production regions: {:?}",
+        resolved.regions
+    );
+    assert!(
+        !resolved.direct_selectors.is_empty(),
+        "directory of tests must resolve selectors: {:?}",
+        resolved.direct_selectors
+    );
+    assert!(
+        crate::test_runner::workspace_selector_cache::store_python_workspace_selectors(
+            tmp.path(),
+            &[],
+            &resolved.direct_selectors,
+            &[],
+        ),
+        "selector cache must record the tests this directory resolved"
+    );
+    let (_, complete) =
+        crate::test_runner::target_request::build_slice_projection(tmp.path(), &request, &resolved);
+    assert!(
+        complete,
+        "a directory that contains only tests must be a complete slice"
+    );
+}
+
+#[test]
 fn test_only_projection_has_empty_report_regions() {
     let tmp = seed_python();
     let request = req(ops(&["tests/test_app.py::test_value"]));
@@ -87,6 +124,30 @@ fn test_only_projection_has_empty_report_regions() {
         projection.report_regions().is_empty(),
         "test-only projection must not carry production regions: {:?}",
         projection.report_regions()
+    );
+}
+
+#[test]
+fn production_file_test_symbol_does_not_add_a_source_region() {
+    let tmp = seed_python();
+    fs::write(
+        tmp.path().join("pkg/hidden.py"),
+        "def test_hidden():\n    assert False\n",
+    )
+    .unwrap();
+    let resolved = resolve_only(tmp.path(), &req(ops(&["pkg/hidden.py::test_hidden"]))).unwrap();
+    assert!(
+        resolved.regions.is_empty(),
+        "a named test in a production file is that test, not the whole source: {:?}",
+        resolved.regions
+    );
+    assert!(
+        resolved
+            .direct_selectors
+            .iter()
+            .any(|selector| selector.contains("test_hidden")),
+        "{:?}",
+        resolved.direct_selectors
     );
 }
 
@@ -136,6 +197,16 @@ fn operand_classes_cover_file_symbol_nodeid_and_directory() {
             OperandClass::PythonNodeid,
         ]
     );
+}
+
+#[test]
+fn symlink_with_a_test_filename_is_a_test_file() {
+    let tmp = seed_python();
+    std::os::unix::fs::symlink("pkg/app.py", tmp.path().join("test_link.py")).unwrap();
+    let resolved = resolve_only(tmp.path(), &req(ops(&["test_link.py"]))).unwrap();
+    assert_eq!(resolved.operand_classes, vec![OperandClass::TestFile]);
+    let symbol = resolve_only(tmp.path(), &req(ops(&["test_link.py::value"]))).unwrap();
+    assert_eq!(symbol.operand_classes, vec![OperandClass::TestSymbol]);
 }
 
 #[test]

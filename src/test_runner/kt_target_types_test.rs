@@ -193,6 +193,13 @@ fn type_rejects_missing_symbol() {
 }
 
 #[test]
+fn type_rejects_missing_python_test_symbol() {
+    let tmp = python_repo();
+    let err = plan_err(tmp.path(), &["tests/test_app.py::test_missing".into()]);
+    assert!(err.contains("unresolved symbol"), "{err}");
+}
+
+#[test]
 fn type_rejects_ignore_path_symbol() {
     let tmp = python_repo();
     let query = crate::test_runner::targets::resolve_target_operands(

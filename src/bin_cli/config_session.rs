@@ -2,6 +2,7 @@ use crate::bin_cli::mimic::run_mimic;
 use crate::bin_cli::util::merge_check_ignore_prefixes;
 use kiss::config_gen::{
     collect_lang_from_paths, generate_gate_stub_toml, raise_measured_thresholds,
+    with_default_language_sections,
 };
 use kiss::{
     Config, GateConfig, Language, LanguageTablesPresent, gather_files_by_lang,
@@ -48,9 +49,28 @@ pub fn ensure_default_config_from(paths: &[String], ignore: &[String]) {
     if !needs_language_tables(&local_config, &roots, &collect_ignore) {
         return;
     }
+    if has_production_source(&roots, &collect_ignore) == Some(false) {
+        fill_language_tables_for_tests_only(&local_config);
+        return;
+    }
     let code = run_mimic(&roots, Some(&local_config), None, &collect_ignore);
     if code != 0 {
         std::process::exit(code);
+    }
+}
+
+fn has_production_source(roots: &[String], ignore: &[String]) -> Option<bool> {
+    let (py, rs) = collect_lang_from_paths(roots, None, ignore).ok()?;
+    Some(py.file_count + rs.file_count > 0)
+}
+
+fn fill_language_tables_for_tests_only(path: &Path) {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return;
+    };
+    let filled = with_default_language_sections(&text);
+    if filled != text {
+        write_config_text(path, &filled);
     }
 }
 
@@ -339,6 +359,39 @@ ignore = [\"vendor\"]
         let created = std::fs::read_to_string(".kissconfig").unwrap();
         std::env::set_current_dir(orig_dir).unwrap();
         assert_eq!(created, KISSCONFIG_DEFAULT);
+    }
+
+    #[test]
+    fn ensure_default_config_from_test_only_repo_adds_language_tables() {
+        let _cwd_guard = crate::cwd_test_lock::lock();
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(
+            tmp.path().join("test_only.py"),
+            "def test_only():\n    assert True\n",
+        )
+        .unwrap();
+        std::fs::write(
+            tmp.path().join(".kissconfig"),
+            "[test]\norphan_detection = true\nmax_num_tests = 100\n",
+        )
+        .unwrap();
+        let orig_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+        ensure_default_config_from(&[".".to_string()], &[]);
+        let created = std::fs::read_to_string(".kissconfig").unwrap();
+        std::env::set_current_dir(orig_dir).unwrap();
+        assert!(
+            created.contains("[python]") && created.contains("[rust]"),
+            "test-only repo must gain language tables:\n{created}"
+        );
+        assert!(
+            created.contains("orphan_detection = true"),
+            "existing orphan_detection must survive config fill:\n{created}"
+        );
+        assert!(
+            created.contains("max_num_tests = 100"),
+            "existing max_num_tests must survive config fill:\n{created}"
+        );
     }
 
     #[test]

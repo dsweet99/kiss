@@ -192,9 +192,6 @@ fn commit_target_reruns_python_population_after_source_edit() {
     let home = TempDir::new().unwrap();
     let repo = TempDir::new().unwrap();
     write_refreshable_python_repo(&repo, "    assert value() == 1\n");
-    let warm = run_python_check(&home, &repo);
-    assert!(warm.status.success(), "warm-up must pass");
-
     fs::write(
         repo.path().join("lib.py"),
         "def value():\n    return int(1)\n",

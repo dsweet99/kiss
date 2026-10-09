@@ -125,6 +125,9 @@ pub(super) fn merge_test(merged: &mut toml::Table, ex: &toml::Table, nw: &toml::
             }
         } else {
             for key in TEST_GATE_MERGE_KEYS {
+                if table.contains_key(*key) {
+                    continue;
+                }
                 if let Some(v) = nw_t.get(*key) {
                     table.insert((*key).to_string(), v.clone());
                 }

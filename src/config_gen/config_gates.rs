@@ -228,6 +228,34 @@ fn merge_inserts_default_language_table_when_absent() {
 }
 
 #[test]
+fn merge_keeps_existing_test_gates() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("cfg.toml");
+    std::fs::write(
+        &path,
+        "[test]\norphan_detection = true\nmax_num_tests = 100\n",
+    )
+    .unwrap();
+    let merged = merge_config_toml(
+        &path,
+        "[test]\norphan_detection = false\nmax_num_tests = 999999\nmax_unit_test_seconds = { \"*\" = 99999 }\n",
+        MergeLanguageUpdate::PythonOnly,
+    );
+    assert!(
+        merged.contains("orphan_detection = true"),
+        "existing orphan_detection must be preserved:\n{merged}"
+    );
+    assert!(
+        merged.contains("max_num_tests = 100"),
+        "existing max_num_tests must be preserved:\n{merged}"
+    );
+    assert!(
+        merged.contains("99999"),
+        "missing time limit must be filled from the generated config:\n{merged}"
+    );
+}
+
+#[test]
 fn merge_keeps_existing_test_section() {
     let tmp = tempfile::tempdir().unwrap();
     let path = tmp.path().join("cfg.toml");

@@ -46,10 +46,24 @@ def _hook(event, args):
     _ext=True
 sys.addaudithook(_hook)
 
+def _repo_nodeid(item):
+    # Pytest's nodeid is relative to rootdir. A nested pytest.ini makes that
+    # directory the root, so a file outside it is reported as "::name" and a
+    # file inside it drops the parent path. Kiss runs from the repo root.
+    # A symlink must keep its own name: realpath would turn test_ok.py into
+    # impl.py, and kiss test test_ok.py::test_ok would not match the result.
+    raw = os.path.abspath(str(item.path))
+    chosen = raw if os.path.islink(raw) else os.path.realpath(raw)
+    rel = os.path.relpath(chosen, _root).replace(os.sep, "/")
+    nodeid = item.nodeid
+    if "::" in nodeid:
+        return rel + "::" + nodeid.split("::", 1)[1]
+    return rel
+
 class _KissCollectReporter:
     def pytest_collection_finish(self, session):
         payload = {
-            "nodeids": [item.nodeid for item in session.items],
+            "nodeids": [_repo_nodeid(item) for item in session.items],
             "observed_workspace": sorted(_obs),
             "unsupported_external": _ext,
         }
@@ -179,11 +193,20 @@ fn collect_subprocess(
         })?;
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    let parsed = parse_collect_payload(&stdout)?;
-    if !output.status.success()
-        && parsed.nodeids.is_empty()
-        && !is_empty_collection_success(output.status.code(), &parsed)
-    {
+    let parsed = match parse_collect_payload(&stdout) {
+        Ok(parsed) => parsed,
+        Err(err) => {
+            if !output.status.success() {
+                return Err(PytestCollectError::CollectionFailed {
+                    exit_code: output.status.code(),
+                    stderr,
+                    stdout,
+                });
+            }
+            return Err(err);
+        }
+    };
+    if !output.status.success() && !is_empty_collection_success(output.status.code(), &parsed) {
         return Err(PytestCollectError::CollectionFailed {
             exit_code: output.status.code(),
             stderr,
@@ -441,5 +464,31 @@ mod touch_witness {
             failure,
             PytestCollectError::CollectionFailed { .. }
         ));
+    }
+
+    #[test]
+    fn witness_collect_subprocess_syntax_error_keeps_sibling_failure() {
+        let (tmp, tests, python) = collect_fixture();
+        fs::write(tests.join("test_bad.py"), "def test_bad(:\n    pass\n").unwrap();
+        let failure = collect_subprocess(PytestCollectRequest {
+            cwd: tmp.path().to_path_buf(),
+            python,
+            paths: Vec::new(),
+            pytest_args: Vec::new(),
+            env: BTreeMap::new(),
+        })
+        .unwrap_err();
+        match failure {
+            PytestCollectError::CollectionFailed {
+                exit_code, stdout, ..
+            } => {
+                assert_eq!(exit_code, Some(2));
+                assert!(
+                    stdout.contains("SyntaxError"),
+                    "partial collection must keep the syntax error:\n{stdout}"
+                );
+            }
+            other => panic!("expected CollectionFailed, got {other:?}"),
+        }
     }
 }

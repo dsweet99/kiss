@@ -43,9 +43,7 @@ pub(super) fn finish_planned_snapshot(
     let target_selected = !scope.selectors.is_empty();
     if !policy.assemble_only()
         && let Some(args) = args
-        && (target_selected
-            || !plan.known_execution_union().is_empty()
-            || plan.population_repair)
+        && (target_selected || !plan.known_execution_union().is_empty() || plan.population_repair)
     {
         let facts = RunFacts {
             time_gate_active: row_plan.time_gate_active,

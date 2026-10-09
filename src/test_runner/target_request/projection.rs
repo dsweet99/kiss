@@ -346,10 +346,10 @@ fn operand_projection_complete(repo_root: &Path, resolved: &ResolvedTarget) -> b
     {
         return true;
     }
-    if paths.is_empty() && resolved.direct_selectors.is_empty() {
-        return false;
+    if paths.is_empty() {
+        return !resolved.direct_selectors.is_empty();
     }
-    !paths.is_empty() && paths.iter().all(|path| repo_root.join(path).is_file())
+    paths.iter().all(|path| repo_root.join(path).is_file())
 }
 
 fn workspace_complete(repo_root: &Path, request: &TargetRequest) -> bool {

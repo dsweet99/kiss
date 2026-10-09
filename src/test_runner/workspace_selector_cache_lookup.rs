@@ -122,6 +122,10 @@ pub(crate) fn load_cached_workspace_selectors_for_lang(
 ) -> Option<(Vec<String>, Vec<String>, String)> {
     match lang_filter {
         Some(Language::Python) => {
+            let fps = workspace_lang_fingerprints(repo_root, ignore).ok()?;
+            if !fps.has_python && python_extra.is_empty() {
+                return Some((Vec::new(), Vec::new(), combined_files_fingerprint(&fps)));
+            }
             let (selectors, fp) =
                 load_cached_python_workspace_hit(repo_root, ignore, python_extra)?;
             Some((selectors, Vec::new(), fp))

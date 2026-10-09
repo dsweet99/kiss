@@ -3,19 +3,27 @@ use kiss::Language;
 use super::super::lang_registry::rules_for;
 use super::super::language_keyed::LanguageKeyed;
 use super::super::runners;
-use super::super::targets::resolve_target_operands;
+use super::super::targets::resolve_target_operands_with;
 use super::{PlannedSelectors, planned_current, planned_from_selector_plan};
 
 pub(super) fn plan_explicit_target_selectors(
     repo_root: &std::path::Path,
     targets: &[String],
+    skip_python_collect: &[std::path::PathBuf],
     ignore: &[String],
     extras: LanguageKeyed<&[String]>,
     lang_filter: Option<Language>,
     include_prior_failures: bool,
 ) -> Result<PlannedSelectors, String> {
-    let query = resolve_target_operands(repo_root, targets, lang_filter, ignore, extras.python)
-        .map_err(prefix_kiss_test_error)?;
+    let query = resolve_target_operands_with(
+        repo_root,
+        targets,
+        lang_filter,
+        ignore,
+        extras.python,
+        skip_python_collect,
+    )
+    .map_err(prefix_kiss_test_error)?;
     let mut source_paths = Vec::new();
     for language in crate::test_runner::lang_registry::languages() {
         let files = query.source_files(language);

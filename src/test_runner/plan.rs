@@ -61,12 +61,13 @@ pub(crate) fn plan_target_selectors_with_priors(
                 ExpandedTargetPlan::All => {
                     plan_all_selectors(&repo_root, &ignore_norm, extras, lang_filter, gate)
                 }
-                ExpandedTargetPlan::Files(files) if files.is_empty() => Ok(
+                ExpandedTargetPlan::Files(files) if files.paths.is_empty() => Ok(
                     super::planned_selectors::empty_planned(repo_root.clone(), ignore_norm),
                 ),
                 ExpandedTargetPlan::Files(files) => plan_explicit_target_selectors(
                     &repo_root,
-                    &files,
+                    &files.paths,
+                    &files.skip_python_collect,
                     &ignore_norm,
                     extras,
                     lang_filter,
