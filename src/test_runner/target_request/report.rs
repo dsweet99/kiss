@@ -13,7 +13,7 @@ use super::report_gates::{
 };
 #[cfg(test)]
 use super::resolved::SourceRegion;
-use super::scope::{ExecutionPlan, ReportScope};
+use super::scope::ReportScope;
 use super::slice::TargetSliceStamp;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -91,14 +91,6 @@ pub(crate) struct TargetReport {
     pub labels: BTreeMap<String, String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct TargetPlanPreview {
-    pub scope: ReportScope,
-    pub plan: ExecutionPlan,
-    pub membership_complete: bool,
-    pub deferred: bool,
-}
-
 impl TargetReport {
     pub(crate) fn assembled_in(
         repo_root: &Path,
@@ -170,18 +162,6 @@ impl TargetReport {
         }
     }
 
-    pub(crate) fn exit_for(worst: Option<EffectiveStatus>) -> i32 {
-        match worst {
-            Some(EffectiveStatus::Timeout) => 1,
-            Some(EffectiveStatus::Fail) => 1,
-            Some(EffectiveStatus::Pass) | None => 0,
-        }
-    }
-
-    pub(crate) fn exit_from_rows(rows: &[SelectorRow]) -> i32 {
-        Self::exit_for(rows.iter().map(|row| row.effective).reduce(worst_status))
-    }
-
     pub(crate) fn apply_gate_exit(exit_code: i32, gates: &[ReportGate]) -> i32 {
         if gates.iter().any(|gate| {
             matches!(
@@ -218,7 +198,6 @@ fn write_graph_items(
     rs: &[PathBuf],
     orphan_allowed: &[String],
 ) -> Result<Vec<super::graph_store::GraphOrphanItem>, String> {
-    super::counters::add_graph();
     crate::test_runner::emit_test_progress("kiss test: graph repair");
     let findings = crate::analyze::collect_orphan_unit_findings(repo_root, py, rs, orphan_allowed)
         .map_err(|_| "graph evidence incomplete".to_string())?;
@@ -395,14 +374,6 @@ fn population_inventory_id(
     Some(digest_bytes(
         &serde_json::to_vec(&payload).expect("population inventory"),
     ))
-}
-
-fn worst_status(left: EffectiveStatus, right: EffectiveStatus) -> EffectiveStatus {
-    match (left, right) {
-        (EffectiveStatus::Timeout, _) | (_, EffectiveStatus::Timeout) => EffectiveStatus::Timeout,
-        (EffectiveStatus::Fail, _) | (_, EffectiveStatus::Fail) => EffectiveStatus::Fail,
-        (EffectiveStatus::Pass, EffectiveStatus::Pass) => EffectiveStatus::Pass,
-    }
 }
 
 #[cfg(test)]

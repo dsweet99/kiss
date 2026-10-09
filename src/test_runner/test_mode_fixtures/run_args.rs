@@ -2,15 +2,6 @@ use crate::bin_cli::args::TestInvocation;
 use crate::test_runner::RunTestCmdArgs;
 use kiss::Language;
 
-pub(crate) fn python_dry_run_args(targets: Vec<String>) -> RunTestCmdArgs<'static> {
-    dry_run_cmd_args(
-        TestInvocation::Targets(targets),
-        &[],
-        1,
-        Some(Language::Python),
-    )
-}
-
 pub(crate) fn dry_run_cmd_args<'a>(
     invocation: TestInvocation,
     ignore: &'a [String],

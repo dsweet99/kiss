@@ -22,15 +22,6 @@ pub(crate) trait KernelRules: KernelHooks {
         extras: &[String],
     ) -> Option<ExecutionWitness>;
 
-    fn stored_witness_matches_extras(
-        &self,
-        repo_root: &std::path::Path,
-        extras: &[String],
-    ) -> bool {
-        let _ = (repo_root, extras);
-        true
-    }
-
     fn list_workspace_selectors(
         &self,
         repo_root: &std::path::Path,

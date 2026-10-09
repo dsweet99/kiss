@@ -19,8 +19,3 @@ pub(super) fn gate_violation_from_raw_pass(witness: &ExecutionWitness, i: usize)
     raw == WitnessStatus::Passed
         && matches!(effective, WitnessStatus::TimedOut | WitnessStatus::Failed)
 }
-
-pub(crate) fn miss_is_warm_skippable(witness: &ExecutionWitness, i: usize) -> bool {
-    let _ = (witness, i);
-    false
-}

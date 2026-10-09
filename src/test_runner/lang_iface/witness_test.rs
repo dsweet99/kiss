@@ -2,7 +2,7 @@ use kiss::GateConfig;
 
 use super::witness::{
     AcceptDecision, AcceptMode, ExecutionWitness, WitnessStatus, accept_witness,
-    all_misses_warm_skippable, identity_covers, miss_selectors_for_repair,
+    identity_covers, miss_selectors_for_repair,
     reclassify_statuses_with_gate,
 };
 
@@ -349,28 +349,6 @@ fn missing_duration_rejects_accept_and_repairs_selector() {
         ),
         vec!["b".to_string()]
     );
-}
-
-#[test]
-fn unresolved_is_not_warm_skippable() {
-    let mut w = witness("id", &["a"], &[WitnessStatus::Unresolved], false);
-    w.durations_ns[0] = None;
-    assert!(!all_misses_warm_skippable(&w, &["a".into()]));
-    let with_duration = witness("id", &["a"], &[WitnessStatus::Unresolved], false);
-    assert!(!all_misses_warm_skippable(&with_duration, &["a".into()]));
-}
-
-#[test]
-fn raw_timeout_is_not_warm_skippable() {
-    let w = witness("id", &["a"], &[WitnessStatus::TimedOut], false);
-    assert!(!all_misses_warm_skippable(&w, &["a".into()]));
-}
-
-#[test]
-fn gate_derived_timeout_from_raw_pass_is_not_warm_skippable() {
-    let mut w = witness("id", &["a"], &[WitnessStatus::TimedOut], false);
-    w.raw_statuses = vec![WitnessStatus::Passed];
-    assert!(!all_misses_warm_skippable(&w, &["a".into()]));
 }
 
 #[test]

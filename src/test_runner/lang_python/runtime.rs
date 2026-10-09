@@ -70,7 +70,6 @@ impl crate::test_runner::lang_iface::KernelRules for PythonKernelRules {
         );
         if let Ok(ids) = out.as_ref() {
             selector_cache::store_python_workspace_selectors(repo_root, ignore, ids, extras);
-            crate::test_runner::target_request::add_index();
         }
         out
     }

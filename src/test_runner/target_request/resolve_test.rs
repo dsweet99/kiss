@@ -248,21 +248,3 @@ fn commit_deleted_path_is_historical_not_a_region() {
     }));
     assert!(resolved.git_stamp.is_some());
 }
-
-#[test]
-fn resolve_git_increments_git_counter() {
-    let tmp = seed_python();
-    super::counters::reset();
-    super::resolve::resolve_only(tmp.path(), &req(TargetFocus::Git(GitFocus::Commit))).unwrap();
-    assert_eq!(super::counters::current().git, 1);
-    assert_eq!(super::counters::current().parse, 0);
-}
-
-#[test]
-fn resolve_operands_increments_parse_counter() {
-    let tmp = seed_python();
-    super::counters::reset();
-    super::resolve::resolve_only(tmp.path(), &req(ops(&["pkg/app.py"]))).unwrap();
-    assert_eq!(super::counters::current().parse, 1);
-    assert_eq!(super::counters::current().git, 0);
-}

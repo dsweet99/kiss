@@ -80,7 +80,6 @@ impl KernelRules for RustKernelRules {
             crate::test_runner::runners::enumerate_workspace_rust_selectors(repo_root, ignore);
         if let Ok(ids) = out.as_ref() {
             selector_cache::store_rust_workspace_selectors(repo_root, ignore, ids);
-            crate::test_runner::target_request::add_index();
         }
         out
     }

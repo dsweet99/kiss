@@ -4,7 +4,6 @@ use kiss::Language;
 use serde::Serialize;
 
 use super::resolved::{OperandClass, ResolvedTarget, SourceRegion};
-use super::slice::{TargetSliceStamp, stamp_from_projection};
 use super::stamp::GitDepStamp;
 use super::types::{TargetFocus, TargetRequest};
 
@@ -379,15 +378,6 @@ fn empty_git_placeholder() -> GitDepStamp {
         explicit_ref: None,
         candidates: Vec::new(),
     }
-}
-
-pub(crate) fn slice_for(
-    repo_root: &Path,
-    request: &TargetRequest,
-    resolved: &ResolvedTarget,
-) -> TargetSliceStamp {
-    let (projection, complete) = build_slice_projection(repo_root, request, resolved);
-    stamp_from_projection(&projection, complete)
 }
 
 #[cfg(test)]

@@ -25,7 +25,6 @@ fn resolve_git(
     request: &TargetRequest,
     focus: &GitFocus,
 ) -> Result<ResolvedTarget, String> {
-    super::counters::add_git();
     let git_stamp = Some(capture_git_dep_stamp(repo_root, focus)?);
     let (mode, main_cfg, main_cli, base_cli) = git_resolve_args(focus);
     let diff_target =
@@ -124,7 +123,6 @@ fn resolve_operands(
     request: &TargetRequest,
     operands: &[OperandExpr],
 ) -> Result<ResolvedTarget, String> {
-    super::counters::add_parse();
     let lang = request.lang;
     let raws: Vec<String> = operands.iter().map(|operand| operand.raw.clone()).collect();
     let expanded = crate::test_runner::targets::expand_target_operands(

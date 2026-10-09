@@ -6,7 +6,7 @@ use std::time::Duration;
 use kiss::GateConfig;
 use kiss::rpytest_runner::TestStatus;
 
-use super::witness_reuse::{miss_is_warm_skippable, reusable_without_rerun};
+use super::witness_reuse::reusable_without_rerun;
 use crate::test_runner::status_labels::apply_unit_test_time_limit;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -266,15 +266,4 @@ pub(crate) fn reclassify_statuses_with_gate(
             WitnessStatus::from_test_status(effective)
         })
         .collect()
-}
-
-pub(crate) fn all_misses_warm_skippable(witness: &ExecutionWitness, misses: &[String]) -> bool {
-    if misses.is_empty() {
-        return false;
-    }
-    let index = selector_index(&witness.selectors);
-    misses.iter().all(|sel| match index.get(sel.as_str()) {
-        Some(&i) => miss_is_warm_skippable(witness, i),
-        None => false,
-    })
 }

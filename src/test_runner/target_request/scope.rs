@@ -34,14 +34,3 @@ impl ReportScope {
         }
     }
 }
-
-impl ExecutionPlan {
-    pub(crate) fn known_execution_union(&self) -> Vec<String> {
-        let mut union = self.repair_selectors.clone();
-        union.extend(self.retry_bad.iter().cloned());
-        union.extend(self.forced.iter().cloned());
-        union.sort();
-        union.dedup();
-        union
-    }
-}

@@ -1,5 +1,4 @@
 #![cfg_attr(not(test), allow(dead_code))]
-use std::cell::{Cell, RefCell};
 use std::io::IsTerminal;
 use std::time::Duration;
 
@@ -7,40 +6,6 @@ use kiss::watch_report::WatchSuiteTotals;
 
 use super::duration::format_test_duration;
 use super::runners::SelectorExecutionSummary;
-
-thread_local! {
-    static DEFER_RECAP: Cell<bool> = const { Cell::new(false) };
-    static PENDING_RECAP: RefCell<Option<(FinalTestSummary, Duration)>> = const { RefCell::new(None) };
-}
-
-pub(crate) struct RecapDeferGuard {
-    discard: Cell<bool>,
-}
-
-impl RecapDeferGuard {
-    pub(crate) fn enter() -> Self {
-        DEFER_RECAP.set(true);
-        PENDING_RECAP.with(|slot| *slot.borrow_mut() = None);
-        Self {
-            discard: Cell::new(false),
-        }
-    }
-
-    pub(crate) fn discard(&self) {
-        self.discard.set(true);
-    }
-}
-
-impl Drop for RecapDeferGuard {
-    fn drop(&mut self) {
-        if self.discard.get() {
-            DEFER_RECAP.set(false);
-            PENDING_RECAP.with(|slot| *slot.borrow_mut() = None);
-            return;
-        }
-        flush_final_test_summary();
-    }
-}
 
 fn watch_suite_totals(summary: &FinalTestSummary, total_duration: Duration) -> WatchSuiteTotals {
     let timed_out = summary.timed_out_selectors.len();
@@ -55,16 +20,6 @@ fn watch_suite_totals(summary: &FinalTestSummary, total_duration: Duration) -> W
 
 fn record_watch_suite_totals(summary: &FinalTestSummary, total_duration: Duration) {
     kiss::watch_report::record_watch_suite_totals(watch_suite_totals(summary, total_duration));
-}
-
-fn flush_final_test_summary() {
-    DEFER_RECAP.set(false);
-    let Some((summary, total_duration)) = PENDING_RECAP.with(|slot| slot.borrow_mut().take())
-    else {
-        return;
-    };
-    let text = format_final_test_summary(&summary, total_duration, stdout_color_enabled());
-    crate::test_runner::emit_test_progress(&text);
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -157,12 +112,6 @@ pub(crate) fn stdout_color_enabled() -> bool {
 
 pub(crate) fn print_final_test_summary(summary: &FinalTestSummary, total_duration: Duration) {
     record_watch_suite_totals(summary, total_duration);
-    if DEFER_RECAP.get() {
-        PENDING_RECAP.with(|slot| {
-            *slot.borrow_mut() = Some((summary.clone(), total_duration));
-        });
-        return;
-    }
     let text = format_final_test_summary(summary, total_duration, stdout_color_enabled());
     crate::test_runner::emit_test_progress(&text);
 }

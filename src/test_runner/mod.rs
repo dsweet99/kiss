@@ -25,15 +25,9 @@ mod status_labels;
 pub(crate) mod target_request;
 mod targets;
 pub(crate) use targets::expand_target_operands;
-mod kiss_test_report;
 pub(crate) mod tests_remaining;
 pub(crate) mod unit_test_timing;
 pub(crate) mod universe_root;
-#[cfg(test)]
-pub(crate) use kiss_test_report::KissTestReport;
-pub(crate) use kiss_test_report::{clone_run_args, repo_can_assemble_reports};
-#[cfg(test)]
-pub(crate) use kiss_test_report::{run_kiss_test_report, run_kiss_test_report_reuse};
 #[cfg(test)]
 pub(crate) use planned_selectors::should_force_cold_initialization;
 pub(crate) use planned_selectors::{PlannedSelectors, SelectorRunOptions, empty_planned};

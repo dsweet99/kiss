@@ -293,32 +293,6 @@ fn request_from_focus_commit_is_git_commit() {
 }
 
 #[test]
-fn clone_run_args_sorts_operands_pin() {
-    let mut args = dry_run_cmd_args(TestInvocation::All, &[], 1, None);
-    args.invocation = TestInvocation::All;
-    args.target_request = operands_request(&["z.py".into(), "a.py".into()], None, &[]);
-    let cloned = crate::test_runner::clone_run_args(&args);
-    assert_eq!(
-        operand_raws(&request_from_run_args(&cloned).focus),
-        Some(vec!["a.py".into(), "z.py".into()])
-    );
-    assert_eq!(
-        cloned.invocation,
-        TestInvocation::Targets(vec!["a.py".into(), "z.py".into()])
-    );
-}
-
-#[test]
-fn clone_run_args_syncs_invocation_from_request() {
-    let mut args = dry_run_cmd_args(TestInvocation::All, &[], 1, None);
-    args.invocation = TestInvocation::Targets(vec!["stale.py".into()]);
-    args.target_request = workspace_request(None, &[]);
-    let cloned = crate::test_runner::clone_run_args(&args);
-    assert_eq!(cloned.invocation, TestInvocation::All);
-    assert!(is_workspace_focus(&request_from_run_args(&cloned).focus));
-}
-
-#[test]
 fn request_from_run_args_sorts_operands_pin() {
     let mut args = dry_run_cmd_args(TestInvocation::All, &[], 1, None);
     args.invocation = TestInvocation::All;
@@ -366,28 +340,6 @@ fn dry_run_cmd_args_syncs_invocation_from_request() {
         TestInvocation::Targets(vec!["a.py".into(), "z.py".into()])
     );
     assert_eq!(args.invocation, to_compat_invocation(&args.target_request));
-}
-
-#[test]
-fn bind_prefers_pinned_request_over_stale_invocation() {
-    let _cwd = crate::cwd_test_lock::lock();
-    let tmp = tempfile::TempDir::new().unwrap();
-    crate::test_runner::test_mode_fixtures::init_git(&tmp);
-    let restore = std::env::current_dir().unwrap();
-    std::env::set_current_dir(tmp.path()).unwrap();
-    let mut args = dry_run_cmd_args(TestInvocation::All, &[], 1, None);
-    args.invocation = TestInvocation::Targets(vec!["stale.py".into()]);
-    args.target_request = workspace_request(None, &[]);
-    let result = super::bind::bind_and_prepare(&args);
-    std::env::set_current_dir(restore).unwrap();
-    match result {
-        Ok(super::bind::BindDecision::Finished(code)) => assert_eq!(code, 0),
-        Ok(super::bind::BindDecision::Interrupted) => panic!("pinned Workspace must bind"),
-        Err(err) => assert!(
-            !err.contains("adapter mismatch"),
-            "pinned Workspace must bind: {err}"
-        ),
-    }
 }
 
 #[test]

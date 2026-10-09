@@ -8,25 +8,6 @@ use crate::test_runner::language_keyed::LanguageKeyed;
 use super::report::{EffectiveStatus, SelectorRow};
 use super::scope::{ExecutionPlan, ReportScope};
 
-pub(crate) fn rows_from_witnesses(
-    repo_root: &Path,
-    scope: &ReportScope,
-    extras: LanguageKeyed<&[String]>,
-) -> Result<Vec<SelectorRow>, String> {
-    if scope.selectors.is_empty() {
-        return Ok(Vec::new());
-    }
-    let by_selector = witness_map(repo_root, extras);
-    let mut rows = Vec::new();
-    for selector in &scope.selectors {
-        let Some(row) = by_selector.get(selector) else {
-            return Err(format!("missing typed evidence for {selector}"));
-        };
-        rows.push(row.clone());
-    }
-    Ok(rows)
-}
-
 pub(crate) fn available_rows(
     repo_root: &Path,
     scope: &ReportScope,
@@ -109,23 +90,6 @@ pub(crate) fn plan_from_available_rows(
         population_repair: !scope.complete,
         graph_repair,
     }
-}
-
-pub(crate) fn duration_evidence_holds(
-    rows: &[SelectorRow],
-    time_gate_active: bool,
-) -> Result<(), String> {
-    if !time_gate_active {
-        return Ok(());
-    }
-    for row in rows {
-        if row.duration_ns.is_none()
-            && matches!(row.effective, EffectiveStatus::Pass | EffectiveStatus::Fail)
-        {
-            return Err(format!("missing duration for {}", row.selector));
-        }
-    }
-    Ok(())
 }
 
 fn have_member(scope: &ReportScope, selector: &str) -> bool {

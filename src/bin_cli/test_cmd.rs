@@ -74,7 +74,6 @@ fn run_test_command_with_runner(
     args: TestCommandArgs<'_>,
     run_local: impl FnOnce(RunTestCmdArgs<'_>) -> RunTestOnceOutcome,
 ) -> i32 {
-    let _run_clock = crate::test_runner::target_request::KissTestRunClock::start();
     if !args.dry_run
         && let Ok(cwd) = std::env::current_dir()
         && let Ok(repo) = crate::test_git::git_repo_root(&cwd)
