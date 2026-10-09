@@ -18,6 +18,7 @@ orphan_detection = true
 max_num_tests = 7000
 num_jobs = 16
 num_jobs_pytest = 16
+num_jobs_nextest = 16
 watch_settle_seconds = 1.0
 pytest_plugins = []
 ignore = ["src/main.rs"]
