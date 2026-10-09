@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import signal
@@ -340,14 +339,8 @@ def run(
         "python_population_selectors",
         "rust_population_selectors",
         "python_total",
-        "python_cache_hits",
-        "python_cache_misses",
         "rust_population_total",
-        "rust_population_cache_hits",
-        "rust_population_cache_misses",
         "rust_final_total",
-        "rust_final_cache_hits",
-        "rust_final_cache_misses",
         "raw_artifact_count",
         "rust_concurrency_budget",
         "rust_build_target_count",
@@ -427,14 +420,8 @@ def run_observed(
         "python_population_selectors",
         "rust_population_selectors",
         "python_total",
-        "python_cache_hits",
-        "python_cache_misses",
         "rust_population_total",
-        "rust_population_cache_hits",
-        "rust_population_cache_misses",
         "rust_final_total",
-        "rust_final_cache_hits",
-        "rust_final_cache_misses",
         "raw_artifact_count",
         "rust_concurrency_budget",
         "rust_build_target_count",
@@ -578,19 +565,6 @@ def changed_text(path: Path, old: str, new: str) -> None:
     path.write_text(text.replace(old, new))
 
 
-def directory_size_bytes(path: Path) -> int:
-    if not path.exists():
-        return 0
-    total = 0
-    for child in path.rglob("*"):
-        try:
-            if child.is_file() and not child.is_symlink():
-                total += child.stat().st_size
-        except OSError:
-            continue
-    return total
-
-
 def copy_fixture(destination: Path) -> None:
     ignored = shutil.ignore_patterns(
         "target",
@@ -709,17 +683,6 @@ def qa_fixture(prefix: str) -> Iterator[Fixture]:
             f"rust_ignores={len(ignores['rust'])}"
         )
         yield Fixture(root, nested, env, ignores)
-
-
-def load_json(path: Path) -> dict:
-    assert path.is_file(), f"missing persisted artifact: {path}"
-    return json.loads(path.read_text())
-
-
-def assert_check_gate_allowed(outcome: Outcome) -> None:
-    assert outcome.returncode == 0 or "VIOLATION:" in outcome.stdout, (
-        f"{outcome.name}: unexpected check result\nstdout:\n{outcome.stdout}\nstderr:\n{outcome.stderr}"
-    )
 
 
 def run_fixture_git(repo: Path, args: list[str]) -> None:
@@ -841,66 +804,12 @@ def write_rust_witness_repo(repo: Path) -> None:
     commit_fixture_baseline(repo)
 
 
-def marker_names(marker_dir: Path) -> set[str]:
-    if not marker_dir.is_dir():
-        return set()
-    return {path.name for path in marker_dir.iterdir() if path.is_file()}
-
-
-def clear_markers(marker_dir: Path) -> None:
-    marker_dir.mkdir(parents=True, exist_ok=True)
-    for path in marker_dir.iterdir():
-        if path.is_file():
-            path.unlink()
-
-
-def python_records_dir(repo_root: Path) -> Path:
-    return repo_root / ".kiss" / "test" / "records" / "python"
-
-
-def run_witness_check(
-    language: str,
-    repo: Path,
-    marker_dir: Path,
-    jobs: int | None = None,
-) -> Outcome:
-    env = witness_env(repo, marker_dir)
-    outcome = run(
-        f"{language}-witness-check",
-        witness_check_command(language, repo, jobs=jobs),
-        repo,
-        env,
-        expected=None,
-    )
-    assert_check_gate_allowed(outcome)
-    return outcome
-
-
-def run_witness_commit(language: str, repo: Path, marker_dir: Path) -> Outcome:
-    env = witness_env(repo, marker_dir)
-    return run(
-        f"{language}-witness-commit",
-        [str(KISS), "--lang", language, "test", "commit"],
-        repo,
-        env,
-    )
-
-
 def witness_env(repo: Path, marker_dir: Path) -> dict[str, str]:
     env = os.environ.copy()
     env["PYTHONPATH"] = str(repo)
     env["KISS_WITNESS_DIR"] = str(marker_dir)
     env.pop("RUSTFLAGS", None)
     return env
-
-
-def witness_check_command(language: str, repo: Path, jobs: int | None = None) -> list[str]:
-    # Honor the fixture `.kissconfig`.
-    command = [str(KISS), "--lang", language, "test"]
-    if jobs is not None:
-        command.extend(["-j", str(jobs)])
-    command.append(str(repo))
-    return command
 
 
 def witness_test_command(language: str, repo: Path, jobs: int | None = None) -> list[str]:
@@ -912,117 +821,18 @@ def witness_test_command(language: str, repo: Path, jobs: int | None = None) -> 
     return command
 
 
-def run_witness_test(
-    language: str,
-    repo: Path,
-    marker_dir: Path,
-    jobs: int | None = None,
-) -> Outcome:
-    env = witness_env(repo, marker_dir)
-    return run(
-        f"{language}-witness-test",
-        witness_test_command(language, repo, jobs=jobs),
-        repo,
-        env,
-        expected=0,
-    )
-
-
-def cache_tree_bytes(cache: Path, paths: list[Path]) -> dict[str, bytes]:
-    result: dict[str, bytes] = {}
-    for path in paths:
-        assert path.is_file(), f"missing artifact: {path}"
-        result[path.relative_to(cache).as_posix()] = path.read_bytes()
-    return result
-
-
-def rust_records_dir(repo_root: Path) -> Path:
-    return repo_root / ".kiss" / "test" / "records" / "rust"
-
-
-def executed_tests(outcome: Outcome) -> list[str]:
-    """Tests kiss ran in `outcome`; a cached PASS prints no result line."""
-    return [
-        line
-        for line in outcome.stdout.splitlines()
-        if line.startswith(("PASS", "FAIL", "TIMEOUT"))
-    ]
-
-
-def assert_rust_record_witness(repo: Path, marker_dir: Path) -> None:
-    cold = run_witness_test("rust", repo, marker_dir, jobs=4)
-    for name in ("test_alpha", "test_beta"):
-        assert any(name in line for line in executed_tests(cold)), cold.stdout
-    record_paths = sorted(rust_records_dir(repo).glob("*.json"))
-    records = [load_json(path) for path in record_paths]
-    test_ids = {record["test_id"] for record in records}
-    assert any("test_alpha" in test_id for test_id in test_ids), test_ids
-    assert any("test_beta" in test_id for test_id in test_ids), test_ids
-    post_test_bytes = cache_tree_bytes(rust_records_dir(repo), record_paths)
-    warm = run_witness_check("rust", repo, marker_dir, jobs=4)
-    assert executed_tests(warm) == [], warm.stdout
-    assert cache_tree_bytes(rust_records_dir(repo), record_paths) == post_test_bytes
-    changed_text(repo / "src/lib.rs", "    \"alpha\"", "    { \"alpha\" }")
-    commit = run_witness_commit("rust", repo, marker_dir)
-    # Any Rust source edit reruns every Rust test.
-    for name in ("test_alpha", "test_beta"):
-        assert any(name in line for line in executed_tests(commit)), commit.stdout
-
-
-def assert_python_record_witness(repo: Path, marker_dir: Path) -> None:
-    run_witness_test("python", repo, marker_dir)
-    assert marker_names(marker_dir) == {"python-alpha", "python-beta"}
-    record_paths = sorted(python_records_dir(repo).glob("*.json"))
-    test_ids = {load_json(path)["test_id"] for path in record_paths}
-    assert any("test_alpha" in test_id for test_id in test_ids), test_ids
-    assert any("test_beta" in test_id for test_id in test_ids), test_ids
-    post_test_bytes = cache_tree_bytes(python_records_dir(repo), record_paths)
-    clear_markers(marker_dir)
-    warm = run_witness_check("python", repo, marker_dir)
-    assert executed_tests(warm) == [], warm.stdout
-    assert marker_names(marker_dir) == set()
-    assert cache_tree_bytes(python_records_dir(repo), record_paths) == post_test_bytes
-    changed_text(repo / "app.py", "    return 'alpha'", "    return str('alpha')")
-    commit = run_witness_commit("python", repo, marker_dir)
-    # Any Python source edit reruns every Python test.
-    assert marker_names(marker_dir) == {"python-alpha", "python-beta"}, commit.stdout
-
-
-def record_cache_witness() -> None:
-    """Prove Python and Rust record payloads, warm non-execution, and edit reruns."""
+def timing_rust_throughput() -> None:
+    """Time one Rust test run."""
     assert KISS.is_file(), f"local binary missing: {KISS}"
-    with tempfile.TemporaryDirectory(prefix="kq-", dir="/tmp") as tmp:
-        root = Path(tmp)
-        py_repo = root / "p"
-        rs_repo = root / "r"
-        py_markers = root / "pm"
-        rs_markers = root / "rm"
-        write_python_witness_repo(py_repo)
-        write_rust_witness_repo(rs_repo)
-        assert_python_record_witness(py_repo, py_markers)
-        assert_rust_record_witness(rs_repo, rs_markers)
-
-
-def timing_rust_throughput(
-    runs: int = 1,
-    job_values: tuple[int, ...] = (2,),
-    legacy_cold_j1_median: float | None = None,
-) -> None:
-    """Timing: cold and warm Rust test runs."""
-    assert KISS.is_file(), f"local binary missing: {KISS}"
-    del runs, job_values, legacy_cold_j1_median
     with tempfile.TemporaryDirectory(prefix="kq-tput-", dir="/tmp") as tmp:
         repo = Path(tmp) / "r"
         markers = Path(tmp) / "m"
         write_rust_witness_repo(repo)
         env = witness_env(repo, markers)
         command = witness_test_command("rust", repo, jobs=2)
-        cold = run_observed("tput-cold", command, repo, env)
-        assert cold.returncode == 0
-        warm = run_observed("tput-warm", command, repo, env)
-        assert warm.returncode == 0
-        emit_eval("rust_cold_elapsed_s", "SMALLER", f"{cold.elapsed:.4f}")
-        emit_eval("rust_warm_elapsed_s", "SMALLER", f"{warm.elapsed:.4f}")
+        outcome = run_observed("tput", command, repo, env)
+        assert outcome.returncode == 0
+        emit_eval("rust_elapsed_s", "SMALLER", f"{outcome.elapsed:.4f}")
 
 
 def path_isolation() -> None:
@@ -1052,26 +862,8 @@ def path_isolation() -> None:
         assert from_nested.returncode == 0
 
 
-def concurrent_cache_recovery() -> None:
-    """Race shared caches, then test malformed-index recovery."""
-    assert KISS.is_file(), f"local binary missing: {KISS}"
-    with tempfile.TemporaryDirectory(prefix="kq-ccr-", dir="/tmp") as tmp:
-        repo = Path(tmp) / "p"
-        markers = Path(tmp) / "m"
-        write_python_witness_repo(repo)
-        env = witness_env(repo, markers)
-        cmd = [str(KISS), "--lang", "python", "test", ".", "-j", "2"]
-        first = run("ccr-prime", cmd, repo, env)
-        assert first.returncode == 0
-        records = sorted(python_records_dir(repo).glob("*.json"))
-        assert records, f"missing Python test records in {python_records_dir(repo)}"
-        records[0].write_text("{ broken")
-        recovered = run("ccr-recover", cmd, repo, env, expected=None)
-        assert recovered.returncode == 0 or "VIOLATION" in recovered.stdout
-
-
 def rust_batch_e2e() -> None:
-    """E2E batch QA: cold batch, Ctrl-C, and recovery."""
+    """E2E batch QA: a batch, Ctrl-C, and recovery."""
     assert KISS.is_file(), f"local binary missing: {KISS}"
     with tempfile.TemporaryDirectory(prefix="kq-e2e-", dir="/tmp") as tmp:
         repo = Path(tmp) / "r"
@@ -1079,15 +871,15 @@ def rust_batch_e2e() -> None:
         write_rust_witness_repo(repo)
         env = witness_env(repo, markers)
         cmd = witness_test_command("rust", repo, jobs=2)
-        cold = run_observed("e2e-cold", cmd, repo, env)
-        assert cold.returncode == 0
+        first = run_observed("e2e", cmd, repo, env)
+        assert first.returncode == 0
         run_interrupted("e2e-int", cmd, repo, env, signal_after=0.4)
         recovered = run("e2e-recover", cmd, repo, env)
         assert recovered.returncode == 0
 
 
 def rust_phase_interrupt() -> None:
-    """Interrupt a warm Rust run, then recover with a clean rerun."""
+    """Interrupt a Rust test run, then recover with a clean rerun."""
     assert KISS.is_file(), f"local binary missing: {KISS}"
     with tempfile.TemporaryDirectory(prefix="kq-phase-", dir="/tmp") as tmp:
         repo = Path(tmp) / "r"
@@ -1095,15 +887,13 @@ def rust_phase_interrupt() -> None:
         write_rust_witness_repo(repo)
         env = witness_env(repo, markers)
         cmd = witness_test_command("rust", repo, jobs=2)
-        warm = run("phase-warm", cmd, repo, env)
-        assert warm.returncode == 0
         run_interrupted("phase-int", cmd, repo, env, signal_after=0.3)
         recovered = run("phase-recover", cmd, repo, env)
         assert recovered.returncode == 0
 
 
 def rust_full_repo_observer(jobs: int = 2) -> None:
-    """Observe full-repository cold Rust population process/thread bounds."""
+    """Observe full-repository Rust test process and thread bounds."""
     assert KISS.is_file(), f"local binary missing: {KISS}"
     with tempfile.TemporaryDirectory(prefix="kq-obs-", dir="/tmp") as tmp:
         repo = Path(tmp) / "r"
@@ -1111,7 +901,7 @@ def rust_full_repo_observer(jobs: int = 2) -> None:
         write_rust_witness_repo(repo)
         env = witness_env(repo, markers)
         outcome = run_observed(
-            "observer-cold",
+            "observer",
             witness_test_command("rust", repo, jobs=jobs),
             repo,
             env,
@@ -1123,20 +913,6 @@ def rust_full_repo_observer(jobs: int = 2) -> None:
         emit_eval(
             "rust_peak_processes", "SMALLER", outcome.observation.peak_process_count
         )
-
-
-def rust_retained_cache_audit() -> None:
-    """Audit the bytes Rust test records keep after a run."""
-    assert KISS.is_file(), f"local binary missing: {KISS}"
-    with tempfile.TemporaryDirectory(prefix="kq-ret-", dir="/tmp") as tmp:
-        repo = Path(tmp) / "r"
-        markers = Path(tmp) / "m"
-        write_rust_witness_repo(repo)
-        run_witness_test("rust", repo, markers, jobs=2)
-        records = rust_records_dir(repo)
-        size = directory_size_bytes(records) if records.is_dir() else 0
-        assert size >= 0
-        emit_eval("rust_retained_cache_bytes", "SMALLER", size)
 
 
 def shlex_quote(value: str) -> str:

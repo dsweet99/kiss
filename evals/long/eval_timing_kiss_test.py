@@ -1,9 +1,8 @@
-"""Time kiss test on ruff with a code cache then again with a warm cache."""
+"""Time kiss test on ruff."""
 
 from __future__ import annotations
 
 import os
-import shutil
 from pathlib import Path
 
 from evals._harness import KISS, ROOT, emit_eval, report_eval, run
@@ -35,49 +34,11 @@ def _ruff_kiss_cmd(*args: str) -> list[str]:
     return cmd
 
 
-def _clear_runtime_test_cache(repo: Path) -> None:
-    """Clear Python/runtime caches only; Rust records stay so ruff's Rust tests stay cached."""
-    kiss_dir = repo / ".kiss"
-    shutil.rmtree(kiss_dir / "test" / "records" / "python", ignore_errors=True)
-
-
-def _ensure_code_cache(repo: Path, env: dict[str, str]) -> None:
-    outcome = run(
-        "kiss-check-ruff-code-cache",
-        [*_ruff_kiss_cmd("check"), "."],
-        repo,
-        env,
-        expected=0,
-        timeout=EVAL_TIMEOUT_S,
-    )
-    assert "Analyzed:" in outcome.stdout, (
-        f"kiss check did not finish analysis (rc={outcome.returncode})\n"
-        f"stdout:\n{outcome.stdout}\nstderr:\n{outcome.stderr}"
-    )
-
-
-def _seed_python_selector_cache(repo: Path, env: dict[str, str]) -> None:
-    """Write the python-only workspace selector cache before timed runs.
-
-    The first `kiss test` on this ignore set may still fail sibling gates; the
-    selector file is what later timed runs use for a known-empty population.
-    """
-    run(
-        "kiss-test-ruff-seed-selectors",
-        _ruff_kiss_cmd("test"),
-        repo,
-        env,
-        expected=None,
-        timeout=EVAL_TIMEOUT_S,
-    )
-
-
 def timing_kiss_test() -> None:
-    """Cold then warm `kiss test --lang python` on ruff within the eval budget.
+    """Time `kiss test --lang python` on ruff within the eval budget.
 
-    A full cold Rust run on ruff exceeds 60s, so this eval
-    times the Python path against the large ruff tree (workspace planning +
-    Python selectors) without forcing a multi-minute Rust rebuild.
+    A full Rust run on ruff exceeds 60s, so this eval times the Python path
+    against the large ruff tree without forcing a multi-minute Rust rebuild.
 
     Ignore prefixes skip intentional syntax-error fixtures. `--config` keeps the
     eval from writing language tables into ruff's .kissconfig.
@@ -91,27 +52,15 @@ def timing_kiss_test() -> None:
     env = os.environ.copy()
     env["PYTHONPATH"] = str(RUFF_REPO)
     env.pop("RUSTFLAGS", None)
-    _ensure_code_cache(RUFF_REPO, env)
-    _seed_python_selector_cache(RUFF_REPO, env)
-    _clear_runtime_test_cache(RUFF_REPO)
-    cold = run(
-        "kiss-test-ruff-cold",
+    outcome = run(
+        "kiss-test-ruff",
         _ruff_kiss_cmd("test"),
         RUFF_REPO,
         env,
         expected=0,
         timeout=EVAL_TIMEOUT_S,
     )
-    warm = run(
-        "kiss-test-ruff-warm",
-        _ruff_kiss_cmd("test"),
-        RUFF_REPO,
-        env,
-        expected=0,
-        timeout=EVAL_TIMEOUT_S,
-    )
-    emit_eval("kiss_test_cold_elapsed_s", "SMALLER", f"{cold.elapsed:.4f}")
-    emit_eval("kiss_test_warm_elapsed_s", "SMALLER", f"{warm.elapsed:.4f}")
+    emit_eval("kiss_test_elapsed_s", "SMALLER", f"{outcome.elapsed:.4f}")
 
 
 def eval_timing_kiss_test() -> None:
