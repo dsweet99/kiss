@@ -74,10 +74,6 @@ pub(crate) fn render_line(counters: KernelCounters) -> String {
     )
 }
 
-pub(crate) fn emit() {
-    crate::test_runner::emit_test_progress(&render_line(current()));
-}
-
 #[cfg(test)]
 mod counters_test {
     use super::*;

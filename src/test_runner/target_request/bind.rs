@@ -267,7 +267,6 @@ pub(crate) fn bind_and_prepare(
             Ok(preview) => {
                 super::render::render_plan_preview(&preview);
                 super::render::render_preview_members(&preview);
-                super::counters::emit();
                 return Ok(BindDecision::Finished(0));
             }
             Err(err) => {
@@ -284,7 +283,6 @@ pub(crate) fn bind_and_prepare(
     ) {
         Ok(Ensured::Report(report)) => {
             let executed = super::counters::current().subprocess > 0;
-            super::counters::emit();
             render_bound_report(&report, executed);
             Ok(BindDecision::Finished(report.exit_code))
         }

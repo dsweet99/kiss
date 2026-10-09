@@ -167,7 +167,7 @@ fn all_hit_still_runs_the_selected_tests() {
         assert_eq!(second.exit_code, 0);
         let replayed = second.output.unwrap_or_default();
         assert!(
-            replayed.contains("1 passed") && replayed.contains("report members=1"),
+            replayed.contains("1 passed"),
             "{replayed}"
         );
         assert!(!replayed.contains("PASS (cached)"), "{replayed}");

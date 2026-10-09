@@ -141,12 +141,7 @@ pub(crate) fn official_summary_text(report: &TargetReport) -> String {
     } else {
         "violations"
     };
-    let mut out = format!(
-        "kiss test: report members={} exit={}\n",
-        report.rows.len(),
-        report.exit_code
-    );
-    out.push_str(&official_gate_text(report));
+    let mut out = official_gate_text(report);
     out.push_str(&format!(
         "{mark} {passed} passed · {failed} failed · {timed_out} timed out · {median} median · {max} max · {total} total · {violations} {violation_word}\n"
     ));
@@ -316,8 +311,7 @@ mod official_text_tests {
         super::TOTAL_OVERRIDE.set(None);
         assert_eq!(
             text,
-            "kiss test: report members=4 exit=0\n\
-NO VIOLATIONS\n\
+            "NO VIOLATIONS\n\
 ✗ 2 passed · 1 failed · 1 timed out · 0.30s median · 0.50s max · 1.25s total · 0 violations\n"
         );
         assert_eq!(
