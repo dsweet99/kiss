@@ -27,7 +27,7 @@ pub(crate) use canon::colon_to_nodeid;
 pub(crate) use projection::build_slice_projection;
 pub(crate) use request_paths::request_source_paths;
 pub(crate) use resolve::resolve_only;
-pub(crate) use rows::{AvailableRowPlan, available_rows, plan_from_available_rows};
+pub(crate) use rows::{available_rows, prior_failure_selectors};
 pub(crate) use scope::ReportScope;
 pub(crate) use types::{GitFocus, TargetFocus, TargetRequest};
 

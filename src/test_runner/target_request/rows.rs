@@ -1,12 +1,12 @@
 #![cfg_attr(not(test), allow(dead_code))]
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::test_runner::lang_iface::{ExecutionWitness, WitnessStatus};
 use crate::test_runner::language_keyed::LanguageKeyed;
 
 use super::report::{EffectiveStatus, SelectorRow};
-use super::scope::{ExecutionPlan, ReportScope};
+use super::scope::ReportScope;
 
 pub(crate) fn available_rows(
     repo_root: &Path,
@@ -24,72 +24,17 @@ pub(crate) fn available_rows(
         .collect()
 }
 
-#[derive(Clone, Copy)]
-pub(crate) struct AvailableRowPlan {
-    pub retry_bad: bool,
-    pub graph_repair: bool,
-    pub force: bool,
-    pub time_gate_active: bool,
-}
-
-pub(crate) fn plan_from_available_rows(
-    scope: &ReportScope,
-    rows: &[SelectorRow],
-    plan: AvailableRowPlan,
-) -> ExecutionPlan {
-    let AvailableRowPlan {
-        retry_bad,
-        graph_repair,
-        force,
-        time_gate_active,
-    } = plan;
-    let have: BTreeSet<&str> = rows.iter().map(|row| row.selector.as_str()).collect();
-    let mut repair_selectors: Vec<String> = scope
-        .selectors
-        .iter()
-        .filter(|selector| !have.contains(selector.as_str()))
-        .cloned()
-        .collect();
-    if time_gate_active {
-        for row in rows {
-            if have_member(scope, &row.selector)
-                && row.duration_ns.is_none()
-                && matches!(row.effective, EffectiveStatus::Pass | EffectiveStatus::Fail)
-            {
-                repair_selectors.push(row.selector.clone());
-            }
-        }
-        repair_selectors.sort();
-        repair_selectors.dedup();
-    }
-    let retry = if retry_bad {
-        rows.iter()
-            .filter(|row| have_member(scope, &row.selector))
-            .filter(|row| {
-                matches!(
-                    row.effective,
-                    EffectiveStatus::Fail | EffectiveStatus::Timeout
-                ) || (time_gate_active
-                    && row.duration_ns.is_none()
-                    && row.effective == EffectiveStatus::Fail)
-            })
-            .map(|row| row.selector.clone())
-            .collect()
-    } else {
-        Vec::new()
-    };
-    let forced = if force {
-        scope.selectors.clone()
-    } else {
-        Vec::new()
-    };
-    ExecutionPlan {
-        repair_selectors,
-        retry_bad: retry,
-        forced,
-        population_repair: !scope.complete,
-        graph_repair,
-    }
+pub(crate) fn prior_failure_selectors(scope: &ReportScope, rows: &[SelectorRow]) -> Vec<String> {
+    rows.iter()
+        .filter(|row| have_member(scope, &row.selector))
+        .filter(|row| {
+            matches!(
+                row.effective,
+                EffectiveStatus::Fail | EffectiveStatus::Timeout
+            )
+        })
+        .map(|row| row.selector.clone())
+        .collect()
 }
 
 fn have_member(scope: &ReportScope, selector: &str) -> bool {
@@ -142,5 +87,41 @@ fn effective_of(raw: WitnessStatus) -> Option<EffectiveStatus> {
         WitnessStatus::Failed => Some(EffectiveStatus::Fail),
         WitnessStatus::TimedOut => Some(EffectiveStatus::Timeout),
         WitnessStatus::Unresolved => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::resolved::SourceRegion;
+    use super::*;
+
+    fn row(selector: &str, effective: EffectiveStatus) -> SelectorRow {
+        SelectorRow {
+            language: kiss::Language::Python,
+            selector: selector.into(),
+            raw: String::new(),
+            effective,
+            duration_ns: None,
+            provenance: "test".into(),
+        }
+    }
+
+    #[test]
+    fn prior_failures_keep_fail_and_timeout_inside_scope() {
+        let scope = ReportScope::from_membership(
+            vec![SourceRegion::WorkspaceAll],
+            vec!["a".into(), "b".into(), "c".into()],
+            true,
+        );
+        let rows = vec![
+            row("a", EffectiveStatus::Fail),
+            row("b", EffectiveStatus::Timeout),
+            row("c", EffectiveStatus::Pass),
+            row("d", EffectiveStatus::Fail),
+        ];
+        assert_eq!(
+            prior_failure_selectors(&scope, &rows),
+            vec!["a".to_string(), "b".to_string()]
+        );
     }
 }

@@ -10,15 +10,6 @@ pub(crate) struct ReportScope {
     pub complete: bool,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct ExecutionPlan {
-    pub repair_selectors: Vec<String>,
-    pub retry_bad: Vec<String>,
-    pub forced: Vec<String>,
-    pub population_repair: bool,
-    pub graph_repair: bool,
-}
-
 impl ReportScope {
     pub(crate) fn from_membership(
         regions: Vec<SourceRegion>,
