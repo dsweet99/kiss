@@ -161,7 +161,6 @@ fn oneshot_runs_local_runner_then_report() {
     let test_cfg = TestSectionConfig::default();
     let gate = kiss::GateConfig {
         max_unit_test_seconds: Vec::new(),
-        max_num_tests: 999999,
         ..kiss::GateConfig::default()
     };
     let mut args = python_oneshot_args(&test_cfg, &gate);
@@ -182,7 +181,6 @@ fn oneshot_existing_target_accepts_resolve() {
     let test_cfg = TestSectionConfig::default();
     let gate = kiss::GateConfig {
         max_unit_test_seconds: Vec::new(),
-        max_num_tests: 999999,
         ..kiss::GateConfig::default()
     };
     let mut args = python_oneshot_args(&test_cfg, &gate);

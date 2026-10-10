@@ -7,9 +7,6 @@ use crate::test_section_config::TestSectionConfig;
 const TEST_SECTION_KEYS: &[&str] = &[
     "main_branch",
     "num_jobs",
-    "num_jobs_pytest",
-    "num_jobs_nextest",
-    "num_jobs_llvm_cov",
     "watch_settle_seconds",
     "test_coverage_threshold",
     "test_coverage_scope",
@@ -17,7 +14,6 @@ const TEST_SECTION_KEYS: &[&str] = &[
     "ignore",
     "orphan_detection",
     "max_unit_test_seconds",
-    "max_num_tests",
     "cache",
 ];
 
@@ -63,11 +59,6 @@ fn merge_test_gates_lenient(config: &mut GateConfig, test: &toml::Table) {
             Err(err) => eprintln!("Error: {err}"),
         }
     }
-    match try_get_max_num_tests(test) {
-        Ok(Some(n)) => config.max_num_tests = n,
-        Ok(None) => {}
-        Err(err) => eprintln!("Error: {err}"),
-    }
 }
 
 fn merge_test_gates_strict(config: &mut GateConfig, test: &toml::Table) -> Result<(), ConfigError> {
@@ -76,9 +67,6 @@ fn merge_test_gates_strict(config: &mut GateConfig, test: &toml::Table) -> Resul
     }
     if let Some(value) = test.get("max_unit_test_seconds") {
         config.max_unit_test_seconds = parse_max_unit_test_seconds(value)?;
-    }
-    if let Some(n) = try_get_max_num_tests(test)? {
-        config.max_num_tests = n;
     }
     Ok(())
 }
@@ -106,7 +94,7 @@ fn try_get_orphan_detection(table: &toml::Table) -> Result<Option<bool>, ConfigE
         })
 }
 
-fn try_get_max_num_tests(table: &toml::Table) -> Result<Option<usize>, ConfigError> {
+pub(crate) fn try_get_max_num_tests(table: &toml::Table) -> Result<Option<usize>, ConfigError> {
     let Some(value) = table.get("max_num_tests") else {
         return Ok(None);
     };
@@ -141,16 +129,6 @@ fn apply_strict_runtime(
     }
     if let Some(v) = table.get("num_jobs") {
         config.num_jobs = parse_positive_usize(v, "num_jobs")?;
-    }
-    if let Some(v) = table.get("num_jobs_pytest") {
-        let val = parse_positive_usize(v, "num_jobs_pytest")?;
-        config.num_jobs_pytest = val;
-        config.num_jobs_pytest_explicit = Some(val);
-    }
-    if let Some(key) = nextest_jobs_key(table) {
-        let val = parse_positive_usize(&table[key], key)?;
-        config.num_jobs_nextest = val;
-        config.num_jobs_nextest_explicit = Some(val);
     }
     if let Some(v) = table.get("pytest_plugins") {
         config.pytest_plugins = parse_string_list_key(v, "pytest_plugins", "plugin names")?;
@@ -208,16 +186,6 @@ fn apply_lenient_runtime(
         }
     }
     apply_lenient_positive_usize(table, "num_jobs", &mut config.num_jobs);
-    apply_lenient_positive_usize(table, "num_jobs_pytest", &mut config.num_jobs_pytest);
-    if let Some(key) = nextest_jobs_key(table) {
-        apply_lenient_positive_usize(table, key, &mut config.num_jobs_nextest);
-    }
-    if table.contains_key("num_jobs_pytest") {
-        config.num_jobs_pytest_explicit = Some(config.num_jobs_pytest);
-    }
-    if nextest_jobs_key(table).is_some() {
-        config.num_jobs_nextest_explicit = Some(config.num_jobs_nextest);
-    }
     apply_lenient_string_list(table, "pytest_plugins", "plugin names", |v| {
         config.pytest_plugins = v;
     });
@@ -225,6 +193,66 @@ fn apply_lenient_runtime(
         config.ignore = v;
     });
     apply_lenient_cache(config, table, repo_root);
+}
+
+pub(crate) fn apply_language_job_keys_strict(
+    config: &mut TestSectionConfig,
+    root: &toml::Table,
+) -> Result<(), ConfigError> {
+    if let Some(table) = root.get("python").and_then(toml::Value::as_table) {
+        apply_pytest_jobs_strict(config, table)?;
+    }
+    if let Some(table) = root.get("rust").and_then(toml::Value::as_table) {
+        apply_nextest_jobs_strict(config, table)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn apply_language_job_keys_lenient(config: &mut TestSectionConfig, root: &toml::Table) {
+    if let Some(table) = root.get("python").and_then(toml::Value::as_table) {
+        apply_pytest_jobs_lenient(config, table);
+    }
+    if let Some(table) = root.get("rust").and_then(toml::Value::as_table) {
+        apply_nextest_jobs_lenient(config, table);
+    }
+}
+
+fn apply_pytest_jobs_strict(
+    config: &mut TestSectionConfig,
+    table: &toml::Table,
+) -> Result<(), ConfigError> {
+    if let Some(v) = table.get("num_jobs_pytest") {
+        let val = parse_positive_usize(v, "num_jobs_pytest")?;
+        config.num_jobs_pytest = val;
+        config.num_jobs_pytest_explicit = Some(val);
+    }
+    Ok(())
+}
+
+fn apply_nextest_jobs_strict(
+    config: &mut TestSectionConfig,
+    table: &toml::Table,
+) -> Result<(), ConfigError> {
+    if let Some(key) = nextest_jobs_key(table) {
+        let val = parse_positive_usize(&table[key], key)?;
+        config.num_jobs_nextest = val;
+        config.num_jobs_nextest_explicit = Some(val);
+    }
+    Ok(())
+}
+
+fn apply_pytest_jobs_lenient(config: &mut TestSectionConfig, table: &toml::Table) {
+    apply_lenient_positive_usize(table, "num_jobs_pytest", &mut config.num_jobs_pytest);
+    if table.contains_key("num_jobs_pytest") {
+        config.num_jobs_pytest_explicit = Some(config.num_jobs_pytest);
+    }
+}
+
+fn apply_nextest_jobs_lenient(config: &mut TestSectionConfig, table: &toml::Table) {
+    if let Some(key) = nextest_jobs_key(table) {
+        apply_lenient_positive_usize(table, key, &mut config.num_jobs_nextest);
+        config.num_jobs_nextest_explicit = Some(config.num_jobs_nextest);
+    }
 }
 
 fn apply_lenient_cache(
@@ -249,9 +277,9 @@ mod tests {
         assert!(TEST_SECTION_KEYS.contains(&"test_coverage_threshold"));
         assert!(TEST_SECTION_KEYS.contains(&"orphan_detection"));
         assert!(TEST_SECTION_KEYS.contains(&"num_jobs"));
-        assert!(TEST_SECTION_KEYS.contains(&"num_jobs_pytest"));
-        assert!(TEST_SECTION_KEYS.contains(&"num_jobs_nextest"));
-        assert!(TEST_SECTION_KEYS.contains(&"num_jobs_llvm_cov"));
+        assert!(!TEST_SECTION_KEYS.contains(&"num_jobs_pytest"));
+        assert!(!TEST_SECTION_KEYS.contains(&"num_jobs_nextest"));
+        assert!(!TEST_SECTION_KEYS.contains(&"num_jobs_llvm_cov"));
         assert!(TEST_SECTION_KEYS.contains(&"max_unit_test_seconds"));
         assert!(TEST_SECTION_KEYS.contains(&"cache"));
     }

@@ -8,12 +8,6 @@ pub(super) const TEST_RULE_SPECS: &[RuleSpec] = &[
         description: "max_unit_test_seconds is an ordered path-pattern → seconds table (must end with \"*\"). First match wins. Enforced by `kiss test` and used by `kiss test` for TIMEOUT labeling. Catch-all 0 bans unmatched paths. Default \"*\" = 2.0.",
     },
     RuleSpec {
-        metric: "max_num_tests",
-        op: ThresholdOp::AtMost,
-        threshold: ThresholdValue::Usize(|_, g| g.max_num_tests),
-        description: "max_num_tests is the maximum number of unit tests in the current population (Python + Rust). Enforced by `kiss test`. `0` means any test fails. Default is 999999. Config key lives under `[test]`.",
-    },
-    RuleSpec {
         metric: "orphan",
         op: ThresholdOp::Equal,
         threshold: ThresholdValue::Usize(|_, _| 0),

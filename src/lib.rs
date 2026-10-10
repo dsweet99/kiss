@@ -105,7 +105,7 @@ pub use duplication::{
 };
 pub use gate_config::{
     GateConfig, MatchedUnitTestSecondsRule, catch_all_limit, exceeds_limit,
-    format_nested_toml_table, limit_for_selector, matched_rule_for_selector,
+    format_nested_toml_table, limit_for_selector, matched_rule_for_selector, max_num_tests_for,
     time_gate_uses_path_prefixes,
 };
 pub use graph::{

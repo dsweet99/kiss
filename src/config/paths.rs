@@ -113,16 +113,17 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         std::fs::write(
             tmp.path().join(".kissconfig"),
-            "[test]\nmax_num_tests = 41\n",
+            "[python]\nmax_num_tests = 41\n[rust]\nmax_num_tests = 19\n",
         )
         .unwrap();
         std::fs::create_dir_all(tmp.path().join("nested")).unwrap();
         std::fs::write(
             tmp.path().join("nested").join(".kissconfig"),
-            "[test]\nmax_num_tests = 7\n",
+            "[python]\nmax_num_tests = 7\n[rust]\nmax_num_tests = 8\n",
         )
         .unwrap();
         let gate = crate::gate_config::GateConfig::load_for_repo(tmp.path());
-        assert_eq!(gate.max_num_tests, 41);
+        assert_eq!(gate.max_num_tests_python, 41);
+        assert_eq!(gate.max_num_tests_rust, 19);
     }
 }

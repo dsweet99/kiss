@@ -81,13 +81,14 @@ docs_allowed = [\"./\"]
 
 [python]
 statements_per_function = 1
+max_num_tests = 1000
 
 [rust]
 statements_per_function = 1
+max_num_tests = 2000
 
 [test]
 orphan_detection = false
-max_num_tests = 999999
 ",
     )
     .unwrap();

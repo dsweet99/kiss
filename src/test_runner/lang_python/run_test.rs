@@ -76,10 +76,18 @@ fn parallel_jobs_are_capped_only_by_num_jobs_pytest() {
     let tmp = sample_repo();
     let cfg = tmp.path().join(".kissconfig");
     for (config, requested, expected) in [
-        ("[test]\nnum_jobs_pytest = 5\n", 32, 5),
-        ("[test]\nnum_jobs_pytest = 16\n", 8, 8),
-        ("[test]\nnum_jobs = 4\nnum_jobs_pytest = 16\n", 4, 16),
-        ("[test]\nnum_jobs = 4\nnum_jobs_pytest = 16\n", 2, 2),
+        ("[python]\nnum_jobs_pytest = 5\n", 32, 5),
+        ("[python]\nnum_jobs_pytest = 16\n", 8, 8),
+        (
+            "[test]\nnum_jobs = 4\n[python]\nnum_jobs_pytest = 16\n",
+            4,
+            16,
+        ),
+        (
+            "[test]\nnum_jobs = 4\n[python]\nnum_jobs_pytest = 16\n",
+            2,
+            2,
+        ),
         ("[test]\nnum_jobs = 32\n", 32, 32),
     ] {
         fs::write(&cfg, config).unwrap();

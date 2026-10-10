@@ -267,6 +267,12 @@ mod tests {
             created.contains("num_jobs_nextest = 4"),
             "created .kissconfig must set num_jobs_nextest = 4:\n{created}"
         );
+        let before_python = created.split("[python]").next().unwrap_or(&created);
+        assert!(
+            !before_python.contains("num_jobs_pytest")
+                && !before_python.contains("num_jobs_nextest"),
+            "language job caps must not stay under [test]:\n{created}"
+        );
         assert!(
             created.contains("pytest_plugins = []"),
             "created .kissconfig must set pytest_plugins = []:\n{created}"
@@ -388,9 +394,18 @@ ignore = [\"vendor\"]
             created.contains("orphan_detection = true"),
             "existing orphan_detection must survive config fill:\n{created}"
         );
+        let test_section = created.split("[python]").next().unwrap_or(&created);
         assert!(
-            created.contains("max_num_tests = 100"),
-            "existing max_num_tests must survive config fill:\n{created}"
+            !test_section.contains("max_num_tests"),
+            "retired [test] max_num_tests must not survive config fill:\n{created}"
+        );
+        assert!(
+            created.contains("[python]\nmax_num_tests = 1000\n"),
+            "filled python section must carry its own cap:\n{created}"
+        );
+        assert!(
+            created.contains("[rust]\nmax_num_tests = 2000\n"),
+            "filled rust section must carry its own cap:\n{created}"
         );
     }
 
@@ -506,16 +521,21 @@ ignore = [\"vendor\"]
         let tmp = tempfile::TempDir::new().unwrap();
         std::fs::write(
             tmp.path().join(".kissconfig"),
-            "[test]\nmax_num_tests = 11\n",
+            "[python]\nmax_num_tests = 11\n[rust]\nmax_num_tests = 13\n",
         )
         .unwrap();
         let custom = tmp.path().join("custom.toml");
-        std::fs::write(&custom, "[test]\nmax_num_tests = 22\n").unwrap();
+        std::fs::write(
+            &custom,
+            "[python]\nmax_num_tests = 22\n[rust]\nmax_num_tests = 24\n",
+        )
+        .unwrap();
         let orig_dir = std::env::current_dir().unwrap();
         std::env::set_current_dir(tmp.path()).unwrap();
         let gate = load_gate_config(Some(&custom)).unwrap();
         std::env::set_current_dir(orig_dir).unwrap();
-        assert_eq!(gate.max_num_tests, 22);
+        assert_eq!(gate.max_num_tests_python, 22);
+        assert_eq!(gate.max_num_tests_rust, 24);
     }
 
     #[test]
@@ -559,7 +579,7 @@ ignore = [\"vendor\"]
         let _cwd_guard = crate::cwd_test_lock::lock();
         let tmp = tempfile::TempDir::new().unwrap();
         std::fs::create_dir_all(tmp.path().join(".git")).unwrap();
-        let root_config = "[test]\nmax_num_tests = 3\n[python]\n[rust]\n";
+        let root_config = "[python]\nmax_num_tests = 3\n[rust]\nmax_num_tests = 4\n";
         std::fs::write(tmp.path().join(".kissconfig"), root_config).unwrap();
         let nested = tmp.path().join("pkg");
         std::fs::create_dir_all(&nested).unwrap();

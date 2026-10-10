@@ -143,9 +143,7 @@ impl Drop for Pool {
     }
 }
 
-fn spawn_workers(
-    bins: &[Vec<(usize, PathBuf)>],
-) -> Result<WorkerSet, RoleBuildError> {
+fn spawn_workers(bins: &[Vec<(usize, PathBuf)>]) -> Result<WorkerSet, RoleBuildError> {
     let mut txs = Vec::new();
     let mut joins = Vec::new();
     let mut acks = Vec::new();
@@ -192,9 +190,7 @@ fn wait_for_parses(
     }
 }
 
-fn index_bins(
-    bins: Vec<Vec<(usize, PathBuf)>>,
-) -> SlotIndex {
+fn index_bins(bins: Vec<Vec<(usize, PathBuf)>>) -> SlotIndex {
     let total = bins.iter().map(|bin| bin.len()).sum();
     let mut slots = vec![(0, 0); total];
     let mut loc = HashMap::new();

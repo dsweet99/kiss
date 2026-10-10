@@ -17,7 +17,7 @@
 
 ### Changed
 
-- `[test] num_jobs_llvm_cov` is now `num_jobs_nextest`; the old name still loads as an alias.
+- `[python] num_jobs_pytest` and `[rust] num_jobs_nextest` replace those `[test]` settings. `[rust] num_jobs_llvm_cov` still loads as an alias for `num_jobs_nextest`. `[test] num_jobs` is unchanged.
 - Orphan detection judges Rust code by static references alone. It now counts names used inside macro calls and `use` paths, treats trait impl methods as reachable, and reaches a `mod.rs` module by its directory name.
 
 ## 0.4.11 — 2026-09-17

@@ -15,10 +15,7 @@ orphan_allowed = [
 
 [test]
 orphan_detection = true
-max_num_tests = 7000
 num_jobs = 16
-num_jobs_pytest = 16
-num_jobs_nextest = 16
 watch_settle_seconds = 1.0
 pytest_plugins = []
 ignore = ["src/main.rs"]
@@ -27,6 +24,8 @@ ignore = ["src/main.rs"]
 "*" = 4
 
 [python]
+max_num_tests = 1000
+num_jobs_pytest = 16
 boolean_parameters = 2
 branches_per_function = 7
 calls_per_function = 20
@@ -52,6 +51,8 @@ statements_per_function = 24
 statements_per_try_block = 2
 
 [rust]
+max_num_tests = 7000
+num_jobs_nextest = 16
 arguments = 8
 attributes_per_function = 2
 boolean_parameters = 1

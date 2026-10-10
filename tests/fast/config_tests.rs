@@ -94,7 +94,9 @@ fn test_load_from_nonexistent() {
 #[test]
 fn test_gate_config_defaults() {
     let gate = GateConfig::default();
-    assert!(gate.max_num_tests > 0);
+    assert!(gate.max_num_tests_python > 0);
+    assert!(gate.max_num_tests_rust > 0);
+    assert_ne!(gate.max_num_tests_python, gate.max_num_tests_rust);
     assert!(gate.min_similarity > 0.0 && gate.min_similarity <= 1.0);
 }
 

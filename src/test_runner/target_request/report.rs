@@ -303,7 +303,10 @@ pub(super) fn configuration_generation(repo_root: &Path) -> String {
 fn gate_policy_id(gate: &kiss::GateConfig) -> String {
     let payload = serde_json::json!({
         "max_unit_test_seconds": gate.max_unit_test_seconds,
-        "max_num_tests": gate.max_num_tests,
+        "max_num_tests": {
+            "python": gate.max_num_tests_python,
+            "rust": gate.max_num_tests_rust,
+        },
         "orphan_detection": gate.orphan_detection,
         "orphan_allowed": gate.orphan_allowed,
     });
@@ -590,13 +593,14 @@ mod exit_gate_tests {
             )
         );
         let gate = kiss::GateConfig {
-            max_num_tests: 2,
+            max_num_tests_python: 1,
+            max_num_tests_rust: 5,
             ..Default::default()
         };
         let gates = gates_from_population(tmp.path(), &gate, &workspace_request());
         assert_eq!(gates.len(), 1);
         assert_eq!(gates[0].kind, "max_num_tests");
-        assert_eq!(gates[0].detail, "3 test(s) exceeds max_num_tests=2");
+        assert_eq!(gates[0].detail, "python: 2 test(s) exceeds max_num_tests=1");
     }
 
     #[test]
@@ -621,7 +625,8 @@ mod exit_gate_tests {
         let mut request = workspace_request();
         request.lang = Some(super::super::types::LangFilter::Rust);
         let gate = kiss::GateConfig {
-            max_num_tests: 2,
+            max_num_tests_python: 0,
+            max_num_tests_rust: 2,
             ..Default::default()
         };
         assert!(gates_from_population(tmp.path(), &gate, &request).is_empty());
@@ -719,12 +724,14 @@ mod exit_gate_tests {
         );
         std::fs::write(
             tmp.path().join(".kissconfig"),
-            "[test]\norphan_detection = true\nmax_num_tests = 1\n",
+            "[python]\nmax_num_tests = 0\n[rust]\nmax_num_tests = 0\n[test]\norphan_detection = true\n",
         )
         .unwrap();
         let scope = ReportScope::from_membership(vec![SourceRegion::WorkspaceAll], vec![], true);
         let gate = kiss::GateConfig::load_for_repo(tmp.path());
-        assert!(gate.orphan_detection && gate.max_num_tests == 1);
+        assert!(
+            gate.orphan_detection && kiss::max_num_tests_for(&gate, kiss::Language::Python) == 0
+        );
         seed_orphan_graph(tmp.path(), &scope, &gate);
         assert!(!gates_from_orphan(tmp.path(), &gate, &scope).is_empty());
         assert!(!gates_from_population(tmp.path(), &gate, &workspace_request()).is_empty());

@@ -530,7 +530,7 @@ mod tests {
         assert_eq!(test_threads(tmp.path(), &[], 8), 2);
         std::fs::write(
             tmp.path().join(".kissconfig"),
-            "[test]\nnum_jobs_nextest = 3\n",
+            "[rust]\nnum_jobs_nextest = 3\n",
         )
         .unwrap();
         assert_eq!(test_threads(tmp.path(), &[], 8), 3);

@@ -149,23 +149,32 @@ pub(super) fn gates_from_population(
     request: &super::types::TargetRequest,
 ) -> Vec<ReportGate> {
     let need = super::manifest::population_count_need(repo_root, request);
-    let Some(count) = population_selector_count(repo_root, request, need) else {
-        return vec![ReportGate {
-            kind: "max_num_tests".into(),
-            detail: "population evidence incomplete".into(),
-        }];
-    };
-    if count > gate.max_num_tests {
-        vec![ReportGate {
-            kind: "max_num_tests".into(),
-            detail: format!(
-                "{count} test(s) exceeds max_num_tests={}",
-                gate.max_num_tests
-            ),
-        }]
-    } else {
-        Vec::new()
+    let mut gates = Vec::new();
+    for language in crate::test_runner::lang_registry::languages()
+        .into_iter()
+        .filter(|language| need.wants(*language))
+    {
+        let count_need = crate::test_runner::workspace_selector_cache::SelectorCountNeed {
+            python: language == kiss::Language::Python,
+            rust: language == kiss::Language::Rust,
+        };
+        let Some(count) = population_selector_count(repo_root, request, count_need) else {
+            gates.push(ReportGate {
+                kind: "max_num_tests".into(),
+                detail: "population evidence incomplete".into(),
+            });
+            continue;
+        };
+        let limit = kiss::max_num_tests_for(gate, language);
+        if count > limit {
+            let label = language.label();
+            gates.push(ReportGate {
+                kind: "max_num_tests".into(),
+                detail: format!("{label}: {count} test(s) exceeds max_num_tests={limit}"),
+            });
+        }
     }
+    gates
 }
 
 pub(super) fn gates_from_orphan(

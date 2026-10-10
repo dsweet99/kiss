@@ -29,11 +29,22 @@ fn test_language_and_config() {
         kiss::defaults::python::STATEMENTS_PER_FUNCTION
     );
     let path = tmp.path().join("kiss.toml");
-    std::fs::write(&path, "[test]\nmax_num_tests = 80\n").unwrap();
-    assert_eq!(load_gate_config(Some(&path)).unwrap().max_num_tests, 80);
+    std::fs::write(
+        &path,
+        "[python]\nmax_num_tests = 80\n[rust]\nmax_num_tests = 70\n",
+    )
+    .unwrap();
+    let loaded = load_gate_config(Some(&path)).unwrap();
+    assert_eq!(loaded.max_num_tests_python, 80);
+    assert_eq!(loaded.max_num_tests_rust, 70);
+    let builtin_gate = load_gate_config(Some(&builtin)).unwrap();
     assert_eq!(
-        load_gate_config(Some(&builtin)).unwrap().max_num_tests,
-        kiss::defaults::gate::MAX_NUM_TESTS
+        builtin_gate.max_num_tests_python,
+        kiss::defaults::python::MAX_NUM_TESTS
+    );
+    assert_eq!(
+        builtin_gate.max_num_tests_rust,
+        kiss::defaults::rust::MAX_NUM_TESTS
     );
 }
 

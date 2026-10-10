@@ -63,6 +63,8 @@ pub const PYTHON_KEYS: &[&str] = &[
     "cycle_size",
     "indirect_dependencies",
     "dependency_depth",
+    "max_num_tests",
+    "num_jobs_pytest",
 ];
 
 pub const RUST_KEYS: &[&str] = &[
@@ -87,4 +89,7 @@ pub const RUST_KEYS: &[&str] = &[
     "cycle_size",
     "indirect_dependencies",
     "dependency_depth",
+    "max_num_tests",
+    "num_jobs_nextest",
+    "num_jobs_llvm_cov",
 ];

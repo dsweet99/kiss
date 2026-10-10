@@ -19,6 +19,22 @@ pub struct GenerateConfigParams<'a> {
 
 const GRAPH_METRIC_IDS: &[&str] = &["cycle_size", "indirect_dependencies", "dependency_depth"];
 
+fn language_max_num_tests(header: &str) -> usize {
+    if header.contains("rust") {
+        crate::defaults::rust::MAX_NUM_TESTS
+    } else {
+        crate::defaults::python::MAX_NUM_TESTS
+    }
+}
+
+fn language_num_jobs(header: &str) -> (&'static str, usize) {
+    if header.contains("rust") {
+        ("num_jobs_nextest", crate::defaults::gate::NUM_JOBS_NEXTEST)
+    } else {
+        ("num_jobs_pytest", crate::defaults::gate::NUM_JOBS_PYTEST)
+    }
+}
+
 fn is_graph_metric_id(metric_id: &str) -> bool {
     GRAPH_METRIC_IDS.contains(&metric_id)
 }
@@ -56,18 +72,7 @@ fn render_gate_preamble(gate: &GateConfig, ignore: &[String]) -> String {
     out.push('\n');
     let _ = writeln!(out, "[test]");
     let _ = writeln!(out, "orphan_detection = {}", gate.orphan_detection);
-    let _ = writeln!(out, "max_num_tests = {}", gate.max_num_tests);
     let _ = writeln!(out, "num_jobs = {}", crate::defaults::gate::NUM_JOBS);
-    let _ = writeln!(
-        out,
-        "num_jobs_pytest = {}",
-        crate::defaults::gate::NUM_JOBS_PYTEST
-    );
-    let _ = writeln!(
-        out,
-        "num_jobs_nextest = {}",
-        crate::defaults::gate::NUM_JOBS_NEXTEST
-    );
     let _ = writeln!(out, "pytest_plugins = []");
     write_toml_string_list(&mut out, "ignore", ignore);
     let _ = write!(
@@ -134,6 +139,9 @@ fn append_language_section(
 ) {
     out.push_str(header);
     out.push('\n');
+    let _ = writeln!(out, "max_num_tests = {}", language_max_num_tests(header));
+    let (jobs_key, jobs) = language_num_jobs(header);
+    let _ = writeln!(out, "{jobs_key} = {jobs}");
     for s in sums {
         if is_graph_metric_id(s.metric_id) {
             continue;
@@ -243,8 +251,16 @@ mod touch_witness {
             "global orphan_allowed emission:\n{toml}"
         );
         assert!(
-            toml.contains("[test]\norphan_detection = false\nmax_num_tests = 999999\n"),
+            toml.contains("[test]\norphan_detection = false\nnum_jobs = 4\n"),
             "test gate emission:\n{toml}"
+        );
+        assert!(
+            toml.contains("[python]\nmax_num_tests = 1000\n"),
+            "python cap emission:\n{toml}"
+        );
+        assert!(
+            toml.contains("[rust]\nmax_num_tests = 2000\n"),
+            "rust cap emission:\n{toml}"
         );
         assert!(
             toml.contains("[test.max_unit_test_seconds]\n\"*\" = 2\n"),

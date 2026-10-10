@@ -140,10 +140,10 @@ impl TestSectionConfig {
             .map_err(|e| ConfigError::ParseError {
                 message: e.to_string(),
             })?;
-        let Some(t) = value.get("test").and_then(|v| v.as_table()) else {
-            return Ok(());
-        };
-        crate::test_toml::merge_test_table_strict(t, None, Some(self), repo_root)
+        if let Some(t) = value.get("test").and_then(|v| v.as_table()) {
+            crate::test_toml::merge_test_table_strict(t, None, Some(self), repo_root)?;
+        }
+        crate::test_toml::apply_language_job_keys_strict(self, &value)
     }
 }
 
@@ -151,10 +151,10 @@ fn merge_from_toml(config: &mut TestSectionConfig, toml_str: &str, repo_root: Op
     let Some(value) = parse_table_memoized(toml_str) else {
         return;
     };
-    let Some(t) = value.get("test").and_then(|v| v.as_table()) else {
-        return;
-    };
-    crate::test_toml::merge_test_table_lenient(t, None, Some(config), repo_root);
+    if let Some(t) = value.get("test").and_then(|v| v.as_table()) {
+        crate::test_toml::merge_test_table_lenient(t, None, Some(config), repo_root);
+    }
+    crate::test_toml::apply_language_job_keys_lenient(config, &value);
 }
 
 fn parse_table_memoized(toml_str: &str) -> Option<toml::Table> {
