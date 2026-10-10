@@ -40,6 +40,33 @@ pub fn collect_comment_violations_with_roles(
     out
 }
 
+pub(crate) fn rust_file_comment_violations(
+    parsed: &ParsedRustFile,
+    roles: Option<&SourceRoleIndex>,
+) -> Vec<Violation> {
+    let mut out = Vec::new();
+    rust_scan::append_rust_comment_violations(parsed, roles, &mut out);
+    out
+}
+
+pub(crate) fn rust_file_doc_violations(
+    parsed: &ParsedRustFile,
+    roles: Option<&SourceRoleIndex>,
+    docs_allowed: &[String],
+    repo_root: &Path,
+) -> Vec<Violation> {
+    if path_in_allowed_dirs(
+        &parsed.path,
+        repo_root,
+        &normalize_allowed_dirs(docs_allowed),
+    ) {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    rust_scan::append_rust_doc_violations(parsed, roles, &mut out);
+    out
+}
+
 pub fn collect_doc_violations(
     py_parsed: &[ParsedFile],
     rs_parsed: &[ParsedRustFile],
@@ -57,13 +84,14 @@ pub fn collect_doc_violations_with_roles(
     roles: Option<&SourceRoleIndex>,
 ) -> Vec<Violation> {
     let allowed = normalize_allowed_dirs(docs_allowed);
-    let mut out = Vec::new();
-    for parsed in py_parsed {
+    let mut out = ordered_file_violations(py_parsed, |parsed| {
         if path_in_allowed_dirs(&parsed.path, repo_root, &allowed) {
-            continue;
+            return None;
         }
-        python::append_python_doc_violations(parsed, roles, &mut out);
-    }
+        let mut file_out = Vec::new();
+        python::append_python_doc_violations(parsed, roles, &mut file_out);
+        Some(file_out)
+    });
     for parsed in rs_parsed {
         if path_in_allowed_dirs(&parsed.path, repo_root, &allowed) {
             continue;
@@ -71,6 +99,19 @@ pub fn collect_doc_violations_with_roles(
         rust_scan::append_rust_doc_violations(parsed, roles, &mut out);
     }
     out
+}
+
+fn ordered_file_violations(
+    parsed: &[ParsedFile],
+    one: impl Fn(&ParsedFile) -> Option<Vec<Violation>> + Sync,
+) -> Vec<Violation> {
+    let mut indexed: Vec<(usize, Vec<Violation>)> = parsed
+        .par_iter()
+        .enumerate()
+        .filter_map(|(idx, parsed)| one(parsed).map(|viols| (idx, viols)))
+        .collect();
+    indexed.sort_by_key(|(idx, _)| *idx);
+    indexed.into_iter().flat_map(|(_, viols)| viols).collect()
 }
 
 pub fn has_non_doc_comments(py_parsed: &[ParsedFile], rs_parsed: &[ParsedRustFile]) -> bool {
@@ -94,7 +135,9 @@ pub(super) fn skip_test_only_line(
 }
 
 pub(crate) fn normalize_allowed_dirs(dirs: &[String]) -> Vec<String> {
-    dirs.iter().filter_map(|dir| normalize_allowed_dir(dir)).collect()
+    dirs.iter()
+        .filter_map(|dir| normalize_allowed_dir(dir))
+        .collect()
 }
 
 fn normalize_allowed_dir(raw: &str) -> Option<String> {

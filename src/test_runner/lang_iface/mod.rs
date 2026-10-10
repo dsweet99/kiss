@@ -14,12 +14,12 @@ pub(crate) use runtime::{
     OutcomeBatch,
 };
 pub(crate) use stored::GenerationIds;
+#[cfg(test)]
+pub(crate) use witness::union_force_selectors_into_misses;
 pub(crate) use witness::{
     AcceptDecision, AcceptMode, ExecutionWitness, WitnessStatus, accept_witness,
     miss_selectors_for_repair, reclassify_statuses_with_gate,
 };
-#[cfg(test)]
-pub(crate) use witness::union_force_selectors_into_misses;
 pub(crate) use witness_summary::summary_from_witness_statuses;
 
 #[cfg(test)]

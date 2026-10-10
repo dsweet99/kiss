@@ -41,13 +41,27 @@ impl IncludeGraph {
 }
 
 pub fn build_include_graph(parsed_files: &[&ParsedRustFile]) -> IncludeGraph {
+    let rows: Vec<(std::path::PathBuf, Vec<String>)> = parsed_files
+        .iter()
+        .map(|parsed| {
+            (
+                parsed.path.clone(),
+                extract_rust_imports(&parsed.ast).include_literals,
+            )
+        })
+        .collect();
+    include_graph_from_literals(&rows)
+}
+
+pub(crate) fn include_graph_from_literals(
+    files: &[(std::path::PathBuf, Vec<String>)],
+) -> IncludeGraph {
     let mut direct: HashMap<std::path::PathBuf, Vec<std::path::PathBuf>> = HashMap::new();
-    for parsed in parsed_files {
-        let parent = crate::rust_include::canonical_path(&parsed.path);
-        let imports = extract_rust_imports(&parsed.ast);
+    for (path, literals) in files {
+        let parent = crate::rust_include::canonical_path(path);
         let mut children = Vec::new();
-        for lit in imports.include_literals {
-            let target = crate::rust_include::resolve_include_path(&parsed.path, &lit);
+        for lit in literals {
+            let target = crate::rust_include::resolve_include_path(path, lit);
             if target.is_file() {
                 children.push(crate::rust_include::canonical_path(&target));
             }

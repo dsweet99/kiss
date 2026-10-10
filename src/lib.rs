@@ -63,6 +63,7 @@ pub mod rust_counts;
 pub mod rust_fn_metrics;
 pub mod rust_graph;
 pub mod rust_include;
+mod rust_parallel;
 pub mod rust_parsing;
 pub mod rust_test_refs;
 pub mod rust_units;
@@ -155,6 +156,7 @@ pub use rust_graph::{
     IncludeGraph, build_include_graph, build_rust_context_graph, build_rust_dependency_graph,
     build_rust_dependency_graph_with_roles, expand_rust_files,
 };
+pub use rust_parallel::{ParallelRustOutput, ParallelRustRequest, parallel_rust_analysis};
 pub use rust_parsing::{ParsedRustFile, RustParseError, parse_rust_file, parse_rust_files};
 pub use rust_test_refs::is_binary_entry_point;
 pub use rust_units::{RustCodeUnit, extract_rust_code_units};

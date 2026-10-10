@@ -10,6 +10,7 @@ pub(super) fn build_python_model(
     content: String,
     line_count: u32,
 ) -> Result<SourceModel, String> {
+    kiss::parsing::ensure_tree_allocator();
     let mut parser = Parser::new();
     parser
         .set_language(&tree_sitter_python::LANGUAGE.into())

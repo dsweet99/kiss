@@ -80,4 +80,3 @@ pub(crate) trait KernelRules: KernelHooks {
         kiss::subprocess_observer::reset_subprocess_observer();
     }
 }
-

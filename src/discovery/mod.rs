@@ -109,9 +109,12 @@ fn should_ignore(path: &Path, ignore_prefixes: &[String]) -> bool {
 #[must_use]
 pub fn path_skipped_by_source_ignore(path: &Path, ignore_prefixes: &[String]) -> bool {
     path_ignored_by_prefixes(&path.to_string_lossy(), ignore_prefixes)
-        || path
-            .components()
-            .any(|component| component.as_os_str().to_str().is_some_and(is_always_ignored))
+        || path.components().any(|component| {
+            component
+                .as_os_str()
+                .to_str()
+                .is_some_and(is_always_ignored)
+        })
 }
 
 pub fn find_source_files(root: &Path) -> Vec<SourceFile> {

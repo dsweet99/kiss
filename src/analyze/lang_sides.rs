@@ -1,8 +1,8 @@
-use crate::analyze::dup_detect::{detect_py_duplicates, detect_rs_duplicates};
-use crate::analyze::graph_api::{build_py_graphs, build_rs_graphs};
+use crate::analyze::dup_detect::detect_py_duplicates;
+use crate::analyze::graph_api::build_py_graphs;
 use crate::analyze::options::AnalyzeOptions;
 use crate::analyze::parallel::RustAnalysis;
-use crate::analyze_parse::{analyze_py_parsed, analyze_rs_parsed};
+use crate::analyze_parse::analyze_py_parsed;
 use kiss::code_roles::SourceRoleIndex;
 use kiss::{DependencyGraph, DuplicateCluster, ParsedFile, ParsedRustFile, Violation};
 use std::path::PathBuf;
@@ -24,6 +24,7 @@ pub(crate) struct RsSide {
     pub stmts: usize,
     pub viols: Vec<Violation>,
     pub comments: Vec<Violation>,
+    pub docs: Vec<Violation>,
     pub analysis: RustAnalysis,
 }
 
@@ -32,16 +33,42 @@ pub(crate) fn parse_and_split_sides(
     rs_files: &[PathBuf],
     opts: &AnalyzeOptions<'_>,
 ) -> Result<(Vec<ParsedFile>, PySide, RsSide), kiss::RoleBuildError> {
-    let rs_parsed = crate::analyze_parse::parse_rs_files(rs_files)?;
-    let py_parsed = crate::analyze_parse::parse_py_files_pooled(py_files)?;
-    let (py_side, rs_side) = std::thread::scope(|scope| {
-        let py_handle = scope.spawn(|| run_python_side(&py_parsed, py_files, opts));
-        let rs_side = run_rust_after_parse(rs_parsed, rs_files, opts);
-        (py_handle.join().expect("python analysis thread"), rs_side)
-    });
-    match (py_side, rs_side) {
-        (Ok(py), Ok(rs)) => Ok((py_parsed, py, rs)),
-        (Err(err), _) | (_, Err(err)) => Err(err),
+    let (py_parsed, py_side, rs_side) = std::thread::scope(|scope| {
+        let rs_handle = scope.spawn(|| run_rust_after_parse(rs_files, opts));
+        let py_parsed = crate::analyze_parse::parse_py_files_pooled(py_files)?;
+        let py_side = run_python_side(&py_parsed, py_files, opts);
+        let rs_out = rs_handle.join().expect("rust analysis thread");
+        match (py_side, rs_out) {
+            (Ok(py_side), Ok(rs_out)) => Ok((py_parsed, py_side, rs_side_from(rs_out))),
+            (_, Err(err)) | (Err(err), _) => Err(err),
+        }
+    })?;
+    Ok((py_parsed, py_side, rs_side))
+}
+
+fn rs_side_from(out: kiss::ParallelRustOutput) -> RsSide {
+    let ast = syn::parse_file("").unwrap_or_else(|_| syn::parse_file("fn _kiss() {}").unwrap());
+    let parsed = out
+        .sources
+        .into_iter()
+        .map(|(path, source)| ParsedRustFile {
+            path,
+            source,
+            ast: ast.clone(),
+        })
+        .collect();
+    RsSide {
+        parsed,
+        roles: out.roles,
+        units: out.units,
+        stmts: out.stmts,
+        viols: out.viols,
+        comments: out.comments,
+        docs: out.docs,
+        analysis: RustAnalysis {
+            graph: out.graph,
+            dups: out.dups,
+        },
     }
 }
 
@@ -78,38 +105,15 @@ pub(crate) fn run_python_side(
 }
 
 pub(crate) fn run_rust_after_parse(
-    parsed: Vec<ParsedRustFile>,
     rs_files: &[PathBuf],
     opts: &AnalyzeOptions<'_>,
-) -> Result<RsSide, kiss::RoleBuildError> {
-    let t1 = std::time::Instant::now();
-    let refs: Vec<&ParsedRustFile> = parsed.iter().collect();
-    let roles = kiss::code_roles::classify_rust(&refs, rs_files)?;
-    let t2 = std::time::Instant::now();
-    let (units, stmts, viols) = analyze_rs_parsed(&parsed, opts.rs_config, &roles)?;
-    let t3 = std::time::Instant::now();
-    let comments = rs_comments(&parsed, opts, &roles);
-    let (graph, _ctx) = build_rs_graphs(&parsed, &roles);
-    let analysis = RustAnalysis {
-        graph,
-        dups: rs_dups(&parsed, opts, &roles),
-    };
-    if opts.show_timing {
-        eprintln!(
-            "[TIMING] rs_side roles={:.2}s analyze={:.2}s graph+={:.2}s",
-            t2.duration_since(t1).as_secs_f64(),
-            t3.duration_since(t2).as_secs_f64(),
-            t3.elapsed().as_secs_f64()
-        );
-    }
-    Ok(RsSide {
-        parsed,
-        roles,
-        units,
-        stmts,
-        viols,
-        comments,
-        analysis,
+) -> Result<kiss::ParallelRustOutput, kiss::RoleBuildError> {
+    kiss::parallel_rust_analysis(kiss::ParallelRustRequest {
+        files: rs_files,
+        config: opts.rs_config,
+        gate: opts.gate_config,
+        repo_root: &crate::analyze_cache::repo_root_for_universe(opts.universe),
+        show_timing: opts.show_timing,
     })
 }
 
@@ -153,18 +157,6 @@ fn py_comments(
     }
 }
 
-fn rs_comments(
-    parsed: &[ParsedRustFile],
-    opts: &AnalyzeOptions<'_>,
-    roles: &SourceRoleIndex,
-) -> Vec<Violation> {
-    if opts.gate_config.comment_removal_enabled {
-        kiss::collect_comment_violations_with_roles(&[], parsed, Some(roles))
-    } else {
-        Vec::new()
-    }
-}
-
 fn py_dups(
     parsed: &[ParsedFile],
     opts: &AnalyzeOptions<'_>,
@@ -172,18 +164,6 @@ fn py_dups(
 ) -> Vec<DuplicateCluster> {
     if opts.gate_config.duplication_enabled {
         detect_py_duplicates(parsed, opts.gate_config.min_similarity, roles)
-    } else {
-        Vec::new()
-    }
-}
-
-fn rs_dups(
-    parsed: &[ParsedRustFile],
-    opts: &AnalyzeOptions<'_>,
-    roles: &SourceRoleIndex,
-) -> Vec<DuplicateCluster> {
-    if opts.gate_config.duplication_enabled {
-        detect_rs_duplicates(parsed, opts.gate_config.min_similarity, roles)
     } else {
         Vec::new()
     }

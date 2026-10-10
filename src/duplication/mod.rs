@@ -1,6 +1,4 @@
-use crate::minhash::{
-    compute_minhash, estimate_similarity, find_lsh_candidates, generate_shingles,
-};
+use crate::minhash::{estimate_similarity, find_lsh_candidates, signature_from_text};
 use crate::parsing::ParsedFile;
 use rayon::prelude::*;
 use std::cmp::Ordering;
@@ -68,12 +66,7 @@ pub fn detect_duplicates_from_chunks(
 
     let signatures: Vec<MinHashSignature> = chunks
         .par_iter()
-        .map(|c| {
-            compute_minhash(
-                &generate_shingles(&c.normalized, config.shingle_size),
-                config.minhash_size,
-            )
-        })
+        .map(|c| signature_from_text(&c.normalized, config.shingle_size, config.minhash_size))
         .collect();
     let candidates = find_lsh_candidates(&signatures, config.lsh_bands);
     let mut duplicates: Vec<DuplicatePair> = candidates
@@ -109,12 +102,7 @@ pub fn cluster_duplicates_from_chunks(
 
     let signatures: Vec<MinHashSignature> = chunks
         .par_iter()
-        .map(|c| {
-            compute_minhash(
-                &generate_shingles(&c.normalized, config.shingle_size),
-                config.minhash_size,
-            )
-        })
+        .map(|c| signature_from_text(&c.normalized, config.shingle_size, config.minhash_size))
         .collect();
 
     let candidates: Vec<(usize, usize)> = find_lsh_candidates(&signatures, config.lsh_bands)

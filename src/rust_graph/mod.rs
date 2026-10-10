@@ -2,7 +2,7 @@ use crate::code_roles::{SourceRoleIndex, SourceSpan, contexts_for_span};
 use crate::graph::{ContextDependencyGraph, DependencyGraph, EdgeOrigin};
 use crate::rust_parsing::ParsedRustFile;
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 mod extract_imports;
 mod include_graph;
 mod resolve;
@@ -18,6 +18,7 @@ pub(crate) use extract_imports::{
     extract_imports_from_block, extract_imports_from_expr, extract_imports_from_items,
 };
 
+pub(crate) use include_graph::include_graph_from_literals;
 pub use include_graph::{IncludeGraph, build_include_graph, expand_rust_files};
 
 #[cfg(test)]
@@ -82,22 +83,34 @@ pub fn build_rust_context_graph(
     parsed_files: &[&ParsedRustFile],
     roles: &SourceRoleIndex,
 ) -> ContextDependencyGraph {
+    let owned: Vec<(PathBuf, RustImports)> = parsed_files
+        .iter()
+        .map(|parsed| (parsed.path.clone(), extract_rust_imports(&parsed.ast)))
+        .collect();
+    context_graph_from_imports(&owned, roles)
+}
+
+pub(crate) fn context_graph_from_imports(
+    files: &[(PathBuf, RustImports)],
+    roles: &SourceRoleIndex,
+) -> ContextDependencyGraph {
     let mut ctx = ContextDependencyGraph::empty();
     let mut internal_modules = HashSet::new();
     let mut bare_to_qualified: HashMap<String, Vec<String>> = HashMap::new();
-    for parsed in parsed_files {
-        register_parsed_module(
+    for (path, _) in files {
+        register_module_path(
             &mut ctx,
-            parsed,
+            path,
             roles,
             &mut internal_modules,
             &mut bare_to_qualified,
         );
     }
-    for parsed in parsed_files {
+    for (path, imports) in files {
         add_file_origins(
             &mut ctx,
-            parsed,
+            path,
+            imports,
             roles,
             &internal_modules,
             &bare_to_qualified,
@@ -106,15 +119,15 @@ pub fn build_rust_context_graph(
     ctx
 }
 
-fn register_parsed_module(
+fn register_module_path(
     ctx: &mut ContextDependencyGraph,
-    parsed: &ParsedRustFile,
+    path: &Path,
     roles: &SourceRoleIndex,
     internal_modules: &mut HashSet<String>,
     bare_to_qualified: &mut HashMap<String, Vec<String>>,
 ) {
-    let qualified = qualified_rust_module_name(&parsed.path);
-    let bare = parsed.path.file_stem().map_or_else(
+    let qualified = qualified_rust_module_name(path);
+    let bare = path.file_stem().map_or_else(
         || String::from("unknown"),
         |s| s.to_string_lossy().into_owned(),
     );
@@ -123,34 +136,31 @@ fn register_parsed_module(
         .entry(bare)
         .or_default()
         .push(qualified.clone());
-    ctx.register_module(
-        &qualified,
-        crate::rust_include::canonical_path(&parsed.path),
-        roles,
-    );
+    ctx.register_module(&qualified, crate::rust_include::canonical_path(path), roles);
 }
 
 fn add_file_origins(
     ctx: &mut ContextDependencyGraph,
-    parsed: &ParsedRustFile,
+    path: &Path,
+    imports: &RustImports,
     roles: &SourceRoleIndex,
     internal_modules: &HashSet<String>,
     bare_to_qualified: &HashMap<String, Vec<String>>,
 ) {
     OriginEnv {
         ctx,
-        parsed,
-        module_name: qualified_rust_module_name(&parsed.path),
+        path,
+        module_name: qualified_rust_module_name(path),
         roles,
         internal_modules,
         bare_to_qualified,
     }
-    .add_imports();
+    .add_imports(imports);
 }
 
 struct OriginEnv<'a> {
     ctx: &'a mut ContextDependencyGraph,
-    parsed: &'a ParsedRustFile,
+    path: &'a Path,
     module_name: String,
     roles: &'a SourceRoleIndex,
     internal_modules: &'a HashSet<String>,
@@ -158,8 +168,7 @@ struct OriginEnv<'a> {
 }
 
 impl OriginEnv<'_> {
-    fn add_imports(&mut self) {
-        let imports = extract_rust_imports(&self.parsed.ast);
+    fn add_imports(&mut self, imports: &RustImports) {
         self.includes(&imports.include_spans);
         self.mods(&imports.mod_spans);
         self.uses(&imports.use_spans);
@@ -169,7 +178,7 @@ impl OriginEnv<'_> {
         for (suffix, lit, span) in include_spans {
             let from = qualify_owner(&self.module_name, suffix);
             self.ensure(&from, *span);
-            let target = crate::rust_include::resolve_include_path(&self.parsed.path, lit);
+            let target = crate::rust_include::resolve_include_path(self.path, lit);
             let key = crate::rust_include::canonical_path(&target);
             if let Some(child_module) = self.ctx.inner().path_to_module.get(&key).cloned() {
                 self.edge(&from, &child_module, *span);
@@ -182,7 +191,7 @@ impl OriginEnv<'_> {
             let from = qualify_owner(&self.module_name, suffix);
             self.ensure(&from, *span);
             if let Some(lit) = path_lit {
-                let target = crate::rust_include::resolve_include_path(&self.parsed.path, lit);
+                let target = crate::rust_include::resolve_include_path(self.path, lit);
                 let key = crate::rust_include::canonical_path(&target);
                 if let Some(child_module) = self.ctx.inner().path_to_module.get(&key).cloned() {
                     self.edge(&from, &child_module, *span);
@@ -218,10 +227,10 @@ impl OriginEnv<'_> {
     }
 
     fn ensure(&mut self, from: &str, span: SourceSpan) {
-        let contexts = contexts_for_span(self.roles, &self.parsed.path, span);
+        let contexts = contexts_for_span(self.roles, self.path, span);
         self.ctx.ensure_named_node(
             from,
-            crate::rust_include::canonical_path(&self.parsed.path),
+            crate::rust_include::canonical_path(self.path),
             contexts,
         );
     }
@@ -232,7 +241,7 @@ impl OriginEnv<'_> {
             to,
             EdgeOrigin {
                 source_span: span,
-                contexts: contexts_for_span(self.roles, &self.parsed.path, span),
+                contexts: contexts_for_span(self.roles, self.path, span),
             },
         );
     }
@@ -246,6 +255,7 @@ fn qualify_owner(file_module: &str, suffix: &str) -> String {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct RustImports {
     #[allow(dead_code)]
     pub(crate) use_roots: Vec<String>,

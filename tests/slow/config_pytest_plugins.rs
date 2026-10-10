@@ -28,10 +28,7 @@ fn pytest_plugins_parametrize_runs_each_case() {
         "kissplug.py",
         "def pytest_generate_tests(metafunc):\n    if \"n\" in metafunc.fixturenames:\n        metafunc.parametrize(\"n\", [1, 2])\n",
     );
-    s.write(
-        "test_ok.py",
-        "def test_ok(n):\n    assert n in (1, 2)\n",
-    );
+    s.write("test_ok.py", "def test_ok(n):\n    assert n in (1, 2)\n");
     s.write(".kissconfig", &plugin_config("[\"kissplug\"]"));
     s.commit();
 

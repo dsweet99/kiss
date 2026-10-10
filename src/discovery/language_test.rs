@@ -23,7 +23,10 @@ fn language_lookup_helpers_round_trip() {
         Language::from_path_extension(Path::new("src/lib.RS")),
         Some(Language::Rust)
     );
-    assert_eq!(Language::from_path_extension(Path::new("src/lib.inc")), None);
+    assert_eq!(
+        Language::from_path_extension(Path::new("src/lib.inc")),
+        None
+    );
     assert_eq!(Language::from_path_extension(Path::new("README.md")), None);
     assert_eq!(Language::from_label("go"), None);
     assert!(!Language::Python.allowed_by(Some(Language::Rust)));

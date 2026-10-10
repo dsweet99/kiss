@@ -30,7 +30,7 @@ pub struct RustTypeMetrics {
     pub methods: usize,
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct RustFileMetrics {
     pub statements: usize,
     pub interface_types: usize,

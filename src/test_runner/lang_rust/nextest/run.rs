@@ -268,6 +268,12 @@ pub(super) fn run(
     req: &RunRequest<'_>,
     on_result: &mut dyn FnMut(SelectorExecutionRecord),
 ) -> Result<SelectorExecutionSummary, String> {
+    if !req.repo_root.join("Cargo.toml").is_file() {
+        return Err(format!(
+            "error: kiss test: no Cargo.toml in {}",
+            req.repo_root.display()
+        ));
+    }
     let stage_started = Instant::now();
     let (plan, toml) = prepare(req)?;
     let tool_config = write_tool_config(req.repo_root, &toml)?;
@@ -293,6 +299,22 @@ pub(super) fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn missing_cargo_toml_fails_before_nextest() {
+        let tmp = tempfile::tempdir().unwrap();
+        let gate = kiss::GateConfig::default();
+        let selectors = vec!["a".to_string()];
+        let req = RunRequest {
+            repo_root: tmp.path(),
+            selectors: &selectors,
+            extras: &[],
+            jobs: 1,
+            gate: &gate,
+        };
+        let err = run(&req, &mut |_| {}).unwrap_err();
+        assert!(err.contains("no Cargo.toml"), "{err}");
+    }
 
     #[test]
     fn argv_names_the_kiss_profile_and_passes_test_arguments_last() {

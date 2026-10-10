@@ -237,4 +237,3 @@ fn append_symlink_sources(
     rs_files.sort();
     rs_files.dedup();
 }
-
