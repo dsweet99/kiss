@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.13 — 2026-10-10
+
 ### Removed
 
 - The watcher (`kiss test-watch`). `kiss test` always runs in the foreground; concurrent `kiss test` runs in one repository still wait for each other.
