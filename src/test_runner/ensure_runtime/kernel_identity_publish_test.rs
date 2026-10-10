@@ -49,8 +49,7 @@ fn forced_run_with_unchanged_outcomes_still_publishes() {
         language: Language::Python,
         state: Rc::clone(&state),
     };
-    let mut req = request(vec!["a".into()]);
-    req.force_selectors = vec!["a".into()];
+    let req = request(vec!["a".into()]);
     let result = ensure_runtime_cache(&req, &[&runtime]).expect("ensure");
     assert_eq!(result.exit_code, 0);
     assert_eq!(state.borrow().run_calls, vec![vec!["a".to_string()]]);
@@ -80,8 +79,7 @@ fn partial_run_summary_includes_accepted_cache_hits() {
         language: Language::Python,
         state: Rc::clone(&state),
     };
-    let mut req = request(vec!["a".into(), "b".into()]);
-    req.force_selectors = vec!["b".into()];
+    let req = request(vec!["a".into(), "b".into()]);
     let result = ensure_runtime_cache(&req, &[&runtime]).expect("ensure");
     let summary = result.by_language.python.unwrap().summary;
     assert_eq!(summary.total, 2);

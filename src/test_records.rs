@@ -45,7 +45,6 @@ pub struct RecordView<'a> {
 pub struct Selection<'a> {
     pub identity: &'a str,
     pub current_deps: Option<&'a BTreeMap<String, String>>,
-    pub retry_bad: bool,
     pub needs_duration: bool,
 }
 
@@ -54,7 +53,6 @@ pub enum RunReason {
     NoRecord,
     IdentityChanged,
     DepsChanged,
-    RetryBad,
     NeedsDuration,
 }
 
@@ -67,9 +65,6 @@ pub fn must_run(record: Option<RecordView<'_>>, now: &Selection<'_>) -> Option<R
     }
     if now.current_deps != Some(record.deps) {
         return Some(RunReason::DepsChanged);
-    }
-    if now.retry_bad && record.status != TestStatus::Passed {
-        return Some(RunReason::RetryBad);
     }
     if now.needs_duration && record.duration.is_zero() {
         return Some(RunReason::NeedsDuration);

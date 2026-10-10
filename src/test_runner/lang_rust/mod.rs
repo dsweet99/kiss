@@ -7,10 +7,8 @@ pub(crate) mod plan_inputs;
 pub(crate) mod records_witness;
 mod runtime;
 pub(crate) mod rust_enumerate;
-mod stored;
 #[cfg(test)]
 pub(crate) mod test_records;
-mod witness_identity;
 pub(crate) mod workspace;
 
 pub(crate) use records_witness::try_load_rust_execution_witness;

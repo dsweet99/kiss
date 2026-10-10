@@ -144,15 +144,6 @@ pub(crate) struct SelectorCountNeed {
     pub(crate) rust: bool,
 }
 
-impl SelectorCountNeed {
-    pub(crate) fn wants(self, language: kiss::Language) -> bool {
-        match language {
-            kiss::Language::Python => self.python,
-            kiss::Language::Rust => self.rust,
-        }
-    }
-}
-
 pub(crate) fn load_workspace_selectors_for_count(
     repo_root: &Path,
     ignore: &[String],

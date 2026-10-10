@@ -67,27 +67,6 @@ pub(crate) fn planner_backer(
     }
 }
 
-pub(crate) fn cached_workspace_selectors(
-    repo_root: &std::path::Path,
-    language: Language,
-    ignore: &[String],
-    test_args: &[String],
-) -> Result<Vec<String>, String> {
-    use crate::test_runner::workspace_selector_cache as cache;
-    let cached = match language {
-        Language::Python => {
-            cache::load_cached_python_workspace_selectors(repo_root, ignore, test_args)
-                .map(|selectors| selectors.into_iter().collect())
-        }
-        Language::Rust => cache::load_cached_rust_workspace_selectors(repo_root, ignore)
-            .map(|selectors| selectors.into_iter().collect()),
-    };
-    match cached {
-        Some(selectors) => Ok(selectors),
-        None => enumerate_workspace_selectors(repo_root, language, ignore, test_args),
-    }
-}
-
 pub(crate) fn enumerate_workspace_selectors(
     repo_root: &std::path::Path,
     language: Language,

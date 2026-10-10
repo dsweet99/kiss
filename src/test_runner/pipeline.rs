@@ -10,16 +10,14 @@ use super::RunTestCmdArgs;
 use super::language_keyed::LanguageKeyed;
 use super::plan::{
     AllWorkspaceCache, PlanSelectorsRequest, TargetPlanKind, VcsWorkspace,
-    plan_selectors_from_workspace, plan_target_selectors_with_priors, plan_vcs_workspace_at,
+    plan_selectors_from_workspace, plan_target_selectors, plan_vcs_workspace_at,
     select_all_language,
 };
 use super::planned_selectors::{
     PlannedSelectors, SelectorRunOptions, should_force_cold_initialization,
 };
 use super::run_logic::{finish_joined_run, merge_language_planned, print_joined_dry_run};
-use crate::test_runner::target_request::{
-    TargetFocus, change_mode_from_focus, operand_raws, request_from_run_args,
-};
+use crate::test_runner::target_request::{TargetFocus, git_resolve_args, operand_raws};
 
 enum SharedKind {
     Change(VcsWorkspace),
@@ -129,10 +127,9 @@ fn plan_shared_prefix(
     a: &RunTestCmdArgs<'_>,
     repo_root: &std::path::Path,
 ) -> Result<SharedPrefix, String> {
-    let request = request_from_run_args(a);
-    match &request.focus {
+    match &a.target_request.focus {
         TargetFocus::Git(_) => {
-            let req = change_request(a);
+            let req = git_plan_request(a);
             let ws = plan_vcs_workspace_at(&req, repo_root.to_path_buf())?;
             let cold_init = should_force_cold_initialization(a, &ws.repo_root);
             let mut may_work = LanguageKeyed::<bool>::default();
@@ -150,7 +147,7 @@ fn plan_shared_prefix(
         }
         TargetFocus::Workspace => plan_all_or_targets_prefix(a, repo_root, None),
         TargetFocus::Operands(_) => {
-            let targets = operand_raws(&request.focus).unwrap_or_default();
+            let targets = operand_raws(&a.target_request.focus).unwrap_or_default();
             plan_all_or_targets_prefix(a, repo_root, Some(&targets))
         }
     }
@@ -261,28 +258,30 @@ pub(super) fn select_language(
                     prefix.ignore.clone(),
                 ));
             }
-            plan_target_selectors_with_priors(
+            plan_target_selectors(
                 TargetPlanKind::Targets(thread_targets.as_slice()),
                 &prefix.ignore,
                 extras,
                 Some(language),
                 &a.gate_config,
-                a.force_bad,
             )
         }
     }
 }
 
-fn change_request<'a>(a: &'a RunTestCmdArgs<'a>) -> PlanSelectorsRequest<'a> {
-    let mode = change_mode_from_focus(&request_from_run_args(a).focus);
+pub(super) fn git_plan_request<'a>(a: &'a RunTestCmdArgs<'a>) -> PlanSelectorsRequest<'a> {
+    let TargetFocus::Git(focus) = &a.target_request.focus else {
+        panic!("git_plan_request requires a git focus");
+    };
+    let (mode, config_main_branch, main_branch_cli, base_branch_cli) = git_resolve_args(focus);
     PlanSelectorsRequest {
         mode,
-        main_branch_cli: a.main_branch_cli,
-        base_branch_cli: a.base_branch_cli,
+        main_branch_cli,
+        base_branch_cli,
         ignore: a.ignore(),
         extras: a.extras,
         lang_filter: a.lang_filter(),
-        config_main_branch: a.config_main_branch,
+        config_main_branch,
     }
 }
 

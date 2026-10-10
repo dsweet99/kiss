@@ -63,7 +63,7 @@ fn resolve_git(
     ))
 }
 
-fn git_resolve_args(
+pub(crate) fn git_resolve_args(
     focus: &GitFocus,
 ) -> (TestChangeMode, Option<&str>, Option<&str>, Option<&str>) {
     match focus {

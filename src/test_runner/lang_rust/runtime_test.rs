@@ -1,59 +1,18 @@
 use super::RustRuntime;
 use crate::test_runner::lang_iface::KernelRules;
-use crate::test_runner::lang_iface::{
-    AcceptMode, EnsureRequest, ExecutionWitness, LanguageRuntime, WitnessStatus,
-};
+use crate::test_runner::lang_iface::{AcceptMode, EnsureRequest, LanguageRuntime, WitnessStatus};
 use crate::test_runner::lang_rust::RustKernelRules;
 use crate::test_runner::test_selection::SupportedLanguage;
 use std::collections::BTreeMap;
 
 #[test]
 fn rust_runtime_language() {
-    assert_eq!(RustRuntime::default().language(), kiss::Language::Rust);
-}
-
-#[test]
-fn accepted_summary_emits_cached_passes() {
-    let rt = RustRuntime::default();
-    let tmp = tempfile::tempdir().unwrap();
-    let req = EnsureRequest {
-        repo_root: tmp.path().to_path_buf(),
-        mode: AcceptMode::Subset,
-        lang_filter: Some(kiss::Language::Rust),
-        ignore: vec![],
-        force: false,
-        force_selectors: Vec::new(),
-        jobs: 1,
-        gate: kiss::GateConfig::default(),
-        extras: crate::test_runner::language_keyed::LanguageKeyed {
-            python: vec![],
-            rust: vec![],
-        },
-        planned: crate::test_runner::language_keyed::LanguageKeyed {
-            python: vec![],
-            rust: vec!["a".into()],
-        },
-    };
-    let witness = ExecutionWitness {
-        language: kiss::Language::Rust,
-        identity_digest: "id".into(),
-        selectors: vec!["a".into()],
-        statuses: vec![WitnessStatus::Passed],
-        durations_ns: vec![Some(1)],
-        complete: true,
-        generation_id: "g".into(),
-        raw_statuses: Vec::new(),
-    };
-    let summary =
-        KernelRules::accepted_summary(&RustKernelRules, &req, &["a".into()], &witness).unwrap();
-    assert_eq!(summary.total, 1);
-    assert_eq!(summary.cache_hits, 1);
-    let _ = rt.list(&req);
+    assert_eq!(RustRuntime.language(), kiss::Language::Rust);
 }
 
 #[test]
 fn rust_runtime_empty_run_and_load_miss() {
-    let rt = RustRuntime::default();
+    let rt = RustRuntime;
     let tmp = tempfile::tempdir().unwrap();
     let req = EnsureRequest {
         repo_root: tmp.path().to_path_buf(),
@@ -61,7 +20,6 @@ fn rust_runtime_empty_run_and_load_miss() {
         lang_filter: Some(kiss::Language::Rust),
         ignore: vec![],
         force: false,
-        force_selectors: Vec::new(),
         jobs: 1,
         gate: kiss::GateConfig::default(),
         extras: crate::test_runner::language_keyed::LanguageKeyed {
@@ -75,9 +33,6 @@ fn rust_runtime_empty_run_and_load_miss() {
     };
     let batch = super::runtime::run_rust_selectors(&req, &[], &mut |_| {}).expect("empty run");
     assert_eq!(batch.summary.total, 0);
-    if let Ok(listing) = rt.list(&req) {
-        assert!(crate::test_runner::ensure_runtime::stored_rows(&req, &rt, &listing).is_none());
-    }
     let _ = rt.list(&req).map(|listing| listing.identity);
 }
 
@@ -91,7 +46,6 @@ fn rust_runtime_nonempty_miss_hits_mode_branches() {
             lang_filter: Some(kiss::Language::Rust),
             ignore: vec![],
             force: false,
-            force_selectors: Vec::new(),
             jobs: 1,
             gate: kiss::GateConfig::default(),
             extras: crate::test_runner::language_keyed::LanguageKeyed {
@@ -184,7 +138,6 @@ fn selectors_for_time_gate_fails_closed_without_report_ids() {
         lang_filter: Some(kiss::Language::Rust),
         ignore: vec![],
         force: false,
-        force_selectors: Vec::new(),
         jobs: 1,
         gate: kiss::GateConfig {
             max_unit_test_seconds: vec![("tests/".into(), 2.0)],
@@ -243,7 +196,6 @@ fn time_gate_report_ids(ignore: &[String]) -> Result<Vec<String>, String> {
         lang_filter: Some(kiss::Language::Rust),
         ignore: ignore.to_vec(),
         force: false,
-        force_selectors: Vec::new(),
         jobs: 1,
         gate: kiss::GateConfig {
             max_unit_test_seconds: vec![("src/".into(), 2.0)],
@@ -259,58 +211,6 @@ fn time_gate_report_ids(ignore: &[String]) -> Result<Vec<String>, String> {
         },
     };
     RustKernelRules.selectors_for_time_gate(&req, &["tests::case".into()])
-}
-
-#[test]
-fn live_misses_are_the_tests_whose_records_do_not_hold() {
-    use kiss::rpytest_runner::TestStatus;
-    let tmp = demo_crate();
-    super::nextest::store_records(
-        tmp.path(),
-        &[("pass", TestStatus::Passed), ("fail", TestStatus::Failed)],
-    );
-    let mut req = EnsureRequest {
-        repo_root: tmp.path().to_path_buf(),
-        mode: AcceptMode::All,
-        lang_filter: Some(kiss::Language::Rust),
-        ignore: vec![],
-        force: false,
-        force_selectors: Vec::new(),
-        jobs: 1,
-        gate: kiss::GateConfig::default(),
-        extras: crate::test_runner::language_keyed::LanguageKeyed {
-            python: vec![],
-            rust: vec![],
-        },
-        planned: crate::test_runner::language_keyed::LanguageKeyed {
-            python: vec![],
-            rust: vec!["pass".into(), "fail".into(), "extra".into()],
-        },
-    };
-    let rt = RustRuntime::default();
-    let listing = rt.list(&req).expect("listing");
-    let witness = crate::test_runner::ensure_runtime::stored_rows(&req, &rt, &listing)
-        .expect("records witness")
-        .witness;
-    assert_eq!(
-        witness.selectors,
-        vec!["fail".to_string(), "pass".to_string()]
-    );
-    assert_eq!(
-        witness.statuses,
-        vec![WitnessStatus::Failed, WitnessStatus::Passed]
-    );
-    assert!(!witness.complete);
-    let planned = req.planned.rust.clone();
-    assert_eq!(
-        RustKernelRules.live_misses(&req, &planned, "", Some(&witness)),
-        planned
-    );
-    req.force = true;
-    assert_eq!(
-        RustKernelRules.live_misses(&req, &planned, "", Some(&witness)),
-        planned
-    );
 }
 
 #[test]

@@ -19,20 +19,6 @@ pub(crate) fn report_string_for_logical_string(
         .unwrap_or_else(|| logical.to_string())
 }
 
-pub(crate) fn qualified_rust_report_ids(
-    repo_root: &std::path::Path,
-    planned: &[String],
-) -> BTreeMap<String, String> {
-    if !planned.iter().any(|selector| selector.contains('$')) {
-        return BTreeMap::new();
-    }
-    crate::test_runner::rust_report_id_cache::rust_logical_to_kiss_test_ids_cached(repo_root, &[])
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|(logical, _)| logical.contains('$'))
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

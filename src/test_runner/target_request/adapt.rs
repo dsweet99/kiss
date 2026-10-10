@@ -50,6 +50,7 @@ pub(crate) fn is_workspace_run(args: &RunTestCmdArgs<'_>) -> bool {
     is_workspace_focus(&request_from_run_args(args).focus)
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn change_mode_from_focus(focus: &TargetFocus) -> TestChangeMode {
     match focus {
         TargetFocus::Git(GitFocus::Commit) => TestChangeMode::Commit,

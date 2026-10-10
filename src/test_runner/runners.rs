@@ -203,13 +203,6 @@ pub fn enumerate_workspace_python_selectors(
     ignore: &[String],
     pytest_args: &[String],
 ) -> Result<Vec<String>, String> {
-    if let Some(selectors) = super::workspace_selector_cache::load_cached_python_workspace_selectors(
-        repo_root,
-        ignore,
-        pytest_args,
-    ) {
-        return filter_ignored_python_selectors(selectors, ignore);
-    }
     if !ignore.is_empty() {
         let paths = crate::test_runner::lang_python::collect_paths::workspace_python_collect_paths(
             repo_root, ignore,

@@ -1,6 +1,5 @@
 use std::path::{Path, PathBuf};
 
-use crate::test_runner::runners::enumerate_workspace_python_selectors;
 use crate::test_runner::test_selection::{ChangedDiff, LanguagePlanner, TestSelector};
 
 pub(crate) struct PythonBackerInput<'a> {
@@ -64,12 +63,12 @@ impl LanguagePlanner for PythonModule {
     }
 
     fn discover_universe(&self) -> Result<Vec<TestSelector>, String> {
-        Ok(
-            enumerate_workspace_python_selectors(&self.repo_root, &self.ignore, &self.test_args)?
-                .into_iter()
-                .map(|id| TestSelector::new(kiss::Language::Python, id))
-                .collect(),
-        )
+        let ids = crate::test_runner::lang_registry::rules_for(kiss::Language::Python)
+            .list_workspace_selectors(&self.repo_root, &self.ignore, &self.test_args)?;
+        Ok(ids
+            .into_iter()
+            .map(|id| TestSelector::new(kiss::Language::Python, id))
+            .collect())
     }
 
     fn changed_tests(&self, _diff: &ChangedDiff) -> Vec<TestSelector> {
@@ -99,6 +98,7 @@ mod tests {
         reset_python_collect_memo_for_tests,
     };
     use crate::test_runner::test_selection::SelectionBasis;
+    use crate::test_runner::runners::enumerate_workspace_python_selectors;
     use crate::test_runner::workspace_selector_cache::store_python_workspace_selectors;
     use std::fs;
 
@@ -133,6 +133,17 @@ mod tests {
             .collect();
         assert_eq!(discovered, cached);
         assert_eq!(full_suite_subprocess_collects_for_tests(), before);
+        let enumerated = enumerate_workspace_python_selectors(tmp.path(), &[], &[]).unwrap();
+        assert!(
+            !enumerated
+                .iter()
+                .any(|selector| selector.contains("test_cached_only"))
+        );
+        assert!(
+            enumerated
+                .iter()
+                .any(|selector| selector == "tests/test_app.py::test_value")
+        );
     }
 
     #[test]

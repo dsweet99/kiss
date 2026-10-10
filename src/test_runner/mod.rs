@@ -7,9 +7,6 @@ pub(crate) mod capture_stdout;
 pub(crate) mod duration;
 pub(crate) mod ensure_runtime;
 pub(crate) mod execution_witness;
-pub(crate) mod force_bad;
-mod test_selection;
-pub(crate) use force_bad::apply_force_bad;
 pub(crate) mod final_summary;
 pub(crate) mod lang_iface;
 pub(crate) mod lang_python;
@@ -24,6 +21,7 @@ mod selector_ids;
 mod status_labels;
 pub(crate) mod target_request;
 mod targets;
+mod test_selection;
 pub(crate) use targets::expand_target_operands;
 pub(crate) mod tests_remaining;
 pub(crate) mod unit_test_timing;
@@ -76,7 +74,6 @@ pub struct RunTestCmdArgs<'a> {
     pub base_branch_cli: Option<&'a str>,
     pub dry_run: bool,
     pub force_rerun: bool,
-    pub force_bad: bool,
     pub metrics: bool,
     pub jobs: usize,
     pub extras: language_keyed::LanguageKeyed<&'a [String]>,
@@ -141,12 +138,6 @@ pub(crate) fn test_state_dir(repo_root: &std::path::Path) -> std::path::PathBuf 
     kiss::test_state_dir(repo_root)
 }
 
-pub(crate) fn lock_test_state(
-    state_dir: &std::path::Path,
-) -> std::io::Result<kiss::test_state_lock::TestStateLock> {
-    kiss::test_state_lock::lock_test_state_dir(state_dir)
-}
-
 pub(crate) fn emit_test_progress(message: &str) {
     emit_test_status(message);
 }
@@ -196,21 +187,10 @@ pub(crate) fn run_live_overlapped_test(
 
 #[cfg(test)]
 fn plan_for_invocation(a: &RunTestCmdArgs<'_>) -> Result<PlannedSelectors, String> {
-    use crate::test_runner::target_request::{
-        TargetFocus, change_mode_from_focus, operand_raws, request_from_run_args,
-    };
-    let request = request_from_run_args(a);
+    use crate::test_runner::target_request::{TargetFocus, operand_raws};
     let extras = a.extras;
-    match &request.focus {
-        TargetFocus::Git(_) => plan_selectors(PlanSelectorsRequest {
-            mode: change_mode_from_focus(&request.focus),
-            main_branch_cli: a.main_branch_cli,
-            base_branch_cli: a.base_branch_cli,
-            ignore: a.ignore(),
-            extras,
-            lang_filter: a.lang_filter(),
-            config_main_branch: a.config_main_branch,
-        }),
+    match &a.target_request.focus {
+        TargetFocus::Git(_) => plan_selectors(pipeline::git_plan_request(a)),
         TargetFocus::Workspace => plan_target_selectors(
             TargetPlanKind::All,
             a.ignore(),
@@ -219,7 +199,7 @@ fn plan_for_invocation(a: &RunTestCmdArgs<'_>) -> Result<PlannedSelectors, Strin
             &a.gate_config,
         ),
         TargetFocus::Operands(_) => {
-            let targets = operand_raws(&request.focus).unwrap_or_default();
+            let targets = operand_raws(&a.target_request.focus).unwrap_or_default();
             plan_target_selectors(
                 TargetPlanKind::Targets(targets.as_slice()),
                 a.ignore(),
@@ -274,10 +254,6 @@ mod test_change_modes_b_test;
 #[cfg(test)]
 #[path = "mod_test.rs"]
 mod mod_test;
-
-#[cfg(test)]
-#[path = "force_bad_test.rs"]
-mod force_bad_test;
 
 #[cfg(test)]
 #[path = "planning_heartbeat_test.rs"]

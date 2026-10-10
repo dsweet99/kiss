@@ -221,16 +221,16 @@ fn supported_language_unifies_planner_and_runtime_stacks() {
     use crate::test_runner::lang_rust::RustRuntime;
     use crate::test_runner::test_selection::SupportedLanguage;
 
-    let python = PythonRuntime::default();
+    let python = PythonRuntime;
     assert_eq!(
         <PythonRuntime as SupportedLanguage>::language(&python),
         Language::Python
     );
     assert_eq!(
-        <RustRuntime as SupportedLanguage>::language(&RustRuntime::default()),
+        <RustRuntime as SupportedLanguage>::language(&RustRuntime),
         Language::Rust
     );
-    let runtimes: [&dyn LanguageRuntime; 2] = [&python, &RustRuntime::default()];
+    let runtimes: [&dyn LanguageRuntime; 2] = [&python, &RustRuntime];
     assert_eq!(
         runtimes.map(|runtime| runtime.language()),
         [Language::Python, Language::Rust]

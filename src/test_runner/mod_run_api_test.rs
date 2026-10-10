@@ -18,7 +18,6 @@ impl RunTestCmdArgs<'_> {
             base_branch_cli: None,
             dry_run: true,
             force_rerun: false,
-            force_bad: false,
             metrics: false,
             jobs: 1,
             extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,

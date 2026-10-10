@@ -81,9 +81,6 @@ impl TestSectionConfig {
         if let Ok(s) = std::fs::read_to_string(&path) {
             merge_from_toml(&mut c, &s, path.parent());
         }
-        if let Some(root) = path.parent() {
-            crate::test_cache_policy::merge_language_adapters(root, &mut c.cache_policy);
-        }
         c
     }
 
@@ -92,9 +89,6 @@ impl TestSectionConfig {
         let path = crate::config::active_kissconfig_path();
         if let Ok(s) = std::fs::read_to_string(&path) {
             c.try_merge_from_toml(&s, path.parent())?;
-        }
-        if let Some(root) = path.parent() {
-            crate::test_cache_policy::merge_language_adapters(root, &mut c.cache_policy);
         }
         Ok(c)
     }

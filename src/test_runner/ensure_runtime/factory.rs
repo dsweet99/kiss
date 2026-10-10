@@ -7,8 +7,8 @@ use crate::test_runner::test_selection::SupportedLanguage;
 pub(crate) fn ensure_languages_runtime(
     request: &EnsureRequest,
 ) -> Result<EnsureRuntimeResult, String> {
-    let python = PythonRuntime::default();
-    let rust = RustRuntime::default();
+    let python = PythonRuntime;
+    let rust = RustRuntime;
     let mut modules: Vec<&dyn LanguageRuntime> = Vec::new();
     if request.requires(SupportedLanguage::language(&python)) {
         modules.push(&python);

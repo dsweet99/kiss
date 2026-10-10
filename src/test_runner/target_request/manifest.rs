@@ -62,17 +62,6 @@ pub(crate) fn needed_langs(repo_root: &Path, request: &TargetRequest) -> (bool, 
     (need_python, need_rust)
 }
 
-pub(crate) fn population_count_need(
-    repo_root: &Path,
-    request: &TargetRequest,
-) -> crate::test_runner::workspace_selector_cache::SelectorCountNeed {
-    let (need_python, need_rust) = needed_langs(repo_root, request);
-    crate::test_runner::workspace_selector_cache::SelectorCountNeed {
-        python: need_python && has_python_test_files(repo_root, request),
-        rust: need_rust,
-    }
-}
-
 pub(crate) fn has_python_test_files(repo_root: &Path, request: &TargetRequest) -> bool {
     let lang = request.lang;
     let root = repo_root.to_string_lossy().into_owned();

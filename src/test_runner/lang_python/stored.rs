@@ -1,7 +1,7 @@
 #![cfg_attr(not(test), allow(dead_code))]
 use std::path::Path;
 
-use crate::test_runner::lang_iface::{ExecutionWitness, GenerationIds, WitnessStatus};
+use crate::test_runner::lang_iface::{ExecutionWitness, WitnessStatus};
 
 pub(crate) fn stored_witness(repo_root: &Path, extras: &[String]) -> Option<ExecutionWitness> {
     let identity = super::records::record_identity(repo_root, extras).ok()?;
@@ -48,13 +48,8 @@ fn record_holds(
         &kiss::test_records::Selection {
             identity: &record.identity,
             current_deps: Some(&current),
-            retry_bad: false,
             needs_duration: false,
         },
     )
     .is_none()
-}
-
-pub(super) fn generation_ids(_repo_root: &Path) -> GenerationIds {
-    GenerationIds { witness: None }
 }

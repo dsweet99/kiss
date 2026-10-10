@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -45,20 +44,7 @@ impl LanguageRuntime for FakeRuntime {
                 .identity
                 .clone()
                 .unwrap_or_else(|| "id".into()),
-            record_identity: "records".into(),
         })
-    }
-
-    fn deps(
-        &self,
-        _request: &EnsureRequest,
-        _row: &kiss::test_records::TestRecord,
-    ) -> Option<BTreeMap<String, String>> {
-        None
-    }
-
-    fn seeded_rows(&self, _request: &EnsureRequest) -> Option<ExecutionWitness> {
-        self.state.borrow().witness.clone()
     }
 
     fn run(
@@ -145,7 +131,6 @@ fn request(planned: Vec<String>) -> EnsureRequest {
         lang_filter: Some(Language::Python),
         ignore: vec![],
         force: false,
-        force_selectors: Vec::new(),
         jobs: 1,
         gate: kiss::GateConfig::default(),
         extras: crate::test_runner::language_keyed::LanguageKeyed {

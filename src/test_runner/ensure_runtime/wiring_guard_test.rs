@@ -19,7 +19,7 @@ fn language_modules_route_python_and_rust_through_ensure() {
 }
 
 #[test]
-fn rust_runs_go_through_nextest_and_forward_force_selectors() {
+fn rust_runs_go_through_nextest() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("src/test_runner/lang_rust/runtime.rs");
     let src = std::fs::read_to_string(&path).expect("read rust runtime");
@@ -39,13 +39,5 @@ fn rust_runs_go_through_nextest_and_forward_force_selectors() {
     assert!(
         !kernel.contains("timed_compute_misses"),
         "the kernel must not replace a miss set with the planned selectors"
-    );
-    let jobs = std::fs::read_to_string(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/test_runner/pipeline_jobs.rs"),
-    )
-    .expect("read pipeline jobs");
-    assert!(
-        jobs.contains("apply_force_bad"),
-        "--force-bad must add prior failures before execution"
     );
 }

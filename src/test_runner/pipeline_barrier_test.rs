@@ -22,7 +22,6 @@ fn run_args(
         base_branch_cli: None,
         dry_run,
         force_rerun: false,
-        force_bad: false,
         metrics: false,
         jobs: 1,
         extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
@@ -51,9 +50,6 @@ fn status_printers_use_emit_test_progress() {
     assert!(!python.contains("writeln!(stdout"));
     assert!(!python.contains("writeln!(out,"));
     assert!(!python.contains("write_all(body"));
-    let witness = include_str!("lang_iface/witness_summary.rs");
-    assert!(witness.contains("emit_test_progress(&format!(\"{label} {count} selectors"));
-    assert!(!witness.contains("println!(\"{label} {count} selectors"));
     let dry = include_str!("run_logic/language_executor.rs");
     assert!(dry.contains("emit_test_progress(&line)"));
 }

@@ -1,6 +1,5 @@
 use std::path::{Path, PathBuf};
 
-use crate::test_runner::runners::enumerate_workspace_rust_selectors;
 use crate::test_runner::test_selection::{ChangedDiff, LanguagePlanner, TestSelector};
 
 pub(crate) struct RustBackerInput<'a> {
@@ -51,18 +50,8 @@ impl LanguagePlanner for RustModule {
     }
 
     fn discover_universe(&self) -> Result<Vec<TestSelector>, String> {
-        use crate::test_runner::workspace_selector_cache as selector_cache;
-        let ids = match selector_cache::load_cached_rust_workspace_selectors(
-            &self.repo_root,
-            &self.ignore,
-        ) {
-            Some(cached) => cached,
-            None => {
-                let ids = enumerate_workspace_rust_selectors(&self.repo_root, &self.ignore)?;
-                selector_cache::store_rust_workspace_selectors(&self.repo_root, &self.ignore, &ids);
-                ids
-            }
-        };
+        let ids = crate::test_runner::lang_registry::rules_for(kiss::Language::Rust)
+            .list_workspace_selectors(&self.repo_root, &self.ignore, &[])?;
         Ok(ids
             .into_iter()
             .map(|id| TestSelector::new(kiss::Language::Rust, id))

@@ -6,10 +6,6 @@ use kiss::Language;
 use super::super::model::SourceModel;
 use super::TargetSelectionQuery;
 use super::resolve_insert::insert_direct;
-use crate::test_runner::workspace_selector_cache::{
-    load_cached_python_workspace_selectors, load_cached_rust_workspace_selectors,
-    store_python_workspace_selectors, store_rust_workspace_selectors,
-};
 
 pub(super) fn flush_unresolved_universes(
     query: &mut TargetSelectionQuery,
@@ -53,41 +49,15 @@ fn insert_universe_if_unresolved(
 ) -> Result<(), String> {
     match language {
         Language::Python if query.direct_python.len() == before_py => {
-            let selectors =
-                match load_cached_python_workspace_selectors(repo_root, ignore, pytest_args) {
-                    Some(selectors) => selectors,
-                    None => {
-                        let selectors =
-                            crate::test_runner::runners::enumerate_workspace_python_selectors(
-                                repo_root,
-                                ignore,
-                                pytest_args,
-                            )?;
-                        store_python_workspace_selectors(
-                            repo_root,
-                            ignore,
-                            &selectors,
-                            pytest_args,
-                        );
-                        selectors
-                    }
-                };
+            let selectors = crate::test_runner::lang_registry::rules_for(Language::Python)
+                .list_workspace_selectors(repo_root, ignore, pytest_args)?;
             for selector in selectors {
                 insert_direct(query, Language::Python, selector);
             }
         }
         Language::Rust if query.direct_rust.len() == before_rs => {
-            let selectors = match load_cached_rust_workspace_selectors(repo_root, ignore) {
-                Some(selectors) => selectors,
-                None => {
-                    let selectors =
-                        crate::test_runner::runners::enumerate_workspace_rust_selectors(
-                            repo_root, ignore,
-                        )?;
-                    store_rust_workspace_selectors(repo_root, ignore, &selectors);
-                    selectors
-                }
-            };
+            let selectors = crate::test_runner::lang_registry::rules_for(Language::Rust)
+                .list_workspace_selectors(repo_root, ignore, &[])?;
             for selector in selectors {
                 insert_direct(query, Language::Rust, selector);
             }

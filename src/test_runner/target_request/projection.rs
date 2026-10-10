@@ -80,37 +80,15 @@ fn python_workspace_selectors(repo_root: &Path, request: &TargetRequest) -> Vec<
     if !super::manifest::has_python_test_files(repo_root, request) {
         return Vec::new();
     }
-    let Ok(found) =
-        crate::test_runner::runners::enumerate_workspace_python_selectors(repo_root, ignore, &[])
-    else {
-        return Vec::new();
-    };
-    let _ = crate::test_runner::workspace_selector_cache::store_python_workspace_selectors(
-        repo_root,
-        ignore,
-        &found,
-        &[],
-    );
-    found
+    crate::test_runner::lang_registry::rules_for(Language::Python)
+        .list_workspace_selectors(repo_root, ignore, &[])
+        .unwrap_or_default()
 }
 
 fn rust_workspace_selectors(repo_root: &Path, ignore: &[String]) -> Vec<String> {
-    if let Some(cached) =
-        crate::test_runner::workspace_selector_cache::load_cached_rust_workspace_selectors(
-            repo_root, ignore,
-        )
-    {
-        return cached;
-    }
-    let Ok(found) =
-        crate::test_runner::runners::enumerate_workspace_rust_selectors(repo_root, ignore)
-    else {
-        return Vec::new();
-    };
-    let _ = crate::test_runner::workspace_selector_cache::store_rust_workspace_selectors(
-        repo_root, ignore, &found,
-    );
-    found
+    crate::test_runner::lang_registry::rules_for(Language::Rust)
+        .list_workspace_selectors(repo_root, ignore, &[])
+        .unwrap_or_default()
 }
 
 fn vcs_projection(
@@ -270,26 +248,6 @@ fn rel_source(repo_root: &Path, path: &Path) -> String {
 }
 
 impl SliceProjection {
-    pub(crate) fn selectors(&self) -> Vec<String> {
-        match self {
-            Self::Workspace { selectors, .. } | Self::TestDescriptors { selectors, .. } => {
-                selectors.clone()
-            }
-            Self::SourceRegions { selectors, .. } | Self::Vcs { selectors, .. } => {
-                selectors.clone()
-            }
-            Self::Mixed { parts } => {
-                let mut union = Vec::new();
-                for part in parts {
-                    union.extend(part.selectors());
-                }
-                union.sort();
-                union.dedup();
-                union
-            }
-        }
-    }
-
     pub(crate) fn report_regions(&self) -> Vec<SourceRegion> {
         match self {
             Self::Workspace { .. } => vec![SourceRegion::WorkspaceAll],

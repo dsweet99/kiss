@@ -269,7 +269,6 @@ fn run_selecting(
         apply_cold_initialization_population(a, &mut planned);
     }
     apply_force_all_population(a, &mut planned);
-    crate::test_runner::apply_force_bad(a, &mut planned)?;
     Ok(planned)
 }
 

@@ -17,7 +17,6 @@ fn now<'a>(deps: Option<&'a BTreeMap<String, String>>) -> Selection<'a> {
     Selection {
         identity: "id-1",
         current_deps: deps,
-        retry_bad: false,
         needs_duration: false,
     }
 }
@@ -58,21 +57,6 @@ fn changed_or_missing_deps_force_run() {
     assert_eq!(
         must_run(Some(record.view()), &now(None)),
         Some(RunReason::DepsChanged)
-    );
-}
-
-#[test]
-fn retry_bad_reruns_only_non_passing_records() {
-    let mut record = sample("t.py::test_a");
-    let mut selection = now(Some(&record.deps));
-    selection.retry_bad = true;
-    assert_eq!(must_run(Some(record.view()), &selection), None);
-    record.status = TestStatus::TimedOut;
-    let deps = record.deps.clone();
-    selection.current_deps = Some(&deps);
-    assert_eq!(
-        must_run(Some(record.view()), &selection),
-        Some(RunReason::RetryBad)
     );
 }
 

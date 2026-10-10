@@ -225,11 +225,10 @@ pub(crate) fn current_prior_failures(
     if prior.is_empty() {
         return Ok(prior);
     }
-    let current: BTreeSet<String> = crate::test_runner::lang_registry::cached_workspace_selectors(
-        repo_root, language, ignore, test_args,
-    )?
-    .into_iter()
-    .collect();
+    let current: BTreeSet<String> = crate::test_runner::lang_registry::rules_for(language)
+        .list_workspace_selectors(repo_root, ignore, test_args)?
+        .into_iter()
+        .collect();
     Ok(prior
         .into_iter()
         .filter(|selector| current.contains(&selector.id))

@@ -10,7 +10,7 @@ mod run;
 mod status_line;
 mod toolchain;
 
-pub(crate) use holding::{CurrentDeps, bad_record_ids, holding_records};
+pub(crate) use holding::holding_records;
 pub(crate) use list::list_tests;
 pub(crate) use records::record_identity;
 pub(crate) use run::cancel_active_run;

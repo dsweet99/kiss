@@ -162,7 +162,6 @@ fn apply_force_all_population_only_for_all_invocation() {
             base_branch_cli: None,
             dry_run: false,
             force_rerun: true,
-            force_bad: false,
             metrics: false,
             jobs: 1,
             extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,

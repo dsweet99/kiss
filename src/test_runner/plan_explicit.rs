@@ -13,7 +13,6 @@ pub(super) fn plan_explicit_target_selectors(
     ignore: &[String],
     extras: LanguageKeyed<&[String]>,
     lang_filter: Option<Language>,
-    include_prior_failures: bool,
 ) -> Result<PlannedSelectors, String> {
     let query = resolve_target_operands_with(
         repo_root,
@@ -52,7 +51,7 @@ pub(super) fn plan_explicit_target_selectors(
         lang_filter,
         ignore,
         extra_direct: direct.as_slices(),
-        include_prior_failures,
+        include_prior_failures: false,
     };
     let selector_plan = runners::combined_selectors_with_direct(input)?;
     Ok(planned_from_selector_plan(

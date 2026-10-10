@@ -25,7 +25,6 @@ fn python_oneshot_args<'a>(
         main_branch: None,
         base_branch: None,
         dry_run: false,
-        retry_bad: false,
         metrics: false,
         jobs: 1,
         ignore: &[],

@@ -25,7 +25,6 @@ pub(crate) fn ensure_language_via_kernel(
         mode,
         lang_filter: Some(language),
         force: ctx.options.force_rerun,
-        force_selectors: ctx.planned.prior_failure_selectors.get(language).clone(),
         jobs: ctx.options.jobs,
         extras: ctx.options.extras,
         repo_root_override: None,
@@ -47,7 +46,6 @@ pub(crate) fn ensure_request_from_planned(args: EnsureFromPlanned<'_>) -> Ensure
         lang_filter: args.lang_filter,
         ignore: args.planned.ignore.clone(),
         force: args.force,
-        force_selectors: args.force_selectors,
         jobs: args.jobs,
         gate: args.gate,
         extras: LanguageKeyed {

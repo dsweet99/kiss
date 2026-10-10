@@ -2,9 +2,6 @@ mod factory;
 mod from_planned;
 mod kernel;
 mod planning;
-mod rows;
-#[cfg(test)]
-pub(crate) use rows::stored_rows;
 
 pub(crate) use factory::ensure_languages_runtime;
 pub(crate) use from_planned::EnsureFromPlanned;

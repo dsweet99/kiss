@@ -1,14 +1,10 @@
 #![cfg_attr(not(test), allow(dead_code))]
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use kiss::GateConfig;
 use kiss::Language;
-use kiss::test_records::TestRecord;
 
 use super::witness::AcceptMode;
-#[cfg(test)]
-use super::witness::ExecutionWitness;
 use crate::test_runner::language_keyed::LanguageKeyed;
 use crate::test_runner::runners::{SelectorExecutionRecord, SelectorExecutionSummary};
 use crate::test_runner::test_selection::SupportedLanguage;
@@ -21,7 +17,6 @@ pub(crate) struct EnsureRequest {
     #[allow(dead_code)]
     pub(crate) ignore: Vec<String>,
     pub(crate) force: bool,
-    pub(crate) force_selectors: Vec<String>,
     pub(crate) jobs: usize,
     pub(crate) gate: GateConfig,
     pub(crate) extras: LanguageKeyed<Vec<String>>,
@@ -76,13 +71,10 @@ impl EnsureRuntimeResult {
 pub(crate) struct Listing {
     pub(crate) ids: Vec<String>,
     pub(crate) identity: String,
-    pub(crate) record_identity: String,
 }
 
 pub(crate) trait LanguageRuntime: SupportedLanguage {
     fn list(&self, request: &EnsureRequest) -> Result<Listing, String>;
-
-    fn deps(&self, request: &EnsureRequest, row: &TestRecord) -> Option<BTreeMap<String, String>>;
 
     fn run(
         &self,
@@ -90,9 +82,4 @@ pub(crate) trait LanguageRuntime: SupportedLanguage {
         ids: &[String],
         on_result: &mut dyn FnMut(SelectorExecutionRecord),
     ) -> Result<OutcomeBatch, String>;
-
-    #[cfg(test)]
-    fn seeded_rows(&self, _request: &EnsureRequest) -> Option<ExecutionWitness> {
-        None
-    }
 }

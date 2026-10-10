@@ -2,7 +2,6 @@ use std::cell::OnceCell;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use kiss::rpytest_runner::TestStatus;
 use kiss::test_records::{Selection, TestRecord, must_run};
 
 use super::records::{
@@ -71,24 +70,12 @@ pub(crate) fn holding_records(
             let selection = Selection {
                 identity: &identity,
                 current_deps: Some(&current),
-                retry_bad: false,
                 needs_duration: false,
             };
             must_run(Some(row.view()), &selection).is_none()
         })
         .collect();
     Ok((identity, holding))
-}
-
-pub(crate) fn bad_record_ids(repo_root: &Path, extras: &[String]) -> Vec<String> {
-    let Ok(identity) = record_identity(repo_root, extras) else {
-        return Vec::new();
-    };
-    records_under(repo_root, &identity)
-        .into_iter()
-        .filter(|row| row.status != TestStatus::Passed)
-        .map(|row| row.test_id)
-        .collect()
 }
 
 #[cfg(test)]
@@ -105,30 +92,5 @@ mod tests {
         assert_eq!(timeout_millis(&gate, "tests/it.rs::x"), Some(2500));
         gate.max_unit_test_seconds.clear();
         assert_eq!(timeout_millis(&gate, "src/a.rs::t::x"), None);
-    }
-
-    #[test]
-    fn bad_records_stay_retryable_after_their_inputs_change() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-        std::fs::create_dir_all(root.join("src")).unwrap();
-        std::fs::write(
-            root.join("Cargo.toml"),
-            "[package]\nname = \"p\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
-        )
-        .unwrap();
-        std::fs::write(root.join("src/lib.rs"), "pub fn a() {}\n").unwrap();
-        super::super::store_records(
-            root,
-            &[
-                ("t::ok", TestStatus::Passed),
-                ("t::bad", TestStatus::Failed),
-                ("t::slow", TestStatus::TimedOut),
-            ],
-        );
-        std::fs::write(root.join("src/lib.rs"), "pub fn b() {}\n").unwrap();
-        let mut bad = bad_record_ids(root, &[]);
-        bad.sort();
-        assert_eq!(bad, ["t::bad", "t::slow"]);
     }
 }

@@ -1,19 +1,6 @@
 #![cfg_attr(not(test), allow(dead_code))]
-use super::runtime::EnsureRequest;
-use super::witness::ExecutionWitness;
-use super::witness_summary::summary_from_witness_statuses;
-use crate::test_runner::runners::SelectorExecutionSummary;
 
 pub(crate) trait KernelHooks: Sync {
-    fn report_labels(
-        &self,
-        repo_root: &std::path::Path,
-        selectors: &[String],
-    ) -> std::collections::BTreeMap<String, String> {
-        let _ = (repo_root, selectors);
-        std::collections::BTreeMap::new()
-    }
-
     fn is_test_source(&self, path: &std::path::Path) -> bool {
         let _ = path;
         false
@@ -37,15 +24,5 @@ pub(crate) trait KernelHooks: Sync {
     fn extras_block_cold_population(&self, extras: &[String]) -> bool {
         let _ = extras;
         false
-    }
-
-    fn cached_witness_summary(
-        &self,
-        request: &EnsureRequest,
-        planned: &[String],
-        witness: &ExecutionWitness,
-    ) -> SelectorExecutionSummary {
-        let _ = request;
-        summary_from_witness_statuses(planned, witness, |selector| selector.to_string(), false)
     }
 }

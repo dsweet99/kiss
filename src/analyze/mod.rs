@@ -33,7 +33,6 @@ pub use graph_api::{
 };
 #[allow(unused_imports)]
 pub use options::{AnalyzeOptions, AnalyzeResult};
-pub(crate) use orphan_unit_gate::collect_orphan_unit_findings;
 #[cfg(test)]
 pub(crate) use pipeline::empty_full_pipeline_result_for_tests;
 #[allow(unused_imports)]

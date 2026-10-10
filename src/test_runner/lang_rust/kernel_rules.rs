@@ -1,17 +1,8 @@
-use crate::test_runner::lang_iface::{EnsureRequest, ExecutionWitness, KernelHooks, KernelRules};
-use crate::test_runner::runners::SelectorExecutionSummary;
+use crate::test_runner::lang_iface::{EnsureRequest, KernelHooks, KernelRules};
 
 pub(crate) struct RustKernelRules;
 
 impl KernelHooks for RustKernelRules {
-    fn report_labels(
-        &self,
-        repo_root: &std::path::Path,
-        selectors: &[String],
-    ) -> std::collections::BTreeMap<String, String> {
-        crate::test_runner::selector_ids::qualified_rust_report_ids(repo_root, selectors)
-    }
-
     fn validate_explicit_targets(
         &self,
         repo_root: &std::path::Path,
@@ -28,40 +19,11 @@ impl KernelHooks for RustKernelRules {
     fn validate_extra_args(&self, extras: &[String]) -> Result<(), String> {
         super::nextest::validate_rust_extra_args(extras)
     }
-
-    fn cached_witness_summary(
-        &self,
-        request: &EnsureRequest,
-        planned: &[String],
-        witness: &ExecutionWitness,
-    ) -> SelectorExecutionSummary {
-        let planned = super::witness_identity::rust_witness_overlap(planned, witness);
-        super::runtime::rust_summary_from_witness_statuses(request, &planned, witness)
-    }
 }
 
 impl KernelRules for RustKernelRules {
     fn identity_stage(&self) -> &'static str {
         "rust_identity"
-    }
-
-    fn runner_identity_part(&self, repo_root: &std::path::Path) -> Option<serde_json::Value> {
-        super::stored::runner_identity_part(repo_root)
-    }
-
-    fn generation_ids(
-        &self,
-        repo_root: &std::path::Path,
-    ) -> crate::test_runner::lang_iface::GenerationIds {
-        super::stored::generation_ids(repo_root)
-    }
-
-    fn stored_witness(
-        &self,
-        repo_root: &std::path::Path,
-        extras: &[String],
-    ) -> Option<ExecutionWitness> {
-        super::stored::stored_witness(repo_root, extras)
     }
 
     fn list_workspace_selectors(
