@@ -20,6 +20,13 @@ impl Language {
     }
 
     #[must_use]
+    pub fn from_path_extension(path: &Path) -> Option<Self> {
+        path.extension()
+            .and_then(|ext| ext.to_str())
+            .and_then(Self::from_extension)
+    }
+
+    #[must_use]
     pub fn from_label(label: &str) -> Option<Self> {
         Self::ALL
             .into_iter()
@@ -39,14 +46,8 @@ impl Language {
     pub fn from_path(path: &Path) -> Option<Self> {
         if crate::rust_include::is_rust_source_path(path) {
             Some(Self::Rust)
-        } else if path
-            .extension()
-            .and_then(|e| e.to_str())
-            .is_some_and(|s| s.eq_ignore_ascii_case("py"))
-        {
-            Some(Self::Python)
         } else {
-            None
+            Self::from_path_extension(path).filter(|language| *language == Self::Python)
         }
     }
 

@@ -126,10 +126,16 @@ fn work_status_from_message(message: &str) -> Option<&str> {
 }
 
 fn silence_exceeds_heartbeat() -> bool {
-    last_emit()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .is_none_or(|last| last.elapsed() >= STAGE_HEARTBEAT)
+    recorded_silence_exceeds(
+        *last_emit()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner),
+        Instant::now(),
+    )
+}
+
+fn recorded_silence_exceeds(last: Option<Instant>, now: Instant) -> bool {
+    last.is_none_or(|last| now.saturating_duration_since(last) >= STAGE_HEARTBEAT)
 }
 
 pub struct ProgressWatchdog {
@@ -201,10 +207,17 @@ mod tests {
 
     #[test]
     fn silence_exceeds_heartbeat_only_after_500ms() {
-        super::note_progress();
-        assert!(!super::silence_exceeds_heartbeat());
-        std::thread::sleep(STAGE_HEARTBEAT + Duration::from_millis(30));
-        assert!(super::silence_exceeds_heartbeat());
+        let now = std::time::Instant::now();
+        assert!(!super::recorded_silence_exceeds(Some(now), now));
+        assert!(!super::recorded_silence_exceeds(
+            Some(now),
+            now + STAGE_HEARTBEAT - Duration::from_millis(1)
+        ));
+        assert!(super::recorded_silence_exceeds(
+            Some(now),
+            now + STAGE_HEARTBEAT
+        ));
+        assert!(super::recorded_silence_exceeds(None, now));
     }
 
     #[test]

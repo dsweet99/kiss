@@ -319,7 +319,7 @@ pub(crate) fn normalize_nodeid(
     nodeid: &str,
     repo_root: &Path,
 ) -> Result<String, PytestCollectError> {
-    let Some((file_part, rest)) = nodeid.split_once("::") else {
+    let (file_part, Some(rest)) = crate::discovery::split_selector(nodeid) else {
         return Err(PytestCollectError::NodeidNormalization {
             nodeid: nodeid.to_string(),
             message: "pytest nodeid must contain '::'".to_string(),

@@ -36,7 +36,7 @@ fn resolve_status_lang(outcome: WatchNamedOutcome, selector: &str) -> Option<cra
 }
 
 fn lang_from_selector(selector: &str) -> Option<crate::Language> {
-    let path = selector.split_once("::").map_or(selector, |(p, _)| p);
+    let (path, _) = crate::discovery::split_selector(selector);
     crate::Language::from_path(std::path::Path::new(path))
 }
 

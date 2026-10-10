@@ -83,11 +83,8 @@ pub(crate) fn expand_target_operands(
 }
 
 fn is_file_or_symbol_operand(raw: &str) -> bool {
-    let path_part = raw.split_once("::").map_or(raw, |(path, _)| path);
-    Path::new(path_part)
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("py") || ext.eq_ignore_ascii_case("rs"))
+    let (path_part, _) = kiss::split_selector(raw);
+    Language::from_path_extension(Path::new(path_part)).is_some()
 }
 
 fn reject_missing_source_file(
@@ -96,7 +93,7 @@ fn reject_missing_source_file(
     ignore: &[String],
     lang_filter: Option<Language>,
 ) -> Result<(), String> {
-    let path_part = raw.split_once("::").map_or(raw, |(path, _)| path);
+    let (path_part, _) = kiss::split_selector(raw);
     let candidate = resolve_candidate(repo_root, path_part);
     match candidate.canonicalize() {
         Ok(abs) if abs.is_file() => {
@@ -223,7 +220,7 @@ fn append_symlink_sources(
         if !path.is_file() {
             continue;
         }
-        if symlink_path_skipped(path, ignore) {
+        if kiss::path_skipped_by_source_ignore(path, ignore) {
             continue;
         }
         let Some(language) = Language::from_path(path) else {
@@ -241,16 +238,3 @@ fn append_symlink_sources(
     rs_files.dedup();
 }
 
-fn symlink_path_skipped(path: &Path, ignore: &[String]) -> bool {
-    if kiss::path_ignored_by_prefixes(&path.to_string_lossy(), ignore) {
-        return true;
-    }
-    path.components().any(|component| {
-        component.as_os_str().to_str().is_some_and(|name| {
-            matches!(
-                name,
-                "__pycache__" | "node_modules" | ".venv" | "venv" | "env"
-            )
-        })
-    })
-}

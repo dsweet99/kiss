@@ -28,9 +28,7 @@ pub(crate) fn reject_non_member_rust_targets(
 ) -> Result<(), String> {
     let mut rust_paths = files.to_vec();
     for selector in direct {
-        let path_part = selector
-            .split_once("::")
-            .map_or(selector.as_str(), |(p, _)| p);
+        let (path_part, _) = kiss::split_selector(selector);
         let candidate = PathBuf::from(path_part);
         if candidate
             .extension()

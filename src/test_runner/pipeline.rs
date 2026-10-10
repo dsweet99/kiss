@@ -326,7 +326,7 @@ fn target_belongs_to_thread(raw: &str, language: Language) -> bool {
 }
 
 fn operand_source_language(raw: &str) -> Option<Language> {
-    let path_part = raw.split_once("::").map_or(raw, |(path, _)| path);
+    let (path_part, _) = kiss::split_selector(raw);
     std::path::Path::new(path_part)
         .extension()
         .and_then(|ext| ext.to_str())

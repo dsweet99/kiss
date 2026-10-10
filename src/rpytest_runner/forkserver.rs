@@ -231,7 +231,7 @@ pub(crate) fn duration_millis_u64(duration: Duration) -> u64 {
 }
 
 fn module_key(nodeid: &str) -> &str {
-    nodeid.split_once("::").map_or(nodeid, |(module, _)| module)
+    crate::discovery::split_selector(nodeid).0
 }
 
 fn partition_requests_by_module(

@@ -81,13 +81,6 @@ fn is_dot_all_operand(operand: &str) -> bool {
     matches!(operand, "." | "./")
 }
 
-fn path_has_source_ext(path_part: &str) -> bool {
-    std::path::Path::new(path_part)
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("py") || ext.eq_ignore_ascii_case("rs"))
-}
-
 pub fn parse_test_invocation(operands: &[String]) -> Result<TestInvocation, String> {
     if operands.is_empty() {
         return Ok(TestInvocation::All);
@@ -165,17 +158,14 @@ fn parse_path_or_directory_targets(
 }
 
 fn validate_target_operand_shape(raw: &str) -> Result<(), String> {
-    let (path_part, symbol) = match raw.split_once("::") {
-        Some((path, symbol)) => (path, Some(symbol)),
-        None => (raw, None),
-    };
+    let (path_part, symbol) = kiss::split_selector(raw);
     if path_part.is_empty() {
         return Err(format!(
             "unknown test target '{raw}'. Use {TEST_OPERAND_HINT}."
         ));
     }
     if let Some(symbol) = symbol {
-        if !path_has_source_ext(path_part) {
+        if Language::from_path_extension(std::path::Path::new(path_part)).is_none() {
             return Err(format!(
                 "unknown test target '{raw}'. PATH::symbol requires a .py or .rs path."
             ));

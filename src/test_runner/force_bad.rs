@@ -124,30 +124,13 @@ pub(crate) fn prior_belongs_to_target(
 }
 
 fn target_names_a_test(target: &str) -> bool {
-    target.contains("::") || source_file_colon_symbol(target).is_some()
-}
-
-fn source_file_colon_symbol(target: &str) -> Option<(&str, &str)> {
-    if target.contains("::") {
-        return None;
-    }
-    let (path, name) = target.rsplit_once(':')?;
-    if name.is_empty() || name.contains('/') {
-        return None;
-    }
-    if path.ends_with(".py") || path.ends_with(".rs") {
-        Some((path, name))
-    } else {
-        None
-    }
+    super::target_request::colon_to_nodeid(target).contains("::")
 }
 
 pub(crate) fn selector_in_target(selector: &str, target: &str) -> bool {
+    let target = super::target_request::colon_to_nodeid(target);
     if selector == target {
         return true;
-    }
-    if let Some((path, name)) = source_file_colon_symbol(target) {
-        return selector_in_target(selector, &format!("{path}::{name}"));
     }
     if target.contains("::") {
         return selector.starts_with(&format!("{target}::"))

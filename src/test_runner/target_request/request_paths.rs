@@ -40,7 +40,7 @@ fn region_paths(repo_root: &Path, resolved: &ResolvedTarget) -> Vec<String> {
 }
 
 fn request_file_path(repo_root: &Path, raw: &str) -> String {
-    let path_part = raw.split_once("::").map_or(raw, |(path, _)| path);
+    let (path_part, _) = kiss::split_selector(raw);
     if path_part.is_empty() || path_part == "." || path_part == "./" {
         return ".".into();
     }

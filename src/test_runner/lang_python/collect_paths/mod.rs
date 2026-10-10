@@ -126,26 +126,12 @@ fn symlink_python_files(repo_root: &Path, ignore: &[String]) -> Vec<PathBuf> {
         if !ext.eq_ignore_ascii_case("py") {
             continue;
         }
-        if path_skipped_by_collect_walk(path, ignore) {
+        if kiss::path_skipped_by_source_ignore(path, ignore) {
             continue;
         }
         out.push(path.to_path_buf());
     }
     out
-}
-
-fn path_skipped_by_collect_walk(path: &Path, ignore: &[String]) -> bool {
-    if kiss::path_ignored_by_prefixes(&path.to_string_lossy(), ignore) {
-        return true;
-    }
-    path.components().any(|component| {
-        component.as_os_str().to_str().is_some_and(|name| {
-            matches!(
-                name,
-                "__pycache__" | "node_modules" | ".venv" | "venv" | "env"
-            )
-        })
-    })
 }
 
 fn is_collect_candidate(path: &Path, patterns: Option<&[String]>) -> bool {

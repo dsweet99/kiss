@@ -125,10 +125,9 @@ fn absolutize_test_invocation(
 }
 
 fn absolutize_operand(raw: String) -> String {
-    let (path, symbol) = match raw.split_once("::") {
-        Some((path, symbol)) => (path.to_string(), Some(symbol.to_string())),
-        None => (raw.clone(), None),
-    };
+    let (path, symbol) = kiss::split_selector(&raw);
+    let path = path.to_string();
+    let symbol = symbol.map(str::to_string);
     let path_ref = std::path::Path::new(&path);
     if path_ref.is_absolute() {
         return raw;

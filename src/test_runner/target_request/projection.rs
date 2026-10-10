@@ -141,9 +141,7 @@ fn vcs_selectors(
             python_workspace_selectors(repo_root, request)
                 .into_iter()
                 .filter(|selector| {
-                    let file = selector
-                        .split_once("::")
-                        .map_or(selector.as_str(), |(file, _)| file);
+                    let (file, _) = kiss::split_selector(selector);
                     paths.iter().any(|path| path == file)
                 }),
         );

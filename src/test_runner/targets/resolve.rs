@@ -252,7 +252,7 @@ fn apply_symbol_target(
 }
 
 fn relative_python_nodeid(repo_root: &Path, requested: &str) -> String {
-    let Some((requested_file, requested_tail)) = requested.split_once("::") else {
+    let (requested_file, Some(requested_tail)) = kiss::split_selector(requested) else {
         return requested.to_string();
     };
     let Some(requested_rel) = nodeid_file_rel(repo_root, requested_file) else {

@@ -69,14 +69,19 @@ pub fn path_ignored_by_prefixes(path: &str, prefixes: &[String]) -> bool {
         .any(|prefix| ignore_prefix_matches(path, prefix))
 }
 
+#[must_use]
+pub fn split_selector(selector: &str) -> (&str, Option<&str>) {
+    match selector.split_once("::") {
+        Some((path, tail)) => (path, Some(tail)),
+        None => (selector, None),
+    }
+}
+
 fn selector_file_path(selector: &str) -> Option<&str> {
-    let path = selector.split_once("::").map_or(selector, |(path, _)| path);
+    let (path, _) = split_selector(selector);
     let looks_like_file = path.contains('/')
         || path.contains('\\')
-        || Path::new(path)
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("py") || ext.eq_ignore_ascii_case("rs"));
+        || Language::from_path_extension(Path::new(path)).is_some();
     looks_like_file.then_some(path)
 }
 
@@ -99,6 +104,14 @@ fn should_ignore(path: &Path, ignore_prefixes: &[String]) -> bool {
         return true;
     }
     path_ignored_by_prefixes(&path.to_string_lossy(), ignore_prefixes)
+}
+
+#[must_use]
+pub fn path_skipped_by_source_ignore(path: &Path, ignore_prefixes: &[String]) -> bool {
+    path_ignored_by_prefixes(&path.to_string_lossy(), ignore_prefixes)
+        || path
+            .components()
+            .any(|component| component.as_os_str().to_str().is_some_and(is_always_ignored))
 }
 
 pub fn find_source_files(root: &Path) -> Vec<SourceFile> {

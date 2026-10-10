@@ -40,26 +40,12 @@ fn canonicalize_operands(operands: &[OperandExpr], repo_root: Option<&Path>) -> 
 
 fn canonicalize_operand_raw(raw: &str, repo_root: Option<&Path>) -> String {
     let normalized = colon_to_nodeid(raw);
-    let (path_part, tail) = split_operand(&normalized);
+    let (path_part, tail) = kiss::split_selector(&normalized);
     let path_part = normalize_path_spelling(path_part, repo_root);
     match tail {
         Some(tail) => format!("{path_part}::{tail}"),
         None => path_part,
     }
-}
-
-fn split_operand(raw: &str) -> (&str, Option<&str>) {
-    match raw.split_once("::") {
-        Some((path, tail)) => (path, Some(tail)),
-        None => (raw, None),
-    }
-}
-
-fn path_has_source_ext(path_part: &str) -> bool {
-    Path::new(path_part)
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("py") || ext.eq_ignore_ascii_case("rs"))
 }
 
 pub(crate) fn colon_to_nodeid(raw: &str) -> String {
@@ -68,7 +54,9 @@ pub(crate) fn colon_to_nodeid(raw: &str) -> String {
     }
     match raw.rsplit_once(':') {
         Some((path, name))
-            if !name.is_empty() && !name.contains('/') && path_has_source_ext(path) =>
+            if !name.is_empty()
+                && !name.contains('/')
+                && kiss::Language::from_path_extension(Path::new(path)).is_some() =>
         {
             format!("{path}::{name}")
         }

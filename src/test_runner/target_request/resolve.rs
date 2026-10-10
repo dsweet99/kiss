@@ -207,7 +207,7 @@ fn regions_from_query(
 }
 
 fn classify_operand(repo_root: &Path, raw: &str) -> Result<OperandClass, String> {
-    let path_part = raw.split_once("::").map_or(raw, |(path, _)| path);
+    let (path_part, _) = kiss::split_selector(raw);
     let candidate = if Path::new(path_part).is_absolute() {
         PathBuf::from(path_part)
     } else {
@@ -265,7 +265,7 @@ fn lang_allows(path: &Path, lang: Option<Language>) -> bool {
 }
 
 fn is_production_source(repo_root: &Path, path: &str) -> bool {
-    let path_part = path.split_once("::").map_or(path, |(file, _)| file);
+    let (path_part, _) = kiss::split_selector(path);
     if path_part.is_empty() {
         return false;
     }
@@ -278,7 +278,7 @@ fn is_production_source(repo_root: &Path, path: &str) -> bool {
 }
 
 fn repo_rel(repo_root: &Path, path: &str) -> String {
-    let path_part = path.split_once("::").map_or(path, |(file, _)| file);
+    let (path_part, _) = kiss::split_selector(path);
     let abs = Path::new(path_part);
     abs.strip_prefix(repo_root)
         .map(|rel| rel.to_string_lossy().replace('\\', "/"))

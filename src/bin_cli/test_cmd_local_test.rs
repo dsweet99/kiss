@@ -144,6 +144,7 @@ fn ignore_prefix_is_rejected_before_running() {
 
 #[test]
 fn dry_run_rejects_unconfigured_languages() {
+    let _repo = isolated_inited_python_repo();
     let test_cfg = TestSectionConfig::default();
     let gate = kiss::GateConfig::default();
     let mut args = python_oneshot_args(&test_cfg, &gate);
