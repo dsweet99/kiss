@@ -1,0 +1,68 @@
+[global]
+min_similarity = 0.9
+duplication_enabled = true
+comment_removal_enabled = false
+docs_allowed = []
+orphan_allowed = []
+
+[test]
+orphan_detection = false
+num_jobs = 4
+watch_settle_seconds = 1.0
+pytest_plugins = []
+ignore = []
+
+[test.max_unit_test_seconds]
+"*" = 3
+
+[python]
+max_num_tests = 1000
+num_jobs_pytest = 4
+boolean_parameters = 2
+branches_per_function = 6
+calls_per_function = 20
+concrete_types_per_file = 1
+cycle_size = 0
+decorators_per_function = 2
+dependency_depth = 3
+functions_per_file = 10
+imported_names_per_file = 13
+indirect_dependencies = 4
+interface_types_per_file = 1
+keyword_only_args = 3
+lines_per_file = 250
+local_variables = 15
+max_indentation = 4
+methods_per_class = 10
+nested_function_depth = 2
+positional_args = 5
+return_values_per_function = 3
+returns_per_function = 5
+statements_per_file = 200
+statements_per_function = 30
+statements_per_try_block = 3
+
+[rust]
+max_num_tests = 2000
+num_jobs_nextest = 4
+arguments = 4
+attributes_per_function = 4
+boolean_parameters = 2
+branches_per_function = 9
+calls_per_function = 20
+concrete_types_per_file = 1
+cycle_size = 0
+dependency_depth = 3
+functions_per_file = 15
+imported_names_per_file = 20
+indirect_dependencies = 9
+interface_types_per_file = 1
+lines_per_file = 250
+local_variables = 10
+max_indentation = 4
+methods_per_class = 10
+nested_function_depth = 2
+returns_per_function = 5
+statements_per_file = 200
+statements_per_function = 30
+

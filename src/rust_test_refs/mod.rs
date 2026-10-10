@@ -71,9 +71,9 @@ fn eval_cfg_meta(meta: &syn::Meta) -> bool {
                 .map(|inner| !eval_cfg_meta(&inner))
                 .unwrap_or(true)
         }
-        syn::Meta::List(list) if list.path.is_ident("any") => {
-            punctuated_cfg_metas(&list.tokens).into_iter().any(|m| eval_cfg_meta(&m))
-        }
+        syn::Meta::List(list) if list.path.is_ident("any") => punctuated_cfg_metas(&list.tokens)
+            .into_iter()
+            .any(|m| eval_cfg_meta(&m)),
         syn::Meta::List(list) if list.path.is_ident("all") => {
             let metas = punctuated_cfg_metas(&list.tokens);
             !metas.is_empty() && metas.into_iter().all(|m| eval_cfg_meta(&m))
@@ -103,9 +103,7 @@ fn collect_test_fn_ids(items: &[Item], prefix: &str, out: &mut Vec<String>) {
                     collect_test_fn_ids(mod_items, &mod_prefix, out);
                 }
             }
-            Item::Fn(f)
-                if has_rust_test_attribute(&f.attrs) && attrs_active_on_host(&f.attrs) =>
-            {
+            Item::Fn(f) if has_rust_test_attribute(&f.attrs) && attrs_active_on_host(&f.attrs) => {
                 out.push(prefixed_test_id(prefix, &f.sig.ident.to_string()));
             }
             Item::Impl(item_impl) => {

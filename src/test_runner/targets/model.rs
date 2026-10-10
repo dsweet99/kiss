@@ -83,7 +83,7 @@ impl SourceModel {
         }
     }
 
-    pub(crate) fn coverage_lines_for_definition(&self, def: &NamedDefinition) -> BTreeSet<u32> {
+    pub(crate) fn target_lines_for_definition(&self, def: &NamedDefinition) -> BTreeSet<u32> {
         let mut lines: BTreeSet<u32> = (def.start_line..=def.end_line).collect();
         for test in &self.direct_tests {
             if test.start_line >= def.start_line && test.end_line <= def.end_line {
@@ -106,29 +106,18 @@ pub(crate) fn load_source_model(path: &Path, language: Language) -> Result<Sourc
     }
 }
 
-pub(crate) fn byte_span_to_lines(content: &str, start: usize, end: usize) -> (u32, u32) {
-    let end = end.max(start);
-    let start_line = line_number_at(content, start);
-    let end_line = if end == 0 {
+pub(crate) fn node_lines(node: tree_sitter::Node<'_>) -> (u32, u32) {
+    let to_line = |row: usize| u32::try_from(row).unwrap_or(u32::MAX - 1).saturating_add(1);
+    let start_line = to_line(node.start_position().row);
+    let end = node.end_position();
+    let end_line = if node.end_byte() <= node.start_byte() {
         start_line
+    } else if end.column == 0 {
+        to_line(end.row.saturating_sub(1))
     } else {
-        line_number_at(content, end.saturating_sub(1))
+        to_line(end.row)
     };
     (start_line, end_line.max(start_line))
-}
-
-fn line_number_at(content: &str, byte_offset: usize) -> u32 {
-    let offset = byte_offset.min(content.len());
-    let mut line = 1u32;
-    for (idx, ch) in content.char_indices() {
-        if idx >= offset {
-            break;
-        }
-        if ch == '\n' {
-            line = line.saturating_add(1);
-        }
-    }
-    line
 }
 
 fn format_symbol(name: &str, member: Option<&str>) -> String {

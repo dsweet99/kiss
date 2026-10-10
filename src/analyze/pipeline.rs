@@ -267,13 +267,15 @@ fn assemble_split_pipeline(inp: AssembleSplit<'_>) -> FullPipelineResult {
     viols.extend(rs_side.viols);
     viols.extend(py_side.comments);
     viols.extend(rs_side.comments);
-    viols.extend(kiss::collect_doc_violations_with_roles(
+    let mut docs = kiss::collect_doc_violations_with_roles(
         &py_parsed,
-        &rs_side.parsed,
+        &[],
         &opts.gate_config.docs_allowed,
         &crate::analyze_cache::repo_root_for_universe(opts.universe),
         Some(&roles),
-    ));
+    );
+    docs.extend(rs_side.docs);
+    viols.extend(docs);
     let graph_viols_all = build_graph_violations(BuildGraphViols {
         py_graph: py_side.graph.as_ref(),
         rs_graph: rs_side.analysis.graph.as_ref(),
@@ -394,7 +396,7 @@ mod pipeline_tests {
     use super::*;
 
     #[test]
-    fn full_pipeline_input_is_coverage_free() {
+    fn full_pipeline_types_build() {
         let _ = std::mem::size_of::<FullPipelineInput<'_>>();
         let _ = std::mem::size_of::<FullPipelineResult>();
         let _ = empty_full_pipeline_result_for_tests();

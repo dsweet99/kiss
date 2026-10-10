@@ -13,11 +13,9 @@ use crate::rpytest_runner::{
 fn parent_safe_env_strips_selector_specific_keys() {
     let mut env = BTreeMap::new();
     env.insert("PYTHONPATH".to_string(), "/proj".to_string());
-    env.insert("RSLIP_COVERAGE_OUT".to_string(), "/tmp/a.json".to_string());
     env.insert("TESTMON_DATAFILE".to_string(), "/tmp/t.db".to_string());
     let safe = parent_safe_env(&env);
     assert_eq!(safe.get("PYTHONPATH").map(String::as_str), Some("/proj"));
-    assert!(!safe.contains_key("RSLIP_COVERAGE_OUT"));
     assert!(!safe.contains_key("TESTMON_DATAFILE"));
 }
 
@@ -70,8 +68,8 @@ fn forkserver_configures_pytest_once_per_controller() {
     );
     assert_eq!(
         body.matches("sessionstart").count(),
-        1,
-        "same-module batch should sessionstart once, got:\n{body}"
+        2,
+        "each test should sessionstart in its own forked process, got:\n{body}"
     );
 }
 

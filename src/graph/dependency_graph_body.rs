@@ -235,13 +235,21 @@ fn compute_reachable_and_depth(
 }
 
 pub fn all_module_metrics(graph: &DependencyGraph) -> HashMap<String, ModuleGraphMetrics> {
-    let mut stamp = vec![0u32; graph.graph.node_count()];
-    let mut stamp_gen = 0u32;
-    let mut out = HashMap::with_capacity(graph.nodes.len());
-    for (name, &idx) in &graph.nodes {
-        out.insert(name.clone(), metrics_at(graph, idx, &mut stamp, &mut stamp_gen));
-    }
-    out
+    use rayon::prelude::*;
+    let n = graph.graph.node_count();
+    graph
+        .nodes
+        .par_iter()
+        .map_init(
+            || (vec![0u32; n], 0u32),
+            |(stamp, stamp_gen), (name, &idx)| {
+                (
+                    name.clone(),
+                    metrics_at(graph, idx, stamp, stamp_gen),
+                )
+            },
+        )
+        .collect()
 }
 
 pub(crate) fn is_orphan(fan_in: usize, fan_out: usize, module_name: &str) -> bool {

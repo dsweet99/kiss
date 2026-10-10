@@ -232,7 +232,7 @@ pub(super) fn extract_function_chunks(
 }
 
 #[cfg(test)]
-mod coverage_witness {
+mod touch_witness {
     use super::*;
 
     impl CodeChunk {

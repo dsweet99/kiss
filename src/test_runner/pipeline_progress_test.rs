@@ -1,7 +1,6 @@
 use kiss::Language;
 use std::sync::Mutex;
 
-use crate::test_runner::pipeline::split_jobs;
 use crate::test_runner::status_labels::print_classified_status_line;
 
 static PIPELINE_STDOUT: Mutex<()> = Mutex::new(());
@@ -20,24 +19,18 @@ fn print_classified_status_line_uses_emit_test_progress() {
 }
 
 #[test]
-fn jobs_split_matches_process_cap_rule() {
-    assert_eq!(split_jobs(4, true), (2, 2));
-    assert_eq!(split_jobs(4, false), (4, 4));
-    assert_eq!(split_jobs(1, true), (1, 1));
-}
-
-#[test]
 fn spawn_language_jobs_honors_configured_jobs() {
     let jobs = include_str!("pipeline_jobs.rs");
     let share = include_str!("pipeline_job_share.rs");
     let src = include_str!("pipeline.rs");
     assert!(
-        jobs.contains("share.acquire_execute(language)"),
-        "execute must use its fixed share without waiting for the peer language"
+        jobs.contains("for language in crate::test_runner::lang_registry::languages()")
+            && jobs.contains("expect_language_remaining(language)"),
+        "spawned languages must be expected so remaining=0 waits for the peer"
     );
     assert!(
-        share.contains("split_jobs(self.total, self.both)"),
-        "covering jobs may split when both languages plan concurrently"
+        jobs.contains("share.acquire_execute(language)"),
+        "execute must use its fixed share without waiting for the peer language"
     );
     assert!(
         share.contains("jobs: self.total"),
@@ -51,13 +44,11 @@ fn spawn_language_jobs_honors_configured_jobs() {
         !src.contains("MAX_PARALLEL_TEST_JOBS"),
         "configured num_jobs must not be silently clamped"
     );
-    assert_eq!(split_jobs(48, false), (48, 48));
-    assert_eq!(split_jobs(48, true), (24, 24));
 }
 
 #[cfg(unix)]
 #[test]
-fn covering_and_workspace_lines_appear_for_all_dry_run() {
+fn selecting_and_workspace_lines_appear_for_all_dry_run() {
     let _cwd = crate::cwd_test_lock::lock();
     let tmp = tempfile::tempdir().unwrap();
     crate::test_runner::test_mode_fixtures::init_git(&tmp);
@@ -68,28 +59,28 @@ fn covering_and_workspace_lines_appear_for_all_dry_run() {
     let old = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
     let out = crate::test_runner::capture_stdout::capture_stdout(|| {
-        let _ = crate::test_runner::run_test(crate::test_runner::RunTestCmdArgs {
-            invocation: crate::bin_cli::args::TestInvocation::All,
-            main_branch_cli: None,
-            base_branch_cli: None,
-            dry_run: true,
-            force_rerun: false,
-            force_bad: false,
-            metrics: false,
-            jobs: 1,
-            extra: &[],
-            python_extra: &[],
-            ignore: &[],
-            lang_filter: Some(Language::Python),
-            config_main_branch: None,
-            gate_config: kiss::GateConfig::default(),
-        });
+        let _ = crate::test_runner::pipeline::run_overlapped_test(
+            &crate::test_runner::RunTestCmdArgs {
+                doubles: None,
+                invocation: crate::bin_cli::args::TestInvocation::All,
+                target_request: crate::test_runner::target_request::workspace_request(
+                    Some(Language::Python),
+                    &[],
+                ),
+                main_branch_cli: None,
+                base_branch_cli: None,
+                dry_run: true,
+                force_rerun: false,
+                metrics: false,
+                jobs: 1,
+                extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
+                config_main_branch: None,
+                gate_config: kiss::GateConfig::default(),
+            },
+            std::time::Instant::now(),
+        );
     });
     std::env::set_current_dir(old).unwrap();
-    assert!(
-        out.contains("kiss test: Planning ..."),
-        "planning heartbeat first: {out}"
-    );
     assert!(
         out.contains("kiss test: Running workspace"),
         "workspace start: {out}"
@@ -99,31 +90,97 @@ fn covering_and_workspace_lines_appear_for_all_dry_run() {
         "workspace end: {out}"
     );
     assert!(
-        out.contains("kiss test: Running covering_python"),
-        "covering start: {out}"
+        out.contains("kiss test: Running select_python"),
+        "selecting start: {out}"
     );
     assert!(
-        out.contains("kiss test: Ran covering_python"),
-        "covering end: {out}"
+        out.contains("kiss test: Ran select_python"),
+        "selecting end: {out}"
     );
     assert!(
-        !out.contains("covering_rust"),
+        !out.contains("select_rust"),
         "--lang python must not cover rust: {out}"
     );
 }
 
 #[cfg(unix)]
 #[test]
-fn lang_rust_omits_covering_python() {
+fn lang_rust_omits_selecting_python() {
     let src = include_str!("pipeline.rs");
     let jobs = include_str!("pipeline_jobs.rs");
-    assert!(jobs.contains("covering_python"));
-    assert!(jobs.contains("covering_rust"));
-    assert!(src.contains("lang_filter != Some(Language::Rust)"));
+    assert!(jobs.contains("format!(\"select_{}\", language.label())"));
+    assert_eq!(
+        format!("select_{}", Language::Python.label()),
+        "select_python"
+    );
+    assert_eq!(format!("select_{}", Language::Rust.label()), "select_rust");
+    assert!(src.contains("language.allowed_by(a.lang_filter())"));
+    assert!(!Language::Python.allowed_by(Some(Language::Rust)));
+    assert!(Language::Rust.allowed_by(Some(Language::Rust)));
+}
+
+#[cfg(unix)]
+#[test]
+fn empty_commit_dry_run_prints_no_selected_tests() {
+    let _cwd = crate::cwd_test_lock::lock();
+    let tmp = tempfile::tempdir().unwrap();
+    crate::test_runner::test_mode_fixtures::init_git(&tmp);
+    std::fs::write(tmp.path().join("README"), "x\n").unwrap();
+    for args in [vec!["add", "."], vec!["commit", "-m", "init"]] {
+        assert!(
+            crate::test_runner::test_mode_fixtures::git_in(tmp.path())
+                .args(args)
+                .status()
+                .unwrap()
+                .success()
+        );
+    }
+    let _stdout = PIPELINE_STDOUT
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let old = std::env::current_dir().unwrap();
+    std::env::set_current_dir(tmp.path()).unwrap();
+    let out = crate::test_runner::capture_stdout::capture_stdout(|| {
+        let code = crate::test_runner::pipeline::run_overlapped_test(
+            &crate::test_runner::RunTestCmdArgs {
+                doubles: None,
+                invocation: crate::bin_cli::args::TestInvocation::Commit,
+                target_request: crate::test_runner::target_request::request_from_focus(
+                    crate::test_runner::target_request::TargetFocus::Git(
+                        crate::test_runner::target_request::GitFocus::Commit,
+                    ),
+                    None,
+                    &[],
+                ),
+                main_branch_cli: None,
+                base_branch_cli: None,
+                dry_run: true,
+                force_rerun: false,
+                metrics: false,
+                jobs: 1,
+                extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
+                config_main_branch: None,
+                gate_config: kiss::GateConfig::default(),
+            },
+            std::time::Instant::now(),
+        )
+        .unwrap_or(1);
+        assert_eq!(code, 0);
+    });
+    std::env::set_current_dir(old).unwrap();
+    assert!(
+        out.contains("NO SELECTED TESTS"),
+        "empty selector list must match finish_no_work: {out}"
+    );
+    assert!(!out.contains("kiss test: Planning"), "{out}");
+    assert!(!out.contains("kiss test: plan complete="), "{out}");
+    assert!(!out.contains("kiss test: plan execute="), "{out}");
+    assert!(!out.contains("kiss test: graph repair"), "{out}");
+    assert!(!out.contains("kiss test: kernel parse="), "{out}");
 }
 
 #[test]
-fn dry_run_prints_selectors_after_covering_joins() {
+fn dry_run_prints_selectors_after_selecting_joins() {
     let src = include_str!("pipeline.rs");
     let spawn = src
         .find("pipeline_jobs::spawn_language_jobs")
@@ -133,7 +190,7 @@ fn dry_run_prints_selectors_after_covering_joins() {
         .expect("print_joined_dry_run call");
     assert!(
         dump > spawn,
-        "dry-run selector dump must wait until covering threads join"
+        "dry-run selector dump must wait until selecting threads join"
     );
 }
 
@@ -163,9 +220,10 @@ fn cold_init_is_decided_in_shared_prefix() {
 
 #[cfg(unix)]
 #[test]
-fn rust_covering_proceeds_while_python_covering_waits() {
+fn rust_selecting_proceeds_while_python_selecting_waits() {
     let _cwd = crate::cwd_test_lock::lock();
-    use crate::test_runner::pipeline::{COVERING_HOOKS, CoveringHooks};
+    use crate::test_runner::language_keyed::LanguageKeyed;
+    use crate::test_runner::pipeline::PipelineDoubles;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Condvar, Mutex};
     use std::time::{Duration, Instant};
@@ -179,9 +237,7 @@ fn rust_covering_proceeds_while_python_covering_waits() {
     let rust_started = Arc::new(AtomicBool::new(false));
     let hold_py = Arc::clone(&hold);
     let rust_flag = Arc::clone(&rust_started);
-    *COVERING_HOOKS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = CoveringHooks {
+    let selecting: LanguageKeyed<Option<Arc<dyn Fn() + Send + Sync>>> = LanguageKeyed {
         python: Some(Arc::new(move || {
             let (lock, cvar) = &*hold_py;
             let mut waiting = lock
@@ -206,22 +262,26 @@ fn rust_covering_proceeds_while_python_covering_waits() {
     let finished = Arc::new(AtomicBool::new(false));
     let finished_job = Arc::clone(&finished);
     let job = std::thread::spawn(move || {
-        let _ = crate::test_runner::run_test(crate::test_runner::RunTestCmdArgs {
-            invocation: crate::bin_cli::args::TestInvocation::All,
-            main_branch_cli: None,
-            base_branch_cli: None,
-            dry_run: true,
-            force_rerun: false,
-            force_bad: false,
-            metrics: false,
-            jobs: 1,
-            extra: &[],
-            python_extra: &[],
-            ignore: &[],
-            lang_filter: None,
-            config_main_branch: None,
-            gate_config: kiss::GateConfig::default(),
-        });
+        let _ = crate::test_runner::pipeline::run_overlapped_test(
+            &crate::test_runner::RunTestCmdArgs {
+                doubles: Some(Arc::new(PipelineDoubles {
+                    selecting,
+                    ..PipelineDoubles::default()
+                })),
+                invocation: crate::bin_cli::args::TestInvocation::All,
+                target_request: crate::test_runner::target_request::workspace_request(None, &[]),
+                main_branch_cli: None,
+                base_branch_cli: None,
+                dry_run: true,
+                force_rerun: false,
+                metrics: false,
+                jobs: 1,
+                extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
+                config_main_branch: None,
+                gate_config: kiss::GateConfig::default(),
+            },
+            Instant::now(),
+        );
         finished_job.store(true, Ordering::SeqCst);
     });
     let started = Instant::now();
@@ -239,19 +299,13 @@ fn rust_covering_proceeds_while_python_covering_waits() {
     }
     job.join().expect("language overlap job");
     std::env::set_current_dir(old).unwrap();
-    *COVERING_HOOKS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = CoveringHooks {
-        python: None,
-        rust: None,
-    };
     assert!(
         rust_ok,
-        "rust covering must start while python covering is held"
+        "rust selecting must start while python selecting is held"
     );
     assert!(
         still_running,
-        "run must still be waiting on python covering"
+        "run must still be waiting on python selecting"
     );
 }
 
@@ -266,24 +320,37 @@ fn touch_print(status: kiss::rpytest_runner::TestStatus) {
     );
 }
 
+fn with_doubles(
+    mut args: crate::test_runner::RunTestCmdArgs<'static>,
+    doubles: crate::test_runner::pipeline::PipelineDoubles,
+) -> crate::test_runner::RunTestCmdArgs<'static> {
+    args.doubles = Some(std::sync::Arc::new(doubles));
+    args
+}
+
 fn run_args(
     invocation: crate::bin_cli::args::TestInvocation,
     dry_run: bool,
     lang: Option<Language>,
 ) -> crate::test_runner::RunTestCmdArgs<'static> {
     crate::test_runner::RunTestCmdArgs {
-        invocation,
+        doubles: None,
+        invocation: invocation.clone(),
+        target_request: crate::test_runner::target_request::request_from_invocation(
+            &invocation,
+            None,
+            None,
+            None,
+            lang,
+            &[],
+        ),
         main_branch_cli: None,
         base_branch_cli: None,
         dry_run,
         force_rerun: false,
-        force_bad: false,
         metrics: false,
         jobs: 1,
-        extra: &[],
-        python_extra: &[],
-        ignore: &[],
-        lang_filter: lang,
+        extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
         config_main_branch: None,
         gate_config: kiss::GateConfig::default(),
     }
@@ -291,11 +358,10 @@ fn run_args(
 
 #[cfg(unix)]
 #[test]
-fn rust_execute_proceeds_while_python_covering_waits() {
+fn rust_execute_proceeds_while_python_selecting_waits() {
     let _cwd = crate::cwd_test_lock::lock();
-    use crate::test_runner::pipeline::{
-        COVERING_HOOKS, CoveringHooks, EXECUTE_HOOKS, ExecuteHooks, STUB_LANGUAGE_EXECUTE,
-    };
+    use crate::test_runner::language_keyed::LanguageKeyed;
+    use crate::test_runner::pipeline::PipelineDoubles;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Condvar, Mutex};
     use std::time::{Duration, Instant};
@@ -309,9 +375,7 @@ fn rust_execute_proceeds_while_python_covering_waits() {
     let rust_executed = Arc::new(AtomicBool::new(false));
     let hold_py = Arc::clone(&hold);
     let rust_flag = Arc::clone(&rust_executed);
-    *COVERING_HOOKS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = CoveringHooks {
+    let selecting: LanguageKeyed<Option<Arc<dyn Fn() + Send + Sync>>> = LanguageKeyed {
         python: Some(Arc::new(move || {
             let (lock, cvar) = &*hold_py;
             let mut waiting = lock
@@ -325,15 +389,18 @@ fn rust_execute_proceeds_while_python_covering_waits() {
         })),
         rust: None,
     };
-    *EXECUTE_HOOKS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = ExecuteHooks {
+    let execute: LanguageKeyed<Option<Arc<dyn Fn() + Send + Sync>>> = LanguageKeyed {
         python: None,
         rust: Some(Arc::new(move || {
             rust_flag.store(true, Ordering::SeqCst);
         })),
     };
-    STUB_LANGUAGE_EXECUTE.store(true, Ordering::SeqCst);
+    let doubles = PipelineDoubles {
+        selecting,
+        execute,
+        stub_execute: true,
+        ..PipelineDoubles::default()
+    };
 
     let old = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
@@ -343,11 +410,13 @@ fn rust_execute_proceeds_while_python_covering_waits() {
     let finished = Arc::new(AtomicBool::new(false));
     let finished_job = Arc::clone(&finished);
     let job = std::thread::spawn(move || {
-        let _ = crate::test_runner::run_test(run_args(
-            crate::bin_cli::args::TestInvocation::All,
-            false,
-            None,
-        ));
+        let _ = crate::test_runner::pipeline::run_overlapped_test(
+            &with_doubles(
+                run_args(crate::bin_cli::args::TestInvocation::All, false, None),
+                doubles,
+            ),
+            Instant::now(),
+        );
         finished_job.store(true, Ordering::SeqCst);
     });
     let started = Instant::now();
@@ -365,36 +434,22 @@ fn rust_execute_proceeds_while_python_covering_waits() {
     }
     job.join().expect("live overlap job");
     std::env::set_current_dir(old).unwrap();
-    STUB_LANGUAGE_EXECUTE.store(false, Ordering::SeqCst);
-    *COVERING_HOOKS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = CoveringHooks {
-        python: None,
-        rust: None,
-    };
-    *EXECUTE_HOOKS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = ExecuteHooks {
-        python: None,
-        rust: None,
-    };
     assert!(
         rust_ok,
-        "rust execute must start while python covering is held"
+        "rust execute must start while python selecting is held"
     );
     assert!(
         still_running,
-        "run must still be waiting on python covering"
+        "run must still be waiting on python selecting"
     );
 }
 
 #[cfg(unix)]
 #[test]
-fn peer_does_not_execute_after_rust_covering_failure() {
+fn peer_does_not_execute_after_rust_selecting_failure() {
     let _cwd = crate::cwd_test_lock::lock();
-    use crate::test_runner::pipeline::{
-        COVERING_HOOKS, CoveringHooks, EXECUTE_HOOKS, ExecuteHooks, STUB_LANGUAGE_EXECUTE,
-    };
+    use crate::test_runner::language_keyed::LanguageKeyed;
+    use crate::test_runner::pipeline::PipelineDoubles;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Condvar, Mutex};
     use std::time::{Duration, Instant};
@@ -405,14 +460,12 @@ fn peer_does_not_execute_after_rust_covering_failure() {
     std::fs::write(tmp.path().join("lib.rs"), "fn f() {}\n").unwrap();
 
     let hold = Arc::new((Mutex::new(true), Condvar::new()));
-    let rust_covering = Arc::new(AtomicBool::new(false));
+    let rust_selecting = Arc::new(AtomicBool::new(false));
     let python_executed = Arc::new(AtomicBool::new(false));
     let hold_py = Arc::clone(&hold);
-    let rust_flag = Arc::clone(&rust_covering);
+    let rust_flag = Arc::clone(&rust_selecting);
     let python_flag = Arc::clone(&python_executed);
-    *COVERING_HOOKS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = CoveringHooks {
+    let selecting: LanguageKeyed<Option<Arc<dyn Fn() + Send + Sync>>> = LanguageKeyed {
         python: Some(Arc::new(move || {
             let (lock, cvar) = &*hold_py;
             let mut waiting = lock
@@ -428,28 +481,36 @@ fn peer_does_not_execute_after_rust_covering_failure() {
             rust_flag.store(true, Ordering::SeqCst);
         })),
     };
-    *EXECUTE_HOOKS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = ExecuteHooks {
+    let execute: LanguageKeyed<Option<Arc<dyn Fn() + Send + Sync>>> = LanguageKeyed {
         python: Some(Arc::new(move || {
             python_flag.store(true, Ordering::SeqCst);
         })),
         rust: None,
     };
-    STUB_LANGUAGE_EXECUTE.store(true, Ordering::SeqCst);
-    crate::test_runner::pipeline::set_fail_covering(Some(Language::Rust));
+    let doubles = PipelineDoubles {
+        selecting,
+        execute,
+        stub_execute: true,
+        fail_selecting: Some(Language::Rust),
+        ..PipelineDoubles::default()
+    };
 
     let old = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
-    let job = std::thread::spawn(|| {
-        crate::test_runner::run_test(run_args(
-            crate::bin_cli::args::TestInvocation::All,
-            false,
-            None,
-        ))
+    let _stdout = PIPELINE_STDOUT
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let job = std::thread::spawn(move || {
+        crate::test_runner::pipeline::run_overlapped_test(
+            &with_doubles(
+                run_args(crate::bin_cli::args::TestInvocation::All, false, None),
+                doubles,
+            ),
+            Instant::now(),
+        )
     });
     let started = Instant::now();
-    while !rust_covering.load(Ordering::SeqCst) && started.elapsed() < Duration::from_secs(15) {
+    while !rust_selecting.load(Ordering::SeqCst) && started.elapsed() < Duration::from_secs(15) {
         std::thread::sleep(Duration::from_millis(10));
     }
     std::thread::sleep(Duration::from_millis(50));
@@ -462,84 +523,73 @@ fn peer_does_not_execute_after_rust_covering_failure() {
     }
     let result = job.join().expect("pipeline job");
     std::env::set_current_dir(old).unwrap();
-    crate::test_runner::pipeline::set_fail_covering(None);
-    STUB_LANGUAGE_EXECUTE.store(false, Ordering::SeqCst);
-    *COVERING_HOOKS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = CoveringHooks {
-        python: None,
-        rust: None,
-    };
-    *EXECUTE_HOOKS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = ExecuteHooks {
-        python: None,
-        rust: None,
-    };
-    assert_ne!(result, 0);
+    assert!(
+        rust_selecting.load(Ordering::SeqCst),
+        "rust selecting must start while python selecting is held"
+    );
+    assert!(result.is_err(), "rust selecting failure must fail the run");
     assert!(
         !python_executed.load(Ordering::SeqCst),
-        "peer must not enter execute after a recorded covering failure"
+        "peer must not enter execute after a recorded selecting failure"
     );
 }
 
 #[cfg(unix)]
 #[test]
-fn workspace_span_completes_before_covering_error() {
+fn workspace_span_completes_before_selecting_error() {
     let _cwd = crate::cwd_test_lock::lock();
     let tmp = tempfile::tempdir().unwrap();
     crate::test_runner::test_mode_fixtures::init_git(&tmp);
     std::fs::write(tmp.path().join("lib.py"), "x = 1\n").unwrap();
-    crate::test_runner::pipeline::set_fail_covering(Some(Language::Python));
+    let doubles = crate::test_runner::pipeline::PipelineDoubles {
+        fail_selecting: Some(Language::Python),
+        ..crate::test_runner::pipeline::PipelineDoubles::default()
+    };
     let old = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
     let _stdout = PIPELINE_STDOUT
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let out = crate::test_runner::capture_stdout::capture_stdout(|| {
-        let _ = crate::test_runner::run_test(run_args(
-            crate::bin_cli::args::TestInvocation::All,
-            true,
-            Some(Language::Python),
-        ));
+        let _ = crate::test_runner::pipeline::run_overlapped_test(
+            &with_doubles(
+                run_args(
+                    crate::bin_cli::args::TestInvocation::All,
+                    true,
+                    Some(Language::Python),
+                ),
+                doubles,
+            ),
+            std::time::Instant::now(),
+        );
     });
     std::env::set_current_dir(old).unwrap();
-    crate::test_runner::pipeline::set_fail_covering(None);
     let workspace_start = out
         .find("kiss test: Running workspace")
         .expect("workspace start");
     let workspace_end = out.find("kiss test: Ran workspace").expect("workspace end");
-    let covering = out
-        .find("kiss test: Running covering_python")
-        .expect("covering start");
+    let selecting = out
+        .find("kiss test: Running select_python")
+        .expect("selecting start");
     assert!(
-        workspace_start < workspace_end && workspace_end < covering,
-        "covering error must follow completed workspace span: {out}"
+        workspace_start < workspace_end && workspace_end < selecting,
+        "selecting error must follow completed workspace span: {out}"
     );
 }
 
 #[test]
-fn force_all_runs_in_language_thread_after_covering() {
+fn force_all_runs_in_language_thread_after_selecting() {
     let src = include_str!("pipeline_jobs.rs");
     let cover = src
-        .find("let mut planned = cover_language")
-        .expect("cover_language");
-    let ran = src.find("Ran {covering_name}").expect("Ran covering");
+        .find("let mut planned = select_language")
+        .expect("select_language");
+    let ran = src.find("Ran {selecting_name}").expect("Ran selecting");
     let force = src
         .find("apply_force_all_population(a, &mut planned)")
         .expect("force_all");
     assert!(
         cover < ran && ran < force,
-        "force_all must run in the language thread after covering Ran"
-    );
-}
-
-#[test]
-fn covering_population_overlaps_list_build() {
-    let src = include_str!("coverage_decision/engine.rs");
-    assert!(
-        src.contains("overlap_with_discover(|| planner.discover_universe())"),
-        "rust plan_population must overlap list-build with discover_universe"
+        "force_all must run in the language thread after selecting Ran"
     );
 }
 
@@ -547,14 +597,16 @@ fn covering_population_overlaps_list_build() {
 #[test]
 fn recap_wall_time_tracks_process_clock() {
     let _cwd = crate::cwd_test_lock::lock();
-    use crate::test_runner::pipeline::STUB_LANGUAGE_EXECUTE;
-    use std::sync::atomic::Ordering;
+    use crate::test_runner::pipeline::PipelineDoubles;
     use std::time::{Duration, Instant};
 
     let tmp = tempfile::tempdir().unwrap();
     crate::test_runner::test_mode_fixtures::init_git(&tmp);
     std::fs::write(tmp.path().join("lib.py"), "x = 1\n").unwrap();
-    STUB_LANGUAGE_EXECUTE.store(true, Ordering::SeqCst);
+    let doubles = PipelineDoubles {
+        stub_execute: true,
+        ..PipelineDoubles::default()
+    };
     let old = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
     let _stdout = PIPELINE_STDOUT
@@ -562,15 +614,17 @@ fn recap_wall_time_tracks_process_clock() {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let started = Instant::now();
     let out = crate::test_runner::capture_stdout::capture_stdout(|| {
-        let _ = crate::test_runner::run_test(run_args(
-            crate::bin_cli::args::TestInvocation::All,
-            false,
-            Some(Language::Python),
+        let _ = crate::test_runner::run_test(with_doubles(
+            run_args(
+                crate::bin_cli::args::TestInvocation::All,
+                false,
+                Some(Language::Python),
+            ),
+            doubles,
         ));
     });
     let wall = started.elapsed();
     std::env::set_current_dir(old).unwrap();
-    STUB_LANGUAGE_EXECUTE.store(false, Ordering::SeqCst);
     let recap = out
         .lines()
         .find(|line| line.contains(" total · "))

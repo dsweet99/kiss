@@ -1,39 +1,35 @@
 #[path = "pipeline_jobs.rs"]
 mod pipeline_jobs;
-#[cfg(test)]
-pub(crate) use pipeline_jobs::{
-    COVERING_HOOKS, CoveringHooks, EXECUTE_HOOKS, ExecuteHooks, STUB_LANGUAGE_EXECUTE,
-    set_blocked_covering_language, set_fail_covering, unpark_blocked_covering,
-};
+pub(crate) use pipeline_jobs::PipelineDoubles;
 
 use std::time::Instant;
 
 use kiss::Language;
 
 use super::RunTestCmdArgs;
+use super::language_keyed::LanguageKeyed;
 use super::plan::{
-    AllWorkspaceCache, PlanSelectorsRequest, TargetPlanKind, VcsWorkspace, cover_all_language,
-    plan_selectors_from_workspace, plan_target_selectors_with_priors, plan_vcs_workspace_at,
+    AllWorkspaceCache, PlanSelectorsRequest, TargetPlanKind, VcsWorkspace,
+    plan_selectors_from_workspace, plan_target_selectors, plan_vcs_workspace_at,
+    select_all_language,
 };
 use super::planned_selectors::{
     PlannedSelectors, SelectorRunOptions, should_force_cold_initialization,
 };
 use super::run_logic::{finish_joined_run, merge_language_planned, print_joined_dry_run};
-use crate::bin_cli::args::TestInvocation;
-use crate::test_git::TestChangeMode;
+use crate::test_runner::target_request::{TargetFocus, git_resolve_args, operand_raws};
 
 enum SharedKind {
     Change(VcsWorkspace),
     All { cache: Option<AllWorkspaceCache> },
-    Targets,
+    Targets(Vec<String>),
 }
 
 pub(super) struct SharedPrefix {
     pub(super) repo_root: std::path::PathBuf,
     pub(super) ignore: Vec<String>,
     kind: SharedKind,
-    pub(super) python_may_work: bool,
-    pub(super) rust_may_work: bool,
+    pub(super) may_work: LanguageKeyed<bool>,
     pub(super) cold_init: bool,
 }
 
@@ -44,22 +40,31 @@ pub(crate) fn run_overlapped_test(
     let cwd = std::env::current_dir().map_err(|e| format!("error: kiss test: {e}"))?;
     let session_root = crate::test_git::require_git_repo_root(&cwd)
         .map_err(|e| format!("error: kiss test requires a git repository ({e})"))?;
-    let rust_cache_root =
-        crate::test_runner::rust_coverage_index::rust_coverage_cache_root(&session_root);
-    let _ = crate::test_runner::execution_generation::reclaim_unreferenced(&rust_cache_root);
+    for rules in crate::test_runner::lang_registry::all_rules() {
+        rules.reclaim_unreferenced(&session_root);
+    }
     let _inventory_session =
         super::workspace_selector_cache::begin_inventory_session(&session_root);
     let prefix = run_workspace_prefix(a, &session_root)?;
     let slots = pipeline_jobs::LanguageSlots::default();
     pipeline_jobs::spawn_language_jobs(a, &prefix, &slots)?;
-    let (python_job, rust_job) = pipeline_jobs::take_job_results(&slots)?;
+    let jobs = pipeline_jobs::take_job_results(&slots)?;
     let planned = merge_and_cache_planned(a, &prefix, &slots)?;
     let options = run_options(a, a.jobs, process_started);
+    if a.dry_run && !joined_has_work(&planned) {
+        return finish_joined_run(&planned, &options, process_started, jobs);
+    }
     if a.dry_run {
         print_joined_dry_run(&planned, &options)?;
         return Ok(0);
     }
-    finish_joined_run(&planned, &options, process_started, python_job, rust_job)
+    finish_joined_run(&planned, &options, process_started, jobs)
+}
+
+fn joined_has_work(planned: &PlannedSelectors) -> bool {
+    Language::ALL
+        .into_iter()
+        .any(|language| super::run_logic::language_has_work(planned, language))
 }
 
 fn run_workspace_prefix(
@@ -81,25 +86,22 @@ fn merge_and_cache_planned(
     prefix: &SharedPrefix,
     slots: &pipeline_jobs::LanguageSlots,
 ) -> Result<PlannedSelectors, String> {
-    let (python, rust) = pipeline_jobs::take_planned(slots);
     let mut planned = merge_language_planned(
         prefix.repo_root.clone(),
         prefix.ignore.clone(),
-        python,
-        rust,
+        pipeline_jobs::take_planned(slots),
     );
-    if matches!(a.invocation, TestInvocation::All)
-        && a.lang_filter.is_none()
+    if crate::test_runner::target_request::is_workspace_run(a)
+        && a.lang_filter().is_none()
         && planned.workspace_files_fingerprint.is_none()
-        && (!planned.sel.python.is_empty() || !planned.sel.rust.is_empty())
+        && !planned.sel.both_empty()
     {
         planned.workspace_files_fingerprint =
-            crate::test_runner::workspace_selector_cache::store_workspace_selectors(
+            crate::test_runner::workspace_selector_cache::store_workspace_selector_sets(
                 &prefix.repo_root,
                 &prefix.ignore,
-                &planned.sel.python,
-                &planned.sel.rust,
-                a.python_extra,
+                &planned.sel,
+                a.extras,
             );
     }
     Ok(planned)
@@ -115,10 +117,7 @@ fn run_options<'a>(
         force_rerun: a.force_rerun,
         metrics: a.metrics,
         jobs,
-        extras: crate::test_runner::language_keyed::LanguageKeyed {
-            python: a.python_extra,
-            rust: a.extra,
-        },
+        extras: a.extras,
         plan_duration: process_started.elapsed(),
         gate: a.gate_config.clone(),
     }
@@ -128,26 +127,29 @@ fn plan_shared_prefix(
     a: &RunTestCmdArgs<'_>,
     repo_root: &std::path::Path,
 ) -> Result<SharedPrefix, String> {
-    match &a.invocation {
-        TestInvocation::Commit | TestInvocation::Base | TestInvocation::Main => {
-            let req = change_request(a);
+    match &a.target_request.focus {
+        TargetFocus::Git(_) => {
+            let req = git_plan_request(a);
             let ws = plan_vcs_workspace_at(&req, repo_root.to_path_buf())?;
             let cold_init = should_force_cold_initialization(a, &ws.repo_root);
-            let python_may_work = a.lang_filter != Some(Language::Rust)
-                && language_thread_may_work(&ws, Language::Python, cold_init)?;
-            let rust_may_work = a.lang_filter != Some(Language::Python)
-                && language_thread_may_work(&ws, Language::Rust, cold_init)?;
+            let mut may_work = LanguageKeyed::<bool>::default();
+            for language in crate::test_runner::lang_registry::languages() {
+                *may_work.get_mut(language) = language.allowed_by(a.lang_filter())
+                    && language_thread_may_work(&ws, language, cold_init)?;
+            }
             Ok(SharedPrefix {
                 repo_root: ws.repo_root.clone(),
                 ignore: ws.ignore_norm.clone(),
                 kind: SharedKind::Change(ws),
-                python_may_work,
-                rust_may_work,
+                may_work,
                 cold_init,
             })
         }
-        TestInvocation::All => plan_all_or_targets_prefix(a, repo_root, None),
-        TestInvocation::Targets(targets) => plan_all_or_targets_prefix(a, repo_root, Some(targets)),
+        TargetFocus::Workspace => plan_all_or_targets_prefix(a, repo_root, None),
+        TargetFocus::Operands(_) => {
+            let targets = operand_raws(&a.target_request.focus).unwrap_or_default();
+            plan_all_or_targets_prefix(a, repo_root, Some(&targets))
+        }
     }
 }
 
@@ -156,30 +158,32 @@ fn plan_all_or_targets_prefix(
     repo_root: &std::path::Path,
     targets: Option<&[String]>,
 ) -> Result<SharedPrefix, String> {
-    let ignore = kiss::normalize_ignore_prefixes(a.ignore);
-    if matches!(a.lang_filter, Some(Language::Rust)) {
-        super::rust_llvm_cov::validate_rust_extra_args(a.extra)?;
+    let ignore = kiss::normalize_ignore_prefixes(a.ignore());
+    if let Some(language) = a.lang_filter() {
+        super::lang_registry::rules_for(language).validate_extra_args(a.extras.get(language))?;
     }
-    let kind = if targets.is_none() {
-        SharedKind::All {
+    let kind = match targets {
+        None => SharedKind::All {
             cache: super::plan::load_all_workspace_cache(
                 repo_root,
                 &ignore,
-                a.python_extra,
-                a.lang_filter,
+                a.extras,
+                a.lang_filter(),
             ),
-        }
-    } else {
-        SharedKind::Targets
+        },
+        Some(targets) => SharedKind::Targets(targets.to_vec()),
     };
-    let python_has_cached_work =
-        !matches!(&kind, SharedKind::All { cache: Some(cache) } if cache.py.is_empty());
-    let rust_has_cached_work =
-        !matches!(&kind, SharedKind::All { cache: Some(cache) } if cache.rs.is_empty());
+    let has_cached_work = LanguageKeyed::from_fn(|language| match &kind {
+        SharedKind::All { cache: Some(cache) } => !cache.sel.get(language).is_empty(),
+        _ => true,
+    });
     let cold_init = should_force_cold_initialization(a, repo_root);
+    let mut may_work = has_cached_work;
+    for language in crate::test_runner::lang_registry::languages() {
+        *may_work.get_mut(language) &= language.allowed_by(a.lang_filter());
+    }
     Ok(SharedPrefix {
-        python_may_work: a.lang_filter != Some(Language::Rust) && python_has_cached_work,
-        rust_may_work: a.lang_filter != Some(Language::Python) && rust_has_cached_work,
+        may_work,
         repo_root: repo_root.to_path_buf(),
         ignore,
         kind,
@@ -206,24 +210,18 @@ fn language_thread_may_work(
 ) -> Result<bool, String> {
     Ok(LanguageMayWork {
         paths: language_paths_may_work(ws, language),
-        priors: language_has_prior_failure_records(&ws.repo_root, language)?,
+        priors: !kiss::test_records::nonpassed_test_ids(&kiss::test_records::records_dir(
+            &ws.repo_root,
+            language.label(),
+        ))
+        .is_empty(),
         cold_init,
     }
     .yes())
 }
 
-fn language_has_prior_failure_records(
-    repo_root: &std::path::Path,
-    language: Language,
-) -> Result<bool, String> {
-    crate::test_runner::last_status::has_language_records(repo_root, language)
-}
-
 fn language_paths_may_work(ws: &VcsWorkspace, language: Language) -> bool {
-    let ext = match language {
-        Language::Python => "py",
-        Language::Rust => "rs",
-    };
+    let ext = language.extension();
     ws.source_changed
         .iter()
         .chain(ws.test_changed.iter())
@@ -233,83 +231,61 @@ fn language_paths_may_work(ws: &VcsWorkspace, language: Language) -> bool {
         })
 }
 
-pub(super) fn cover_language(
+pub(super) fn select_language(
     a: &RunTestCmdArgs<'_>,
     prefix: &SharedPrefix,
     language: Language,
 ) -> Result<PlannedSelectors, String> {
-    if pipeline_jobs::covering_should_fail(language) {
-        return Err("error: kiss test: covering failed".to_string());
+    if pipeline_jobs::selecting_should_fail(a, language) {
+        return Err("error: kiss test: selecting failed".to_string());
     }
-    let extras = crate::test_runner::language_keyed::LanguageKeyed {
-        python: a.python_extra,
-        rust: a.extra,
-    };
+    let extras = a.extras;
     match &prefix.kind {
         SharedKind::Change(ws) => plan_selectors_from_workspace(ws, extras, Some(language)),
-        SharedKind::All { cache } => cover_all_language(
+        SharedKind::All { cache } => select_all_language(
             &prefix.repo_root,
             &prefix.ignore,
-            a.python_extra,
+            extras,
             language,
             &a.gate_config,
             cache.as_ref(),
         ),
-        SharedKind::Targets => {
-            let TestInvocation::Targets(targets) = &a.invocation else {
-                return Err("error: kiss test: missing targets".to_string());
-            };
-            let thread_targets = cover_thread_targets(targets, language, a.lang_filter)?;
+        SharedKind::Targets(targets) => {
+            let thread_targets = select_thread_targets(targets, language, a.lang_filter())?;
             if thread_targets.is_empty() {
                 return Ok(super::empty_planned(
                     prefix.repo_root.clone(),
                     prefix.ignore.clone(),
                 ));
             }
-            plan_target_selectors_with_priors(
+            plan_target_selectors(
                 TargetPlanKind::Targets(thread_targets.as_slice()),
                 &prefix.ignore,
                 extras,
                 Some(language),
                 &a.gate_config,
-                a.force_bad,
             )
         }
     }
 }
 
-fn change_request<'a>(a: &'a RunTestCmdArgs<'a>) -> PlanSelectorsRequest<'a> {
-    let mode = match a.invocation {
-        TestInvocation::Commit => TestChangeMode::Commit,
-        TestInvocation::Base => TestChangeMode::Base,
-        TestInvocation::Main => TestChangeMode::Main,
-        TestInvocation::All | TestInvocation::Targets(_) => TestChangeMode::Commit,
+pub(super) fn git_plan_request<'a>(a: &'a RunTestCmdArgs<'a>) -> PlanSelectorsRequest<'a> {
+    let TargetFocus::Git(focus) = &a.target_request.focus else {
+        panic!("git_plan_request requires a git focus");
     };
+    let (mode, config_main_branch, main_branch_cli, base_branch_cli) = git_resolve_args(focus);
     PlanSelectorsRequest {
         mode,
-        main_branch_cli: a.main_branch_cli,
-        base_branch_cli: a.base_branch_cli,
-        ignore: a.ignore,
-        extras: crate::test_runner::language_keyed::LanguageKeyed {
-            python: a.python_extra,
-            rust: a.extra,
-        },
-        lang_filter: a.lang_filter,
-        config_main_branch: a.config_main_branch,
+        main_branch_cli,
+        base_branch_cli,
+        ignore: a.ignore(),
+        extras: a.extras,
+        lang_filter: a.lang_filter(),
+        config_main_branch,
     }
 }
 
-pub(crate) fn split_jobs(jobs: usize, both: bool) -> (usize, usize) {
-    let full = jobs.max(1);
-    if both {
-        let half = (full / 2).max(1);
-        (half, half)
-    } else {
-        (full, full)
-    }
-}
-
-fn cover_thread_targets(
+fn select_thread_targets(
     targets: &[String],
     language: Language,
     user_lang: Option<Language>,
@@ -349,83 +325,13 @@ fn target_belongs_to_thread(raw: &str, language: Language) -> bool {
 }
 
 fn operand_source_language(raw: &str) -> Option<Language> {
-    let path_part = raw.split_once("::").map_or(raw, |(path, _)| path);
-    match std::path::Path::new(path_part)
+    let (path_part, _) = kiss::split_selector(raw);
+    std::path::Path::new(path_part)
         .extension()
         .and_then(|ext| ext.to_str())
-    {
-        Some(ext) if ext.eq_ignore_ascii_case("py") => Some(Language::Python),
-        Some(ext) if ext.eq_ignore_ascii_case("rs") => Some(Language::Rust),
-        _ => None,
-    }
+        .and_then(crate::test_runner::lang_registry::language_for_extension)
 }
 
 #[cfg(test)]
-mod pipeline_tests {
-    use super::{LanguageMayWork, VcsWorkspace, language_paths_may_work, split_jobs};
-    use kiss::Language;
-    use std::collections::BTreeMap;
-    use std::path::PathBuf;
-
-    #[test]
-    fn jobs_split_both_languages_and_lang_filter() {
-        assert_eq!(split_jobs(4, true), (2, 2));
-        assert_eq!(split_jobs(4, false), (4, 4));
-        assert_eq!(split_jobs(1, true), (1, 1));
-    }
-
-    #[test]
-    fn configured_jobs_are_honored_without_a_hidden_cap() {
-        assert_eq!(split_jobs(48, true), (24, 24));
-        assert_eq!(split_jobs(48, false), (48, 48));
-        assert_eq!(split_jobs(32, true), (16, 16));
-        assert_eq!(split_jobs(16, false), (16, 16));
-        assert_eq!(split_jobs(8, false), (8, 8));
-        assert_eq!(split_jobs(0, false), (1, 1));
-    }
-
-    #[test]
-    fn vcs_spawn_uses_paths_priors_and_cold_init() {
-        assert!(
-            !LanguageMayWork {
-                paths: false,
-                priors: false,
-                cold_init: false
-            }
-            .yes()
-        );
-        assert!(
-            LanguageMayWork {
-                paths: true,
-                priors: false,
-                cold_init: false
-            }
-            .yes()
-        );
-        assert!(
-            LanguageMayWork {
-                paths: false,
-                priors: true,
-                cold_init: false
-            }
-            .yes()
-        );
-        assert!(
-            LanguageMayWork {
-                paths: false,
-                priors: false,
-                cold_init: true
-            }
-            .yes()
-        );
-        let ws = VcsWorkspace {
-            repo_root: PathBuf::from("."),
-            ignore_norm: Vec::new(),
-            source_changed: vec![PathBuf::from("lib.py")],
-            test_changed: Vec::new(),
-            changed_lines: BTreeMap::new(),
-        };
-        assert!(language_paths_may_work(&ws, Language::Python));
-        assert!(!language_paths_may_work(&ws, Language::Rust));
-    }
-}
+#[path = "pipeline_unit_test.rs"]
+mod pipeline_tests;

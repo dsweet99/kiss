@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+#[cfg(test)]
+use std::process::Output;
 
 use crate::bin_cli::check_cmd::CheckCommandArgs;
-use kiss::Language;
 
 pub const SHARD_ENV: &str = "KISS_CHECK_GATHER_ROOTS";
 
@@ -15,65 +15,28 @@ pub(crate) fn gather_roots_from_env() -> Option<Vec<PathBuf>> {
         .filter(|s| !s.is_empty())
         .map(PathBuf::from)
         .collect();
-    if roots.is_empty() {
-        None
-    } else {
-        Some(roots)
-    }
+    if roots.is_empty() { None } else { Some(roots) }
 }
 
 pub(crate) fn run_split_check_sharded(exe: &Path, args: &CheckCommandArgs<'_>) -> i32 {
-    let ignore = crate::bin_cli::util::merge_check_ignore_prefixes(args.ignore);
-    let universe = Path::new(&args.paths[0]);
-    let (_, rs_files) = crate::analyze::gather_files(universe, Some(Language::Rust), &ignore);
-    let shard_count = rust_shard_count(rs_files.len());
-    if shard_count <= 1 || rs_files.len() < 64 {
-        return crate::bin_cli::check_cmd::run_split_check_with_exe_legacy(exe, args);
-    }
-    let shards = partition_paths(rs_files, shard_count);
-    let Ok(mut python) = spawn_lang(exe, args, "python", None) else {
-        return crate::bin_cli::check_cmd::run_check_in_process_pub(args);
-    };
-    let mut rust_children = Vec::with_capacity(shards.len());
-    for shard in &shards {
-        match spawn_lang(exe, args, "rust", Some(shard)) {
-            Ok(child) => rust_children.push(child),
-            Err(_) => {
-                let _ = python.kill();
-                for child in &mut rust_children {
-                    let _ = child.kill();
-                }
-                return crate::bin_cli::check_cmd::run_check_in_process_pub(args);
-            }
-        }
-    }
-    let python_out = python.wait_with_output().ok();
-    let mut rust_outs = Vec::with_capacity(rust_children.len());
-    for child in rust_children {
-        match child.wait_with_output() {
-            Ok(out) => rust_outs.push(out),
-            Err(_) => {
-                return crate::bin_cli::check_cmd::run_check_in_process_pub(args);
-            }
-        }
-    }
-    match python_out {
-        Some(python) => publish_sharded_outputs(&python, &rust_outs),
-        None => crate::bin_cli::check_cmd::run_check_in_process_pub(args),
-    }
+    crate::bin_cli::check_cmd::run_split_check_with_exe(exe, args)
 }
 
+#[cfg(test)]
 fn rust_shard_count(file_count: usize) -> usize {
-    let cpus = kiss::shared_helpers::host_cpu_count(4);
-    cpus.min(file_count.max(1)).max(1)
+    kiss::host_parallelism::check_rust_shard_count(file_count)
 }
 
+#[cfg(test)]
 fn partition_paths(mut paths: Vec<PathBuf>, shards: usize) -> Vec<Vec<PathBuf>> {
     paths.sort();
     let mut weighted: Vec<(u64, PathBuf)> = paths
         .into_iter()
         .map(|path| {
-            let bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(1).max(1);
+            let bytes = std::fs::metadata(&path)
+                .map(|m| m.len())
+                .unwrap_or(1)
+                .max(1);
             (bytes, path)
         })
         .collect();
@@ -93,38 +56,7 @@ fn partition_paths(mut paths: Vec<PathBuf>, shards: usize) -> Vec<Vec<PathBuf>> 
     bins.into_iter().filter(|b| !b.is_empty()).collect()
 }
 
-fn spawn_lang(
-    exe: &Path,
-    args: &CheckCommandArgs<'_>,
-    lang: &str,
-    gather_roots: Option<&[PathBuf]>,
-) -> std::io::Result<std::process::Child> {
-    let mut cmd = Command::new(exe);
-    cmd.arg("check").arg("--lang").arg(lang);
-    if args.timing {
-        cmd.arg("--timing");
-    }
-    if let Some(path) = args.config {
-        cmd.arg("--config").arg(path);
-    }
-    for prefix in args.ignore {
-        cmd.arg("--ignore").arg(prefix);
-    }
-    cmd.args(args.paths)
-        .env("KISS_CHECK_WORKER", "1")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    if let Some(roots) = gather_roots {
-        let joined = roots
-            .iter()
-            .map(|p| p.to_string_lossy())
-            .collect::<Vec<_>>()
-            .join("\n");
-        cmd.env(SHARD_ENV, joined);
-    }
-    cmd.spawn()
-}
-
+#[cfg(test)]
 fn publish_sharded_outputs(python: &Output, rust_outs: &[Output]) -> i32 {
     crate::bin_cli::check_cmd::forward_worker_stderr_pub(&python.stderr);
     for rust in rust_outs {
@@ -132,12 +64,18 @@ fn publish_sharded_outputs(python: &Output, rust_outs: &[Output]) -> i32 {
     }
     let mut totals = [0_usize; 5];
     let mut ok = python.status.success();
+    let mut saw_hint = false;
     for out in std::iter::once(python).chain(rust_outs.iter()) {
         ok &= out.status.success();
         for line in String::from_utf8_lossy(&out.stdout).lines() {
             if let Some(next) = crate::bin_cli::check_cmd::analyzed_add_pub(totals, line) {
                 totals = next;
-            } else if line != "NO VIOLATIONS" {
+            } else if line == kiss::cli_output::VIOLATIONS_FIX_HINT {
+                saw_hint = true;
+            } else if crate::bin_cli::check_cmd::empty_language_root(line).is_none()
+                && line != "NO VIOLATIONS"
+                && !crate::is_cli_wall_timing_line(line)
+            {
                 println!("{line}");
             }
         }
@@ -148,10 +86,12 @@ fn publish_sharded_outputs(python: &Output, rust_outs: &[Output]) -> i32 {
     );
     if ok {
         println!("NO VIOLATIONS");
-        0
-    } else {
-        1
+        return 0;
     }
+    if saw_hint {
+        println!("{}", kiss::cli_output::VIOLATIONS_FIX_HINT);
+    }
+    1
 }
 
 #[cfg(test)]
@@ -185,7 +125,11 @@ mod tests {
         let bins = partition_paths(vec![big.clone(), small_a.clone(), small_b.clone()], 2);
         assert_eq!(bins.len(), 2);
         let big_shard = bins.iter().find(|b| b.contains(&big)).unwrap();
-        assert_eq!(big_shard.len(), 1, "largest file should sit alone when peers are tiny");
+        assert_eq!(
+            big_shard.len(),
+            1,
+            "largest file should sit alone when peers are tiny"
+        );
     }
 
     #[test]

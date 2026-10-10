@@ -169,10 +169,7 @@ fn run_selectors_non_dry_run_executes_python_selective_phase() {
         Ok(0) => {}
         Ok(other) => panic!("unexpected exit code {other}"),
         Err(err) => assert!(
-            err.contains("kiss")
-                || err.contains("pytest")
-                || err.contains("rslip")
-                || err.contains("population"),
+            err.contains("kiss") || err.contains("pytest") || err.contains("population"),
             "unexpected error: {err}"
         ),
     }

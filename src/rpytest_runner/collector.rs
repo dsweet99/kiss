@@ -10,6 +10,7 @@ const PYTEST_COLLECT_MAIN: &str = r#"
 import json
 import os
 import sys
+import tempfile
 
 os.environ.pop("PYTEST_ADDOPTS", None)
 os.environ["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
@@ -45,10 +46,24 @@ def _hook(event, args):
     _ext=True
 sys.addaudithook(_hook)
 
+def _repo_nodeid(item):
+    # Pytest's nodeid is relative to rootdir. A nested pytest.ini makes that
+    # directory the root, so a file outside it is reported as "::name" and a
+    # file inside it drops the parent path. Kiss runs from the repo root.
+    # A symlink must keep its own name: realpath would turn test_ok.py into
+    # impl.py, and kiss test test_ok.py::test_ok would not match the result.
+    raw = os.path.abspath(str(item.path))
+    chosen = raw if os.path.islink(raw) else os.path.realpath(raw)
+    rel = os.path.relpath(chosen, _root).replace(os.sep, "/")
+    nodeid = item.nodeid
+    if "::" in nodeid:
+        return rel + "::" + nodeid.split("::", 1)[1]
+    return rel
+
 class _KissCollectReporter:
     def pytest_collection_finish(self, session):
         payload = {
-            "nodeids": [item.nodeid for item in session.items],
+            "nodeids": [_repo_nodeid(item) for item in session.items],
             "observed_workspace": sorted(_obs),
             "unsupported_external": _ext,
         }
@@ -68,7 +83,11 @@ def main():
     ]
     args.extend(config.get("pytest_args", []))
     args.extend(config.get("paths", []))
-    raise SystemExit(pytest.main(args, plugins=[_KissCollectReporter()]))
+    # Collection must not reuse timestamp-based bytecode after a same-size edit.
+    with tempfile.TemporaryDirectory(prefix="kiss-collect-") as cache:
+        sys.pycache_prefix = cache
+        sys.dont_write_bytecode = True
+        raise SystemExit(pytest.main(args, plugins=[_KissCollectReporter()]))
 
 import pytest
 
@@ -174,11 +193,20 @@ fn collect_subprocess(
         })?;
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    let parsed = parse_collect_payload(&stdout)?;
-    if !output.status.success()
-        && parsed.nodeids.is_empty()
-        && !is_empty_collection_success(output.status.code(), &parsed)
-    {
+    let parsed = match parse_collect_payload(&stdout) {
+        Ok(parsed) => parsed,
+        Err(err) => {
+            if !output.status.success() {
+                return Err(PytestCollectError::CollectionFailed {
+                    exit_code: output.status.code(),
+                    stderr,
+                    stdout,
+                });
+            }
+            return Err(err);
+        }
+    };
+    if !output.status.success() && !is_empty_collection_success(output.status.code(), &parsed) {
         return Err(PytestCollectError::CollectionFailed {
             exit_code: output.status.code(),
             stderr,
@@ -291,7 +319,7 @@ pub(crate) fn normalize_nodeid(
     nodeid: &str,
     repo_root: &Path,
 ) -> Result<String, PytestCollectError> {
-    let Some((file_part, rest)) = nodeid.split_once("::") else {
+    let (file_part, Some(rest)) = crate::discovery::split_selector(nodeid) else {
         return Err(PytestCollectError::NodeidNormalization {
             nodeid: nodeid.to_string(),
             message: "pytest nodeid must contain '::'".to_string(),
@@ -325,7 +353,7 @@ fn posix_path(path: &Path) -> String {
 }
 
 #[cfg(test)]
-mod coverage_witness {
+mod touch_witness {
     use super::*;
     use std::collections::BTreeMap;
     use std::fs;
@@ -368,8 +396,7 @@ mod coverage_witness {
         );
     }
 
-    #[test]
-    fn witness_collect_subprocess_paths() {
+    fn collect_fixture() -> (tempfile::TempDir, PathBuf, PathBuf) {
         let tmp = tempfile::tempdir().unwrap();
         let tests = tmp.path().join("tests");
         fs::create_dir_all(&tests).unwrap();
@@ -380,9 +407,15 @@ mod coverage_witness {
         .unwrap();
         let python =
             PathBuf::from(std::env::var("PYTHON").unwrap_or_else(|_| "python3".to_string()));
+        (tmp, tests, python)
+    }
+
+    #[test]
+    fn witness_collect_subprocess_paths() {
+        let (tmp, tests, python) = collect_fixture();
         let request = PytestCollectRequest {
             cwd: tmp.path().to_path_buf(),
-            python: python.clone(),
+            python,
             paths: vec![tests.join("test_ok.py")],
             pytest_args: vec!["-q".into()],
             env: BTreeMap::from([("KISS_COLLECT_ENV".into(), "1".into())]),
@@ -392,17 +425,28 @@ mod coverage_witness {
             success.nodeids,
             vec!["tests/test_ok.py::test_ok".to_string()]
         );
+    }
 
+    #[test]
+    fn witness_collect_subprocess_full_suite() {
+        let (tmp, _tests, python) = collect_fixture();
         let full_suite = collect_subprocess(PytestCollectRequest {
             cwd: tmp.path().to_path_buf(),
-            python: python.clone(),
+            python,
             paths: Vec::new(),
             pytest_args: Vec::new(),
             env: BTreeMap::new(),
         })
         .unwrap();
-        assert_eq!(full_suite.nodeids, success.nodeids);
+        assert_eq!(
+            full_suite.nodeids,
+            vec!["tests/test_ok.py::test_ok".to_string()]
+        );
+    }
 
+    #[test]
+    fn witness_collect_subprocess_import_error() {
+        let (tmp, tests, python) = collect_fixture();
         fs::write(
             tests.join("test_bad.py"),
             "import missing_module\n\ndef test_bad():\n    pass\n",
@@ -420,5 +464,31 @@ mod coverage_witness {
             failure,
             PytestCollectError::CollectionFailed { .. }
         ));
+    }
+
+    #[test]
+    fn witness_collect_subprocess_syntax_error_keeps_sibling_failure() {
+        let (tmp, tests, python) = collect_fixture();
+        fs::write(tests.join("test_bad.py"), "def test_bad(:\n    pass\n").unwrap();
+        let failure = collect_subprocess(PytestCollectRequest {
+            cwd: tmp.path().to_path_buf(),
+            python,
+            paths: Vec::new(),
+            pytest_args: Vec::new(),
+            env: BTreeMap::new(),
+        })
+        .unwrap_err();
+        match failure {
+            PytestCollectError::CollectionFailed {
+                exit_code, stdout, ..
+            } => {
+                assert_eq!(exit_code, Some(2));
+                assert!(
+                    stdout.contains("SyntaxError"),
+                    "partial collection must keep the syntax error:\n{stdout}"
+                );
+            }
+            other => panic!("expected CollectionFailed, got {other:?}"),
+        }
     }
 }

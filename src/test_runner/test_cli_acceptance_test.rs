@@ -25,7 +25,6 @@ fn kiss_test_dot_dry_run_smoke() {
                 config.to_str().unwrap(),
                 "test",
                 ".",
-                "--dry-run",
                 "--lang",
                 "rust",
             ])
@@ -102,15 +101,10 @@ fn parse_rejects_framework_args_without_dashdash_as_mixed_reserved() {
 }
 
 #[test]
-fn clap_keeps_trailing_extra_after_dashdash() {
-    let cli = Cli::parse_from(["kiss", "test", ".", "--", "-q"]);
-    match cli.command {
-        Commands::Test {
-            operands, extra, ..
-        } => {
-            assert_eq!(operands, vec![".".to_string()]);
-            assert_eq!(extra, vec!["-q".to_string()]);
-        }
-        _ => panic!("expected Test"),
-    }
+fn clap_keeps_trailing_operand_after_dashdash_for_dispatch_to_reject() {
+    let cli = Cli::try_parse_from(["kiss", "test", ".", "--", "-q"]).expect("clap accepts --");
+    let Commands::Test { operands, .. } = cli.command else {
+        panic!("expected test command");
+    };
+    assert!(operands.iter().any(|operand| operand == "-q"));
 }

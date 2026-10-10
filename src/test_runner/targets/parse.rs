@@ -16,7 +16,9 @@ pub(crate) fn parse_test_target(raw: &str) -> Result<ParsedTestTarget, String> {
     if raw.is_empty() {
         return Err("target must be non-empty".to_string());
     }
-    if let Some((path_part, symbol_part)) = raw.split_once("::") {
+    let raw = crate::test_runner::target_request::colon_to_nodeid(raw);
+    let (path_part, symbol_part) = kiss::split_selector(&raw);
+    if let Some(symbol_part) = symbol_part {
         if path_part.is_empty() || symbol_part.is_empty() {
             return Err("target path and symbol must both be non-empty".to_string());
         }
@@ -24,11 +26,11 @@ pub(crate) fn parse_test_target(raw: &str) -> Result<ParsedTestTarget, String> {
         let language = detect_test_target_language(&path)?;
         if language == Language::Python && is_python_nodeid_tail(symbol_part) {
             return Ok(ParsedTestTarget {
-                raw: raw.to_string(),
+                raw: raw.clone(),
                 path,
                 symbol: None,
                 member: None,
-                python_nodeid: Some(raw.to_string()),
+                python_nodeid: Some(raw),
                 language,
             });
         }
@@ -37,7 +39,7 @@ pub(crate) fn parse_test_target(raw: &str) -> Result<ParsedTestTarget, String> {
         }
         let (symbol, member) = parse_symbol_shape(symbol_part, language)?;
         Ok(ParsedTestTarget {
-            raw: raw.to_string(),
+            raw,
             path,
             symbol: Some(symbol),
             member,
@@ -45,10 +47,10 @@ pub(crate) fn parse_test_target(raw: &str) -> Result<ParsedTestTarget, String> {
             language,
         })
     } else {
-        let path = PathBuf::from(raw);
+        let path = PathBuf::from(&raw);
         let language = detect_test_target_language(&path)?;
         Ok(ParsedTestTarget {
-            raw: raw.to_string(),
+            raw,
             path,
             symbol: None,
             member: None,
@@ -59,11 +61,8 @@ pub(crate) fn parse_test_target(raw: &str) -> Result<ParsedTestTarget, String> {
 }
 
 fn detect_test_target_language(path: &Path) -> Result<Language, String> {
-    match path.extension().and_then(|ext| ext.to_str()) {
-        Some(ext) if ext.eq_ignore_ascii_case("py") => Ok(Language::Python),
-        Some(ext) if ext.eq_ignore_ascii_case("rs") => Ok(Language::Rust),
-        _ => Err("target path must end in .py or .rs".to_string()),
-    }
+    Language::from_path_extension(path)
+        .ok_or_else(|| "target path must end in .py or .rs".to_string())
 }
 
 fn is_python_nodeid_tail(symbol_part: &str) -> bool {

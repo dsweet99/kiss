@@ -64,10 +64,23 @@ pub(crate) fn store_python_file_nodeids(
 
 pub(crate) fn repo_relative(repo_root: &Path, abs: &Path) -> Option<String> {
     let root = repo_root.canonicalize().ok()?;
-    let abs = abs.canonicalize().ok()?;
+    let abs = logical_file_path(abs)?;
     abs.strip_prefix(&root)
         .ok()
         .map(|p| p.to_string_lossy().replace('\\', "/"))
+}
+
+fn logical_file_path(path: &Path) -> Option<PathBuf> {
+    let meta = path.symlink_metadata().ok()?;
+    if meta.file_type().is_symlink() {
+        let name = path.file_name()?;
+        let parent = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .unwrap_or(Path::new("."));
+        return Some(parent.canonicalize().ok()?.join(name));
+    }
+    path.canonicalize().ok()
 }
 
 fn content_fingerprint(path: &Path) -> Option<String> {
@@ -86,7 +99,7 @@ fn content_fingerprint(path: &Path) -> Option<String> {
 }
 
 fn cache_path(repo_root: &Path) -> PathBuf {
-    repo_root.join(".kiss").join(CACHE_FILE)
+    crate::test_runner::test_state_dir(repo_root).join(CACHE_FILE)
 }
 
 fn read_cache(repo_root: &Path) -> Option<FileNodeidCache> {
@@ -96,7 +109,7 @@ fn read_cache(repo_root: &Path) -> Option<FileNodeidCache> {
 }
 
 fn write_cache(repo_root: &Path, cache: &FileNodeidCache) -> bool {
-    let dir = repo_root.join(".kiss");
+    let dir = crate::test_runner::test_state_dir(repo_root);
     if fs::create_dir_all(&dir).is_err() {
         return false;
     }

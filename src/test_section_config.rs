@@ -1,6 +1,7 @@
 use crate::config::ConfigError;
 use crate::test_cache_policy::TestCachePolicy;
 use std::path::Path;
+use std::sync::Mutex;
 
 #[derive(Debug, Clone)]
 pub struct TestSectionConfig {
@@ -8,9 +9,8 @@ pub struct TestSectionConfig {
     pub num_jobs: usize,
     pub num_jobs_pytest: usize,
     pub num_jobs_pytest_explicit: Option<usize>,
-    pub num_jobs_llvm_cov: usize,
-    pub num_jobs_llvm_cov_explicit: Option<usize>,
-    pub watch_settle_seconds: f64,
+    pub num_jobs_nextest: usize,
+    pub num_jobs_nextest_explicit: Option<usize>,
     pub pytest_plugins: Vec<String>,
     pub ignore: Vec<String>,
     pub cache_policy: TestCachePolicy,
@@ -23,9 +23,8 @@ impl Default for TestSectionConfig {
             num_jobs: crate::defaults::gate::NUM_JOBS,
             num_jobs_pytest: crate::defaults::gate::NUM_JOBS_PYTEST,
             num_jobs_pytest_explicit: None,
-            num_jobs_llvm_cov: crate::defaults::gate::NUM_JOBS_LLVM_COV,
-            num_jobs_llvm_cov_explicit: None,
-            watch_settle_seconds: crate::defaults::gate::WATCH_SETTLE_SECONDS,
+            num_jobs_nextest: crate::defaults::gate::NUM_JOBS_NEXTEST,
+            num_jobs_nextest_explicit: None,
             pytest_plugins: Vec::new(),
             ignore: Vec::new(),
             cache_policy: TestCachePolicy::default(),
@@ -65,6 +64,11 @@ impl TestSectionConfig {
     }
 
     #[must_use]
+    pub fn command_jobs(&self) -> usize {
+        self.num_jobs.max(1)
+    }
+
+    #[must_use]
     pub fn merged_ignore(&self, cli_ignore: &[String]) -> Vec<String> {
         let mut ignore = self.ignore.clone();
         ignore.extend(cli_ignore.iter().cloned());
@@ -75,10 +79,7 @@ impl TestSectionConfig {
         let mut c = Self::default();
         let path = crate::config::active_kissconfig_path();
         if let Ok(s) = std::fs::read_to_string(&path) {
-            c.merge_from_toml(&s, path.parent());
-        }
-        if let Some(root) = path.parent() {
-            crate::test_cache_policy::merge_language_adapters(root, &mut c.cache_policy);
+            merge_from_toml(&mut c, &s, path.parent());
         }
         c
     }
@@ -89,16 +90,13 @@ impl TestSectionConfig {
         if let Ok(s) = std::fs::read_to_string(&path) {
             c.try_merge_from_toml(&s, path.parent())?;
         }
-        if let Some(root) = path.parent() {
-            crate::test_cache_policy::merge_language_adapters(root, &mut c.cache_policy);
-        }
         Ok(c)
     }
 
     pub fn load_from(path: &Path) -> Self {
         let mut c = Self::load();
         if let Ok(s) = std::fs::read_to_string(path) {
-            c.merge_from_toml(&s, path.parent());
+            merge_from_toml(&mut c, &s, path.parent());
         }
         c
     }
@@ -126,16 +124,6 @@ impl TestSectionConfig {
         Ok(c)
     }
 
-    fn merge_from_toml(&mut self, toml_str: &str, repo_root: Option<&Path>) {
-        let Ok(value) = toml_str.parse::<toml::Table>() else {
-            return;
-        };
-        let Some(t) = value.get("test").and_then(|v| v.as_table()) else {
-            return;
-        };
-        crate::test_toml::merge_test_table_lenient(t, None, Some(self), repo_root);
-    }
-
     fn try_merge_from_toml(
         &mut self,
         toml_str: &str,
@@ -146,11 +134,36 @@ impl TestSectionConfig {
             .map_err(|e| ConfigError::ParseError {
                 message: e.to_string(),
             })?;
-        let Some(t) = value.get("test").and_then(|v| v.as_table()) else {
-            return Ok(());
-        };
-        crate::test_toml::merge_test_table_strict(t, None, Some(self), repo_root)
+        if let Some(t) = value.get("test").and_then(|v| v.as_table()) {
+            crate::test_toml::merge_test_table_strict(t, None, Some(self), repo_root)?;
+        }
+        crate::test_toml::apply_language_job_keys_strict(self, &value)
     }
+}
+
+fn merge_from_toml(config: &mut TestSectionConfig, toml_str: &str, repo_root: Option<&Path>) {
+    let Some(value) = parse_table_memoized(toml_str) else {
+        return;
+    };
+    if let Some(t) = value.get("test").and_then(|v| v.as_table()) {
+        crate::test_toml::merge_test_table_lenient(t, None, Some(config), repo_root);
+    }
+    crate::test_toml::apply_language_job_keys_lenient(config, &value);
+}
+
+fn parse_table_memoized(toml_str: &str) -> Option<toml::Table> {
+    static LAST: Mutex<Option<(String, toml::Table)>> = Mutex::new(None);
+    if let Ok(last) = LAST.lock()
+        && let Some((text, table)) = last.as_ref()
+        && text == toml_str
+    {
+        return Some(table.clone());
+    }
+    let table = toml_str.parse::<toml::Table>().ok()?;
+    if let Ok(mut last) = LAST.lock() {
+        *last = Some((toml_str.to_string(), table.clone()));
+    }
+    Some(table)
 }
 
 #[cfg(test)]

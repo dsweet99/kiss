@@ -1,31 +1,76 @@
 use crate::bin_cli::mimic::run_mimic;
 use crate::bin_cli::util::merge_check_ignore_prefixes;
-use kiss::config_gen::generate_gate_stub_toml;
+use kiss::config_gen::{
+    collect_lang_from_paths, generate_gate_stub_toml, raise_measured_thresholds,
+    with_default_language_sections,
+};
 use kiss::{
-    Config, ConfigLanguage, GateConfig, LanguageTablesPresent, gather_files_by_lang,
+    Config, GateConfig, Language, LanguageTablesPresent, gather_files_by_lang,
     kissconfig_path_from_cwd,
 };
 use std::path::{Path, PathBuf};
+
+const KISSCONFIG_DEFAULT: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/kissconfig-default"));
 
 pub fn ensure_default_config_exists() {
     ensure_default_config_from(&[".".to_string()], &[]);
 }
 
+pub fn ensure_check_config_from(paths: &[String], ignore: &[String]) {
+    let local_config = kiss::kissconfig_path_from_cwd();
+    if local_config.exists() {
+        return;
+    }
+    write_config_text(&local_config, KISSCONFIG_DEFAULT);
+    let roots = config_roots(paths);
+    let collect_ignore = ignore_for_collect(&local_config, ignore);
+    let Ok((py, rs)) = collect_lang_from_paths(&roots, None, &collect_ignore) else {
+        return;
+    };
+    let Ok(text) = std::fs::read_to_string(&local_config) else {
+        return;
+    };
+    let raised = raise_measured_thresholds(&text, &py, &rs);
+    if raised != text {
+        write_config_text(&local_config, &raised);
+    }
+}
+
 pub fn ensure_default_config_from(paths: &[String], ignore: &[String]) {
-    let local_config = Path::new(".kissconfig");
+    let local_config = kiss::kissconfig_path_from_cwd();
     let roots = config_roots(paths);
     if !local_config.exists() {
-        write_gate_stub(local_config, ignore);
-    } else if !is_kiss_gate_config(local_config) {
+        write_gate_stub(&local_config, ignore);
+    } else if !is_kiss_gate_config(&local_config) {
         return;
     }
-    let collect_ignore = ignore_for_collect(local_config, ignore);
-    if !needs_language_tables(local_config, &roots, &collect_ignore) {
+    let collect_ignore = ignore_for_collect(&local_config, ignore);
+    if !needs_language_tables(&local_config, &roots, &collect_ignore) {
         return;
     }
-    let code = run_mimic(&roots, Some(local_config), None, &collect_ignore);
+    if has_production_source(&roots, &collect_ignore) == Some(false) {
+        fill_language_tables_for_tests_only(&local_config);
+        return;
+    }
+    let code = run_mimic(&roots, Some(&local_config), None, &collect_ignore);
     if code != 0 {
         std::process::exit(code);
+    }
+}
+
+fn has_production_source(roots: &[String], ignore: &[String]) -> Option<bool> {
+    let (py, rs) = collect_lang_from_paths(roots, None, ignore).ok()?;
+    Some(py.file_count + rs.file_count > 0)
+}
+
+fn fill_language_tables_for_tests_only(path: &Path) {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return;
+    };
+    let filled = with_default_language_sections(&text);
+    if filled != text {
+        write_config_text(path, &filled);
     }
 }
 
@@ -38,8 +83,11 @@ fn config_roots(paths: &[String]) -> Vec<String> {
 }
 
 fn write_gate_stub(path: &Path, cli_ignore: &[String]) {
-    let stub = generate_gate_stub_toml(cli_ignore);
-    if let Err(err) = std::fs::write(path, stub) {
+    write_config_text(path, &generate_gate_stub_toml(cli_ignore));
+}
+
+fn write_config_text(path: &Path, text: &str) {
+    if let Err(err) = std::fs::write(path, text) {
         eprintln!("Error writing to {}: {err}", path.display());
         std::process::exit(1);
     }
@@ -66,7 +114,7 @@ fn ignore_for_collect(config_path: &Path, cli_ignore: &[String]) -> Vec<String> 
 
 fn needs_language_tables(config_path: &Path, roots: &[String], ignore: &[String]) -> bool {
     let tables = LanguageTablesPresent::from_path(config_path);
-    if tables.python && tables.rust {
+    if tables.all_present() {
         return false;
     }
     let (py_files, rs_files) = gather_files_by_lang(roots, None, ignore);
@@ -91,25 +139,32 @@ pub fn load_test_section_config(
     }
 }
 
-pub fn load_gate_config(config_path: Option<&PathBuf>) -> GateConfig {
-    if let Some(path) = config_path {
-        GateConfig::load_from(path)
-    } else {
-        GateConfig::load()
+pub fn load_gate_config(config_path: Option<&PathBuf>) -> Result<GateConfig, kiss::ConfigError> {
+    let path = match config_path {
+        Some(path) => path.clone(),
+        None => kissconfig_path_from_cwd(),
+    };
+    if !path.exists() {
+        return Ok(GateConfig::default());
     }
+    GateConfig::try_load_from(&path)
 }
 
-pub fn load_configs(config_path: Option<&PathBuf>) -> (Config, Config) {
+pub fn load_configs(config_path: Option<&PathBuf>) -> Result<(Config, Config), kiss::ConfigError> {
     let Some(path) = config_path else {
-        return (
-            Config::load_for_language(ConfigLanguage::Python),
-            Config::load_for_language(ConfigLanguage::Rust),
-        );
+        return Ok((
+            Config::try_load_for_language(Language::Python)?,
+            Config::try_load_for_language(Language::Rust)?,
+        ));
     };
-    (
-        Config::load_from_for_language(path, ConfigLanguage::Python),
-        Config::load_from_for_language(path, ConfigLanguage::Rust),
-    )
+    if !path.exists() {
+        eprintln!("Warning: Could not read config file: {}", path.display());
+        return Ok((Config::python_defaults(), Config::rust_defaults()));
+    }
+    Ok((
+        Config::try_load_from(path, Language::Python)?,
+        Config::try_load_from(path, Language::Rust)?,
+    ))
 }
 
 pub fn config_provenance(config: Option<&Path>) -> String {
@@ -197,10 +252,6 @@ mod tests {
 {created}"#,
         );
         assert!(
-            created.contains("test_coverage_threshold = 0"),
-            "created .kissconfig must set test_coverage_threshold = 0:\n{created}"
-        );
-        assert!(
             created.contains("\"*\" = 99999"),
             "created .kissconfig must set max_unit_test_seconds catch-all to 99999:\n{created}"
         );
@@ -213,8 +264,14 @@ mod tests {
             "created .kissconfig must set num_jobs_pytest = 16:\n{created}"
         );
         assert!(
-            created.contains("num_jobs_llvm_cov = 4"),
-            "created .kissconfig must set num_jobs_llvm_cov = 4:\n{created}"
+            created.contains("num_jobs_nextest = 4"),
+            "created .kissconfig must set num_jobs_nextest = 4:\n{created}"
+        );
+        let before_python = created.split("[python]").next().unwrap_or(&created);
+        assert!(
+            !before_python.contains("num_jobs_pytest")
+                && !before_python.contains("num_jobs_nextest"),
+            "language job caps must not stay under [test]:\n{created}"
         );
         assert!(
             created.contains("pytest_plugins = []"),
@@ -226,6 +283,130 @@ mod tests {
         );
 
         std::env::set_current_dir(orig_dir).unwrap();
+    }
+
+    #[test]
+    fn check_missing_config_writes_default_then_raises_exceeded_threshold() {
+        let _cwd_guard = crate::cwd_test_lock::lock();
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(
+            tmp.path().join("wide.py"),
+            "def f(a, b, c, d, e, f):\n    return a\n",
+        )
+        .unwrap();
+        let orig_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+        ensure_check_config_from(&[".".to_string()], &[]);
+        let created = std::fs::read_to_string(".kissconfig").unwrap();
+        std::env::set_current_dir(orig_dir).unwrap();
+        assert!(
+            created.contains("duplication_enabled = true"),
+            "must start from kissconfig-default:\n{created}"
+        );
+        assert!(
+            created.contains("docs_allowed = []"),
+            "docs_allowed must stay empty:\n{created}"
+        );
+        assert!(
+            created.contains("num_jobs_pytest = 4"),
+            "pytest jobs must stay at the default:\n{created}"
+        );
+        assert!(
+            created.contains("\"*\" = 3"),
+            "unit-test catch-all must stay at 3:\n{created}"
+        );
+        assert!(
+            created.contains("positional_args = 6"),
+            "exceeded positional_args must be raised:\n{created}"
+        );
+        assert!(
+            created.contains("arguments = 4"),
+            "rust arguments must stay when no rust file exceeds them:\n{created}"
+        );
+        assert!(
+            created.contains("[rust]"),
+            "default rust section must be kept:\n{created}"
+        );
+    }
+
+    #[test]
+    fn check_does_not_alter_existing_kissconfig() {
+        let _cwd_guard = crate::cwd_test_lock::lock();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let original = "\
+[global]
+duplication_enabled = false
+
+[test]
+ignore = [\"vendor\"]
+";
+        std::fs::write(tmp.path().join(".kissconfig"), original).unwrap();
+        std::fs::write(
+            tmp.path().join("wide.py"),
+            "def f(a, b, c, d, e, f):\n    return a\n",
+        )
+        .unwrap();
+        let orig_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+        ensure_check_config_from(&[".".to_string()], &[]);
+        let kept = std::fs::read_to_string(".kissconfig").unwrap();
+        std::env::set_current_dir(orig_dir).unwrap();
+        assert_eq!(kept, original);
+    }
+
+    #[test]
+    fn check_missing_config_keeps_default_bytes_when_code_fits() {
+        let _cwd_guard = crate::cwd_test_lock::lock();
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("tiny.py"), "def foo():\n    return 1\n").unwrap();
+        let orig_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+        ensure_check_config_from(&[".".to_string()], &[]);
+        let created = std::fs::read_to_string(".kissconfig").unwrap();
+        std::env::set_current_dir(orig_dir).unwrap();
+        assert_eq!(created, KISSCONFIG_DEFAULT);
+    }
+
+    #[test]
+    fn ensure_default_config_from_test_only_repo_adds_language_tables() {
+        let _cwd_guard = crate::cwd_test_lock::lock();
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(
+            tmp.path().join("test_only.py"),
+            "def test_only():\n    assert True\n",
+        )
+        .unwrap();
+        std::fs::write(
+            tmp.path().join(".kissconfig"),
+            "[test]\norphan_detection = true\nmax_num_tests = 100\n",
+        )
+        .unwrap();
+        let orig_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+        ensure_default_config_from(&[".".to_string()], &[]);
+        let created = std::fs::read_to_string(".kissconfig").unwrap();
+        std::env::set_current_dir(orig_dir).unwrap();
+        assert!(
+            created.contains("[python]") && created.contains("[rust]"),
+            "test-only repo must gain language tables:\n{created}"
+        );
+        assert!(
+            created.contains("orphan_detection = true"),
+            "existing orphan_detection must survive config fill:\n{created}"
+        );
+        let test_section = created.split("[python]").next().unwrap_or(&created);
+        assert!(
+            !test_section.contains("max_num_tests"),
+            "retired [test] max_num_tests must not survive config fill:\n{created}"
+        );
+        assert!(
+            created.contains("[python]\nmax_num_tests = 1000\n"),
+            "filled python section must carry its own cap:\n{created}"
+        );
+        assert!(
+            created.contains("[rust]\nmax_num_tests = 2000\n"),
+            "filled rust section must carry its own cap:\n{created}"
+        );
     }
 
     #[test]
@@ -248,7 +429,6 @@ docs_allowed = [\"./\" ]
 
 [test]
 orphan_detection = false
-test_coverage_threshold = 0
 ignore = [\"vendor\"]
 ",
         )
@@ -314,9 +494,25 @@ ignore = [\"vendor\"]
         std::fs::write(&custom, "[python]\nstatements_per_function = 42\n").unwrap();
         let orig_dir = std::env::current_dir().unwrap();
         std::env::set_current_dir(tmp.path()).unwrap();
-        let (py, _) = load_configs(Some(&custom));
+        let (py, _) = load_configs(Some(&custom)).unwrap();
         std::env::set_current_dir(orig_dir).unwrap();
         assert_eq!(py.statements_per_function, 42);
+    }
+
+    #[test]
+    fn load_configs_rejects_an_unknown_section() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let custom = tmp.path().join("custom.toml");
+        std::fs::write(
+            &custom,
+            "bogus = 1\n\n[python]\nstatements_per_function = 1\n",
+        )
+        .unwrap();
+        let message = load_configs(Some(&custom)).unwrap_err().to_string();
+        assert!(
+            message.contains("Unknown config section") && message.contains("bogus"),
+            "{message}"
+        );
     }
 
     #[test]
@@ -325,16 +521,38 @@ ignore = [\"vendor\"]
         let tmp = tempfile::TempDir::new().unwrap();
         std::fs::write(
             tmp.path().join(".kissconfig"),
-            "[test]\ntest_coverage_threshold = 11\n",
+            "[python]\nmax_num_tests = 11\n[rust]\nmax_num_tests = 13\n",
         )
         .unwrap();
         let custom = tmp.path().join("custom.toml");
-        std::fs::write(&custom, "[test]\ntest_coverage_threshold = 22\n").unwrap();
+        std::fs::write(
+            &custom,
+            "[python]\nmax_num_tests = 22\n[rust]\nmax_num_tests = 24\n",
+        )
+        .unwrap();
         let orig_dir = std::env::current_dir().unwrap();
         std::env::set_current_dir(tmp.path()).unwrap();
-        let gate = load_gate_config(Some(&custom));
+        let gate = load_gate_config(Some(&custom)).unwrap();
         std::env::set_current_dir(orig_dir).unwrap();
-        assert_eq!(gate.test_coverage_threshold, 22);
+        assert_eq!(gate.max_num_tests_python, 22);
+        assert_eq!(gate.max_num_tests_rust, 24);
+    }
+
+    #[test]
+    fn load_gate_config_rejects_a_bad_time_limit_once() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let custom = tmp.path().join("custom.toml");
+        std::fs::write(
+            &custom,
+            "[test]\nmax_unit_test_seconds = [{path = \"*\", seconds = 2.0}]\n",
+        )
+        .unwrap();
+        let err = load_gate_config(Some(&custom)).unwrap_err();
+        let message = err.to_string();
+        assert!(
+            message.contains("max_unit_test_seconds") && message.contains("[pattern, seconds]"),
+            "{message}"
+        );
     }
 
     #[test]
@@ -354,5 +572,26 @@ ignore = [\"vendor\"]
             missing_text.contains("absent.toml") && missing_text.contains("not found"),
             "{missing_text}"
         );
+    }
+
+    #[test]
+    fn ensure_default_config_from_subdir_keeps_repo_root_config() {
+        let _cwd_guard = crate::cwd_test_lock::lock();
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(tmp.path().join(".git")).unwrap();
+        let root_config = "[python]\nmax_num_tests = 3\n[rust]\nmax_num_tests = 4\n";
+        std::fs::write(tmp.path().join(".kissconfig"), root_config).unwrap();
+        let nested = tmp.path().join("pkg");
+        std::fs::create_dir_all(&nested).unwrap();
+        let orig_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&nested).unwrap();
+        ensure_default_config_exists();
+        std::env::set_current_dir(orig_dir).unwrap();
+        assert!(
+            !nested.join(".kissconfig").exists(),
+            "a subdirectory kiss command must not create its own .kissconfig"
+        );
+        let kept = std::fs::read_to_string(tmp.path().join(".kissconfig")).unwrap();
+        assert_eq!(kept, root_config);
     }
 }

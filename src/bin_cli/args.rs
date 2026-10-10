@@ -10,7 +10,7 @@ const AFTER_HELP: &str = "\
 Examples:
   kiss check .                    Run static analysis; write .kissconfig if missing
   kiss check . src/module/        Check one module against the full codebase
-  kiss test                       Run tests and enforce runtime coverage
+  kiss test                       Run tests and enforce test gates
   kiss check --lang rust src/     Analyze only Rust files in src/
   kiss viz graph.md               Write a Mermaid dependency graph
 ";
@@ -81,19 +81,12 @@ fn is_dot_all_operand(operand: &str) -> bool {
     matches!(operand, "." | "./")
 }
 
-fn path_has_source_ext(path_part: &str) -> bool {
-    std::path::Path::new(path_part)
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("py") || ext.eq_ignore_ascii_case("rs"))
-}
-
 pub fn parse_test_invocation(operands: &[String]) -> Result<TestInvocation, String> {
     if operands.is_empty() {
         return Ok(TestInvocation::All);
     }
     let first = &operands[0];
-    reject_legacy_all_operand(operands)?;
+    reject_all_operand(operands)?;
     if let Some(reserved) = parse_reserved_action(first, operands.len())? {
         return Ok(reserved);
     }
@@ -103,11 +96,21 @@ pub fn parse_test_invocation(operands: &[String]) -> Result<TestInvocation, Stri
     parse_path_or_directory_targets(operands, first)
 }
 
-fn reject_legacy_all_operand(operands: &[String]) -> Result<(), String> {
+fn reject_all_operand(operands: &[String]) -> Result<(), String> {
     if operands.iter().any(|operand| operand == "all") {
         Err("unknown test target 'all'. Use `kiss test .` instead of `kiss test all`.".to_string())
     } else {
         Ok(())
+    }
+}
+
+fn dot_operand_is_repo_root() -> bool {
+    let Ok(cwd) = std::env::current_dir() else {
+        return true;
+    };
+    match crate::test_git::git_repo_root(&cwd) {
+        Ok(root) => cwd.canonicalize().ok().as_deref() == Some(root.as_path()),
+        Err(_) => true,
     }
 }
 
@@ -116,7 +119,10 @@ fn try_parse_dot_all(operands: &[String], first: &str) -> Result<Option<TestInvo
         if operands.len() > 1 {
             return Err("`.` cannot be mixed with additional targets".to_string());
         }
-        return Ok(Some(TestInvocation::All));
+        if dot_operand_is_repo_root() {
+            return Ok(Some(TestInvocation::All));
+        }
+        return Ok(Some(TestInvocation::Targets(vec![first.to_string()])));
     }
     if operands.iter().any(|operand| is_dot_all_operand(operand)) {
         return Err("`.` cannot be mixed with additional targets".to_string());
@@ -130,7 +136,7 @@ fn parse_path_or_directory_targets(
 ) -> Result<TestInvocation, String> {
     if matches!(first, "cov" | "validate-selection") {
         return Err(format!(
-            "unknown test target '{first}'. Use {TEST_OPERAND_HINT}. Coverage is enforced by `kiss test`."
+            "unknown test target '{first}'. Use {TEST_OPERAND_HINT}."
         ));
     }
     if let Some(operand) = operands
@@ -141,24 +147,25 @@ fn parse_path_or_directory_targets(
             "reserved action '{operand}' cannot be mixed with PATH / PATH::symbol targets"
         ));
     }
-    for operand in operands {
+    let operands: Vec<String> = operands
+        .iter()
+        .map(|raw| crate::test_runner::target_request::colon_to_nodeid(raw))
+        .collect();
+    for operand in &operands {
         validate_target_operand_shape(operand)?;
     }
-    Ok(TestInvocation::Targets(operands.to_vec()))
+    Ok(TestInvocation::Targets(operands))
 }
 
 fn validate_target_operand_shape(raw: &str) -> Result<(), String> {
-    let (path_part, symbol) = match raw.split_once("::") {
-        Some((path, symbol)) => (path, Some(symbol)),
-        None => (raw, None),
-    };
+    let (path_part, symbol) = kiss::split_selector(raw);
     if path_part.is_empty() {
         return Err(format!(
             "unknown test target '{raw}'. Use {TEST_OPERAND_HINT}."
         ));
     }
     if let Some(symbol) = symbol {
-        if !path_has_source_ext(path_part) {
+        if Language::from_path_extension(std::path::Path::new(path_part)).is_none() {
             return Err(format!(
                 "unknown test target '{raw}'. PATH::symbol requires a .py or .rs path."
             ));
@@ -221,4 +228,4 @@ pub fn validate_test_branch_options(
 
 #[cfg(test)]
 #[path = "args_test.rs"]
-mod coverage_witness;
+mod touch_witness;

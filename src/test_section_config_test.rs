@@ -73,7 +73,7 @@ fn test_section_config_reads_positive_num_jobs_pytest() {
     let cwd = tempfile::TempDir::new().unwrap();
     let _cwd_guard = CwdGuard::enter(cwd.path());
     let tmp = tempfile::NamedTempFile::new().unwrap();
-    std::fs::write(tmp.path(), "[test]\nnum_jobs_pytest = 5\n").unwrap();
+    std::fs::write(tmp.path(), "[python]\nnum_jobs_pytest = 5\n").unwrap();
     let cfg = TestSectionConfig::try_load_from(tmp.path()).unwrap();
     assert_eq!(cfg.num_jobs_pytest, 5);
     assert_eq!(cfg.num_jobs_pytest_explicit, Some(5));
@@ -96,40 +96,88 @@ fn test_section_config_python_parallel_cap_uses_explicit_pytest() {
     let cwd = tempfile::TempDir::new().unwrap();
     let _cwd_guard = CwdGuard::enter(cwd.path());
     let tmp = tempfile::NamedTempFile::new().unwrap();
-    std::fs::write(tmp.path(), "[test]\nnum_jobs = 32\nnum_jobs_pytest = 8\n").unwrap();
+    std::fs::write(
+        tmp.path(),
+        "[test]\nnum_jobs = 32\n[python]\nnum_jobs_pytest = 8\n",
+    )
+    .unwrap();
     let cfg = TestSectionConfig::try_load_from(tmp.path()).unwrap();
     assert_eq!(cfg.python_parallel_cap(), 8);
+    assert_eq!(cfg.command_jobs(), 32);
 }
 
 #[test]
-fn test_section_config_defaults_num_jobs_llvm_cov_to_four() {
+fn test_section_config_command_jobs_stays_at_num_jobs_when_pytest_is_higher() {
+    let cwd = tempfile::TempDir::new().unwrap();
+    let _cwd_guard = CwdGuard::enter(cwd.path());
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(
+        tmp.path(),
+        "[test]\nnum_jobs = 4\n[python]\nnum_jobs_pytest = 16\n",
+    )
+    .unwrap();
+    let cfg = TestSectionConfig::try_load_from(tmp.path()).unwrap();
+    assert_eq!(cfg.command_jobs(), 4);
+    assert_eq!(cfg.python_parallel_cap(), 16);
+}
+
+#[test]
+fn test_section_config_defaults_num_jobs_nextest_to_four() {
     assert_eq!(
-        TestSectionConfig::default().num_jobs_llvm_cov,
-        crate::defaults::gate::NUM_JOBS_LLVM_COV
+        TestSectionConfig::default().num_jobs_nextest,
+        crate::defaults::gate::NUM_JOBS_NEXTEST
     );
 }
 
 #[test]
-fn test_section_config_reads_positive_num_jobs_llvm_cov() {
+fn test_section_config_reads_positive_num_jobs_nextest() {
     let cwd = tempfile::TempDir::new().unwrap();
     let _cwd_guard = CwdGuard::enter(cwd.path());
     let tmp = tempfile::NamedTempFile::new().unwrap();
-    std::fs::write(tmp.path(), "[test]\nnum_jobs_llvm_cov = 3\n").unwrap();
+    std::fs::write(tmp.path(), "[rust]\nnum_jobs_nextest = 3\n").unwrap();
     assert_eq!(
         TestSectionConfig::try_load_from(tmp.path())
             .unwrap()
-            .num_jobs_llvm_cov,
+            .num_jobs_nextest,
         3
     );
 }
 
 #[test]
-fn test_section_config_rejects_nonpositive_num_jobs_llvm_cov() {
+fn test_section_config_reads_former_num_jobs_llvm_cov_name() {
     let cwd = tempfile::TempDir::new().unwrap();
     let _cwd_guard = CwdGuard::enter(cwd.path());
     let tmp = tempfile::NamedTempFile::new().unwrap();
-    std::fs::write(tmp.path(), "[test]\nnum_jobs_llvm_cov = 0\n").unwrap();
+    std::fs::write(tmp.path(), "[rust]\nnum_jobs_llvm_cov = 5\n").unwrap();
+    let cfg = TestSectionConfig::try_load_from(tmp.path()).unwrap();
+    assert_eq!(cfg.num_jobs_nextest, 5);
+    assert_eq!(cfg.num_jobs_nextest_explicit, Some(5));
+    std::fs::write(
+        tmp.path(),
+        "[rust]\nnum_jobs_llvm_cov = 5\nnum_jobs_nextest = 2\n",
+    )
+    .unwrap();
+    let cfg = TestSectionConfig::try_load_from(tmp.path()).unwrap();
+    assert_eq!(cfg.num_jobs_nextest, 2);
+}
+
+#[test]
+fn test_section_config_rejects_nonpositive_num_jobs_nextest() {
+    let cwd = tempfile::TempDir::new().unwrap();
+    let _cwd_guard = CwdGuard::enter(cwd.path());
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(tmp.path(), "[rust]\nnum_jobs_nextest = 0\n").unwrap();
     assert!(TestSectionConfig::try_load_from(tmp.path()).is_err());
+}
+
+#[test]
+fn test_section_config_rejects_pytest_jobs_left_under_test() {
+    let cwd = tempfile::TempDir::new().unwrap();
+    let _cwd_guard = CwdGuard::enter(cwd.path());
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(tmp.path(), "[test]\nnum_jobs_pytest = 5\n").unwrap();
+    let err = TestSectionConfig::try_load_from(tmp.path()).unwrap_err();
+    assert!(err.to_string().contains("num_jobs_pytest"), "{err}");
 }
 
 #[test]
@@ -137,7 +185,7 @@ fn test_section_config_rejects_nonpositive_num_jobs_pytest() {
     let cwd = tempfile::TempDir::new().unwrap();
     let _cwd_guard = CwdGuard::enter(cwd.path());
     let tmp = tempfile::NamedTempFile::new().unwrap();
-    std::fs::write(tmp.path(), "[test]\nnum_jobs_pytest = 0\n").unwrap();
+    std::fs::write(tmp.path(), "[python]\nnum_jobs_pytest = 0\n").unwrap();
     assert!(TestSectionConfig::try_load_from(tmp.path()).is_err());
 }
 
@@ -150,33 +198,17 @@ fn test_section_config_try_load_rejects_local_nonpositive_num_jobs() {
 }
 
 #[test]
-fn test_section_config_defaults_watch_settle_to_one() {
-    assert!((TestSectionConfig::default().watch_settle_seconds - 1.0).abs() < f64::EPSILON);
-}
-
-#[test]
-fn test_section_config_reads_watch_settle_seconds() {
+fn test_section_config_accepts_and_ignores_watch_settle_seconds() {
     let cwd = tempfile::TempDir::new().unwrap();
     let _cwd_guard = CwdGuard::enter(cwd.path());
     let tmp = tempfile::NamedTempFile::new().unwrap();
-    std::fs::write(tmp.path(), "[test]\nwatch_settle_seconds = 2.5\n").unwrap();
-    assert!(
-        (TestSectionConfig::try_load_from(tmp.path())
-            .unwrap()
-            .watch_settle_seconds
-            - 2.5)
-            .abs()
-            < f64::EPSILON
-    );
-}
-
-#[test]
-fn test_section_config_rejects_nonpositive_watch_settle() {
-    let cwd = tempfile::TempDir::new().unwrap();
-    let _cwd_guard = CwdGuard::enter(cwd.path());
-    let tmp = tempfile::NamedTempFile::new().unwrap();
-    std::fs::write(tmp.path(), "[test]\nwatch_settle_seconds = 0\n").unwrap();
-    assert!(TestSectionConfig::try_load_from(tmp.path()).is_err());
+    std::fs::write(
+        tmp.path(),
+        "[test]\nwatch_settle_seconds = 0\nnum_jobs = 3\n",
+    )
+    .unwrap();
+    let config = TestSectionConfig::try_load_from(tmp.path()).unwrap();
+    assert_eq!(config.num_jobs, 3);
 }
 
 #[test]

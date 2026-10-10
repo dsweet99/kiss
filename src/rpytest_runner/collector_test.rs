@@ -58,6 +58,65 @@ fn normalize_nodeids_preserves_order() {
 }
 
 #[test]
+fn collect_subprocess_keeps_nodeids_repo_relative_when_nested_ini_moves_rootdir() {
+    let tmp = TempDir::new().unwrap();
+    let sub = tmp.path().join("sub");
+    fs::create_dir_all(&sub).unwrap();
+    fs::write(
+        sub.join("pytest.ini"),
+        "[pytest]\npython_files = check_*.py\n",
+    )
+    .unwrap();
+    fs::write(sub.join("test_a.py"), "def test_a():\n    assert False\n").unwrap();
+    fs::write(
+        tmp.path().join("test_ok.py"),
+        "def test_c():\n    assert True\n",
+    )
+    .unwrap();
+    let python = PathBuf::from(std::env::var("PYTHON").unwrap_or_else(|_| "python3".to_string()));
+    let outcome = SubprocessPytestCollector::new()
+        .collect(PytestCollectRequest {
+            cwd: tmp.path().to_path_buf(),
+            python,
+            paths: vec![sub.join("test_a.py"), tmp.path().join("test_ok.py")],
+            pytest_args: Vec::new(),
+            env: BTreeMap::new(),
+        })
+        .unwrap();
+    let mut nodeids = outcome.nodeids;
+    nodeids.sort();
+    assert_eq!(
+        nodeids,
+        vec![
+            "sub/test_a.py::test_a".to_string(),
+            "test_ok.py::test_c".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn collect_subprocess_keeps_symlink_filename_in_nodeid() {
+    let tmp = TempDir::new().unwrap();
+    fs::write(
+        tmp.path().join("impl.py"),
+        "def test_ok():\n    assert True\n",
+    )
+    .unwrap();
+    std::os::unix::fs::symlink("impl.py", tmp.path().join("test_ok.py")).unwrap();
+    let python = PathBuf::from(std::env::var("PYTHON").unwrap_or_else(|_| "python3".to_string()));
+    let outcome = SubprocessPytestCollector::new()
+        .collect(PytestCollectRequest {
+            cwd: tmp.path().to_path_buf(),
+            python,
+            paths: vec![tmp.path().join("test_ok.py")],
+            pytest_args: Vec::new(),
+            env: BTreeMap::new(),
+        })
+        .unwrap();
+    assert_eq!(outcome.nodeids, vec!["test_ok.py::test_ok".to_string()]);
+}
+
+#[test]
 fn collect_subprocess_returns_pytest_nodeids_from_temp_repo() {
     let tmp = TempDir::new().unwrap();
     let tests = tmp.path().join("tests");
@@ -220,8 +279,16 @@ raise SystemExit(2)
             env: BTreeMap::new(),
         })
         .unwrap_err();
-    assert!(matches!(
-        err,
-        PytestCollectError::CollectionFailed { .. } | PytestCollectError::InvalidOutput { .. }
-    ));
+    match err {
+        PytestCollectError::CollectionFailed {
+            exit_code, stderr, ..
+        } => {
+            assert_eq!(exit_code, Some(2));
+            assert!(
+                stderr.contains("import error"),
+                "collection failure must keep the child error:\n{stderr}"
+            );
+        }
+        other => panic!("expected CollectionFailed, got {other:?}"),
+    }
 }

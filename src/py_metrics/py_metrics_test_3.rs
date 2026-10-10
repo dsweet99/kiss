@@ -22,7 +22,7 @@ fn get_func_node(p: &crate::parsing::ParsedFile) -> Node<'_> {
 mod tests {
     use super::*;
     #[test]
-    fn test_touch_return_helpers_for_static_coverage() {
+    fn test_touch_return_helpers_for_static_touch() {
         let p_ret = parse("def g():\n    return a, b, c");
         let ret = p_ret
             .tree
@@ -37,7 +37,7 @@ mod tests {
     }
 
     #[test]
-    fn test_touch_statement_counters_for_static_coverage() {
+    fn test_touch_statement_counters_for_static_touch() {
         let p2 = parse("class C:\n    def m(self):\n        x = 1\n        return x\n");
         let root2 = p2.tree.root_node();
         assert!(count_file_statements(root2) > 0);

@@ -9,6 +9,8 @@ docs_allowed = ["./"]
 orphan_allowed = []
 
 [python]
+max_num_tests = 999999
+num_jobs_pytest = 16
 statements_per_function = 82
 positional_args = 9
 keyword_only_args = 6
@@ -34,6 +36,8 @@ dependency_depth = 3
 cycle_size = 2
 
 [rust]
+max_num_tests = 999998
+num_jobs_nextest = 16
 statements_per_function = 859
 arguments = 16
 max_indentation = 12
@@ -59,10 +63,7 @@ cycle_size = 60
 test_coverage_threshold = 0
 test_coverage_scope = "codebase"
 orphan_detection = false
-max_num_tests = 999999
 num_jobs = 64
-num_jobs_pytest = 16
-num_jobs_llvm_cov = 16
 watch_settle_seconds = 1.0
 pytest_plugins = []
 ignore = ["crates/ruff_benchmark", "resources", "ty_completion_eval", "ty_benchmark"]

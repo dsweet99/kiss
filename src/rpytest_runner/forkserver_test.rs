@@ -44,8 +44,8 @@ fn forkserver_wire_request_preserves_contract_fields() {
         env,
         vec!["preload_flag".to_string()],
         vec![RequestedArtifact {
-            name: "coverage".to_string(),
-            path: PathBuf::from("coverage.json"),
+            name: "report".to_string(),
+            path: PathBuf::from("report.json"),
         }],
         Some(Duration::from_millis(25)),
     );
@@ -57,10 +57,10 @@ fn forkserver_wire_request_preserves_contract_fields() {
     assert_eq!(wire.cwd, "/tmp/project");
     assert_eq!(wire.env["A"], "B");
     assert_eq!(wire.child_preload_modules, vec!["preload_flag"]);
-    assert_eq!(wire.artifacts[0].name, "coverage");
-    assert_eq!(wire.artifacts[0].path, "coverage.json");
+    assert_eq!(wire.artifacts[0].name, "report");
+    assert_eq!(wire.artifacts[0].path, "report.json");
     assert_eq!(wire.timeout_ms, Some(25));
-    assert_eq!(WireArtifact::witness().name, "coverage");
+    assert_eq!(WireArtifact::witness().name, "report");
     assert_eq!(duration_millis_u64(Duration::from_millis(9)), 9);
 }
 
@@ -130,6 +130,34 @@ def test_global_starts_clean():\n    assert stateful.VALUE == 0\n",
 }
 
 #[test]
+fn forkserver_same_module_tests_do_not_share_globals() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::write(
+        tmp.path().join("test_sample.py"),
+        "VALUE = 0\n\n\
+def test_mutate():\n    global VALUE\n    VALUE = 1\n    assert VALUE == 1\n\n\
+def test_clean():\n    assert VALUE == 0\n",
+    )
+    .unwrap();
+
+    let outcomes = ForkserverPytestRunner::new().run_many_bounded(
+        vec![
+            passing_req(tmp.path(), "test_sample.py::test_mutate"),
+            passing_req(tmp.path(), "test_sample.py::test_clean"),
+        ],
+        1,
+    );
+
+    assert_eq!(outcomes[0].as_ref().unwrap().status, TestStatus::Passed);
+    assert_eq!(
+        outcomes[1].as_ref().unwrap().status,
+        TestStatus::Passed,
+        "later test in the same module saw mutated global state: {:?}",
+        outcomes[1]
+    );
+}
+
+#[test]
 fn forkserver_run_many_same_module_batch_preserves_order() {
     let tmp = tempfile::tempdir().unwrap();
     fs::write(
@@ -160,6 +188,43 @@ def test_c():\n    assert True\n",
     assert_eq!(
         outcomes[1].as_ref().unwrap().nodeid,
         "test_sample.py::test_b"
+    );
+}
+
+#[test]
+fn same_module_batch_reports_each_test_before_the_module_finishes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let marker = tmp.path().join("first_reported");
+    fs::write(
+        tmp.path().join("test_sample.py"),
+        format!(
+            "import os, time\n\n\
+def test_a():\n    assert True\n\n\
+def test_b():\n    deadline = time.monotonic() + 20\n    \
+while not os.path.exists({marker:?}) and time.monotonic() < deadline:\n        \
+time.sleep(0.01)\n    assert os.path.exists({marker:?})\n"
+        ),
+    )
+    .unwrap();
+    let mut statuses = vec![None, None];
+
+    ForkserverPytestRunner::new().run_many_bounded_with_on_complete(
+        vec![
+            passing_req(tmp.path(), "test_sample.py::test_a"),
+            passing_req(tmp.path(), "test_sample.py::test_b"),
+        ],
+        1,
+        |index, result| {
+            if index == 0 {
+                fs::write(&marker, b"").unwrap();
+            }
+            statuses[index] = Some(result.unwrap().status);
+        },
+    );
+
+    assert_eq!(
+        statuses,
+        vec![Some(TestStatus::Passed), Some(TestStatus::Passed)]
     );
 }
 

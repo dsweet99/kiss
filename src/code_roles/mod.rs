@@ -8,11 +8,13 @@ mod facts;
 mod fingerprint;
 mod index;
 mod python;
+mod python_dynamic;
 mod python_path;
 mod rust;
 mod rust_cargo;
 mod rust_include_parse;
 mod rust_modules;
+mod rust_test_binaries;
 mod rust_walk;
 mod rust_walk_attrs;
 mod span;
@@ -20,6 +22,7 @@ pub(crate) mod sweep;
 mod types;
 
 pub use build::build_source_role_index;
+pub(crate) use cfg_pred::{AtomInterner, CfgPred};
 pub use error::RoleBuildError;
 pub use fingerprint::{
     ROLE_SCHEMA_VERSION, role_input_fingerprint, workspace_preflight_fingerprint,
@@ -30,9 +33,15 @@ pub use index::{
 };
 pub use python::classify_python;
 pub use python_path::{is_default_pytest_collect_candidate, is_python_test_module_path};
+pub(crate) use rust::classify_rust_with_known;
 pub use rust::{classify_rust, reachable_workspace_rust_sources};
 pub(crate) use rust_cargo::cargo_entry_src_paths;
-pub(crate) use rust_modules::declared_mod_path;
+pub(crate) use rust_modules::{declared_mod_path, resolve_conventional_mod_file};
+pub use rust_test_binaries::{
+    NextestBinary, RustTestBinaryModule, workspace_nextest_binaries, workspace_nextest_binary_ids,
+    workspace_nextest_file_modules, workspace_rust_test_modules,
+};
+pub(crate) use rust_walk::{WalkOutput, walk_file};
 pub use span::{SourcePosition, SourceSpan};
 pub use types::{CodeContextSet, CodeRole, FileComposition};
 

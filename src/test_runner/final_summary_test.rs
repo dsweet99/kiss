@@ -47,7 +47,7 @@ fn format_failures_preserve_order_and_full_selectors() {
         2,
         &[
             "tests/test_models.py::test_round_trip[parametrize-case-2]",
-            "src/rslip/cache_test.rs::missing_file_is_not_reusable",
+            "src/cache/cache_test.rs::missing_file_is_not_reusable",
         ],
         Duration::from_millis(200),
     );
@@ -60,7 +60,7 @@ fn format_failures_preserve_order_and_full_selectors() {
         "✗ 1 passed · 3 failed · 0 timed out · 12.84s total · 0.20s max pass\n\
 FAIL tests/test_api.py::TestGateway::test_rejects_expired_token\n\
 FAIL tests/test_models.py::test_round_trip[parametrize-case-2]\n\
-FAIL src/rslip/cache_test.rs::missing_file_is_not_reusable"
+FAIL src/cache/cache_test.rs::missing_file_is_not_reusable"
     );
 }
 
@@ -121,41 +121,9 @@ TIMEOUT slow::test"
     );
 }
 
-#[test]
-fn coverage_skip_message_only_when_failures_or_timeouts() {
-    let pass = FinalTestSummary {
-        passed: 2,
-        failed: 0,
-        ..FinalTestSummary::default()
-    };
-    assert_eq!(coverage_skip_for_failures_message(&pass), None);
-
-    let failed = FinalTestSummary {
-        passed: 1,
-        failed: 1,
-        failed_selectors: vec!["boom".to_string()],
-        ..FinalTestSummary::default()
-    };
-    assert_eq!(
-        coverage_skip_for_failures_message(&failed),
-        Some("kiss test: skipping coverage because tests failed or timed out")
-    );
-
-    let timed_out = FinalTestSummary {
-        passed: 1,
-        failed: 1,
-        timed_out_selectors: vec!["slow".to_string()],
-        ..FinalTestSummary::default()
-    };
-    assert_eq!(
-        coverage_skip_for_failures_message(&timed_out),
-        Some("kiss test: skipping coverage because tests failed or timed out")
-    );
-}
-
 #[cfg(unix)]
 #[test]
-fn print_emits_skip_message_immediately_before_summary() {
+fn print_failed_summary_prints_failed_recap() {
     let failed = FinalTestSummary {
         passed: 1,
         failed: 1,
@@ -165,80 +133,6 @@ fn print_emits_skip_message_immediately_before_summary() {
     let out = crate::test_runner::capture_stdout::capture_stdout(|| {
         print_final_test_summary(&failed, Duration::from_secs(1));
     });
-    let skip = "kiss test: skipping coverage because tests failed or timed out";
-    let skip_at = out.find(skip).expect(skip);
-    let recap_at = out.find("✗ 1 passed").expect("recap");
-    assert!(
-        skip_at < recap_at,
-        "skip message must precede summary:\n{out}"
-    );
-    assert!(
-        !out[..skip_at].contains("passed"),
-        "no recap before skip:\n{out}"
-    );
-
-    let pass = FinalTestSummary {
-        passed: 2,
-        failed: 0,
-        ..FinalTestSummary::default()
-    };
-    let pass_out = crate::test_runner::capture_stdout::capture_stdout(|| {
-        print_final_test_summary(&pass, Duration::from_secs(1));
-    });
-    assert!(
-        !pass_out.contains(skip),
-        "all-pass must still check coverage:\n{pass_out}"
-    );
-}
-
-#[test]
-fn recap_appends_nonzero_violation_counts() {
-    let summary = FinalTestSummary {
-        passed: 3,
-        failed: 0,
-        ..FinalTestSummary::default()
-    };
-    let text = super::recap_with_violations(
-        &summary,
-        Duration::from_secs_f64(0.74),
-        false,
-        &[
-            ("test_coverage".into(), 113),
-            ("max_unit_test_seconds".into(), 2455),
-        ],
-    );
-    assert_eq!(
-        text,
-        "✓ 3 passed · 0 failed · 0 timed out · 0.74s total · 0s max pass · 113 test_coverage · 2455 max_unit_test_seconds"
-    );
-}
-
-#[cfg(unix)]
-#[test]
-fn deferred_recap_prints_after_violations_with_counts() {
-    let summary = FinalTestSummary {
-        passed: 2,
-        failed: 0,
-        ..FinalTestSummary::default()
-    };
-    let out = crate::test_runner::capture_stdout::capture_stdout(|| {
-        let _guard = RecapDeferGuard::enter();
-        print_final_test_summary(&summary, Duration::from_secs_f64(0.5));
-        crate::test_runner::emit_test_progress(
-            "VIOLATION:test_coverage:foo.py:1:foo: 0% covered (0/4). Need 3 more lines to reach 75%.",
-        );
-        note_violation_kind("test_coverage", 2);
-        note_violation_kind("max_unit_test_seconds", 4);
-    });
-    let viol_at = out.find("VIOLATION:test_coverage:").expect("violation");
-    let recap_at = out.find("✓ 2 passed").expect("recap");
-    assert!(viol_at < recap_at, "recap must follow violations:\n{out}");
-    assert!(
-        out.contains("· 2 test_coverage · 4 max_unit_test_seconds"),
-        "recap must count violation types:\n{out}"
-    );
-    assert!(
-        out.trim_end().ends_with("· 2 test_coverage · 4 max_unit_test_seconds"),
-        "recap must be last:\n{out}"
-    );
+    assert!(out.contains("✗ 1 passed"), "recap:\n{out}");
+    assert!(out.contains("boom"), "recap:\n{out}");
 }

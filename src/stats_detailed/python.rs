@@ -102,13 +102,13 @@ pub(crate) fn collect_detailed_from_node_for_test(
 }
 
 #[cfg(test)]
-mod python_coverage {
+mod python_touch {
     use super::collect_detailed_py;
     use super::*;
     use std::io::Write;
 
     #[test]
-    fn touch_for_coverage() {
+    fn touch_helpers() {
         let mut tmp = tempfile::NamedTempFile::with_suffix(".py").unwrap();
         write!(
             tmp,

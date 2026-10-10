@@ -7,19 +7,23 @@ impl RunTestCmdArgs<'_> {
     fn dry_run_commit() -> Self {
         Self {
             invocation: crate::bin_cli::args::TestInvocation::Commit,
+            target_request: crate::test_runner::target_request::request_from_focus(
+                crate::test_runner::target_request::TargetFocus::Git(
+                    crate::test_runner::target_request::GitFocus::Commit,
+                ),
+                None,
+                &[],
+            ),
             main_branch_cli: None,
             base_branch_cli: None,
             dry_run: true,
             force_rerun: false,
-            force_bad: false,
             metrics: false,
             jobs: 1,
-            extra: &[],
-            python_extra: &[],
-            ignore: &[],
-            lang_filter: None,
+            extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
             config_main_branch: None,
             gate_config: kiss::GateConfig::default(),
+            doubles: None,
         }
     }
 }
@@ -44,19 +48,11 @@ impl PlannedSelectors {
                 python: 0,
                 rust: 0,
             },
-            snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
-                python: 0,
-                rust: 0,
-            },
-            snapshot_delta_structural: crate::test_runner::language_keyed::LanguageKeyed {
-                python: false,
-                rust: false,
-            },
             prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
                 python: Vec::new(),
                 rust: Vec::new(),
             },
-            coverage_decision_engine_used: true,
+            selection_engine_used: true,
             selection_basis: Default::default(),
             ignore: vec![],
             workspace_files_fingerprint: None,
@@ -139,6 +135,7 @@ mod plan_tests {
     use tempfile::TempDir;
 
     use super::*;
+    use crate::test_git::TestChangeMode;
 
     fn git_in(dir: &Path) -> Command {
         crate::test_git::git_command(dir)
@@ -204,7 +201,7 @@ mod plan_tests {
         )
         .unwrap();
         assert_eq!(code, 0);
-        assert!(planned.coverage_decision_engine_used);
+        assert!(planned.selection_engine_used);
     }
 
     #[test]
@@ -228,19 +225,11 @@ mod plan_tests {
                 python: 0,
                 rust: 0,
             },
-            snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
-                python: 0,
-                rust: 0,
-            },
-            snapshot_delta_structural: crate::test_runner::language_keyed::LanguageKeyed {
-                python: false,
-                rust: false,
-            },
             prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
                 python: Vec::new(),
                 rust: Vec::new(),
             },
-            coverage_decision_engine_used: true,
+            selection_engine_used: true,
             selection_basis: Default::default(),
             ignore: Vec::new(),
             workspace_files_fingerprint: None,

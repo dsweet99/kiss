@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import json
 import os
-import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -151,7 +149,7 @@ def _run_kiss_test(name: str, repo: Path, env: dict[str, str]):
 
 
 def timing_kiss_test() -> None:
-    """Build a mixed-language tmp repo and time cold then warm `kiss test`."""
+    """Build a mixed-language tmp repo and time `kiss test`."""
     assert KISS.is_file(), f"local binary missing: {KISS}"
     with tempfile.TemporaryDirectory(prefix="kq-test-") as tmp:
         repo = Path(tmp) / "repo"
@@ -160,18 +158,8 @@ def timing_kiss_test() -> None:
         env = os.environ.copy()
         env["PYTHONPATH"] = str(repo)
         env.pop("RUSTFLAGS", None)
-        cold = _run_kiss_test("kiss-test-complex-cold", repo, env)
-        for name in ("python_test_selectors.json", "rust_test_selectors.json"):
-            path = repo / "target/kiss-plan" / name
-            body = json.loads(path.read_text())
-            body["selectors"] = [] if "rust" in name else body["selectors"][:1]
-            path.write_text(json.dumps(body))
-        shutil.rmtree(repo / ".kiss", ignore_errors=True)
-        wiped = _run_kiss_test("kiss-test-complex-kiss-wipe", repo, env)
-        warm = _run_kiss_test("kiss-test-complex-warm", repo, env)
-        emit_eval("kiss_test_cold_elapsed_s", "SMALLER", f"{cold.elapsed:.4f}")
-        emit_eval("kiss_test_wipe_elapsed_s", "SMALLER", f"{wiped.elapsed:.4f}")
-        emit_eval("kiss_test_warm_elapsed_s", "SMALLER", f"{warm.elapsed:.4f}")
+        outcome = _run_kiss_test("kiss-test-complex", repo, env)
+        emit_eval("kiss_test_elapsed_s", "SMALLER", f"{outcome.elapsed:.4f}")
 
 
 def eval_timing_kiss_test() -> None:

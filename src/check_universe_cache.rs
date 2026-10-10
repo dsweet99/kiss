@@ -1,28 +1,11 @@
 use crate::check_cache::{CachedCodeChunk, CachedViolation};
 use crate::stats::MetricStats;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CachedDuplicateCluster {
     pub chunks: Vec<CachedCodeChunk>,
     pub avg_similarity: f64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CachedCoverageItem {
-    pub file: String,
-    pub name: String,
-    pub line: usize,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CachedLineCoverageRecord {
-    pub file: String,
-    pub total_lines: usize,
-    pub covered_lines: usize,
-    pub percent: usize,
-    pub first_uncovered_line: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,35 +40,10 @@ pub struct FullCheckCache {
     pub file_content_digests: Vec<(String, u64)>,
 }
 
-impl CachedCoverageItem {
-    pub fn into_tuple(self) -> (PathBuf, String, usize) {
-        (PathBuf::from(self.file), self.name, self.line)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::check_cache::CachedCodeChunk;
-
-    #[test]
-    fn test_cached_coverage_item_into_tuple() {
-        let item = CachedCoverageItem::witness();
-        let (p, name, line) = item.into_tuple();
-        assert_eq!(p, PathBuf::from("a.py"));
-        assert_eq!(name, "x");
-        assert_eq!(line, 7);
-    }
-
-    impl CachedCoverageItem {
-        fn witness() -> Self {
-            Self {
-                file: "a.py".to_string(),
-                name: "x".to_string(),
-                line: 7,
-            }
-        }
-    }
 
     impl CachedDuplicateCluster {
         fn witness() -> Self {

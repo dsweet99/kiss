@@ -18,14 +18,15 @@ static prefer_tmpfs_tmpdir_init: extern "C" fn() = {
 
 pub mod kiss_publication_barrier;
 pub mod rpytest_runner;
-pub mod rslip;
-pub mod rust_llvm_cov_runner;
+pub mod subprocess_observer;
+pub mod test_progress;
 
 pub mod cli_output;
 pub mod config;
 pub mod config_gen;
 pub mod defaults;
 pub mod gate_config;
+pub mod host_parallelism;
 pub mod py_imports;
 pub mod py_metrics;
 pub mod shared_helpers;
@@ -44,18 +45,25 @@ pub mod parsing;
 pub mod stats;
 pub mod stats_detailed;
 pub mod test_cache_policy;
+pub mod test_records;
 pub mod test_refs;
 pub mod test_section_config;
+pub mod test_state_lock;
 pub(crate) mod test_toml;
 pub mod units;
+pub mod watch_report;
 
 pub mod code_roles;
+
+pub fn test_state_dir(repo_root: &std::path::Path) -> std::path::PathBuf {
+    repo_root.join(".kiss").join("test")
+}
 pub mod lang_analysis;
 pub mod rust_counts;
-pub mod rust_coverage_off;
 pub mod rust_fn_metrics;
 pub mod rust_graph;
 pub mod rust_include;
+mod rust_parallel;
 pub mod rust_parsing;
 pub mod rust_test_refs;
 pub mod rust_units;
@@ -74,10 +82,9 @@ pub use comments::{
     has_non_doc_comments_with_roles,
 };
 pub use config::{
-    Config, ConfigError, ConfigLanguage, ConfigPathOverrideGuard, LanguageTablesPresent,
-    active_kissconfig_path, find_repo_root, is_similar, kissconfig_path_for_repo,
-    kissconfig_path_from_cwd, missing_language_table_message, reject_unconfigured_languages,
-    set_config_path_override,
+    Config, ConfigError, ConfigPathOverrideGuard, LanguageTablesPresent, active_kissconfig_path,
+    find_repo_root, is_similar, kissconfig_path_for_repo, kissconfig_path_from_cwd,
+    missing_language_table_message, reject_unconfigured_languages, set_config_path_override,
 };
 pub use counts::analyze_file;
 pub use counts::analyze_file_with_statement_count;
@@ -87,7 +94,7 @@ pub use discovery::{
     find_python_files, find_rust_files, find_source_files, find_source_files_with_ignore,
     gather_files_by_lang, gather_files_by_lang_opts, ignore_prefix_matches,
     merge_check_ignore_prefixes, normalize_ignore_prefixes, path_ignored_by_prefixes,
-    selector_ignored_by_prefixes,
+    path_skipped_by_source_ignore, selector_ignored_by_prefixes, split_selector,
 };
 pub use duplication::{
     CodeChunk, DuplicateCluster, DuplicatePair, DuplicationConfig, MinHashSignature,
@@ -97,16 +104,17 @@ pub use duplication::{
     extract_rust_chunks_for_duplication_with_roles,
 };
 pub use gate_config::{
-    GateConfig, MatchedUnitTestSecondsRule, TestCoverageScope, catch_all_limit, exceeds_limit,
+    GateConfig, MatchedUnitTestSecondsRule, catch_all_limit, exceeds_limit,
+    format_nested_toml_table, limit_for_selector, matched_rule_for_selector, max_num_tests_for,
     time_gate_uses_path_prefixes,
-    format_nested_toml_table, limit_for_selector, matched_rule_for_selector,
 };
 pub use graph::{
     ContextDependencyGraph, CycleInfo, DependencyGraph, EdgeOrigin, GraphKeyMaxima,
-    ModuleGraphMetrics, OrphanCoverage, OrphanUnitInput, RoleDependencyGraphs, analyze_graph,
+    ModuleGraphMetrics, OrphanUnitFinding, OrphanUnitInput, RoleDependencyGraphs, analyze_graph,
     build_dependency_graph, build_python_context_graph, collect_orphan_entry_callables,
     collect_orphan_entry_paths, compute_cyclomatic_complexity, graph_key_maxima,
-    module_name_for_path, orphan_unit_violations, orphan_violations, path_for_module_name,
+    module_name_for_path, orphan_unit_findings, orphan_unit_violations, orphan_violations,
+    path_for_module_name,
 };
 pub use layout_cycles::{CycleBreakSuggestion, LayoutCycleAnalysis, analyze_cycles};
 pub use layout_layers::{LayerInfo, compute_layers};
@@ -118,7 +126,7 @@ pub use py_metrics::{
 };
 pub use shared_helpers::{
     cargo_target_linker_env, env_map_from_allowlist, host_cpu_count, json_entry_paths,
-    python_coverage_env_map, pythonpath_for_coverage_identity, scrubbed_git_command,
+    python_test_env_map, pythonpath_for_tests, scrubbed_git_command,
 };
 pub use stats::{
     METRICS, MetricDef, MetricScope, MetricStats, PercentileSummary, compute_summaries,
@@ -140,7 +148,6 @@ pub use rust_counts::{
     analyze_rust_file, analyze_rust_file_include_rollup,
     analyze_rust_file_include_rollup_with_roles, analyze_rust_file_with_roles,
 };
-pub use rust_coverage_off::coverage_off_attrs;
 pub use rust_fn_metrics::{
     RustFileMetrics, RustFunctionMetrics, RustTypeMetrics, compute_rust_file_metrics,
     compute_rust_file_metrics_with_roles, compute_rust_function_metrics, count_non_doc_attrs,
@@ -149,6 +156,7 @@ pub use rust_graph::{
     IncludeGraph, build_include_graph, build_rust_context_graph, build_rust_dependency_graph,
     build_rust_dependency_graph_with_roles, expand_rust_files,
 };
+pub use rust_parallel::{ParallelRustOutput, ParallelRustRequest, parallel_rust_analysis};
 pub use rust_parsing::{ParsedRustFile, RustParseError, parse_rust_file, parse_rust_files};
 pub use rust_test_refs::is_binary_entry_point;
 pub use rust_units::{RustCodeUnit, extract_rust_code_units};

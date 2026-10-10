@@ -1,17 +1,18 @@
 use super::ConfigError;
 use super::merge::{apply_python, apply_rust, apply_shared, apply_thresholds};
-use super::types::{Config, ConfigLanguage};
+use super::types::Config;
 use super::validation::{
     check_unknown_keys, check_unknown_sections, get_usize, validate_config_keys,
     validate_python_keys, validate_rust_keys, validate_shared_keys, validate_thresholds_keys,
 };
+use crate::Language;
 
 #[test]
 fn test_merge_and_apply() {
     let mut c = Config::python_defaults();
     c.merge_from_toml(
         "[python]\nstatements_per_function = 99",
-        Some(ConfigLanguage::Python),
+        Some(Language::Python),
     );
     assert_eq!(c.statements_per_function, 99);
 
@@ -118,8 +119,8 @@ fn validate_section_keys_accept_known_keys() {
     root.insert("python".into(), toml::Value::Table(python));
     root.insert("rust".into(), toml::Value::Table(rust));
     validate_config_keys(&root, None).unwrap();
-    validate_config_keys(&root, Some(ConfigLanguage::Python)).unwrap();
-    validate_config_keys(&root, Some(ConfigLanguage::Rust)).unwrap();
+    validate_config_keys(&root, Some(Language::Python)).unwrap();
+    validate_config_keys(&root, Some(Language::Rust)).unwrap();
 }
 
 #[test]
@@ -155,10 +156,8 @@ fn test_unknown_key_returns_error() {
 
 #[test]
 fn test_thresholds_section_accepts_boolean_parameters() {
-    let result = Config::try_load_from_content(
-        "[thresholds]\nboolean_parameters = 2",
-        ConfigLanguage::Python,
-    );
+    let result =
+        Config::try_load_from_content("[thresholds]\nboolean_parameters = 2", Language::Python);
     assert!(
         result.is_ok(),
         "boolean_parameters should be accepted in [thresholds]: {:?}",
@@ -184,13 +183,13 @@ fn load_and_load_for_language_with_override_apply_toml() {
 
     let tmp = tempfile::NamedTempFile::new().unwrap();
     std::fs::write(tmp.path(), "[python]\nstatements_per_function = 61\n").unwrap();
-    let overridden = Config::load_from_for_language(tmp.path(), ConfigLanguage::Python);
+    let overridden = Config::load_from_for_language(tmp.path(), Language::Python);
     assert_eq!(overridden.statements_per_function, 61);
 
     let missing = tempfile::NamedTempFile::new().unwrap();
     std::fs::remove_file(missing.path()).unwrap();
 
-    let fallback = Config::load_from_for_language(missing.path(), ConfigLanguage::Python);
+    let fallback = Config::load_from_for_language(missing.path(), Language::Python);
     assert_eq!(
         fallback.statements_per_function,
         Config::python_defaults().statements_per_function
@@ -202,15 +201,15 @@ fn test_load_from_for_language_and_try_load_from() {
     let tmp = tempfile::NamedTempFile::new().unwrap();
     std::fs::write(tmp.path(), "[python]\nstatements_per_function = 77\n").unwrap();
 
-    let loaded = Config::load_from_for_language(tmp.path(), ConfigLanguage::Python);
+    let loaded = Config::load_from_for_language(tmp.path(), Language::Python);
     assert_eq!(loaded.statements_per_function, 77);
 
-    let try_loaded = Config::try_load_from(tmp.path(), ConfigLanguage::Python).unwrap();
+    let try_loaded = Config::try_load_from(tmp.path(), Language::Python).unwrap();
     assert_eq!(try_loaded.statements_per_function, 77);
 
     let missing = tempfile::NamedTempFile::new().unwrap();
     std::fs::remove_file(missing.path()).unwrap();
-    let err = Config::try_load_from(missing.path(), ConfigLanguage::Rust).unwrap_err();
+    let err = Config::try_load_from(missing.path(), Language::Rust).unwrap_err();
     assert!(matches!(err, ConfigError::IoError { .. }));
 }
 
@@ -228,7 +227,7 @@ types_per_file = 14
 [rust]
 types_per_file = 15
 ",
-        Some(ConfigLanguage::Python),
+        Some(Language::Python),
     );
     assert_eq!(config.concrete_types_per_file, 14);
 
@@ -241,7 +240,7 @@ statements_per_function = 99
 types_per_file = 16
 attributes_per_function = 17
 ",
-        Some(ConfigLanguage::Rust),
+        Some(Language::Rust),
     );
     assert_ne!(rust_config.statements_per_function, 99);
     assert_eq!(rust_config.concrete_types_per_file, 16);
@@ -252,17 +251,17 @@ attributes_per_function = 17
 fn try_merge_reports_parse_unknown_section_and_unknown_key_errors() {
     let mut config = Config::python_defaults();
     let parse = config
-        .try_merge_from_toml("[python\nbad", Some(ConfigLanguage::Python))
+        .try_merge_from_toml("[python\nbad", Some(Language::Python))
         .unwrap_err();
     assert!(matches!(parse, ConfigError::ParseError { .. }));
 
     let section = config
-        .try_merge_from_toml("[pythno]\nvalue = 1", Some(ConfigLanguage::Python))
+        .try_merge_from_toml("[pythno]\nvalue = 1", Some(Language::Python))
         .unwrap_err();
     assert!(matches!(section, ConfigError::UnknownSection { .. }));
 
     let key = config
-        .try_merge_from_toml("[python]\nunknown = 1", Some(ConfigLanguage::Python))
+        .try_merge_from_toml("[python]\nunknown = 1", Some(Language::Python))
         .unwrap_err();
     assert!(matches!(key, ConfigError::UnknownKey { .. }));
 }
@@ -273,14 +272,14 @@ fn merge_from_toml_with_path_ignores_invalid_input_without_mutating() {
     let before = config.statements_per_function;
     config.merge_from_toml_with_path(
         "[python\nbad",
-        Some(ConfigLanguage::Python),
+        Some(Language::Python),
         Some(std::path::Path::new(".kissconfig")),
     );
     assert_eq!(config.statements_per_function, before);
 
     config.merge_from_toml_with_path(
         "[unknown]\nvalue = 1",
-        Some(ConfigLanguage::Python),
+        Some(Language::Python),
         Some(std::path::Path::new(".kissconfig")),
     );
     assert_eq!(config.statements_per_function, before);
@@ -297,7 +296,7 @@ fn config_defaults_and_language_debug_are_stable() {
         Config::python_defaults().arguments_keyword_only,
         Config::rust_defaults().arguments_keyword_only
     );
-    assert_eq!(format!("{:?}", ConfigLanguage::Rust), "Rust");
+    assert_eq!(format!("{:?}", Language::Rust), "Rust");
 }
 
 #[test]
@@ -340,17 +339,21 @@ fn language_tables_present_from_toml_and_missing_language() {
         LanguageTablesPresent::none()
     );
     let both = LanguageTablesPresent::from_toml("[python]\n[rust]\n");
-    assert!(both.python && both.rust);
+    assert!(both.all_present());
     let py = [std::path::PathBuf::from("a.py")];
     let rs = [std::path::PathBuf::from("a.rs")];
     assert_eq!(both.missing_language(&py, &rs), None);
     assert_eq!(
         LanguageTablesPresent::none().missing_language(&py, &[]),
-        Some("python")
+        Some(crate::Language::Python)
     );
     assert_eq!(
         LanguageTablesPresent::none().missing_language(&[], &rs),
-        Some("rust")
+        Some(crate::Language::Rust)
     );
-    assert!(missing_language_table_message("rust").contains("kiss check"));
+    let message = missing_language_table_message(crate::Language::Rust);
+    assert!(
+        message.contains("leaves an existing .kissconfig unchanged"),
+        "{message}"
+    );
 }

@@ -1,11 +1,8 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use kiss::Language;
-
-use crate::bin_cli::args::TestInvocation;
-
 use super::RunTestCmdArgs;
+use super::target_request::{GitFocus, TargetFocus};
 
 #[derive(Clone)]
 pub(crate) struct PlannedSelectors {
@@ -14,12 +11,10 @@ pub(crate) struct PlannedSelectors {
     pub population_required: crate::test_runner::language_keyed::LanguageKeyed<bool>,
     pub source_paths: crate::test_runner::language_keyed::LanguageKeyed<Vec<PathBuf>>,
     pub vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed<usize>,
-    pub snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed<usize>,
-    pub snapshot_delta_structural: crate::test_runner::language_keyed::LanguageKeyed<bool>,
     pub prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed<Vec<String>>,
-    pub coverage_decision_engine_used: bool,
+    pub selection_engine_used: bool,
     pub selection_basis: crate::test_runner::language_keyed::LanguageKeyed<
-        crate::test_runner::coverage_decision::SelectionBasis,
+        crate::test_runner::test_selection::SelectionBasis,
     >,
     pub ignore: Vec<String>,
     pub workspace_files_fingerprint: Option<String>,
@@ -27,44 +22,21 @@ pub(crate) struct PlannedSelectors {
 }
 
 pub(crate) fn empty_planned(repo_root: PathBuf, ignore: Vec<String>) -> PlannedSelectors {
+    use crate::test_runner::language_keyed::LanguageKeyed;
     PlannedSelectors {
         repo_root,
-        sel: crate::test_runner::language_keyed::LanguageKeyed {
-            python: Vec::new(),
-            rust: Vec::new(),
-        },
-        population_required: crate::test_runner::language_keyed::LanguageKeyed {
-            python: false,
-            rust: false,
-        },
-        source_paths: crate::test_runner::language_keyed::LanguageKeyed {
-            python: Vec::new(),
-            rust: Vec::new(),
-        },
-        vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed { python: 0, rust: 0 },
-        snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
-            python: 0,
-            rust: 0,
-        },
-        snapshot_delta_structural: crate::test_runner::language_keyed::LanguageKeyed {
-            python: false,
-            rust: false,
-        },
-        prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
-            python: Vec::new(),
-            rust: Vec::new(),
-        },
-        coverage_decision_engine_used: false,
-        selection_basis: crate::test_runner::language_keyed::LanguageKeyed {
-            python: crate::test_runner::coverage_decision::SelectionBasis::Current,
-            rust: crate::test_runner::coverage_decision::SelectionBasis::Current,
-        },
+        sel: LanguageKeyed::default(),
+        population_required: LanguageKeyed::default(),
+        source_paths: LanguageKeyed::default(),
+        vcs_source_paths: LanguageKeyed::default(),
+        prior_failure_selectors: LanguageKeyed::default(),
+        selection_engine_used: false,
+        selection_basis: LanguageKeyed::from_fn(|_| {
+            crate::test_runner::test_selection::SelectionBasis::Current
+        }),
         ignore,
         workspace_files_fingerprint: None,
-        skip_index_rebuild_after_selective: crate::test_runner::language_keyed::LanguageKeyed {
-            python: false,
-            rust: false,
-        },
+        skip_index_rebuild_after_selective: LanguageKeyed::default(),
     }
 }
 
@@ -83,14 +55,27 @@ pub(crate) fn should_force_cold_initialization(
     a: &RunTestCmdArgs<'_>,
     repo_root: &std::path::Path,
 ) -> bool {
-    matches!(a.invocation, TestInvocation::Base | TestInvocation::Main)
-        && !a.dry_run
+    matches!(
+        super::target_request::request_from_run_args(a).focus,
+        TargetFocus::Git(
+            GitFocus::AutomaticBase
+                | GitFocus::ExplicitBase { .. }
+                | GitFocus::DefaultMain
+                | GitFocus::ConfiguredMain { .. }
+                | GitFocus::ExplicitMain { .. }
+        )
+    ) && !a.dry_run
         && !a.force_rerun
         && !a.metrics
-        && a.extra.is_empty()
-        && a.ignore.is_empty()
-        && a.lang_filter.is_none()
-        && !repo_root.join(".kiss").exists()
+        && !crate::test_runner::lang_registry::languages()
+            .into_iter()
+            .any(|language| {
+                crate::test_runner::lang_registry::rules_for(language)
+                    .extras_block_cold_population(a.extras.get(language))
+            })
+        && a.ignore().is_empty()
+        && a.lang_filter().is_none()
+        && !crate::test_runner::test_state_dir(repo_root).exists()
 }
 
 pub(crate) fn apply_cold_initialization_population(
@@ -100,102 +85,27 @@ pub(crate) fn apply_cold_initialization_population(
     if !should_force_cold_initialization(a, &planned.repo_root) {
         return;
     }
-    planned.population_required.python = true;
-    planned.population_required.rust = true;
+    planned.population_required =
+        crate::test_runner::language_keyed::LanguageKeyed::from_fn(|_| true);
 }
 
 pub(crate) fn apply_force_all_population(a: &RunTestCmdArgs<'_>, planned: &mut PlannedSelectors) {
     if !a.force_rerun {
         return;
     }
-    if !matches!(a.invocation, TestInvocation::All) {
+    if !matches!(
+        super::target_request::request_from_run_args(a).focus,
+        TargetFocus::Workspace
+    ) {
         return;
     }
-    match a.lang_filter {
-        Some(Language::Python) => {
-            if !planned.sel.python.is_empty() {
-                planned.population_required.python = true;
-            }
-        }
-        Some(Language::Rust) => {
-            if !planned.sel.rust.is_empty() {
-                planned.population_required.rust = true;
-            }
-        }
-        None => {
-            if !planned.sel.python.is_empty() {
-                planned.population_required.python = true;
-            }
-            if !planned.sel.rust.is_empty() {
-                planned.population_required.rust = true;
-            }
+    for language in crate::test_runner::lang_registry::languages() {
+        if language.allowed_by(a.lang_filter()) && !planned.sel.get(language).is_empty() {
+            *planned.population_required.get_mut(language) = true;
         }
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::bin_cli::args::TestInvocation;
-    use crate::test_runner::test_mode_fixtures::empty_planned_selectors;
-
-    fn args(
-        invocation: TestInvocation,
-        force: bool,
-        lang: Option<Language>,
-    ) -> RunTestCmdArgs<'static> {
-        RunTestCmdArgs {
-            invocation,
-            main_branch_cli: None,
-            base_branch_cli: None,
-            dry_run: false,
-            force_rerun: force,
-            force_bad: false,
-            metrics: false,
-            jobs: 1,
-            extra: &[],
-            python_extra: &[],
-            ignore: &[],
-            lang_filter: lang,
-            config_main_branch: None,
-            gate_config: kiss::GateConfig::default(),
-        }
-    }
-
-    #[test]
-    fn force_and_cold_helpers_cover_language_branches() {
-        let tmp = tempfile::tempdir().unwrap();
-        let mut planned = empty_planned_selectors(tmp.path().to_path_buf());
-        planned.sel.python = vec!["t.py::test_a".into()];
-        planned.sel.rust = vec!["crate::t".into()];
-
-        let cold = args(TestInvocation::Base, false, None);
-        assert!(should_force_cold_initialization(&cold, tmp.path()));
-        apply_cold_initialization_population(&cold, &mut planned);
-        assert!(planned.population_required.python);
-        assert!(planned.population_required.rust);
-
-        planned.population_required.python = false;
-        planned.population_required.rust = false;
-        apply_force_all_population(
-            &args(TestInvocation::All, true, Some(Language::Python)),
-            &mut planned,
-        );
-        assert!(planned.population_required.python);
-        apply_force_all_population(
-            &args(TestInvocation::All, true, Some(Language::Rust)),
-            &mut planned,
-        );
-        assert!(planned.population_required.rust);
-        planned.population_required.python = false;
-        planned.population_required.rust = false;
-        apply_force_all_population(&args(TestInvocation::All, true, None), &mut planned);
-        assert!(planned.population_required.python && planned.population_required.rust);
-        apply_force_all_population(&args(TestInvocation::Commit, true, None), &mut planned);
-        apply_force_all_population(&args(TestInvocation::All, false, None), &mut planned);
-        let mut empty = empty_planned_selectors(tmp.path().to_path_buf());
-        apply_force_all_population(&args(TestInvocation::All, true, None), &mut empty);
-        assert!(!empty.population_required.python);
-        assert!(!empty.population_required.rust);
-    }
-}
+#[path = "planned_selectors_test.rs"]
+mod tests;

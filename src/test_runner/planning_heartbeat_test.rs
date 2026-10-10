@@ -1,23 +1,27 @@
 #[test]
-fn run_test_emits_planning_heartbeat_before_plan_work() {
+fn run_test_outside_git_does_not_print_planning() {
     let _cwd = crate::cwd_test_lock::lock();
     let tmp = tempfile::tempdir().unwrap();
     let old = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
     let out = crate::test_runner::capture_stdout::capture_stdout(|| {
         let code = crate::test_runner::run_test(crate::test_runner::RunTestCmdArgs {
+            doubles: None,
             invocation: crate::bin_cli::args::TestInvocation::Commit,
+            target_request: crate::test_runner::target_request::request_from_focus(
+                crate::test_runner::target_request::TargetFocus::Git(
+                    crate::test_runner::target_request::GitFocus::Commit,
+                ),
+                None,
+                &[],
+            ),
             main_branch_cli: None,
             base_branch_cli: None,
             dry_run: true,
             force_rerun: false,
-            force_bad: false,
             metrics: false,
             jobs: 1,
-            extra: &[],
-            python_extra: &[],
-            ignore: &[],
-            lang_filter: None,
+            extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
             config_main_branch: None,
             gate_config: kiss::GateConfig::default(),
         });
@@ -25,7 +29,9 @@ fn run_test_emits_planning_heartbeat_before_plan_work() {
     });
     std::env::set_current_dir(old).unwrap();
     assert!(
-        out.contains("kiss test: Planning ..."),
-        "expected early planning heartbeat before plan failure, got {out:?}"
+        !out.contains("kiss test: Planning"),
+        "kiss test must not plan before the runner, got {out:?}"
     );
+    assert!(!out.contains("kiss test: plan complete="), "{out:?}");
+    assert!(!out.contains("kiss test: kernel parse="), "{out:?}");
 }

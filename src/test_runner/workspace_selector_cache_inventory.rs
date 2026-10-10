@@ -2,12 +2,22 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use ignore::gitignore::{Gitignore, GitignoreBuilder};
+
 use crate::analyze_cache::fnv1a64;
 
 use super::digest::{flush_persisted_digests, hash_file_contents};
 use super::{LangFingerprints, fresh};
 
-fn should_skip_dir(name: &str) -> bool {
+pub(crate) fn support_gitignore(repo: &Path) -> Gitignore {
+    let mut builder = GitignoreBuilder::new(repo);
+    for name in [".gitignore", ".kissignore", ".git/info/exclude"] {
+        let _ = builder.add(repo.join(name));
+    }
+    builder.build().unwrap_or_else(|_| Gitignore::empty())
+}
+
+pub(crate) fn should_skip_dir(name: &str) -> bool {
     matches!(
         name,
         ".git"
@@ -17,7 +27,6 @@ fn should_skip_dir(name: &str) -> bool {
             | "venv"
             | "__pycache__"
             | ".pytest_cache"
-            | ".rslip_cache"
             | "node_modules"
     )
 }
@@ -52,102 +61,28 @@ pub(crate) fn rust_selector_inputs_fingerprint_for_cache(
     Ok(fingerprint)
 }
 
-pub(crate) fn workspace_source_inventory_fingerprint_for_cache(
-    repo_root: &Path,
-    ignore: &[String],
-) -> io::Result<String> {
-    let rels = source_inventory_git(repo_root, ignore)
-        .or_else(|_| source_inventory_walk(repo_root, ignore))?;
-    let mut h = fnv1a64(0xcbf2_9ce4_8422_2325, b"workspace-source-inventory-v1");
-    for rel in rels {
-        h = fnv1a64(h, rel.as_bytes());
-        h = fnv1a64(h, &[0]);
-        if rel == "Cargo.toml" || rel.ends_with("/Cargo.toml") {
-            h = fnv1a64(h, &fs::read(repo_root.join(rel))?);
-        }
-    }
-    Ok(format!("{h:016x}"))
-}
-
-fn source_inventory_git(repo_root: &Path, ignore: &[String]) -> io::Result<Vec<String>> {
-    let output = kiss::scrubbed_git_command(repo_root)
-        .args([
-            "ls-files",
-            "-z",
-            "-c",
-            "-o",
-            "--exclude-standard",
-            "--",
-            "*.py",
-            "*.rs",
-            "Cargo.toml",
-            "**/Cargo.toml",
-            "Cargo.lock",
-            "**/Cargo.lock",
-            ".cargo/config",
-            ".cargo/config.toml",
-            "**/.cargo/config",
-            "**/.cargo/config.toml",
-            "rust-toolchain",
-            "rust-toolchain.toml",
-            "**/rust-toolchain",
-            "**/rust-toolchain.toml",
-        ])
-        .output()?;
-    if !output.status.success() {
-        return Err(io::Error::other("git ls-files failed"));
-    }
-    let mut rels: Vec<String> = output
-        .stdout
-        .split(|byte| *byte == 0)
-        .filter(|part| !part.is_empty())
-        .map(|part| String::from_utf8_lossy(part).replace('\\', "/"))
-        .filter(|rel| !ignored(rel, ignore))
-        .collect();
-    rels.sort();
-    rels.dedup();
-    Ok(rels)
-}
-
-fn source_inventory_walk(repo_root: &Path, ignore: &[String]) -> io::Result<Vec<String>> {
-    let mut rels = Vec::new();
-    let mut stack = vec![repo_root.to_path_buf()];
-    while let Some(dir) = stack.pop() {
-        for entry in fs::read_dir(dir)? {
-            let path = entry?.path();
-            let name = path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or_default();
-            let rel = path
-                .strip_prefix(repo_root)
-                .map(|path| path.to_string_lossy().replace('\\', "/"))
-                .unwrap_or_default();
-            if path.is_dir() {
-                if !should_skip_dir(name) && !ignored(&rel, ignore) {
-                    stack.push(path);
-                }
-                continue;
-            }
-            let source = path.extension().is_some_and(|ext| {
-                ext.eq_ignore_ascii_case("py") || ext.eq_ignore_ascii_case("rs")
-            });
-            if !ignored(&rel, ignore) && (source || name == "Cargo.toml") {
-                rels.push(rel);
-            }
-        }
-    }
-    rels.sort();
-    rels.dedup();
-    Ok(rels)
-}
-
 fn hash_rel_list(seed: &[u8], repo_root: &Path, rels: &[String]) -> io::Result<String> {
     let mut h = fnv1a64(0xcbf2_9ce4_8422_2325, seed);
     for rel in rels {
         h = hash_file_contents(h, rel, repo_root, &repo_root.join(rel))?;
     }
     Ok(format!("{h:016x}"))
+}
+
+fn hash_rel_list_full(seed: &[u8], repo_root: &Path, rels: &[String]) -> io::Result<String> {
+    let mut h = fnv1a64(0xcbf2_9ce4_8422_2325, seed);
+    for rel in rels {
+        h = super::digest::hash_file_full_contents(h, rel, &repo_root.join(rel))?;
+    }
+    Ok(format!("{h:016x}"))
+}
+
+pub(crate) fn rust_full_source_fingerprint(
+    repo_root: &Path,
+    ignore: &[String],
+) -> io::Result<String> {
+    let rels = fresh::rust_source_rels(repo_root, ignore)?;
+    hash_rel_list_full(b"workspace-fp-v1-rs", repo_root, &rels)
 }
 
 pub(super) fn workspace_lang_fingerprints_git(
@@ -206,6 +141,8 @@ pub(super) fn workspace_lang_fingerprints_git(
     Ok(LangFingerprints {
         python: hash_rel_list(b"workspace-selectors-fp-v6-git-py", repo_root, &py_rels)?,
         rust: hash_rel_list(b"workspace-selectors-fp-v6-git-rs", repo_root, &rs_rels)?,
+        has_python: !py_rels.is_empty(),
+        has_rust: !rs_rels.is_empty(),
     })
 }
 
@@ -238,6 +175,8 @@ pub(super) fn workspace_lang_fingerprints_walk(
     Ok(LangFingerprints {
         python: format!("{py_h:016x}"),
         rust: format!("{rs_h:016x}"),
+        has_python: !py_rels.is_empty(),
+        has_rust: !rs_rels.is_empty(),
     })
 }
 

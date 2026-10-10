@@ -1,6 +1,6 @@
 use crate::bin_cli::args::{Cli, Commands};
 use crate::bin_cli::config_session::{
-    ensure_default_config_exists, ensure_default_config_from, load_configs, load_gate_config,
+    ensure_check_config_from, ensure_default_config_exists, load_configs, load_gate_config,
     load_test_section_config,
 };
 use crate::bin_cli::dispatch::dispatch;
@@ -12,23 +12,21 @@ pub fn run_cli_entrypoint() -> i32 {
 
 pub(crate) fn run_with_cli(cli: Cli) -> i32 {
     let _config_override = kiss::ConfigPathOverrideGuard::enter(cli.config.as_deref());
-    if let Commands::RustLlvmCovTargetRunner {
-        output_dir,
-        runner_map,
-        platform,
-        command,
-    } = &cli.command
-    {
-        return kiss::rust_llvm_cov_runner::run_target_runner_shim(
-            output_dir, runner_map, platform, command,
-        );
-    }
-    if let Some(code) = prepare_watch_flags(&cli) {
-        return code;
-    }
     prepare_default_config(&cli);
-    let (py_config, rs_config) = load_configs(cli.config.as_ref());
-    let gate_config = load_gate_config(cli.config.as_ref());
+    let (py_config, rs_config) = match load_configs(cli.config.as_ref()) {
+        Ok(configs) => configs,
+        Err(err) => {
+            eprintln!("Error: {err}");
+            return 2;
+        }
+    };
+    let gate_config = match load_gate_config(cli.config.as_ref()) {
+        Ok(config) => config,
+        Err(err) => {
+            eprintln!("Error: {err}");
+            return 2;
+        }
+    };
     let test_section = match load_test_section_config(cli.config.as_ref()) {
         Ok(config) => config,
         Err(err) => {
@@ -45,21 +43,10 @@ fn prepare_default_config(cli: &Cli) {
     }
     match &cli.command {
         Commands::Check { paths, ignore, .. } => {
-            ensure_default_config_from(paths, ignore);
+            ensure_check_config_from(paths, ignore);
         }
         _ => ensure_default_config_exists(),
     }
-}
-
-fn prepare_watch_flags(cli: &Cli) -> Option<i32> {
-    let Commands::Test { watch, dry_run, .. } = &cli.command else {
-        return None;
-    };
-    if *watch && *dry_run {
-        eprintln!("error: kiss test: --watch cannot be combined with --dry-run");
-        return Some(2);
-    }
-    None
 }
 
 pub(crate) fn parse_cli() -> Cli {
@@ -82,15 +69,15 @@ where
 }
 
 #[cfg(test)]
-mod run_coverage {
+mod run_touch {
     use super::{parse_cli_from, run_cli_entrypoint, run_with_cli};
     use crate::bin_cli::args::{Cli, Commands};
     use std::fs;
 
     #[test]
     fn run_with_cli_rejects_watch_combined_with_dry_run() {
-        let cli = parse_cli_from(["kiss", "test", "--watch", "--dry-run"]);
-        assert_eq!(run_with_cli(cli), 2);
+        use clap::Parser;
+        assert!(Cli::try_parse_from(["kiss", "test", "--watch", "--dry-run"]).is_err());
     }
 
     #[test]
@@ -146,47 +133,71 @@ mod run_coverage {
     }
 
     #[test]
-    fn hidden_rust_llvm_cov_target_runner_dispatches_before_config_loading() {
+    fn check_raises_rust_include_rollup_so_the_check_passes() {
+        let _cwd_guard = crate::cwd_test_lock::lock();
         let tmp = tempfile::tempdir().unwrap();
-        let script = tmp.path().join("shim-child.sh");
-        fs::write(&script, "#!/bin/sh\nexit 6\n").unwrap();
-        make_executable(&script);
-        let output_dir = tmp.path().join("instances");
-
-        let runner_map = tmp.path().join("runner-map.json");
-        fs::write(&runner_map, b"{}").unwrap();
+        fs::create_dir_all(tmp.path().join("src")).unwrap();
+        fs::write(
+            tmp.path().join("src/lib.rs"),
+            "struct Parent;\ninclude!(\"frag.rs\");\n",
+        )
+        .unwrap();
+        fs::write(tmp.path().join("src/frag.rs"), "struct Frag;\n").unwrap();
+        let orig_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
         let code = run_with_cli(Cli {
             config: None,
             lang: None,
-            command: Commands::RustLlvmCovTargetRunner {
-                output_dir: output_dir.clone(),
-                runner_map,
-                platform: "x86_64-unknown-linux-gnu".to_string(),
-                command: vec![script.into_os_string()],
+            command: Commands::Check {
+                paths: vec![".".to_string()],
+                ignore: Vec::new(),
+                timing: false,
             },
         });
-
-        assert_eq!(code, 6);
-        assert!(fs::read_dir(output_dir).unwrap().any(|entry| {
-            entry
-                .unwrap()
-                .path()
-                .extension()
-                .and_then(|ext| ext.to_str())
-                == Some("json")
-        }));
+        let created = fs::read_to_string(".kissconfig").unwrap();
+        std::env::set_current_dir(&orig_dir).unwrap();
+        assert_eq!(
+            code, 0,
+            "include rollup must pass after the raise:\n{created}"
+        );
+        assert!(
+            created.contains("concrete_types_per_file = 2"),
+            "rollup of two structs must raise the threshold:\n{created}"
+        );
+        assert!(
+            created.contains("duplication_enabled = true"),
+            "non-threshold settings must stay at kissconfig-default:\n{created}"
+        );
     }
 
     #[test]
     fn run_with_cli_rejects_invalid_test_num_jobs_config() {
         let _cwd_guard = crate::cwd_test_lock::lock();
         let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join(".kissconfig"), "[test]\nnum_jobs = 0\n").unwrap();
+        fs::write(tmp.path().join("sample.py"), "def f():\n    return 1\n").unwrap();
+        let original = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+
+        let code = run_with_cli(Cli {
+            config: None,
+            lang: None,
+            command: Commands::Rules,
+        });
+
+        std::env::set_current_dir(original).unwrap();
+        assert_eq!(code, 2);
+    }
+
+    #[test]
+    fn run_with_cli_rejects_unknown_config_section() {
+        let _cwd_guard = crate::cwd_test_lock::lock();
+        let tmp = tempfile::tempdir().unwrap();
         fs::write(
             tmp.path().join(".kissconfig"),
-            "[test]\nnum_jobs = 0\ntest_coverage_threshold = 0\n",
+            "bogus = 1\n\n[python]\nstatements_per_function = 1\n",
         )
         .unwrap();
-        fs::write(tmp.path().join("sample.py"), "def f():\n    return 1\n").unwrap();
         let original = std::env::current_dir().unwrap();
         std::env::set_current_dir(tmp.path()).unwrap();
 
@@ -206,7 +217,7 @@ mod run_coverage {
         let tmp = tempfile::tempdir().unwrap();
         fs::write(
             tmp.path().join(".kissconfig"),
-            "[global]\nduplication_enabled = false\n[test]\ntest_coverage_threshold = 0\n[python]\n[rust]\n",
+            "[global]\nduplication_enabled = false\n[test]\n[python]\n[rust]\n",
         )
         .unwrap();
         fs::write(
@@ -305,16 +316,4 @@ mod run_coverage {
             "--config should not write .kissconfig"
         );
     }
-
-    #[cfg(unix)]
-    fn make_executable(path: &std::path::Path) {
-        use std::os::unix::fs::PermissionsExt;
-
-        let mut permissions = fs::metadata(path).unwrap().permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(path, permissions).unwrap();
-    }
-
-    #[cfg(not(unix))]
-    fn make_executable(_path: &std::path::Path) {}
 }

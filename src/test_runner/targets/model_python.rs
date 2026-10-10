@@ -2,7 +2,7 @@ use std::path::Path;
 
 use tree_sitter::{Node, Parser};
 
-use super::model::{DirectTestDef, NamedDefinition, SourceModel, byte_span_to_lines};
+use super::model::{DirectTestDef, NamedDefinition, SourceModel, node_lines};
 use kiss::Language;
 
 pub(super) fn build_python_model(
@@ -10,6 +10,7 @@ pub(super) fn build_python_model(
     content: String,
     line_count: u32,
 ) -> Result<SourceModel, String> {
+    kiss::parsing::ensure_tree_allocator();
     let mut parser = Parser::new();
     parser
         .set_language(&tree_sitter_python::LANGUAGE.into())
@@ -51,8 +52,7 @@ fn walk_python(
         "class_definition" => {
             if let Some(name_node) = node.child_by_field_name("name") {
                 let class_name = content[name_node.start_byte()..name_node.end_byte()].to_string();
-                let (start_line, end_line) =
-                    byte_span_to_lines(content, node.start_byte(), node.end_byte());
+                let (start_line, end_line) = node_lines(node);
                 definitions.push(NamedDefinition {
                     name: class_name.clone(),
                     member: None,
@@ -93,7 +93,7 @@ fn push_python_function(
         return;
     };
     let name = content[name_node.start_byte()..name_node.end_byte()].to_string();
-    let (start_line, end_line) = byte_span_to_lines(content, node.start_byte(), node.end_byte());
+    let (start_line, end_line) = node_lines(node);
     let is_test = looks_like_python_test(&name, owner);
     let (def_name, def_member) = match owner {
         Some(owner) => (owner.to_string(), Some(name.clone())),

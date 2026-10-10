@@ -1,8 +1,6 @@
 use crate::bin_cli::args::{TestInvocation, parse_test_invocation};
-use crate::bin_cli::{TestCommandArgs, finish_with_coverage};
 use crate::test_runner::test_mode_fixtures::{
-    checkout_branch, git_in, init_git, with_cloned_warm_committed_repo, with_cwd,
-    with_locked_warm_python_repo,
+    checkout_branch, git_in, init_git, with_cwd, with_locked_warm_python_repo,
 };
 use crate::test_runner::{RunTestCmdArgs, TargetPlanKind, plan_target_selectors};
 use std::fs;
@@ -124,48 +122,8 @@ fn dry_mode(root: &Path, invocation: TestInvocation) -> i32 {
 fn no_false_lang(code: i32) {
     assert_eq!(
         code, 0,
-        "overlapped covering must not reject a valid TARGET with a false --lang filter"
+        "overlapped selecting must not reject a valid TARGET with a false --lang filter"
     );
-}
-
-fn after_tests_pass_coverage(root: &Path, invocation: TestInvocation) -> i32 {
-    let _cwd = crate::cwd_test_lock::lock();
-    with_cwd(root, || {
-        let test_cfg = kiss::TestSectionConfig::default();
-        let py = kiss::Config::python_defaults();
-        let rs = kiss::Config::rust_defaults();
-        let gate = kiss::GateConfig {
-            test_coverage_threshold: 0,
-            max_unit_test_seconds: Vec::new(),
-            ..Default::default()
-        };
-        finish_with_coverage(
-            &TestCommandArgs {
-                invocation,
-                main_branch: None,
-                base_branch: None,
-                dry_run: false,
-                retry_bad: false,
-                metrics: false,
-                coverage_all: false,
-                watch: false,
-                jobs: 1,
-                jobs_cli: Some(1),
-                ignore: &[],
-                cli_ignore: &[],
-                extra: &[],
-                lang_filter: None,
-                test_cfg: &test_cfg,
-                py_config: &py,
-                rs_config: &rs,
-                gate_config: &gate,
-                reload_kissconfig: false,
-                config_path: None,
-                language_tables: kiss::LanguageTablesPresent::both(),
-            },
-            0,
-        )
-    })
 }
 
 fn plan_err(root: &Path, targets: &[String]) -> String {
@@ -235,6 +193,13 @@ fn type_rejects_missing_symbol() {
 }
 
 #[test]
+fn type_rejects_missing_python_test_symbol() {
+    let tmp = python_repo();
+    let err = plan_err(tmp.path(), &["tests/test_app.py::test_missing".into()]);
+    assert!(err.contains("unresolved symbol"), "{err}");
+}
+
+#[test]
 fn type_rejects_ignore_path_symbol() {
     let tmp = python_repo();
     let query = crate::test_runner::targets::resolve_target_operands(
@@ -248,49 +213,30 @@ fn type_rejects_ignore_path_symbol() {
     assert!(query.contains("--ignore"), "{query}");
 }
 
-fn no_post_test_gate(code: i32) {
-    assert_eq!(
-        code, 0,
-        "post-test coverage/timing gate must not fail after tests already passed"
-    );
-}
-
-fn coverage_gate_on_cloned_warm(invocation: TestInvocation) {
-    // Nested kiss-test work must not hold the shared warm-committed lock (TIMEOUT under -j 16).
-    with_cloned_warm_committed_repo(|repo, _lib| {
-        no_post_test_gate(after_tests_pass_coverage(repo, invocation));
-    });
-}
-
 #[test]
 fn type_dot() {
     no_false_lang(dry_mode(workspace_repo().path(), TestInvocation::All));
-    coverage_gate_on_cloned_warm(TestInvocation::All);
 }
 
 #[test]
 fn type_commit() {
     no_false_lang(dry_mode(workspace_repo().path(), TestInvocation::Commit));
-    coverage_gate_on_cloned_warm(TestInvocation::Commit);
 }
 
 #[test]
 fn type_base() {
     no_false_lang(dry_mode(workspace_repo().path(), TestInvocation::Base));
-    coverage_gate_on_cloned_warm(TestInvocation::Base);
 }
 
 #[test]
 fn type_main() {
     no_false_lang(dry_mode(workspace_repo().path(), TestInvocation::Main));
-    coverage_gate_on_cloned_warm(TestInvocation::Main);
 }
 
 #[test]
 fn type_directory() {
     with_locked_warm_python_repo(|repo, _app| {
         no_false_lang(dry_targets(repo, &["pkg".into()], &[]));
-        no_post_test_gate(after_tests_pass_coverage(repo, TestInvocation::All));
     });
 }
 
@@ -298,7 +244,6 @@ fn type_directory() {
 fn type_test_directory() {
     with_locked_warm_python_repo(|repo, _app| {
         no_false_lang(dry_targets(repo, &["tests".into()], &[]));
-        no_post_test_gate(after_tests_pass_coverage(repo, TestInvocation::All));
     });
 }
 

@@ -4,8 +4,8 @@ use tempfile::TempDir;
 
 use crate::test_git::TestChangeMode;
 use crate::test_runner::test_mode_fixtures::{
-    RS_COVERING_SELECTOR, assert_base_delta_plan, checkout_branch, clone_warm_committed_repo,
-    edit_rust_covered_source, ensure_main_branch, git_in, git_stdout, init_git, with_cwd,
+    RS_SELECTOR, assert_base_delta_plan, checkout_branch, clone_warm_committed_repo,
+    edit_rust_source, ensure_main_branch, git_in, git_stdout, init_git, with_cwd,
     with_locked_base_historical_repo, with_locked_warm_committed_repo,
 };
 use crate::test_runner::{PlannedSelectors, RunTestCmdArgs, plan_selectors, run_test};
@@ -121,7 +121,7 @@ fn row_g_untracked_rust_source_commit_only() {
 }
 
 #[test]
-fn row_h_base_and_main_use_snapshot_delta_not_historical_sources() {
+fn row_h_base_and_main_count_every_rust_source_since_the_baseline() {
     let _cwd_guard = crate::cwd_test_lock::lock();
     with_locked_base_historical_repo(|repo, baseline, lib| {
         let base_planned = with_cwd(repo, || {
@@ -152,7 +152,7 @@ fn row_i_base_and_main_same_tree_yield_identical_selectors() {
     let _cwd_guard = crate::cwd_test_lock::lock();
     with_locked_warm_committed_repo(|repo, lib| {
         let baseline = git_stdout(repo, &["rev-parse", "HEAD"]);
-        edit_rust_covered_source(&lib, 2);
+        edit_rust_source(&lib, 2);
         let base_planned = with_cwd(repo, || {
             plan(
                 TestChangeMode::Base,
@@ -187,40 +187,45 @@ fn row_i_base_and_main_same_tree_yield_identical_selectors() {
             base_planned.population_required.python, main_planned.population_required.python,
             "base≡main same-tree: python_population_required must match"
         );
-        assert_eq!(
-            base_planned.sel.rust,
-            vec![RS_COVERING_SELECTOR.to_string()]
-        );
+        assert_eq!(base_planned.sel.rust, vec![RS_SELECTOR.to_string()]);
     });
 }
 
 fn assert_run_test_dry_run(mode: TestChangeMode, main: Option<&str>, base: Option<&str>) {
     let tmp = TempDir::new().unwrap();
     let lib = clone_warm_committed_repo(tmp.path());
-    edit_rust_covered_source(&lib, 2);
+    edit_rust_source(&lib, 2);
     let gate = kiss::GateConfig {
-        test_coverage_threshold: 0,
         orphan_detection: false,
         ..Default::default()
     };
     let code = with_cwd(tmp.path(), || {
+        let invocation = match mode {
+            TestChangeMode::Commit => crate::bin_cli::args::TestInvocation::Commit,
+            TestChangeMode::Base => crate::bin_cli::args::TestInvocation::Base,
+            TestChangeMode::Main => crate::bin_cli::args::TestInvocation::Main,
+        };
+        let request = crate::test_runner::target_request::request_from_focus(
+            crate::test_runner::target_request::focus_from_invocation(
+                &invocation,
+                main,
+                base,
+                None,
+            ),
+            Some(kiss::Language::Rust),
+            &[],
+        );
         run_test(RunTestCmdArgs {
-            invocation: match mode {
-                TestChangeMode::Commit => crate::bin_cli::args::TestInvocation::Commit,
-                TestChangeMode::Base => crate::bin_cli::args::TestInvocation::Base,
-                TestChangeMode::Main => crate::bin_cli::args::TestInvocation::Main,
-            },
+            doubles: None,
+            invocation: crate::test_runner::target_request::to_compat_invocation(&request),
+            target_request: request,
             main_branch_cli: main,
             base_branch_cli: base,
             dry_run: true,
             force_rerun: false,
-            force_bad: false,
             metrics: false,
             jobs: 1,
-            extra: &[],
-            python_extra: &[],
-            ignore: &[],
-            lang_filter: Some(kiss::Language::Rust),
+            extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
             config_main_branch: None,
             gate_config: gate,
         })
@@ -279,18 +284,23 @@ fn row_k_run_test_base_without_other_refs_fails() {
     );
     let code = with_cwd(tmp.path(), || {
         run_test(RunTestCmdArgs {
+            doubles: None,
             invocation: crate::bin_cli::args::TestInvocation::Base,
+            target_request: crate::test_runner::target_request::request_from_invocation(
+                &crate::bin_cli::args::TestInvocation::Base,
+                None,
+                None,
+                None,
+                Some(kiss::Language::Rust),
+                &[],
+            ),
             main_branch_cli: None,
             base_branch_cli: None,
             dry_run: true,
             force_rerun: false,
-            force_bad: false,
             metrics: false,
             jobs: 1,
-            extra: &[],
-            python_extra: &[],
-            ignore: &[],
-            lang_filter: Some(kiss::Language::Rust),
+            extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
             config_main_branch: None,
             gate_config: kiss::GateConfig::default(),
         })

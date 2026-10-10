@@ -20,8 +20,125 @@ fn expand_directory_yields_nested_py_and_rs() {
     let expanded = expand_target_operands(tmp.path(), &["dir".into()], &[], None).unwrap();
     match expanded {
         ExpandedTargetPlan::Files(files) => {
-            assert!(files.iter().any(|f| f.ends_with("a.py")), "{files:?}");
-            assert!(files.iter().any(|f| f.ends_with("b.rs")), "{files:?}");
+            assert!(files.paths.iter().any(|f| f.ends_with("a.py")), "{files:?}");
+            assert!(files.paths.iter().any(|f| f.ends_with("b.rs")), "{files:?}");
+        }
+        ExpandedTargetPlan::All => panic!("expected files"),
+    }
+}
+
+#[test]
+fn expand_directory_keeps_symlink_leaf_name() {
+    let tmp = tempdir().unwrap();
+    init_git_repo(tmp.path());
+    let dir = tmp.path().join("sub");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(tmp.path().join("impl.py"), "x = 1\n").unwrap();
+    fs::write(
+        dir.join("test_real.py"),
+        "def test_real():\n    assert True\n",
+    )
+    .unwrap();
+    std::os::unix::fs::symlink("../impl.py", dir.join("test_link.py")).unwrap();
+
+    let expanded =
+        expand_target_operands(tmp.path(), &["sub".into()], &[], Some(Language::Python)).unwrap();
+    match expanded {
+        ExpandedTargetPlan::Files(files) => {
+            assert!(
+                files.paths.iter().any(|f| f.ends_with("sub/test_link.py")),
+                "{files:?}"
+            );
+            assert!(
+                files.paths.iter().any(|f| f.ends_with("sub/test_real.py")),
+                "{files:?}"
+            );
+            assert!(
+                !files.paths.iter().any(|f| f.ends_with("/impl.py")),
+                "{files:?}"
+            );
+        }
+        ExpandedTargetPlan::All => panic!("expected files"),
+    }
+}
+
+#[test]
+fn expand_directory_applies_workspace_python_filters() {
+    let tmp = tempdir().unwrap();
+    init_git_repo(tmp.path());
+    fs::write(
+        tmp.path().join("pytest.ini"),
+        "[pytest]\npython_files = check_*.py\nnorecursedirs = nested\n",
+    )
+    .unwrap();
+    let dir = tmp.path().join("sub");
+    fs::create_dir_all(dir.join("nested")).unwrap();
+    fs::write(dir.join("app.py"), "x = 1\n").unwrap();
+    fs::write(
+        dir.join("check_bad.py"),
+        "def test_bad():\n    assert False\n",
+    )
+    .unwrap();
+    fs::write(dir.join("test_ok.py"), "def test_ok():\n    assert True\n").unwrap();
+    fs::write(
+        dir.join("nested").join("check_bad.py"),
+        "def test_bad():\n    assert False\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.join("conftest.py"),
+        "collect_ignore = [\"check_skip.py\"]\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.join("check_skip.py"),
+        "def test_skip():\n    assert False\n",
+    )
+    .unwrap();
+
+    let expanded =
+        expand_target_operands(tmp.path(), &["sub".into()], &[], Some(Language::Python)).unwrap();
+    match expanded {
+        ExpandedTargetPlan::Files(files) => {
+            assert!(
+                files.paths.iter().any(|f| f.ends_with("sub/app.py")),
+                "{files:?}"
+            );
+            assert!(
+                files.paths.iter().any(|f| f.ends_with("sub/check_bad.py")),
+                "{files:?}"
+            );
+            assert!(
+                !files.paths.iter().any(|f| f.ends_with("test_ok.py")),
+                "{files:?}"
+            );
+            assert!(
+                !files
+                    .paths
+                    .iter()
+                    .any(|f| f.ends_with("nested/check_bad.py")),
+                "{files:?}"
+            );
+            assert!(
+                !files.paths.iter().any(|f| f.ends_with("check_skip.py")),
+                "{files:?}"
+            );
+            assert!(
+                files
+                    .skip_python_collect
+                    .iter()
+                    .any(|path| path.ends_with("sub/app.py")),
+                "{:?}",
+                files.skip_python_collect
+            );
+            assert!(
+                !files
+                    .skip_python_collect
+                    .iter()
+                    .any(|path| path.ends_with("check_bad.py")),
+                "{:?}",
+                files.skip_python_collect
+            );
         }
         ExpandedTargetPlan::All => panic!("expected files"),
     }
@@ -42,8 +159,8 @@ fn expand_honors_lang_and_ignore() {
         expand_target_operands(tmp.path(), &["pkg".into()], &[], Some(Language::Rust)).unwrap();
     match rust_only {
         ExpandedTargetPlan::Files(files) => {
-            assert!(files.iter().all(|f| f.ends_with(".rs")), "{files:?}");
-            assert_eq!(files.len(), 2);
+            assert!(files.paths.iter().all(|f| f.ends_with(".rs")), "{files:?}");
+            assert_eq!(files.paths.len(), 2);
         }
         ExpandedTargetPlan::All => panic!("expected files"),
     }
@@ -57,8 +174,8 @@ fn expand_honors_lang_and_ignore() {
     .unwrap();
     match ignored {
         ExpandedTargetPlan::Files(files) => {
-            assert_eq!(files.len(), 1);
-            assert!(files[0].ends_with("b.rs"));
+            assert_eq!(files.paths.len(), 1);
+            assert!(files.paths[0].ends_with("b.rs"));
         }
         ExpandedTargetPlan::All => panic!("expected files"),
     }
@@ -75,7 +192,7 @@ fn expand_lang_filter_on_other_language_dir_is_empty_not_zero_files() {
         expand_target_operands(tmp.path(), &["nested".into()], &[], Some(Language::Python))
             .unwrap();
     match expanded {
-        ExpandedTargetPlan::Files(files) => assert!(files.is_empty(), "{files:?}"),
+        ExpandedTargetPlan::Files(files) => assert!(files.paths.is_empty(), "{files:?}"),
         ExpandedTargetPlan::All => panic!("expected empty files, not all"),
     }
 }

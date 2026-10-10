@@ -1,13 +1,19 @@
-use std::fs;
+use std::fs::{self, OpenOptions};
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
+use fs2::FileExt;
 use tempfile::TempDir;
 
 use crate::cwd_test_lock;
 use crate::test_runner::capture_stdout::capture_stdout;
 use crate::test_runner::python_named_target_args::python_named_target_args;
 use crate::test_runner::run_test;
+
+struct ForcePythonFixtureLock {
+    _mutex: MutexGuard<'static, ()>,
+    _file: std::fs::File,
+}
 
 fn init_git_repo(root: &Path) {
     let mut cmd = kiss::scrubbed_git_command(root);
@@ -26,7 +32,6 @@ fn write_two_python_tests(root: &Path) {
 
 fn force_gate() -> kiss::GateConfig {
     kiss::GateConfig {
-        test_coverage_threshold: 0,
         orphan_detection: false,
         max_unit_test_seconds: Vec::new(),
         ..Default::default()
@@ -95,11 +100,28 @@ fn persistent_force_python_repo() -> std::path::PathBuf {
     .clone()
 }
 
-fn force_python_repo_lock() -> MutexGuard<'static, ()> {
+fn force_python_repo_lock() -> ForcePythonFixtureLock {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
+    let _mutex = LOCK
+        .get_or_init(|| Mutex::new(()))
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    // nextest runs these tests in separate processes; Mutex alone does not
+    // serialize concurrent force runs against the shared persistent fixture.
+    let lock_path = std::env::temp_dir().join("kiss-force-python-fixture.lock");
+    let file = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .truncate(false)
+        .open(&lock_path)
+        .unwrap_or_else(|e| panic!("open {}: {e}", lock_path.display()));
+    file.lock_exclusive()
+        .unwrap_or_else(|e| panic!("lock {}: {e}", lock_path.display()));
+    ForcePythonFixtureLock {
+        _mutex,
+        _file: file,
+    }
 }
 
 #[test]

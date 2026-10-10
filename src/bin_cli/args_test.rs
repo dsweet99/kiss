@@ -41,7 +41,7 @@ fn config_flag_parses_before_and_after_subcommand() {
 }
 
 #[test]
-fn cov_subcommand_parses_as_coverage() {
+fn cov_subcommand_is_rejected() {
     assert!(Cli::try_parse_from(["kiss", "cov"]).is_err());
     assert!(Cli::command().find_subcommand("cov").is_none());
     let help = Cli::command().render_long_help().to_string();
@@ -52,29 +52,17 @@ fn cov_subcommand_parses_as_coverage() {
             .any(|w| w.eq_ignore_ascii_case("cov")),
         "top-level help must not mention the token cov\n{help}"
     );
-    assert!(Cli::try_parse_from(["kiss", "__coverage"]).is_err());
-    assert!(Cli::command().find_subcommand("__coverage").is_none());
 }
 
 #[test]
 fn readme_does_not_mention_cov_token() {
     let readme = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"));
-    let tokens: Vec<&str> = readme
-        .split(|c: char| !c.is_ascii_alphanumeric())
-        .filter(|w| !w.is_empty())
-        .collect();
-    for (i, word) in tokens.iter().enumerate() {
-        if !word.eq_ignore_ascii_case("cov") {
-            continue;
-        }
-        let allowed_llvm_cov = i
-            .checked_sub(1)
-            .is_some_and(|j| tokens[j].eq_ignore_ascii_case("llvm"));
-        assert!(
-            allowed_llvm_cov,
-            "README.md must not mention the token cov except as llvm-cov"
-        );
-    }
+    assert!(
+        !readme
+            .split(|c: char| !c.is_ascii_alphanumeric())
+            .any(|word| word.eq_ignore_ascii_case("cov")),
+        "README.md must not mention the token cov"
+    );
 }
 
 #[test]
@@ -101,18 +89,6 @@ fn help_subcommand_is_removed() {
 }
 
 #[test]
-fn test_accepts_coverage_all_flag() {
-    let cli = Cli::parse_from(["kiss", "test", ".", "--coverage-all"]);
-    assert!(matches!(
-        cli.command,
-        Commands::Test {
-            coverage_all: true,
-            ..
-        }
-    ));
-}
-
-#[test]
 fn test_accepts_jobs_override() {
     let cli = Cli::parse_from(["kiss", "test", ".", "-j", "7"]);
     assert!(matches!(cli.command, Commands::Test { jobs: Some(7), .. }));
@@ -130,34 +106,21 @@ fn test_rejects_zero_jobs_override() {
 }
 
 #[test]
-fn check_rejects_removed_coverage_flags() {
+fn check_rejects_removed_all_and_jobs_flags() {
     assert!(Cli::try_parse_from(["kiss", "check", "--all"]).is_err());
     assert!(Cli::try_parse_from(["kiss", "check", "-j", "2"]).is_err());
 }
 
 #[test]
-fn test_retry_bad_parses_and_removed_force_flags_are_rejected() {
-    let cli = Cli::parse_from(["kiss", "test", ".", "--retry-bad"]);
-    assert!(matches!(
-        cli.command,
-        Commands::Test {
-            retry_bad: true,
-            ..
-        }
-    ));
+fn test_removed_retry_and_force_flags_are_rejected() {
+    assert!(Cli::try_parse_from(["kiss", "test", ".", "--retry-bad"]).is_err());
     let targeted = Cli::parse_from([
         "kiss",
         "test",
-        "--retry-bad",
         "tests/fast/app_server/test_transact_grid.py::test_assign_method_follows_grid_queue_after_rebind",
     ]);
     match targeted.command {
-        Commands::Test {
-            operands,
-            retry_bad,
-            ..
-        } => {
-            assert!(retry_bad);
+        Commands::Test { operands, .. } => {
             assert_eq!(
                 parse_test_invocation(&operands).unwrap(),
                 TestInvocation::Targets(vec![
@@ -169,6 +132,10 @@ fn test_retry_bad_parses_and_removed_force_flags_are_rejected() {
     }
     assert!(Cli::try_parse_from(["kiss", "test", ".", "--force"]).is_err());
     assert!(Cli::try_parse_from(["kiss", "test", ".", "--force-bad"]).is_err());
+    assert_eq!(
+        parse_test_invocation(&["path/to/test.py:one_test".into()]).unwrap(),
+        TestInvocation::Targets(vec!["path/to/test.py::one_test".into()])
+    );
 }
 
 #[test]
@@ -209,12 +176,14 @@ fn test_branch_options_are_mode_specific() {
     assert!(validate_test_branch_options(&TestInvocation::Base, None, Some("origin/main")).is_ok());
     assert!(validate_test_branch_options(&TestInvocation::All, Some("main"), None).is_err());
     assert!(validate_test_branch_options(&TestInvocation::Commit, None, Some("base")).is_err());
-    assert!(validate_test_branch_options(
-        &TestInvocation::Targets(vec!["a.py".into()]),
-        Some("main"),
-        None
-    )
-    .is_err());
+    assert!(
+        validate_test_branch_options(
+            &TestInvocation::Targets(vec!["a.py".into()]),
+            Some("main"),
+            None
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -226,10 +195,9 @@ fn test_command_help_is_language_neutral_for_shared_options() {
         .render_long_help()
         .to_string();
 
-    assert!(help.contains("--retry-bad"));
+    assert!(!help.contains("--retry-bad"));
     assert!(!help.contains("--force"));
-    assert!(help
-        .contains("Rerun FAIL and TIMEOUT tests in the TARGET subset"));
+    assert!(!help.contains("Rerun FAIL and TIMEOUT tests in the TARGET subset"));
     assert!(help.contains("Maximum number of test jobs to run concurrently"));
     assert!(help.contains("commit, base, main, ., or PATH / PATH::symbol / directory"));
     assert!(help.contains("[TARGET]"));
@@ -238,8 +206,10 @@ fn test_command_help_is_language_neutral_for_shared_options() {
     assert!(!help.contains("validate-selection"));
     assert!(!help.contains("Force Python tests"));
     assert!(!help.contains("Maximum number of Python test jobs"));
-    assert!(help.contains("Show tests that would run without executing them"));
-    assert!(help.contains("Rerun tests when sources change"));
+    assert!(!help.contains("Show tests that would run without executing them"));
+    assert!(!help.contains("Rerun tests when sources change"));
+    assert!(!help.contains("--dry-run"));
+    assert!(!help.contains("--watch"));
 }
 
 #[test]
@@ -267,10 +237,7 @@ fn top_level_help_describes_commands_and_global_flags() {
     assert!(Cli::command().find_subcommand("help").is_none());
     assert!(help.contains("Write a dependency graph"));
     assert!(!help.contains("Output markdown path"));
-    assert!(help.contains("Run covering tests and enforce coverage and time gates"));
-    assert!(!help.contains("Coverage-only evaluation (prefer kiss test for the full path)"));
-    assert!(Cli::command().find_subcommand("__coverage").is_none());
-    assert!(!help.contains("Coverage is enforced by kiss test, not a standalone command"));
+    assert!(help.contains("Run tests and enforce time, test-count, and orphan gates"));
     assert!(
         !help.lines().any(|line| {
             let name = line.split_whitespace().next();
@@ -300,7 +267,9 @@ fn check_and_cov_help_describe_options() {
     assert!(check.contains("Codebase root, optionally followed by focus paths"));
     assert!(check.contains("Path prefix to exclude"));
     assert!(check.contains("Print analysis stage timings"));
-    assert!(check.contains("If .kissconfig is missing, writes one from current-codebase maxima."));
+    assert!(check.contains(
+        "If .kissconfig is missing, writes the default config, then raises Python and Rust thresholds so those checks pass."
+    ));
     assert!(check.contains("Usage:"));
     assert!(Cli::command().find_subcommand("cov").is_none());
     let mut command = Cli::command();
@@ -315,17 +284,19 @@ fn check_and_cov_help_describe_options() {
 
 #[test]
 fn test_cli_parses_targets_and_rejects_removed_modes() {
-    let cli = Cli::parse_from([
-        "kiss",
-        "test",
-        "src/lib.rs",
-        "tests/test_x.py::test_y",
-        "--dry-run",
-    ]);
+    assert!(
+        Cli::try_parse_from([
+            "kiss",
+            "test",
+            "src/lib.rs",
+            "tests/test_x.py::test_y",
+            "--dry-run",
+        ])
+        .is_err()
+    );
+    let cli = Cli::parse_from(["kiss", "test", "src/lib.rs", "tests/test_x.py::test_y"]);
     match cli.command {
-        Commands::Test {
-            operands, dry_run, ..
-        } => {
+        Commands::Test { operands, .. } => {
             assert_eq!(
                 operands,
                 vec![
@@ -333,14 +304,13 @@ fn test_cli_parses_targets_and_rejects_removed_modes() {
                     "tests/test_x.py::test_y".to_string()
                 ]
             );
-            assert!(dry_run);
         }
         _ => panic!("expected Test"),
     }
     let bare = Cli::try_parse_from(["kiss", "test"]).unwrap();
     match bare.command {
         Commands::Test { operands, .. } => {
-            assert_eq!(operands, vec![".".to_string()]);
+            assert!(operands.is_empty());
             assert_eq!(
                 parse_test_invocation(&operands).unwrap(),
                 TestInvocation::All
@@ -358,24 +328,7 @@ fn test_cli_parses_targets_and_rejects_removed_modes() {
 }
 
 #[test]
-fn test_watch_flag_parses() {
-    let cli = Cli::try_parse_from(["kiss", "test", "--watch", "commit"]).unwrap();
-    match cli.command {
-        Commands::Test {
-            watch: true,
-            operands,
-            ..
-        } => assert_eq!(operands, vec!["commit".to_string()]),
-        _ => panic!("expected watch"),
-    }
-}
-
-#[test]
-fn test_watch_bg_flag_is_rejected_by_clap() {
-    let err = Cli::try_parse_from(["kiss", "test", "--watch-bg", "commit"]).unwrap_err();
-    let msg = err.to_string();
-    assert!(
-        msg.contains("unexpected argument") || msg.contains("--watch-bg"),
-        "msg={msg}"
-    );
+fn test_watch_command_is_not_a_subcommand() {
+    assert!(Cli::try_parse_from(["kiss", "test-watch"]).is_err());
+    assert!(Cli::try_parse_from(["kiss", "test", "--watch", "commit"]).is_err());
 }

@@ -6,7 +6,6 @@ use crate::analyze::run_analyze;
 use crate::bin_cli::util::{merge_check_ignore_prefixes, validate_paths};
 use kiss::Language;
 
-
 pub struct CheckCommandArgs<'a> {
     pub paths: &'a [String],
     pub lang_filter: Option<Language>,
@@ -97,6 +96,7 @@ fn run_check_in_process(args: &CheckCommandArgs<'_>) -> i32 {
     i32::from(!run_analyze(&opts))
 }
 
+#[cfg(test)]
 pub(crate) fn run_check_in_process_pub(args: &CheckCommandArgs<'_>) -> i32 {
     run_check_in_process(args)
 }
@@ -108,11 +108,7 @@ fn run_split_check(args: &CheckCommandArgs<'_>) -> i32 {
     crate::bin_cli::check_shards::run_split_check_sharded(&exe, args)
 }
 
-pub(crate) fn run_split_check_with_exe_legacy(exe: &Path, args: &CheckCommandArgs<'_>) -> i32 {
-    run_split_check_with_exe(exe, args)
-}
-
-fn run_split_check_with_exe(exe: &Path, args: &CheckCommandArgs<'_>) -> i32 {
+pub(crate) fn run_split_check_with_exe(exe: &Path, args: &CheckCommandArgs<'_>) -> i32 {
     let Ok(mut rust) = spawn_lang_check(exe, args, "rust") else {
         return run_check_in_process(args);
     };
@@ -159,14 +155,23 @@ fn publish_worker_outputs(python: &Output, rust: &Output) -> i32 {
     forward_worker_stderr(&python.stderr);
     forward_worker_stderr(&rust.stderr);
     let mut totals = [0_usize; 5];
+    let mut saw_body = false;
+    let mut saw_hint = false;
+    let mut empty_root: Option<String> = None;
     for out in [&python.stdout, &rust.stdout] {
         for line in String::from_utf8_lossy(out).lines() {
-            if let Some(next) = analyzed_add(totals, line) {
-                totals = next;
-            } else if line != "NO VIOLATIONS" {
-                println!("{line}");
-            }
+            absorb_worker_line(
+                line,
+                &mut totals,
+                &mut saw_body,
+                &mut saw_hint,
+                &mut empty_root,
+            );
         }
+    }
+    if let Some(root) = empty_root.filter(|_| !saw_body && totals == [0; 5]) {
+        println!("No files in {root}");
+        return i32::from(!(python.status.success() && rust.status.success()));
     }
     println!(
         "Analyzed: {} files, {} code_units, {} statements, {} graph_nodes, {} graph_edges",
@@ -174,9 +179,36 @@ fn publish_worker_outputs(python: &Output, rust: &Output) -> i32 {
     );
     if python.status.success() && rust.status.success() {
         println!("NO VIOLATIONS");
-        0
-    } else {
-        1
+        return 0;
+    }
+    if saw_hint {
+        println!("{}", kiss::cli_output::VIOLATIONS_FIX_HINT);
+    }
+    1
+}
+
+fn absorb_worker_line(
+    line: &str,
+    totals: &mut [usize; 5],
+    saw_body: &mut bool,
+    saw_hint: &mut bool,
+    empty_root: &mut Option<String>,
+) {
+    if let Some(next) = analyzed_add(*totals, line) {
+        *totals = next;
+        return;
+    }
+    if let Some(root) = empty_language_root(line) {
+        empty_root.get_or_insert_with(|| root.to_string());
+        return;
+    }
+    if line == kiss::cli_output::VIOLATIONS_FIX_HINT {
+        *saw_hint = true;
+        return;
+    }
+    if line != "NO VIOLATIONS" && !crate::is_cli_wall_timing_line(line) {
+        println!("{line}");
+        *saw_body = true;
     }
 }
 
@@ -188,8 +220,15 @@ fn forward_worker_stderr(bytes: &[u8]) {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn forward_worker_stderr_pub(bytes: &[u8]) {
     forward_worker_stderr(bytes);
+}
+
+pub(crate) fn empty_language_root(line: &str) -> Option<&str> {
+    ["No Rust files in ", "No Python files in ", "No files in "]
+        .into_iter()
+        .find_map(|prefix| line.strip_prefix(prefix))
 }
 
 fn analyzed_add(mut totals: [usize; 5], line: &str) -> Option<[usize; 5]> {
@@ -207,12 +246,13 @@ fn analyzed_add(mut totals: [usize; 5], line: &str) -> Option<[usize; 5]> {
     Some(totals)
 }
 
+#[cfg(test)]
 pub(crate) fn analyzed_add_pub(totals: [usize; 5], line: &str) -> Option<[usize; 5]> {
     analyzed_add(totals, line)
 }
 
 #[cfg(test)]
-mod coverage_witness {
+mod touch_witness {
     use super::*;
     use std::os::unix::process::ExitStatusExt;
     use std::process::ExitStatus;
@@ -266,6 +306,21 @@ mod coverage_witness {
     }
 
     #[test]
+    fn empty_language_root_matches_worker_notices_only() {
+        assert_eq!(empty_language_root("No Rust files in ."), Some("."));
+        assert_eq!(
+            empty_language_root("No Python files in /tmp/x"),
+            Some("/tmp/x")
+        );
+        assert_eq!(empty_language_root("No files in ."), Some("."));
+        assert_eq!(empty_language_root("NO VIOLATIONS"), None);
+        assert_eq!(
+            empty_language_root("VIOLATION:statements_per_function:a.py:1:f: msg"),
+            None
+        );
+    }
+
+    #[test]
     fn analyzed_add_sums_two_summaries() {
         let line = "Analyzed: 10 files, 20 code_units, 30 statements, 4 graph_nodes, 5 graph_edges";
         let totals = analyzed_add([1, 2, 3, 4, 5], line).unwrap();
@@ -278,12 +333,12 @@ mod coverage_witness {
     fn publish_merges_clean_workers() {
         let python = output(
             true,
-            "Analyzed: 2 files, 3 code_units, 4 statements, 2 graph_nodes, 1 graph_edges\nNO VIOLATIONS\n",
+            "Analyzed: 2 files, 3 code_units, 4 statements, 2 graph_nodes, 1 graph_edges\nNO VIOLATIONS\nkiss: 1.00s\n",
             "[TIMING] py=1\nkiss: 1.00s\n",
         );
         let rust = output(
             true,
-            "Analyzed: 1 files, 1 code_units, 1 statements, 1 graph_nodes, 1 graph_edges\nNO VIOLATIONS\n",
+            "Analyzed: 1 files, 1 code_units, 1 statements, 1 graph_nodes, 1 graph_edges\nNO VIOLATIONS\nkiss: 2.00s\n",
             "kiss: 2.00s\n",
         );
         assert_eq!(publish_worker_outputs(&python, &rust), 0);
@@ -349,10 +404,13 @@ mod coverage_witness {
         let args = sample_args(&path);
 
         assert_eq!(run_check_in_process_pub(&args), 0);
-        assert_eq!(run_split_check_with_exe_legacy(Path::new("/bin/true"), &args), 0);
+        assert_eq!(run_split_check_with_exe(Path::new("/bin/true"), &args), 0);
         forward_worker_stderr_pub(b"some stderr\n");
         assert_eq!(
-            analyzed_add_pub([1, 2, 3, 4, 5], "Analyzed: 1 files, 2 code_units, 3 statements, 4 graph_nodes, 5 graph_edges"),
+            analyzed_add_pub(
+                [1, 2, 3, 4, 5],
+                "Analyzed: 1 files, 2 code_units, 3 statements, 4 graph_nodes, 5 graph_edges"
+            ),
             Some([2, 4, 6, 8, 10])
         );
     }

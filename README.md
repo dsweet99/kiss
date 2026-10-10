@@ -3,7 +3,7 @@
 Global code feedback for LLM coding agents
 
 ## tl;dr
-`kiss check` provides feedback to LLMs about code complexity and duplication; `kiss test` refreshes and enforces cached runtime line coverage. Add an AI coder rule (e.g., in `AGENTS.md`) like
+`kiss check` provides feedback to LLMs about code complexity and duplication; `kiss test` runs your unit tests and enforces time, test-count, and orphan gates. Add an AI coder rule (e.g., in `AGENTS.md`) like
 ```
 When you write code, always make sure `pytest -sv tests`, `ruff check`, `kiss check`, and `kiss test` pass.
 Iterate until they do.
@@ -14,7 +14,7 @@ kiss will help your agent produce simpler, clearer, more maintainable code. kiss
 ## The Problem: Missing Global Context
 LLMs operate locally, focusing on whatever code they are editing plus bits and pieces of other, relevant code. They ignore the overall structure of the codebase because they don't see it. Over time, code tends to be a little more tangled, a little less DRY, harder to read and harder to update. To counteract this, LLMs need global information about the codebase.
 
-kiss attempts to provide that in the form of stats about files, functions, etc., code-graph metrics, detected duplication, and low runtime line coverage. `kiss check` stays fast and static; run `kiss test` when you need coverage enforcement. kiss's output is compact, so it won't bloat context. `orphan` (under `[test] orphan_detection`) is a flood-fill reachability check run by `kiss test` after coverage: a production unit that no test, main, or coverage-reached unit names. `kiss check` does not report orphans.
+kiss attempts to provide that in the form of stats about files, functions, etc., code-graph metrics, and detected duplication. `kiss check` stays fast and static; run `kiss test` when you need test gates. kiss's output is compact, so it won't bloat context. `orphan` (under `[test] orphan_detection`) is a flood-fill reachability check run by `kiss test` after tests pass: a production unit that no test, main, or test-executed unit names. `kiss check` does not report orphans.
 
 ## Installation
 
@@ -24,11 +24,11 @@ cargo install kiss-ai
 
 `kiss check`, `kiss stats`, and `kiss viz` need only the installed binary. `kiss test` also needs the language toolchains for the repos you run it on:
 
-- **Rust coverage:** [`cargo-llvm-cov`](https://crates.io/crates/cargo-llvm-cov) and [`cargo-nextest`](https://crates.io/crates/cargo-nextest) on `PATH` (kiss drives `cargo llvm-cov nextest`).
+- **Rust tests:** [`cargo-nextest`](https://crates.io/crates/cargo-nextest) on `PATH` (kiss drives `cargo nextest run`).
 - **Python tests:** a `python` interpreter with [`pytest`](https://pypi.org/project/pytest/) importable.
 
 ```bash
-cargo install cargo-llvm-cov cargo-nextest
+cargo install cargo-nextest
 # Python: pip install pytest   # or your environment's equivalent
 ```
 
@@ -58,13 +58,12 @@ VIOLATION:duplication:src/users.py:10:create_user: 80% similar, 2 copies: [src/u
 
 ## `kiss test`
 
-`kiss test` runs your unit tests, then enforces line-level code coverage, and flags too-long-running unit tests as violations.
+`kiss test` runs your unit tests and flags too-long-running unit tests, too many tests, and (optionally) orphan units as violations.
 `kiss test` is designed to be an efficient and robust unit test runner for both Python and Rust. It supports
 - Caching, to avoid reruns of working tests
 - Parallelization, to speed up test running
 - Separate interpreters for each Python test, to reduce test flakiness and failures of the test runner
 - Timeouts with feedback for your agent to motivate it to write faster tests
-- Watcher: `kiss test --watch` will rerun affected unit tests as your agent codes so that when an agent requests `kiss test`, the result will be more likely to already be cached.
 
 
 ---
@@ -115,7 +114,7 @@ FIRST STEP: After the user's first request, before doing anything else, call `ki
 ```
 
 
-The rules that `kiss rules` dumps to stdout are enforced by `kiss check` for static rules and by `kiss test` for coverage, time, and test-count gates. Threshold numbers come from your `.kissconfig`, or from `--config FILE` when you pass that flag. Run `kiss rules` for the live catalog. Example line:
+The rules that `kiss rules` dumps to stdout are enforced by `kiss check` for static rules and by `kiss test` for time, test-count, and orphan gates. Threshold numbers come from your `.kissconfig`, or from `--config FILE` when you pass that flag. Run `kiss rules` for the live catalog. Example line:
 
 ```
 RULE: [Python] [positional_args <= 3] positional_args is the maximum number of positional parameters in a Python function definition.

@@ -109,35 +109,6 @@ fn test_defaults_appenders() {
 }
 
 #[test]
-fn test_infer_gate_keeps_default_coverage_threshold() {
-    let tmp = TempDir::new().unwrap();
-    std::fs::write(
-        tmp.path().join("app.py"),
-        "def covered():\n    return 1\n\ndef uncovered():\n    return 2\n",
-    )
-    .unwrap();
-    std::fs::write(
-        tmp.path().join("test_app.py"),
-        "from app import covered\n\ndef test_covered():\n    assert covered() == 1\n",
-    )
-    .unwrap();
-    std::fs::write(
-        tmp.path().join("fake_extra.py"),
-        "def ignored_uncovered():\n    return 3\n",
-    )
-    .unwrap();
-
-    let paths = vec![tmp.path().to_string_lossy().to_string()];
-    let ignore = vec!["fake_".to_string()];
-    let gate = infer_gate_config_for_paths(&paths, None, &ignore).unwrap();
-    assert_eq!(
-        gate.test_coverage_threshold,
-        GateConfig::default().test_coverage_threshold,
-        "mimic/clamp must not infer coverage from static references"
-    );
-}
-
-#[test]
 fn test_infer_gate_does_not_enable_orphan_detection() {
     let tmp = TempDir::new().unwrap();
     let orphan_py = tmp.path().join("orphan.py");
@@ -196,7 +167,7 @@ fn test_infer_gate_config_comment_removal_enabled() {
 fn test_write_mimic_config_smoke() {
     let tmp = tempfile::tempdir().unwrap();
     let out = tmp.path().join("mimic_out.toml");
-    let toml = "[test]\ntest_coverage_threshold = 90\n";
+    let toml = "[python]\nmax_num_tests = 90\n[rust]\nmax_num_tests = 80\n";
     write_mimic_config(&out, toml, 0, 0).unwrap();
     assert!(out.exists());
 }
@@ -215,14 +186,35 @@ fn test_merge_config_toml_smoke() {
 }
 
 #[test]
-fn merge_omits_unanalyzed_language_table() {
+fn merge_keeps_unanalyzed_language_table() {
     let tmp = tempfile::tempdir().unwrap();
     let path = tmp.path().join("cfg.toml");
     std::fs::write(
         &path,
-        "[python]\nstatements_per_function = 1\n[rust]\narguments = 8\n",
+        "[python]\nstatements_per_function = 1\n[rust]\narguments = 9\n",
     )
     .unwrap();
+    let merged = merge_config_toml(
+        &path,
+        "[python]\nstatements_per_function = 2\n[rust]\narguments = 8\n",
+        MergeLanguageUpdate::PythonOnly,
+    );
+    assert!(merged.contains("[python]"), "{merged}");
+    assert!(
+        merged.contains("statements_per_function = 2"),
+        "analyzed python thresholds must be updated:\n{merged}"
+    );
+    assert!(
+        merged.contains("[rust]") && merged.contains("arguments = 9"),
+        "unanalyzed rust table must be kept:\n{merged}"
+    );
+}
+
+#[test]
+fn merge_inserts_default_language_table_when_absent() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("cfg.toml");
+    std::fs::write(&path, "[python]\nstatements_per_function = 1\n").unwrap();
     let merged = merge_config_toml(
         &path,
         "[python]\nstatements_per_function = 2\n",
@@ -230,8 +222,44 @@ fn merge_omits_unanalyzed_language_table() {
     );
     assert!(merged.contains("[python]"), "{merged}");
     assert!(
-        !merged.contains("[rust]"),
-        "unanalyzed rust table must be omitted:\n{merged}"
+        merged.contains("[rust]") && merged.contains("arguments = 8"),
+        "missing rust table must be filled with defaults:\n{merged}"
+    );
+}
+
+#[test]
+fn merge_keeps_existing_test_gates() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("cfg.toml");
+    std::fs::write(
+        &path,
+        "[python]\nstatements_per_function = 1\nmax_num_tests = 100\n[rust]\narguments = 9\nmax_num_tests = 80\n[test]\norphan_detection = true\nmax_num_tests = 100\n",
+    )
+    .unwrap();
+    let merged = merge_config_toml(
+        &path,
+        "[python]\nstatements_per_function = 2\nmax_num_tests = 1000\n[rust]\narguments = 8\nmax_num_tests = 2000\n[test]\norphan_detection = false\nmax_unit_test_seconds = { \"*\" = 99999 }\n",
+        MergeLanguageUpdate::PythonOnly,
+    );
+    assert!(
+        merged.contains("orphan_detection = true"),
+        "existing orphan_detection must be preserved:\n{merged}"
+    );
+    assert!(
+        merged.contains("max_num_tests = 100"),
+        "existing python max_num_tests must be preserved:\n{merged}"
+    );
+    assert!(
+        merged.contains("max_num_tests = 80"),
+        "unanalyzed rust max_num_tests must be preserved:\n{merged}"
+    );
+    assert!(
+        !merged.contains("max_num_tests = 1000"),
+        "generated python cap must not replace the existing cap:\n{merged}"
+    );
+    assert!(
+        merged.contains("99999"),
+        "missing time limit must be filled from the generated config:\n{merged}"
     );
 }
 
@@ -274,7 +302,7 @@ fn merge_adds_test_section_from_new_when_missing() {
     std::fs::write(&path, "[python]\nstatements_per_function = 1\n").unwrap();
     let merged = merge_config_toml(
         &path,
-        "[python]\nstatements_per_function = 2\n[test]\nnum_jobs = 4\nnum_jobs_pytest = 16\nnum_jobs_llvm_cov = 4\nwatch_settle_seconds = 1.0\npytest_plugins = []\nignore = []\n",
+        "[python]\nstatements_per_function = 2\n[test]\nnum_jobs = 4\nnum_jobs_pytest = 16\nnum_jobs_nextest = 4\npytest_plugins = []\nignore = []\n",
         MergeLanguageUpdate::PythonOnly,
     );
     assert!(
@@ -290,8 +318,8 @@ fn merge_adds_test_section_from_new_when_missing() {
         "new num_jobs_pytest default must be present:\n{merged}"
     );
     assert!(
-        merged.contains("num_jobs_llvm_cov = 4"),
-        "new num_jobs_llvm_cov default must be present:\n{merged}"
+        merged.contains("num_jobs_nextest = 4"),
+        "new num_jobs_nextest default must be present:\n{merged}"
     );
     assert!(
         merged.contains("pytest_plugins = []"),
@@ -300,5 +328,47 @@ fn merge_adds_test_section_from_new_when_missing() {
     assert!(
         merged.contains("ignore = []"),
         "new ignore default must be present:\n{merged}"
+    );
+    let test_part = merged.split("[test]").nth(1).unwrap_or("");
+    assert!(
+        !test_part.contains("num_jobs_pytest") && !test_part.contains("num_jobs_nextest"),
+        "language job caps must leave [test]:\n{merged}"
+    );
+}
+
+#[test]
+fn merge_moves_existing_test_job_keys_into_language_sections() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("cfg.toml");
+    std::fs::write(
+        &path,
+        "[python]\nstatements_per_function = 1\n[test]\nnum_jobs = 8\nnum_jobs_pytest = 9\nnum_jobs_llvm_cov = 7\n",
+    )
+    .unwrap();
+    let merged = merge_config_toml(
+        &path,
+        "[python]\nstatements_per_function = 2\nnum_jobs_pytest = 16\n[rust]\nnum_jobs_nextest = 4\n[test]\nnum_jobs = 4\n",
+        MergeLanguageUpdate::PythonOnly,
+    );
+    assert!(
+        merged.contains("num_jobs = 8"),
+        "existing shared num_jobs must stay:\n{merged}"
+    );
+    assert!(
+        merged.contains("num_jobs_pytest = 9"),
+        "existing pytest jobs must move onto [python]:\n{merged}"
+    );
+    assert!(
+        merged.contains("num_jobs_nextest = 7"),
+        "existing llvm-cov alias must move onto [rust] as num_jobs_nextest:\n{merged}"
+    );
+    assert!(
+        !merged.contains("num_jobs_llvm_cov"),
+        "alias must not be rewritten into the merged file:\n{merged}"
+    );
+    let test_part = merged.split("[test]").nth(1).unwrap_or("");
+    assert!(
+        !test_part.contains("num_jobs_pytest") && !test_part.contains("num_jobs_nextest"),
+        "moved job caps must not remain under [test]:\n{merged}"
     );
 }

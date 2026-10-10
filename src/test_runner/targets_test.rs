@@ -33,6 +33,13 @@ fn parse_test_target_accepts_path_and_symbol_forms() {
         class_test.python_nodeid.as_deref(),
         Some("tests/test_x.py::TestBox::test_method")
     );
+
+    let single_colon = parse_test_target("path/to/test.py:one_test").unwrap();
+    assert_eq!(single_colon.symbol.as_deref(), Some("one_test"));
+    assert_eq!(
+        single_colon.path,
+        std::path::PathBuf::from("path/to/test.py")
+    );
 }
 
 #[test]
@@ -155,6 +162,27 @@ fn python_attach_nodeids_for_function_and_class_tests() {
             .iter()
             .any(|d| d.test_selector.as_deref() == Some("test_mod.py::test_top"))
     );
+}
+
+#[test]
+fn symlink_node_selector_keeps_the_link_name() {
+    let tmp = tempdir().unwrap();
+    fs::write(
+        tmp.path().join("impl.py"),
+        "def test_ok():\n    assert True\n",
+    )
+    .unwrap();
+    std::os::unix::fs::symlink("impl.py", tmp.path().join("test_ok.py")).unwrap();
+    let query = resolve_target_operands(
+        tmp.path(),
+        &["test_ok.py::test_ok".to_string()],
+        Some(Language::Python),
+        &[],
+        &[],
+    )
+    .unwrap();
+    let ids: Vec<_> = query.direct_python.iter().cloned().collect();
+    assert_eq!(ids, vec!["test_ok.py::test_ok".to_string()]);
 }
 
 #[test]

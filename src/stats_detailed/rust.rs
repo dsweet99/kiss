@@ -218,13 +218,13 @@ pub(crate) fn get_impl_name(i: &syn::ItemImpl) -> String {
 }
 
 #[cfg(test)]
-mod rust_coverage {
+mod rust_touch {
     use super::collect_detailed_rs;
     use super::*;
     use std::io::Write;
 
     #[test]
-    fn touch_for_coverage() {
+    fn touch_helpers() {
         let mut tmp = tempfile::NamedTempFile::with_suffix(".rs").unwrap();
         write!(
             tmp,
@@ -320,11 +320,11 @@ mod rust_coverage {
 }
 
 #[cfg(test)]
-mod coverage_witness {
+mod touch_witness {
     use super::*;
 
     impl RustFnMethodPush<'_> {
-        fn witness_for_coverage<'a>(m: &'a RustFunctionMetrics) -> RustFnMethodPush<'a> {
+        fn witness_for_touch<'a>(m: &'a RustFunctionMetrics) -> RustFnMethodPush<'a> {
             RustFnMethodPush {
                 file: "a.rs",
                 name: "f".into(),
@@ -348,6 +348,6 @@ mod coverage_witness {
         let mut units = Vec::new();
         push_rust_fn_or_method_unit(&mut units, p);
         assert_eq!(units.len(), 1);
-        RustFnMethodPush::witness_for_coverage(&m);
+        RustFnMethodPush::witness_for_touch(&m);
     }
 }

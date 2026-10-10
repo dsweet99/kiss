@@ -1,11 +1,11 @@
 use crate::analyze;
 use crate::analyze::DryRunParams;
 use crate::bin_cli::check_cmd;
-use crate::bin_cli::stats::{run_stats, RunStatsArgs};
+use crate::bin_cli::stats::{RunStatsArgs, run_stats};
 use crate::bin_cli::test_cmd::run_test_command;
 use crate::bin_cli::util;
 use crate::rules::run_rules;
-use crate::viz::{run_viz, VizCoarsen};
+use crate::viz::{VizCoarsen, run_viz};
 
 use super::options::{
     CheckDispatchOptions, DryDispatchOptions, RulesDispatchOptions, StatsDispatchOptions,
@@ -101,29 +101,19 @@ fn eprint_viz_error(e: &std::io::Error) {
 }
 
 pub(in crate::bin_cli::dispatch) fn dispatch_test(o: TestDispatchOptions<'_>) -> i32 {
-    let cli_ignore = o.ignore.clone();
     let ignore = o.test_cfg.merged_ignore(&o.ignore);
     run_test_command(crate::bin_cli::test_cmd::TestCommandArgs {
         invocation: o.invocation,
         main_branch: o.main_branch.as_deref(),
         base_branch: o.base_branch.as_deref(),
         dry_run: o.dry_run,
-        retry_bad: o.retry_bad,
         metrics: o.metrics,
-        coverage_all: o.coverage_all,
-        watch: o.watch,
-        jobs: o.jobs.unwrap_or(o.test_cfg.num_jobs),
-        jobs_cli: o.jobs,
+        jobs: o.jobs.unwrap_or_else(|| o.test_cfg.command_jobs()),
         ignore: &ignore,
-        cli_ignore: &cli_ignore,
         extra: &o.extra,
         lang_filter: o.lang,
         test_cfg: o.test_cfg,
-        py_config: o.cfg.py,
-        rs_config: o.cfg.rs,
         gate_config: o.cfg.gate,
-        reload_kissconfig: o.reload_kissconfig,
-        config_path: o.config_path,
         language_tables: o.cfg.language_tables,
     })
 }

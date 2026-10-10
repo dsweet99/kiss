@@ -66,6 +66,51 @@ pub fn generate_shingles(text: &str, shingle_size: usize) -> HashSet<u64> {
     shingles
 }
 
+#[must_use]
+pub fn signature_from_text(text: &str, shingle_size: usize, size: usize) -> MinHashSignature {
+    let mut hashes = vec![u64::MAX; size];
+    if shingle_size == 0 || size == 0 {
+        return MinHashSignature { hashes };
+    }
+    let tokens: Vec<&str> = text.split_whitespace().collect();
+    if tokens.len() < shingle_size {
+        return MinHashSignature { hashes };
+    }
+    if size == DEFAULT_MINHASH_SIZE {
+        fill_signature(&mut hashes, &tokens, shingle_size, &*DEFAULT_COEFFICIENTS);
+    } else {
+        fill_signature(&mut hashes, &tokens, shingle_size, &coefficients_for(size));
+    }
+    MinHashSignature { hashes }
+}
+
+fn coefficients_for(size: usize) -> Vec<(u64, u64)> {
+    (0..size)
+        .map(|i| {
+            let seed = 0x9E37_79B9_7F4A_7C15_u64.wrapping_add(u64::try_from(i).unwrap_or(0));
+            let a = seed.wrapping_mul(0xBF58_476D_1CE4_E5B9) | 1;
+            let b = seed.wrapping_mul(0x94D0_49BB_1331_11EB);
+            (a, b)
+        })
+        .collect()
+}
+
+fn fill_signature(hashes: &mut [u64], tokens: &[&str], shingle_size: usize, coeffs: &[(u64, u64)]) {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    for window in tokens.windows(shingle_size) {
+        let mut hasher = DefaultHasher::new();
+        window.hash(&mut hasher);
+        let shingle = hasher.finish();
+        for (slot, &(a, b)) in hashes.iter_mut().zip(coeffs) {
+            let mixed = a.wrapping_mul(shingle).wrapping_add(b);
+            if mixed < *slot {
+                *slot = mixed;
+            }
+        }
+    }
+}
+
 pub fn compute_minhash<S: std::hash::BuildHasher>(
     shingles: &HashSet<u64, S>,
     size: usize,
@@ -179,7 +224,7 @@ pub fn find_lsh_candidates(
 mod tests;
 
 #[cfg(test)]
-mod coverage_witness {
+mod touch_witness {
     use super::*;
 
     impl MinHashSignature {

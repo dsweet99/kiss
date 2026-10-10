@@ -1,7 +1,8 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use crate::test_runner::coverage_decision::TestSelector;
+use super::ChangedTestSelectors;
+use crate::test_runner::language_keyed::LanguageKeyed;
 use kiss::{
     ContextDependencyGraph, ParsedFile, ParsedRustFile, module_name_for_path, path_for_module_name,
 };
@@ -13,20 +14,25 @@ pub(super) fn expand_unresolved_test_helpers(
     test_paths: &[PathBuf],
     ignore: &[String],
     enumerated: &ChangedFileTests,
-    python: &mut Vec<TestSelector>,
-    rust: &mut Vec<TestSelector>,
+    changed: &mut ChangedTestSelectors,
 ) -> Result<(), String> {
-    if unresolved_python_helper(test_paths, enumerated) {
-        for selector in super::super::enumerate_workspace_python_selectors(repo_root, ignore, &[])?
-        {
-            python.push(TestSelector::new(kiss::Language::Python, selector));
+    let unresolved = LanguageKeyed {
+        python: unresolved_python_helper(test_paths, enumerated),
+        rust: unresolved_rust_helper(test_paths, enumerated),
+    };
+    let mut ids = LanguageKeyed::<Vec<String>>::default();
+    for language in crate::test_runner::lang_registry::languages() {
+        if *unresolved.get(language) {
+            *ids.get_mut(language) =
+                crate::test_runner::lang_registry::enumerate_workspace_selectors(
+                    repo_root,
+                    language,
+                    ignore,
+                    &[],
+                )?;
         }
     }
-    if unresolved_rust_helper(test_paths, enumerated) {
-        for selector in super::super::enumerate_workspace_rust_selectors(repo_root, ignore)? {
-            rust.push(TestSelector::new(kiss::Language::Rust, selector));
-        }
-    }
+    super::extend_tagged(changed, ids);
     Ok(())
 }
 
@@ -58,28 +64,17 @@ pub(super) fn append_importer_tests(
     repo_root: &Path,
     ignore: &[String],
     test_paths: &[PathBuf],
-    python: &mut Vec<TestSelector>,
-    rust: &mut Vec<TestSelector>,
+    changed: &mut ChangedTestSelectors,
 ) -> Result<(), String> {
     if test_paths.is_empty() {
         return Ok(());
     }
     let extra = importer_files(repo_root, ignore, test_paths)?;
-    if extra.is_empty() {
-        append_covering_selectors(repo_root, test_paths, python, rust);
-        return Ok(());
+    if !extra.is_empty() {
+        let more = super::super::enumerate_tests_in_changed_files(repo_root, &extra)
+            .map_err(|err| err.to_string())?;
+        super::extend_tagged(changed, super::changed_file_ids(&more));
     }
-    let more = super::super::enumerate_tests_in_changed_files(repo_root, &extra)
-        .map_err(|err| err.to_string())?;
-    for nodeid in more.python_nodeids {
-        python.push(TestSelector::new(kiss::Language::Python, nodeid));
-    }
-    for (path, id) in more.rust_tests {
-        if kiss::Language::is_rust_path(&path) {
-            rust.push(TestSelector::new(kiss::Language::Rust, id));
-        }
-    }
-    append_covering_selectors(repo_root, test_paths, python, rust);
     Ok(())
 }
 
@@ -137,34 +132,4 @@ fn importer_paths_of(ctx: &ContextDependencyGraph, test_paths: &[PathBuf]) -> Ve
         }
     }
     extra.into_iter().collect()
-}
-
-fn append_covering_selectors(
-    repo_root: &Path,
-    test_paths: &[PathBuf],
-    python: &mut Vec<TestSelector>,
-    rust: &mut Vec<TestSelector>,
-) {
-    if let Some(sels) =
-        crate::test_runner::python_coverage_index::select_python_source_selectors_from_index(
-            repo_root, test_paths,
-        )
-    {
-        for id in sels {
-            python.push(TestSelector::new(kiss::Language::Python, id));
-        }
-    }
-    if let Some(pop) = crate::test_runner::rust_coverage_index::load_current_rust_population_state(
-        repo_root,
-        None,
-        &[],
-    ) && let Some(sels) = crate::test_runner::rust_coverage_index::selectors_for_source_paths(
-        repo_root,
-        test_paths,
-        &pop.line_index,
-    ) {
-        for id in sels {
-            rust.push(TestSelector::new(kiss::Language::Rust, id));
-        }
-    }
 }

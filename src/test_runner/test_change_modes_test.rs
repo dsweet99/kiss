@@ -2,10 +2,9 @@ use tempfile::TempDir;
 
 use crate::test_git::TestChangeMode;
 use crate::test_runner::test_mode_fixtures::{
-    PY_COVERING_SELECTOR, RS_COVERING_SELECTOR, edit_python_covered_source,
-    clone_row_b_committed_repo, clone_warm_committed_repo, edit_rust_covered_source,
-    rewrite_python_population_after_edit, warm_committed_rust_demo, warm_python_covering_demo,
-    with_locked_warm_committed_repo, with_cwd,
+    PY_SELECTOR, RS_SELECTOR, clone_row_b_committed_repo, clone_warm_committed_repo,
+    edit_python_source, edit_rust_source, refresh_python_selectors_after_edit,
+    warm_committed_rust_demo, warm_python_demo, with_cwd, with_locked_warm_committed_repo,
 };
 use crate::test_runner::{PlannedSelectors, SelectorRunOptions, plan_selectors, run_selectors};
 
@@ -46,67 +45,67 @@ fn mode_plan_args(mode: TestChangeMode) -> (Option<&'static str>, Option<&'stati
     }
 }
 
-fn assert_rust_covering(mode: TestChangeMode) {
+fn assert_rust_population(mode: TestChangeMode) {
     with_locked_warm_committed_repo(|repo, lib| {
-        edit_rust_covered_source(&lib, 2);
+        edit_rust_source(&lib, 2);
         let (main, base) = mode_plan_args(mode);
         let planned = with_cwd(repo, || {
             plan(mode, main, base, &[], Some(kiss::Language::Rust))
         })
         .unwrap_or_else(|e| panic!("{} plan failed: {e}", mode_label(mode)));
         assert!(
-            !planned.population_required.rust,
-            "{}: rust_population_required must be false",
+            planned.population_required.rust,
+            "{}: a Rust edit must rerun the Rust population",
             mode_label(mode)
         );
         assert_eq!(
             planned.sel.rust,
-            vec![RS_COVERING_SELECTOR.to_string()],
-            "{}: covering Rust selector contract",
+            vec![RS_SELECTOR.to_string()],
+            "{}: every Rust test must be planned",
             mode_label(mode)
         );
     });
 }
 
-fn assert_python_covering(mode: TestChangeMode) {
+fn assert_python_population(mode: TestChangeMode) {
     let tmp = TempDir::new().unwrap();
-    let app = warm_python_covering_demo(&tmp);
-    edit_python_covered_source(&app, 2);
-    rewrite_python_population_after_edit(tmp.path());
+    let app = warm_python_demo(&tmp);
+    edit_python_source(&app, 2);
+    refresh_python_selectors_after_edit(tmp.path());
     let (main, base) = mode_plan_args(mode);
     let planned = with_cwd(tmp.path(), || {
         plan(mode, main, base, &[], Some(kiss::Language::Python))
     })
     .unwrap_or_else(|e| panic!("{} python plan failed: {e}", mode_label(mode)));
     assert!(
-        !planned.population_required.python,
-        "{}: python_population_required must be false",
+        planned.population_required.python,
+        "{}: a Python edit must rerun the Python population",
         mode_label(mode)
     );
     assert_eq!(
         planned.sel.python,
-        vec![PY_COVERING_SELECTOR.to_string()],
-        "{}: covering Python selector contract",
+        vec![PY_SELECTOR.to_string()],
+        "{}: every Python test must be planned",
         mode_label(mode)
     );
 }
 
 #[test]
-fn row_a_commit_warm_rust_edit_selects_covering() {
+fn row_a_commit_warm_rust_edit_selects_population() {
     let _cwd_guard = crate::cwd_test_lock::lock();
-    assert_rust_covering(TestChangeMode::Commit);
+    assert_rust_population(TestChangeMode::Commit);
 }
 
 #[test]
-fn row_a_base_warm_rust_edit_selects_covering() {
+fn row_a_base_warm_rust_edit_selects_population() {
     let _cwd_guard = crate::cwd_test_lock::lock();
-    assert_rust_covering(TestChangeMode::Base);
+    assert_rust_population(TestChangeMode::Base);
 }
 
 #[test]
-fn row_a_main_warm_rust_edit_selects_covering() {
+fn row_a_main_warm_rust_edit_selects_population() {
     let _cwd_guard = crate::cwd_test_lock::lock();
-    assert_rust_covering(TestChangeMode::Main);
+    assert_rust_population(TestChangeMode::Main);
 }
 
 #[test]
@@ -134,21 +133,21 @@ fn row_b_rust_test_file_only_selects_that_test() {
 }
 
 #[test]
-fn row_c_commit_warm_python_edit_selects_covering() {
+fn row_c_commit_warm_python_edit_selects_population() {
     let _cwd_guard = crate::cwd_test_lock::lock();
-    assert_python_covering(TestChangeMode::Commit);
+    assert_python_population(TestChangeMode::Commit);
 }
 
 #[test]
-fn row_c_base_warm_python_edit_selects_covering() {
+fn row_c_base_warm_python_edit_selects_population() {
     let _cwd_guard = crate::cwd_test_lock::lock();
-    assert_python_covering(TestChangeMode::Base);
+    assert_python_population(TestChangeMode::Base);
 }
 
 #[test]
-fn row_c_main_warm_python_edit_selects_covering() {
+fn row_c_main_warm_python_edit_selects_population() {
     let _cwd_guard = crate::cwd_test_lock::lock();
-    assert_python_covering(TestChangeMode::Main);
+    assert_python_population(TestChangeMode::Main);
 }
 
 #[test]
@@ -195,9 +194,9 @@ fn row_d_empty_diff_dry_run_exits_zero() {
 fn row_e_lang_rust_excludes_python_selectors() {
     let _cwd_guard = crate::cwd_test_lock::lock();
     let tmp = TempDir::new().unwrap();
-    let app = warm_python_covering_demo(&tmp);
-    edit_python_covered_source(&app, 2);
-    rewrite_python_population_after_edit(tmp.path());
+    let app = warm_python_demo(&tmp);
+    edit_python_source(&app, 2);
+    refresh_python_selectors_after_edit(tmp.path());
     let rust_only = with_cwd(tmp.path(), || {
         plan(
             TestChangeMode::Commit,
@@ -221,7 +220,7 @@ fn row_e_lang_python_excludes_rust_selectors() {
     let _cwd_guard = crate::cwd_test_lock::lock();
     let tmp = TempDir::new().unwrap();
     let lib = clone_warm_committed_repo(tmp.path());
-    edit_rust_covered_source(&lib, 2);
+    edit_rust_source(&lib, 2);
     let py_only = with_cwd(tmp.path(), || {
         plan(
             TestChangeMode::Commit,
@@ -245,7 +244,7 @@ fn row_f_ignore_prefix_skips_edited_file() {
     let _cwd_guard = crate::cwd_test_lock::lock();
     let tmp = TempDir::new().unwrap();
     let lib = warm_committed_rust_demo(&tmp);
-    edit_rust_covered_source(&lib, 2);
+    edit_rust_source(&lib, 2);
     let ignore = vec!["src".to_string()];
     let planned = with_cwd(tmp.path(), || {
         plan(

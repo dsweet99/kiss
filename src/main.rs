@@ -27,9 +27,6 @@ mod viz;
 mod viz_coarsen;
 
 use crate::bin_cli::{run, set_sigpipe_default};
-use kiss::rust_llvm_cov_runner::{
-    KissProfrawProcessGuard, discover_repo_root, redirect_this_process, sweep_kiss_profraw_dir,
-};
 
 fn main() {
     std::process::exit(run_kiss_main());
@@ -39,24 +36,24 @@ fn main() {
 fn run_kiss_main() -> i32 {
     let t0 = std::time::Instant::now();
     set_sigpipe_default();
-    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    let repo_root = discover_repo_root(&cwd);
-    let _profraw_guard = if cfg!(test) {
-        None
-    } else {
-        let _ = redirect_this_process(&repo_root);
-        let _ = sweep_kiss_profraw_dir(&repo_root);
-        let _ = kiss::rust_llvm_cov_runner::sweep_orphan_default_profraw(&repo_root);
-        Some(KissProfrawProcessGuard::for_current_process(&repo_root))
-    };
     let exit_code = run();
-    let d = t0.elapsed();
-    if d.as_secs() >= 1 {
-        eprintln!("kiss: {:.2}s", d.as_secs_f64());
-    } else {
-        eprintln!("kiss: {}ms", d.as_millis());
-    }
+    println!("{}", format_cli_wall_timing(t0.elapsed()));
     exit_code
+}
+
+pub(crate) fn format_cli_wall_timing(d: std::time::Duration) -> String {
+    if d.as_secs() >= 1 {
+        format!("kiss: {:.2}s", d.as_secs_f64())
+    } else {
+        format!("kiss: {}ms", d.as_millis())
+    }
+}
+
+pub(crate) fn is_cli_wall_timing_line(line: &str) -> bool {
+    let Some(rest) = line.strip_prefix("kiss: ") else {
+        return false;
+    };
+    rest.ends_with("ms") || (rest.ends_with('s') && rest.contains('.'))
 }
 
 #[cfg(test)]
@@ -126,9 +123,27 @@ pub(crate) mod cwd_test_lock {
 
 #[cfg(test)]
 mod run_kiss_main_test {
+    use std::time::Duration;
+
     #[test]
     fn run_kiss_main_rules_exits_zero() {
         let _lock = super::cwd_test_lock::lock();
         assert_eq!(super::run_kiss_main(), 0);
+    }
+
+    #[test]
+    fn wall_timing_format_and_predicate() {
+        assert_eq!(
+            super::format_cli_wall_timing(Duration::from_millis(285)),
+            "kiss: 285ms"
+        );
+        assert_eq!(
+            super::format_cli_wall_timing(Duration::from_secs(2)),
+            "kiss: 2.00s"
+        );
+        assert!(super::is_cli_wall_timing_line("kiss: 285ms"));
+        assert!(super::is_cli_wall_timing_line("kiss: 2.00s"));
+        assert!(!super::is_cli_wall_timing_line("kiss test: Planning ..."));
+        assert!(!super::is_cli_wall_timing_line("NO VIOLATIONS"));
     }
 }

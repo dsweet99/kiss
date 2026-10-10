@@ -1,5 +1,5 @@
 
-pub fn actually_covered() -> i32 {
+pub fn actually_called() -> i32 {
     1
 }
 
@@ -54,8 +54,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn calls_actually_covered() {
-        assert_eq!(actually_covered(), 1);
+    fn calls_actually_called() {
+        assert_eq!(actually_called(), 1);
     }
 
     #[test]

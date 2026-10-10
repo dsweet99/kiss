@@ -121,4 +121,10 @@ pub(super) const RS_RULE_SPECS: &[RuleSpec] = &[
         threshold: ThresholdValue::Usize(|c, _| c.dependency_depth),
         description: "dependency_depth is the maximum length of a module dependency chain in the dependency graph.",
     },
+    RuleSpec {
+        metric: "max_num_tests",
+        op: ThresholdOp::AtMost,
+        threshold: ThresholdValue::Usize(|_, g| g.max_num_tests_rust),
+        description: "max_num_tests is the maximum number of Rust unit tests in the current population. Enforced by `kiss test`. `0` means any Rust test fails. Default is 2000. Config key lives under `[rust]`.",
+    },
 ];

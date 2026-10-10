@@ -183,6 +183,20 @@ fn ignore_prefix_matches_component_and_path_forms() {
 }
 
 #[test]
+fn split_selector_keeps_the_path_before_the_first_separator() {
+    assert_eq!(
+        split_selector("src/lib.rs::unit_ok"),
+        ("src/lib.rs", Some("unit_ok"))
+    );
+    assert_eq!(
+        split_selector("pkg/app.py::Test::case"),
+        ("pkg/app.py", Some("Test::case"))
+    );
+    assert_eq!(split_selector("bare_fn"), ("bare_fn", None));
+    assert_eq!(split_selector("file.py::"), ("file.py", Some("")));
+}
+
+#[test]
 fn selector_ignored_by_prefixes_requires_a_file_path() {
     let tests = ["tests".to_string()];
     let resources = ["resources".to_string()];
@@ -201,7 +215,10 @@ fn selector_ignored_by_prefixes_requires_a_file_path() {
         "tests/slow/test_b.py::t",
         &["tests/slow".to_string()]
     ));
-    assert!(selector_ignored_by_prefixes("lib.rs::unit_ok", &["lib.rs".to_string()]));
+    assert!(selector_ignored_by_prefixes(
+        "lib.rs::unit_ok",
+        &["lib.rs".to_string()]
+    ));
 }
 
 #[test]
@@ -297,6 +314,39 @@ fn test_always_ignored_includes_env_dir() {
         is_always_ignored("env"),
         "'env' should be always ignored (common virtualenv directory)"
     );
+}
+
+#[test]
+fn path_skipped_by_source_ignore_uses_always_ignored_dirs() {
+    assert!(path_skipped_by_source_ignore(
+        std::path::Path::new("pkg/node_modules/a.py"),
+        &[]
+    ));
+    assert!(path_skipped_by_source_ignore(
+        std::path::Path::new("pkg/__pycache__/a.py"),
+        &[]
+    ));
+    assert!(path_skipped_by_source_ignore(
+        std::path::Path::new("pkg/.venv/a.py"),
+        &[]
+    ));
+    assert!(path_skipped_by_source_ignore(
+        std::path::Path::new("pkg/venv/a.py"),
+        &[]
+    ));
+    assert!(path_skipped_by_source_ignore(
+        std::path::Path::new("pkg/env/a.py"),
+        &[]
+    ));
+    assert!(!path_skipped_by_source_ignore(
+        std::path::Path::new("pkg/src/a.py"),
+        &[]
+    ));
+    assert!(path_skipped_by_source_ignore(
+        std::path::Path::new("pkg/src/a.py"),
+        &["src".to_string()]
+    ));
+    assert!(!should_ignore(std::path::Path::new("env"), &[]));
 }
 
 #[test]

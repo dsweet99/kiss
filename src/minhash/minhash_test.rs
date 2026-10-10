@@ -13,6 +13,19 @@ fn test_normalize_code() {
 }
 
 #[test]
+fn signature_from_text_matches_shingle_set() {
+    let text = "the quick brown fox jumps over the lazy dog";
+    let via_set = compute_minhash(&generate_shingles(text, 3), 100);
+    let direct = signature_from_text(text, 3, 100);
+    assert_eq!(via_set.hashes, direct.hashes);
+
+    let repeated = "alpha beta alpha beta alpha";
+    let via_set = compute_minhash(&generate_shingles(repeated, 2), 7);
+    let direct = signature_from_text(repeated, 2, 7);
+    assert_eq!(via_set.hashes, direct.hashes);
+}
+
+#[test]
 fn test_normalize_code_handles_newlines_and_default_minhash_size() {
     assert_eq!(normalize_code("hello\n\tworld"), "hello world");
     assert_eq!(normalize_code(""), "");

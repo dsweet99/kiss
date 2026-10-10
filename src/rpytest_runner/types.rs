@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-const SELECTOR_SPECIFIC_ENV: &[&str] = &["RSLIP_COVERAGE_OUT", "TESTMON_DATAFILE"];
+const SELECTOR_SPECIFIC_ENV: &[&str] = &["TESTMON_DATAFILE"];
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RequestedArtifact {
@@ -17,8 +17,8 @@ pub struct RequestedArtifact {
 impl RequestedArtifact {
     pub(crate) fn witness() -> Self {
         Self {
-            name: "coverage".to_string(),
-            path: PathBuf::from("coverage.json"),
+            name: "report".to_string(),
+            path: PathBuf::from("report.json"),
         }
     }
 }
@@ -147,7 +147,7 @@ impl PytestRunOutcome {
             stdout: b"out".to_vec(),
             stderr: b"err".to_vec(),
             duration: Duration::from_millis(3),
-            artifacts: BTreeMap::from([("coverage".to_string(), PathBuf::from("coverage.json"))]),
+            artifacts: BTreeMap::from([("report".to_string(), PathBuf::from("report.json"))]),
         }
     }
 }

@@ -3,10 +3,7 @@ use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
 
-use crate::graph::{
-    extract_dynamic_import_module, extract_imports_for_cache, is_dunder_import,
-    is_importlib_import_module, qualified_module_name,
-};
+use crate::graph::{extract_imports_for_cache, qualified_module_name};
 use crate::parsing::ParsedFile;
 
 use super::error::RoleBuildError;
@@ -26,9 +23,7 @@ pub fn classify_python(
     let imports = python_import_edges(parsed, &modules);
     let mut contexts = seed_python_contexts(parsed);
     seed_unparsed_discovered(&mut contexts, parsed, discovered);
-    if production_unresolved_dynamic(parsed) {
-        promote_all_test_named(&mut contexts, parsed, discovered);
-    }
+    super::python_dynamic::apply_dynamic_import_promotion(&mut contexts, parsed, discovered);
     propagate_python_contexts(&mut contexts, &imports);
     for parsed in parsed {
         let ctx = contexts
@@ -152,55 +147,6 @@ fn resolve_python_import_targets(
         }
     }
     targets
-}
-
-fn production_unresolved_dynamic(parsed: &[&ParsedFile]) -> bool {
-    parsed
-        .iter()
-        .any(|file| !is_python_test_module_path(&file.path) && has_unresolved_dynamic(file))
-}
-
-fn has_unresolved_dynamic(file: &ParsedFile) -> bool {
-    let src = &file.source;
-    if !src.contains("import_module") && !src.contains("__import__") {
-        return false;
-    }
-    walk_unresolved(file.tree.root_node(), src)
-}
-
-fn walk_unresolved(node: tree_sitter::Node<'_>, source: &str) -> bool {
-    if node.kind() == "call" && call_is_unresolved_dynamic(node, source) {
-        return true;
-    }
-    let mut cursor = node.walk();
-    node.children(&mut cursor)
-        .any(|child| walk_unresolved(child, source))
-}
-
-fn call_is_unresolved_dynamic(node: tree_sitter::Node<'_>, source: &str) -> bool {
-    let Some(func) = node.child_by_field_name("function") else {
-        return false;
-    };
-    let is_dyn = is_importlib_import_module(func, source) || is_dunder_import(func, source);
-    is_dyn && extract_dynamic_import_module(node, source).is_none()
-}
-
-fn promote_all_test_named(
-    contexts: &mut HashMap<PathBuf, CodeContextSet>,
-    parsed: &[&ParsedFile],
-    discovered: &[PathBuf],
-) {
-    for path in parsed
-        .iter()
-        .map(|file| file.path.as_path())
-        .chain(discovered.iter().map(PathBuf::as_path))
-    {
-        if is_python_test_module_path(path)
-            && let Some(ctx) = contexts.get_mut(&canonical_key(path))
-        {
-            ctx.production = true;
-        }
-    }
 }
 
 fn seed_python_contexts(parsed: &[&ParsedFile]) -> HashMap<PathBuf, CodeContextSet> {
@@ -335,5 +281,28 @@ mod python_roles_test {
         let index = classify_python(&[&helper, &prod], &[]).unwrap();
         assert_eq!(index.role_at(&helper.path, 1), CodeRole::Production);
         assert_eq!(index.role_at(&prod.path, 1), CodeRole::Production);
+    }
+
+    #[test]
+    fn fstring_prefix_does_not_promote_unrelated_tests() {
+        let tmp = tempfile::tempdir().unwrap();
+        let helper = parse_one(
+            tmp.path(),
+            "tests/test_helper.py",
+            "def test_a():\n    pass\n",
+        );
+        let wrong_name = parse_one(tmp.path(), "evals/test_loaded.py", "VAL = 1\n");
+        let matched = parse_one(tmp.path(), "evals/short/eval_loaded_test.py", "VAL = 1\n");
+        let prod = parse_one(
+            tmp.path(),
+            "ops/evaluate.py",
+            "import importlib\n\
+             def run(group, eval_name):\n    \
+             importlib.import_module(f\"evals.{group}.eval_{eval_name}\")\n",
+        );
+        let index = classify_python(&[&helper, &wrong_name, &matched, &prod], &[]).unwrap();
+        assert_eq!(index.role_at(&helper.path, 1), CodeRole::TestOnly);
+        assert_eq!(index.role_at(&wrong_name.path, 1), CodeRole::TestOnly);
+        assert_eq!(index.role_at(&matched.path, 1), CodeRole::Production);
     }
 }

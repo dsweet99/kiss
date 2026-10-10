@@ -6,7 +6,7 @@ mod test_dispatch;
 #[cfg(test)]
 mod test_dispatch_b;
 
-use crate::bin_cli::args::{parse_test_invocation, validate_test_branch_options, Cli, Commands};
+use crate::bin_cli::args::{Cli, Commands, parse_test_invocation, validate_test_branch_options};
 
 use handlers::{
     dispatch_check, dispatch_dry, dispatch_rules, dispatch_stats, dispatch_test, dispatch_viz,
@@ -65,7 +65,6 @@ fn dispatch_analyze(
 
 fn dispatch_tools(
     lang: Option<kiss::Language>,
-    config: Option<std::path::PathBuf>,
     command: Commands,
     cfg: &TriConfig<'_>,
     test_section: &TestSectionConfig,
@@ -107,15 +106,44 @@ fn dispatch_tools(
             language_tables: cfg.language_tables,
         }),
         test_command @ Commands::Test { .. } => {
-            dispatch_test_command(lang, config.as_ref(), test_command, cfg, test_section)
+            dispatch_test_command(lang, test_command, cfg, test_section)
         }
         _ => 2,
     }
 }
 
+fn absolutize_test_invocation(
+    invocation: crate::bin_cli::args::TestInvocation,
+) -> crate::bin_cli::args::TestInvocation {
+    use crate::bin_cli::args::TestInvocation;
+    match invocation {
+        TestInvocation::Targets(operands) => {
+            TestInvocation::Targets(operands.into_iter().map(absolutize_operand).collect())
+        }
+        other => other,
+    }
+}
+
+fn absolutize_operand(raw: String) -> String {
+    let (path, symbol) = kiss::split_selector(&raw);
+    let path = path.to_string();
+    let symbol = symbol.map(str::to_string);
+    let path_ref = std::path::Path::new(&path);
+    if path_ref.is_absolute() {
+        return raw;
+    }
+    let Ok(cwd) = std::env::current_dir() else {
+        return raw;
+    };
+    let abs = cwd.join(path_ref);
+    match symbol {
+        Some(symbol) => format!("{}::{symbol}", abs.display()),
+        None => abs.display().to_string(),
+    }
+}
+
 fn dispatch_test_command(
     lang: Option<kiss::Language>,
-    config_path: Option<&std::path::PathBuf>,
     command: Commands,
     cfg: &TriConfig<'_>,
     test_section: &TestSectionConfig,
@@ -125,17 +153,14 @@ fn dispatch_test_command(
             operands,
             main_branch,
             base_branch,
-            dry_run,
-            retry_bad,
-            metrics,
-            coverage_all,
-            watch,
             jobs,
-            ignore,
-            extra,
         } => {
+            if let Some(operand) = operands.iter().find(|operand| operand.starts_with('-')) {
+                eprintln!("error: kiss test: arguments after -- are not accepted: {operand}");
+                return 2;
+            }
             let invocation = match parse_test_invocation(&operands) {
-                Ok(invocation) => invocation,
+                Ok(invocation) => absolutize_test_invocation(invocation),
                 Err(e) => {
                     eprintln!("error: kiss test: {e}");
                     return 2;
@@ -149,27 +174,18 @@ fn dispatch_test_command(
                 eprintln!("error: kiss test: {e}");
                 return 2;
             }
-            if watch && dry_run {
-                eprintln!("error: kiss test: --watch cannot be combined with --dry-run");
-                return 2;
-            }
             dispatch_test(TestDispatchOptions {
                 lang,
                 invocation,
                 main_branch,
                 base_branch,
-                dry_run,
-                retry_bad,
-                metrics,
-                coverage_all,
-                watch,
+                dry_run: false,
+                metrics: false,
                 jobs,
-                ignore,
-                extra,
+                ignore: Vec::new(),
+                extra: Vec::new(),
                 test_cfg: test_section,
                 cfg,
-                reload_kissconfig: true,
-                config_path,
             })
         }
         _ => 2,
@@ -197,10 +213,6 @@ pub fn dispatch(
             config,
             command: command @ (Commands::Check { .. } | Commands::Stats { .. }),
         } => dispatch_analyze(lang, config, command, &cfg, test_section),
-        Cli {
-            lang,
-            config,
-            command,
-        } => dispatch_tools(lang, config, command, &cfg, test_section),
+        Cli { lang, command, .. } => dispatch_tools(lang, command, &cfg, test_section),
     }
 }

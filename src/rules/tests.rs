@@ -30,17 +30,11 @@ fn global_and_test_rule_specs_use_shared_metrics() {
         .iter()
         .map(|s| s.metric)
         .collect();
-    assert_eq!(
-        test_metrics,
-        [
-            "test_coverage_threshold",
-            "max_unit_test_seconds",
-            "max_num_tests",
-            "orphan"
-        ]
-    );
+    assert_eq!(test_metrics, ["max_unit_test_seconds", "orphan"]);
     let py_metrics: Vec<_> = python::PY_RULE_SPECS.iter().map(|s| s.metric).collect();
     let rs_metrics: Vec<_> = rust_rules::RS_RULE_SPECS.iter().map(|s| s.metric).collect();
+    assert!(py_metrics.contains(&"max_num_tests"));
+    assert!(rs_metrics.contains(&"max_num_tests"));
     for metric in global_metrics.iter().chain(test_metrics.iter()) {
         assert!(!py_metrics.contains(metric), "{metric} still under Python");
         assert!(!rs_metrics.contains(metric), "{metric} still under Rust");

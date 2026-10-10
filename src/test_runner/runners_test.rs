@@ -1,15 +1,9 @@
-use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
-use kiss::rpytest_runner::TestStatus;
-use kiss::rust_llvm_cov_runner::RustLineCoverage;
 use tempfile::TempDir;
 
 use super::runners::*;
-use super::rust_coverage_index::{
-    rebuild_rust_coverage_index, write_rust_population_manifest_for_args, write_test_entry,
-};
 use crate::test_runner::test_mode_fixtures::clone_warm_demo_repo;
 
 #[test]
@@ -66,46 +60,26 @@ fn enumerate_tests_in_changed_files_errors_on_bad_rs() {
 }
 
 #[test]
-fn combined_selectors_uses_existing_rust_index_for_source_changes() {
+fn combined_selectors_reruns_every_rust_test_when_a_rust_source_changes() {
     let tmp = TempDir::new().unwrap();
     let src = tmp.path().join("src");
     fs::create_dir(&src).unwrap();
     let lib = src.join("lib.rs");
     fs::write(
         &lib,
-        "pub fn value() -> u32 { 1 }\n#[cfg(test)]\nmod tests { #[test] fn gets_value() {} }\n",
+        "pub fn first() {}\npub fn second() {}\n#[cfg(test)]\nmod tests { #[test] fn first() {} #[test] fn second() {} }\n",
     )
     .unwrap();
-    write_test_entry(
-        tmp.path(),
-        "abc",
-        "tests::gets_value",
-        TestStatus::Passed,
-        RustLineCoverage {
-            files: std::collections::BTreeMap::from([(
-                lib.to_string_lossy().to_string(),
-                std::collections::BTreeSet::from([1]),
-            )]),
-        },
+
+    let plan =
+        combined_selectors(tmp.path(), std::slice::from_ref(&lib), &[], &[], None, &[]).unwrap();
+
+    assert_eq!(
+        plan.selectors.rust,
+        vec!["tests::first".to_string(), "tests::second".to_string()]
     );
-    rebuild_rust_coverage_index(tmp.path()).unwrap();
-    write_rust_population_manifest_for_args(tmp.path(), &["tests::gets_value".to_string()], &[])
-        .unwrap();
-
-    let plan = combined_selectors(
-        tmp.path(),
-        std::slice::from_ref(&lib),
-        &[],
-        &BTreeMap::new(),
-        &[],
-        None,
-        &[],
-    )
-    .unwrap();
-
-    assert_eq!(plan.selectors.rust, vec!["tests::gets_value".to_string()]);
     assert_eq!(plan.source_paths.rust, vec![lib]);
-    assert!(!plan.population_required.rust);
+    assert!(plan.population_required.rust);
 }
 
 #[test]
@@ -117,101 +91,7 @@ fn combined_selectors_repopulates_when_rust_test_args_change() {
         tmp.path(),
         std::slice::from_ref(&lib),
         &[],
-        &BTreeMap::new(),
         &["--exact".to_string()],
-        None,
-        &[],
-    )
-    .unwrap();
-
-    assert_eq!(plan.selectors.rust, vec!["tests::gets_value".to_string()]);
-    assert!(plan.population_required.rust);
-}
-
-#[test]
-fn combined_selectors_prefers_rust_changed_line_matches() {
-    let tmp = TempDir::new().unwrap();
-    let src = tmp.path().join("src");
-    fs::create_dir(&src).unwrap();
-    let lib = src.join("lib.rs");
-    fs::write(
-        &lib,
-        "pub fn first() {}\npub fn second() {}\n#[cfg(test)]\nmod tests { #[test] fn first() {} #[test] fn second() {} }\n",
-    )
-    .unwrap();
-    write_test_entry(
-        tmp.path(),
-        "line1",
-        "tests::first",
-        TestStatus::Passed,
-        RustLineCoverage {
-            files: std::collections::BTreeMap::from([(
-                lib.to_string_lossy().to_string(),
-                std::collections::BTreeSet::from([1]),
-            )]),
-        },
-    );
-    write_test_entry(
-        tmp.path(),
-        "line2",
-        "tests::second",
-        TestStatus::Passed,
-        RustLineCoverage {
-            files: std::collections::BTreeMap::from([(
-                lib.to_string_lossy().to_string(),
-                std::collections::BTreeSet::from([2]),
-            )]),
-        },
-    );
-    // rebuild publishes the population from entry selectors; no second publish.
-    rebuild_rust_coverage_index(tmp.path()).unwrap();
-
-    let plan = combined_selectors(
-        tmp.path(),
-        std::slice::from_ref(&lib),
-        &[],
-        &BTreeMap::from([(lib.clone(), BTreeSet::from([2]))]),
-        &[],
-        None,
-        &[],
-    )
-    .unwrap();
-
-    assert_eq!(plan.selectors.rust, vec!["tests::second".to_string()]);
-    assert_eq!(plan.source_paths.rust, vec![lib]);
-    assert!(!plan.population_required.rust);
-}
-
-#[test]
-fn combined_selectors_requires_complete_rust_population_manifest() {
-    let tmp = TempDir::new().unwrap();
-    let src = tmp.path().join("src");
-    fs::create_dir(&src).unwrap();
-    let lib = src.join("lib.rs");
-    fs::write(
-        &lib,
-        "pub fn value() -> u32 { 1 }\n#[cfg(test)]\nmod tests { #[test] fn gets_value() {} }\n",
-    )
-    .unwrap();
-    write_test_entry(
-        tmp.path(),
-        "abc",
-        "tests::gets_value",
-        TestStatus::Passed,
-        RustLineCoverage {
-            files: std::collections::BTreeMap::from([(
-                lib.to_string_lossy().to_string(),
-                std::collections::BTreeSet::from([1]),
-            )]),
-        },
-    );
-
-    let plan = combined_selectors(
-        tmp.path(),
-        std::slice::from_ref(&lib),
-        &[],
-        &BTreeMap::new(),
-        &[],
         None,
         &[],
     )
@@ -241,7 +121,6 @@ fn combined_selectors_carries_changed_rust_tests_into_population_plan() {
         tmp.path(),
         std::slice::from_ref(&lib),
         std::slice::from_ref(&changed_test),
-        &BTreeMap::new(),
         &[],
         None,
         &[changed_test
@@ -269,16 +148,8 @@ fn combined_selectors_marks_missing_rust_index_for_population() {
     let lib = src.join("lib.rs");
     fs::write(&lib, "pub fn value() -> u32 { 1 }\n").unwrap();
 
-    let plan = combined_selectors(
-        tmp.path(),
-        std::slice::from_ref(&lib),
-        &[],
-        &BTreeMap::new(),
-        &[],
-        None,
-        &[],
-    )
-    .unwrap();
+    let plan =
+        combined_selectors(tmp.path(), std::slice::from_ref(&lib), &[], &[], None, &[]).unwrap();
 
     assert!(plan.selectors.rust.is_empty());
     assert_eq!(plan.source_paths.rust, vec![lib]);
@@ -288,7 +159,7 @@ fn combined_selectors_marks_missing_rust_index_for_population() {
 #[test]
 fn combined_selectors_empty_without_sources() {
     let tmp = TempDir::new().unwrap();
-    let plan = combined_selectors(tmp.path(), &[], &[], &BTreeMap::new(), &[], None, &[]).unwrap();
+    let plan = combined_selectors(tmp.path(), &[], &[], &[], None, &[]).unwrap();
     assert!(plan.selectors.python.is_empty());
     assert!(plan.selectors.rust.is_empty());
     assert!(plan.source_paths.rust.is_empty());
@@ -303,31 +174,30 @@ fn build_pytest_argv_non_empty() {
 }
 
 #[test]
-fn rust_coverage_batch_dry_run_lines_render_one_nextest_batch() {
+fn rust_dry_run_lines_render_one_nextest_batch() {
     let selectors = vec!["alpha".to_string(), "beta".to_string()];
     let lines =
-        build_rust_coverage_batch_dry_run_lines(&selectors, &["--exact".into()], 8).unwrap();
+        crate::test_runner::lang_rust::nextest::dry_run_lines(&selectors, &["--exact".into()], 8)
+            .unwrap();
 
-    let expected_build_jobs = kiss::rust_llvm_cov_runner::effective_coverage_build_jobs(8);
     assert_eq!(lines[0], "RUST BATCH selectors=2 jobs=8");
-    assert!(lines[1].starts_with("cargo llvm-cov nextest"));
-    assert!(
-        lines[1].contains(&format!("'--build-jobs' {expected_build_jobs}"))
-    );
-    assert!(lines[1].contains("'--test-threads' 8"));
-    assert!(lines[1].contains("'--message-format-version' 0.1"));
-    assert!(!lines[1].contains("llvm-cov test"));
-    assert!(!lines[1].contains("--no-clean"));
+    assert!(lines[1].starts_with("cargo nextest run '--workspace' '--test-threads' 8"));
+    assert!(lines[1].contains("test(/(^|::)alpha$/) | test(/(^|::)beta$/)"));
+    assert!(lines[1].ends_with("'--' '--exact'"));
+    assert!(!lines[1].contains("llvm-cov"));
     assert_eq!(lines[2], "RUST SELECTOR alpha");
     assert_eq!(lines[3], "RUST SELECTOR beta");
 }
 
 #[test]
-fn rust_coverage_batch_dry_run_lines_return_unsupported_argument_error() {
+fn rust_dry_run_lines_return_unsupported_argument_error() {
     let selectors = vec!["alpha".to_string()];
-    let err =
-        build_rust_coverage_batch_dry_run_lines(&selectors, &["--format".into(), "json".into()], 8)
-            .unwrap_err();
+    let err = crate::test_runner::lang_rust::nextest::dry_run_lines(
+        &selectors,
+        &["--format".into(), "json".into()],
+        8,
+    )
+    .unwrap_err();
 
     assert!(err.contains("unsupported Rust test argument"));
     assert!(err.contains("--format"));

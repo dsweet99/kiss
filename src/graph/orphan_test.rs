@@ -58,11 +58,11 @@ fn orphan_names(viols: &[crate::Violation]) -> Vec<String> {
         .collect()
 }
 
-fn write(path: &Path, body: &str) {
+fn write_fixture(path: &Path, body: &str) {
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).unwrap();
+        std::fs::create_dir_all(parent).expect("create fixture parent");
     }
-    std::fs::write(path, body).unwrap();
+    std::fs::write(path, body).expect("write fixture");
 }
 
 #[test]
@@ -70,8 +70,8 @@ fn python_test_import_clears_orphan() {
     let tmp = tempfile::TempDir::new().unwrap();
     let utils = tmp.path().join("utils.py");
     let test = tmp.path().join("tests").join("test_foo.py");
-    write(&utils, "def f():\n    return 1\n");
-    write(
+    write_fixture(&utils, "def f():\n    return 1\n");
+    write_fixture(
         &test,
         "from utils import f\n\ndef test_f():\n    assert f() == 1\n",
     );
@@ -86,7 +86,7 @@ fn python_test_import_clears_orphan() {
 fn production_isolate_is_orphan() {
     let tmp = tempfile::TempDir::new().unwrap();
     let utils = tmp.path().join("utils.py");
-    write(&utils, "def f():\n    return 1\n");
+    write_fixture(&utils, "def f():\n    return 1\n");
     let (viols, _) = py_report(&[utils], &[], tmp.path());
     assert!(
         orphan_names(&viols).iter().any(|n| n.ends_with("utils")),
@@ -98,7 +98,7 @@ fn production_isolate_is_orphan() {
 fn test_only_file_is_not_orphan_candidate() {
     let tmp = tempfile::TempDir::new().unwrap();
     let test = tmp.path().join("tests").join("test_only.py");
-    write(&test, "def test_x():\n    assert True\n");
+    write_fixture(&test, "def test_x():\n    assert True\n");
     let (viols, _) = py_report(&[test], &[], tmp.path());
     assert!(
         !viols.iter().any(|v| v.metric == "orphan_module"),
@@ -110,9 +110,9 @@ fn test_only_file_is_not_orphan_candidate() {
 fn rust_cfg_test_use_clears_orphan() {
     let tmp = tempfile::TempDir::new().unwrap();
     let src = tmp.path().join("src");
-    write(&src.join("lib.rs"), "mod mixed;\n");
-    write(&src.join("helper.rs"), "pub fn f() {}\n");
-    write(
+    write_fixture(&src.join("lib.rs"), "mod mixed;\n");
+    write_fixture(&src.join("helper.rs"), "pub fn f() {}\n");
+    write_fixture(
         &src.join("mixed.rs"),
         "#[cfg(test)]\nmod tests {\n    use helper;\n}\n",
     );
@@ -131,9 +131,9 @@ fn rust_cfg_test_use_clears_orphan() {
 #[test]
 fn rust_tests_dir_use_clears_orphan() {
     let tmp = tempfile::TempDir::new().unwrap();
-    write(&tmp.path().join("src/lib.rs"), "pub fn f() {}\n");
-    write(&tmp.path().join("src/helper.rs"), "pub fn g() {}\n");
-    write(&tmp.path().join("tests/uses_helper.rs"), "use helper;\n");
+    write_fixture(&tmp.path().join("src/lib.rs"), "pub fn f() {}\n");
+    write_fixture(&tmp.path().join("src/helper.rs"), "pub fn g() {}\n");
+    write_fixture(&tmp.path().join("tests/uses_helper.rs"), "use helper;\n");
     let files = vec![
         tmp.path().join("src/lib.rs"),
         tmp.path().join("src/helper.rs"),
@@ -149,8 +149,8 @@ fn rust_tests_dir_use_clears_orphan() {
 #[test]
 fn rust_isolate_is_orphan() {
     let tmp = tempfile::TempDir::new().unwrap();
-    write(&tmp.path().join("src/lib.rs"), "pub fn f() {}\n");
-    write(&tmp.path().join("src/lonely.rs"), "pub fn g() {}\n");
+    write_fixture(&tmp.path().join("src/lib.rs"), "pub fn f() {}\n");
+    write_fixture(&tmp.path().join("src/lonely.rs"), "pub fn g() {}\n");
     let files = vec![
         tmp.path().join("src/lib.rs"),
         tmp.path().join("src/lonely.rs"),
@@ -166,7 +166,7 @@ fn rust_isolate_is_orphan() {
 fn python_main_guard_is_entry() {
     let tmp = tempfile::TempDir::new().unwrap();
     let run = tmp.path().join("scripts").join("run.py");
-    write(&run, "if __name__ == \"__main__\":\n    print(1)\n");
+    write_fixture(&run, "if __name__ == \"__main__\":\n    print(1)\n");
     let (viols, entries) = py_report(std::slice::from_ref(&run), &[], tmp.path());
     assert!(
         entries.iter().any(|p| p.ends_with("run.py")),
@@ -181,12 +181,12 @@ fn python_main_guard_is_entry() {
 #[test]
 fn pyproject_scripts_are_entries() {
     let tmp = tempfile::TempDir::new().unwrap();
-    write(
+    write_fixture(
         &tmp.path().join("pyproject.toml"),
         "[project]\nname = \"d\"\nversion = \"0\"\n[project.scripts]\ntool = \"pkg.cli:main\"\n",
     );
-    write(&tmp.path().join("pkg/__init__.py"), "");
-    write(
+    write_fixture(&tmp.path().join("pkg/__init__.py"), "");
+    write_fixture(
         &tmp.path().join("pkg/cli.py"),
         "def main():\n    return 0\n",
     );
@@ -204,12 +204,12 @@ fn pyproject_scripts_are_entries() {
 #[test]
 fn pyproject_gui_scripts_are_entries() {
     let tmp = tempfile::TempDir::new().unwrap();
-    write(
+    write_fixture(
         &tmp.path().join("pyproject.toml"),
         "[project]\nname = \"d\"\nversion = \"0\"\n[project.gui-scripts]\napp = \"pkg.ui:run\"\n",
     );
-    write(&tmp.path().join("pkg/__init__.py"), "");
-    write(&tmp.path().join("pkg/ui.py"), "def run():\n    return 0\n");
+    write_fixture(&tmp.path().join("pkg/__init__.py"), "");
+    write_fixture(&tmp.path().join("pkg/ui.py"), "def run():\n    return 0\n");
     let files = vec![
         tmp.path().join("pkg/__init__.py"),
         tmp.path().join("pkg/ui.py"),
@@ -224,12 +224,12 @@ fn pyproject_gui_scripts_are_entries() {
 #[test]
 fn setup_cfg_console_scripts_are_entries() {
     let tmp = tempfile::TempDir::new().unwrap();
-    write(
+    write_fixture(
         &tmp.path().join("setup.cfg"),
         "[options.entry_points]\nconsole_scripts =\n    tool = pkg.cli:main\n",
     );
-    write(&tmp.path().join("pkg/__init__.py"), "");
-    write(
+    write_fixture(&tmp.path().join("pkg/__init__.py"), "");
+    write_fixture(
         &tmp.path().join("pkg/cli.py"),
         "def main():\n    return 0\n",
     );
@@ -247,11 +247,11 @@ fn setup_cfg_console_scripts_are_entries() {
 #[test]
 fn rust_cargo_bin_is_entry() {
     let tmp = tempfile::TempDir::new().unwrap();
-    write(
+    write_fixture(
         &tmp.path().join("Cargo.toml"),
         "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n[[bin]]\nname = \"tool\"\npath = \"src/cli.rs\"\n",
     );
-    write(&tmp.path().join("src/cli.rs"), "fn main() {}\n");
+    write_fixture(&tmp.path().join("src/cli.rs"), "fn main() {}\n");
     let viols = rs_report(&[tmp.path().join("src/cli.rs")], &[], tmp.path());
     assert!(
         !viols.iter().any(|v| v.metric == "orphan_module"),
@@ -262,12 +262,12 @@ fn rust_cargo_bin_is_entry() {
 #[test]
 fn rust_cargo_example_is_entry() {
     let tmp = tempfile::TempDir::new().unwrap();
-    write(
+    write_fixture(
         &tmp.path().join("Cargo.toml"),
         "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n[lib]\npath = \"src/lib.rs\"\n[[example]]\nname = \"demo\"\npath = \"examples/demo.rs\"\n",
     );
-    write(&tmp.path().join("src/lib.rs"), "pub fn f() {}\n");
-    write(&tmp.path().join("examples/demo.rs"), "fn main() {}\n");
+    write_fixture(&tmp.path().join("src/lib.rs"), "pub fn f() {}\n");
+    write_fixture(&tmp.path().join("examples/demo.rs"), "fn main() {}\n");
     let files = vec![
         tmp.path().join("src/lib.rs"),
         tmp.path().join("examples/demo.rs"),
@@ -282,10 +282,26 @@ fn rust_cargo_example_is_entry() {
 }
 
 #[test]
+fn orphan_allowed_dot_slash_prefix_exempts_plugin_path() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let plugin = tmp.path().join("src/plugins/hook.py");
+    write_fixture(&plugin, "def run():\n    return 1\n");
+    let (with_allow, _) = py_report(
+        std::slice::from_ref(&plugin),
+        &["./src/plugins".into()],
+        tmp.path(),
+    );
+    assert!(
+        !with_allow.iter().any(|v| v.metric == "orphan_module"),
+        "orphan_allowed=\"./src/plugins\" must exempt the plugin: {with_allow:#?}"
+    );
+}
+
+#[test]
 fn orphan_allowed_exempts_plugin_path() {
     let tmp = tempfile::TempDir::new().unwrap();
     let plugin = tmp.path().join("src/plugins/hook.py");
-    write(&plugin, "def run():\n    return 1\n");
+    write_fixture(&plugin, "def run():\n    return 1\n");
     let (with_allow, _) = py_report(
         std::slice::from_ref(&plugin),
         &["src/plugins".into()],
@@ -305,11 +321,11 @@ fn orphan_allowed_exempts_plugin_path() {
 #[test]
 fn rust_path_attr_clears_orphan() {
     let tmp = tempfile::TempDir::new().unwrap();
-    write(
+    write_fixture(
         &tmp.path().join("src/lib.rs"),
         "#[path = \"renamed.rs\"]\nmod foo;\n",
     );
-    write(&tmp.path().join("src/renamed.rs"), "pub fn f() {}\n");
+    write_fixture(&tmp.path().join("src/renamed.rs"), "pub fn f() {}\n");
     let files = vec![
         tmp.path().join("src/lib.rs"),
         tmp.path().join("src/renamed.rs"),
@@ -327,7 +343,7 @@ fn rust_path_attr_clears_orphan() {
 fn analyze_graph_false_emits_no_orphan() {
     let tmp = tempfile::TempDir::new().unwrap();
     let utils = tmp.path().join("utils.py");
-    write(&utils, "def f():\n    return 1\n");
+    write_fixture(&utils, "def f():\n    return 1\n");
     let parsed = parse_py(&utils);
     let roles = build_source_role_index(std::slice::from_ref(&parsed), &[], &[utils], &[]).unwrap();
     let ctx = build_python_context_graph(&[&parsed], &roles);
@@ -340,9 +356,9 @@ fn analyze_graph_false_emits_no_orphan() {
 }
 
 #[test]
-fn orphan_scanners_do_not_mention_runtime_coverage() {
+fn orphan_scanners_do_not_mention_runtime_artifacts() {
     let src = include_str!("orphan.rs");
-    for needle in [".kiss", "profraw", "coverage"] {
+    for needle in [".kiss", "profraw"] {
         assert!(!src.contains(needle), "orphan.rs must not mention {needle}");
     }
 }

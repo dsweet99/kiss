@@ -1,4 +1,4 @@
-use super::{EnsureSelectorsArgs, ensure_request_for_selectors, ensure_request_from_planned};
+use super::planning::ensure_request_from_planned;
 use crate::test_runner::PlannedSelectors;
 use crate::test_runner::lang_iface::AcceptMode;
 use std::path::PathBuf;
@@ -20,22 +20,14 @@ fn ensure_request_from_planned_copies_selectors_and_root() {
             rust: vec![],
         },
         vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed { python: 0, rust: 0 },
-        snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
-            python: 0,
-            rust: 0,
-        },
-        snapshot_delta_structural: crate::test_runner::language_keyed::LanguageKeyed {
-            python: false,
-            rust: false,
-        },
         prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
             python: vec![],
             rust: vec![],
         },
-        coverage_decision_engine_used: false,
+        selection_engine_used: false,
         selection_basis: crate::test_runner::language_keyed::LanguageKeyed {
-            python: crate::test_runner::coverage_decision::SelectionBasis::Current,
-            rust: crate::test_runner::coverage_decision::SelectionBasis::Current,
+            python: crate::test_runner::test_selection::SelectionBasis::Current,
+            rust: crate::test_runner::test_selection::SelectionBasis::Current,
         },
         ignore: vec!["tmp".into()],
         workspace_files_fingerprint: None,
@@ -49,7 +41,6 @@ fn ensure_request_from_planned_copies_selectors_and_root() {
         mode: AcceptMode::Subset,
         lang_filter: Some(kiss::Language::Python),
         force: true,
-        force_selectors: Vec::new(),
         jobs: 4,
         extras: crate::test_runner::language_keyed::LanguageKeyed {
             python: &["-p".into()],
@@ -82,22 +73,14 @@ fn ensure_request_carries_session_gate_without_reload() {
             rust: vec![],
         },
         vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed { python: 0, rust: 0 },
-        snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
-            python: 0,
-            rust: 0,
-        },
-        snapshot_delta_structural: crate::test_runner::language_keyed::LanguageKeyed {
-            python: false,
-            rust: false,
-        },
         prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
             python: vec![],
             rust: vec![],
         },
-        coverage_decision_engine_used: false,
+        selection_engine_used: false,
         selection_basis: crate::test_runner::language_keyed::LanguageKeyed {
-            python: crate::test_runner::coverage_decision::SelectionBasis::Current,
-            rust: crate::test_runner::coverage_decision::SelectionBasis::Current,
+            python: crate::test_runner::test_selection::SelectionBasis::Current,
+            rust: crate::test_runner::test_selection::SelectionBasis::Current,
         },
         ignore: vec![],
         workspace_files_fingerprint: None,
@@ -115,7 +98,6 @@ fn ensure_request_carries_session_gate_without_reload() {
         mode: AcceptMode::Subset,
         lang_filter: Some(kiss::Language::Python),
         force: false,
-        force_selectors: Vec::new(),
         jobs: 1,
         extras: crate::test_runner::language_keyed::LanguageKeyed {
             python: &[],
@@ -133,21 +115,4 @@ fn ensure_request_carries_session_gate_without_reload() {
             .abs()
             < f64::EPSILON
     );
-}
-
-#[test]
-fn ensure_request_for_selectors_sets_lang_filter() {
-    let req = ensure_request_for_selectors(EnsureSelectorsArgs {
-        repo_root: PathBuf::from("/r").as_path(),
-        ignore: &[],
-        jobs: 1,
-        lang_filter: kiss::Language::Rust,
-        force: false,
-        python: vec![],
-        rust: vec!["t".into()],
-        gate: kiss::GateConfig::default(),
-        pytest_args: vec![],
-    });
-    assert_eq!(req.lang_filter, Some(kiss::Language::Rust));
-    assert_eq!(req.planned.rust, vec!["t".to_string()]);
 }

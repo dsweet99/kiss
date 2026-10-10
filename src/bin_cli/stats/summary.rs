@@ -9,10 +9,6 @@ use kiss::{Config, GateConfig, Language, compute_summaries, format_stats_table};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-#[path = "summary_snapshot.rs"]
-mod summary_snapshot;
-use summary_snapshot::{SnapshotExtras, format_coverage_counts, try_snapshot_extras};
-
 struct StatsSummaryInput<'a> {
     paths: &'a [String],
     py_files: &'a [PathBuf],
@@ -153,19 +149,6 @@ fn print_summary_from_pipeline(
     config: Option<&Path>,
 ) {
     let duplicate_total = pipeline.py_dups_all.len() + pipeline.rs_dups_all.len();
-    let py_files: Vec<PathBuf> = pipeline
-        .result
-        .py_parsed
-        .iter()
-        .map(|parsed| parsed.path.clone())
-        .collect();
-    let rs_files: Vec<PathBuf> = pipeline
-        .result
-        .rs_parsed
-        .iter()
-        .map(|parsed| parsed.path.clone())
-        .collect();
-    let snapshot = try_snapshot_extras(paths, &py_files, &rs_files, ignore, gate);
     let graph_nodes = pipeline
         .py_graph
         .as_ref()
@@ -189,9 +172,17 @@ fn print_summary_from_pipeline(
     println!("Analyzed from: {}", paths.join(", "));
     println!("{}", config_provenance(config));
     println!();
+    let py_count = production_file_count(
+        pipeline.result.py_parsed.iter().map(|parsed| &parsed.path),
+        &pipeline.result.roles,
+    );
+    let rs_count = production_file_count(
+        pipeline.result.rs_parsed.iter().map(|parsed| &parsed.path),
+        &pipeline.result.roles,
+    );
     println!(
         "Analyzed: {} files, {} code_units, {} statements, {} graph_nodes, {} graph_edges",
-        pipeline.result.py_parsed.len() + pipeline.result.rs_parsed.len(),
+        py_count + rs_count,
         pipeline.result.code_unit_count,
         pipeline.result.statement_count,
         graph_nodes,
@@ -201,7 +192,6 @@ fn print_summary_from_pipeline(
         "{}\n",
         format_violation_counts(
             duplicate_total,
-            snapshot.as_ref().map(|s| s.orphan),
             count_metric(
                 pipeline.result.violations.iter().map(|v| v.metric.as_str()),
                 "comment"
@@ -212,21 +202,18 @@ fn print_summary_from_pipeline(
             ),
         )
     );
-    if let Some(snapshot) = &snapshot {
-        println!("{}\n", format_coverage_counts(snapshot));
-    }
 
-    if !pipeline.result.py_parsed.is_empty() {
+    if py_count > 0 {
         println!(
             "=== Python ({} files) ===\n{}\n",
-            pipeline.result.py_parsed.len(),
+            py_count,
             format_stats_table(&compute_summaries(&pipeline.py_stats))
         );
     }
-    if !pipeline.result.rs_parsed.is_empty() {
+    if rs_count > 0 {
         println!(
             "=== Rust ({} files) ===\n{}",
-            pipeline.result.rs_parsed.len(),
+            rs_count,
             format_stats_table(&compute_summaries(&pipeline.rs_stats))
         );
     }
@@ -265,22 +252,11 @@ fn maybe_print_cached_stats_summary(args: CachedStatsSummaryArgs<'_>) -> bool {
     ) else {
         return false;
     };
-    let snapshot = try_snapshot_extras(
-        args.paths,
-        args.py_files,
-        args.rs_files,
-        args.ignore,
-        args.gate,
-    );
-    print_cached_summary(&args, &cache, snapshot.as_ref());
+    print_cached_summary(&args, &cache);
     true
 }
 
-fn print_cached_summary(
-    args: &CachedStatsSummaryArgs<'_>,
-    cache: &FullCheckCache,
-    snapshot: Option<&SnapshotExtras>,
-) {
+fn print_cached_summary(args: &CachedStatsSummaryArgs<'_>, cache: &FullCheckCache) {
     let dup_total = cache.py_duplicates.len() + cache.rs_duplicates.len();
 
     println!("kiss stats - Summary Statistics");
@@ -299,7 +275,6 @@ fn print_cached_summary(
         "{}\n",
         format_violation_counts(
             dup_total,
-            snapshot.map(|s| s.orphan),
             count_metric(
                 cache.base_violations.iter().map(|v| v.metric.as_str()),
                 "comment"
@@ -310,9 +285,6 @@ fn print_cached_summary(
             ),
         )
     );
-    if let Some(snapshot) = snapshot {
-        println!("{}\n", format_coverage_counts(snapshot));
-    }
 
     if cache.py_file_count > 0
         && let Some(stats) = &cache.py_stats
@@ -364,20 +336,18 @@ fn unit_test_runtime_section_for_rules(
     )
 }
 
-fn format_violation_counts(
-    duplicate: usize,
-    orphan: Option<usize>,
-    comment: usize,
-    doc: usize,
-) -> String {
-    match orphan {
-        Some(orphan) => {
-            format!(
-                "Violations: {duplicate} duplicate, {orphan} orphan, {comment} comment, {doc} doc"
-            )
-        }
-        None => format!("Violations: {duplicate} duplicate, {comment} comment, {doc} doc"),
-    }
+fn production_file_count(
+    paths: impl IntoIterator<Item = impl AsRef<Path>>,
+    roles: &kiss::code_roles::SourceRoleIndex,
+) -> usize {
+    paths
+        .into_iter()
+        .filter(|path| !kiss::code_roles::is_test_only_file(roles, path.as_ref()))
+        .count()
+}
+
+fn format_violation_counts(duplicate: usize, comment: usize, doc: usize) -> String {
+    format!("Violations: {duplicate} duplicate, {comment} comment, {doc} doc")
 }
 
 fn count_metric<'a, I>(metrics: I, metric: &str) -> usize
@@ -392,7 +362,7 @@ where
 mod summary_tests;
 
 #[cfg(test)]
-mod coverage_witness {
+mod touch_witness {
     use super::*;
     use kiss::{Config, GateConfig};
 

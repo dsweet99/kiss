@@ -51,6 +51,8 @@ pub(crate) struct WireModuleResponse {
     #[serde(default)]
     pub(crate) results: Vec<WireResponse>,
     pub(crate) error: Option<String>,
+    #[serde(default)]
+    pub(crate) progress: Option<WireResponse>,
 }
 
 impl WireRequest {
@@ -87,8 +89,8 @@ pub(crate) struct WireArtifact {
 impl WireArtifact {
     pub(crate) fn witness() -> Self {
         Self {
-            name: "coverage".to_string(),
-            path: "coverage.json".to_string(),
+            name: "report".to_string(),
+            path: "report.json".to_string(),
         }
     }
 }

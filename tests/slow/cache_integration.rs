@@ -1,0 +1,353 @@
+use crate::common::{generate_lockfile, list_full_check_cache_files};
+use crate::support::git::{commit_all, init_git_repo};
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
+use std::process::{Command, Output};
+use std::time::SystemTime;
+use tempfile::TempDir;
+
+fn kiss_binary() -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kiss"));
+    crate::common::scrub_parent_build_env(&mut cmd);
+    cmd
+}
+
+fn chmod(path: &std::path::Path, mode: u32) {
+    let mut perms = fs::metadata(path).unwrap().permissions();
+    perms.set_mode(mode);
+    fs::set_permissions(path, perms).unwrap();
+}
+
+fn run_python_check(repo: &Path, home: &Path) -> Output {
+    let config = crate::common::write_builtin_language_config(home);
+    kiss_binary()
+        .arg("--config")
+        .arg(&config)
+        .arg("check")
+        .arg("--lang")
+        .arg("python")
+        .arg(repo)
+        .env("HOME", home)
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn check_cache_hit_replays_on_second_run() {
+    let repo = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+
+    let src = repo.path().join("simple.py");
+    fs::write(&src, "def foo():\n    return 1\n").unwrap();
+
+    let out1 = run_python_check(repo.path(), home.path());
+    let stdout1 = String::from_utf8_lossy(&out1.stdout).to_string();
+    assert!(
+        stdout1.contains("Analyzed:"),
+        "expected summary line. stdout:\n{stdout1}"
+    );
+    assert!(
+        !list_full_check_cache_files(repo.path()).is_empty(),
+        "expected full-check cache file under repo/.kiss. stdout:\n{stdout1}"
+    );
+
+    let out2 = run_python_check(repo.path(), home.path());
+    let stdout2 = String::from_utf8_lossy(&out2.stdout).to_string();
+    assert_eq!(
+        out2.status.code(),
+        out1.status.code(),
+        "exit status should match on cache hit.\n--stderr1--\n{}\n--stderr2--\n{}",
+        String::from_utf8_lossy(&out1.stderr),
+        String::from_utf8_lossy(&out2.stderr)
+    );
+    assert_eq!(
+        crate::common::without_cli_wall_timing(&stdout2),
+        crate::common::without_cli_wall_timing(&stdout1),
+        "cache-hit output should match exactly.\n--stdout1--\n{stdout1}\n--stdout2--\n{stdout2}"
+    );
+}
+
+#[test]
+fn check_cache_invalidates_when_sources_unreadable() {
+    let repo = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+
+    let src = repo.path().join("simple.py");
+    fs::write(&src, "def foo():\n    return 1\n").unwrap();
+
+    let out1 = run_python_check(repo.path(), home.path());
+    let stdout1 = String::from_utf8_lossy(&out1.stdout).to_string();
+    assert!(!list_full_check_cache_files(repo.path()).is_empty());
+
+    chmod(&src, 0o000);
+
+    let out2 = run_python_check(repo.path(), home.path());
+    let stdout2 = String::from_utf8_lossy(&out2.stdout).to_string();
+    assert_ne!(
+        crate::common::without_cli_wall_timing(&stdout2),
+        crate::common::without_cli_wall_timing(&stdout1),
+        "unreadable sources must not replay cached output.\n--stdout1--\n{stdout1}\n--stdout2--\n{stdout2}"
+    );
+}
+
+#[test]
+fn check_cache_invalidates_on_mtime_or_size_change() {
+    let repo = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+
+    let src = repo.path().join("simple.py");
+    fs::write(&src, "def foo():\n    return 1\n").unwrap();
+
+    let out1 = run_python_check(repo.path(), home.path());
+    let stdout1 = String::from_utf8_lossy(&out1.stdout).to_string();
+    assert!(!list_full_check_cache_files(repo.path()).is_empty());
+
+    chmod(&src, 0o200);
+    fs::write(&src, "def foo():\n    return 2\n").unwrap();
+    chmod(&src, 0o000);
+
+    let out2 = run_python_check(repo.path(), home.path());
+
+    let stdout2 = String::from_utf8_lossy(&out2.stdout).to_string();
+    assert_ne!(
+        crate::common::without_cli_wall_timing(&stdout2),
+        crate::common::without_cli_wall_timing(&stdout1),
+        "after source change, cached output must not be replayed.\n--stdout1--\n{stdout1}\n--stdout2--\n{stdout2}"
+    );
+}
+
+#[test]
+fn check_cache_invalidates_on_same_size_content_change() {
+    let repo = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+
+    let src = repo.path().join("simple.py");
+    let content1 = "def foo():\n    return 1\n# padding!!\n";
+    let content2 = "def a():\n    pass\ndef b():\n    pass\n";
+    assert_eq!(content1.len(), content2.len());
+    fs::write(&src, content1).unwrap();
+
+    let out1 = run_python_check(repo.path(), home.path());
+    let stdout1 = String::from_utf8_lossy(&out1.stdout).to_string();
+    assert!(!list_full_check_cache_files(repo.path()).is_empty());
+
+    let mtime: SystemTime = fs::metadata(&src).unwrap().modified().unwrap();
+    fs::write(&src, content2).unwrap();
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&src)
+        .unwrap()
+        .set_modified(mtime)
+        .unwrap();
+
+    let out2 = run_python_check(repo.path(), home.path());
+    let stdout2 = String::from_utf8_lossy(&out2.stdout).to_string();
+    assert_ne!(
+        crate::common::without_cli_wall_timing(&stdout2),
+        crate::common::without_cli_wall_timing(&stdout1),
+        "same-size content change with preserved mtime must not replay stale cache.\n\
+         --stdout1--\n{stdout1}\n--stdout2--\n{stdout2}"
+    );
+}
+
+fn run_mixed_cmd(home: &Path, repo: &Path, args: &[&str]) -> Output {
+    let config = crate::common::write_builtin_language_config(home);
+    let mut cmd = kiss_binary();
+    cmd.current_dir(repo).arg("--config").arg(&config);
+    for arg in args {
+        cmd.arg(arg);
+    }
+    cmd.arg(".").env("HOME", home).output().unwrap()
+}
+
+fn sorted_stdout_lines(out: &Output) -> Vec<String> {
+    let mut lines: Vec<String> = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter(|line| !line.is_empty() && !crate::common::is_cli_wall_timing_line(line))
+        .map(str::to_string)
+        .collect();
+    lines.sort_unstable();
+    lines
+}
+
+fn write_mixed_workspace(repo: &Path) {
+    init_git_repo(repo);
+    fs::create_dir_all(repo.join("src")).unwrap();
+    fs::write(repo.join("app.py"), "def py_value():\n    return 1\n").unwrap();
+    fs::write(
+        repo.join("test_app.py"),
+        "from app import py_value\n\ndef test_py_value():\n    assert py_value() == 1\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.join("Cargo.toml"),
+        "[package]\nname = \"mixed_cache\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.join("src").join("lib.rs"),
+        "pub fn rust_value() -> i32 {\n    1\n}\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn rust_ok() {\n        assert_eq!(super::rust_value(), 1);\n    }\n}\n",
+    )
+    .unwrap();
+    generate_lockfile(repo);
+    commit_all(repo, "init");
+}
+
+#[test]
+fn mixed_workspace_cached_check_and_stats_match_uncached() {
+    // check+stats only: bundling repeated test runs with these under suite load exceeded
+    // the tests/cases 60s SLA (~62s). Cached-run identity lives in the dedicated
+    // `*_cached_*_matches_uncached` tests below.
+    let repo = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    write_mixed_workspace(repo.path());
+
+    let (check1, check2) = replay_cmd(home.path(), repo.path(), &["check"]);
+    assert_eq!(
+        crate::common::without_cli_wall_timing(&String::from_utf8_lossy(&check1.stdout)),
+        crate::common::without_cli_wall_timing(&String::from_utf8_lossy(&check2.stdout)),
+        "cached kiss check must replay the uncached production dataset"
+    );
+
+    let (stats1, stats2) = replay_cmd(home.path(), repo.path(), &["stats", "--all"]);
+    assert_eq!(
+        sorted_stdout_lines(&stats1),
+        sorted_stdout_lines(&stats2),
+        "cached kiss stats must match the uncached production dataset"
+    );
+}
+
+fn product_gate_lines(out: &Output) -> Vec<String> {
+    sorted_stdout_lines(out)
+        .into_iter()
+        .filter(|line| {
+            !crate::common::is_cli_wall_timing_line(line)
+                && !line.starts_with("kiss test:")
+                && !line.starts_with("PASS:")
+                && !line.starts_with("PASS (cached):")
+                && !line.starts_with("PASS ")
+                && !line.starts_with("FAIL:")
+                && !line.starts_with("FAIL ")
+                && !line.starts_with("TIMEOUT ")
+                && !line.starts_with("SKIP:")
+                && !line.starts_with('✓')
+                && !line.starts_with('✗')
+        })
+        .collect()
+}
+
+fn write_rust_inline_external_crate(repo: &Path) {
+    init_git_repo(repo);
+    fs::create_dir_all(repo.join("src")).unwrap();
+    fs::create_dir_all(repo.join("tests")).unwrap();
+    fs::write(
+        repo.join("Cargo.toml"),
+        "[package]\nname = \"role_cache_rs\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.join("src").join("lib.rs"),
+        "pub fn value() -> i32 {\n    1\n}\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn inline_ok() {\n        assert_eq!(super::value(), 1);\n    }\n}\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.join("tests").join("external.rs"),
+        "#[test]\nfn external_ok() {\n    assert_eq!(role_cache_rs::value(), 1);\n}\n",
+    )
+    .unwrap();
+    commit_all(repo, "init");
+}
+
+fn replay_cmd(home: &Path, repo: &Path, args: &[&str]) -> (Output, Output) {
+    let first = run_mixed_cmd(home, repo, args);
+    let second = run_mixed_cmd(home, repo, args);
+    assert_eq!(first.status.code(), second.status.code());
+    (first, second)
+}
+
+fn assert_cached_run_identity(home: &Path, repo: &Path, args: &[&str]) {
+    let (first, second) = replay_cmd(home, repo, args);
+    let first_lines = product_gate_lines(&first);
+    assert!(
+        first.status.success()
+            && first_lines
+                .iter()
+                .any(|line| line.contains("NO VIOLATIONS")),
+        "run must succeed. stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&first.stdout),
+        String::from_utf8_lossy(&first.stderr)
+    );
+    assert_eq!(
+        first_lines,
+        product_gate_lines(&second),
+        "cached run must match the uncached production dataset"
+    );
+}
+
+#[test]
+fn python_only_cached_test_matches_uncached() {
+    let repo = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    init_git_repo(repo.path());
+    fs::write(repo.path().join("simple.py"), "def foo():\n    return 1\n").unwrap();
+    fs::write(
+        repo.path().join("test_simple.py"),
+        "from simple import foo\n\ndef test_simple():\n    assert foo() == 1\n",
+    )
+    .unwrap();
+    commit_all(repo.path(), "init");
+    let (first, second) = replay_cmd(home.path(), repo.path(), &["test", "--lang", "python"]);
+    let first_out = String::from_utf8_lossy(&first.stdout);
+    assert!(
+        first.status.success() && first_out.contains("1 passed"),
+        "run must succeed. stdout:\n{first_out}\nstderr:\n{}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    assert_eq!(
+        product_gate_lines(&first),
+        product_gate_lines(&second),
+        "a second kiss test must match the first run's product lines"
+    );
+}
+
+#[test]
+fn rust_inline_and_external_tests_cached_check_and_stats_match_uncached() {
+    // check+stats only: check+stats+repeated runs exceeded the 60s cases SLA under suite
+    // load (~63s). Cached-run identity is `rust_only_cached_check_matches_uncached`.
+    let repo = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    write_rust_inline_external_crate(repo.path());
+
+    let (check1, check2) = replay_cmd(home.path(), repo.path(), &["check", "--lang", "rust"]);
+    let check1_out = String::from_utf8_lossy(&check1.stdout);
+    assert!(
+        check1.status.success() && check1_out.contains("Analyzed: 1 files"),
+        "production check must omit test-only rust files. stdout:\n{check1_out}\nstderr:\n{}",
+        String::from_utf8_lossy(&check1.stderr)
+    );
+    assert_eq!(
+        crate::common::without_cli_wall_timing(check1_out.as_ref()),
+        crate::common::without_cli_wall_timing(&String::from_utf8_lossy(&check2.stdout)),
+        "cached kiss check must replay the uncached rust production dataset"
+    );
+
+    let (stats1, stats2) = replay_cmd(
+        home.path(),
+        repo.path(),
+        &["stats", "--all", "--lang", "rust"],
+    );
+    assert_eq!(
+        sorted_stdout_lines(&stats1),
+        sorted_stdout_lines(&stats2),
+        "cached kiss stats must match the uncached rust production dataset"
+    );
+}
+
+#[test]
+fn rust_only_cached_check_matches_uncached() {
+    let repo = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    write_rust_inline_external_crate(repo.path());
+    assert_cached_run_identity(home.path(), repo.path(), &["check", "--lang", "rust"]);
+}

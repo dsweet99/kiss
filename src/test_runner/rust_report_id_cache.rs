@@ -13,7 +13,7 @@ use super::workspace_selector_cache::{
     rust_selector_inputs_fingerprint_for_cache,
 };
 
-const SCHEMA_VERSION: &str = "rust-test-report-ids-v2";
+const SCHEMA_VERSION: &str = "rust-test-report-ids-v3";
 const CACHE_FILE_NAME: &str = "rust_test_report_ids.json";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -26,7 +26,7 @@ struct RustReportIdCache {
 }
 
 fn cache_path(repo_root: &Path) -> PathBuf {
-    repo_root.join(".kiss").join(CACHE_FILE_NAME)
+    crate::test_runner::test_state_dir(repo_root).join(CACHE_FILE_NAME)
 }
 
 type ReportIdMemoEntry = (String, Vec<String>, String, BTreeMap<String, String>);
@@ -115,7 +115,6 @@ fn store_cached(
     let mut file = File::create(&tmp)?;
     serde_json::to_writer(&mut file, &cache).map_err(io::Error::other)?;
     file.write_all(b"\n")?;
-    file.sync_all()?;
     drop(file);
     fs::rename(tmp, path)?;
     Ok(())

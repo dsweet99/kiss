@@ -1,8 +1,8 @@
-use crate::test_runner::coverage_decision::SupportedLanguage;
 use crate::test_runner::ensure_runtime::ensure_runtime_cache;
 use crate::test_runner::lang_iface::{EnsureRequest, EnsureRuntimeResult, LanguageRuntime};
 use crate::test_runner::lang_python::PythonRuntime;
 use crate::test_runner::lang_rust::RustRuntime;
+use crate::test_runner::test_selection::SupportedLanguage;
 
 pub(crate) fn ensure_languages_runtime(
     request: &EnsureRequest,

@@ -49,8 +49,8 @@ fn exits_with_diagnostic_code_37() {
 }
 
 #[test]
-#[ignore = "fixture ignored coverage case"]
-fn ignored_coverage_case() {
+#[ignore = "fixture ignored case"]
+fn ignored_case() {
     assert_eq!(export_contract_runner::run_helper(), 42);
 }
 

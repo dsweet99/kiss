@@ -7,42 +7,10 @@ pub use unit_test_seconds::{
     time_gate_uses_path_prefixes, validate_rules,
 };
 
+use crate::Language;
 use crate::config::{ConfigError, check_unknown_keys};
 use crate::defaults;
-use std::fmt;
 use std::path::Path;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum TestCoverageScope {
-    ByFile,
-    #[default]
-    Codebase,
-}
-
-impl TestCoverageScope {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::ByFile => "by_file",
-            Self::Codebase => "codebase",
-        }
-    }
-
-    pub(crate) fn parse(raw: &str) -> Result<Self, String> {
-        match raw {
-            "by_file" => Ok(Self::ByFile),
-            "codebase" => Ok(Self::Codebase),
-            other => Err(format!(
-                "must be \"by_file\" or \"codebase\", got \"{other}\""
-            )),
-        }
-    }
-}
-
-impl fmt::Display for TestCoverageScope {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
 
 const GLOBAL_KEYS: &[&str] = &[
     "min_similarity",
@@ -54,15 +22,15 @@ const GLOBAL_KEYS: &[&str] = &[
 
 const GATE_RENAMED_MSG: &str = "\
 [gate] was renamed: put min_similarity/duplication_enabled/\
-comment_removal_enabled/docs_allowed/orphan_allowed under [global], and test_coverage_threshold/\
-test_coverage_scope/orphan_detection/max_unit_test_seconds/max_num_tests under [test]";
+comment_removal_enabled/docs_allowed/orphan_allowed under [global], \
+orphan_detection/max_unit_test_seconds under [test], and \
+max_num_tests under [python] and [rust]";
 
 #[derive(Debug, Clone)]
 pub struct GateConfig {
-    pub test_coverage_threshold: usize,
-    pub test_coverage_scope: TestCoverageScope,
     pub max_unit_test_seconds: Vec<(String, f64)>,
-    pub max_num_tests: usize,
+    pub max_num_tests_python: usize,
+    pub max_num_tests_rust: usize,
     pub min_similarity: f64,
     pub duplication_enabled: bool,
     pub orphan_detection: bool,
@@ -74,10 +42,9 @@ pub struct GateConfig {
 impl Default for GateConfig {
     fn default() -> Self {
         Self {
-            test_coverage_threshold: defaults::gate::TEST_COVERAGE_THRESHOLD,
-            test_coverage_scope: TestCoverageScope::Codebase,
             max_unit_test_seconds: default_max_unit_test_seconds(),
-            max_num_tests: defaults::gate::MAX_NUM_TESTS,
+            max_num_tests_python: defaults::python::MAX_NUM_TESTS,
+            max_num_tests_rust: defaults::rust::MAX_NUM_TESTS,
             min_similarity: defaults::duplication::MIN_SIMILARITY,
             duplication_enabled: true,
             orphan_detection: false,
@@ -100,6 +67,13 @@ impl GateConfig {
 
     pub fn unit_test_time_gate_disabled(&self) -> bool {
         self.max_unit_test_seconds.is_empty()
+    }
+}
+
+pub fn max_num_tests_for(gate: &GateConfig, language: Language) -> usize {
+    match language {
+        Language::Python => gate.max_num_tests_python,
+        Language::Rust => gate.max_num_tests_rust,
     }
 }
 
@@ -155,6 +129,7 @@ impl GateConfig {
         if let Some(test) = value.get("test").and_then(|v| v.as_table()) {
             crate::test_toml::merge_test_table_lenient(test, Some(self), None, None);
         }
+        merge_language_caps_lenient(self, &value);
     }
 
     fn try_merge_from_toml(&mut self, toml_str: &str) -> Result<(), ConfigError> {
@@ -176,7 +151,43 @@ impl GateConfig {
         if let Some(test) = value.get("test").and_then(|v| v.as_table()) {
             crate::test_toml::merge_test_table_strict(test, Some(self), None, None)?;
         }
+        merge_language_caps_strict(self, &value)?;
         Ok(())
+    }
+}
+
+fn merge_language_caps_lenient(config: &mut GateConfig, root: &toml::Table) {
+    for language in Language::ALL {
+        let Some(table) = root.get(language.label()).and_then(|v| v.as_table()) else {
+            continue;
+        };
+        match crate::test_toml::try_get_max_num_tests(table) {
+            Ok(Some(n)) => set_max_num_tests(config, language, n),
+            Ok(None) => {}
+            Err(err) => eprintln!("Error: {err}"),
+        }
+    }
+}
+
+fn merge_language_caps_strict(
+    config: &mut GateConfig,
+    root: &toml::Table,
+) -> Result<(), ConfigError> {
+    for language in Language::ALL {
+        let Some(table) = root.get(language.label()).and_then(|v| v.as_table()) else {
+            continue;
+        };
+        if let Some(n) = crate::test_toml::try_get_max_num_tests(table)? {
+            set_max_num_tests(config, language, n);
+        }
+    }
+    Ok(())
+}
+
+fn set_max_num_tests(config: &mut GateConfig, language: Language, n: usize) {
+    match language {
+        Language::Python => config.max_num_tests_python = n,
+        Language::Rust => config.max_num_tests_rust = n,
     }
 }
 

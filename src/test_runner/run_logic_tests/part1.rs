@@ -22,18 +22,20 @@ fn force_all_population_helper_keeps_targets_selective() {
     let mut planned = planned();
     planned.sel.python = vec!["tests/a.py::only".to_string()];
     let args = crate::test_runner::RunTestCmdArgs {
+        doubles: None,
         invocation: crate::bin_cli::args::TestInvocation::Targets(vec!["tests/a.py::only".into()]),
+        target_request: crate::test_runner::target_request::operands_request(
+            &["tests/a.py::only".into()],
+            Some(Language::Python),
+            &[],
+        ),
         main_branch_cli: None,
         base_branch_cli: None,
         dry_run: true,
         force_rerun: true,
-        force_bad: false,
         metrics: false,
         jobs: 1,
-        extra: &[],
-        python_extra: &[],
-        ignore: &[],
-        lang_filter: Some(Language::Python),
+        extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
         config_main_branch: None,
         gate_config: kiss::GateConfig::default(),
     };
@@ -55,18 +57,19 @@ fn force_all_population_helper_sets_population_for_all() {
     let mut planned = planned();
     planned.sel.python = vec!["tests/a.py::only".to_string()];
     let args = crate::test_runner::RunTestCmdArgs {
+        doubles: None,
         invocation: crate::bin_cli::args::TestInvocation::All,
+        target_request: crate::test_runner::target_request::workspace_request(
+            Some(Language::Python),
+            &[],
+        ),
         main_branch_cli: None,
         base_branch_cli: None,
         dry_run: true,
         force_rerun: true,
-        force_bad: false,
         metrics: false,
         jobs: 1,
-        extra: &[],
-        python_extra: &[],
-        ignore: &[],
-        lang_filter: Some(Language::Python),
+        extras: crate::test_runner::language_keyed::LanguageKeyed::EMPTY,
         config_main_branch: None,
         gate_config: kiss::GateConfig::default(),
     };
@@ -277,19 +280,11 @@ fn planned_selectors_carry_population_decisions_without_selector_vectors() {
             rust: Vec::new(),
         },
         vcs_source_paths: crate::test_runner::language_keyed::LanguageKeyed { python: 0, rust: 0 },
-        snapshot_delta_modified: crate::test_runner::language_keyed::LanguageKeyed {
-            python: 0,
-            rust: 0,
-        },
-        snapshot_delta_structural: crate::test_runner::language_keyed::LanguageKeyed {
-            python: false,
-            rust: false,
-        },
         prior_failure_selectors: crate::test_runner::language_keyed::LanguageKeyed {
             python: Vec::new(),
             rust: Vec::new(),
         },
-        coverage_decision_engine_used: true,
+        selection_engine_used: true,
         selection_basis: Default::default(),
         ignore: Vec::new(),
         workspace_files_fingerprint: None,
@@ -317,32 +312,6 @@ fn population_selector_count_comes_from_execution_phase() {
 }
 
 #[test]
-fn language_modules_expose_language_and_indexable_source_policy() {
-    let tmp = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
-    std::fs::write(tmp.path().join("app.py"), "VALUE = 1\n").unwrap();
-    std::fs::write(tmp.path().join("src").join("lib.rs"), "pub fn value() {}\n").unwrap();
-    let ignore = Vec::<String>::new();
-
-    assert!(
-        python_backer::PythonModule::for_execution(tmp.path(), &ignore)
-            .is_indexable_source(&tmp.path().join("app.py"), tmp.path())
-    );
-    assert!(
-        !python_backer::PythonModule::for_execution(tmp.path(), &ignore)
-            .is_indexable_source(Path::new("<frozen importlib>"), tmp.path())
-    );
-    assert!(
-        rust_backer::RustModule::for_execution(tmp.path(), &ignore)
-            .is_indexable_source(&tmp.path().join("src").join("lib.rs"), tmp.path())
-    );
-    assert!(
-        !rust_backer::RustModule::for_execution(tmp.path(), &ignore)
-            .is_indexable_source(Path::new(".kiss/runtime.rs"), tmp.path())
-    );
-}
-
-#[test]
 fn empty_module_runs_return_default_summaries_without_spawning() {
     let planned = planned();
     let options = options(false);
@@ -351,10 +320,6 @@ fn empty_module_runs_return_default_summaries_without_spawning() {
         options: &options,
     };
 
-    assert_eq!(
-        language_modules::run_rust_selectors_for_module(&[], &ctx, None).unwrap(),
-        SelectorExecutionSummary::default()
-    );
     let outcome: LanguagePhaseOutcome = execute_language_phase(
         &execution_module_python(&planned),
         &ExecutionPhase::NoWork,
@@ -411,7 +376,13 @@ fn python_outcome_records_index_rebuild_duration_in_metrics() {
         index_rebuild_duration: Duration::from_millis(3),
     };
 
-    record_python_outcome(&mut metrics, outcome);
+    let module = FakeLanguageModule {
+        language: Language::Python,
+        population_required: false,
+        selective: Vec::new(),
+        summary: SelectorExecutionSummary::default(),
+    };
+    record_language_outcome(&mut metrics, &module, outcome);
 
     assert_eq!(metrics.python.summary.total, 1);
     assert_eq!(metrics.python.duration, Duration::from_millis(7));

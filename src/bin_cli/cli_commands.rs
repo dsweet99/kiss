@@ -1,5 +1,4 @@
 use clap::Subcommand;
-use std::ffi::OsString;
 use std::path::PathBuf;
 
 use super::parse_positive_usize;
@@ -8,7 +7,7 @@ use super::parse_positive_usize;
 pub enum Commands {
     #[command(
         about = "Run static complexity, graph, duplicate, comment, and doc checks",
-        after_help = "If .kissconfig is missing, writes one from current-codebase maxima."
+        after_help = "If .kissconfig is missing, writes the default config, then raises Python and Rust thresholds so those checks pass."
     )]
     Check {
         #[arg(
@@ -99,33 +98,19 @@ pub enum Commands {
     },
     #[command(
         alias = "t",
-        about = "Run covering tests and enforce coverage and time gates"
+        about = "Run tests and enforce time, test-count, and orphan gates"
     )]
     Test {
         #[arg(
             num_args = 0..,
             value_name = "TARGET",
-            default_value = ".",
-            help = "commit, base, main, ., or PATH / PATH::symbol / directory"
+            help = "commit, base, main, ., or PATH / PATH::symbol / directory. Bare kiss test is the whole repository."
         )]
         operands: Vec<String>,
         #[arg(long, value_name = "BRANCH", help = "Branch name for kiss test main")]
         main_branch: Option<String>,
         #[arg(long, value_name = "BRANCH", help = "Branch name for kiss test base")]
         base_branch: Option<String>,
-        #[arg(long, help = "Show tests that would run without executing them")]
-        dry_run: bool,
-        #[arg(
-            long,
-            help = "Rerun FAIL and TIMEOUT tests in the TARGET subset"
-        )]
-        retry_bad: bool,
-        #[arg(long, help = "Print test-run metrics")]
-        metrics: bool,
-        #[arg(long, help = "Include files that currently pass the coverage gate")]
-        coverage_all: bool,
-        #[arg(long, help = "Rerun tests when sources change")]
-        watch: bool,
         #[arg(
             short = 'j',
             long,
@@ -134,24 +119,5 @@ pub enum Commands {
             help = "Maximum number of test jobs to run concurrently"
         )]
         jobs: Option<usize>,
-        #[arg(long, value_name = "PREFIX", help = "Path prefix to exclude")]
-        ignore: Vec<String>,
-        #[arg(
-            last = true,
-            value_name = "ARG",
-            help = "Arguments passed through to the test runner"
-        )]
-        extra: Vec<String>,
-    },
-    #[command(name = "__rust-llvm-cov-target-runner", hide = true)]
-    RustLlvmCovTargetRunner {
-        #[arg(long, value_name = "DIR")]
-        output_dir: PathBuf,
-        #[arg(long, value_name = "PATH")]
-        runner_map: PathBuf,
-        #[arg(long, value_name = "TRIPLE")]
-        platform: String,
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        command: Vec<OsString>,
     },
 }

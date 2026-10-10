@@ -74,7 +74,7 @@ pub(crate) fn log_timing_phase1(
     t3: std::time::Instant,
 ) {
     eprintln!(
-        "[TIMING] discovery={:.2}s, parse+analyze={:.2}s, coverage=0.00s, graph={:.2}s",
+        "[TIMING] discovery={:.2}s, parse+analyze={:.2}s, graph={:.2}s",
         t1.duration_since(t0).as_secs_f64(),
         t2.duration_since(t1).as_secs_f64(),
         t3.duration_since(t2).as_secs_f64()
@@ -82,7 +82,7 @@ pub(crate) fn log_timing_phase1(
 }
 
 #[cfg(test)]
-mod coverage_witness {
+mod print_witness {
     use super::*;
 
     impl PrintResultsCtx {

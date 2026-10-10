@@ -177,6 +177,25 @@ fn docs_allowed_dot_allows_all_paths() {
 }
 
 #[test]
+fn docs_allowed_dot_slash_prefix_matches_directory() {
+    let root = Path::new(".");
+    let mut parsed = parse_python_source("\"\"\"doc\"\"\"\nx = 1\n");
+    parsed.path = PathBuf::from("docs/app.py");
+    let dotted = vec!["./docs".to_string()];
+    assert!(
+        collect_doc_violations(&[parsed], &[], &dotted, root).is_empty(),
+        "./docs must allow docs/app.py"
+    );
+
+    let mut outside = parse_python_source("\"\"\"doc\"\"\"\nx = 1\n");
+    outside.path = PathBuf::from("app.py");
+    assert_eq!(
+        collect_doc_violations(&[outside], &[], &["./docs/".to_string()], root).len(),
+        1
+    );
+}
+
+#[test]
 fn docs_allowed_prefix_matches_file_path() {
     let root = Path::new(".");
     let mut parsed = parse_python_source("\"\"\"doc\"\"\"\nx = 1\n");

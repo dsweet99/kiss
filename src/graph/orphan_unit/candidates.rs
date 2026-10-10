@@ -3,8 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::code_roles::{CodeRole, SourceRoleIndex};
 use crate::comments::{normalize_allowed_dirs, path_in_allowed_dirs};
-use crate::graph::orphan_unit::extract::file_key;
-use crate::graph::orphan_unit::{OrphanCoverage, UnitRef};
+use crate::graph::orphan_unit::UnitRef;
 use crate::rust_include::canonical_path;
 use crate::units::CodeUnitKind;
 
@@ -15,22 +14,11 @@ pub(super) struct CandidateIn<'a> {
     pub entry_callables: &'a HashSet<(PathBuf, String)>,
     pub orphan_allowed: &'a [String],
     pub repo_root: &'a Path,
-    pub coverage: &'a OrphanCoverage,
-    pub coverage_off: &'a HashSet<(PathBuf, String, usize)>,
 }
 
 pub(super) fn is_candidate(in_: CandidateIn<'_>) -> bool {
-    let path = &in_.unit.file;
-    if role_or_path_excluded(&in_, path)
-        || unit_kind_excluded(in_.unit, in_.entries, in_.entry_callables)
-    {
-        return false;
-    }
-    let prod_coverable = production_coverable(in_.unit, in_.roles, in_.coverage);
-    let off =
-        in_.coverage_off
-            .contains(&(path.clone(), in_.unit.name.clone(), in_.unit.start_line));
-    !(prod_coverable.is_empty() && off)
+    !role_or_path_excluded(&in_, &in_.unit.file)
+        && !unit_kind_excluded(in_.unit, in_.entries, in_.entry_callables)
 }
 
 fn role_or_path_excluded(in_: &CandidateIn<'_>, path: &Path) -> bool {
@@ -80,20 +68,4 @@ fn callable_hit(unit: &UnitRef, canon: &Path, callables: &HashSet<(PathBuf, Stri
     callables.iter().any(|(path, name)| {
         name == &unit.name && (path == &unit.file || canonical_path(path) == canon)
     })
-}
-
-fn production_coverable(
-    unit: &UnitRef,
-    roles: &SourceRoleIndex,
-    coverage: &OrphanCoverage,
-) -> Vec<usize> {
-    let Some(lines) = file_key(&coverage.coverable, &unit.file) else {
-        return Vec::new();
-    };
-    let in_range: Vec<usize> = lines
-        .iter()
-        .copied()
-        .filter(|line| *line >= unit.start_line && *line <= unit.end_line)
-        .collect();
-    roles.production_lines(&unit.file, &in_range)
 }

@@ -202,19 +202,6 @@ fn fingerprint_includes_python_returns_per_function() {
 }
 
 #[test]
-fn fingerprint_excludes_gate_test_coverage_threshold() {
-    let py = Config::python_defaults();
-    let rs = Config::rust_defaults();
-    let g0 = GateConfig::default();
-    let mut g1 = g0.clone();
-    g1.test_coverage_threshold = g0.test_coverage_threshold.saturating_add(1);
-    assert_eq!(
-        fingerprint_for_check(&[], &[], &py, &rs, &g0),
-        fingerprint_for_check(&[], &[], &py, &rs, &g1),
-    );
-}
-
-#[test]
 fn fingerprint_excludes_gate_max_unit_test_seconds() {
     let py = Config::python_defaults();
     let rs = Config::rust_defaults();

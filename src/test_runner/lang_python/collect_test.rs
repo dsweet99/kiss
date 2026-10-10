@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 use super::collect::{collect_python_nodeids, reset_python_collect_memo_for_tests};
-use crate::test_runner::python_coverage_index::PYTHON_SELECTOR_DISCOVERY_VERSION;
 use crate::test_runner::runners::{
     enumerate_tests_in_changed_files, enumerate_workspace_python_selectors,
 };
@@ -233,6 +232,16 @@ fn format_collect_error_maps_all_collector_failures() {
         })
         .contains("stdout detail")
     );
+    let with_payload = format_collect_error_for_test(PytestCollectError::CollectionFailed {
+        exit_code: Some(2),
+        stderr: String::new(),
+        stdout: "KISS_COLLECT_JSON:{\"nodeids\": []}\nfailure detail\n".into(),
+    });
+    assert!(with_payload.contains("failure detail"), "{with_payload}");
+    assert!(
+        !with_payload.contains("KISS_COLLECT_JSON"),
+        "{with_payload}"
+    );
     assert!(
         format_collect_error_for_test(PytestCollectError::InvalidOutput("bad json".into()))
             .contains("invalid pytest collection output")
@@ -321,7 +330,7 @@ fn collect_pytest_nodeids_public_wrapper_is_used() {
 #[test]
 fn kiss_repo_discovery_omits_ignored_fixtures() {
     // Full-workspace collection of this repo exceeds the src/test_runner SLA under
-    // parallel `kiss test` load. Behavioral ignore coverage lives in tempfile tests
+    // parallel `kiss test` load. Behavioral ignore checks live in tempfile tests
     // (`full_suite_collection_omits_collect_ignore_glob_paths`, acceptance dry-run).
     // Here we only regression-check that the real repo still configures the ignore.
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -339,14 +348,6 @@ fn empty_repo_collection_succeeds_with_pytest_exit_code_five() {
     fs::write(tmp.path().join("source.py"), "VALUE = 1\n").unwrap();
     let selectors = collect_python_nodeids(tmp.path(), None, &[]).unwrap();
     assert!(selectors.is_empty());
-}
-
-#[test]
-fn selector_discovery_version_is_v2() {
-    assert_eq!(
-        PYTHON_SELECTOR_DISCOVERY_VERSION,
-        "python-selector-discovery-v2"
-    );
 }
 
 #[test]
@@ -408,15 +409,28 @@ fn ignore_collection_keeps_duplicate_basenames_under_tests() {
 }
 
 #[test]
+fn ignore_with_no_candidates_skips_a_broken_ignored_tree() {
+    reset_python_collect_memo_for_tests();
+    let tmp = TempDir::new().unwrap();
+    let ignored = tmp.path().join("resources");
+    fs::create_dir_all(&ignored).unwrap();
+    fs::write(
+        ignored.join("test_broken.py"),
+        "import definitely_missing_module\n\ndef test_broken():\n    pass\n",
+    )
+    .unwrap();
+    fs::write(tmp.path().join("app.py"), "x = 1\n").unwrap();
+    let ignore = ["resources".to_string()];
+    let selectors = enumerate_workspace_python_selectors(tmp.path(), &ignore, &[]).unwrap();
+    assert!(selectors.is_empty());
+}
+
+#[test]
 fn ignore_collection_paths_pass_tests_dir_not_each_file() {
     let tmp = TempDir::new().unwrap();
     let tests = tmp.path().join("tests");
     fs::create_dir_all(tests.join("nested")).unwrap();
-    fs::write(
-        tests.join("test_a.py"),
-        "def test_a():\n    assert True\n",
-    )
-    .unwrap();
+    fs::write(tests.join("test_a.py"), "def test_a():\n    assert True\n").unwrap();
     fs::write(
         tests.join("nested/test_b.py"),
         "def test_b():\n    assert True\n",

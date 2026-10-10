@@ -137,6 +137,38 @@ impl<'ast> Visit<'ast> for NameRefVisitor {
             .push((String::new(), node.method.to_string(), line));
         syn::visit::visit_expr_method_call(self, node);
     }
+
+    fn visit_use_path(&mut self, node: &'ast syn::UsePath) {
+        push_ident(&node.ident, &mut self.out);
+        syn::visit::visit_use_path(self, node);
+    }
+
+    fn visit_use_name(&mut self, node: &'ast syn::UseName) {
+        push_ident(&node.ident, &mut self.out);
+    }
+
+    fn visit_use_rename(&mut self, node: &'ast syn::UseRename) {
+        push_ident(&node.ident, &mut self.out);
+    }
+
+    fn visit_macro(&mut self, node: &'ast syn::Macro) {
+        syn::visit::visit_macro(self, node);
+        push_token_idents(node.tokens.clone(), &mut self.out);
+    }
+}
+
+fn push_ident(ident: &proc_macro2::Ident, out: &mut Vec<(String, String, usize)>) {
+    out.push((String::new(), ident.to_string(), ident.span().start().line));
+}
+
+fn push_token_idents(tokens: proc_macro2::TokenStream, out: &mut Vec<(String, String, usize)>) {
+    for tree in tokens {
+        match tree {
+            proc_macro2::TokenTree::Ident(ident) => push_ident(&ident, out),
+            proc_macro2::TokenTree::Group(group) => push_token_idents(group.stream(), out),
+            proc_macro2::TokenTree::Punct(_) | proc_macro2::TokenTree::Literal(_) => {}
+        }
+    }
 }
 
 fn push_path(path: &syn::Path, out: &mut Vec<(String, String, usize)>) {
@@ -247,5 +279,21 @@ mod name_refs_test {
     fn method_call_names_the_method() {
         let got = refs("fn f(x: i32) { let _ = x.abs(); }");
         assert!(got.iter().any(|(_, last)| last == "abs"));
+    }
+
+    #[test]
+    fn calls_inside_macro_arguments_are_refs() {
+        let got = refs("fn f() { println!(\"{}\", helper(nested::inner(1))); }");
+        for name in ["helper", "inner"] {
+            assert!(got.iter().any(|(_, last)| last == name), "{name}: {got:?}");
+        }
+    }
+
+    #[test]
+    fn use_tree_segments_and_names_are_refs() {
+        let got = refs("use crate::outer::inner::{Item, other as alias};\n");
+        for name in ["outer", "inner", "Item", "other"] {
+            assert!(got.iter().any(|(_, last)| last == name), "{name}: {got:?}");
+        }
     }
 }

@@ -194,7 +194,6 @@ fn test_run_analyze_current_repo_in_process() {
     let py_cfg = permissive_config(Config::python_defaults());
     let rs_cfg = permissive_config(Config::rust_defaults());
     let gate_cfg = GateConfig {
-        test_coverage_threshold: 0,
         duplication_enabled: false,
         docs_allowed: vec!["".into()],
         ..GateConfig::default()

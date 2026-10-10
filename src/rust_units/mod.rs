@@ -161,7 +161,7 @@ pub fn extract_rust_code_units(parsed: &ParsedRustFile) -> Vec<RustCodeUnit> {
 }
 
 #[cfg(test)]
-mod inline_coverage_tests {
+mod inline_tests {
     use super::*;
     use syn::visit::Visit;
 

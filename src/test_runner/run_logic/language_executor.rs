@@ -1,12 +1,13 @@
 use std::time::Instant;
 
-use crate::test_runner::coverage_decision::{
+use crate::test_runner::runners::SelectorExecutionSummary;
+use crate::test_runner::test_selection::{
     LanguageExecutor, LanguagePlanner, LanguageTestModule, RunContext,
 };
-use crate::test_runner::runners::SelectorExecutionSummary;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(super) enum ExecutionPhase {
+    #[default]
     NoWork,
     Population(Vec<String>),
     Selective(Vec<String>),
@@ -40,49 +41,21 @@ pub(super) fn execution_phase(
     module: &dyn LanguageTestModule,
     ctx: &RunContext<'_, '_>,
 ) -> Result<ExecutionPhase, String> {
+    let selectors = module.selective_selectors(ctx);
     if module.population_required(ctx) {
-        let language = LanguagePlanner::language(module);
-        if language == kiss::Language::Rust {
-            return rust_population_phase(module, ctx);
-        }
-        if !ctx.planned.sel.python.is_empty() {
-            return planned_population_selectors(module, ctx);
+        if module.population_from_plan() && !selectors.is_empty() {
+            let mut selectors = selectors;
+            selectors.sort();
+            selectors.dedup();
+            return Ok(ExecutionPhase::Population(selectors));
         }
         return discover_population_selectors(module, ctx);
     }
-    let selectors = module.selective_selectors(ctx);
     if selectors.is_empty() {
         Ok(ExecutionPhase::NoWork)
     } else {
         Ok(ExecutionPhase::Selective(selectors))
     }
-}
-
-fn rust_population_phase(
-    module: &dyn LanguageTestModule,
-    ctx: &RunContext<'_, '_>,
-) -> Result<ExecutionPhase, String> {
-    if crate::test_runner::rust_list_build::covering_population_list_build_done() {
-        return planned_population_selectors(module, ctx);
-    }
-    crate::test_runner::rust_list_build::overlap_with_discover(|| {
-        discover_population_selectors(module, ctx)
-    })
-}
-
-fn planned_population_selectors(
-    module: &dyn LanguageTestModule,
-    ctx: &RunContext<'_, '_>,
-) -> Result<ExecutionPhase, String> {
-    let language = LanguagePlanner::language(module);
-    let mut selectors = match language {
-        kiss::Language::Python => ctx.planned.sel.python.clone(),
-        kiss::Language::Rust => ctx.planned.sel.rust.clone(),
-    };
-    selectors.extend(module.selective_selectors(ctx));
-    selectors.sort();
-    selectors.dedup();
-    Ok(ExecutionPhase::Population(selectors))
 }
 
 fn discover_population_selectors(

@@ -1,10 +1,11 @@
 use std::path::Path;
 
+use crate::Language;
 use crate::config::error::ConfigError;
-use crate::config::types::{Config, ConfigLanguage};
+use crate::config::types::Config;
 
 impl Config {
-    fn load_config_chain(base: Self, lang: Option<ConfigLanguage>) -> Self {
+    fn load_config_chain(base: Self, lang: Option<Language>) -> Self {
         let mut config = base;
         if let Ok(content) = std::fs::read_to_string(super::kissconfig_path_from_cwd()) {
             config.merge_from_toml(&content, lang);
@@ -16,12 +17,16 @@ impl Config {
         Self::load_config_chain(Self::default(), None)
     }
 
-    pub fn load_for_language(lang: ConfigLanguage) -> Self {
-        let base = match lang {
-            ConfigLanguage::Python => Self::python_defaults(),
-            ConfigLanguage::Rust => Self::rust_defaults(),
-        };
-        Self::load_config_chain(base, Some(lang))
+    pub fn load_for_language(lang: Language) -> Self {
+        Self::load_config_chain(Self::defaults_for(lang), Some(lang))
+    }
+
+    pub fn try_load_for_language(lang: Language) -> Result<Self, ConfigError> {
+        let path = super::kissconfig_path_from_cwd();
+        if !path.exists() {
+            return Ok(Self::defaults_for(lang));
+        }
+        Self::try_load_from(&path, lang)
     }
 
     pub fn load_from(path: &Path) -> Self {
@@ -34,11 +39,8 @@ impl Config {
         config
     }
 
-    pub fn load_from_for_language(path: &Path, lang: ConfigLanguage) -> Self {
-        let mut config = match lang {
-            ConfigLanguage::Python => Self::python_defaults(),
-            ConfigLanguage::Rust => Self::rust_defaults(),
-        };
+    pub fn load_from_for_language(path: &Path, lang: Language) -> Self {
+        let mut config = Self::defaults_for(lang);
         if let Ok(content) = std::fs::read_to_string(path) {
             config.merge_from_toml_with_path(&content, Some(lang), Some(path));
         } else {
@@ -47,16 +49,13 @@ impl Config {
         config
     }
 
-    pub fn load_from_content(content: &str, lang: ConfigLanguage) -> Self {
-        let mut config = match lang {
-            ConfigLanguage::Python => Self::python_defaults(),
-            ConfigLanguage::Rust => Self::rust_defaults(),
-        };
+    pub fn load_from_content(content: &str, lang: Language) -> Self {
+        let mut config = Self::defaults_for(lang);
         config.merge_from_toml(content, Some(lang));
         config
     }
 
-    pub fn try_load_from(path: &Path, lang: ConfigLanguage) -> Result<Self, ConfigError> {
+    pub fn try_load_from(path: &Path, lang: Language) -> Result<Self, ConfigError> {
         let content = std::fs::read_to_string(path).map_err(|e| ConfigError::IoError {
             path: path.display().to_string(),
             message: e.to_string(),
@@ -64,11 +63,8 @@ impl Config {
         Self::try_load_from_content(&content, lang)
     }
 
-    pub fn try_load_from_content(content: &str, lang: ConfigLanguage) -> Result<Self, ConfigError> {
-        let mut config = match lang {
-            ConfigLanguage::Python => Self::python_defaults(),
-            ConfigLanguage::Rust => Self::rust_defaults(),
-        };
+    pub fn try_load_from_content(content: &str, lang: Language) -> Result<Self, ConfigError> {
+        let mut config = Self::defaults_for(lang);
         config.try_merge_from_toml(content, Some(lang))?;
         Ok(config)
     }

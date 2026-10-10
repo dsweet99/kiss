@@ -21,9 +21,7 @@ pub(super) fn python_nodeids_for_model(
         if !from_cache.is_empty() {
             return Ok(from_cache);
         }
-        let has_named_tests = is_python_test_module_path(&model.path)
-            && model.direct_tests.iter().any(|test| !test.name.is_empty());
-        if !has_named_tests {
+        if !model_has_named_tests(model) {
             return Ok(from_cache);
         }
     }
@@ -61,7 +59,8 @@ pub(super) fn hydrate_python_models(
         return Ok(());
     }
     let started = std::time::Instant::now();
-    let nodeids = collect_python_nodeids_for_targets(repo_root, Some(misses.as_slice()), pytest_args)?;
+    let nodeids =
+        collect_python_nodeids_for_targets(repo_root, Some(misses.as_slice()), pytest_args)?;
     crate::test_runner::emit_stage_time("python_target_batch_collect", started.elapsed());
     let mut updates: Vec<(PathBuf, Vec<String>)> = Vec::new();
     for abs in &misses {
@@ -71,6 +70,10 @@ pub(super) fn hydrate_python_models(
     }
     let _ = store_python_file_nodeids(repo_root, &updates);
     Ok(())
+}
+
+fn model_has_named_tests(model: &SourceModel) -> bool {
+    model.direct_tests.iter().any(|test| !test.name.is_empty())
 }
 
 fn nodeids_already_available(
@@ -84,9 +87,7 @@ fn nodeids_already_available(
         if !from_cache.is_empty() {
             return true;
         }
-        let has_named_tests = is_python_test_module_path(&model.path)
-            && model.direct_tests.iter().any(|test| !test.name.is_empty());
-        if !has_named_tests {
+        if !model_has_named_tests(model) {
             return true;
         }
     }

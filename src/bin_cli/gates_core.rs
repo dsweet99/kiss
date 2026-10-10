@@ -11,58 +11,40 @@ use crate::bin_cli::util::validate_paths;
 use kiss::Language;
 use kiss::normalize_ignore_prefixes;
 use kiss::truncate;
-use kiss::{Config, ConfigLanguage, GateConfig};
+use kiss::{Config, GateConfig};
 
 #[test]
 fn test_language_and_config() {
     assert_eq!(parse_language("python"), Ok(Language::Python));
     assert_eq!(parse_language("rust"), Ok(Language::Rust));
     assert!(parse_language("invalid").is_err());
-    let (py, rs) = load_configs(None);
+    let (py, rs) = load_configs(None).unwrap();
     assert!(py.statements_per_function > 0 && rs.statements_per_function > 0);
     let tmp = tempfile::TempDir::new().unwrap();
     let builtin = tmp.path().join("builtin.toml");
     std::fs::write(&builtin, "[python]\n[rust]\n").unwrap();
-    let (py_def, _) = load_configs(Some(&builtin));
+    let (py_def, _) = load_configs(Some(&builtin)).unwrap();
     assert_eq!(
         py_def.statements_per_function,
         kiss::defaults::python::STATEMENTS_PER_FUNCTION
     );
     let path = tmp.path().join("kiss.toml");
-    std::fs::write(&path, "[test]\ntest_coverage_threshold = 80\n").unwrap();
-    assert_eq!(load_gate_config(Some(&path)).test_coverage_threshold, 80);
+    std::fs::write(
+        &path,
+        "[python]\nmax_num_tests = 80\n[rust]\nmax_num_tests = 70\n",
+    )
+    .unwrap();
+    let loaded = load_gate_config(Some(&path)).unwrap();
+    assert_eq!(loaded.max_num_tests_python, 80);
+    assert_eq!(loaded.max_num_tests_rust, 70);
+    let builtin_gate = load_gate_config(Some(&builtin)).unwrap();
     assert_eq!(
-        load_gate_config(Some(&builtin)).test_coverage_threshold,
-        kiss::defaults::gate::TEST_COVERAGE_THRESHOLD
+        builtin_gate.max_num_tests_python,
+        kiss::defaults::python::MAX_NUM_TESTS
     );
-}
-
-#[test]
-fn test_clamp_keeps_default_coverage_threshold() {
-    let tmp = tempfile::TempDir::new().unwrap();
-    std::fs::write(
-        tmp.path().join("app.py"),
-        "def covered():\n    return 1\n\ndef uncovered():\n    return 2\n",
-    )
-    .unwrap();
-    std::fs::write(
-        tmp.path().join("test_app.py"),
-        "from app import covered\n\ndef test_covered():\n    assert covered() == 1\n",
-    )
-    .unwrap();
-    std::fs::write(
-        tmp.path().join("fake_extra.py"),
-        "def ignored_uncovered():\n    return 3\n",
-    )
-    .unwrap();
-
-    let ignore = crate::bin_cli::util::merge_check_ignore_prefixes(&[]);
-    let path = tmp.path().to_string_lossy().to_string();
-    let gate = kiss::config_gen::infer_gate_config_for_paths(&[path], None, &ignore).unwrap();
     assert_eq!(
-        gate.test_coverage_threshold,
-        kiss::defaults::gate::TEST_COVERAGE_THRESHOLD,
-        "clamp must not infer coverage from static references after the kiss cov split"
+        builtin_gate.max_num_tests_rust,
+        kiss::defaults::rust::MAX_NUM_TESTS
     );
 }
 
@@ -105,8 +87,8 @@ fn test_gather_stats_normalize_validate() {
             .len(),
         1
     );
-    let py_cfg = Config::load_for_language(ConfigLanguage::Python);
-    let rs_cfg = Config::load_for_language(ConfigLanguage::Rust);
+    let py_cfg = Config::load_for_language(Language::Python);
+    let rs_cfg = Config::load_for_language(Language::Rust);
     let gate_cfg = GateConfig::load();
     run_stats_summary(&RunStatsArgs {
         paths: std::slice::from_ref(&p),

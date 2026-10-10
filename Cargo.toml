@@ -79,10 +79,28 @@ codegen-units = 256
 debug = 0
 strip = "debuginfo"
 
+# codegen-units applies to kiss-ai only. Set on [profile.dev], it also applies
+# to dependencies.
+[profile.dev]
+incremental = true
+debug = "line-tables-only"
+lto = "off"
+
 [profile.release]
-lto = true
-codegen-units = 1
-panic = "abort"
+lto = "off"
+
+[profile.dev.package."kiss-ai"]
+codegen-units = 3
+
+# Backtraces lose line numbers inside dependencies; dev builds are about 14% faster.
+[profile.dev.package."*"]
+debug = false
+
+# Local optimized builds: `cargo build --profile release-local`. Shipped builds
+# (`cargo install kiss-ai`) use [profile.release] unchanged.
+[profile.release-local]
+inherits = "release"
+incremental = true
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }

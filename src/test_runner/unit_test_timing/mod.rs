@@ -3,26 +3,16 @@ use std::time::Duration;
 
 use kiss::Language;
 
-use crate::test_runner::check_line_coverage::repository_root_for_universe;
+use crate::test_runner::universe_root::repository_root_for_universe;
 
 mod rust_durations;
-pub(crate) use rust_durations::clear_rust_duration_pairs_memo;
-pub(super) use rust_durations::load_rust_population_max_duration;
 use rust_durations::load_rust_duration_pairs;
-#[cfg(test)]
-pub(crate) use rust_durations::set_pairs_for_tests;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct UnitTestTiming {
     pub(crate) language: Language,
     pub(crate) selector: String,
     pub(crate) duration: Duration,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum TimingPopulation {
-    Complete(Vec<UnitTestTiming>),
-    Incomplete,
 }
 
 pub(crate) type TimingLangInclude = crate::test_runner::language_keyed::LanguageKeyed<bool>;
@@ -34,30 +24,6 @@ pub(crate) struct TimingCollectOpts<'a> {
     pub(crate) include: TimingLangInclude,
     pub(crate) ignore: &'a [String],
     pub(crate) pytest_args: &'a [String],
-}
-
-pub(crate) fn collect_current_unit_test_timings(opts: TimingCollectOpts<'_>) -> TimingPopulation {
-    let want_python =
-        opts.include.python && matches!(opts.lang_filter, None | Some(Language::Python));
-    let want_rust = opts.include.rust && matches!(opts.lang_filter, None | Some(Language::Rust));
-    if !want_python && !want_rust {
-        return TimingPopulation::Complete(Vec::new());
-    }
-    let repo_root = repository_root_for_universe(opts.universe);
-    let mut timings = Vec::new();
-    if want_python {
-        match load_python_timings(&repo_root, opts.pytest_args) {
-            Some(python) => timings.extend(python),
-            None => return TimingPopulation::Incomplete,
-        }
-    }
-    if want_rust {
-        match load_rust_timings(&repo_root) {
-            Some(rust) => timings.extend(rust),
-            None => return TimingPopulation::Incomplete,
-        }
-    }
-    TimingPopulation::Complete(filter_timings_by_ignore(timings, opts.ignore))
 }
 
 fn filter_timings_by_ignore(
@@ -76,11 +42,8 @@ pub(super) fn selector_matches_ignore_prefix(selector: &str, ignore: &[String]) 
 }
 
 fn load_python_timings(repo_root: &Path, pytest_args: &[String]) -> Option<Vec<UnitTestTiming>> {
-    let pairs =
-        crate::test_runner::python_coverage_index::load_current_python_population_durations(
-            repo_root,
-            pytest_args,
-        )?;
+    let witness = crate::test_runner::lang_python::stored_witness(repo_root, pytest_args)?;
+    let pairs = rust_durations::duration_pairs(&witness)?;
     Some(
         pairs
             .into_iter()
@@ -94,7 +57,10 @@ fn load_python_timings(repo_root: &Path, pytest_args: &[String]) -> Option<Vec<U
 }
 
 fn load_rust_timings(repo_root: &Path) -> Option<Vec<UnitTestTiming>> {
-    Some(map_rust_timing_pairs(repo_root, load_rust_duration_pairs(repo_root)?))
+    Some(map_rust_timing_pairs(
+        repo_root,
+        load_rust_duration_pairs(repo_root)?,
+    ))
 }
 
 fn map_rust_timing_pairs(
@@ -109,74 +75,10 @@ fn map_rust_timing_pairs(
         .into_iter()
         .map(|(selector, duration)| UnitTestTiming {
             language: Language::Rust,
-            selector: report_ids
-                .get(&selector)
-                .cloned()
-                .unwrap_or(selector),
+            selector: report_ids.get(&selector).cloned().unwrap_or(selector),
             duration,
         })
         .collect()
-}
-
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct RuntimeGateViolation {
-    pub(crate) language: Language,
-    pub(crate) selector: String,
-    pub(crate) seconds: f64,
-    pub(crate) limit_seconds: f64,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) enum RuntimeGateEval {
-    Disabled,
-    Passed,
-    Failed(Vec<RuntimeGateViolation>),
-    Incomplete,
-}
-
-pub(crate) fn evaluate_runtime_gate(
-    timings: &TimingPopulation,
-    max_unit_test_seconds: &[(String, f64)],
-) -> RuntimeGateEval {
-    if max_unit_test_seconds.is_empty() {
-        return RuntimeGateEval::Disabled;
-    }
-    match timings {
-        TimingPopulation::Complete(entries) => {
-            let viols: Vec<RuntimeGateViolation> = entries
-                .iter()
-                .filter_map(|t| {
-                    let limit =
-                        kiss::gate_config::limit_for_selector(max_unit_test_seconds, &t.selector);
-                    let seconds = t.duration.as_secs_f64();
-                    if seconds >= limit {
-                        Some(RuntimeGateViolation {
-                            language: t.language,
-                            selector: t.selector.clone(),
-                            seconds,
-                            limit_seconds: limit,
-                        })
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            if viols.is_empty() {
-                RuntimeGateEval::Passed
-            } else {
-                RuntimeGateEval::Failed(viols)
-            }
-        }
-        TimingPopulation::Incomplete => RuntimeGateEval::Incomplete,
-    }
-}
-
-pub(crate) fn runtime_gate_failure_lines(viols: &[RuntimeGateViolation]) -> Vec<String> {
-    vec![format!(
-        "VIOLATION:max_unit_test_seconds: {} test(s) exceeded path-pattern time limits",
-        viols.len()
-    )]
 }
 
 pub(crate) fn collect_available_unit_test_timings(
@@ -194,16 +96,6 @@ pub(crate) fn collect_available_unit_test_timings(
         timings.extend(rust);
     }
     filter_timings_by_ignore(timings, opts.ignore)
-}
-
-pub(crate) fn known_empty_unit_test_population(
-    universe: &Path,
-    lang_filter: Option<Language>,
-    include: TimingLangInclude,
-    ignore: &[String],
-    pytest_args: &[String],
-) -> bool {
-    cheap_codebase_test_count(universe, lang_filter, include, ignore, pytest_args) == Some(0)
 }
 
 fn cheap_codebase_test_count(
@@ -226,65 +118,6 @@ fn cheap_codebase_test_count(
         },
     )?;
     Some(py.len() + rs.len())
-}
-
-pub(crate) fn codebase_test_count_for_cov(
-    universe: &Path,
-    lang_filter: Option<Language>,
-    include: TimingLangInclude,
-    ignore: &[String],
-    pytest_args: &[String],
-) -> Option<usize> {
-    if let Some(n) = cheap_codebase_test_count(universe, lang_filter, include, ignore, pytest_args)
-    {
-        return Some(n);
-    }
-    if let Some(n) = timing_artifact_test_count(universe, lang_filter, include, ignore, pytest_args)
-    {
-        return Some(n);
-    }
-    match collect_current_unit_test_timings(TimingCollectOpts {
-        universe,
-        lang_filter,
-        include,
-        ignore,
-        pytest_args,
-    }) {
-        TimingPopulation::Complete(entries) => Some(entries.len()),
-        TimingPopulation::Incomplete => None,
-    }
-}
-
-fn timing_artifact_test_count(
-    universe: &Path,
-    lang_filter: Option<Language>,
-    include: TimingLangInclude,
-    ignore: &[String],
-    pytest_args: &[String],
-) -> Option<usize> {
-    let repo_root = repository_root_for_universe(universe);
-    let want_python = include.python && matches!(lang_filter, None | Some(Language::Python));
-    let want_rust = include.rust && matches!(lang_filter, None | Some(Language::Rust));
-    let mut count = 0usize;
-    if want_python {
-        let pairs =
-            crate::test_runner::python_coverage_index::load_current_python_population_durations(
-                &repo_root,
-                pytest_args,
-            )?;
-        count += pairs
-            .into_iter()
-            .filter(|(selector, _)| !selector_matches_ignore_prefix(selector, ignore))
-            .count();
-    }
-    if want_rust {
-        let pairs = load_rust_duration_pairs(&repo_root)?;
-        count += pairs
-            .into_iter()
-            .filter(|(selector, _)| !selector_matches_ignore_prefix(selector, ignore))
-            .count();
-    }
-    Some(count)
 }
 
 pub(crate) fn unit_test_runtime_sec_report_for_universe(
@@ -312,11 +145,6 @@ mod runtime_report;
 pub(crate) use runtime_report::{
     build_unit_test_runtime_grouped_report, format_unit_test_runtime_grouped_report,
 };
-
-mod cov_gate;
-#[cfg(test)]
-use cov_gate::evaluate_path_max_runtime_violations;
-pub(crate) use cov_gate::{CovTimeGateOpts, evaluate_cov_time_gate};
 
 #[cfg(test)]
 #[path = "mod_test.rs"]

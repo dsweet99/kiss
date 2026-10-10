@@ -31,6 +31,42 @@ fn forkserver_shutdown_runs_pytest_unconfigure_once() {
 }
 
 #[test]
+fn controller_start_sweeps_scratch_left_by_dead_controllers_only() {
+    let mut exited = std::process::Command::new("true").spawn().unwrap();
+    let dead_pid = exited.id();
+    exited.wait().unwrap();
+    let base = std::env::temp_dir();
+    let dead = base.join(format!("rpytest-forkserver-{dead_pid}-sweeptest"));
+    let live = base.join(format!(
+        "rpytest-forkserver-{}-sweeptest",
+        std::process::id()
+    ));
+    for dir in [&dead, &live] {
+        fs::create_dir_all(dir).unwrap();
+        fs::write(dir.join("rpytest-forkserver-stream-x"), b"{}\n").unwrap();
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    fs::write(
+        tmp.path().join("test_sample.py"),
+        "def test_ok():\n    assert True\n",
+    )
+    .unwrap();
+    let req = base_req(tmp.path(), "test_sample.py::test_ok");
+
+    let controller = ForkserverController::start(&test_python(), &req.bootstrap).unwrap();
+    drop(controller);
+
+    let dead_survived = dead.exists();
+    let live_survived = live.exists();
+    let _ = fs::remove_dir_all(&live);
+    assert!(
+        !dead_survived,
+        "scratch of an exited controller must be swept"
+    );
+    assert!(live_survived, "scratch of a running process must be kept");
+}
+
+#[test]
 fn forkserver_shutdown_force_kills_unresponsive_controller() {
     let tmp = tempfile::tempdir().unwrap();
     fs::write(

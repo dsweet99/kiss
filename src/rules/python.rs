@@ -139,4 +139,10 @@ pub(super) const PY_RULE_SPECS: &[RuleSpec] = &[
         threshold: ThresholdValue::Usize(|c, _| c.dependency_depth),
         description: "dependency_depth is the maximum length of an import chain in the dependency graph.",
     },
+    RuleSpec {
+        metric: "max_num_tests",
+        op: ThresholdOp::AtMost,
+        threshold: ThresholdValue::Usize(|_, g| g.max_num_tests_python),
+        description: "max_num_tests is the maximum number of Python unit tests in the current population. Enforced by `kiss test`. `0` means any Python test fails. Default is 1000. Config key lives under `[python]`.",
+    },
 ];

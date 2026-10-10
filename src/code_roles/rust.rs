@@ -10,13 +10,16 @@ use super::cfg_pred::{AtomInterner, CfgPred};
 use super::error::RoleBuildError;
 use super::facts::{FileRoleFacts, RoleRange};
 use super::index::SourceRoleIndex;
-use super::rust_cargo::{cargo_roots_for_files, workspace_roots_at, CargoRoot};
-use super::rust_include_parse::{parse_include_source, IncludeAst, IncludeKind};
+use super::rust_cargo::{CargoRoot, cargo_roots_for_files, workspace_roots_at};
+use super::rust_include_parse::{IncludeAst, IncludeKind, parse_include_source};
 use super::rust_modules::resolve_external_mod;
-use super::rust_walk::{walk_file, WalkOutput};
+use super::rust_walk::{WalkOutput, walk_file};
 use super::span::SourceSpan;
 use super::sweep::normalize_ranges;
 use super::types::CodeContextSet;
+
+type KnownWalk<'a> = dyn FnMut(&Path, &CfgPred, bool, &mut AtomInterner) -> Option<Result<WalkOutput, RoleBuildError>>
+    + 'a;
 
 struct WorkItem {
     path: PathBuf,
@@ -34,6 +37,14 @@ enum WalkMode {
 pub fn classify_rust(
     parsed: &[&ParsedRustFile],
     discovered: &[PathBuf],
+) -> Result<SourceRoleIndex, RoleBuildError> {
+    classify_rust_with_known(parsed, discovered, &mut |_, _, _, _| None)
+}
+
+pub(crate) fn classify_rust_with_known(
+    parsed: &[&ParsedRustFile],
+    discovered: &[PathBuf],
+    known: &mut KnownWalk<'_>,
 ) -> Result<SourceRoleIndex, RoleBuildError> {
     let mut by_path: HashMap<PathBuf, &ParsedRustFile> = HashMap::new();
     for file in parsed {
@@ -66,13 +77,7 @@ pub fn classify_rust(
             continue;
         }
         process_work_item(
-            item,
-            &by_path,
-            &mut atoms,
-            &mut acc,
-            &mut base,
-            &mut queue,
-            walk_mode,
+            item, &by_path, &mut atoms, &mut acc, &mut base, &mut queue, walk_mode, known,
         )?;
     }
     Ok(finish_rust_index(&paths, acc, base))
@@ -225,6 +230,7 @@ fn pred_key(pred: &CfgPred) -> String {
     format!("{pred:?}")
 }
 
+#[allow(clippy::too_many_arguments)]
 fn process_work_item(
     item: WorkItem,
     by_path: &HashMap<PathBuf, &ParsedRustFile>,
@@ -233,6 +239,7 @@ fn process_work_item(
     base: &mut HashMap<PathBuf, CodeContextSet>,
     queue: &mut VecDeque<WorkItem>,
     walk_mode: WalkMode,
+    known: &mut KnownWalk<'_>,
 ) -> Result<(), RoleBuildError> {
     let path = canonical_path(&item.path);
     let walked = walk_path(
@@ -243,6 +250,7 @@ fn process_work_item(
         by_path,
         atoms,
         walk_mode,
+        known,
     )?;
     let ctx = super::cfg_sat::contexts_for_pred(&item.pred, item.allow_production);
     let entry = base
@@ -254,6 +262,7 @@ fn process_work_item(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn walk_path(
     path: &Path,
     kind: IncludeKind,
@@ -262,9 +271,13 @@ fn walk_path(
     by_path: &HashMap<PathBuf, &ParsedRustFile>,
     atoms: &mut AtomInterner,
     walk_mode: WalkMode,
+    known: &mut KnownWalk<'_>,
 ) -> Result<WalkOutput, RoleBuildError> {
     if let Some(parsed) = by_path.get(path) {
         return walk_file(path, &parsed.ast, pred, allow_production, atoms);
+    }
+    if let Some(walked) = known(path, pred, allow_production, atoms) {
+        return walked;
     }
     match walk_mode {
         WalkMode::ShardLocal => {

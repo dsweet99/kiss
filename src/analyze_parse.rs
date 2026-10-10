@@ -1,5 +1,6 @@
 use rayon::prelude::*;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 use kiss::code_roles::{
     CodeRole, RoleBuildError, SourceRoleIndex, build_source_role_index, is_test_only_file,
@@ -146,18 +147,25 @@ pub(crate) fn parse_py_files(files: &[PathBuf]) -> Result<Vec<ParsedFile>, RoleB
 }
 
 pub(crate) fn parse_py_files_pooled(files: &[PathBuf]) -> Result<Vec<ParsedFile>, RoleBuildError> {
-    let n = std::thread::available_parallelism()
-        .map(|p| p.get())
-        .unwrap_or(8)
-        .max(1);
-    rayon::ThreadPoolBuilder::new()
-        .num_threads(n)
-        .build()
-        .map_err(|err| RoleBuildError::PythonParse {
+    python_parse_pool()
+        .ok_or_else(|| RoleBuildError::PythonParse {
             path: files.first().cloned().unwrap_or_default(),
-            message: err.to_string(),
+            message: "failed to build the Python parse pool".to_string(),
         })?
         .install(|| parse_py_files(files))
+}
+
+fn python_parse_pool() -> Option<&'static rayon::ThreadPool> {
+    static POOL: OnceLock<rayon::ThreadPool> = OnceLock::new();
+    if POOL.get().is_none() {
+        let n = kiss::shared_helpers::host_cpu_count(8);
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(n)
+            .build()
+            .ok()?;
+        let _ = POOL.set(pool);
+    }
+    POOL.get()
 }
 
 pub(crate) fn parse_rs_files(files: &[PathBuf]) -> Result<Vec<ParsedRustFile>, RoleBuildError> {

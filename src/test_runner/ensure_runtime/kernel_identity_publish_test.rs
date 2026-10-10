@@ -3,13 +3,11 @@ use super::*;
 fn python_state(status: WitnessStatus, duration: Option<u64>) -> Rc<RefCell<FakeState>> {
     Rc::new(RefCell::new(FakeState {
         witness: Some(ExecutionWitness {
-            language: "python".into(),
-            scope: WitnessScope::Full,
+            language: kiss::Language::Python,
             identity_digest: "id".into(),
             selectors: vec!["a".into()],
             statuses: vec![status],
             durations_ns: vec![duration],
-            covered_lines: BTreeMap::new(),
             complete: status == WitnessStatus::Passed,
             generation_id: "g".into(),
             raw_statuses: Vec::new(),
@@ -20,64 +18,28 @@ fn python_state(status: WitnessStatus, duration: Option<u64>) -> Rc<RefCell<Fake
 }
 
 #[test]
-fn unresolved_without_duration_runs_instead_of_panicking() {
-    let state = python_state(WitnessStatus::Unresolved, None);
-    let runtime = FakeRuntime {
-        language: Language::Python,
-        state: Rc::clone(&state),
-    };
-    let result = ensure_runtime_cache(&request(vec!["a".into()]), &[&runtime]).expect("ensure");
-    assert_eq!(result.exit_code, 0);
-    assert_eq!(state.borrow().run_calls, vec![vec!["a".to_string()]]);
-}
-
-#[test]
-fn passed_without_duration_runs_when_time_gate_disabled() {
-    let state = python_state(WitnessStatus::Passed, None);
-    let runtime = FakeRuntime {
-        language: Language::Python,
-        state: Rc::clone(&state),
-    };
-    let mut req = request(vec!["a".into()]);
-    req.gate.max_unit_test_seconds.clear();
-    let result = ensure_runtime_cache(&req, &[&runtime]).expect("ensure");
-    assert_eq!(result.exit_code, 0);
-    assert_eq!(state.borrow().run_calls, vec![vec!["a".to_string()]]);
-}
-
-#[test]
-fn identity_drift_with_unchanged_outcomes_still_publishes() {
-    let state = Rc::new(RefCell::new(FakeState {
-        witness: Some(ExecutionWitness {
-            language: "python".into(),
-            scope: WitnessScope::Full,
-            identity_digest: "old-id".into(),
-            selectors: vec!["a".into()],
-            statuses: vec![WitnessStatus::Passed],
-            durations_ns: vec![Some(1_000_000)],
-            covered_lines: BTreeMap::new(),
-            complete: true,
-            generation_id: "g".into(),
-            raw_statuses: Vec::new(),
-        }),
-        run_exit_code: 0,
-        identity: Some("new-id".into()),
-        ..Default::default()
-    }));
-    let runtime = FakeRuntime {
-        language: Language::Python,
-        state: Rc::clone(&state),
-    };
-    let result = ensure_runtime_cache(&request(vec!["a".into()]), &[&runtime]).expect("ensure");
-    assert_eq!(result.exit_code, 0);
-    assert_eq!(state.borrow().run_calls, vec![vec!["a".to_string()]]);
-    assert_eq!(
-        state.borrow().publish_calls,
-        1,
-        "must publish even when outcomes match prior, so cov sees current fingerprint"
-    );
-    let w = state.borrow().witness.clone().expect("published");
-    assert_eq!(w.identity_digest, "new-id");
+fn missing_durations_are_accepted_like_rust() {
+    for (status, gate_off) in [
+        (WitnessStatus::Unresolved, false),
+        (WitnessStatus::Passed, true),
+    ] {
+        let state = python_state(status, None);
+        let runtime = FakeRuntime {
+            language: Language::Python,
+            state: Rc::clone(&state),
+        };
+        let mut req = request(vec!["a".into()]);
+        if gate_off {
+            req.gate.max_unit_test_seconds.clear();
+        }
+        let result = ensure_runtime_cache(&req, &[&runtime]).expect("ensure");
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(
+            state.borrow().run_calls,
+            vec![vec!["a".to_string()]],
+            "{status:?}"
+        );
+    }
 }
 
 #[test]
@@ -87,15 +49,14 @@ fn forced_run_with_unchanged_outcomes_still_publishes() {
         language: Language::Python,
         state: Rc::clone(&state),
     };
-    let mut req = request(vec!["a".into()]);
-    req.force_selectors = vec!["a".into()];
+    let req = request(vec!["a".into()]);
     let result = ensure_runtime_cache(&req, &[&runtime]).expect("ensure");
     assert_eq!(result.exit_code, 0);
     assert_eq!(state.borrow().run_calls, vec![vec!["a".to_string()]]);
     assert_eq!(
         state.borrow().publish_calls,
         1,
-        "executed selectors may have changed coverage even when status and duration match"
+        "executed selectors republish their records even when status and duration match"
     );
 }
 
@@ -103,13 +64,11 @@ fn forced_run_with_unchanged_outcomes_still_publishes() {
 fn partial_run_summary_includes_accepted_cache_hits() {
     let state = Rc::new(RefCell::new(FakeState {
         witness: Some(ExecutionWitness {
-            language: "python".into(),
-            scope: WitnessScope::Full,
+            language: kiss::Language::Python,
             identity_digest: "id".into(),
             selectors: vec!["a".into(), "b".into()],
             statuses: vec![WitnessStatus::Passed, WitnessStatus::Passed],
             durations_ns: vec![Some(1_000_000), Some(1_000_000)],
-            covered_lines: BTreeMap::new(),
             complete: true,
             generation_id: "g".into(),
             raw_statuses: Vec::new(),
@@ -120,26 +79,23 @@ fn partial_run_summary_includes_accepted_cache_hits() {
         language: Language::Python,
         state: Rc::clone(&state),
     };
-    let mut req = request(vec!["a".into(), "b".into()]);
-    req.force_selectors = vec!["b".into()];
+    let req = request(vec!["a".into(), "b".into()]);
     let result = ensure_runtime_cache(&req, &[&runtime]).expect("ensure");
     let summary = result.by_language.python.unwrap().summary;
     assert_eq!(summary.total, 2);
-    assert_eq!(summary.cache_hits, 1);
-    assert_eq!(summary.cache_misses, 1);
+    assert_eq!(summary.cache_hits, 0);
+    assert_eq!(summary.cache_misses, 2);
 }
 
 #[test]
 fn rust_warm_accept_still_emits_rust_identity_without_run() {
     let state = Rc::new(RefCell::new(FakeState {
         witness: Some(ExecutionWitness {
-            language: "rust".into(),
-            scope: WitnessScope::Full,
+            language: kiss::Language::Rust,
             identity_digest: "id".into(),
             selectors: vec!["a".into()],
             statuses: vec![WitnessStatus::Passed],
             durations_ns: vec![Some(1)],
-            covered_lines: BTreeMap::new(),
             complete: true,
             generation_id: "g".into(),
             raw_statuses: Vec::new(),
@@ -158,8 +114,9 @@ fn rust_warm_accept_still_emits_rust_identity_without_run() {
         out.contains("kiss test: stage rust_identity"),
         "warm accept must still emit rust_identity:\n{out}"
     );
-    assert!(
-        state.borrow().run_calls.is_empty(),
-        "warm accept must not run"
+    assert_eq!(
+        state.borrow().run_calls,
+        vec![vec!["a".to_string()]],
+        "a stored pass still runs"
     );
 }

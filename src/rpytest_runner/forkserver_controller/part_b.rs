@@ -5,8 +5,7 @@ class _TestDurationPlugin(object):
         self.seen = False
 
     def pytest_runtest_logreport(self, report):
-        # Call phase only: setup under rslip coverage includes import tracing
-        # and must not dominate max_unit_test_seconds / PASS timing.
+        # Call phase only: setup must not dominate max_unit_test_seconds / PASS timing.
         if report.when == "call":
             self.seconds = float(report.duration)
             self.seen = True
@@ -251,14 +250,14 @@ def _read_test_duration_ms(path):
         return None
 
 def _handle_run(req):
-    stdout_fd, stdout_path = tempfile.mkstemp(prefix="rpytest-forkserver-out-")
-    stderr_fd, stderr_path = tempfile.mkstemp(prefix="rpytest-forkserver-err-")
-    duration_fd, duration_path = tempfile.mkstemp(prefix="rpytest-forkserver-dur-")
+    stdout_fd, stdout_path = tempfile.mkstemp(prefix="rpytest-forkserver-out-", dir=_SCRATCH)
+    stderr_fd, stderr_path = tempfile.mkstemp(prefix="rpytest-forkserver-err-", dir=_SCRATCH)
+    duration_fd, duration_path = tempfile.mkstemp(prefix="rpytest-forkserver-dur-", dir=_SCRATCH)
     os.close(stdout_fd)
     os.close(stderr_fd)
     os.close(duration_fd)
     gate_path = os.path.join(
-        tempfile.gettempdir(),
+        _SCRATCH,
         "rpytest-fs-gate-%s-%s" % (os.getpid(), time.time_ns()),
     )
     call_gate_path = gate_path + ".call"

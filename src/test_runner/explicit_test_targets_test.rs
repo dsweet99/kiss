@@ -12,20 +12,24 @@ fn init_git_repo(root: &Path) {
 }
 
 fn write_prior_failures(root: &Path, count: usize) {
-    let kiss_dir = root.join(".kiss");
-    fs::create_dir_all(&kiss_dir).unwrap();
-    let mut records = String::from("[");
+    let dir = kiss::test_records::records_dir(root, "python");
+    fs::create_dir_all(&dir).unwrap();
     for i in 0..count {
-        if i > 0 {
-            records.push(',');
-        }
-        records.push_str(&format!(
-            r#"{{"language":"python","selector":"tests/other.py::test_prior_{i}","identity":{{"schema_version":"kiss-test-last-status-v1","tool_versions":{{"python":"3.12.0","pytest":"8.0.0"}},"test_args":[],"env":{{}}}}}}"#
-        ));
+        kiss::test_records::store_record(
+            &dir,
+            &kiss::test_records::TestRecord {
+                schema: kiss::test_records::RECORD_SCHEMA.to_string(),
+                language: "python".to_string(),
+                test_id: format!("tests/other.py::test_prior_{i}"),
+                identity: "identity".to_string(),
+                deps: std::collections::BTreeMap::new(),
+                status: kiss::rpytest_runner::TestStatus::Failed,
+                exit_code: Some(1),
+                duration: std::time::Duration::ZERO,
+            },
+        )
+        .unwrap();
     }
-    records.push(']');
-    let body = format!(r#"{{"schema_version":"kiss-test-last-status-v1","records":{records}}}"#);
-    fs::write(kiss_dir.join("test_last_status.json"), body).unwrap();
 }
 
 #[test]
@@ -60,8 +64,7 @@ fn explicit_single_python_test_ignores_prior_failure_fanout() {
     assert!(planned.sel.rust.is_empty());
     assert!(!planned.population_required.python);
     assert!(planned.prior_failure_selectors.python.is_empty());
-    assert!(!planned.coverage_decision_engine_used);
-    assert!(planned.skip_index_rebuild_after_selective.python);
+    assert!(!planned.selection_engine_used);
 }
 
 #[test]
@@ -107,7 +110,7 @@ fn explicit_python_test_file_selects_only_that_file() {
     );
     assert!(planned.prior_failure_selectors.python.is_empty());
     assert!(!planned.population_required.python);
-    assert!(!planned.coverage_decision_engine_used);
+    assert!(!planned.selection_engine_used);
 }
 
 #[test]

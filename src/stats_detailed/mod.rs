@@ -232,7 +232,7 @@ mod tests {
 }
 
 #[cfg(test)]
-mod coverage_witness {
+mod touch_witness {
     use super::*;
     use std::path::Path;
 

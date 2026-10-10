@@ -35,12 +35,12 @@ fn collection_input_stamp(repo_root: &Path) -> String {
     format!("{h:016x}")
 }
 
+fn collection_audit_dir(repo_root: &Path) -> std::path::PathBuf {
+    crate::test_runner::test_state_dir(repo_root).join("python")
+}
+
 fn mix_collection_audit(mut h: u64, repo_root: &Path) -> u64 {
-    let Ok(dir) =
-        crate::test_runner::python_coverage_index::storage::python_coverage_cache_root(repo_root)
-    else {
-        return h;
-    };
+    let dir = collection_audit_dir(repo_root);
     let path = dir.join("collection_audit.json");
     let Ok(bytes) = fs::read(&path) else {
         return h;
@@ -62,19 +62,18 @@ fn mix_collection_audit(mut h: u64, repo_root: &Path) -> u64 {
 }
 
 fn persist_collection_audit(repo_root: &Path, observed: &[String]) {
-    let Ok(dir) =
-        crate::test_runner::python_coverage_index::storage::python_coverage_cache_root(repo_root)
-    else {
-        return;
-    };
-    let _ = fs::create_dir_all(&dir);
     let mut listed: Vec<String> = observed
         .iter()
         .filter(|rel| rel.ends_with(".py") && !rel.contains("__pycache__"))
         .cloned()
         .collect();
+    if listed.is_empty() {
+        return;
+    }
     listed.sort();
     listed.dedup();
+    let dir = collection_audit_dir(repo_root);
+    let _ = fs::create_dir_all(&dir);
     if let Ok(bytes) = serde_json::to_vec(&listed) {
         let _ = fs::write(dir.join("collection_audit.json"), bytes);
     }
@@ -116,7 +115,9 @@ pub(crate) fn collect_python_nodeids(
     Ok(outcome.nodeids)
 }
 
-const COLLECT_SHARD_PATH_THRESHOLD: usize = 64;
+#[cfg(test)]
+const COLLECT_SHARD_PATH_THRESHOLD: usize =
+    kiss::host_parallelism::PYTHON_COLLECT_SHARD_PATH_THRESHOLD;
 
 fn collect_shard_count(path_count: usize) -> usize {
     collect_shard_count_for_cap(
@@ -126,12 +127,7 @@ fn collect_shard_count(path_count: usize) -> usize {
 }
 
 fn collect_shard_count_for_cap(path_count: usize, cap: usize) -> usize {
-    if path_count < COLLECT_SHARD_PATH_THRESHOLD {
-        return 1;
-    }
-    let cap = cap.max(1);
-    let cpus = kiss::shared_helpers::host_cpu_count(4).clamp(1, cap);
-    cpus.min(path_count / 16).max(1)
+    kiss::host_parallelism::python_collect_shard_count(path_count, cap)
 }
 
 fn shard_collect_paths(paths: &[PathBuf], shard_count: usize) -> Vec<Vec<PathBuf>> {
@@ -281,14 +277,10 @@ fn format_collect_error(err: kiss::rpytest_runner::PytestCollectError) -> String
             stderr,
             stdout,
         } => {
-            let detail = if !stderr.trim().is_empty() {
-                stderr.trim().to_string()
-            } else {
-                stdout.trim().to_string()
-            };
+            let detail = collection_failure_detail(&stderr, &stdout);
             format!(
-                "error: kiss test: pytest collection failed (exit={:?}): {detail}",
-                exit_code
+                "error: kiss test: pytest collection failed (exit={exit_code:?}): {}",
+                detail.trim()
             )
         }
         kiss::rpytest_runner::PytestCollectError::InvalidOutput(message) => {
@@ -300,6 +292,23 @@ fn format_collect_error(err: kiss::rpytest_runner::PytestCollectError) -> String
     }
 }
 
+fn collection_failure_detail(stderr: &str, stdout: &str) -> String {
+    let stderr = without_collect_payload(stderr);
+    let stdout = without_collect_payload(stdout);
+    if !stderr.trim().is_empty() {
+        stderr
+    } else {
+        stdout
+    }
+}
+
+fn without_collect_payload(text: &str) -> String {
+    text.lines()
+        .filter(|line| !line.trim_start().starts_with("KISS_COLLECT_JSON:"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 #[cfg(test)]
 pub(crate) fn format_collect_error_for_test(
     err: kiss::rpytest_runner::PytestCollectError,
@@ -309,7 +318,6 @@ pub(crate) fn format_collect_error_for_test(
 
 pub(crate) fn clear_python_collect_memo() {
     COLLECT_MEMO.lock().unwrap().clear();
-    crate::test_runner::lang_python::generation::clear_python_execution_identity_memo();
 }
 
 #[cfg(test)]
@@ -399,7 +407,7 @@ mod shard_tests {
 }
 
 #[cfg(test)]
-mod coverage_witness {
+mod touch_witness {
     use super::*;
     use kiss::rpytest_runner::PytestCollectError;
 

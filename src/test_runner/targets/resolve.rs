@@ -10,8 +10,8 @@ use kiss::code_roles::{
 use super::model::{SourceModel, load_source_model};
 use super::model_python::attach_python_nodeids;
 use super::parse::{ParsedTestTarget, parse_test_target};
-use crate::test_runner::workspace_selector_cache::load_cached_python_workspace_selectors;
 use super::resolve_hydrate::{hydrate_python_models, python_nodeids_for_model};
+use crate::test_runner::workspace_selector_cache::load_cached_python_workspace_selectors;
 #[derive(Clone, Debug, Default)]
 pub(crate) struct TargetSelectionQuery {
     pub direct_python: BTreeSet<String>,
@@ -24,12 +24,41 @@ pub(crate) struct TargetSelectionQuery {
     unresolved_rust_test_module: bool,
 }
 
+impl TargetSelectionQuery {
+    pub(crate) fn direct(&self, language: Language) -> &BTreeSet<String> {
+        match language {
+            Language::Python => &self.direct_python,
+            Language::Rust => &self.direct_rust,
+        }
+    }
+
+    pub(crate) fn source_files(&self, language: Language) -> Vec<PathBuf> {
+        let (files, lines) = match language {
+            Language::Python => (&self.python_files, &self.python_lines),
+            Language::Rust => (&self.rust_files, &self.rust_lines),
+        };
+        files.iter().chain(lines.keys()).cloned().collect()
+    }
+}
+
+#[cfg(test)]
 pub(crate) fn resolve_target_operands(
     repo_root: &Path,
     operands: &[String],
     lang_filter: Option<Language>,
     ignore: &[String],
     pytest_args: &[String],
+) -> Result<TargetSelectionQuery, String> {
+    resolve_target_operands_with(repo_root, operands, lang_filter, ignore, pytest_args, &[])
+}
+
+pub(crate) fn resolve_target_operands_with(
+    repo_root: &Path,
+    operands: &[String],
+    lang_filter: Option<Language>,
+    ignore: &[String],
+    pytest_args: &[String],
+    skip_python_collect: &[PathBuf],
 ) -> Result<TargetSelectionQuery, String> {
     let mut query = TargetSelectionQuery::default();
     let mut seen_raw = BTreeSet::new();
@@ -41,25 +70,25 @@ pub(crate) fn resolve_target_operands(
     let mut python_selector_cache =
         load_python_target_cache(repo_root, ignore, pytest_args, lang_filter);
     let mut pending: Vec<(ParsedTestTarget, PathBuf)> = Vec::new();
+    let mut rust_universe = None;
     for raw in operands {
         if !seen_raw.insert(raw.clone()) {
             continue;
         }
-        let parsed = parse_test_target(raw)?;
-        let abs = canonicalize_target_path(repo_root, &parsed)?;
-        reject_ignored_target(repo_root, &abs, ignore, &parsed.raw)?;
-        reject_lang_mismatch(lang_filter, parsed.language, &parsed.raw)?;
-
-        if let Some(nodeid) = explicit_python_test_selector(repo_root, &parsed, &abs) {
-            insert_direct(&mut query, Language::Python, nodeid);
-            continue;
-        }
-        if !models.contains_key(&abs) {
-            let model = load_source_model(&abs, parsed.language)?;
-            models.insert(abs.clone(), model);
-        }
-        pending.push((parsed, abs));
+        ingest_operand(
+            repo_root,
+            raw,
+            lang_filter,
+            ignore,
+            &mut IngestState {
+                query: &mut query,
+                models: &mut models,
+                rust_universe: &mut rust_universe,
+                pending: &mut pending,
+            },
+        )?;
     }
+    suppress_directory_production_tests(&mut models, skip_python_collect);
     hydrate_python_models(
         repo_root,
         &mut models,
@@ -86,26 +115,39 @@ pub(crate) fn resolve_target_operands(
     Ok(query)
 }
 
-fn explicit_python_test_selector(
+struct IngestState<'a> {
+    query: &'a mut TargetSelectionQuery,
+    models: &'a mut BTreeMap<PathBuf, SourceModel>,
+    rust_universe: &'a mut Option<BTreeSet<String>>,
+    pending: &'a mut Vec<(ParsedTestTarget, PathBuf)>,
+}
+
+fn ingest_operand(
     repo_root: &Path,
-    parsed: &ParsedTestTarget,
-    abs: &Path,
-) -> Option<String> {
-    if parsed.language != Language::Python {
-        return None;
+    raw: &str,
+    lang_filter: Option<Language>,
+    ignore: &[String],
+    state: &mut IngestState<'_>,
+) -> Result<(), String> {
+    let parsed = parse_test_target(raw)?;
+    let abs = canonicalize_target_path(repo_root, &parsed)?;
+    reject_ignored_target(repo_root, &abs, ignore, &parsed.raw)?;
+    reject_lang_mismatch(lang_filter, parsed.language, &parsed.raw)?;
+    if let Some(nodeid) = parsed.python_nodeid.as_deref() {
+        insert_direct(
+            state.query,
+            Language::Python,
+            relative_python_nodeid(repo_root, nodeid),
+        );
+        return Ok(());
     }
-    if let Some(nodeid) = &parsed.python_nodeid {
-        return Some(nodeid.clone());
+    if !state.models.contains_key(&abs) {
+        let mut model = load_source_model(&abs, parsed.language)?;
+        qualify_rust_model(repo_root, &mut model, state.rust_universe);
+        state.models.insert(abs.clone(), model);
     }
-    if !is_python_test_module_path(abs) {
-        return None;
-    }
-    let rel = repo_relative(repo_root, abs)?;
-    match (&parsed.symbol, parsed.member.as_deref()) {
-        (Some(name), None) => Some(format!("{rel}::{name}")),
-        (Some(class), Some(method)) => Some(format!("{rel}::{class}::{method}")),
-        (None, _) => None,
-    }
+    state.pending.push((parsed, abs));
+    Ok(())
 }
 
 struct RolesOnDemand {
@@ -136,17 +178,6 @@ fn apply_parsed_target(
     abs: &Path,
     roles: &mut RolesOnDemand,
 ) -> Result<(), String> {
-    if let Some(nodeid) = &parsed.python_nodeid {
-        if model.direct_tests.iter().any(|t| t.selector == *nodeid) {
-            insert_direct(query, Language::Python, nodeid.clone());
-            return Ok(());
-        }
-        return Err(format!(
-            "unknown pytest nodeid '{}' in {}",
-            parsed.raw,
-            abs.display()
-        ));
-    }
     match (&parsed.symbol, parsed.member.as_deref()) {
         (None, _) => apply_file_operand(query, model, abs, roles)?,
         (Some(name), member) => {
@@ -200,7 +231,7 @@ fn apply_symbol_target(
         if roles.get(abs)?.role_for_span(abs, definition_span(def)) == CodeRole::TestOnly {
             return Ok(());
         }
-        let lines = model.coverage_lines_for_definition(def);
+        let lines = model.target_lines_for_definition(def);
         if !lines.is_empty() {
             insert_lines(query, model.language, abs, lines);
         }
@@ -218,6 +249,24 @@ fn apply_symbol_target(
         insert_direct(query, model.language, selector);
     }
     Ok(())
+}
+
+fn relative_python_nodeid(repo_root: &Path, requested: &str) -> String {
+    let (requested_file, Some(requested_tail)) = kiss::split_selector(requested) else {
+        return requested.to_string();
+    };
+    let Some(requested_rel) = nodeid_file_rel(repo_root, requested_file) else {
+        return requested.to_string();
+    };
+    format!("{requested_rel}::{requested_tail}")
+}
+
+fn nodeid_file_rel(repo_root: &Path, file: &str) -> Option<String> {
+    let path = Path::new(file);
+    if path.is_absolute() {
+        return repo_relative(repo_root, path);
+    }
+    Some(file.replace('\\', "/"))
 }
 
 fn definition_span(def: &super::model::NamedDefinition) -> SourceSpan {
@@ -242,6 +291,33 @@ fn unit_test_selectors_for_def(
         .map(|test| test.selector.clone())
         .filter(|selector| !selector.is_empty())
         .collect()
+}
+
+fn suppress_directory_production_tests(
+    models: &mut BTreeMap<PathBuf, SourceModel>,
+    skip_python_collect: &[PathBuf],
+) {
+    if skip_python_collect.is_empty() {
+        return;
+    }
+    let skip: Vec<PathBuf> = skip_python_collect
+        .iter()
+        .map(|path| path.canonicalize().unwrap_or_else(|_| path.clone()))
+        .collect();
+    for (abs, model) in models.iter_mut() {
+        if model.language != Language::Python {
+            continue;
+        }
+        let canon = abs.canonicalize().unwrap_or_else(|_| abs.clone());
+        if !skip.iter().any(|path| path == abs || path == &canon) {
+            continue;
+        }
+        model.direct_tests.clear();
+        for def in &mut model.definitions {
+            def.is_unit_test = false;
+            def.test_selector = None;
+        }
+    }
 }
 
 fn load_python_target_cache(
@@ -290,41 +366,6 @@ fn attach_python_tests(
     Ok(())
 }
 
-fn canonicalize_target_path(
-    repo_root: &Path,
-    parsed: &ParsedTestTarget,
-) -> Result<PathBuf, String> {
-    let candidate = if parsed.path.is_absolute() {
-        parsed.path.clone()
-    } else {
-        repo_root.join(&parsed.path)
-    };
-    let abs = candidate.canonicalize().map_err(|_| {
-        format!(
-            "target '{}': file not found at {}",
-            parsed.raw,
-            candidate.display()
-        )
-    })?;
-    if !abs.is_file() {
-        return Err(format!(
-            "target '{}': {} is not a regular file",
-            parsed.raw,
-            abs.display()
-        ));
-    }
-    let root = repo_root
-        .canonicalize()
-        .unwrap_or_else(|_| repo_root.to_path_buf());
-    if !abs.starts_with(&root) {
-        return Err(format!(
-            "target '{}': path escapes repository root",
-            parsed.raw
-        ));
-    }
-    Ok(abs)
-}
-
 fn reject_ignored_target(
     repo_root: &Path,
     abs: &Path,
@@ -336,7 +377,7 @@ fn reject_ignored_target(
     };
     if kiss::path_ignored_by_prefixes(&rel, ignore) {
         return Err(format!(
-            "target '{raw}' is covered by --ignore prefix and cannot be requested"
+            "target '{raw}' is matched by an --ignore prefix and cannot be requested"
         ));
     }
     Ok(())
@@ -361,7 +402,10 @@ fn reject_lang_mismatch(
 
 #[path = "resolve_insert.rs"]
 mod resolve_insert;
+#[path = "resolve_path.rs"]
+mod resolve_path;
 #[path = "resolve_universe.rs"]
 mod resolve_universe;
 use resolve_insert::{insert_direct, insert_file, insert_lines, language_label, repo_relative};
-use resolve_universe::flush_unresolved_universes;
+use resolve_path::canonicalize_target_path;
+use resolve_universe::{flush_unresolved_universes, qualify_rust_model};

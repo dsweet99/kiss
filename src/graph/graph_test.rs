@@ -24,7 +24,7 @@ fn graph_include_shim_modules_are_imported() {
 }
 
 #[test]
-fn test_touch_dynamic_import_helpers_for_static_coverage() {
+fn test_touch_dynamic_import_helpers_for_static_touch() {
     let mut parser = create_parser().unwrap();
     let code = "def f():\n    import importlib\n    importlib.import_module(\"pkg.target\")\n    __import__(\"pkg.other\")\n";
     let tree = parser.parse(code, None).unwrap();

@@ -134,6 +134,13 @@ fn pick_mod_file(
     }
 }
 
+pub(crate) fn resolve_conventional_mod_file(parent_file: &Path, name: &str) -> Option<PathBuf> {
+    let search_dir = child_module_dir(parent_file);
+    conventional_paths(parent_file, &search_dir, name)
+        .ok()
+        .flatten()
+}
+
 pub(crate) fn declared_mod_path(module: &ItemMod) -> Option<String> {
     if let Some(direct) = direct_path_attr(&module.attrs) {
         return Some(direct);

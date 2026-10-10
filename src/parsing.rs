@@ -2,6 +2,14 @@ use rayon::prelude::*;
 use std::path::{Path, PathBuf};
 use tree_sitter::{Parser, Tree};
 
+mod arena {
+    include!("parsing_arena.rs");
+}
+
+pub fn ensure_tree_allocator() {
+    arena::install();
+}
+
 #[derive(Debug)]
 pub enum ParseError {
     IoError(std::io::Error),
@@ -41,6 +49,7 @@ pub struct ParsedFile {
 }
 
 pub fn create_parser() -> Result<Parser, ParseError> {
+    ensure_tree_allocator();
     let mut parser = Parser::new();
     let language = tree_sitter_python::LANGUAGE;
     parser
@@ -50,6 +59,7 @@ pub fn create_parser() -> Result<Parser, ParseError> {
 }
 
 pub fn parse_file(parser: &mut Parser, path: &Path) -> Result<ParsedFile, ParseError> {
+    ensure_tree_allocator();
     let source = std::fs::read_to_string(path)?;
     let tree = parser.parse(&source, None).ok_or(ParseError::ParseFailed)?;
     if python_tree_has_error(tree.root_node()) {

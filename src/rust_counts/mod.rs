@@ -11,8 +11,8 @@ use crate::violation::{Violation, ViolationBuilder};
 pub use crate::rust_fn_metrics::{RustFileMetrics, RustFunctionMetrics, RustTypeMetrics};
 
 #[cfg(test)]
-#[path = "inline_coverage_tests.rs"]
-mod inline_coverage_tests;
+#[path = "inline_tests.rs"]
+mod inline_tests;
 
 #[cfg(test)]
 mod tests;
@@ -57,8 +57,6 @@ pub fn analyze_rust_file_include_rollup_with_roles(
     if included.is_empty() {
         return Vec::new();
     }
-    let mut violations = Vec::new();
-    let mut analyzer = RustAnalyzer::new(&parent.path, config, &mut violations, roles);
     let mut merged = compute_rust_file_metrics_with_roles(parent, roles);
     let mut lines = counted_source_lines(parent, roles);
     let mut contributor_paths = Vec::new();
@@ -72,14 +70,30 @@ pub fn analyze_rust_file_include_rollup_with_roles(
         lines += counted_source_lines(frag, roles);
         contributor_paths.push(frag.path.display().to_string());
     }
-    let contrib = contributor_paths.join(", ");
-    let fname = parent
-        .path
+    file_threshold_violations(
+        &parent.path,
+        config,
+        &merged,
+        lines,
+        &contributor_paths.join(", "),
+    )
+}
+
+pub(crate) fn file_threshold_violations(
+    path: &Path,
+    config: &Config,
+    metrics: &RustFileMetrics,
+    lines: usize,
+    include_contributors: &str,
+) -> Vec<Violation> {
+    let mut violations = Vec::new();
+    let mut analyzer = RustAnalyzer::new(path, config, &mut violations, None);
+    let fname = path
         .file_name()
         .unwrap_or_default()
         .to_string_lossy()
         .into_owned();
-    analyzer.check_rolled_file_metrics(&fname, &merged, lines, &contrib);
+    analyzer.check_rolled_file_metrics(&fname, metrics, lines, include_contributors);
     violations
 }
 

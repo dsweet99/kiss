@@ -93,10 +93,36 @@ fn pytest_runner_from_bounded_fn_powers_all_entrypoints() {
 }
 
 #[test]
+fn pytest_runner_from_streaming_bounded_fn_powers_all_entrypoints() {
+    let runner = PytestRunner::from_streaming_bounded_fn(|reqs, max_jobs, on_complete| {
+        assert!(max_jobs > 0);
+        for (index, req) in reqs.into_iter().enumerate() {
+            on_complete(
+                index,
+                Ok(PytestRunOutcome {
+                    nodeid: req.nodeid,
+                    status: TestStatus::Passed,
+                    exit_code: Some(0),
+                    stdout: Vec::new(),
+                    stderr: Vec::new(),
+                    duration: Duration::ZERO,
+                    artifacts: BTreeMap::new(),
+                }),
+            );
+        }
+    });
+    let req = PytestRunRequest::witness();
+
+    assert_eq!(runner.run_one(req.clone()).unwrap().nodeid, req.nodeid);
+    assert_eq!(runner.run_many(vec![req.clone()]).len(), 1);
+    assert_eq!(runner.run_many_bounded(vec![req], 1).len(), 1);
+}
+
+#[test]
 fn api_structs_expose_expected_fields() {
     let artifact = crate::rpytest_runner::RequestedArtifact::witness();
-    assert_eq!(artifact.name, "coverage");
-    assert_eq!(artifact.path, PathBuf::from("coverage.json"));
+    assert_eq!(artifact.name, "report");
+    assert_eq!(artifact.path, PathBuf::from("report.json"));
     assert_eq!(TestStatus::Passed, TestStatus::Passed);
 
     let req = PytestRunRequest::witness();
@@ -104,17 +130,14 @@ fn api_structs_expose_expected_fields() {
     assert_eq!(req.pytest_args, vec!["-q"]);
     assert_eq!(req.env["A"], "B");
     assert_eq!(req.child_preload_modules, vec!["preload_mod"]);
-    assert_eq!(req.artifacts[0].name, "coverage");
+    assert_eq!(req.artifacts[0].name, "report");
     assert_eq!(req.timeout, Some(Duration::from_secs(1)));
 
     let outcome = PytestRunOutcome::witness();
     assert_eq!(outcome.status, TestStatus::Failed);
     assert_eq!(outcome.stdout, b"out");
     assert_eq!(outcome.stderr, b"err");
-    assert_eq!(
-        outcome.artifacts["coverage"],
-        PathBuf::from("coverage.json")
-    );
+    assert_eq!(outcome.artifacts["report"], PathBuf::from("report.json"));
 }
 
 #[test]

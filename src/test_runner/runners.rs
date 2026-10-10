@@ -3,33 +3,35 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-pub(crate) use super::rust_llvm_cov::{
-    cached_rust_check_aggregate_selectors, run_rust_llvm_cov_selectors,
-};
 use kiss::code_roles::is_test_only_file;
-use kiss::rust_llvm_cov_runner::{
-    CoverageOutputMode, RustCoverageBatchRequest, build_rust_coverage_batch_plan,
-};
 
 #[path = "runners/decision.rs"]
 mod decision;
 #[cfg(test)]
 pub(crate) use decision::combined_selectors;
 pub(crate) use decision::{
-    CombinedSelectorInput, SelectorPlan, combined_selectors_with_direct, current_prior_failures,
+    ChangedTestSelectors, changed_test_selectors_by_language, split_source_paths,
+};
+pub(crate) use decision::{CombinedSelectorInput, SelectorPlan, combined_selectors_with_direct};
+
+pub use crate::test_runner::lang_rust::rust_enumerate::enumerate_workspace_rust_selectors;
+pub(crate) use crate::test_runner::lang_rust::rust_enumerate::{
+    rust_logical_to_kiss_test_ids, universe_rust_selectors_for_file,
 };
 
-#[path = "runners/rust_enumerate.rs"]
-mod rust_enumerate;
-pub use rust_enumerate::enumerate_workspace_rust_selectors;
-pub(crate) use rust_enumerate::rust_logical_to_kiss_test_ids;
+pub(crate) fn current_rust_selector_universe(repo_root: &Path) -> BTreeSet<String> {
+    crate::test_runner::workspace_selector_cache::cached_rust_selectors_if_rust_fingerprint_current(
+        repo_root,
+    )
+    .or_else(|| enumerate_workspace_rust_selectors(repo_root, &[]).ok())
+    .unwrap_or_default()
+    .into_iter()
+    .collect()
+}
 
+#[cfg(test)]
 pub(crate) use crate::test_runner::lang_python::backer as python_backer;
 pub(crate) use crate::test_runner::lang_python::collect;
-use crate::test_runner::python_coverage_index::{
-    PYTHON_COVERAGE_ENV_KEYS, repo_relative_path as python_repo_relative_path,
-    stored_python_universe_selectors,
-};
 pub(crate) use collect::clear_python_collect_memo;
 use collect::collect_python_nodeids;
 pub(crate) fn collect_python_nodeids_for_targets(
@@ -39,26 +41,20 @@ pub(crate) fn collect_python_nodeids_for_targets(
 ) -> Result<Vec<String>, String> {
     collect_python_nodeids(repo_root, paths, pytest_args)
 }
+#[cfg(test)]
 pub(crate) use crate::test_runner::lang_rust::backer as rust_backer;
 
 use crate::test_runner::lang_rust::workspace::{
     cargo_workspace_member_manifest_dirs, is_workspace_rust_selector_file,
 };
 
-pub(crate) use crate::test_runner::lang_python::rslip::run_rslip_selectors;
-pub(crate) use crate::test_runner::lang_python::rslip::{
-    detect_rslip_versions, rslip_request_from_parts,
-};
-
 #[path = "runners/execution_summary.rs"]
 mod execution_summary;
-#[path = "runners/rust_batch_counters.rs"]
-mod rust_batch_counters;
 pub(crate) use execution_summary::{
     SelectorCacheRecord, SelectorExecutionRecord, SelectorExecutionSummary,
 };
 
-pub const NO_COVERING_TESTS_MSG: &str = "NO COVERING TESTS";
+pub const NO_SELECTED_TESTS_MSG: &str = "NO SELECTED TESTS";
 
 #[cfg(test)]
 pub(crate) fn py_selector(test_path: &Path, test_id: &str) -> String {
@@ -122,7 +118,7 @@ pub(crate) fn roles_for_changed_paths(
 }
 
 pub(crate) fn is_rust_planning_source_path(path: &Path) -> bool {
-    kiss::Language::is_rust_path(path) || kiss::rust_llvm_cov_runner::is_rust_cov_cache_input(path)
+    crate::test_git::is_rust_planning_path(path)
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -160,46 +156,22 @@ pub fn enumerate_tests_in_changed_files(
         }
     };
     if !py.is_empty() {
-        if let Some(nodeids) = python_nodeids_from_stored_universe(repo_root, &py) {
-            out.python_nodeids.extend(nodeids);
-        } else {
-            for nodeid in collect_python_nodeids(repo_root, Some(&py), &[])? {
-                out.python_nodeids.insert(nodeid);
-            }
-        }
+        out.python_nodeids
+            .extend(collect_python_nodeids(repo_root, Some(&py), &[])?);
     }
     if !rs.is_empty() {
+        let universe = current_rust_selector_universe(repo_root);
         for path in rs {
             let ids =
                 crate::test_runner::targets::rust_direct_test_selectors(&path).map_err(|e| {
                     format!("error: kiss test: failed to parse {}: {e}", path.display())
                 })?;
-            for id in ids {
+            for id in universe_rust_selectors_for_file(repo_root, &path, ids, &universe) {
                 out.rust_tests.insert((path.clone(), id));
             }
         }
     }
     Ok(out)
-}
-
-fn python_nodeids_from_stored_universe(
-    repo_root: &Path,
-    py_files: &[PathBuf],
-) -> Option<BTreeSet<String>> {
-    let selectors =
-        stored_python_universe_selectors(repo_root, &[], &[], PYTHON_COVERAGE_ENV_KEYS)?;
-    let mut rels = BTreeSet::new();
-    for path in py_files {
-        rels.insert(python_repo_relative_path(repo_root, path)?);
-    }
-    let mut out = BTreeSet::new();
-    for selector in selectors {
-        let file = selector.split("::").next().unwrap_or(selector.as_str());
-        if rels.contains(file) {
-            out.insert(selector);
-        }
-    }
-    Some(out)
 }
 
 pub(crate) fn require_kiss_test_report_id(
@@ -231,14 +203,6 @@ pub fn enumerate_workspace_python_selectors(
     ignore: &[String],
     pytest_args: &[String],
 ) -> Result<Vec<String>, String> {
-    if let Some(selectors) = stored_python_universe_selectors(
-        repo_root,
-        pytest_args,
-        ignore,
-        PYTHON_COVERAGE_ENV_KEYS,
-    ) {
-        return filter_ignored_python_selectors(selectors, ignore);
-    }
     if !ignore.is_empty() {
         let paths = crate::test_runner::lang_python::collect_paths::workspace_python_collect_paths(
             repo_root, ignore,
@@ -262,10 +226,9 @@ fn collect_from_workspace_paths(
     pytest_args: &[String],
 ) -> Result<Vec<String>, String> {
     if paths.is_empty() {
-        collect_python_nodeids(repo_root, None, pytest_args)
-    } else {
-        collect_python_nodeids(repo_root, Some(paths), pytest_args)
+        return Ok(Vec::new());
     }
+    collect_python_nodeids(repo_root, Some(paths), pytest_args)
 }
 
 fn filter_ignored_python_selectors(
@@ -312,50 +275,6 @@ pub fn build_pytest_argv(selectors: &[String], extra: &[String]) -> Vec<String> 
     v.extend(selectors.iter().cloned());
     v.extend(extra.iter().cloned());
     v
-}
-
-pub(crate) fn build_rust_coverage_batch_dry_run_lines(
-    selectors: &[String],
-    extra: &[String],
-    jobs: usize,
-) -> Result<Vec<String>, String> {
-    if selectors.is_empty() {
-        return Ok(Vec::new());
-    }
-    let (delegated_runners, runner_map_fingerprint, host_platform) =
-        kiss::rust_llvm_cov_runner::placeholder_delegated_runner_fields();
-    let req = RustCoverageBatchRequest {
-        cwd: PathBuf::from("."),
-        source_root: PathBuf::from("."),
-        cargo: PathBuf::from("cargo"),
-        cache_root: PathBuf::from("<cache>/rust_llvm_cov_cache"),
-        logical_selectors: selectors.to_vec(),
-        cargo_args: Vec::new(),
-        test_args: extra.to_vec(),
-        env: BTreeMap::new(),
-        force_rerun: false,
-        force_rerun_selectors: Vec::new(),
-        jobs,
-        generated_config: PathBuf::from("<generated-filter>"),
-        population_publication_selectors: None,
-        delegated_runners,
-        runner_map_fingerprint,
-        host_platform,
-        coverage_output_mode: CoverageOutputMode::SelectorEntries,
-        selector_timeout_millis: std::collections::BTreeMap::new(),
-        cache_policy: kiss::test_cache_policy::TestCachePolicy::default(),
-    };
-    let plan = build_rust_coverage_batch_plan(&req)?;
-    let mut lines = vec![
-        format!("RUST BATCH selectors={} jobs={jobs}", selectors.len()),
-        shell_quote_line(&plan.argv),
-    ];
-    lines.extend(
-        selectors
-            .iter()
-            .map(|selector| format!("RUST SELECTOR {selector}")),
-    );
-    Ok(lines)
 }
 
 pub(crate) fn command_stdout(program: &Path, args: &[&str], cwd: &Path) -> Result<String, String> {

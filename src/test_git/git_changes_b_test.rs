@@ -258,3 +258,187 @@ fn changed_lines_since_reports_new_line_numbers() {
         "changed_lines_since must report new line numbers"
     );
 }
+
+#[test]
+fn changed_lines_commit_maps_spaced_filename() {
+    let tmp = TempDir::new().unwrap();
+    init_repo(&tmp);
+    fs::write(tmp.path().join("my file.py"), "x=1\n").unwrap();
+    assert!(
+        git_in(tmp.path())
+            .args(["add", "."])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        git_in(tmp.path())
+            .args(["commit", "-m", "m"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    fs::write(tmp.path().join("my file.py"), "x=2\n").unwrap();
+    let lines = changed_lines_commit(tmp.path()).unwrap();
+    assert_eq!(
+        lines.get("my file.py"),
+        Some(&BTreeSet::from([1])),
+        "commit: spaced path must keep line numbers, got {lines:?}"
+    );
+}
+
+#[test]
+fn changed_paths_commit_unquotes_tab_filename() {
+    let tmp = TempDir::new().unwrap();
+    init_repo(&tmp);
+    commit_file(&tmp, "a.py", "x=1\n", "root");
+    let tabbed = tmp.path().join("tab\tfile.py");
+    fs::write(&tabbed, "z=1\n").unwrap();
+    assert!(
+        git_in(tmp.path())
+            .args(["add", "tab\tfile.py"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        git_in(tmp.path())
+            .args(["commit", "-m", "tab"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    fs::write(&tabbed, "z=2\n").unwrap();
+    let names = changed_paths_commit(tmp.path()).unwrap();
+    assert!(
+        names.iter().any(|n| n == "tab\tfile.py"),
+        "commit: C-quoted special path must be unquoted, got {names:?}"
+    );
+    let lines = changed_lines_commit(tmp.path()).unwrap();
+    assert_eq!(
+        lines.get("tab\tfile.py"),
+        Some(&BTreeSet::from([1])),
+        "commit: C-quoted +++ path must keep line numbers, got {lines:?}"
+    );
+}
+
+#[test]
+fn changed_paths_commit_unquotes_untracked_tab_filename() {
+    let tmp = TempDir::new().unwrap();
+    init_repo(&tmp);
+    commit_file(&tmp, "a.py", "x=1\n", "root");
+    fs::write(tmp.path().join("tab\tfile.py"), "z=1\n").unwrap();
+    let names = changed_paths_commit(tmp.path()).unwrap();
+    assert!(
+        names.iter().any(|n| n == "tab\tfile.py"),
+        "commit: untracked C-quoted path must be unquoted, got {names:?}"
+    );
+}
+
+#[test]
+fn changed_since_maps_spaced_and_tab_filenames() {
+    let tmp = TempDir::new().unwrap();
+    init_repo(&tmp);
+    commit_file(&tmp, "a.py", "x=1\n", "root");
+    fs::write(tmp.path().join("my file.py"), "x=1\n").unwrap();
+    fs::write(tmp.path().join("tab\tfile.py"), "z=1\n").unwrap();
+    assert!(
+        git_in(tmp.path())
+            .args(["add", "my file.py", "tab\tfile.py"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        git_in(tmp.path())
+            .args(["commit", "-m", "special"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    let baseline = rev_parse(&tmp, "HEAD");
+    fs::write(tmp.path().join("my file.py"), "x=2\n").unwrap();
+    fs::write(tmp.path().join("tab\tfile.py"), "z=2\n").unwrap();
+    let names = changed_paths_since(tmp.path(), &baseline).unwrap();
+    assert!(
+        names.iter().any(|n| n == "my file.py"),
+        "since/base/main: spaced path must be unquoted, got {names:?}"
+    );
+    assert!(
+        names.iter().any(|n| n == "tab\tfile.py"),
+        "since/base/main: tab path must be unquoted, got {names:?}"
+    );
+    let lines = changed_lines_since(tmp.path(), &baseline).unwrap();
+    assert_eq!(
+        lines.get("my file.py"),
+        Some(&BTreeSet::from([1])),
+        "since/base/main: spaced +++ path must keep line numbers, got {lines:?}"
+    );
+    assert_eq!(
+        lines.get("tab\tfile.py"),
+        Some(&BTreeSet::from([1])),
+        "since/base/main: quoted +++ path must keep line numbers, got {lines:?}"
+    );
+}
+
+#[test]
+fn changed_lines_commit_maps_utf8_filename() {
+    let tmp = TempDir::new().unwrap();
+    init_repo(&tmp);
+    fs::write(tmp.path().join("café.py"), "x=1\n").unwrap();
+    assert!(
+        git_in(tmp.path())
+            .args(["add", "café.py"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        git_in(tmp.path())
+            .args(["commit", "-m", "utf8"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    fs::write(tmp.path().join("café.py"), "x=2\n").unwrap();
+    let names = changed_paths_commit(tmp.path()).unwrap();
+    assert!(
+        names.iter().any(|n| n == "café.py"),
+        "commit: UTF-8 path must stay unquoted, got {names:?}"
+    );
+    let lines = changed_lines_commit(tmp.path()).unwrap();
+    assert_eq!(
+        lines.get("café.py"),
+        Some(&BTreeSet::from([1])),
+        "commit: octal-quoted +++ path must keep line numbers, got {lines:?}"
+    );
+}
+
+#[test]
+fn changed_paths_commit_includes_renamed_file() {
+    let tmp = TempDir::new().unwrap();
+    init_repo(&tmp);
+    commit_file(&tmp, "old.py", "x=1\n", "root");
+    assert!(
+        git_in(tmp.path())
+            .args(["mv", "old.py", "new.py"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    let names = changed_paths_commit(tmp.path()).unwrap();
+    assert!(
+        names.iter().any(|n| n == "old.py"),
+        "commit: rename must keep the deleted old path, got {names:?}"
+    );
+    assert!(
+        names.iter().any(|n| n == "new.py"),
+        "commit: rename must include the new path, got {names:?}"
+    );
+    let lines = changed_lines_commit(tmp.path()).unwrap();
+    assert_eq!(
+        lines.get("new.py"),
+        Some(&BTreeSet::from([1])),
+        "commit: rename must report added lines on the new path, got {lines:?}"
+    );
+}

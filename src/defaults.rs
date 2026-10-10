@@ -1,6 +1,7 @@
 pub const NOT_APPLICABLE: usize = usize::MAX;
 
 pub mod python {
+    pub const MAX_NUM_TESTS: usize = 1000;
     pub const IMPORTS_PER_FILE: usize = 30;
     pub const STATEMENTS_PER_FILE: usize = 200;
     pub const LINES_PER_FILE: usize = 300;
@@ -26,6 +27,7 @@ pub mod python {
 }
 
 pub mod rust {
+    pub const MAX_NUM_TESTS: usize = 2000;
     pub const IMPORTS_PER_FILE: usize = 50;
     pub const STATEMENTS_PER_FILE: usize = 250;
     pub const LINES_PER_FILE: usize = 900;
@@ -56,17 +58,12 @@ pub mod duplication {
 }
 
 pub mod gate {
-    pub const TEST_COVERAGE_THRESHOLD: usize = 90;
-    pub const TEST_COVERAGE_SCOPE: &str = "codebase";
-    pub const TEST_COVERAGE_SCOPE_TOML: &str = "\"codebase\"";
     pub const MAX_UNIT_TEST_SECONDS: f64 = 2.0;
-    pub const MAX_NUM_TESTS: usize = 999_999;
     pub const NUM_JOBS: usize = 4;
     pub const NUM_JOBS_PYTEST: usize = 16;
-    pub const NUM_JOBS_LLVM_COV: usize = 4;
+    pub const NUM_JOBS_NEXTEST: usize = 4;
     pub const MIN_MEMAVAILABLE_KIB: u64 = 262_144;
     pub const MIN_MEMAVAILABLE_PERCENT: u64 = 10;
-    pub const WATCH_SETTLE_SECONDS: f64 = 1.0;
 }
 
 pub fn default_config_toml() -> String {
@@ -81,14 +78,8 @@ docs_allowed = []
 orphan_allowed = []
 
 [test]
-test_coverage_threshold = {gate_coverage}
-test_coverage_scope = {gate_scope}
 orphan_detection = false
-max_num_tests = {max_num_tests}
 num_jobs = {num_jobs}
-num_jobs_pytest = {num_jobs_pytest}
-num_jobs_llvm_cov = {num_jobs_llvm_cov}
-watch_settle_seconds = {watch_settle:.1}
 pytest_plugins = []
 ignore = []
 
@@ -96,6 +87,8 @@ ignore = []
 "*" = {max_unit_test_seconds}
 
 [python]
+max_num_tests = {py_max_num_tests}
+num_jobs_pytest = {num_jobs_pytest}
 statements_per_function = {py_statements}
 positional_args = {py_pos_args}
 keyword_only_args = {py_kw_args}
@@ -120,6 +113,8 @@ indirect_dependencies = {py_indirect_deps}
 dependency_depth = {py_dep_depth}
 
 [rust]
+max_num_tests = {rs_max_num_tests}
+num_jobs_nextest = {num_jobs_nextest}
 statements_per_function = {rs_statements}
 arguments = {rs_args}
 max_indentation = {rs_indent}
@@ -141,14 +136,12 @@ cycle_size = {cycle_size}
 indirect_dependencies = {rs_indirect_deps}
 dependency_depth = {rs_dep_depth}
 "#,
-        gate_coverage = gate::TEST_COVERAGE_THRESHOLD,
-        gate_scope = gate::TEST_COVERAGE_SCOPE_TOML,
         max_unit_test_seconds = gate::MAX_UNIT_TEST_SECONDS,
-        max_num_tests = gate::MAX_NUM_TESTS,
+        py_max_num_tests = python::MAX_NUM_TESTS,
+        rs_max_num_tests = rust::MAX_NUM_TESTS,
         num_jobs = gate::NUM_JOBS,
         num_jobs_pytest = gate::NUM_JOBS_PYTEST,
-        num_jobs_llvm_cov = gate::NUM_JOBS_LLVM_COV,
-        watch_settle = gate::WATCH_SETTLE_SECONDS,
+        num_jobs_nextest = gate::NUM_JOBS_NEXTEST,
         min_sim = duplication::MIN_SIMILARITY,
         py_statements = python::STATEMENTS_PER_FUNCTION,
         py_pos_args = python::POSITIONAL_ARGS,
@@ -203,7 +196,9 @@ mod tests {
     fn test_defaults_are_reasonable() {
         assert!(python::STATEMENTS_PER_FUNCTION > 0);
         assert!(rust::STATEMENTS_PER_FUNCTION > 0);
-        assert!(gate::TEST_COVERAGE_THRESHOLD <= 100);
+        assert!(python::MAX_NUM_TESTS > 0);
+        assert!(rust::MAX_NUM_TESTS > 0);
+        assert_ne!(python::MAX_NUM_TESTS, rust::MAX_NUM_TESTS);
     }
 
     #[test]
@@ -239,18 +234,28 @@ mod tests {
             "init default must emit orphan_allowed=[]:\n{toml}"
         );
         assert!(
-            toml.contains("test_coverage_threshold = 90"),
-            "init default must emit coverage under [test]:\n{toml}"
+            toml.contains("[python]\nmax_num_tests = 1000\n"),
+            "init default must emit the Python cap under [python]:\n{toml}"
         );
         assert!(
-            toml.contains("max_num_tests = 999999"),
-            "init default must emit max_num_tests under [test]:\n{toml}"
+            toml.contains("[rust]\nmax_num_tests = 2000\n"),
+            "init default must emit the Rust cap under [rust]:\n{toml}"
         );
         assert!(
-            toml.contains(
-                "num_jobs = 4\nnum_jobs_pytest = 16\nnum_jobs_llvm_cov = 4\nwatch_settle_seconds = 1.0\npytest_plugins = []\nignore = []\n"
-            ),
+            !toml.contains("[test]\norphan_detection = false\nmax_num_tests"),
+            "init default must not emit max_num_tests under [test]:\n{toml}"
+        );
+        assert!(
+            toml.contains("num_jobs = 4\npytest_plugins = []\nignore = []\n"),
             "init default must emit [test] runtime defaults:\n{toml}"
+        );
+        assert!(
+            toml.contains("[python]\nmax_num_tests = 1000\nnum_jobs_pytest = 16\n"),
+            "init default must emit pytest jobs under [python]:\n{toml}"
+        );
+        assert!(
+            toml.contains("[rust]\nmax_num_tests = 2000\nnum_jobs_nextest = 4\n"),
+            "init default must emit nextest jobs under [rust]:\n{toml}"
         );
     }
 }

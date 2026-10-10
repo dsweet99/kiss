@@ -3,7 +3,7 @@ use std::fs;
 use tempfile::TempDir;
 
 use super::runners::{
-    enumerate_tests_in_changed_files, enumerate_workspace_rust_selectors, rust_backer,
+    enumerate_tests_in_changed_files, enumerate_workspace_rust_selectors,
     rust_logical_to_kiss_test_ids,
 };
 
@@ -47,7 +47,11 @@ fn store_fixture_enum_cache(root: &std::path::Path, ignore: &[String], selectors
         "ignore": ignore,
         "selectors": selectors,
     });
-    fs::write(fixture_enum_cache_path(root), serde_json::to_vec(&payload).unwrap()).unwrap();
+    fs::write(
+        fixture_enum_cache_path(root),
+        serde_json::to_vec(&payload).unwrap(),
+    )
+    .unwrap();
 }
 
 fn load_fixture_enum_cache(root: &std::path::Path, ignore: &[String]) -> Option<Vec<String>> {
@@ -113,9 +117,6 @@ fn persistent_macro_generated_repo() -> std::path::PathBuf {
         let root = std::env::temp_dir().join("kiss-macro-generated-fixture");
         let stamp = root.join(".kiss").join("fixture_inplace_ok");
         if root.join("Cargo.toml").is_file()
-            && root
-                .join(".kiss/rust_llvm_cov_cache/build/target")
-                .is_dir()
             && stamp.is_file()
             && fixture_enum_cache_path(&root).is_file()
             && fs::read_to_string(&stamp).ok().as_deref() == Some(root.to_string_lossy().as_ref())
@@ -222,11 +223,7 @@ fn enumerate_workspace_rust_selectors_lists_macro_generated_tests() {
     assert!(selectors.contains(&"tests::generated_b".to_string()));
     assert!(
         !root.join("target").exists(),
-        "dynamic discovery must not create a separate default Cargo target tree"
-    );
-    assert!(
-        root.join(".kiss/rust_llvm_cov_cache/build/target").is_dir(),
-        "dynamic discovery must use the reusable coverage build tree"
+        "dynamic discovery must honor the repo's Cargo target-dir, as test runs do"
     );
 }
 
@@ -252,9 +249,6 @@ fn persistent_ignored_static_listing_repo() -> std::path::PathBuf {
         let root = std::env::temp_dir().join("kiss-ignored-static-listing-fixture");
         let stamp = root.join(".kiss").join("fixture_inplace_ok");
         let usable = root.join("Cargo.toml").is_file()
-            && root
-                .join(".kiss/rust_llvm_cov_cache/build/target")
-                .is_dir()
             && stamp.is_file()
             && fixture_enum_cache_path(&root).is_file()
             && fs::read_to_string(&stamp).ok().as_deref() == Some(root.to_string_lossy().as_ref());
@@ -280,8 +274,7 @@ mod tests {
         )
         .unwrap();
         let ignore = vec!["tests".to_string()];
-        let selectors =
-            enumerate_workspace_rust_selectors(&root, &ignore).unwrap_or_default();
+        let selectors = enumerate_workspace_rust_selectors(&root, &ignore).unwrap_or_default();
         store_fixture_enum_cache(&root, &ignore, &selectors);
         fs::create_dir_all(root.join(".kiss")).unwrap();
         fs::write(&stamp, root.to_string_lossy().as_bytes()).unwrap();
@@ -297,9 +290,6 @@ fn persistent_ignored_macro_listing_repo() -> std::path::PathBuf {
         let root = std::env::temp_dir().join("kiss-ignored-macro-listing-fixture");
         let stamp = root.join(".kiss").join("fixture_inplace_ok");
         let usable = root.join("Cargo.toml").is_file()
-            && root
-                .join(".kiss/rust_llvm_cov_cache/build/target")
-                .is_dir()
             && stamp.is_file()
             && fixture_enum_cache_path(&root).is_file()
             && fs::read_to_string(&stamp).ok().as_deref() == Some(root.to_string_lossy().as_ref());
@@ -325,8 +315,7 @@ mod tests {
         )
         .unwrap();
         let ignore = vec!["tests".to_string()];
-        let selectors =
-            enumerate_workspace_rust_selectors(&root, &ignore).unwrap_or_default();
+        let selectors = enumerate_workspace_rust_selectors(&root, &ignore).unwrap_or_default();
         store_fixture_enum_cache(&root, &ignore, &selectors);
         fs::create_dir_all(root.join(".kiss")).unwrap();
         fs::write(&stamp, root.to_string_lossy().as_bytes()).unwrap();
@@ -342,9 +331,6 @@ fn persistent_report_id_submodule_repo() -> std::path::PathBuf {
         let root = std::env::temp_dir().join("kiss-report-id-submodule-fixture");
         let stamp = root.join(".kiss").join("fixture_inplace_ok");
         let usable = root.join("Cargo.toml").is_file()
-            && root
-                .join(".kiss/rust_llvm_cov_cache/build/target")
-                .is_dir()
             && stamp.is_file()
             && root.join(".kiss").join("fixture_report_ids.json").is_file()
             && fs::read_to_string(&stamp).ok().as_deref() == Some(root.to_string_lossy().as_ref());
@@ -375,7 +361,7 @@ fn persistent_dynamic_listing_failure_repo() -> std::path::PathBuf {
     use std::sync::OnceLock;
     static REPO: OnceLock<std::path::PathBuf> = OnceLock::new();
     REPO.get_or_init(|| {
-        let root = std::env::temp_dir().join("kiss-dynamic-listing-failure-fixture");
+        let root = std::env::temp_dir().join("kiss-dynamic-listing-failure-fixture-v2");
         let stamp = root.join(".kiss").join("fixture_inplace_ok");
         let usable = root.join("Cargo.toml").is_file()
             && stamp.is_file()
@@ -395,6 +381,9 @@ include!("missing.inc");
 fn known_test() {}
 "#,
         );
+        // Another fixture builds a same-named `demo` crate into the shared target dir,
+        // and cargo would reuse that build instead of failing on this source.
+        fs::remove_dir_all(root.join(".cargo")).unwrap();
         fs::create_dir_all(root.join(".kiss")).unwrap();
         fs::write(&stamp, root.to_string_lossy().as_bytes()).unwrap();
         root
@@ -425,7 +414,7 @@ fn dynamic_listing_failure_does_not_publish_partial_static_universe() {
     let root = persistent_dynamic_listing_failure_repo();
     let err = enumerate_workspace_rust_selectors(&root, &[]).unwrap_err();
 
-    assert!(err.contains("failed to list generated Rust tests"));
+    assert!(err.contains("cargo nextest list failed"), "{err}");
 }
 
 #[test]
@@ -559,12 +548,11 @@ fn enumerate_changed_rust_tests_excludes_fixture_paths() {
 }
 
 #[test]
-fn rust_module_population_manifest_selectors_uses_workspace_discovery() {
+fn enumerate_workspace_rust_selectors_uses_workspace_discovery() {
     let tmp = TempDir::new().unwrap();
     write_demo_crate(&tmp, demo_test_lib());
-    let module = rust_backer::RustModule::for_execution(tmp.path(), &[]);
 
-    let selectors = module.population_manifest_selectors().unwrap();
+    let selectors = enumerate_workspace_rust_selectors(tmp.path(), &[]).unwrap();
 
     assert_eq!(selectors, vec!["tests::gets_value".to_string()]);
 }

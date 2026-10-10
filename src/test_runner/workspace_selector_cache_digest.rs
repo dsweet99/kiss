@@ -41,7 +41,7 @@ fn disk_maps() -> &'static Mutex<HashMap<PathBuf, BTreeMap<String, DiskRecord>>>
 }
 
 fn load_disk_map(repo_root: &Path) -> BTreeMap<String, DiskRecord> {
-    let path = repo_root.join(".kiss").join(DISK_FILE);
+    let path = crate::test_runner::test_state_dir(repo_root).join(DISK_FILE);
     let Ok(bytes) = fs::read(path) else {
         return BTreeMap::new();
     };
@@ -93,9 +93,64 @@ fn remember_disk_record(
     }
 }
 
-fn content_digest(repo_root: &Path, rel: &str, path: &Path) -> io::Result<u64> {
+#[derive(Clone, Copy, Eq, PartialEq)]
+struct StatSig {
+    len: u64,
+    mtime_ns: i128,
+    ctime_ns: i128,
+    ino: u64,
+    dev: u64,
+}
+
+const RACY_STAT_WINDOW_NS: i128 = 2_000_000_000;
+
+fn stat_sig(meta: &fs::Metadata) -> StatSig {
+    use std::os::unix::fs::MetadataExt;
+    StatSig {
+        len: meta.len(),
+        mtime_ns: i128::from(meta.mtime()) * 1_000_000_000 + i128::from(meta.mtime_nsec()),
+        ctime_ns: i128::from(meta.ctime()) * 1_000_000_000 + i128::from(meta.ctime_nsec()),
+        ino: meta.ino(),
+        dev: meta.dev(),
+    }
+}
+
+fn stat_memo() -> &'static Mutex<HashMap<PathBuf, (StatSig, u64)>> {
+    static MEMO: OnceLock<Mutex<HashMap<PathBuf, (StatSig, u64)>>> = OnceLock::new();
+    MEMO.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn now_ns() -> i128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| {
+            i128::try_from(elapsed.as_nanos()).unwrap_or(i128::MAX)
+        })
+}
+
+fn content_hash_by_stat(path: &Path) -> io::Result<(u64, Option<Vec<u8>>)> {
+    let sig = stat_sig(&fs::metadata(path)?);
+    if let Ok(guard) = stat_memo().lock()
+        && let Some((known, hash)) = guard.get(path)
+        && *known == sig
+    {
+        return Ok((*hash, None));
+    }
     let bytes = fs::read(path)?;
-    let content_hash = fnv1a64(0xcbf2_9ce4_8422_2325, &bytes);
+    let hash = fnv1a64(0xcbf2_9ce4_8422_2325, &bytes);
+    let after = stat_sig(&fs::metadata(path)?);
+    let settled = now_ns() - sig.mtime_ns.max(sig.ctime_ns) >= RACY_STAT_WINDOW_NS;
+    if after == sig
+        && settled
+        && let Ok(mut guard) = stat_memo().lock()
+    {
+        guard.insert(path.to_path_buf(), (sig, hash));
+    }
+    Ok((hash, Some(bytes)))
+}
+
+fn content_digest(repo_root: &Path, rel: &str, path: &Path) -> io::Result<u64> {
+    let (content_hash, read) = content_hash_by_stat(path)?;
     let memo_key = ContentMemoKey {
         path: path.to_path_buf(),
         content_hash,
@@ -116,6 +171,15 @@ fn content_digest(repo_root: &Path, rel: &str, path: &Path) -> io::Result<u64> {
         }
         return Ok(digest);
     }
+    let bytes = match read {
+        Some(bytes) => bytes,
+        None => fs::read(path)?,
+    };
+    let content_hash = fnv1a64(0xcbf2_9ce4_8422_2325, &bytes);
+    let memo_key = ContentMemoKey {
+        path: path.to_path_buf(),
+        content_hash,
+    };
     let mut hashed = if rel.ends_with(".rs") && !rel.ends_with("build.rs") {
         rust_selector_declaration_bytes(&bytes)
     } else {
@@ -276,7 +340,21 @@ pub(super) fn hash_file_contents(
     repo_root: &Path,
     path: &Path,
 ) -> io::Result<u64> {
-    let digest = content_digest(repo_root, rel, path)?;
+    let digest = match content_digest(repo_root, rel, path) {
+        Ok(digest) => digest,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(h),
+        Err(err) => return Err(err),
+    };
+    let acc = fnv1a64(h, rel.as_bytes());
+    Ok(fnv1a64(acc, &digest.to_le_bytes()))
+}
+
+pub(super) fn hash_file_full_contents(h: u64, rel: &str, path: &Path) -> io::Result<u64> {
+    let digest = match content_hash_by_stat(path) {
+        Ok((digest, _)) => digest,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(h),
+        Err(err) => return Err(err),
+    };
     let acc = fnv1a64(h, rel.as_bytes());
     Ok(fnv1a64(acc, &digest.to_le_bytes()))
 }
@@ -290,7 +368,7 @@ pub(super) fn flush_persisted_digests(repo_root: &Path) {
     else {
         return;
     };
-    let dir = repo_root.join(".kiss");
+    let dir = crate::test_runner::test_state_dir(repo_root);
     if fs::create_dir_all(&dir).is_err() {
         return;
     }

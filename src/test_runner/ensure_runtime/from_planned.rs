@@ -11,7 +11,6 @@ pub(crate) struct EnsureFromPlanned<'a> {
     pub(crate) mode: AcceptMode,
     pub(crate) lang_filter: Option<Language>,
     pub(crate) force: bool,
-    pub(crate) force_selectors: Vec<String>,
     pub(crate) jobs: usize,
     pub(crate) extras: LanguageKeyed<&'a [String]>,
     pub(crate) repo_root_override: Option<PathBuf>,

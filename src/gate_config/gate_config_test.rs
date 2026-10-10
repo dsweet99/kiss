@@ -21,66 +21,21 @@ fn lenient_merge_ignores_legacy_orphan_module_enabled_without_applying_test() {
 fn test_gate_config_merge_from_toml() {
     let mut gate = GateConfig::default();
     gate.merge_from_toml(
-        "[test]\ntest_coverage_threshold = 50\n[global]\nmin_similarity = 0.8\nduplication_enabled = false\ncomment_removal_enabled = true",
+        "[python]\nmax_num_tests = 50\n[rust]\nmax_num_tests = 40\n[global]\nmin_similarity = 0.8\nduplication_enabled = false\ncomment_removal_enabled = true",
     );
-    assert_eq!(gate.test_coverage_threshold, 50);
+    assert_eq!(gate.max_num_tests_python, 50);
+    assert_eq!(gate.max_num_tests_rust, 40);
     assert!((gate.min_similarity - 0.8).abs() < 0.01);
     assert!(!gate.duplication_enabled);
     assert!(gate.comment_removal_enabled);
 }
 
 #[test]
-fn default_gate_config_scope_is_codebase() {
-    assert_eq!(
-        GateConfig::default().test_coverage_scope,
-        TestCoverageScope::Codebase
-    );
+fn default_gate_config_disables_comment_removal() {
     assert!(!GateConfig::default().comment_removal_enabled);
     assert!(!GateConfig::default().orphan_detection);
     assert!(GateConfig::default().docs_allowed.is_empty());
     assert!(GateConfig::default().orphan_allowed.is_empty());
-}
-
-#[test]
-fn parse_test_coverage_scope_values() {
-    let by_file =
-        GateConfig::try_load_from_content("[test]\ntest_coverage_scope = \"by_file\"").unwrap();
-    assert_eq!(by_file.test_coverage_scope, TestCoverageScope::ByFile);
-    let codebase =
-        GateConfig::try_load_from_content("[test]\ntest_coverage_scope = \"codebase\"").unwrap();
-    assert_eq!(codebase.test_coverage_scope, TestCoverageScope::Codebase);
-}
-
-#[test]
-fn missing_test_coverage_scope_keeps_codebase() {
-    let gate = GateConfig::try_load_from_content("[test]\ntest_coverage_threshold = 80\n").unwrap();
-    assert_eq!(gate.test_coverage_scope, TestCoverageScope::Codebase);
-}
-
-#[test]
-fn try_load_rejects_unknown_test_coverage_scope() {
-    let err =
-        GateConfig::try_load_from_content("[test]\ntest_coverage_scope = \"mean\"").unwrap_err();
-    assert!(matches!(
-        err,
-        ConfigError::InvalidValue { ref key, .. } if key == "test_coverage_scope"
-    ));
-    let wrong_type =
-        GateConfig::try_load_from_content("[test]\ntest_coverage_scope = 1").unwrap_err();
-    assert!(matches!(
-        wrong_type,
-        ConfigError::InvalidValue { ref key, .. } if key == "test_coverage_scope"
-    ));
-}
-
-#[test]
-fn merge_from_toml_keeps_prior_scope_on_invalid() {
-    let mut gate = GateConfig {
-        test_coverage_scope: TestCoverageScope::Codebase,
-        ..Default::default()
-    };
-    gate.merge_from_toml("[test]\ntest_coverage_scope = \"mean\"");
-    assert_eq!(gate.test_coverage_scope, TestCoverageScope::Codebase);
 }
 
 #[test]
@@ -173,9 +128,10 @@ fn test_get_f64() {
 #[test]
 fn witness_try_merge_from_toml_and_int_to_f64() {
     let mut gate = GateConfig::default();
-    gate.try_merge_from_toml("[test]\ntest_coverage_threshold = 75\n")
+    gate.try_merge_from_toml("[python]\nmax_num_tests = 75\n[rust]\nmax_num_tests = 60\n")
         .unwrap();
-    assert_eq!(gate.test_coverage_threshold, 75);
+    assert_eq!(gate.max_num_tests_python, 75);
+    assert_eq!(gate.max_num_tests_rust, 60);
     assert_eq!(int_to_f64(3), 3.0);
 }
 
@@ -190,20 +146,22 @@ comment_removal_enabled = true
 docs_allowed = [\"docs\", \"src/api\"]
 orphan_allowed = [\"src/plugins\"]
 
+[python]
+max_num_tests = 12
+
+[rust]
+max_num_tests = 7
+
 [test]
-test_coverage_threshold = 91
-test_coverage_scope = \"codebase\"
 orphan_detection = true
 max_unit_test_seconds = 1.5
-max_num_tests = 12
 ",
     )
     .unwrap();
 
-    assert_eq!(gate.test_coverage_threshold, 91);
-    assert_eq!(gate.test_coverage_scope, TestCoverageScope::Codebase);
     assert_eq!(gate.max_unit_test_seconds, vec![("*".to_string(), 1.5)]);
-    assert_eq!(gate.max_num_tests, 12);
+    assert_eq!(gate.max_num_tests_python, 12);
+    assert_eq!(gate.max_num_tests_rust, 7);
     assert!((gate.min_similarity - 0.75).abs() < f64::EPSILON);
     assert!(!gate.duplication_enabled);
     assert!(gate.orphan_detection);
@@ -214,9 +172,10 @@ max_num_tests = 12
     );
     assert_eq!(gate.orphan_allowed, vec!["src/plugins".to_string()]);
 
-    let zero = GateConfig::try_load_from_content("[test]\nmax_num_tests = 0").unwrap();
-    assert_eq!(zero.max_num_tests, 0);
-    let err = GateConfig::try_load_from_content("[test]\nmax_num_tests = \"inf\"").unwrap_err();
+    let zero = GateConfig::try_load_from_content("[python]\nmax_num_tests = 0").unwrap();
+    assert_eq!(zero.max_num_tests_python, 0);
+    assert_eq!(zero.max_num_tests_rust, defaults::rust::MAX_NUM_TESTS);
+    let err = GateConfig::try_load_from_content("[rust]\nmax_num_tests = \"inf\"").unwrap_err();
     assert!(
         matches!(
             err,
@@ -224,7 +183,22 @@ max_num_tests = 12
         ),
         "err={err:?}"
     );
-    assert_eq!(GateConfig::default().max_num_tests, 999_999);
+    assert_eq!(
+        GateConfig::default().max_num_tests_python,
+        defaults::python::MAX_NUM_TESTS
+    );
+    assert_eq!(
+        GateConfig::default().max_num_tests_rust,
+        defaults::rust::MAX_NUM_TESTS
+    );
+    let err = GateConfig::try_load_from_content("[test]\nmax_num_tests = 9\n").unwrap_err();
+    assert!(
+        matches!(
+            err,
+            ConfigError::UnknownKey { ref key, .. } if key == "max_num_tests"
+        ),
+        "err={err:?}"
+    );
     let err =
         GateConfig::try_load_from_content("[global]\norphan_unit_enabled = true").unwrap_err();
     assert!(
@@ -309,9 +283,14 @@ fn max_unit_test_seconds_zero_is_catch_all_ban() {
 #[test]
 fn try_load_from_reads_file_and_reports_missing_file() {
     let tmp = tempfile::NamedTempFile::new().unwrap();
-    std::fs::write(tmp.path(), "[test]\ntest_coverage_threshold = 44\n").unwrap();
+    std::fs::write(
+        tmp.path(),
+        "[python]\nmax_num_tests = 44\n[rust]\nmax_num_tests = 33\n",
+    )
+    .unwrap();
     let gate = GateConfig::try_load_from(tmp.path()).unwrap();
-    assert_eq!(gate.test_coverage_threshold, 44);
+    assert_eq!(gate.max_num_tests_python, 44);
+    assert_eq!(gate.max_num_tests_rust, 33);
 
     let missing = tempfile::NamedTempFile::new().unwrap();
     let missing_path = missing.path().to_path_buf();
@@ -321,14 +300,7 @@ fn try_load_from_reads_file_and_reports_missing_file() {
 }
 
 #[test]
-fn try_load_from_content_rejects_out_of_range_gate_values() {
-    let coverage =
-        GateConfig::try_load_from_content("[test]\ntest_coverage_threshold = 101").unwrap_err();
-    assert!(matches!(
-        coverage,
-        ConfigError::InvalidValue { ref key, .. } if key == "test_coverage_threshold"
-    ));
-
+fn try_load_from_content_rejects_out_of_range_similarity() {
     let similarity =
         GateConfig::try_load_from_content("[global]\nmin_similarity = 1.5").unwrap_err();
     assert!(matches!(
@@ -340,18 +312,20 @@ fn try_load_from_content_rejects_out_of_range_gate_values() {
 #[test]
 fn merge_from_toml_ignores_out_of_range_and_unknown_gate_values() {
     let mut gate = GateConfig::default();
-    gate.merge_from_toml("[test]\ntest_coverage_threshold = 101");
-    assert_eq!(
-        gate.test_coverage_threshold,
-        defaults::gate::TEST_COVERAGE_THRESHOLD
-    );
-
     gate.merge_from_toml("[global]\nmin_similarity = 1.5");
     assert_eq!(gate.min_similarity, defaults::duplication::MIN_SIMILARITY);
 
-    gate.merge_from_toml("[global]\nunknown = 1\ntest_coverage_threshold = 1");
-    assert_eq!(
-        gate.test_coverage_threshold,
-        defaults::gate::TEST_COVERAGE_THRESHOLD
-    );
+    gate.merge_from_toml("[global]\nunknown = 1\nmax_num_tests = 1");
+    assert_eq!(gate.max_num_tests_python, defaults::python::MAX_NUM_TESTS);
+    assert_eq!(gate.max_num_tests_rust, defaults::rust::MAX_NUM_TESTS);
+}
+
+#[test]
+fn retired_coverage_keys_are_accepted_and_ignored() {
+    let gate = GateConfig::try_load_from_content(
+        "[python]\nmax_num_tests = 9\n[rust]\nmax_num_tests = 4\n[test]\ntest_coverage_threshold = 75\ntest_coverage_scope = \"by_file\"\n",
+    )
+    .unwrap();
+    assert_eq!(gate.max_num_tests_python, 9);
+    assert_eq!(gate.max_num_tests_rust, 4);
 }

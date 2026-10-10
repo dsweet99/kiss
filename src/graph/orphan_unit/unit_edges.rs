@@ -83,6 +83,13 @@ fn name_index(units: &[UnitRef]) -> HashMap<String, Vec<usize>> {
             map.entry(stem.to_string_lossy().into_owned())
                 .or_default()
                 .push(i);
+            if stem == "mod"
+                && let Some(dir) = unit.file.parent().and_then(Path::file_name)
+            {
+                map.entry(dir.to_string_lossy().into_owned())
+                    .or_default()
+                    .push(i);
+            }
         }
     }
     map
@@ -127,7 +134,6 @@ mod tests {
             kind,
             start_line: start,
             end_line: end,
-            parent_type: None,
             is_rust: file.ends_with(".rs"),
             trait_impl: false,
         }

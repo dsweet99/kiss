@@ -45,7 +45,7 @@ fn unit_violation(unit: &UnitRef) -> Violation {
         value: 0,
         threshold: 0,
         message: format!(
-            "{} '{}' is unused: no named import/use and no runtime coverable line ran.",
+            "{} '{}' is unused: no entry point, test, or trait impl reaches it through named imports, uses, or calls.",
             unit.kind, unit.name
         ),
         suggestion: "Import or call this unit from production or test code, or delete it."
@@ -66,7 +66,7 @@ fn file_violation(unit: &UnitRef) -> Violation {
         metric: "orphan".to_string(),
         value: 0,
         threshold: 0,
-        message: "every candidate unit in this file is unused: no named import/use and no runtime coverable line ran."
+        message: "every candidate unit in this file is unused: no entry point, test, or trait impl reaches it through named imports, uses, or calls."
             .to_string(),
         suggestion: "Import or call this file from production or test code, or delete it."
             .to_string(),

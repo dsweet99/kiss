@@ -1,6 +1,5 @@
 use std::cell::RefCell;
-use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use kiss::Language;
@@ -8,8 +7,8 @@ use kiss::rpytest_runner::TestStatus;
 
 use super::ensure_runtime_cache;
 use crate::test_runner::lang_iface::{
-    AcceptMode, EnsureRequest, ExecutionWitness, LanguageRuntime, OutcomeBatch, PublishBatch,
-    SourceDeltaMisses, WitnessScope, WitnessStatus,
+    AcceptMode, EnsureRequest, ExecutionWitness, LanguageRuntime, Listing, OutcomeBatch,
+    WitnessStatus,
 };
 use crate::test_runner::runners::{
     SelectorCacheRecord, SelectorExecutionRecord, SelectorExecutionSummary,
@@ -29,37 +28,47 @@ struct FakeRuntime {
     state: Rc<RefCell<FakeState>>,
 }
 
-impl SourceDeltaMisses for FakeRuntime {}
-
-impl LanguageRuntime for FakeRuntime {
+impl crate::test_runner::test_selection::SupportedLanguage for FakeRuntime {
     fn language(&self) -> Language {
         self.language
     }
+}
 
-    fn current_identity(&self, _request: &EnsureRequest) -> Result<String, String> {
-        Ok(self
-            .state
-            .borrow()
-            .identity
-            .clone()
-            .unwrap_or_else(|| "id".into()))
+impl LanguageRuntime for FakeRuntime {
+    fn list(&self, request: &EnsureRequest) -> Result<Listing, String> {
+        Ok(Listing {
+            ids: request.planned_for(self.language).to_vec(),
+            identity: self
+                .state
+                .borrow()
+                .identity
+                .clone()
+                .unwrap_or_else(|| "id".into()),
+        })
     }
 
-    fn load_full_witness(&self, _repo_root: &Path) -> Result<ExecutionWitness, String> {
-        self.state
-            .borrow()
-            .witness
-            .clone()
-            .ok_or_else(|| "no witness".into())
-    }
-
-    fn run_selectors(
+    fn run(
         &self,
         _request: &EnsureRequest,
         miss_set: &[String],
+        on_result: &mut dyn FnMut(SelectorExecutionRecord),
     ) -> Result<OutcomeBatch, String> {
-        self.state.borrow_mut().run_calls.push(miss_set.to_vec());
-        let mut summary = SelectorExecutionSummary {
+        let batch = self.run_selectors(miss_set, on_result);
+        self.store_records(&batch);
+        Ok(batch)
+    }
+}
+
+impl FakeRuntime {
+    fn run_selectors(
+        &self,
+        miss_set: &[String],
+        on_result: &mut dyn FnMut(SelectorExecutionRecord),
+    ) -> OutcomeBatch {
+        if !miss_set.is_empty() {
+            self.state.borrow_mut().run_calls.push(miss_set.to_vec());
+        }
+        let summary = SelectorExecutionSummary {
             exit_code: self.state.borrow().run_exit_code,
             ..Default::default()
         };
@@ -69,7 +78,7 @@ impl LanguageRuntime for FakeRuntime {
             } else {
                 TestStatus::Failed
             };
-            summary.record(SelectorExecutionRecord {
+            on_result(SelectorExecutionRecord {
                 selector: sel.clone(),
                 status,
                 raw_status: Some(status),
@@ -81,32 +90,21 @@ impl LanguageRuntime for FakeRuntime {
                 crate::test_runner::emit_test_progress(&format!("PASS: {sel}"));
             }
         }
-        Ok(OutcomeBatch {
+        OutcomeBatch {
             summary,
             selectors: miss_set.to_vec(),
-            statuses: miss_set
-                .iter()
-                .map(|_| {
-                    if self.state.borrow().run_exit_code == 0 {
-                        WitnessStatus::Passed
-                    } else {
-                        WitnessStatus::Failed
-                    }
-                })
-                .collect(),
-            durations_ns: vec![Some(1_000_000); miss_set.len()],
-            covered_lines: BTreeMap::new(),
-            publication_universe: Some(miss_set.to_vec()),
-        })
+        }
     }
 
-    fn publish_outcomes(
-        &self,
-        _request: &EnsureRequest,
-        batch: &PublishBatch,
-    ) -> Result<(), String> {
+    fn store_records(&self, batch: &OutcomeBatch) {
         self.state.borrow_mut().publish_calls += 1;
-        let complete = batch.statuses.iter().all(|s| *s == WitnessStatus::Passed);
+        let status = if batch.summary.exit_code == 0 {
+            WitnessStatus::Passed
+        } else {
+            WitnessStatus::Failed
+        };
+        let statuses = vec![status; batch.selectors.len()];
+        let complete = statuses.iter().all(|s| *s == WitnessStatus::Passed);
         let identity_digest = self
             .state
             .borrow()
@@ -114,59 +112,15 @@ impl LanguageRuntime for FakeRuntime {
             .clone()
             .unwrap_or_else(|| "id".into());
         self.state.borrow_mut().witness = Some(ExecutionWitness {
-            language: match self.language {
-                Language::Python => "python",
-                Language::Rust => "rust",
-            }
-            .into(),
-            scope: WitnessScope::Full,
+            language: self.language,
             identity_digest,
-            selectors: batch
-                .publication_universe
-                .clone()
-                .unwrap_or_else(|| batch.selectors.clone()),
-            statuses: batch.statuses.clone(),
-            durations_ns: batch.durations_ns.clone(),
-            covered_lines: batch.covered_lines.clone(),
+            selectors: batch.selectors.clone(),
+            durations_ns: vec![Some(1_000_000); statuses.len()],
+            statuses,
             complete,
             generation_id: "gen".into(),
             raw_statuses: Vec::new(),
         });
-        Ok(())
-    }
-
-    fn is_indexable_source(&self, _path: &Path, _repo_root: &Path) -> bool {
-        true
-    }
-
-    fn dry_run_lines(
-        &self,
-        _selectors: &[String],
-        _population: bool,
-        _extra: &[String],
-        _jobs: usize,
-    ) -> Result<Vec<String>, String> {
-        Ok(vec![])
-    }
-
-    fn accepted_summary(
-        &self,
-        _request: &EnsureRequest,
-        planned: &[String],
-        _witness: &ExecutionWitness,
-    ) -> Result<SelectorExecutionSummary, String> {
-        let mut summary = SelectorExecutionSummary::default();
-        for sel in planned {
-            summary.record(SelectorExecutionRecord {
-                selector: sel.clone(),
-                status: TestStatus::Passed,
-                raw_status: Some(TestStatus::Passed),
-                cache_record: SelectorCacheRecord::Hit,
-                exit_code: Some(0),
-                duration: std::time::Duration::from_millis(1),
-            });
-        }
-        Ok(summary)
     }
 }
 
@@ -177,7 +131,6 @@ fn request(planned: Vec<String>) -> EnsureRequest {
         lang_filter: Some(Language::Python),
         ignore: vec![],
         force: false,
-        force_selectors: Vec::new(),
         jobs: 1,
         gate: kiss::GateConfig::default(),
         extras: crate::test_runner::language_keyed::LanguageKeyed {
@@ -215,92 +168,66 @@ fn miss_runs_and_publishes_even_when_exit_nonzero() {
     assert_eq!(state.borrow().publish_calls, 1);
     assert_eq!(state.borrow().run_calls.len(), 1);
     let w = state.borrow().witness.clone().expect("published");
-    assert_eq!(w.scope, WitnessScope::Full);
     assert!(!w.complete);
 }
 
-#[test]
-fn accept_skips_run() {
-    let state = Rc::new(RefCell::new(FakeState {
-        witness: Some(ExecutionWitness {
-            language: "python".into(),
-            scope: WitnessScope::Full,
-            identity_digest: "id".into(),
-            selectors: vec!["a".into()],
-            statuses: vec![WitnessStatus::Passed],
-            durations_ns: vec![Some(1)],
-            covered_lines: BTreeMap::new(),
-            complete: true,
-            generation_id: "g".into(),
-            raw_statuses: Vec::new(),
-        }),
-        ..Default::default()
-    }));
-    let runtime = FakeRuntime {
-        language: Language::Python,
-        state: Rc::clone(&state),
+fn witness(language: Language, statuses: &[WitnessStatus], complete: bool) -> ExecutionWitness {
+    ExecutionWitness {
+        language,
+        identity_digest: "id".into(),
+        selectors: (0..statuses.len()).map(|i| format!("t{i}")).collect(),
+        statuses: statuses.to_vec(),
+        durations_ns: vec![Some(1); statuses.len()],
+        complete,
+        generation_id: "g".into(),
+        raw_statuses: Vec::new(),
+    }
+}
+
+/// The selectors handed to the runner for a stored witness, in each language.
+fn run_calls_per_language(
+    statuses: &[WitnessStatus],
+    complete: bool,
+) -> (Vec<Vec<String>>, Vec<Vec<String>>) {
+    let planned: Vec<String> = (0..statuses.len()).map(|i| format!("t{i}")).collect();
+    let run = |language: Language, req: EnsureRequest| {
+        let state = Rc::new(RefCell::new(FakeState {
+            witness: Some(witness(language, statuses, complete)),
+            ..Default::default()
+        }));
+        let runtime = FakeRuntime {
+            language,
+            state: Rc::clone(&state),
+        };
+        let _ = ensure_runtime_cache(&req, &[&runtime]).expect("ensure");
+        state.borrow().run_calls.clone()
     };
-    let result = ensure_runtime_cache(&request(vec!["a".into()]), &[&runtime]).expect("ensure");
-    assert_eq!(result.exit_code, 0);
-    assert!(state.borrow().run_calls.is_empty());
-    assert_eq!(state.borrow().publish_calls, 0);
-    assert!(!result.by_language.python.unwrap().published);
+    (
+        run(Language::Python, request(planned.clone())),
+        run(Language::Rust, rust_request(planned)),
+    )
 }
 
 #[test]
-fn second_ensure_after_partial_failure_runs_only_problem_selectors() {
-    let state = Rc::new(RefCell::new(FakeState {
-        witness: Some(ExecutionWitness {
-            language: "python".into(),
-            scope: WitnessScope::Full,
-            identity_digest: "id".into(),
-            selectors: vec!["a".into(), "b".into()],
-            statuses: vec![WitnessStatus::Passed, WitnessStatus::Failed],
-            durations_ns: vec![Some(1), Some(1)],
-            covered_lines: BTreeMap::new(),
-            complete: false,
-            generation_id: "g".into(),
-            raw_statuses: Vec::new(),
-        }),
-        run_exit_code: 0,
-        ..Default::default()
-    }));
-    let runtime = FakeRuntime {
-        language: Language::Python,
-        state: Rc::clone(&state),
-    };
-    let _ =
-        ensure_runtime_cache(&request(vec!["a".into(), "b".into()]), &[&runtime]).expect("ensure");
-    assert_eq!(state.borrow().run_calls, vec![vec!["b".to_string()]]);
+fn python_and_rust_accept_stored_outcomes_alike() {
+    for (statuses, complete) in [
+        (vec![WitnessStatus::Passed], true),
+        (vec![WitnessStatus::Passed, WitnessStatus::Failed], false),
+        (
+            vec![WitnessStatus::Passed, WitnessStatus::Unresolved],
+            false,
+        ),
+    ] {
+        let (python, rust) = run_calls_per_language(&statuses, complete);
+        assert_eq!(python, rust, "{statuses:?}");
+    }
 }
 
 #[test]
-fn unresolved_with_duration_reruns_and_publishes() {
-    let state = Rc::new(RefCell::new(FakeState {
-        witness: Some(ExecutionWitness {
-            language: "python".into(),
-            scope: WitnessScope::Full,
-            identity_digest: "id".into(),
-            selectors: vec!["a".into(), "b".into()],
-            statuses: vec![WitnessStatus::Passed, WitnessStatus::Unresolved],
-            durations_ns: vec![Some(1), Some(5)],
-            covered_lines: BTreeMap::new(),
-            complete: false,
-            generation_id: "g".into(),
-            raw_statuses: Vec::new(),
-        }),
-        run_exit_code: 1,
-        ..Default::default()
-    }));
-    let runtime = FakeRuntime {
-        language: Language::Python,
-        state: Rc::clone(&state),
-    };
-    let result =
-        ensure_runtime_cache(&request(vec!["a".into(), "b".into()]), &[&runtime]).expect("ensure");
-    assert_ne!(result.exit_code, 0);
-    assert_eq!(state.borrow().run_calls, vec![vec!["b".to_string()]]);
-    assert_eq!(state.borrow().publish_calls, 1);
+fn stored_pass_still_runs_the_planned_selector() {
+    let (python, rust) = run_calls_per_language(&[WitnessStatus::Passed], true);
+    assert_eq!(python, vec![vec!["t0".to_string()]]);
+    assert_eq!(rust, python);
 }
 
 #[test]
@@ -317,7 +244,6 @@ fn empty_all_mode_publishes_empty_full_without_run() {
     assert!(state.borrow().run_calls.is_empty());
     assert_eq!(state.borrow().publish_calls, 1);
     let w = state.borrow().witness.clone().expect("published");
-    assert_eq!(w.scope, WitnessScope::Full);
     assert!(w.selectors.is_empty());
 }
 
@@ -325,13 +251,11 @@ fn empty_all_mode_publishes_empty_full_without_run() {
 fn rust_accept_under_fake_runs_zero_exports_and_delta_publish() {
     let state = Rc::new(RefCell::new(FakeState {
         witness: Some(ExecutionWitness {
-            language: "rust".into(),
-            scope: WitnessScope::Full,
+            language: kiss::Language::Rust,
             identity_digest: "id".into(),
             selectors: vec!["a".into(), "b".into()],
             statuses: vec![WitnessStatus::Passed, WitnessStatus::Passed],
             durations_ns: vec![Some(1), Some(2)],
-            covered_lines: BTreeMap::from([("f.rs".into(), vec![1])]),
             complete: true,
             generation_id: "g".into(),
             raw_statuses: Vec::new(),
@@ -343,24 +267,74 @@ fn rust_accept_under_fake_runs_zero_exports_and_delta_publish() {
         state: Rc::clone(&state),
     };
     let req = rust_request(vec!["a".into(), "b".into()]);
-    let result = ensure_runtime_cache(&req, &[&runtime]).expect("accept");
+    let result = ensure_runtime_cache(&req, &[&runtime]).expect("run");
     assert_eq!(result.exit_code, 0);
-    assert!(
-        state.borrow().run_calls.is_empty(),
-        "Accept must not run selectors"
+    assert_eq!(
+        state.borrow().run_calls,
+        vec![vec!["a".to_string(), "b".to_string()]],
+        "a stored pass does not skip the planned selectors"
     );
-    assert_eq!(state.borrow().publish_calls, 0);
 
+    state.borrow_mut().run_calls.clear();
     state.borrow_mut().witness.as_mut().unwrap().statuses[1] = WitnessStatus::Failed;
     state.borrow_mut().witness.as_mut().unwrap().complete = false;
     state.borrow_mut().run_exit_code = 0;
-    let result = ensure_runtime_cache(&req, &[&runtime]).expect("repair");
-    assert_eq!(result.exit_code, 0);
-    assert_eq!(state.borrow().run_calls, vec![vec!["b".to_string()]]);
-    assert_eq!(state.borrow().publish_calls, 1);
-    let observed = kiss::rust_llvm_cov_runner::subprocess_observer_snapshot();
-    assert_eq!(observed.llvm_export_invocations, 0);
-    assert_eq!(observed.cargo_invocations, 0);
+    let _ = ensure_runtime_cache(&req, &[&runtime]).expect("rerun");
+    assert_eq!(
+        state.borrow().run_calls,
+        vec![vec!["a".to_string(), "b".to_string()]],
+        "a stored FAIL does not skip the planned selectors"
+    );
+    let observed = kiss::subprocess_observer::subprocess_observer_snapshot();
+    assert_eq!(observed.nextest_invocations, 0);
+}
+
+fn rust_selecting_miss_recaps_witness_complement(mode: AcceptMode) {
+    let state = Rc::new(RefCell::new(FakeState {
+        witness: Some(ExecutionWitness {
+            language: kiss::Language::Rust,
+            identity_digest: "rs:old:g:s".into(),
+            selectors: vec!["b".into()],
+            statuses: vec![WitnessStatus::Passed],
+            durations_ns: vec![Some(2)],
+            complete: true,
+            generation_id: "g".into(),
+            raw_statuses: Vec::new(),
+        }),
+        identity: Some("rs:new:g:s".into()),
+        run_exit_code: 0,
+        ..Default::default()
+    }));
+    let runtime = FakeRuntime {
+        language: Language::Rust,
+        state: Rc::clone(&state),
+    };
+    let mut req = rust_request(vec!["a".into()]);
+    req.mode = mode;
+    let out = crate::test_runner::capture_stdout::capture_stdout(|| {
+        let result = ensure_runtime_cache(&req, &[&runtime]).expect("ensure");
+        let rust = result.by_language.rust.expect("rust result");
+        assert_eq!(
+            rust.summary.total, 1,
+            "a stored pass outside the planned set is not part of this run (mode {mode:?})"
+        );
+        assert_eq!(rust.summary.cache_hits, 0);
+    });
+    assert_eq!(state.borrow().run_calls, vec![vec!["a".to_string()]]);
+    assert!(
+        !out.contains("PASS b"),
+        "a stored pass that was not selected has no line:\n{out}"
+    );
+}
+
+#[test]
+fn rust_selecting_subset_miss_recaps_witness_complement() {
+    rust_selecting_miss_recaps_witness_complement(AcceptMode::Subset);
+}
+
+#[test]
+fn rust_selecting_all_mode_subset_recaps_witness_complement() {
+    rust_selecting_miss_recaps_witness_complement(AcceptMode::All);
 }
 
 #[test]

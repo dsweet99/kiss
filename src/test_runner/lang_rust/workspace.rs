@@ -21,6 +21,38 @@ pub(crate) fn is_workspace_rust_selector_file_cached(
             .is_some_and(|dir| member_manifest_dirs.contains(&dir))
 }
 
+pub(crate) fn reject_non_member_rust_targets(
+    repo_root: &Path,
+    files: &[PathBuf],
+    direct: &BTreeSet<String>,
+) -> Result<(), String> {
+    let mut rust_paths = files.to_vec();
+    for selector in direct {
+        let (path_part, _) = kiss::split_selector(selector);
+        let candidate = PathBuf::from(path_part);
+        if candidate
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("rs"))
+        {
+            rust_paths.push(if candidate.is_absolute() {
+                candidate
+            } else {
+                repo_root.join(candidate)
+            });
+        }
+    }
+    rust_paths.sort();
+    rust_paths.dedup();
+    let roots = non_member_rust_crate_roots(repo_root, &rust_paths)?;
+    if roots.is_empty() {
+        return Ok(());
+    }
+    Err(format!(
+        "error: kiss test: nested Cargo crate(s) are not root workspace members, so nextest cannot run their tests: {}",
+        roots.join(", ")
+    ))
+}
+
 pub(crate) fn non_member_rust_crate_roots(
     repo_root: &Path,
     rust_paths: &[PathBuf],

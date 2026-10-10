@@ -10,6 +10,15 @@ pub enum TestLangFilter {
     Rust,
 }
 
+impl From<kiss::Language> for TestLangFilter {
+    fn from(language: kiss::Language) -> Self {
+        match language {
+            kiss::Language::Python => Self::Python,
+            kiss::Language::Rust => Self::Rust,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 pub enum TestChangeMode {
     Commit,
@@ -146,13 +155,8 @@ pub fn auto_detect_fork_commit(repo: &Path) -> Result<String, String> {
 pub fn changed_paths_commit(repo: &Path) -> Result<Vec<String>, String> {
     let mut names = BTreeSet::new();
     names.extend(changed_paths_from_diff(repo, &["diff"], Some("HEAD"))?);
-    let u = git_output(repo, &["ls-files", "--others", "--exclude-standard"])?;
-    names.extend(
-        u.lines()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(String::from),
-    );
+    let u = git_output(repo, &["ls-files", "-z", "--others", "--exclude-standard"])?;
+    names.extend(diff_paths::nul_paths(&u));
     Ok(names.into_iter().collect())
 }
 
@@ -168,54 +172,67 @@ fn changed_paths_from_diff(
     let mut names = BTreeSet::new();
     for filter in ["AM", "D"] {
         let mut args: Vec<&str> = diff_prefix.to_vec();
-        args.extend(["--name-only", "--diff-filter", filter]);
+        args.extend(["--no-renames", "-z", "--name-only", "--diff-filter", filter]);
         if let Some(rev) = rev {
             args.push(rev);
         }
         let out = git_output(repo, &args)?;
-        names.extend(
-            out.lines()
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(String::from),
-        );
+        names.extend(diff_paths::nul_paths(&out));
     }
     Ok(names.into_iter().collect())
 }
 
 pub fn changed_lines_commit(repo: &Path) -> Result<BTreeMap<String, BTreeSet<u32>>, String> {
-    changed_lines_for_diff(repo, &["diff", "--unified=0", "--diff-filter=AM", "HEAD"])
+    changed_lines_for_diff(repo, "HEAD")
 }
 
 pub fn changed_lines_since(
     repo: &Path,
     rev: &str,
 ) -> Result<BTreeMap<String, BTreeSet<u32>>, String> {
-    changed_lines_for_diff(repo, &["diff", "--unified=0", "--diff-filter=AM", rev])
+    changed_lines_for_diff(repo, rev)
 }
 
 fn changed_lines_for_diff(
     repo: &Path,
-    args: &[&str],
+    rev: &str,
 ) -> Result<BTreeMap<String, BTreeSet<u32>>, String> {
-    let diff = git_output(repo, args)?;
+    let diff = git_output(
+        repo,
+        &[
+            "diff",
+            "--no-color",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--src-prefix=a/",
+            "--dst-prefix=b/",
+            "--no-renames",
+            "--unified=0",
+            "--diff-filter=AM",
+            rev,
+        ],
+    )?;
     Ok(parse_changed_lines_from_unified_diff(&diff))
 }
 
 pub(crate) fn parse_changed_lines_from_unified_diff(diff: &str) -> BTreeMap<String, BTreeSet<u32>> {
     let mut out = BTreeMap::new();
     let mut current_file: Option<String> = None;
+    let mut accept_plus_header = true;
     for line in diff.lines() {
-        if let Some(path) = line.strip_prefix("+++ ") {
-            current_file = path
-                .strip_prefix("b/")
-                .filter(|path| *path != "/dev/null")
-                .map(str::to_string);
+        if line.starts_with("diff --git ") {
+            current_file = None;
+            accept_plus_header = true;
+            continue;
+        }
+        if accept_plus_header && let Some(path) = line.strip_prefix("+++ ") {
+            current_file = diff_paths::plus_line_path(path);
             continue;
         }
         if !line.starts_with("@@") {
             continue;
         }
+        accept_plus_header = false;
         let Some(file) = current_file.as_ref() else {
             continue;
         };
@@ -257,8 +274,25 @@ fn lang_ok(path: &Path, lang_filter: Option<TestLangFilter>) -> bool {
     }
 }
 
-fn is_rust_planning_path(path: &Path) -> bool {
-    kiss::Language::is_rust_path(path) || kiss::rust_llvm_cov_runner::is_rust_cov_cache_input(path)
+pub(crate) fn is_rust_planning_path(path: &Path) -> bool {
+    if kiss::Language::is_rust_path(path)
+        || path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("inc"))
+    {
+        return true;
+    }
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
+    let in_cargo_dir = path
+        .parent()
+        .and_then(|parent| parent.file_name())
+        .is_some_and(|dir| dir == ".cargo");
+    matches!(name, "Cargo.toml" | "Cargo.lock" | "config.toml")
+        || (in_cargo_dir && name == "config")
+        || name.starts_with("rust-toolchain")
 }
 
 pub fn resolve_changed_source_paths(
@@ -294,31 +328,6 @@ pub fn resolve_changed_source_paths(
     out
 }
 
-pub fn resolve_changed_line_paths(
-    repo_root: &Path,
-    rel_lines: &BTreeMap<String, BTreeSet<u32>>,
-    ignore: &[String],
-    lang_filter: Option<TestLangFilter>,
-) -> BTreeMap<PathBuf, BTreeSet<u32>> {
-    let mut out = BTreeMap::new();
-    for (rel, lines) in rel_lines {
-        if lines.is_empty() || rel_path_ignored(rel, ignore) {
-            continue;
-        }
-        let abs = repo_root.join(rel);
-        let Ok(meta) = abs.metadata() else {
-            continue;
-        };
-        if !meta.is_file() || !lang_ok(&abs, lang_filter) {
-            continue;
-        }
-        if let Ok(c) = abs.canonicalize() {
-            out.insert(c, lines.clone());
-        }
-    }
-    out
-}
-
 pub fn resolve_diff_target(
     repo: &Path,
     mode: TestChangeMode,
@@ -339,6 +348,8 @@ pub fn resolve_diff_target(
     }
 }
 
+mod diff_paths;
+
 #[cfg(test)]
 #[path = "test_git/git_changes_test.rs"]
 mod git_changes_test;
@@ -346,3 +357,7 @@ mod git_changes_test;
 #[cfg(test)]
 #[path = "test_git/git_changes_b_test.rs"]
 mod git_changes_b_test;
+
+#[cfg(test)]
+#[path = "test_git/git_changes_c_test.rs"]
+mod git_changes_c_test;
