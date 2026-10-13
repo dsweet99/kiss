@@ -27,6 +27,7 @@ pub(crate) struct FinalizeAnalysisIn<'a> {
     pub focus: &'a FocusFilter,
     pub products: AnalysisProducts,
     pub timings: (Instant, Instant, Instant),
+    pub had_parse_errors: bool,
 }
 
 pub(crate) struct HeaderPhase<'a> {
@@ -70,6 +71,7 @@ pub(crate) struct StorePrintPhase<'a> {
     pub py_dups: &'a [kiss::DuplicateCluster],
     pub rs_dups: &'a [kiss::DuplicateCluster],
     pub t_phase2: Instant,
+    pub had_parse_errors: bool,
 }
 
 #[cfg(test)]

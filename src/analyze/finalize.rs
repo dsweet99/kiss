@@ -81,21 +81,24 @@ fn finalize_store_and_print(phase: StorePrintPhase<'_>) -> bool {
         py_dups,
         rs_dups,
         t_phase2,
+        had_parse_errors,
     } = phase;
-    maybe_store_full_cache(FullCacheStoreInput {
-        opts,
-        py_files,
-        rs_files,
-        focus,
-        result,
-        graph_viols_all,
-        py_graph,
-        rs_graph,
-        py_dups_all,
-        rs_dups_all,
-        py_stats,
-        rs_stats,
-    });
+    if !had_parse_errors {
+        maybe_store_full_cache(FullCacheStoreInput {
+            opts,
+            py_files,
+            rs_files,
+            focus,
+            result,
+            graph_viols_all,
+            py_graph,
+            rs_graph,
+            py_dups_all,
+            rs_dups_all,
+            py_stats,
+            rs_stats,
+        });
+    }
     print_all_results_with_dups(
         viols,
         py_dups,
@@ -104,8 +107,9 @@ fn finalize_store_and_print(phase: StorePrintPhase<'_>) -> bool {
             show_timing: opts.show_timing,
             t_phase2: Some(t_phase2),
             suppress_final_status: opts.suppress_final_status,
+            had_parse_errors,
         },
-    )
+    ) && !had_parse_errors
 }
 
 pub(crate) fn finalize_analysis(in_: FinalizeAnalysisIn<'_>) -> AnalyzeResult {
@@ -158,6 +162,7 @@ pub(crate) fn finalize_analysis(in_: FinalizeAnalysisIn<'_>) -> AnalyzeResult {
         py_dups: &outcome.py_dups,
         rs_dups: &outcome.rs_dups,
         t_phase2: outcome.t_phase2,
+        had_parse_errors: in_.had_parse_errors,
     });
     let t_teardown = Instant::now();
     let leftover = (

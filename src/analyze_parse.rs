@@ -124,35 +124,46 @@ fn parse_py_and_rs(
 }
 
 pub(crate) fn parse_py_files(files: &[PathBuf]) -> Result<Vec<ParsedFile>, RoleBuildError> {
+    let (parsed, errors) = parse_py_files_partial(files)?;
+    if let Some(err) = errors.into_iter().next() {
+        return Err(err);
+    }
+    Ok(parsed)
+}
+
+pub(crate) fn parse_py_files_partial(
+    files: &[PathBuf],
+) -> Result<(Vec<ParsedFile>, Vec<RoleBuildError>), RoleBuildError> {
     if files.is_empty() {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), Vec::new()));
     }
     let results = parse_files(files).map_err(|err| RoleBuildError::PythonParse {
         path: files[0].clone(),
         message: err.to_string(),
     })?;
     let mut parsed = Vec::new();
+    let mut errors = Vec::new();
     for (path, result) in files.iter().zip(results) {
         match result {
             Ok(file) => parsed.push(file),
-            Err(err) => {
-                return Err(RoleBuildError::PythonParse {
-                    path: path.clone(),
-                    message: err.to_string(),
-                });
-            }
+            Err(err) => errors.push(RoleBuildError::PythonParse {
+                path: path.clone(),
+                message: err.to_string(),
+            }),
         }
     }
-    Ok(parsed)
+    Ok((parsed, errors))
 }
 
-pub(crate) fn parse_py_files_pooled(files: &[PathBuf]) -> Result<Vec<ParsedFile>, RoleBuildError> {
+pub(crate) fn parse_py_files_partial_pooled(
+    files: &[PathBuf],
+) -> Result<(Vec<ParsedFile>, Vec<RoleBuildError>), RoleBuildError> {
     python_parse_pool()
         .ok_or_else(|| RoleBuildError::PythonParse {
             path: files.first().cloned().unwrap_or_default(),
             message: "failed to build the Python parse pool".to_string(),
         })?
-        .install(|| parse_py_files(files))
+        .install(|| parse_py_files_partial(files))
 }
 
 fn python_parse_pool() -> Option<&'static rayon::ThreadPool> {

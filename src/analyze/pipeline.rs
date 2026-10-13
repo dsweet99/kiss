@@ -198,13 +198,17 @@ pub(crate) fn run_analyze_uncached(in_: RunAnalyzeUncached<'_>) -> AnalyzeResult
         t1,
     } = in_;
     let t_split = Instant::now();
-    let (py_parsed, py_side, rs_side) = match parse_and_split_sides(py_files, rs_files, opts) {
-        Ok(sides) => sides,
-        Err(err) => {
-            eprintln!("{err}");
-            return AnalyzeResult { success: false };
-        }
-    };
+    let (py_parsed, py_side, rs_side, parse_errors) =
+        match parse_and_split_sides(py_files, rs_files, opts) {
+            Ok(sides) => sides,
+            Err(err) => {
+                eprintln!("{err}");
+                return AnalyzeResult { success: false };
+            }
+        };
+    for err in &parse_errors {
+        eprintln!("{err}");
+    }
     if opts.show_timing {
         eprintln!(
             "[TIMING] parse_and_split={:.2}s",
@@ -237,6 +241,7 @@ pub(crate) fn run_analyze_uncached(in_: RunAnalyzeUncached<'_>) -> AnalyzeResult
             py_dups_all: pipeline.py_dups_all,
         },
         timings: pipeline.timings,
+        had_parse_errors: !parse_errors.is_empty(),
     })
 }
 

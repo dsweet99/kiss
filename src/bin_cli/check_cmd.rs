@@ -154,10 +154,19 @@ fn spawn_lang_check(
 fn publish_worker_outputs(python: &Output, rust: &Output) -> i32 {
     forward_worker_stderr(&python.stderr);
     forward_worker_stderr(&rust.stderr);
+    let (lines, code) = merged_worker_stdout(python, rust);
+    for line in lines {
+        println!("{line}");
+    }
+    code
+}
+
+fn merged_worker_stdout(python: &Output, rust: &Output) -> (Vec<String>, i32) {
     let mut totals = [0_usize; 5];
     let mut saw_body = false;
     let mut saw_hint = false;
     let mut empty_root: Option<String> = None;
+    let mut lines = Vec::new();
     for out in [&python.stdout, &rust.stdout] {
         for line in String::from_utf8_lossy(out).lines() {
             absorb_worker_line(
@@ -166,25 +175,29 @@ fn publish_worker_outputs(python: &Output, rust: &Output) -> i32 {
                 &mut saw_body,
                 &mut saw_hint,
                 &mut empty_root,
+                &mut lines,
             );
         }
     }
+    let both_ok = python.status.success() && rust.status.success();
     if let Some(root) = empty_root.filter(|_| !saw_body && totals == [0; 5]) {
-        println!("No files in {root}");
-        return i32::from(!(python.status.success() && rust.status.success()));
+        if both_ok {
+            lines.push(format!("No files in {root}"));
+        }
+        return (lines, i32::from(!both_ok));
     }
-    println!(
+    lines.push(format!(
         "Analyzed: {} files, {} code_units, {} statements, {} graph_nodes, {} graph_edges",
         totals[0], totals[1], totals[2], totals[3], totals[4]
-    );
-    if python.status.success() && rust.status.success() {
-        println!("NO VIOLATIONS");
-        return 0;
+    ));
+    if both_ok {
+        lines.push("NO VIOLATIONS".to_string());
+        return (lines, 0);
     }
     if saw_hint {
-        println!("{}", kiss::cli_output::VIOLATIONS_FIX_HINT);
+        lines.push(kiss::cli_output::VIOLATIONS_FIX_HINT.to_string());
     }
-    1
+    (lines, 1)
 }
 
 fn absorb_worker_line(
@@ -193,6 +206,7 @@ fn absorb_worker_line(
     saw_body: &mut bool,
     saw_hint: &mut bool,
     empty_root: &mut Option<String>,
+    lines: &mut Vec<String>,
 ) {
     if let Some(next) = analyzed_add(*totals, line) {
         *totals = next;
@@ -207,7 +221,7 @@ fn absorb_worker_line(
         return;
     }
     if line != "NO VIOLATIONS" && !crate::is_cli_wall_timing_line(line) {
-        println!("{line}");
+        lines.push(line.to_string());
         *saw_body = true;
     }
 }
@@ -349,6 +363,49 @@ mod touch_witness {
         let python = output(false, "bad.py: boom\n", "");
         let rust = output(true, "NO VIOLATIONS\n", "");
         assert_eq!(publish_worker_outputs(&python, &rust), 1);
+    }
+
+    #[test]
+    fn publish_collapses_two_empty_languages() {
+        let python = output(true, "No Python files in /tmp/proj\n", "");
+        let rust = output(true, "No Rust files in /tmp/proj\n", "");
+        let (lines, code) = merged_worker_stdout(&python, &rust);
+        assert_eq!(code, 0);
+        assert_eq!(lines, vec!["No files in /tmp/proj".to_string()]);
+    }
+
+    #[test]
+    fn publish_does_not_report_no_files_when_a_worker_failed() {
+        let python = output(
+            false,
+            "",
+            "Python parse failed for /tmp/proj/bad.py: Failed to parse Python code\n",
+        );
+        let rust = output(true, "No Rust files in /tmp/proj\n", "");
+        let (lines, code) = merged_worker_stdout(&python, &rust);
+        assert_eq!(code, 1);
+        assert!(
+            lines.iter().all(|line| !line.starts_with("No files in")),
+            "{lines:?}"
+        );
+    }
+
+    #[test]
+    fn publish_keeps_findings_beside_an_empty_language() {
+        let python = output(
+            false,
+            "VIOLATION:duplication:good.py:1:alpha: 100% similar\nAnalyzed: 1 files, 2 code_units, 6 statements, 0 graph_nodes, 0 graph_edges\n",
+            "Python parse failed for /tmp/proj/bad.py: Failed to parse Python code\n",
+        );
+        let rust = output(true, "No Rust files in /tmp/proj\n", "");
+        let (lines, code) = merged_worker_stdout(&python, &rust);
+        assert_eq!(code, 1);
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.contains("VIOLATION:duplication"))
+        );
+        assert!(lines.iter().all(|line| !line.starts_with("No files in")));
     }
 
     #[test]
