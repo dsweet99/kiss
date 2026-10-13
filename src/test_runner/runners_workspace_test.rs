@@ -20,9 +20,10 @@ fn write_demo_crate_at(root: &std::path::Path, lib_rs: &str) {
     .unwrap();
     fs::create_dir_all(root.join("src")).unwrap();
     fs::write(root.join("src").join("lib.rs"), lib_rs).unwrap();
-    let target_dir = std::env::temp_dir()
-        .join("kiss-test-targets")
-        .join("workspace-enumerate-demo");
+    let target_dir = std::env::temp_dir().join("kiss-test-targets").join(
+        root.file_name()
+            .unwrap_or(std::ffi::OsStr::new("workspace-enumerate-demo")),
+    );
     fs::create_dir_all(&target_dir).unwrap();
     let config_dir = root.join(".cargo");
     fs::create_dir_all(&config_dir).unwrap();
@@ -115,7 +116,7 @@ fn persistent_macro_generated_repo() -> std::path::PathBuf {
     static REPO: OnceLock<std::path::PathBuf> = OnceLock::new();
     REPO.get_or_init(|| {
         let root = std::env::temp_dir().join("kiss-macro-generated-fixture");
-        let stamp = root.join(".kiss").join("fixture_inplace_ok");
+        let stamp = root.join(".kiss").join("fixture_inplace_ok_v2");
         if root.join("Cargo.toml").is_file()
             && stamp.is_file()
             && fixture_enum_cache_path(&root).is_file()
@@ -247,7 +248,7 @@ fn persistent_ignored_static_listing_repo() -> std::path::PathBuf {
     static REPO: OnceLock<std::path::PathBuf> = OnceLock::new();
     REPO.get_or_init(|| {
         let root = std::env::temp_dir().join("kiss-ignored-static-listing-fixture");
-        let stamp = root.join(".kiss").join("fixture_inplace_ok");
+        let stamp = root.join(".kiss").join("fixture_inplace_ok_v2");
         let usable = root.join("Cargo.toml").is_file()
             && stamp.is_file()
             && fixture_enum_cache_path(&root).is_file()
@@ -288,7 +289,7 @@ fn persistent_ignored_macro_listing_repo() -> std::path::PathBuf {
     static REPO: OnceLock<std::path::PathBuf> = OnceLock::new();
     REPO.get_or_init(|| {
         let root = std::env::temp_dir().join("kiss-ignored-macro-listing-fixture");
-        let stamp = root.join(".kiss").join("fixture_inplace_ok");
+        let stamp = root.join(".kiss").join("fixture_inplace_ok_v2");
         let usable = root.join("Cargo.toml").is_file()
             && stamp.is_file()
             && fixture_enum_cache_path(&root).is_file()
@@ -329,7 +330,7 @@ fn persistent_report_id_submodule_repo() -> std::path::PathBuf {
     static REPO: OnceLock<std::path::PathBuf> = OnceLock::new();
     REPO.get_or_init(|| {
         let root = std::env::temp_dir().join("kiss-report-id-submodule-fixture");
-        let stamp = root.join(".kiss").join("fixture_inplace_ok");
+        let stamp = root.join(".kiss").join("fixture_inplace_ok_v2");
         let usable = root.join("Cargo.toml").is_file()
             && stamp.is_file()
             && root.join(".kiss").join("fixture_report_ids.json").is_file()
@@ -362,7 +363,7 @@ fn persistent_dynamic_listing_failure_repo() -> std::path::PathBuf {
     static REPO: OnceLock<std::path::PathBuf> = OnceLock::new();
     REPO.get_or_init(|| {
         let root = std::env::temp_dir().join("kiss-dynamic-listing-failure-fixture-v2");
-        let stamp = root.join(".kiss").join("fixture_inplace_ok");
+        let stamp = root.join(".kiss").join("fixture_inplace_ok_v2");
         let usable = root.join("Cargo.toml").is_file()
             && stamp.is_file()
             && fs::read_to_string(&stamp).ok().as_deref() == Some(root.to_string_lossy().as_ref());

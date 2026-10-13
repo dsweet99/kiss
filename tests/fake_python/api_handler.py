@@ -1,3 +1,4 @@
+# ruff: noqa
 
 import base64
 import logging

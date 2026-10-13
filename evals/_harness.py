@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Long-running integration QA commands for the local development `kiss`."""
 
 from __future__ import annotations
@@ -9,10 +8,10 @@ import signal
 import subprocess
 import tempfile
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterator
 
 ROOT = Path(__file__).resolve().parents[1]
 KISS = ROOT / "target" / "debug" / "kiss"
@@ -28,7 +27,7 @@ class Outcome:
     stdout: str
     stderr: str
     elapsed: float
-    observation: "ProcessObservation | None" = None
+    observation: ProcessObservation | None = None
 
     @property
     def combined(self) -> str:

@@ -135,6 +135,27 @@ fn test_generate_shingles_zero_size_returns_empty() {
 }
 
 #[test]
+fn zero_shingle_or_minhash_size_does_not_mark_distinct_text_identical() {
+    let left = signature_from_text("process order total quantity", 0, 100);
+    let right = signature_from_text("render report header footer", 0, 100);
+    assert_eq!(estimate_similarity(&left, &right), 0.0);
+
+    let identical = "alpha beta gamma delta epsilon zeta";
+    let sized = signature_from_text(identical, 2, 0);
+    assert!(sized.hashes.is_empty());
+    assert_eq!(
+        estimate_similarity(&sized, &signature_from_text(identical, 2, 8)),
+        0.0
+    );
+}
+
+#[test]
+fn zero_lsh_bands_returns_no_candidates() {
+    let sig = signature_from_text("one two three four five six", 2, 8);
+    assert!(find_lsh_candidates(&[sig.clone(), sig], 0).is_empty());
+}
+
+#[test]
 fn test_estimate_similarity_is_symmetric() {
     let sig1 = MinHashSignature {
         hashes: vec![1, 2, 3, 4, 5],

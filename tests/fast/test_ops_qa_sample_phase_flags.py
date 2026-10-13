@@ -15,8 +15,10 @@ def test_sample_phase_flags_nextest_parent_is_not_test_execution() -> None:
 def test_sample_phase_flags_cold_compile_with_nextest_parent() -> None:
     commands = [
         NEXTEST_PARENT,
-        "/home/user/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo "
-        "test --no-run --message-format json-render-diagnostics",
+        (
+            "/home/user/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo "
+            "test --no-run --message-format json-render-diagnostics"
+        ),
         "/tmp/kiss-qa/target/debug/build/foo-abc/build-script-build",
     ]
     build_active, test_active = sample_phase_flags(commands)
@@ -45,9 +47,11 @@ def test_sample_phase_flags_ignores_nested_tempfile_cargo_during_tests() -> None
     commands = [
         NEXTEST_PARENT,
         "/repo/target/debug/deps/kiss-0123abcd --exact tests::alpha --nocapture",
-        "/home/user/.cargo/bin/cargo test --manifest-path /tmp/.tmpAbC123/Cargo.toml "
-        "--no-run --message-format json --workspace "
-        "--target-dir /tmp/.tmpAbC123/target",
+        (
+            "/home/user/.cargo/bin/cargo test --manifest-path /tmp/.tmpAbC123/Cargo.toml "
+            "--no-run --message-format json --workspace "
+            "--target-dir /tmp/.tmpAbC123/target"
+        ),
     ]
     build_active, test_active = sample_phase_flags(commands)
     assert not build_active
@@ -57,9 +61,11 @@ def test_sample_phase_flags_ignores_nested_tempfile_cargo_during_tests() -> None
 def test_sample_phase_flags_still_counts_kiss_qa_fixture_compile() -> None:
     commands = [
         NEXTEST_PARENT,
-        "/home/user/.cargo/bin/cargo test --manifest-path "
-        "/tmp/kiss-qa-phase-abc/repo/Cargo.toml --no-run "
-        "--target-dir /tmp/kiss-qa-phase-abc/repo/target",
+        (
+            "/home/user/.cargo/bin/cargo test --manifest-path "
+            "/tmp/kiss-qa-phase-abc/repo/Cargo.toml --no-run "
+            "--target-dir /tmp/kiss-qa-phase-abc/repo/target"
+        ),
     ]
     build_active, test_active = sample_phase_flags(commands)
     assert build_active
