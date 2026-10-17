@@ -81,6 +81,46 @@ fn forkserver_timeout_metamorphic_vs_untimed_sleep() {
 }
 
 #[test]
+fn skipped_test_duration_is_not_the_module_batch_clock() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::write(
+        tmp.path().join("test_sample.py"),
+        "import time\nimport pytest\n\n\
+def test_slow():\n    time.sleep(0.3)\n\n\
+@pytest.mark.skip\ndef test_skipped():\n    time.sleep(5)\n",
+    )
+    .unwrap();
+    let req = |nodeid: &str| {
+        PytestRunRequest::from_parts(
+            nodeid.to_string(),
+            tmp.path().to_path_buf(),
+            python!(),
+            vec!["-q".to_string()],
+            BTreeMap::new(),
+            Vec::new(),
+            Vec::new(),
+            None,
+        )
+    };
+    let outcomes = ForkserverPytestRunner::new().run_many_bounded(
+        vec![
+            req("test_sample.py::test_slow"),
+            req("test_sample.py::test_skipped"),
+        ],
+        1,
+    );
+    let slow = outcomes[0].as_ref().unwrap();
+    let skipped = outcomes[1].as_ref().unwrap();
+    assert_eq!(slow.status, TestStatus::Passed);
+    assert!(slow.duration >= Duration::from_millis(200), "{slow:?}");
+    assert_eq!(skipped.status, TestStatus::Passed);
+    assert!(
+        skipped.duration < Duration::from_millis(100),
+        "skip duration must not include the earlier test: {skipped:?}"
+    );
+}
+
+#[test]
 fn forkserver_same_module_timeout_does_not_contaminate_later_tests() {
     let tmp = tempfile::tempdir().unwrap();
     fs::write(

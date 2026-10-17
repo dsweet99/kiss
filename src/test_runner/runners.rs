@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -207,7 +208,9 @@ pub fn enumerate_workspace_python_selectors(
         let paths = crate::test_runner::lang_python::collect_paths::workspace_python_collect_paths(
             repo_root, ignore,
         );
-        let collected = collect_from_workspace_paths(repo_root, &paths, pytest_args)?;
+        let mut args = pytest_collect_ignore_args(repo_root, &paths, ignore);
+        args.extend(pytest_args.iter().cloned());
+        let collected = collect_from_workspace_paths(repo_root, &paths, &args)?;
         return filter_ignored_python_selectors(collected, ignore);
     }
 
@@ -239,6 +242,51 @@ fn filter_ignored_python_selectors(
         .into_iter()
         .filter(|selector| !kiss::selector_ignored_by_prefixes(selector, ignore))
         .collect())
+}
+
+fn pytest_collect_ignore_args(
+    repo_root: &Path,
+    paths: &[PathBuf],
+    ignore: &[String],
+) -> Vec<String> {
+    let mut ignored = Vec::new();
+    for path in paths {
+        if path.is_dir() {
+            push_pytest_ignores(repo_root, path, ignore, &mut ignored);
+        }
+    }
+    ignored.sort();
+    ignored.dedup();
+    let mut args = Vec::with_capacity(ignored.len() * 2);
+    for path in ignored {
+        args.push("--ignore".to_string());
+        args.push(path);
+    }
+    args
+}
+
+fn push_pytest_ignores(repo_root: &Path, dir: &Path, ignore: &[String], ignored: &mut Vec<String>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let child = entry.path();
+        let rel = repo_relative(repo_root, &child);
+        if kiss::path_ignored_by_prefixes(&rel, ignore) {
+            ignored.push(rel);
+            continue;
+        }
+        if child.is_dir() {
+            push_pytest_ignores(repo_root, &child, ignore, ignored);
+        }
+    }
+}
+
+fn repo_relative(repo_root: &Path, path: &Path) -> String {
+    path.strip_prefix(repo_root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
 }
 
 pub fn shell_quote_line(argv: &[String]) -> String {
