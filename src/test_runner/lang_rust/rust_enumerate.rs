@@ -152,12 +152,13 @@ fn dynamic_rust_selectors(
         .into_iter()
         .map(|binary| (binary.binary_id, binary.src_path))
         .collect();
+    let attribution = attribution_sources(repo_root, ignore, candidate_sources);
     let mut selectors = BTreeSet::new();
     for listed in super::nextest::list_tests(repo_root)? {
         let Some(target_source) = sources.get(&listed.binary_id) else {
             continue;
         };
-        let source = defining_source_for_selector(target_source, &listed.name, candidate_sources);
+        let source = defining_source_for_selector(target_source, &listed.name, &attribution);
         let rel = source
             .strip_prefix(repo_root)
             .map(|path| path.to_string_lossy().replace('\\', "/"))
@@ -167,6 +168,17 @@ fn dynamic_rust_selectors(
         }
     }
     Ok(selectors.into_iter().collect())
+}
+
+fn attribution_sources(
+    repo_root: &Path,
+    ignore: &[String],
+    filtered: &[PathBuf],
+) -> Vec<PathBuf> {
+    if ignore.is_empty() {
+        return filtered.to_vec();
+    }
+    gather_member_rust_files(repo_root, &[])
 }
 
 fn defining_source_for_selector(

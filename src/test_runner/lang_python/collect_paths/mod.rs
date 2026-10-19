@@ -34,27 +34,32 @@ fn tests_root_collect_paths(
     ignore: &[String],
     tests_root: PathBuf,
 ) -> Vec<PathBuf> {
-    let mut paths = vec![tests_root.clone()];
-    paths.extend(collect_candidates_outside_tests(
-        repo_root,
-        ignore,
-        &tests_root,
-    ));
+    let tests_canon = tests_root
+        .canonicalize()
+        .unwrap_or_else(|_| tests_root.clone());
+    let mut under_tests = Vec::new();
+    let mut outside = Vec::new();
+    for path in python_collect_candidates(repo_root, &[]) {
+        if path_is_under_tests(&path, &tests_root, &tests_canon) {
+            under_tests.push(path);
+        } else if !prefix_ignored(&path, ignore) {
+            outside.push(path);
+        }
+    }
+    let mut paths = if under_tests.iter().any(|path| prefix_ignored(path, ignore)) {
+        under_tests
+            .into_iter()
+            .filter(|path| !prefix_ignored(path, ignore))
+            .collect()
+    } else {
+        vec![tests_root]
+    };
+    paths.extend(outside);
     paths
 }
 
-fn collect_candidates_outside_tests(
-    repo_root: &Path,
-    ignore: &[String],
-    tests_root: &Path,
-) -> Vec<PathBuf> {
-    let tests_canon = tests_root
-        .canonicalize()
-        .unwrap_or_else(|_| tests_root.to_path_buf());
-    python_collect_candidates(repo_root, ignore)
-        .into_iter()
-        .filter(|path| !path_is_under_tests(path, tests_root, &tests_canon))
-        .collect()
+fn prefix_ignored(path: &Path, ignore: &[String]) -> bool {
+    kiss::path_ignored_by_prefixes(&path.to_string_lossy(), ignore)
 }
 
 fn path_is_under_tests(path: &Path, tests_root: &Path, tests_canon: &Path) -> bool {

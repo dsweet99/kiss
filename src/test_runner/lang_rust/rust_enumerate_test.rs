@@ -1,4 +1,4 @@
-use super::rust_file_needs_dynamic_listing;
+use super::{defining_source_for_selector, rust_file_needs_dynamic_listing};
 
 #[test]
 fn tokio_test_does_not_need_dynamic_listing() {
@@ -77,4 +77,35 @@ fn flatten_parsed_entries_skips_errors_when_policy_skip() {
     let hard =
         super::flatten_parsed_entries(vec![Err("boom".into())], super::ParseErrorPolicy::Fail);
     assert!(hard.is_err());
+}
+
+#[test]
+fn defining_source_attributes_an_ignored_module_instead_of_lib_rs() {
+    let tmp = tempfile::tempdir().unwrap();
+    let src = tmp.path().join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    let lib = src.join("lib.rs");
+    let secret = src.join("secret.rs");
+    std::fs::write(&lib, "mod secret;\n").unwrap();
+    std::fs::write(&secret, "#[test]\nfn hidden() {}\n").unwrap();
+    let filtered = [lib.clone()];
+    let with_ignored = [lib.clone(), secret.clone()];
+    assert_eq!(
+        defining_source_for_selector(&lib, "secret::hidden", &filtered),
+        lib,
+        "without the ignored file, the name is blamed on lib.rs"
+    );
+    assert_eq!(
+        defining_source_for_selector(&lib, "secret::hidden", &with_ignored),
+        secret
+    );
+    let rel = secret
+        .strip_prefix(tmp.path())
+        .unwrap()
+        .to_string_lossy()
+        .replace('\\', "/");
+    assert!(kiss::path_ignored_by_prefixes(
+        &rel,
+        &[String::from("src/secret.rs")]
+    ));
 }
