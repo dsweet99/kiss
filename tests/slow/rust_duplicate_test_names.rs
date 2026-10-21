@@ -73,9 +73,9 @@ fn same_named_integration_tests_in_two_files_are_two_tests() {
     assert_eq!(
         status_lines(&first),
         [
+            "FAIL tests/a.rs::t_same",
+            "FAIL tests/b.rs::t_same",
             "FAIL: tests/a.rs::t_same",
-            "FAIL: tests/a.rs::t_same",
-            "FAIL: tests/b.rs::t_same",
             "FAIL: tests/b.rs::t_same",
             "PASS: tests/a.rs::t_ok_a",
             "PASS: tests/b.rs::t_ok_b",
@@ -122,7 +122,8 @@ fn same_named_integration_tests_in_two_files_are_two_tests() {
     );
     assert!(
         fixed_a.stdout.contains("tests/b.rs::t_same")
-            && !fixed_a.stdout.contains("FAIL: tests/a.rs"),
+            && !fixed_a.stdout.contains("FAIL: tests/a.rs")
+            && !fixed_a.stdout.contains("FAIL tests/a.rs"),
         "only b.rs's t_same still fails: {fixed_a:?}"
     );
     assert!(
@@ -158,7 +159,7 @@ fn assert_two_unit_tests(s: &Scenario, runs: &[&str]) {
     assert_eq!(
         status_lines(&first),
         [
-            "FAIL: src/a.rs::same",
+            "FAIL src/a.rs::same",
             "FAIL: src/a.rs::same",
             "PASS: src/b.rs::same",
         ],

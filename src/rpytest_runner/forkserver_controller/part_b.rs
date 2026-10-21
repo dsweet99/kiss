@@ -6,8 +6,13 @@ class _TestDurationPlugin(object):
 
     def pytest_runtest_logreport(self, report):
         # Call phase only: setup must not dominate max_unit_test_seconds / PASS timing.
+        # A skip has no call phase. Record 0 so the module-batch clock is not
+        # used as this test's duration.
         if report.when == "call":
             self.seconds = float(report.duration)
+            self.seen = True
+        elif getattr(report, "skipped", False) and not self.seen:
+            self.seconds = 0.0
             self.seen = True
 
 def _write_duration(path, plugin):

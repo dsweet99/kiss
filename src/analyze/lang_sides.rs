@@ -32,18 +32,22 @@ pub(crate) fn parse_and_split_sides(
     py_files: &[PathBuf],
     rs_files: &[PathBuf],
     opts: &AnalyzeOptions<'_>,
-) -> Result<(Vec<ParsedFile>, PySide, RsSide), kiss::RoleBuildError> {
-    let (py_parsed, py_side, rs_side) = std::thread::scope(|scope| {
+) -> Result<(Vec<ParsedFile>, PySide, RsSide, Vec<kiss::RoleBuildError>), kiss::RoleBuildError> {
+    let (py_parsed, py_side, rs_side, parse_errors) = std::thread::scope(|scope| {
         let rs_handle = scope.spawn(|| run_rust_after_parse(rs_files, opts));
-        let py_parsed = crate::analyze_parse::parse_py_files_pooled(py_files)?;
+        let (py_parsed, py_errors) = crate::analyze_parse::parse_py_files_partial_pooled(py_files)?;
         let py_side = run_python_side(&py_parsed, py_files, opts);
         let rs_out = rs_handle.join().expect("rust analysis thread");
         match (py_side, rs_out) {
-            (Ok(py_side), Ok(rs_out)) => Ok((py_parsed, py_side, rs_side_from(rs_out))),
+            (Ok(py_side), Ok((rs_out, rs_errors))) => {
+                let mut parse_errors = py_errors;
+                parse_errors.extend(rs_errors);
+                Ok((py_parsed, py_side, rs_side_from(rs_out), parse_errors))
+            }
             (_, Err(err)) | (Err(err), _) => Err(err),
         }
     })?;
-    Ok((py_parsed, py_side, rs_side))
+    Ok((py_parsed, py_side, rs_side, parse_errors))
 }
 
 fn rs_side_from(out: kiss::ParallelRustOutput) -> RsSide {
@@ -107,7 +111,7 @@ pub(crate) fn run_python_side(
 pub(crate) fn run_rust_after_parse(
     rs_files: &[PathBuf],
     opts: &AnalyzeOptions<'_>,
-) -> Result<kiss::ParallelRustOutput, kiss::RoleBuildError> {
+) -> Result<(kiss::ParallelRustOutput, Vec<kiss::RoleBuildError>), kiss::RoleBuildError> {
     kiss::parallel_rust_analysis(kiss::ParallelRustRequest {
         files: rs_files,
         config: opts.rs_config,

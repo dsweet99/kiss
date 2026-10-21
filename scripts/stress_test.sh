@@ -111,21 +111,21 @@ echo "  Total:  $((NUM_FILES + NUM_FILES / 2)) files"
 echo ""
 
 # Build release binary if needed
-if [ ! -f ./target/release/kiss ]; then
+if [ ! -f ./target/release-local/kiss ]; then
     echo "Building release binary..."
     cargo build --release 2>/dev/null
 fi
 
 # Warm-up run
 echo "Warm-up run..."
-./target/release/kiss "$TEMP_DIR" --all > /dev/null 2>&1 || true
+./target/release-local/kiss "$TEMP_DIR" --all > /dev/null 2>&1 || true
 
 # Timed runs
 echo ""
 echo "=== Benchmark (3 runs) ==="
 for run in 1 2 3; do
     start=$(python3 -c 'import time; print(time.time())')
-    ./target/release/kiss "$TEMP_DIR" --all > /dev/null 2>&1 || true
+    ./target/release-local/kiss "$TEMP_DIR" --all > /dev/null 2>&1 || true
     end=$(python3 -c 'import time; print(time.time())')
     duration=$(python3 -c "print(f'{($end - $start):.3f}')")
     echo "Run $run: ${duration}s"
@@ -133,7 +133,7 @@ done
 
 echo ""
 echo "=== Profile with 'time' ==="
-time ./target/release/kiss "$TEMP_DIR" --all > /dev/null 2>&1 || true
+time ./target/release-local/kiss "$TEMP_DIR" --all > /dev/null 2>&1 || true
 
 echo ""
 echo "To test with more files: $0 500"

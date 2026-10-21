@@ -1,3 +1,4 @@
+# ruff: noqa
 
 import pkg2.submod
 

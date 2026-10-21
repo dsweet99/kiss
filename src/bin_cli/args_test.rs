@@ -106,6 +106,20 @@ fn test_rejects_zero_jobs_override() {
 }
 
 #[test]
+fn dry_hash_parameters_reject_zero_and_accept_one() {
+    for flag in ["--shingle-size", "--minhash-size", "--lsh-bands"] {
+        assert!(
+            Cli::try_parse_from(["kiss", "dry", ".", flag, "0"]).is_err(),
+            "{flag} must reject 0"
+        );
+        assert!(
+            Cli::try_parse_from(["kiss", "dry", ".", flag, "1"]).is_ok(),
+            "{flag} must accept 1"
+        );
+    }
+}
+
+#[test]
 fn check_rejects_removed_all_and_jobs_flags() {
     assert!(Cli::try_parse_from(["kiss", "check", "--all"]).is_err());
     assert!(Cli::try_parse_from(["kiss", "check", "-j", "2"]).is_err());

@@ -36,13 +36,30 @@ pub struct ParallelRustOutput {
 
 pub fn parallel_rust_analysis(
     req: ParallelRustRequest<'_>,
-) -> Result<ParallelRustOutput, RoleBuildError> {
+) -> Result<(ParallelRustOutput, Vec<RoleBuildError>), RoleBuildError> {
     if req.files.is_empty() {
-        return Ok(empty_output());
+        return Ok((empty_output(), Vec::new()));
     }
-    let pool = Pool::open(req.files)?;
+    let (pool, errors) = Pool::open(req.files)?;
+    let good: Vec<PathBuf> = req
+        .files
+        .iter()
+        .filter(|path| pool.contains(path))
+        .cloned()
+        .collect();
+    if good.is_empty() {
+        return Ok((empty_output(), errors));
+    }
     let t_roles = Instant::now();
-    let roles = classify_on_pool(&pool, req.files)?;
+    let roles = match classify_on_pool(&pool, &good) {
+        Ok(roles) => roles,
+        Err(err) => {
+            for error in &errors {
+                eprintln!("{error}");
+            }
+            return Err(err);
+        }
+    };
     let roles_s = t_roles.elapsed().as_secs_f64();
     let t_analyze = Instant::now();
     let facts = facts::map_facts(&pool, &roles, req.config, req.gate, req.repo_root)?;
@@ -50,7 +67,7 @@ pub fn parallel_rust_analysis(
     let sources = pool.map(|parsed| parsed.source.clone())?;
     let t_rest = Instant::now();
     let output = assemble_output(
-        req.files,
+        &good,
         roles,
         facts,
         sources,
@@ -63,7 +80,7 @@ pub fn parallel_rust_analysis(
             t_rest.elapsed().as_secs_f64()
         );
     }
-    Ok(output)
+    Ok((output, errors))
 }
 
 fn empty_output() -> ParallelRustOutput {
@@ -106,11 +123,37 @@ mod tests {
             let refs: Vec<_> = parsed.iter().collect();
             classify_rust(&refs, &files).unwrap()
         };
-        let parallel = classify_on_pool(&Pool::open(&files).unwrap(), &files).unwrap();
+        let (pool, errors) = Pool::open(&files).unwrap();
+        assert!(errors.is_empty());
+        let parallel = classify_on_pool(&pool, &files).unwrap();
         assert_eq!(
             sequential.file_composition(&helper),
             parallel.file_composition(&helper)
         );
         assert_eq!(sequential.role_at(&lib, 1), parallel.role_at(&lib, 1));
+    }
+
+    #[test]
+    fn syntax_error_skips_that_file_and_keeps_its_sibling() {
+        let tmp = tempfile::tempdir().unwrap();
+        let good = tmp.path().join("good.rs");
+        let bad = tmp.path().join("bad.rs");
+        std::fs::write(&good, "pub fn ok() {}\n").unwrap();
+        std::fs::write(&bad, "pub fn broken(\n").unwrap();
+        let files = vec![bad, good.clone()];
+        let config = crate::config::Config::rust_defaults();
+        let gate = crate::gate_config::GateConfig::default();
+        let (out, errors) = parallel_rust_analysis(ParallelRustRequest {
+            files: &files,
+            config: &config,
+            gate: &gate,
+            repo_root: tmp.path(),
+            show_timing: false,
+        })
+        .unwrap();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].to_string().contains("bad.rs"), "{errors:?}");
+        assert_eq!(out.sources.len(), 1);
+        assert_eq!(out.sources[0].0, good);
     }
 }

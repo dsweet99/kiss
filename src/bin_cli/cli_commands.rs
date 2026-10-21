@@ -52,12 +52,23 @@ pub enum Commands {
         #[arg(
             long,
             default_value = "3",
-            help = "Shingle size for similarity hashing"
+            value_parser = parse_positive_usize,
+            help = "Shingle size for similarity hashing (at least 1)"
         )]
         shingle_size: usize,
-        #[arg(long, default_value = "100", help = "MinHash permutation count")]
+        #[arg(
+            long,
+            default_value = "100",
+            value_parser = parse_positive_usize,
+            help = "MinHash permutation count (at least 1)"
+        )]
         minhash_size: usize,
-        #[arg(long, default_value = "20", help = "Number of LSH bands")]
+        #[arg(
+            long,
+            default_value = "20",
+            value_parser = parse_positive_usize,
+            help = "Number of LSH bands (at least 1)"
+        )]
         lsh_bands: usize,
         #[arg(
             long,

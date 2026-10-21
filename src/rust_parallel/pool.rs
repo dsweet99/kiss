@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -10,13 +10,13 @@ use crate::rust_parsing::{ParsedRustFile, parse_rust_file};
 use crate::shared_helpers::host_cpu_count;
 
 type FileJob = Box<dyn FnOnce(&[ParsedRustFile]) + Send>;
-type ParseAck = Receiver<Result<(), ParseFail>>;
+type ParseAck = Receiver<Vec<ParseFail>>;
 type WorkerSet = (Vec<Sender<Job>>, Vec<JoinHandle<()>>, Vec<ParseAck>);
 type SlotIndex = (Vec<(usize, usize)>, HashMap<PathBuf, (usize, usize)>);
 type MapReplies<T> = Vec<Receiver<Vec<(usize, T)>>>;
 
 enum Job {
-    Parse(Vec<(usize, PathBuf)>, Sender<Result<(), ParseFail>>),
+    Parse(Vec<(usize, PathBuf)>, Sender<Vec<ParseFail>>),
     Call(FileJob),
     Stop(Sender<Vec<(PathBuf, String)>>),
 }
@@ -34,17 +34,26 @@ pub(super) struct Pool {
 }
 
 impl Pool {
-    pub(super) fn open(files: &[PathBuf]) -> Result<Self, RoleBuildError> {
+    pub(super) fn open(files: &[PathBuf]) -> Result<(Self, Vec<RoleBuildError>), RoleBuildError> {
         let bins = assign_bins(files);
         let (txs, joins, acks) = spawn_workers(&bins)?;
-        wait_for_parses(&acks, &bins, files)?;
-        let (slots, loc) = index_bins(bins);
-        Ok(Self {
-            txs,
-            joins,
-            slots,
-            loc,
-        })
+        let fails = wait_for_parses(&acks, &bins, files)?;
+        let failed: HashSet<usize> = fails.iter().map(|fail| fail.global).collect();
+        let errors = fails.into_iter().map(|fail| fail.err).collect();
+        let (slots, loc) = index_bins(bins, &failed);
+        Ok((
+            Self {
+                txs,
+                joins,
+                slots,
+                loc,
+            },
+            errors,
+        ))
+    }
+
+    pub(super) fn contains(&self, path: &Path) -> bool {
+        self.loc.contains_key(&canonical_path(path))
     }
 
     pub(super) fn walk(
@@ -160,45 +169,47 @@ fn spawn_workers(bins: &[Vec<(usize, PathBuf)>]) -> Result<WorkerSet, RoleBuildE
 }
 
 fn wait_for_parses(
-    acks: &[Receiver<Result<(), ParseFail>>],
+    acks: &[Receiver<Vec<ParseFail>>],
     bins: &[Vec<(usize, PathBuf)>],
     files: &[PathBuf],
-) -> Result<(), RoleBuildError> {
+) -> Result<Vec<ParseFail>, RoleBuildError> {
     let mut fails = Vec::new();
     for (worker, ack_rx) in acks.iter().enumerate() {
         match ack_rx.recv() {
-            Ok(Ok(())) => {}
-            Ok(Err(fail)) => fails.push(fail),
-            Err(_) => fails.push(ParseFail {
-                global: bins
-                    .get(worker)
-                    .and_then(|bin| bin.first())
-                    .map(|(global, _)| *global)
-                    .unwrap_or(0),
-                err: worker_lost(
-                    files
-                        .first()
-                        .map(PathBuf::as_path)
+            Ok(batch) => fails.extend(batch),
+            Err(_) => {
+                return Err(worker_lost(
+                    bins.get(worker)
+                        .and_then(|bin| bin.first())
+                        .map(|(_, path)| path.as_path())
+                        .or_else(|| files.first().map(PathBuf::as_path))
                         .unwrap_or(Path::new(".")),
-                ),
-            }),
+                ));
+            }
         }
     }
-    match fails.into_iter().min_by_key(|fail| fail.global) {
-        Some(fail) => Err(fail.err),
-        None => Ok(()),
-    }
+    fails.sort_by_key(|fail| fail.global);
+    Ok(fails)
 }
 
-fn index_bins(bins: Vec<Vec<(usize, PathBuf)>>) -> SlotIndex {
-    let total = bins.iter().map(|bin| bin.len()).sum();
-    let mut slots = vec![(0, 0); total];
-    let mut loc = HashMap::new();
+fn index_bins(bins: Vec<Vec<(usize, PathBuf)>>, failed: &HashSet<usize>) -> SlotIndex {
+    let mut kept = Vec::new();
     for (worker, bin) in bins.into_iter().enumerate() {
-        for (local, (global, path)) in bin.into_iter().enumerate() {
-            slots[global] = (worker, local);
-            loc.insert(canonical_path(&path), (worker, local));
+        let mut local = 0usize;
+        for (global, path) in bin {
+            if failed.contains(&global) {
+                continue;
+            }
+            kept.push((global, worker, local, path));
+            local += 1;
         }
+    }
+    kept.sort_by_key(|(global, _, _, _)| *global);
+    let mut slots = Vec::with_capacity(kept.len());
+    let mut loc = HashMap::new();
+    for (_global, worker, local, path) in kept {
+        slots.push((worker, local));
+        loc.insert(canonical_path(&path), (worker, local));
     }
     (slots, loc)
 }
@@ -236,26 +247,23 @@ fn worker_loop(rx: Receiver<Job>) {
 fn parse_batch(
     files: &mut Vec<ParsedRustFile>,
     batch: Vec<(usize, PathBuf)>,
-    ack: Sender<Result<(), ParseFail>>,
+    ack: Sender<Vec<ParseFail>>,
 ) {
     files.clear();
+    let mut failed = Vec::new();
     for (global, path) in batch {
         match parse_rust_file(&path) {
             Ok(parsed) => files.push(parsed),
-            Err(err) => {
-                files.clear();
-                let _ = ack.send(Err(ParseFail {
-                    global,
-                    err: RoleBuildError::RustParse {
-                        path,
-                        message: err.to_string(),
-                    },
-                }));
-                return;
-            }
+            Err(err) => failed.push(ParseFail {
+                global,
+                err: RoleBuildError::RustParse {
+                    path,
+                    message: err.to_string(),
+                },
+            }),
         }
     }
-    let _ = ack.send(Ok(()));
+    let _ = ack.send(failed);
 }
 
 fn assign_bins(files: &[PathBuf]) -> Vec<Vec<(usize, PathBuf)>> {

@@ -150,4 +150,35 @@ mod entry_touch {
         let result = run_analyze_with_result(&opts);
         assert!(result.success);
     }
+
+    #[test]
+    fn syntax_error_keeps_sibling_duplication_and_does_not_say_no_files() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let body = "def alpha():\n    x = 1\n    y = 2\n    z = 3\n    a = 4\n    b = 5\n    return x + y + z + a + b\n";
+        let good = body.to_string() + "\n" + &body.replace("alpha", "beta");
+        std::fs::write(tmp.path().join("good.py"), good).unwrap();
+        std::fs::write(tmp.path().join("bad.py"), "def broken(:\n").unwrap();
+        let universe = tmp.path().to_str().unwrap().to_string();
+        let focus = vec![universe.clone()];
+        let py_cfg = kiss::Config::python_defaults();
+        let rs_cfg = kiss::Config::rust_defaults();
+        let gate = kiss::GateConfig::default();
+        let opts = sample_opts(&universe, &focus, &py_cfg, &rs_cfg, &gate, false, false);
+        let stdout = crate::test_runner::capture_stdout::capture_stdout(|| {
+            let result = run_analyze_with_result(&opts);
+            assert!(!result.success);
+        });
+        assert!(
+            stdout.contains("VIOLATION:duplication:"),
+            "sibling duplication must still be reported:\n{stdout}"
+        );
+        assert!(
+            !stdout.contains("No files in"),
+            "a syntax error must not be summarized as an empty tree:\n{stdout}"
+        );
+        assert!(
+            !stdout.contains("NO VIOLATIONS"),
+            "a syntax error must not be reported as a clean tree:\n{stdout}"
+        );
+    }
 }

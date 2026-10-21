@@ -150,6 +150,7 @@ fn test_print_all_results() {
             show_timing: false,
             t_phase2: None,
             suppress_final_status: false,
+            had_parse_errors: false,
         },
     );
     assert!(result);

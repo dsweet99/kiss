@@ -18,6 +18,7 @@ pub(crate) struct PrintResultsCtx {
     pub show_timing: bool,
     pub t_phase2: Option<std::time::Instant>,
     pub suppress_final_status: bool,
+    pub had_parse_errors: bool,
 }
 
 pub(crate) fn print_all_results_with_dups(
@@ -44,7 +45,8 @@ pub(crate) fn print_all_results_with_dups(
     }
 
     let has_violations = !viols.is_empty() || dup_count > 0;
-    if !ctx.suppress_final_status {
+    let hide_clean_banner = ctx.had_parse_errors && !has_violations;
+    if !ctx.suppress_final_status && !hide_clean_banner {
         print_final_status(has_violations);
     }
 
@@ -91,6 +93,7 @@ mod print_witness {
                 show_timing: false,
                 t_phase2: None,
                 suppress_final_status: true,
+                had_parse_errors: false,
             }
         }
     }

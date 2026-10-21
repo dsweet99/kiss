@@ -1,3 +1,4 @@
+# ruff: noqa
 
 import csv
 import os

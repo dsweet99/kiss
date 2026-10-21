@@ -68,10 +68,10 @@ pub fn generate_shingles(text: &str, shingle_size: usize) -> HashSet<u64> {
 
 #[must_use]
 pub fn signature_from_text(text: &str, shingle_size: usize, size: usize) -> MinHashSignature {
-    let mut hashes = vec![u64::MAX; size];
     if shingle_size == 0 || size == 0 {
-        return MinHashSignature { hashes };
+        return MinHashSignature { hashes: Vec::new() };
     }
+    let mut hashes = vec![u64::MAX; size];
     let tokens: Vec<&str> = text.split_whitespace().collect();
     if tokens.len() < shingle_size {
         return MinHashSignature { hashes };
@@ -189,7 +189,7 @@ pub fn find_lsh_candidates(
     num_bands: usize,
 ) -> HashSet<(usize, usize)> {
     let mut candidates = HashSet::new();
-    if signatures.is_empty() {
+    if signatures.is_empty() || num_bands == 0 {
         return candidates;
     }
 

@@ -335,3 +335,30 @@ fn collect_file_names(root: &Path) -> Vec<String> {
         .map(str::to_string)
         .collect()
 }
+
+#[test]
+fn test_section_ignore_excludes_matching_files_under_tests() {
+    let tmp = tempfile::tempdir().unwrap();
+    let tests = tmp.path().join("tests");
+    std::fs::create_dir_all(tests.join("keep")).unwrap();
+    std::fs::create_dir_all(tests.join("skipme")).unwrap();
+    let keep = tests.join("keep/test_keep.py");
+    let skip = tests.join("skipme/test_skip.py");
+    std::fs::write(&keep, "def test_keep():\n    assert True\n").unwrap();
+    std::fs::write(&skip, "def test_skip():\n    assert False\n").unwrap();
+    let cfg = kiss::TestSectionConfig {
+        ignore: vec!["skipme".to_string()],
+        ..Default::default()
+    };
+    let paths = workspace_python_collect_paths(tmp.path(), &cfg.merged_ignore(&[]));
+    let keep = keep.canonicalize().unwrap();
+    let skip = skip.canonicalize().unwrap();
+    assert!(
+        paths.iter().any(|path| path == &keep),
+        "kept test must stay a collect path: {paths:?}"
+    );
+    assert!(
+        paths.iter().all(|path| path != &skip && !skip.starts_with(path)),
+        "ignored test under tests/ must not be collected via its file or a parent dir: {paths:?}"
+    );
+}

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import os
 import subprocess
 import tempfile
@@ -19,7 +20,7 @@ def _max_progress_gap_s(progress_times: list[float]) -> float:
         return float(progress_times[0]) if progress_times else 0.0
     return max(
         later - earlier
-        for earlier, later in zip(progress_times, progress_times[1:], strict=False)
+        for earlier, later in itertools.pairwise(progress_times)
     )
 
 

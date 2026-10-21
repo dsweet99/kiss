@@ -409,6 +409,28 @@ fn ignore_collection_keeps_duplicate_basenames_under_tests() {
 }
 
 #[test]
+fn ignore_under_tests_does_not_collect_a_tree_that_exits() {
+    reset_python_collect_memo_for_tests();
+    let tmp = TempDir::new().unwrap();
+    let tests = tmp.path().join("tests");
+    fs::create_dir_all(tests.join("keep")).unwrap();
+    fs::create_dir_all(tests.join("stress/webtester")).unwrap();
+    fs::write(
+        tests.join("keep/test_ok.py"),
+        "def test_ok():\n    assert True\n",
+    )
+    .unwrap();
+    fs::write(
+        tests.join("stress/webtester/conftest.py"),
+        "import pytest\n\ndef pytest_configure(config):\n    pytest.exit('integration env missing', returncode=1)\n",
+    )
+    .unwrap();
+    let ignore = ["tests/stress/".to_string()];
+    let selectors = enumerate_workspace_python_selectors(tmp.path(), &ignore, &[]).unwrap();
+    assert_eq!(selectors, vec!["tests/keep/test_ok.py::test_ok".to_string()]);
+}
+
+#[test]
 fn ignore_with_no_candidates_skips_a_broken_ignored_tree() {
     reset_python_collect_memo_for_tests();
     let tmp = TempDir::new().unwrap();
