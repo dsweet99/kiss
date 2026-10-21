@@ -12,7 +12,7 @@ use super::facts::{FileRoleFacts, RoleRange};
 use super::index::SourceRoleIndex;
 use super::rust_cargo::{CargoRoot, cargo_roots_for_files, workspace_roots_at};
 use super::rust_include_parse::{IncludeAst, IncludeKind, parse_include_source};
-use super::rust_modules::resolve_external_mod;
+use super::rust_modules::{inline_mod_segment, resolve_external_mod};
 use super::rust_walk::{WalkOutput, walk_file};
 use super::span::SourceSpan;
 use super::sweep::normalize_ranges;
@@ -120,20 +120,28 @@ fn reachable_rust_sources_from(entry_paths: impl IntoIterator<Item = PathBuf>) -
 
 fn rust_child_source_paths(parent: &Path, items: &[syn::Item]) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    collect_child_source_paths(parent, items, &mut out);
+    collect_child_source_paths(parent, &[], items, &mut out);
     out
 }
 
-fn collect_child_source_paths(parent: &Path, items: &[syn::Item], out: &mut Vec<PathBuf>) {
+fn collect_child_source_paths(
+    parent: &Path,
+    inline_dirs: &[PathBuf],
+    items: &[syn::Item],
+    out: &mut Vec<PathBuf>,
+) {
     for item in items {
         match item {
             syn::Item::Mod(module) => {
                 if let Some((_, nested)) = &module.content {
-                    collect_child_source_paths(parent, nested, out);
+                    let mut dirs = inline_dirs.to_vec();
+                    dirs.push(inline_mod_segment(module));
+                    collect_child_source_paths(parent, &dirs, nested, out);
                     continue;
                 }
                 let mut atoms = AtomInterner::new();
-                if let Ok(edges) = resolve_external_mod(parent, module, &CfgPred::True, &mut atoms)
+                if let Ok(edges) =
+                    resolve_external_mod(parent, inline_dirs, module, &CfgPred::True, &mut atoms)
                 {
                     out.extend(edges.into_iter().map(|edge| edge.target));
                 }
@@ -551,5 +559,27 @@ mod rust_roles_test {
         assert!(reachable.contains(&canonical_path(&src.join("lib.rs"))));
         assert!(reachable.contains(&canonical_path(&src.join("kept.rs"))));
         assert!(!reachable.contains(&canonical_path(&src.join("orphan.rs"))));
+    }
+
+    #[test]
+    fn reachable_sources_follow_child_declared_inside_inline_mod() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        let server = src.join("server");
+        std::fs::create_dir_all(server.join("tests")).unwrap();
+        std::fs::write(
+            tmp.path().join("Cargo.toml"),
+            "[package]\nname='demo'\nversion='0.1.0'\nedition='2024'\n",
+        )
+        .unwrap();
+        std::fs::write(src.join("lib.rs"), "mod server;\n").unwrap();
+        std::fs::write(server.join("mod.rs"), "mod tests {\n    mod helper;\n}\n").unwrap();
+        let helper = server.join("tests").join("helper.rs");
+        std::fs::write(&helper, "pub fn h() {}\n").unwrap();
+        std::fs::write(server.join("helper.rs"), "pub fn decoy() {}\n").unwrap();
+
+        let reachable = reachable_workspace_rust_sources(tmp.path()).unwrap();
+        assert!(reachable.contains(&canonical_path(&helper)));
+        assert!(!reachable.contains(&canonical_path(&server.join("helper.rs"))));
     }
 }

@@ -267,11 +267,17 @@ pub(super) fn test_threads(repo_root: &Path, extras: &[String], jobs: usize) -> 
     let config =
         kiss::TestSectionConfig::try_load_path_only(&kiss::kissconfig_path_for_repo(repo_root))
             .unwrap_or_default();
-    config
+    match config
         .num_jobs_nextest_explicit
         .or_else(|| repo_default_test_threads(repo_root))
-        .unwrap_or(jobs)
-        .max(1)
+    {
+        Some(configured) => cap_configured_threads_at_host_cpus(configured),
+        None => jobs.max(1),
+    }
+}
+
+fn cap_configured_threads_at_host_cpus(configured: usize) -> usize {
+    configured.max(1).min(kiss::host_cpu_count(configured))
 }
 
 fn repo_default_test_threads(repo_root: &Path) -> Option<usize> {
@@ -534,5 +540,14 @@ mod tests {
         )
         .unwrap();
         assert_eq!(test_threads(tmp.path(), &[], 8), 3);
+        std::fs::write(
+            tmp.path().join(".kissconfig"),
+            "[rust]\nnum_jobs_nextest = 100\n",
+        )
+        .unwrap();
+        assert_eq!(
+            test_threads(tmp.path(), &[], 8),
+            kiss::host_cpu_count(100).min(100)
+        );
     }
 }

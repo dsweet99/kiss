@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import signal
+import socket
 import sys
 import tempfile
 import threading
@@ -31,12 +32,21 @@ def _sweep_dead_scratch_dirs(base):
             continue
         shutil.rmtree(os.path.join(base, name), ignore_errors=True)
 
-_SCRATCH = os.environ.pop("KISS_FORKSERVER_SCRATCH", "")
-if not _SCRATCH:
+def _ensure_scratch():
+    global _SCRATCH
+    if _SCRATCH:
+        return
     _sweep_dead_scratch_dirs(tempfile.gettempdir())
     _SCRATCH = tempfile.mkdtemp(prefix="%s%d-" % (_SCRATCH_PREFIX, os.getpid()))
+
+_SCRATCH = os.environ.pop("KISS_FORKSERVER_SCRATCH", "")
 _CONFIG = None
-_PROTOCOL_IN = os.fdopen(os.dup(0), "r", buffering=1)
+_PROTOCOL_IN = None
+
+def _ensure_protocol_in():
+    global _PROTOCOL_IN
+    if _PROTOCOL_IN is None:
+        _PROTOCOL_IN = os.fdopen(os.dup(0), "r", buffering=1)
 
 def _respond(obj):
     sys.stdout.write(json.dumps(obj, separators=(",", ":")) + "\n")
@@ -98,7 +108,11 @@ def _reject_non_main_threads():
         )
 
 def _bootstrap(boot):
-    global _CONFIG
+    global _CONFIG, _SCRATCH
+    scratch = boot.get("scratch") or ""
+    if scratch:
+        _SCRATCH = scratch
+    _ensure_scratch()
     out_buf, err_buf = io.StringIO(), io.StringIO()
     old_out, old_err = sys.stdout, sys.stderr
     try:

@@ -42,7 +42,11 @@ def change_active(delta):
 def mark():
     change_active(1)
     try:
-        time.sleep(0.2)
+        jobs = int(os.environ.get("EXPECTED_JOBS", "1"))
+        deadline = time.monotonic() + 1.0
+        while read_int(MAX_STATE) < jobs and time.monotonic() < deadline:
+            time.sleep(0.01)
+        time.sleep(0.05)
     finally:
         change_active(-1)
 
@@ -148,9 +152,11 @@ pub(crate) fn assert_bounded_concurrency(
     )
         -> Vec<Result<PytestRunOutcome, crate::rpytest_runner::PytestRunError>>,
 ) {
+    let mut env = fixture.env.clone();
+    env.insert("EXPECTED_JOBS".to_string(), jobs.to_string());
     let requests: Vec<_> = nodeids
         .iter()
-        .map(|nodeid| concurrency_request(fixture.tmp.path(), &fixture.env, nodeid))
+        .map(|nodeid| concurrency_request(fixture.tmp.path(), &env, nodeid))
         .collect();
     let expected: Vec<_> = nodeids.iter().map(|nodeid| nodeid.to_string()).collect();
     let mut max_active = 0usize;

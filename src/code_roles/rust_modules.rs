@@ -27,22 +27,20 @@ pub fn child_module_dir(parent_file: &Path) -> PathBuf {
 
 pub fn resolve_external_mod(
     parent_file: &Path,
+    inline_dirs: &[PathBuf],
     module: &ItemMod,
     inherited: &CfgPred,
     atoms: &mut AtomInterner,
 ) -> Result<Vec<ModEdge>, RoleBuildError> {
     let name = module.ident.to_string();
-    let search_dir = child_module_dir(parent_file);
-    let conventional = conventional_paths(parent_file, &search_dir, &name)?;
+    let conventional = conventional_target(parent_file, inline_dirs, &name)?;
+    let path_attr_base = path_attr_base_dir(parent_file, inline_dirs);
     let mut edges = Vec::new();
     let mut used_conditional = false;
     for attr in &module.attrs {
         if let Some((pred, path_val)) = conditional_path_attr(attr, atoms, parent_file)? {
             used_conditional = true;
-            let target = parent_file
-                .parent()
-                .unwrap_or_else(|| Path::new("."))
-                .join(path_val);
+            let target = path_attr_base.join(path_val);
             edges.push(ModEdge {
                 target,
                 pred: inherited.clone().and(pred),
@@ -50,10 +48,7 @@ pub fn resolve_external_mod(
         }
     }
     if let Some(direct) = direct_path_attr(&module.attrs) {
-        let target = parent_file
-            .parent()
-            .unwrap_or_else(|| Path::new("."))
-            .join(direct);
+        let target = path_attr_base.join(direct);
         edges.push(ModEdge {
             target,
             pred: inherited.clone(),
@@ -86,6 +81,46 @@ pub fn resolve_external_mod(
         pred: inherited.clone(),
     });
     Ok(edges)
+}
+
+fn path_attr_base_dir(parent_file: &Path, inline_dirs: &[PathBuf]) -> PathBuf {
+    if inline_dirs.is_empty() {
+        parent_file
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .to_path_buf()
+    } else {
+        inline_stack_dir(parent_file, inline_dirs)
+    }
+}
+
+fn inline_stack_dir(parent_file: &Path, inline_dirs: &[PathBuf]) -> PathBuf {
+    inline_dirs
+        .iter()
+        .fold(child_module_dir(parent_file), |dir, seg| dir.join(seg))
+}
+
+pub(crate) fn inline_mod_segment(module: &ItemMod) -> PathBuf {
+    match declared_mod_path(module) {
+        Some(declared) => PathBuf::from(declared),
+        None => PathBuf::from(module.ident.to_string()),
+    }
+}
+
+fn conventional_target(
+    parent_file: &Path,
+    inline_dirs: &[PathBuf],
+    name: &str,
+) -> Result<Option<PathBuf>, RoleBuildError> {
+    if inline_dirs.is_empty() {
+        return conventional_paths(parent_file, &child_module_dir(parent_file), name);
+    }
+    let dir = inline_stack_dir(parent_file, inline_dirs);
+    pick_mod_file(
+        dir.join(format!("{name}.rs")),
+        dir.join(name).join("mod.rs"),
+        name,
+    )
 }
 
 fn conventional_paths(
@@ -245,12 +280,13 @@ mod modules_test {
         std::fs::write(&lib, "").unwrap();
         let mut atoms = AtomInterner::new();
         let missing: ItemMod = syn::parse_str("mod missing;").unwrap();
-        let err = resolve_external_mod(&lib, &missing, &CfgPred::True, &mut atoms).unwrap_err();
+        let err =
+            resolve_external_mod(&lib, &[], &missing, &CfgPred::True, &mut atoms).unwrap_err();
         assert!(err.to_string().contains("missing module"));
 
         std::fs::write(src.join("present.rs"), "").unwrap();
         let present: ItemMod = syn::parse_str("mod present;").unwrap();
-        let edges = resolve_external_mod(&lib, &present, &CfgPred::True, &mut atoms).unwrap();
+        let edges = resolve_external_mod(&lib, &[], &present, &CfgPred::True, &mut atoms).unwrap();
         assert_eq!(edges.len(), 1);
         assert!(edges[0].target.ends_with("present.rs"));
 
@@ -258,7 +294,8 @@ mod modules_test {
         std::fs::create_dir_all(&nested).unwrap();
         std::fs::write(nested.join("mod.rs"), "").unwrap();
         let nested_mod: ItemMod = syn::parse_str("mod nested;").unwrap();
-        let edges = resolve_external_mod(&lib, &nested_mod, &CfgPred::True, &mut atoms).unwrap();
+        let edges =
+            resolve_external_mod(&lib, &[], &nested_mod, &CfgPred::True, &mut atoms).unwrap();
         assert!(edges[0].target.ends_with("mod.rs"));
     }
 
@@ -272,29 +309,31 @@ mod modules_test {
         std::fs::write(src.join("alt.rs"), "").unwrap();
         let mut atoms = AtomInterner::new();
         let pathed: ItemMod = syn::parse_str("#[path = \"alt.rs\"] mod foo;").unwrap();
-        let edges = resolve_external_mod(&lib, &pathed, &CfgPred::True, &mut atoms).unwrap();
+        let edges = resolve_external_mod(&lib, &[], &pathed, &CfgPred::True, &mut atoms).unwrap();
         assert!(edges[0].target.ends_with("alt.rs"));
 
         let cfg_mod: ItemMod =
             syn::parse_str("#[cfg_attr(unix, path = \"alt.rs\")] mod cfgfoo;").unwrap();
-        let edges = resolve_external_mod(&lib, &cfg_mod, &CfgPred::True, &mut atoms).unwrap();
+        let edges = resolve_external_mod(&lib, &[], &cfg_mod, &CfgPred::True, &mut atoms).unwrap();
         assert!(edges.iter().any(|e| e.target.ends_with("alt.rs")));
 
         let foo = src.join("foo.rs");
         std::fs::write(&foo, "").unwrap();
         std::fs::write(src.join("foo").join("mod.rs"), "").unwrap();
         let nested_foo: ItemMod = syn::parse_str("mod foo;").unwrap();
-        let err = resolve_external_mod(&foo, &nested_foo, &CfgPred::True, &mut atoms).unwrap_err();
+        let err =
+            resolve_external_mod(&foo, &[], &nested_foo, &CfgPred::True, &mut atoms).unwrap_err();
         assert!(
             err.to_string().contains("missing module"),
             "mod foo inside foo.rs looks for foo/foo.rs, not sibling foo.rs or foo/mod.rs"
         );
         let crate_root: ItemMod = syn::parse_str("mod foo;").unwrap();
-        let err = resolve_external_mod(&lib, &crate_root, &CfgPred::True, &mut atoms).unwrap_err();
+        let err =
+            resolve_external_mod(&lib, &[], &crate_root, &CfgPred::True, &mut atoms).unwrap_err();
         assert!(err.to_string().contains("ambiguous module"));
 
         let bad: ItemMod = syn::parse_str("#[cfg_attr(unix, path)] mod z;").unwrap();
-        let err = resolve_external_mod(&lib, &bad, &CfgPred::True, &mut atoms).unwrap_err();
+        let err = resolve_external_mod(&lib, &[], &bad, &CfgPred::True, &mut atoms).unwrap_err();
         assert!(err.to_string().contains("malformed cfg"));
     }
 
@@ -308,7 +347,7 @@ mod modules_test {
         std::fs::write(src.join("owner").join("child.rs"), "").unwrap();
         let mut atoms = AtomInterner::new();
         let child: ItemMod = syn::parse_str("#[allow(dead_code)] mod child;").unwrap();
-        let edges = resolve_external_mod(&owner, &child, &CfgPred::True, &mut atoms).unwrap();
+        let edges = resolve_external_mod(&owner, &[], &child, &CfgPred::True, &mut atoms).unwrap();
         assert!(edges[0].target.ends_with("child.rs"));
     }
 
@@ -324,7 +363,7 @@ mod modules_test {
         std::fs::write(&child, "fn child() {}\n").unwrap();
         let mut atoms = AtomInterner::new();
         let tests: ItemMod = syn::parse_str("#[cfg(test)] mod tests;").unwrap();
-        let edges = resolve_external_mod(&owner, &tests, &CfgPred::True, &mut atoms).unwrap();
+        let edges = resolve_external_mod(&owner, &[], &tests, &CfgPred::True, &mut atoms).unwrap();
         assert_eq!(edges[0].target, child);
     }
 
@@ -339,7 +378,68 @@ mod modules_test {
         std::fs::write(&impl_rs, "").unwrap();
         let mut atoms = AtomInterner::new();
         let child: ItemMod = syn::parse_str("mod check_impl;").unwrap();
-        let edges = resolve_external_mod(&check, &child, &CfgPred::True, &mut atoms).unwrap();
+        let edges = resolve_external_mod(&check, &[], &child, &CfgPred::True, &mut atoms).unwrap();
         assert_eq!(edges[0].target, impl_rs);
+    }
+
+    #[test]
+    fn inline_stack_resolves_under_mod_rs_and_file_module() {
+        let tmp = tempfile::tempdir().unwrap();
+        let server = tmp.path().join("src").join("server");
+        std::fs::create_dir_all(server.join("tests")).unwrap();
+        std::fs::create_dir_all(server.join("reasoning").join("tests")).unwrap();
+        let mod_rs = server.join("mod.rs");
+        let file = server.join("reasoning.rs");
+        std::fs::write(&mod_rs, "").unwrap();
+        std::fs::write(&file, "").unwrap();
+        let from_mod = server.join("tests").join("helper.rs");
+        let from_file = server.join("reasoning").join("tests").join("helper.rs");
+        std::fs::write(&from_mod, "").unwrap();
+        std::fs::write(&from_file, "").unwrap();
+        let mut atoms = AtomInterner::new();
+        let decl: ItemMod = syn::parse_str("mod helper;").unwrap();
+        let edges = resolve_external_mod(
+            &mod_rs,
+            &[PathBuf::from("tests")],
+            &decl,
+            &CfgPred::True,
+            &mut atoms,
+        )
+        .unwrap();
+        assert_eq!(edges[0].target, from_mod);
+        let edges = resolve_external_mod(
+            &file,
+            &[PathBuf::from("tests")],
+            &decl,
+            &CfgPred::True,
+            &mut atoms,
+        )
+        .unwrap();
+        assert_eq!(edges[0].target, from_file);
+    }
+
+    #[test]
+    fn path_attr_inside_inline_mod_is_relative_to_inline_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        std::fs::create_dir_all(src.join("thread_files")).unwrap();
+        let lib = src.join("lib.rs");
+        std::fs::write(&lib, "").unwrap();
+        let tls = src.join("thread_files").join("tls.rs");
+        std::fs::write(&tls, "").unwrap();
+        let inline: ItemMod =
+            syn::parse_str("#[path = \"thread_files\"] mod thread { mod local_data; }").unwrap();
+        assert_eq!(inline_mod_segment(&inline), PathBuf::from("thread_files"));
+        let mut atoms = AtomInterner::new();
+        let child: ItemMod = syn::parse_str("#[path = \"tls.rs\"] mod local_data;").unwrap();
+        let edges = resolve_external_mod(
+            &lib,
+            &[PathBuf::from("thread_files")],
+            &child,
+            &CfgPred::True,
+            &mut atoms,
+        )
+        .unwrap();
+        assert_eq!(edges[0].target, tls);
     }
 }

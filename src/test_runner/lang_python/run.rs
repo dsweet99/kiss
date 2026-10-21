@@ -136,23 +136,31 @@ fn purge_stale_bytecode(repo_root: &Path, selectors: &[String], force_rerun: boo
     }
 }
 
-fn pytest_request(
+pub(crate) fn pytest_launch(
     repo_root: &Path,
-    selector: &str,
-    args: &PytestSelectorsArgs<'_>,
-) -> PytestRunRequest {
+    extras: &[String],
+) -> (Vec<String>, std::collections::BTreeMap<String, String>) {
     let cache_dir = crate::test_runner::test_state_dir(repo_root).join("pytest_cache");
     let mut pytest_args = vec![
         "-o".to_string(),
         format!("cache_dir={}", cache_dir.to_string_lossy()),
     ];
-    pytest_args.extend(args.extra.iter().cloned());
+    pytest_args.extend(extras.iter().cloned());
+    (pytest_args, pytest_env(repo_root))
+}
+
+fn pytest_request(
+    repo_root: &Path,
+    selector: &str,
+    args: &PytestSelectorsArgs<'_>,
+) -> PytestRunRequest {
+    let (pytest_args, env) = pytest_launch(repo_root, args.extra);
     PytestRunRequest::from_parts(
         selector.to_string(),
         repo_root.to_path_buf(),
         std::path::PathBuf::from("python"),
         pytest_args,
-        pytest_env(repo_root),
+        env,
         Vec::new(),
         Vec::new(),
         Some(timeout_for_selector_with_gate(args.gate, selector)),

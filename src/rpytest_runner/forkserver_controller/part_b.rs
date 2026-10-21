@@ -255,6 +255,7 @@ def _read_test_duration_ms(path):
         return None
 
 def _handle_run(req):
+    _ensure_scratch()
     stdout_fd, stdout_path = tempfile.mkstemp(prefix="rpytest-forkserver-out-", dir=_SCRATCH)
     stderr_fd, stderr_path = tempfile.mkstemp(prefix="rpytest-forkserver-err-", dir=_SCRATCH)
     duration_fd, duration_path = tempfile.mkstemp(prefix="rpytest-forkserver-dur-", dir=_SCRATCH)

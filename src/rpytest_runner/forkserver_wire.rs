@@ -10,6 +10,8 @@ pub(crate) struct WireBootstrap {
     pub(crate) cwd: String,
     pub(crate) pytest_args: Vec<String>,
     pub(crate) env: BTreeMap<String, String>,
+    #[serde(default)]
+    pub(crate) scratch: String,
 }
 
 #[derive(Deserialize)]
@@ -24,6 +26,8 @@ pub(crate) struct WireBootstrapResult {
 pub(crate) struct WireShutdown {
     pub(crate) op: &'static str,
 }
+
+pub(crate) use super::forkserver_wire_collect::{WireCollect, WireCollectResult};
 
 #[derive(Serialize)]
 pub(crate) struct WireRequest {

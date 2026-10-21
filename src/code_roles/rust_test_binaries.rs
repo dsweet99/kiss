@@ -6,7 +6,7 @@ use crate::rust_include::canonical_path;
 use super::cfg_pred::{AtomInterner, CfgPred};
 use super::error::RoleBuildError;
 use super::rust_cargo::{CargoRoot, workspace_roots_at};
-use super::rust_modules::resolve_external_mod;
+use super::rust_modules::{inline_mod_segment, resolve_external_mod};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct RustTestBinaryModule {
@@ -137,13 +137,14 @@ fn collect_file_modules(
         return;
     };
     out.push((file.clone(), module_path.clone()));
-    collect_item_modules(&file, &ast.items, &module_path, seen, out);
+    collect_item_modules(&file, &ast.items, &module_path, &[], seen, out);
 }
 
 fn collect_item_modules(
     file: &Path,
     items: &[syn::Item],
     module_path: &str,
+    inline_dirs: &[PathBuf],
     seen: &mut HashSet<PathBuf>,
     out: &mut Vec<(PathBuf, String)>,
 ) {
@@ -153,11 +154,14 @@ fn collect_item_modules(
         };
         let child_path = join_module(module_path, &module.ident.to_string());
         if let Some((_, nested)) = &module.content {
-            collect_item_modules(file, nested, &child_path, seen, out);
+            let mut dirs = inline_dirs.to_vec();
+            dirs.push(inline_mod_segment(module));
+            collect_item_modules(file, nested, &child_path, &dirs, seen, out);
             continue;
         }
         let mut atoms = AtomInterner::new();
-        let Ok(edges) = resolve_external_mod(file, module, &CfgPred::True, &mut atoms) else {
+        let Ok(edges) = resolve_external_mod(file, inline_dirs, module, &CfgPred::True, &mut atoms)
+        else {
             continue;
         };
         for edge in edges {
