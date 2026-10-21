@@ -33,6 +33,21 @@ fn require_git_repo_root_rejects_without_git() {
 }
 
 #[test]
+fn repo_root_lookup_tracks_git_dir_creation_and_removal() {
+    let tmp = TempDir::new().unwrap();
+    assert!(require_git_repo_root(tmp.path()).is_err());
+    assert!(git_repo_root(tmp.path()).is_err());
+    init_repo(&tmp);
+    let expected = tmp.path().canonicalize().unwrap();
+    assert_eq!(require_git_repo_root(tmp.path()).unwrap(), expected);
+    assert_eq!(git_repo_root(tmp.path()).unwrap(), expected);
+    std::fs::remove_dir_all(tmp.path().join(".git")).unwrap();
+    assert!(require_git_repo_root(tmp.path()).is_err());
+    init_repo(&tmp);
+    assert_eq!(require_git_repo_root(tmp.path()).unwrap(), expected);
+}
+
+#[test]
 fn repo_root_and_commit_changed_paths() {
     let tmp = TempDir::new().unwrap();
     init_repo(&tmp);

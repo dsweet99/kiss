@@ -10,7 +10,8 @@ use crate::rpytest_runner::forkserver::{
     spawn_forkserver_worker,
 };
 use crate::rpytest_runner::{
-    ForkserverPytestRunner, PytestRunError, PytestRunRequest, RequestedArtifact, TestStatus,
+    ForkserverPytestRunner, PytestBootstrap, PytestRunError, PytestRunRequest, RequestedArtifact,
+    TestStatus, collect_and_park,
 };
 
 macro_rules! python {
@@ -154,6 +155,41 @@ def test_clean():\n    assert VALUE == 0\n",
         TestStatus::Passed,
         "later test in the same module saw mutated global state: {:?}",
         outcomes[1]
+    );
+}
+
+#[test]
+fn module_batch_reuses_the_parked_collector() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    fs::write(
+        root.join("test_sample.py"),
+        "def test_a():\n    assert True\n\ndef test_b():\n    assert True\n",
+    )
+    .unwrap();
+    let bootstrap = PytestBootstrap::new(root.clone(), vec!["-q".to_string()], BTreeMap::new());
+    collect_and_park(&python!(), &bootstrap, &[root.join("test_sample.py")])
+        .expect("park collector");
+    let pid = crate::rpytest_runner::forkserver::parked_controller_pid(&root)
+        .expect("collector stays parked until the module batch");
+    let outcomes = ForkserverPytestRunner::new().run_many_bounded(
+        vec![
+            passing_req(&root, "test_sample.py::test_a"),
+            passing_req(&root, "test_sample.py::test_b"),
+        ],
+        1,
+    );
+    assert_eq!(outcomes[0].as_ref().unwrap().status, TestStatus::Passed);
+    assert_eq!(outcomes[1].as_ref().unwrap().status, TestStatus::Passed);
+    assert!(
+        crate::rpytest_runner::forkserver::parked_controller_pid(&root).is_none(),
+        "module batch left the collector parked"
+    );
+    let raw = i32::try_from(pid).expect("controller pid fits in pid_t");
+    let still_alive = unsafe { libc::kill(raw, 0) } == 0;
+    assert!(
+        !still_alive,
+        "module batch started another controller and left pid {pid} alive"
     );
 }
 

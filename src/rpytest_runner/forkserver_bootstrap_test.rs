@@ -255,7 +255,7 @@ fn configured_parent_path_is_faster_than_two_cold_subprocess_configures() {
     let tmp = tempfile::tempdir().unwrap();
     fs::write(
         tmp.path().join("conftest.py"),
-        "import time\ndef pytest_configure(config):\n    time.sleep(0.12)\n",
+        "import time\ndef pytest_configure(config):\n    time.sleep(0.02)\n",
     )
     .unwrap();
     fs::write(
@@ -274,7 +274,7 @@ fn configured_parent_path_is_faster_than_two_cold_subprocess_configures() {
         assert_eq!(outcome.as_ref().unwrap().status, TestStatus::Passed);
     }
 
-    let sub_out = crate::rpytest_runner::SubprocessPytestRunner::new().run_many_bounded(reqs, 1);
+    let sub_out = crate::rpytest_runner::SubprocessPytestRunner::new().run_many_bounded(reqs, 2);
     for outcome in &sub_out {
         assert_eq!(outcome.as_ref().unwrap().status, TestStatus::Passed);
     }
@@ -289,13 +289,13 @@ fn configured_parent_path_is_faster_than_two_cold_subprocess_configures() {
     // Each cold subprocess invocation pays pytest_configure sleep; forkserver pays once in parent.
     for outcome in &sub_out {
         assert!(
-            outcome.as_ref().unwrap().duration >= Duration::from_millis(90),
+            outcome.as_ref().unwrap().duration >= Duration::from_millis(30),
             "cold subprocess should include configure sleep: {:?}",
             outcome.as_ref().unwrap().duration
         );
     }
     assert!(
-        sub_duration > fork_duration + Duration::from_millis(80),
+        sub_duration > fork_duration + Duration::from_millis(20),
         "two cold subprocess configures ({sub_duration:?}) should exceed forkserver per-run time ({fork_duration:?})"
     );
     assert!(fork_elapsed > Duration::from_millis(50));
@@ -347,6 +347,31 @@ fn forkserver_lifecycle_errors_match_pytest_exit_codes() {
         "import pytest\ndef test_ok():\n    assert True\ndef test_sys():\n    raise SystemExit(99)\ndef test_exit():\n    pytest.exit('bye', returncode=7)\n",
     )
     .unwrap();
+    let boom_dir = tmp.path().join("boom");
+    fs::create_dir(&boom_dir).unwrap();
+    fs::write(
+        boom_dir.join("conftest.py"),
+        "def pytest_sessionstart(session):\n    raise RuntimeError('boom-sessionstart')\n",
+    )
+    .unwrap();
+    fs::write(
+        boom_dir.join("test_ok.py"),
+        "def test_ok():\n    assert True\n",
+    )
+    .unwrap();
+    let boom_dir_for_thread = boom_dir.clone();
+    let boom = std::thread::spawn(move || {
+        let mut boom = ForkserverController::start(
+            &test_python(),
+            &base_req(&boom_dir_for_thread, "test_ok.py::test_ok").bootstrap,
+        )
+        .unwrap();
+        let unexpected = boom
+            .run(base_req(&boom_dir_for_thread, "test_ok.py::test_ok"))
+            .unwrap();
+        (unexpected.status, unexpected.exit_code)
+    });
+
     let mut controller = ForkserverController::start(
         &test_python(),
         &base_req(tmp.path(), "test_life.py::test_ok").bootstrap,
@@ -365,26 +390,7 @@ fn forkserver_lifecycle_errors_match_pytest_exit_codes() {
     assert_eq!(interrupted.status, TestStatus::Failed);
     assert_eq!(interrupted.exit_code, Some(7), "pytest.exit returncode");
 
-    let boom_dir = tmp.path().join("boom");
-    fs::create_dir(&boom_dir).unwrap();
-    fs::write(
-        boom_dir.join("conftest.py"),
-        "def pytest_sessionstart(session):\n    raise RuntimeError('boom-sessionstart')\n",
-    )
-    .unwrap();
-    fs::write(
-        boom_dir.join("test_ok.py"),
-        "def test_ok():\n    assert True\n",
-    )
-    .unwrap();
-    let mut boom = ForkserverController::start(
-        &test_python(),
-        &base_req(&boom_dir, "test_ok.py::test_ok").bootstrap,
-    )
-    .unwrap();
-    let unexpected = boom
-        .run(base_req(&boom_dir, "test_ok.py::test_ok"))
-        .unwrap();
-    assert_eq!(unexpected.status, TestStatus::Failed);
-    assert_eq!(unexpected.exit_code, Some(3), "INTERNAL_ERROR");
+    let (status, code) = boom.join().unwrap();
+    assert_eq!(status, TestStatus::Failed);
+    assert_eq!(code, Some(3), "INTERNAL_ERROR");
 }

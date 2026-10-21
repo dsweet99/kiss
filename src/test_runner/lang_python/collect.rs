@@ -5,6 +5,7 @@ use std::sync::Mutex;
 #[cfg(test)]
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+#[cfg(not(target_os = "linux"))]
 use kiss::rpytest_runner::{PytestCollectRequest, collect_pytest_nodeids};
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -161,6 +162,16 @@ fn collect_one_path_set(
     paths: Vec<PathBuf>,
     pytest_args: &[String],
 ) -> Result<kiss::rpytest_runner::PytestCollectOutcome, kiss::rpytest_runner::PytestCollectError> {
+    if repo_root.as_os_str().is_empty() {
+        return Err(kiss::rpytest_runner::PytestCollectError::InvalidRequest(
+            "pytest collect cwd must not be empty".to_string(),
+        ));
+    }
+    #[cfg(target_os = "linux")]
+    {
+        collect_one_path_set_parked(repo_root, &paths, pytest_args)
+    }
+    #[cfg(not(target_os = "linux"))]
     collect_pytest_nodeids(PytestCollectRequest {
         cwd: repo_root.to_path_buf(),
         python: PathBuf::from("python"),
@@ -168,6 +179,44 @@ fn collect_one_path_set(
         pytest_args: pytest_args.to_vec(),
         env: BTreeMap::new(),
     })
+}
+
+#[cfg(target_os = "linux")]
+fn collect_one_path_set_parked(
+    repo_root: &Path,
+    paths: &[PathBuf],
+    extras: &[String],
+) -> Result<kiss::rpytest_runner::PytestCollectOutcome, kiss::rpytest_runner::PytestCollectError> {
+    use kiss::rpytest_runner::{PytestBootstrap, PytestRunError};
+    let root = repo_root
+        .canonicalize()
+        .unwrap_or_else(|_| repo_root.to_path_buf());
+    let (pytest_args, env) = super::run::pytest_launch(&root, extras);
+    let bootstrap = PytestBootstrap::new(root.clone(), pytest_args, env);
+    let collected =
+        match kiss::rpytest_runner::collect_and_park(Path::new("python"), &bootstrap, paths) {
+            Ok(collected) => collected,
+            Err(PytestRunError::Spawn { program, message }) => {
+                return Err(kiss::rpytest_runner::PytestCollectError::Spawn { program, message });
+            }
+            Err(err) => {
+                return Err(kiss::rpytest_runner::PytestCollectError::CollectionFailed {
+                    exit_code: Some(1),
+                    stderr: format!("{err:?}"),
+                    stdout: String::new(),
+                });
+            }
+        };
+    if !collected.python_version.is_empty() && !collected.executable.is_empty() {
+        super::versions::remember_probed_versions(
+            &root,
+            &collected.python_version,
+            &collected.pytest_version,
+            &collected.executable,
+            &collected.pytest_file,
+        );
+    }
+    Ok(collected.outcome)
 }
 
 fn merge_collect_outcomes(

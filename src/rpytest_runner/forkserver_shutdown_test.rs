@@ -68,6 +68,7 @@ fn controller_start_sweeps_scratch_left_by_dead_controllers_only() {
 
 #[test]
 fn forkserver_shutdown_force_kills_unresponsive_controller() {
+    super::enable_zygote();
     let tmp = tempfile::tempdir().unwrap();
     fs::write(
         tmp.path().join("conftest.py"),
@@ -103,6 +104,7 @@ fn forkserver_shutdown_force_kills_unresponsive_controller() {
 
 #[test]
 fn forkserver_shutdown_is_fast_when_unconfigure_is_slow() {
+    super::enable_zygote();
     let tmp = tempfile::tempdir().unwrap();
     fs::write(
         tmp.path().join("conftest.py"),

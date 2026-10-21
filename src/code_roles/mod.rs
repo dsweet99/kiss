@@ -17,6 +17,8 @@ mod rust_modules;
 mod rust_test_binaries;
 mod rust_walk;
 mod rust_walk_attrs;
+#[cfg(test)]
+mod rust_walk_inline_test;
 mod span;
 pub(crate) mod sweep;
 mod types;

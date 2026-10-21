@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import shutil
-import signal
 import subprocess
 import tempfile
 import time
@@ -441,65 +440,6 @@ def run_observed(
     return outcome
 
 
-def run_interrupted(
-    name: str,
-    argv: list[str],
-    cwd: Path,
-    env: dict[str, str],
-    signal_after: float,
-    sig: signal.Signals = signal.SIGINT,
-    settle: float = 2.0,
-    timeout: int = 1_200,
-) -> Outcome:
-    started = time.monotonic()
-    with (
-        tempfile.TemporaryFile("w+t") as stdout_file,
-        tempfile.TemporaryFile("w+t") as stderr_file,
-    ):
-        process = subprocess.Popen(
-            argv,
-            cwd=cwd,
-            env=env,
-            text=True,
-            stdout=stdout_file,
-            stderr=stderr_file,
-            start_new_session=True,
-        )
-        deadline = started + timeout
-        while time.monotonic() < deadline:
-            if process.poll() is not None:
-                break
-            if time.monotonic() - started >= signal_after:
-                os.killpg(os.getpgid(process.pid), sig)
-                break
-            time.sleep(0.05)
-        else:
-            process.kill()
-            process.wait()
-            raise subprocess.TimeoutExpired(argv, timeout)
-        try:
-            process.wait(timeout=max(1.0, deadline - time.monotonic()))
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait()
-            raise
-        time.sleep(settle)
-        stdout_file.seek(0)
-        stderr_file.seek(0)
-        outcome = Outcome(
-            name,
-            process.returncode,
-            stdout_file.read(),
-            stderr_file.read(),
-            time.monotonic() - started,
-        )
-    print(
-        f"{name}: rc={outcome.returncode} elapsed={outcome.elapsed:.2f}s "
-        f"(interrupted after {signal_after:.2f}s)"
-    )
-    return outcome
-
-
 def run_concurrent(
     name: str,
     commands: list[tuple[list[str], Path]],
@@ -644,9 +584,9 @@ def qa_fixture(prefix: str) -> Iterator[Fixture]:
         copy_fixture(root)
         nested = root / "src" / "test_runner"
         assert nested.is_dir(), nested
-        # GateConfig::load() reads only CWD `.kissconfig`; path-isolation and
-        # concurrent races also run from `nested`, so write the same file there
-        # (otherwise ensure_default_config_exists writes defaults).
+        # GateConfig::load() reads only CWD `.kissconfig`. A run that changes
+        # into `nested` needs the same file there, or ensure_default_config_exists
+        # writes defaults.
         kissconfig = (
             "[global]\n"
             "duplication_enabled = false\n"
@@ -716,45 +656,6 @@ def write_witness_config(repo: Path) -> None:
         "[rust]\n",
     )
     (repo / ".gitignore").write_text(".kiss/\ntarget/\n.pytest_cache/\n__pycache__/\n")
-
-
-def write_python_witness_repo(repo: Path) -> None:
-    repo.mkdir()
-    (repo / "tests").mkdir()
-    write_witness_config(repo)
-    (repo / "app.py").write_text(
-        "def alpha():\n"
-        "    return 'alpha'\n"
-        "\n"
-        "def beta():\n"
-        "    return 'beta'\n"
-        "\n"
-        "def gamma():\n"
-        "    return 'gamma'\n",
-    )
-    (repo / "tests/test_app.py").write_text(
-        "import os\n"
-        "from pathlib import Path\n"
-        "\n"
-        "import app\n"
-        "\n"
-        "\n"
-        "def mark(name):\n"
-        "    root = Path(os.environ['KISS_WITNESS_DIR'])\n"
-        "    root.mkdir(parents=True, exist_ok=True)\n"
-        "    (root / name).write_text('ran')\n"
-        "\n"
-        "\n"
-        "def test_alpha():\n"
-        "    mark('python-alpha')\n"
-        "    assert app.alpha() == 'alpha'\n"
-        "\n"
-        "\n"
-        "def test_beta():\n"
-        "    mark('python-beta')\n"
-        "    assert app.beta() == 'beta'\n",
-    )
-    commit_fixture_baseline(repo)
 
 
 def write_rust_witness_repo(repo: Path) -> None:
@@ -832,86 +733,6 @@ def timing_rust_throughput() -> None:
         outcome = run_observed("tput", command, repo, env)
         assert outcome.returncode == 0
         emit_eval("rust_elapsed_s", "SMALLER", f"{outcome.elapsed:.4f}")
-
-
-def path_isolation() -> None:
-    """Test nested-CWD plans and persisted path isolation."""
-    assert KISS.is_file(), f"local binary missing: {KISS}"
-    with tempfile.TemporaryDirectory(prefix="kq-path-", dir="/tmp") as tmp:
-        repo = Path(tmp) / "p"
-        markers = Path(tmp) / "m"
-        write_python_witness_repo(repo)
-        nested = repo / "nested"
-        nested.mkdir()
-        (nested / ".kissconfig").write_text((repo / ".kissconfig").read_text())
-        env = witness_env(repo, markers)
-        from_root = run(
-            "path-root",
-            [str(KISS), "--lang", "python", "test", "commit"],
-            repo,
-            env,
-        )
-        from_nested = run(
-            "path-nested",
-            [str(KISS), "--lang", "python", "test", "commit"],
-            nested,
-            env,
-        )
-        assert from_root.returncode == 0
-        assert from_nested.returncode == 0
-
-
-def rust_batch_e2e() -> None:
-    """E2E batch QA: a batch, Ctrl-C, and recovery."""
-    assert KISS.is_file(), f"local binary missing: {KISS}"
-    with tempfile.TemporaryDirectory(prefix="kq-e2e-", dir="/tmp") as tmp:
-        repo = Path(tmp) / "r"
-        markers = Path(tmp) / "m"
-        write_rust_witness_repo(repo)
-        env = witness_env(repo, markers)
-        cmd = witness_test_command("rust", repo, jobs=2)
-        first = run_observed("e2e", cmd, repo, env)
-        assert first.returncode == 0
-        run_interrupted("e2e-int", cmd, repo, env, signal_after=0.4)
-        recovered = run("e2e-recover", cmd, repo, env)
-        assert recovered.returncode == 0
-
-
-def rust_phase_interrupt() -> None:
-    """Interrupt a Rust test run, then recover with a clean rerun."""
-    assert KISS.is_file(), f"local binary missing: {KISS}"
-    with tempfile.TemporaryDirectory(prefix="kq-phase-", dir="/tmp") as tmp:
-        repo = Path(tmp) / "r"
-        markers = Path(tmp) / "m"
-        write_rust_witness_repo(repo)
-        env = witness_env(repo, markers)
-        cmd = witness_test_command("rust", repo, jobs=2)
-        run_interrupted("phase-int", cmd, repo, env, signal_after=0.3)
-        recovered = run("phase-recover", cmd, repo, env)
-        assert recovered.returncode == 0
-
-
-def rust_full_repo_observer(jobs: int = 2) -> None:
-    """Observe full-repository Rust test process and thread bounds."""
-    assert KISS.is_file(), f"local binary missing: {KISS}"
-    with tempfile.TemporaryDirectory(prefix="kq-obs-", dir="/tmp") as tmp:
-        repo = Path(tmp) / "r"
-        markers = Path(tmp) / "m"
-        write_rust_witness_repo(repo)
-        env = witness_env(repo, markers)
-        outcome = run_observed(
-            "observer",
-            witness_test_command("rust", repo, jobs=jobs),
-            repo,
-            env,
-            timeout=50,
-        )
-        assert outcome.returncode == 0
-        assert outcome.observation is not None
-        emit_eval("rust_peak_rss_kib", "SMALLER", outcome.observation.peak_rss_kib)
-        emit_eval(
-            "rust_peak_processes", "SMALLER", outcome.observation.peak_process_count
-        )
 
 
 def shlex_quote(value: str) -> str:

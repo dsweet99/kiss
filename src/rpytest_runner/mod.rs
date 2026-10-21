@@ -7,6 +7,7 @@ mod forkserver;
 mod forkserver_controller;
 mod forkserver_controller_runtime;
 mod forkserver_wire;
+mod forkserver_wire_collect;
 mod runner;
 mod types;
 
@@ -46,8 +47,11 @@ pub use collector::{
     PytestCollectError, PytestCollectOutcome, PytestCollectRequest, SubprocessPytestCollector,
     collect_pytest_nodeids, subprocess_pytest_collector,
 };
-pub use forkserver::{ForkserverPytestRunner, forkserver_pytest_runner};
+pub use forkserver::{
+    ForkserverCollected, ForkserverPytestRunner, collect_and_park, forkserver_pytest_runner,
+};
 pub use forkserver_controller_runtime::cancel_active_forkservers;
+pub use forkserver_controller_runtime::enable_zygote;
 pub use runner::{PytestRunner, SubprocessPytestRunner, subprocess_pytest_runner};
 pub use types::{
     PytestBootstrap, PytestRunError, PytestRunOutcome, PytestRunRequest, RequestedArtifact,

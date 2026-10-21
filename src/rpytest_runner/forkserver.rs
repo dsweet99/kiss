@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::Duration;
@@ -7,7 +8,7 @@ pub(crate) use crate::rpytest_runner::forkserver_controller_runtime::ForkserverC
 #[cfg(test)]
 pub(crate) use crate::rpytest_runner::forkserver_wire::{WireArtifact, WireRequest, WireResponse};
 
-use crate::rpytest_runner::{PytestRunError, PytestRunOutcome, PytestRunRequest};
+use crate::rpytest_runner::{PytestBootstrap, PytestRunError, PytestRunOutcome, PytestRunRequest};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ForkserverPytestRunner;
@@ -122,10 +123,82 @@ fn start_controller_for(
     let needs_controller = controller.as_ref().is_none_or(|existing| {
         existing.python != req.python || existing.bootstrap != req.bootstrap
     });
-    if needs_controller {
-        *controller = Some(ForkserverController::start(&req.python, &req.bootstrap)?);
+    if !needs_controller {
+        return Ok(());
     }
+    if let Some(parked) = take_parked_controller(&req.python, &req.bootstrap) {
+        *controller = Some(parked);
+        return Ok(());
+    }
+    *controller = Some(ForkserverController::start(&req.python, &req.bootstrap)?);
     Ok(())
+}
+
+#[cfg(test)]
+pub(crate) fn parked_controller_pid(cwd: &Path) -> Option<u32> {
+    parked_controllers()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .iter()
+        .find(|existing| existing.bootstrap.cwd == cwd)
+        .map(|existing| existing.controller_pid())
+}
+
+fn parked_controllers() -> &'static Mutex<Vec<ForkserverController>> {
+    static PARKED: Mutex<Vec<ForkserverController>> = Mutex::new(Vec::new());
+    &PARKED
+}
+
+fn park_controller(controller: ForkserverController) {
+    parked_controllers()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .push(controller);
+}
+
+fn take_parked_controller(
+    python: &Path,
+    bootstrap: &PytestBootstrap,
+) -> Option<ForkserverController> {
+    let mut parked = parked_controllers()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let index = parked
+        .iter()
+        .rposition(|existing| existing.python == python && existing.bootstrap == *bootstrap)?;
+    Some(parked.remove(index))
+}
+
+pub struct ForkserverCollected {
+    pub outcome: crate::rpytest_runner::PytestCollectOutcome,
+    pub python_version: String,
+    pub pytest_version: String,
+    pub executable: String,
+    pub pytest_file: String,
+}
+
+pub fn collect_and_park(
+    python: &Path,
+    bootstrap: &PytestBootstrap,
+    paths: &[PathBuf],
+) -> Result<ForkserverCollected, PytestRunError> {
+    let mut controller = ForkserverController::start(python, bootstrap)?;
+    let collected = controller.collect_paths(paths)?;
+    let nodeids =
+        crate::rpytest_runner::collector::normalize_nodeids(&collected.nodeids, &bootstrap.cwd)
+            .map_err(|err| PytestRunError::Protocol(format!("{err:?}")))?;
+    park_controller(controller);
+    Ok(ForkserverCollected {
+        outcome: crate::rpytest_runner::PytestCollectOutcome {
+            nodeids,
+            observed_workspace: collected.observed_workspace,
+            unsupported_external: collected.unsupported_external,
+        },
+        python_version: collected.python_version,
+        pytest_version: collected.pytest_version,
+        executable: collected.executable,
+        pytest_file: collected.pytest_file,
+    })
 }
 
 fn controller_pipe_is_dead(err: &PytestRunError) -> bool {
@@ -189,16 +262,8 @@ fn run_module_with_reused_controller(
         return vec![run_with_reused_controller(controller, req)];
     }
     let first = reqs.first().expect("module batch is non-empty");
-    let needs_controller = controller.as_ref().is_none_or(|existing| {
-        existing.python != first.python || existing.bootstrap != first.bootstrap
-    });
-    if needs_controller {
-        match ForkserverController::start(&first.python, &first.bootstrap) {
-            Ok(started) => *controller = Some(started),
-            Err(err) => {
-                return reqs.iter().map(|_| Err(err.cloned())).collect();
-            }
-        }
+    if let Err(err) = start_controller_for(controller, first) {
+        return reqs.iter().map(|_| Err(err.cloned())).collect();
     }
     let mut streamed = vec![false; reqs.len()];
     let result = controller

@@ -1,9 +1,13 @@
-use std::collections::HashSet;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::{Mutex, OnceLock};
+use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
+
+mod proc;
+#[cfg(unix)]
+mod zygote;
+
+pub use proc::cancel_active_forkservers;
 
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
@@ -13,8 +17,8 @@ use serde::de::DeserializeOwned;
 
 use crate::rpytest_runner::forkserver_controller::FORKSERVER_CONTROLLER;
 use crate::rpytest_runner::forkserver_wire::{
-    WireBootstrap, WireBootstrapResult, WireModuleRequest, WireModuleResponse, WireRequest,
-    WireResponse, WireShutdown,
+    WireBootstrap, WireBootstrapResult, WireCollect, WireCollectResult, WireModuleRequest,
+    WireModuleResponse, WireRequest, WireResponse, WireShutdown,
 };
 use crate::rpytest_runner::runner::validate_request;
 use crate::rpytest_runner::{PytestBootstrap, PytestRunError, PytestRunOutcome, PytestRunRequest};
@@ -22,12 +26,36 @@ use crate::rpytest_runner::{PytestBootstrap, PytestRunError, PytestRunOutcome, P
 #[cfg(test)]
 pub(crate) const SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(400);
 
+pub fn enable_zygote() {
+    zygote_flag().store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn zygote_enabled() -> bool {
+    zygote_flag().load(std::sync::atomic::Ordering::Relaxed)
+}
+
+fn zygote_flag() -> &'static std::sync::atomic::AtomicBool {
+    static ENABLED: std::sync::OnceLock<std::sync::atomic::AtomicBool> = std::sync::OnceLock::new();
+    ENABLED.get_or_init(|| std::sync::atomic::AtomicBool::new(false))
+}
+
+pub(crate) struct ForkserverCollect {
+    pub(crate) nodeids: Vec<String>,
+    pub(crate) observed_workspace: Vec<String>,
+    pub(crate) unsupported_external: bool,
+    pub(crate) python_version: String,
+    pub(crate) pytest_version: String,
+    pub(crate) executable: String,
+    pub(crate) pytest_file: String,
+}
+
 pub(crate) struct ForkserverController {
     pub(crate) python: PathBuf,
     pub(crate) bootstrap: PytestBootstrap,
-    child: Child,
-    stdin: ChildStdin,
-    stdout: BufReader<std::process::ChildStdout>,
+    pid: u32,
+    owned: Option<Child>,
+    stdin: Box<dyn Write + Send>,
+    stdout: BufReader<Box<dyn Read + Send>>,
     next_id: u64,
     shutting_down: bool,
     scratch: Option<PathBuf>,
@@ -38,40 +66,14 @@ impl ForkserverController {
         python: &Path,
         bootstrap: &PytestBootstrap,
     ) -> Result<Self, PytestRunError> {
-        let mut command = Command::new(python);
-        command
-            .current_dir("/")
-            .arg("-u")
-            .arg("-c")
-            .arg(&*FORKSERVER_CONTROLLER)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null());
-        let scratch = create_scratch_dir(&bootstrap.cwd);
-        if let Some(dir) = &scratch {
-            command.env(SCRATCH_ENV, dir);
-        }
+        let scratch = proc::create_scratch_dir(&bootstrap.cwd);
         #[cfg(unix)]
-        command.process_group(0);
-        let mut child = command.spawn().map_err(|err| PytestRunError::Spawn {
-            program: python.to_path_buf(),
-            message: err.to_string(),
-        })?;
-        let stdin = take_stdin(&mut child)?;
-        let stdout = take_stdout(&mut child)?;
-        let mut controller = Self {
-            python: python.to_path_buf(),
-            bootstrap: bootstrap.clone(),
-            child,
-            stdin,
-            stdout: BufReader::new(stdout),
-            next_id: 0,
-            shutting_down: false,
-            scratch,
-        };
-        register_active_forkserver(controller.child.id());
-        controller.bootstrap_parent(bootstrap)?;
-        Ok(controller)
+        if zygote_enabled()
+            && let Some(controller) = zygote::start_from_zygote(python, bootstrap, scratch.clone())
+        {
+            return controller;
+        }
+        start_owned(python, bootstrap, scratch)
     }
 
     fn bootstrap_parent(&mut self, bootstrap: &PytestBootstrap) -> Result<(), PytestRunError> {
@@ -80,14 +82,18 @@ impl ForkserverController {
             cwd: bootstrap.cwd.to_string_lossy().to_string(),
             pytest_args: bootstrap.pytest_args.clone(),
             env: bootstrap.env.clone(),
+            scratch: self
+                .scratch
+                .as_ref()
+                .map(|dir| dir.to_string_lossy().into_owned())
+                .unwrap_or_default(),
         };
-        self.write_json(&wire)?;
-        let response: WireBootstrapResult = self.read_json()?;
+        write_json(&mut self.stdin, &wire)?;
+        let response: WireBootstrapResult = read_json(&mut self.stdout)?;
         if response.ok {
             return Ok(());
         }
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        self.kill_controller();
         self.shutting_down = true;
         let mut message = response
             .error
@@ -99,6 +105,39 @@ impl ForkserverController {
         Err(PytestRunError::Protocol(message))
     }
 
+    pub(crate) fn collect_paths(
+        &mut self,
+        paths: &[PathBuf],
+    ) -> Result<ForkserverCollect, PytestRunError> {
+        write_json(
+            &mut self.stdin,
+            &WireCollect {
+                op: "collect",
+                paths: paths
+                    .iter()
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .collect(),
+            },
+        )?;
+        let response: WireCollectResult = read_json(&mut self.stdout)?;
+        if !response.ok {
+            return Err(PytestRunError::Protocol(
+                response
+                    .error
+                    .unwrap_or_else(|| "pytest collection failed".to_string()),
+            ));
+        }
+        Ok(ForkserverCollect {
+            nodeids: response.nodeids,
+            observed_workspace: response.observed_workspace,
+            unsupported_external: response.unsupported_external,
+            python_version: response.python_version,
+            pytest_version: response.pytest_version,
+            executable: response.executable,
+            pytest_file: response.pytest_file,
+        })
+    }
+
     pub(crate) fn run(
         &mut self,
         req: PytestRunRequest,
@@ -108,8 +147,8 @@ impl ForkserverController {
         let started = Instant::now();
         let request_id = self.next_id;
         self.next_id += 1;
-        self.write_json(&WireRequest::from_request(request_id, &req))?;
-        let response: WireResponse = self.read_json()?;
+        write_json(&mut self.stdin, &WireRequest::from_request(request_id, &req))?;
+        let response: WireResponse = read_json(&mut self.stdout)?;
         outcome_from_response(response, request_id, timeout, started)
     }
 
@@ -131,7 +170,7 @@ impl ForkserverController {
             tests.push(WireRequest::from_request(request_id, req));
         }
         let first = reqs.first().expect("module batch is non-empty");
-        self.write_json(&WireModuleRequest {
+        write_json(&mut self.stdin, &WireModuleRequest {
             op: "run_module",
             cwd: first.cwd.to_string_lossy().to_string(),
             pytest_args: first.pytest_args.clone(),
@@ -139,7 +178,7 @@ impl ForkserverController {
             tests,
         })?;
         let response = loop {
-            let mut response: WireModuleResponse = self.read_json()?;
+            let mut response: WireModuleResponse = read_json(&mut self.stdout)?;
             let Some(progress) = response.progress.take() else {
                 break response;
             };
@@ -175,8 +214,8 @@ impl ForkserverController {
             return;
         }
         self.shutting_down = true;
-        let _ = self.write_json(&WireShutdown { op: "shutdown" });
-        force_reap(&mut self.child);
+        let _ = write_json(&mut self.stdin, &WireShutdown { op: "shutdown" });
+        self.kill_controller();
     }
 
     #[cfg(test)]
@@ -185,47 +224,46 @@ impl ForkserverController {
             return;
         }
         self.shutting_down = true;
-        if self.write_json(&WireShutdown { op: "shutdown" }).is_err() {
-            force_reap(&mut self.child);
+        if write_json(&mut self.stdin, &WireShutdown { op: "shutdown" }).is_err() {
+            self.kill_controller();
             return;
         }
-        wait_or_kill(&mut self.child, SHUTDOWN_TIMEOUT);
-    }
-
-    fn write_json<T: Serialize>(&mut self, value: &T) -> Result<(), PytestRunError> {
-        serde_json::to_writer(&mut self.stdin, value)
-            .map_err(|err| PytestRunError::Protocol(err.to_string()))?;
-        self.stdin
-            .write_all(b"\n")
-            .map_err(|err| PytestRunError::Protocol(err.to_string()))?;
-        self.stdin
-            .flush()
-            .map_err(|err| PytestRunError::Protocol(err.to_string()))
-    }
-
-    fn read_json<T: DeserializeOwned>(&mut self) -> Result<T, PytestRunError> {
-        let mut line = String::new();
-        let n = self
-            .stdout
-            .read_line(&mut line)
-            .map_err(|err| PytestRunError::Protocol(err.to_string()))?;
-        if n == 0 {
-            return Err(PytestRunError::Protocol(
-                "controller exited before response".to_string(),
-            ));
-        }
-        serde_json::from_str(&line).map_err(|err| PytestRunError::Protocol(err.to_string()))
+        self.wait_for_exit(SHUTDOWN_TIMEOUT);
     }
 
     #[cfg(test)]
     pub(crate) fn controller_pid(&self) -> u32 {
-        self.child.id()
+        self.pid
+    }
+
+    fn kill_controller(&mut self) {
+        if let Some(child) = self.owned.as_mut() {
+            proc::force_reap(child);
+            return;
+        }
+        proc::signal_pid(self.pid);
+    }
+
+    #[cfg(test)]
+    fn wait_for_exit(&mut self, timeout: Duration) {
+        if let Some(child) = self.owned.as_mut() {
+            proc::wait_or_kill(child, timeout);
+            return;
+        }
+        let deadline = Instant::now() + timeout;
+        while Instant::now() < deadline {
+            if !proc::process_alive(self.pid) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        proc::signal_pid(self.pid);
     }
 }
 
 impl Drop for ForkserverController {
     fn drop(&mut self) {
-        unregister_active_forkserver(self.child.id());
+        proc::unregister_active_forkserver(self.pid);
         self.shutdown();
         if let Some(dir) = &self.scratch {
             let _ = std::fs::remove_dir_all(dir);
@@ -235,138 +273,77 @@ impl Drop for ForkserverController {
 
 const SCRATCH_ENV: &str = "KISS_FORKSERVER_SCRATCH";
 
-fn create_scratch_dir(cwd: &Path) -> Option<PathBuf> {
-    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let state = cwd
-        .ancestors()
-        .map(crate::test_state_dir)
-        .find(|dir| dir.is_dir())?;
-    let base = state.join("forkserver-scratch");
-    sweep_dead_scratch_dirs(&base);
-    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let dir = base.join(format!("{}-{n}", std::process::id()));
-    std::fs::create_dir_all(&dir).ok()?;
-    Some(dir)
-}
-
-fn sweep_dead_scratch_dirs(base: &Path) {
-    let Ok(entries) = std::fs::read_dir(base) else {
-        return;
+fn start_owned(
+    python: &Path,
+    bootstrap: &PytestBootstrap,
+    scratch: Option<PathBuf>,
+) -> Result<ForkserverController, PytestRunError> {
+    let mut command = Command::new(python);
+    command
+        .current_dir("/")
+        .arg("-u")
+        .arg("-c")
+        .arg(&*FORKSERVER_CONTROLLER)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    if let Some(dir) = &scratch {
+        command.env(SCRATCH_ENV, dir);
+    }
+    #[cfg(unix)]
+    command.process_group(0);
+    #[cfg(target_os = "linux")]
+    proc::kill_on_parent_exit(&mut command);
+    let mut child = command.spawn().map_err(|err| PytestRunError::Spawn {
+        program: python.to_path_buf(),
+        message: err.to_string(),
+    })?;
+    let pid = child.id();
+    let stdin = proc::take_stdin(&mut child)?;
+    let stdout = proc::take_stdout(&mut child)?;
+    let mut controller = ForkserverController {
+        python: python.to_path_buf(),
+        bootstrap: bootstrap.clone(),
+        pid,
+        owned: Some(child),
+        stdin: Box::new(stdin),
+        stdout: BufReader::new(Box::new(stdout)),
+        next_id: 0,
+        shutting_down: false,
+        scratch,
     };
-    for entry in entries.flatten() {
-        let name = entry.file_name();
-        let owner = name
-            .to_string_lossy()
-            .split('-')
-            .next()
-            .and_then(|pid| pid.parse::<u32>().ok());
-        if owner.is_some_and(|pid| !process_alive(pid)) {
-            let _ = std::fs::remove_dir_all(entry.path());
-        }
+    proc::register_active_forkserver(pid);
+    controller.bootstrap_parent(bootstrap)?;
+    Ok(controller)
+}
+
+fn write_json<T: Serialize>(
+    stdin: &mut (dyn Write + Send),
+    value: &T,
+) -> Result<(), PytestRunError> {
+    serde_json::to_writer(&mut *stdin, value)
+        .map_err(|err| PytestRunError::Protocol(err.to_string()))?;
+    stdin
+        .write_all(b"\n")
+        .map_err(|err| PytestRunError::Protocol(err.to_string()))?;
+    stdin
+        .flush()
+        .map_err(|err| PytestRunError::Protocol(err.to_string()))
+}
+
+fn read_json<T: DeserializeOwned>(
+    stdout: &mut BufReader<Box<dyn Read + Send>>,
+) -> Result<T, PytestRunError> {
+    let mut line = String::new();
+    let n = stdout
+        .read_line(&mut line)
+        .map_err(|err| PytestRunError::Protocol(err.to_string()))?;
+    if n == 0 {
+        return Err(PytestRunError::Protocol(
+            "controller exited before response".to_string(),
+        ));
     }
-}
-
-fn process_alive(pid: u32) -> bool {
-    #[cfg(unix)]
-    {
-        let Ok(pid) = libc::pid_t::try_from(pid) else {
-            return false;
-        };
-        let signalled = unsafe { libc::kill(pid, 0) == 0 };
-        signalled || std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH)
-    }
-    #[cfg(not(unix))]
-    {
-        pid == std::process::id()
-    }
-}
-
-fn active_forkservers() -> &'static Mutex<HashSet<u32>> {
-    static ACTIVE: OnceLock<Mutex<HashSet<u32>>> = OnceLock::new();
-    ACTIVE.get_or_init(|| Mutex::new(HashSet::new()))
-}
-
-fn register_active_forkserver(pid: u32) {
-    active_forkservers()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .insert(pid);
-}
-
-fn unregister_active_forkserver(pid: u32) {
-    active_forkservers()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .remove(&pid);
-}
-
-pub fn cancel_active_forkservers() {
-    #[cfg(unix)]
-    {
-        let pids: Vec<u32> = active_forkservers()
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .iter()
-            .copied()
-            .collect();
-        for pid in &pids {
-            signal_forkserver_group(*pid, libc::SIGTERM);
-        }
-        if !pids.is_empty() {
-            std::thread::sleep(Duration::from_millis(100));
-        }
-        for pid in pids {
-            signal_forkserver_group(pid, libc::SIGKILL);
-        }
-    }
-}
-
-#[cfg(unix)]
-fn signal_forkserver_group(pid: u32, signal: libc::c_int) {
-    let pid = pid as libc::pid_t;
-    if pid > 0 && unsafe { libc::getpgid(pid) } == pid {
-        unsafe {
-            libc::kill(-pid, signal);
-        }
-    }
-}
-
-fn take_stdin(child: &mut Child) -> Result<ChildStdin, PytestRunError> {
-    child
-        .stdin
-        .take()
-        .ok_or_else(|| PytestRunError::Protocol("controller stdin unavailable".to_string()))
-}
-
-fn take_stdout(child: &mut Child) -> Result<std::process::ChildStdout, PytestRunError> {
-    child
-        .stdout
-        .take()
-        .ok_or_else(|| PytestRunError::Protocol("controller stdout unavailable".to_string()))
-}
-
-fn force_reap(child: &mut Child) {
-    let _ = child.kill();
-    let _ = child.wait();
-}
-
-#[cfg(test)]
-fn wait_or_kill(child: &mut Child, timeout: Duration) {
-    let deadline = Instant::now() + timeout;
-    loop {
-        if Instant::now() >= deadline {
-            force_reap(child);
-            return;
-        }
-        match child.try_wait() {
-            Ok(Some(_)) => return,
-            Ok(None) => std::thread::sleep(Duration::from_millis(10)),
-            Err(_) => {
-                force_reap(child);
-                return;
-            }
-        }
-    }
+    serde_json::from_str(&line).map_err(|err| PytestRunError::Protocol(err.to_string()))
 }
 
 fn outcome_from_response(

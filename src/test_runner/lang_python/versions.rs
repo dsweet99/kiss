@@ -154,6 +154,38 @@ fn next_probe_line<'a>(
         .ok_or_else(|| format!("error: kiss test: {what} probe produced no output"))
 }
 
+pub(crate) fn remember_probed_versions(
+    repo_root: &Path,
+    python_version: &str,
+    pytest_version: &str,
+    python_exe: &str,
+    pytest_file: &str,
+) {
+    let Some((python_mtime_nanos, python_len)) = file_stamp(Path::new(python_exe)) else {
+        return;
+    };
+    let Some((pytest_mtime_nanos, pytest_len)) = file_stamp(Path::new(pytest_file)) else {
+        return;
+    };
+    let Some((path_python, path_python_mtime_nanos, path_python_len)) = path_python_stamp() else {
+        return;
+    };
+    let cached = PythonToolVersionsCache {
+        python: python_version.to_string(),
+        pytest: pytest_version.to_string(),
+        python_exe: python_exe.to_string(),
+        python_mtime_nanos,
+        python_len,
+        pytest_file: pytest_file.to_string(),
+        pytest_mtime_nanos,
+        pytest_len,
+        path_python,
+        path_python_mtime_nanos,
+        path_python_len,
+    };
+    let _ = write_cached_python_tool_versions(repo_root, &cached);
+}
+
 fn write_cached_python_tool_versions(
     repo_root: &Path,
     cached: &PythonToolVersionsCache,
