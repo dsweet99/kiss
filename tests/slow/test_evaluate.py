@@ -11,12 +11,12 @@ from ops.evaluate import evaluation_names, main, run_evaluation
 def test_evaluation_names_include_qa_commands() -> None:
     assert python.__name__ == "python"
     names = evaluation_names()
-    assert "short/path_isolation" in names
-    assert "short/timing_rust_throughput" in names
-    assert "short/timing_kiss_check" in names
-    assert "short/timing_kiss_test" in names
-    assert "short/timing_kiss_test_sigint_restart" in names
-    assert "short/timing_kiss_test_progress_cpu" in names
+    assert names == [
+        "short/timing_kiss_check",
+        "short/timing_kiss_test",
+        "short/timing_kiss_test_progress_cpu",
+        "short/timing_rust_throughput",
+    ]
     assert not any(name.startswith("long/") for name in names)
     assert not any("watch" in name for name in names)
     assert all(" " not in name for name in names)
@@ -66,13 +66,13 @@ def test_run_evaluation_invokes_wrapper(monkeypatch) -> None:
 
     class Fake:
         @staticmethod
-        def eval_path_isolation() -> None:
+        def eval_timing_kiss_check() -> None:
             called.append("ran")
 
     monkeypatch.setattr("importlib.import_module", lambda name: Fake())
-    run_evaluation("short/path_isolation")
+    run_evaluation("short/timing_kiss_check")
     assert called == ["ran"]
-    run_evaluation("path_isolation")
+    run_evaluation("timing_kiss_check")
     assert called == ["ran", "ran"]
 
 
