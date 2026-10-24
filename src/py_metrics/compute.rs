@@ -146,4 +146,14 @@ mod tests {
             "kinds={found:?}"
         );
     }
+
+    #[test]
+    fn match_cases_do_not_count_as_branches() {
+        let parsed = parse_python_source(
+            "def f(x):\n    if x < 0:\n        return -1\n    elif x > 0:\n        return 1\n    match x:\n        case 0:\n            return 0\n        case _:\n            return 2\n",
+        );
+        let func = parsed.tree.root_node().child(0).expect("function");
+
+        assert_eq!(compute_function_metrics(func, &parsed.source).branches, 2);
+    }
 }

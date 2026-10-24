@@ -29,7 +29,7 @@ pub(super) const PY_RULE_SPECS: &[RuleSpec] = &[
         metric: "branches_per_function",
         op: ThresholdOp::AtMost,
         threshold: ThresholdValue::Usize(|c, _| c.branches_per_function),
-        description: "branches_per_function is the number of if/elif/case_clause branches in a Python function.",
+        description: "branches_per_function is the number of if/elif branches in a Python function.",
     },
     RuleSpec {
         metric: "local_variables_per_function",

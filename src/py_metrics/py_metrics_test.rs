@@ -57,12 +57,7 @@ fn count_branches(node: Node) -> usize {
     let mut cursor = node.walk();
 
     node.children(&mut cursor)
-        .map(|c| {
-            usize::from(matches!(
-                c.kind(),
-                "if_statement" | "elif_clause" | "case_clause"
-            )) + count_branches(c)
-        })
+        .map(|c| usize::from(matches!(c.kind(), "if_statement" | "elif_clause")) + count_branches(c))
         .sum()
 }
 

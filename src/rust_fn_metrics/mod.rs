@@ -291,14 +291,7 @@ impl FunctionMetricsVisitor<'_> {
                 self.branches += 1;
                 self.enter_block();
             }
-            Expr::Match(m) => {
-                let arms = m.arms.iter().filter(|arm| match (self.path, self.roles) {
-                    (Some(path), Some(roles)) => !skip_syn(Some(roles), path, *arm),
-                    _ => true,
-                });
-                self.branches += arms.count();
-                self.enter_block();
-            }
+            Expr::Match(_) => self.enter_block(),
             Expr::While(_) | Expr::ForLoop(_) | Expr::Loop(_) => self.enter_block(),
             Expr::Return(_) => self.returns += 1,
             Expr::Closure(_) => {

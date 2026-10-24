@@ -32,8 +32,8 @@ fn test_function_metrics() {
     let (i_match, b_match) = parse_fn("fn f(x: u32) -> u32 { match x { 0 => 1, 1 => 2, _ => 0 } }");
     assert_eq!(
         compute_rust_function_metrics(&i_match, &b_match, 0).branches,
-        3,
-        "match arms should count as branches"
+        0,
+        "match arms should not count as branches"
     );
 
     let (i4, b4) = parse_fn("fn f() { let a=1; let b=2; let (c,d)=(3,4); }");
@@ -322,7 +322,7 @@ fn function_metrics_count_closures_calls_and_skip_inner_function_bodies() {
 
     assert_eq!(metrics.bool_parameters, 1);
     assert_eq!(metrics.returns, 1);
-    assert_eq!(metrics.branches, 4);
+    assert_eq!(metrics.branches, 1);
     assert_eq!(metrics.nested_function_depth, 2);
     assert!(metrics.calls >= 4);
     assert_eq!(metrics.local_variables, 1);

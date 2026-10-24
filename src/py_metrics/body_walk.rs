@@ -91,7 +91,6 @@ pub(crate) fn update_body_counts(node: Node, agg: &mut BodyAgg) {
         node.kind(),
         "if_statement"
             | "elif_clause"
-            | "case_clause"
             | "for_statement"
             | "while_statement"
             | "async_for_statement"
